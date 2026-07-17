@@ -19636,9 +19636,167 @@ fn exact_line_edge_parameter_range(
         })
 }
 
+fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool; 2] {
+    let mismatch = |left: [f64; 3], right: [f64; 3]| {
+        dot(
+            std::array::from_fn(|index| left[index] - right[index]),
+            std::array::from_fn(|index| left[index] - right[index]),
+        )
+        .sqrt()
+    };
+    let scale = mapped
+        .into_iter()
+        .flatten()
+        .chain(target.into_iter().flatten())
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let tolerance = 1e-9 * scale;
+    [
+        mismatch(mapped[0], target[0]).max(mismatch(mapped[1], target[1])) <= tolerance,
+        mismatch(mapped[0], target[1]).max(mismatch(mapped[1], target[0])) <= tolerance,
+    ]
+}
+
+fn circle_edge_parameter_range(
+    geometry: &CurveGeometry,
+    points: [[f64; 3]; 2],
+    interior: [f64; 3],
+) -> Option<[f64; 2]> {
+    if !curve_contains_points(geometry, points)
+        || !curve_contains_points(geometry, [interior, interior])
+    {
+        return None;
+    }
+    let CurveGeometry::Circle {
+        center,
+        axis,
+        ref_direction,
+        radius,
+    } = geometry
+    else {
+        return None;
+    };
+    let center = [center.x, center.y, center.z];
+    let x_axis = [ref_direction.x, ref_direction.y, ref_direction.z];
+    let y_axis = cross([axis.x, axis.y, axis.z], x_axis);
+    let parameter = |point: [f64; 3]| {
+        let relative = std::array::from_fn(|index| point[index] - center[index]);
+        dot(relative, y_axis)
+            .atan2(dot(relative, x_axis))
+            .rem_euclid(std::f64::consts::TAU)
+    };
+    let [first, second] = points.map(parameter);
+    let increasing = |start: f64, end: f64| {
+        [
+            start,
+            if end < start {
+                end + std::f64::consts::TAU
+            } else {
+                end
+            },
+        ]
+    };
+    let first_arc = increasing(first, second);
+    let second_arc = if (first - second).abs() <= 1e-12 {
+        [first, first + std::f64::consts::TAU]
+    } else {
+        increasing(second, first)
+    };
+    let scale = radius.abs().max(1.0);
+    let matches_interior = |range: [f64; 2]| {
+        cadmpeg_ir::eval::curve_point(geometry, f64::midpoint(range[0], range[1])).is_some_and(
+            |point| {
+                let point = [point.x, point.y, point.z];
+                dot(
+                    std::array::from_fn(|index| point[index] - interior[index]),
+                    std::array::from_fn(|index| point[index] - interior[index]),
+                )
+                .sqrt()
+                    <= 1e-9 * scale
+            },
+        )
+    };
+    let selected = match (matches_interior(first_arc), matches_interior(second_arc)) {
+        (true, false) => first_arc,
+        (false, true) => second_arc,
+        _ => return None,
+    };
+    (selected[1] - selected[0] > 1e-12).then_some(selected)
+}
+
+fn native_pcurve_midpoint(
+    surface: &SurfaceGeometry,
+    endpoints: [[f64; 2]; 2],
+    edge_points: [[f64; 3]; 2],
+) -> Option<[f64; 3]> {
+    let mapped = endpoints.map(|uv| {
+        cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
+            .map(|point| [point.x, point.y, point.z])
+    });
+    let [Some(first), Some(second)] = mapped else {
+        return None;
+    };
+    point_pair_alignments([first, second], edge_points)
+        .into_iter()
+        .any(|matches| matches)
+        .then_some(())?;
+    let uv = [
+        f64::midpoint(endpoints[0][0], endpoints[1][0]),
+        f64::midpoint(endpoints[0][1], endpoints[1][1]),
+    ];
+    cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1]).map(|point| [point.x, point.y, point.z])
+}
+
+type NativePcurveCandidates = BTreeMap<(u32, u32), Vec<([[f64; 2]; 2], usize)>>;
+
+fn pcurve_backed_circle_edge_parameter_range(
+    geometry: &CurveGeometry,
+    curve_id: u32,
+    faces: [u32; 2],
+    candidates: &NativePcurveCandidates,
+    surfaces: &[Surface],
+    points: [[f64; 3]; 2],
+) -> Option<[f64; 2]> {
+    let mut selected = None;
+    for face_id in faces {
+        let Some(surface) = surfaces
+            .iter()
+            .find(|surface| surface.id == SurfaceId(format!("creo:visibgeom:surface#{face_id}")))
+            .map(|surface| &surface.geometry)
+        else {
+            continue;
+        };
+        for (endpoints, _) in candidates.get(&(curve_id, face_id)).into_iter().flatten() {
+            let Some(interior) = native_pcurve_midpoint(surface, *endpoints, points) else {
+                continue;
+            };
+            let candidate = circle_edge_parameter_range(geometry, points, interior)?;
+            if selected.is_some_and(|selected: [f64; 2]| {
+                candidate
+                    .into_iter()
+                    .zip(selected)
+                    .any(|(candidate, selected)| (candidate - selected).abs() > 1e-9)
+            }) {
+                return None;
+            }
+            selected = Some(candidate);
+        }
+    }
+    selected
+}
+
 #[cfg(test)]
 mod native_edge_parameter_tests {
     use super::*;
+
+    fn circle() -> CurveGeometry {
+        CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        }
+    }
 
     #[test]
     fn preserves_scaled_line_parameterization_and_orders_the_interval() {
@@ -19663,6 +19821,101 @@ mod native_edge_parameter_tests {
             None
         );
     }
+
+    #[test]
+    fn pcurve_midpoint_selects_minor_major_and_full_circle_intervals() {
+        let circle = circle();
+        let points = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
+        let root_two = std::f64::consts::SQRT_2;
+        assert_eq!(
+            circle_edge_parameter_range(&circle, points, [root_two, root_two, 0.0]),
+            Some([0.0, std::f64::consts::FRAC_PI_2])
+        );
+        assert_eq!(
+            circle_edge_parameter_range(&circle, points, [-root_two, -root_two, 0.0]),
+            Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
+        );
+        assert_eq!(
+            circle_edge_parameter_range(&circle, [points[0], points[0]], [-2.0, 0.0, 0.0],),
+            Some([0.0, std::f64::consts::TAU])
+        );
+        assert_eq!(
+            circle_edge_parameter_range(&circle, [points[0], points[0]], points[0]),
+            None
+        );
+    }
+
+    #[test]
+    fn surface_pcurve_midpoint_retains_periodic_path() {
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let midpoint = native_pcurve_midpoint(
+            &cylinder,
+            [[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]],
+            [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]],
+        )
+        .expect("periodic midpoint");
+        assert!((midpoint[0] + std::f64::consts::SQRT_2).abs() <= 1e-12);
+        assert!((midpoint[1] + std::f64::consts::SQRT_2).abs() <= 1e-12);
+    }
+
+    #[test]
+    fn adjacent_face_pcurves_must_select_the_same_circle_arc() {
+        let surface_geometry = SurfaceGeometry::Cylinder {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let surfaces = [10, 11]
+            .map(|face| Surface {
+                id: SurfaceId(format!("creo:visibgeom:surface#{face}")),
+                geometry: surface_geometry.clone(),
+                source_object: None,
+            })
+            .to_vec();
+        let points = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
+        let mut candidates = NativePcurveCandidates::new();
+        candidates.insert(
+            (7, 10),
+            vec![([[0.0, 0.0], [std::f64::consts::FRAC_PI_2, 0.0]], 10)],
+        );
+        candidates.insert(
+            (7, 11),
+            vec![([[0.0, 0.0], [std::f64::consts::FRAC_PI_2, 0.0]], 20)],
+        );
+        assert_eq!(
+            pcurve_backed_circle_edge_parameter_range(
+                &circle(),
+                7,
+                [10, 11],
+                &candidates,
+                &surfaces,
+                points,
+            ),
+            Some([0.0, std::f64::consts::FRAC_PI_2])
+        );
+
+        candidates.insert(
+            (7, 11),
+            vec![([[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]], 20)],
+        );
+        assert_eq!(
+            pcurve_backed_circle_edge_parameter_range(
+                &circle(),
+                7,
+                [10, 11],
+                &candidates,
+                &surfaces,
+                points,
+            ),
+            None
+        );
+    }
 }
 
 fn oriented_native_pcurve_endpoints(
@@ -19677,25 +19930,9 @@ fn oriented_native_pcurve_endpoints(
     let [Some(first), Some(second)] = mapped else {
         return None;
     };
-    let mismatch = |left: [f64; 3], right: [f64; 3]| {
-        left.into_iter()
-            .zip(right)
-            .map(|(left, right)| (left - right).powi(2))
-            .sum::<f64>()
-            .sqrt()
-    };
-    let forward = mismatch(first, traversal[0]).max(mismatch(second, traversal[1]));
-    let reverse = mismatch(first, traversal[1]).max(mismatch(second, traversal[0]));
-    let scale = first
-        .into_iter()
-        .chain(second)
-        .chain(traversal.into_iter().flatten())
-        .map(f64::abs)
-        .fold(1.0, f64::max);
-    let tolerance = 1e-9 * scale;
-    match (forward <= tolerance, reverse <= tolerance) {
-        (true, false) => Some(endpoints),
-        (false, true) => Some([endpoints[1], endpoints[0]]),
+    match point_pair_alignments([first, second], traversal) {
+        [true, false] => Some(endpoints),
+        [false, true] => Some([endpoints[1], endpoints[0]]),
         _ => None,
     }
 }
@@ -19823,7 +20060,7 @@ fn transfer_plane_brep(
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
     let solved_vertices = solved_topological_vertices(scan, &carriers);
-    let mut native_pcurves = BTreeMap::<(u32, u32), Vec<([[f64; 2]; 2], usize)>>::new();
+    let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
         .pcurves
         .iter()
@@ -19928,6 +20165,10 @@ fn transfer_plane_brep(
         .iter()
         .map(|row| (row.id, row.offset))
         .collect::<BTreeMap<_, _>>();
+    let curve_faces = crate::topology::uniquely_identified_rows(&scan.curve_topology_rows)
+        .into_iter()
+        .map(|row| (row.id, row.faces))
+        .collect::<BTreeMap<_, _>>();
 
     for vertex_id in used_vertices {
         let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
@@ -19967,7 +20208,11 @@ fn transfer_plane_brep(
         let [start, end] = edge_vertices[curve_id];
         let curve = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
         let points = [solved_vertices[&start], solved_vertices[&end]];
-        let param_range = if derived_intersection_curves.contains(&curve) {
+        let derived_line = derived_intersection_curves.contains(&curve)
+            && ir.model.curves.iter().any(|candidate| {
+                candidate.id == curve && matches!(candidate.geometry, CurveGeometry::Line { .. })
+            });
+        let param_range = if derived_line {
             ir.model
                 .curves
                 .iter_mut()
@@ -19978,7 +20223,18 @@ fn transfer_plane_brep(
                 .curves
                 .iter()
                 .find(|candidate| candidate.id == curve)
-                .and_then(|candidate| exact_line_edge_parameter_range(&candidate.geometry, points))
+                .and_then(|candidate| {
+                    exact_line_edge_parameter_range(&candidate.geometry, points).or_else(|| {
+                        pcurve_backed_circle_edge_parameter_range(
+                            &candidate.geometry,
+                            *curve_id,
+                            *curve_faces.get(curve_id)?,
+                            &native_pcurves,
+                            &ir.model.surfaces,
+                            points,
+                        )
+                    })
+                })
         };
         let id = EdgeId(format!("creo:visibgeom:edge#{curve_id}"));
         annotate(

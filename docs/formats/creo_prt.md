@@ -930,7 +930,13 @@ are not replaced by this construction. For an exact line with origin `O` and
 direction `D`, each solved endpoint `P` has native parameter
 `dot(P - O, D) / dot(D, D)`; the edge interval is the ordered pair of those
 parameters. Periodic carriers require an independent arc-selection rule and do
-not acquire an interval from endpoint positions alone.
+not acquire an interval from endpoint positions alone. For a circular edge,
+the midpoint of a complete straight face pcurve maps through the face surface
+to the interior of exactly one of the two circle arcs between the solved edge
+endpoints. That arc supplies the ordered circle interval. Coincident endpoints
+select a full-turn interval when the mapped midpoint is antipodal to the
+endpoint. Every endpoint-matching pcurve on an evaluable adjacent face must
+select the same interval.
 
 A plane normal to a torus axis at axial offset `z` intersects the torus in circles of radii `R ± sqrt(r² - z²)`. At `|z| = r` the two roots coincide in one contact circle. At `|z| < r` the edge's paired solved endpoint orbits select one circle when exactly one positive-radius candidate contains both endpoints. A zero-radius horn-torus root is a point and does not define a curve.
 
