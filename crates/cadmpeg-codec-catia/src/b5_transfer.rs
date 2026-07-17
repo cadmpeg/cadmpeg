@@ -59,6 +59,11 @@ struct OwnershipPlan {
     face_components: Vec<usize>,
 }
 
+struct OrientedLoop {
+    member_order: Vec<usize>,
+    reversed: Vec<bool>,
+}
+
 /// Transfer a complete B5 graph. Returns `false` without mutation when any
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
 pub(crate) fn transfer(
@@ -335,6 +340,9 @@ fn transfer_complete(
             edge_ids.insert(edge_id);
         }
     }
+    let Some(loop_orientation) = orient_loop_members(graph, loop_senses) else {
+        return false;
+    };
     let vertex_tolerances = transfer_vertex_tolerances(graph, &pcurve_plan, &surface_plan);
 
     let used_vertices: HashSet<usize> = edge_ids
@@ -761,10 +769,16 @@ fn transfer_complete(
         });
         for loop_id_value in &face.loops {
             let loop_ = &graph.loops[loop_id_value];
-            let senses = &loop_senses[loop_id_value];
+            let orientation = &loop_orientation[loop_id_value];
+            let senses = &orientation.reversed;
+            let member_order = &orientation.member_order;
             let loop_id = LoopId(format!("catia:b5:loop#{loop_id_value}"));
-            let coedge_ids: Vec<CoedgeId> = (0..loop_.edges.len())
+            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edges.len())
                 .map(|index| CoedgeId(format!("catia:b5:coedge#{loop_id_value}-{index}")))
+                .collect();
+            let coedge_ids: Vec<CoedgeId> = member_order
+                .iter()
+                .map(|member| coedge_ids_by_member[*member].clone())
                 .collect();
             annotate(
                 annotations,
@@ -781,8 +795,10 @@ fn transfer_complete(
                 face: face_id.clone(),
                 coedges: coedge_ids.clone(),
             });
-            for (index, (&edge, &reversed)) in loop_.edges.iter().zip(senses).enumerate() {
-                let id = coedge_ids[index].clone();
+            for (position, &member) in member_order.iter().enumerate() {
+                let edge = loop_.edges[member];
+                let reversed = senses[member];
+                let id = coedge_ids_by_member[member].clone();
                 annotate(
                     annotations,
                     &id,
@@ -807,15 +823,16 @@ fn transfer_complete(
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_id_map[&edge].clone(),
-                    next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
+                    next: coedge_ids[(position + 1) % coedge_ids.len()].clone(),
+                    previous: coedge_ids[(position + coedge_ids.len() - 1) % coedge_ids.len()]
+                        .clone(),
                     radial_next: id,
                     sense: if reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward
                     },
-                    pcurve: pcurve_ids.get(&(loop_.object_id, index)).cloned(),
+                    pcurve: pcurve_ids.get(&(loop_.object_id, member)).cloned(),
                 });
             }
         }
@@ -2065,6 +2082,94 @@ fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     })
 }
 
+fn orient_loop_members(
+    graph: &B5Graph,
+    mut reversed: BTreeMap<u32, Vec<bool>>,
+) -> Option<BTreeMap<u32, OrientedLoop>> {
+    let loop_ids: Vec<u32> = graph.loops.keys().copied().collect();
+    let node_by_loop: HashMap<u32, usize> = loop_ids
+        .iter()
+        .enumerate()
+        .map(|(node, loop_id)| (*loop_id, node))
+        .collect();
+    if reversed.len() != loop_ids.len()
+        || loop_ids.iter().any(|loop_id| {
+            reversed
+                .get(loop_id)
+                .is_none_or(|senses| senses.len() != graph.loops[loop_id].edges.len())
+        })
+    {
+        return None;
+    }
+
+    let mut uses = HashMap::<u32, Vec<(usize, bool)>>::new();
+    for loop_id in &loop_ids {
+        let node = node_by_loop[loop_id];
+        for (&edge, &sense) in graph.loops[loop_id].edges.iter().zip(&reversed[loop_id]) {
+            uses.entry(edge).or_default().push((node, sense));
+        }
+    }
+    let mut constraints = vec![Vec::<(usize, bool)>::new(); loop_ids.len()];
+    for occurrences in uses.values().filter(|occurrences| occurrences.len() == 2) {
+        let [(left, left_reversed), (right, right_reversed)] = occurrences.as_slice() else {
+            unreachable!("filtered to two occurrences");
+        };
+        let parity = left_reversed == right_reversed;
+        if left == right {
+            if parity {
+                return None;
+            }
+        } else {
+            constraints[*left].push((*right, parity));
+            constraints[*right].push((*left, parity));
+        }
+    }
+
+    let mut flips = vec![None; loop_ids.len()];
+    for root in 0..loop_ids.len() {
+        if flips[root].is_some() {
+            continue;
+        }
+        flips[root] = Some(false);
+        let mut pending = vec![root];
+        while let Some(node) = pending.pop() {
+            let flip = flips[node]?;
+            for &(neighbor, parity) in &constraints[node] {
+                let required = flip ^ parity;
+                match flips[neighbor] {
+                    Some(existing) if existing != required => return None,
+                    Some(_) => {}
+                    None => {
+                        flips[neighbor] = Some(required);
+                        pending.push(neighbor);
+                    }
+                }
+            }
+        }
+    }
+
+    let mut oriented = BTreeMap::new();
+    for (node, loop_id) in loop_ids.into_iter().enumerate() {
+        let member_count = graph.loops[&loop_id].edges.len();
+        let flip = flips[node]?;
+        let mut member_order: Vec<usize> = (0..member_count).collect();
+        if flip {
+            member_order.reverse();
+            for sense in reversed.get_mut(&loop_id)? {
+                *sense = !*sense;
+            }
+        }
+        oriented.insert(
+            loop_id,
+            OrientedLoop {
+                member_order,
+                reversed: reversed.remove(&loop_id)?,
+            },
+        );
+    }
+    Some(oriented)
+}
+
 fn union_faces(parents: &mut [usize], left: usize, right: usize) {
     let left = face_root(parents, left);
     let right = face_root(parents, right);
@@ -2125,9 +2230,10 @@ mod tests {
     use super::{
         b5_edge_support_definition, bounded_occurrence_range, cylinder_helix, cylinder_point,
         edge_pcurve_parameters, isocurve_endpoint_parameters, lifted_curve_geometry,
-        merge_curve_plan, neutral_pcurve_point, ordered_subrange, oriented_circle_plan,
-        oriented_line_plan, oriented_nurbs_range, ownership_plan, rational_arc, revolution_surface,
-        revolve_nurbs, transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
+        merge_curve_plan, neutral_pcurve_point, ordered_subrange, orient_loop_members,
+        oriented_circle_plan, oriented_line_plan, oriented_nurbs_range, ownership_plan,
+        rational_arc, revolution_surface, revolve_nurbs, transfer, transfer_vertex_tolerances,
+        CurvePlan, SurfacePlan,
     };
     use crate::b5::{
         loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
@@ -2523,6 +2629,60 @@ mod tests {
         graph.edge_vertices.remove(&7);
         graph.edge_vertices.insert(3, [0, 2]);
         assert!(ownership_plan(&graph).is_none());
+    }
+
+    #[test]
+    fn loop_orientation_reverses_member_order_and_rejects_frustrated_parity() {
+        let loop_ = |object_id: u32, edges: Vec<u32>| B5Loop {
+            object_id,
+            pcurves: vec![0; edges.len()],
+            edges,
+            surface: 10,
+        };
+        let mut graph = B5Graph {
+            complete: true,
+            records: Vec::new(),
+            faces: Vec::new(),
+            loops: BTreeMap::from([(1, loop_(1, vec![3])), (2, loop_(2, vec![4, 5, 3]))]),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::new(),
+            vertex_points: Vec::new(),
+            logical_vertex_points: Vec::new(),
+            logical_vertex_refs: Vec::new(),
+            edge_vertices: BTreeMap::new(),
+            edge_parameter_incidences: BTreeMap::new(),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+        let orientation = orient_loop_members(
+            &graph,
+            BTreeMap::from([(1, vec![false]), (2, vec![false; 3])]),
+        )
+        .unwrap();
+        assert_eq!(orientation[&1].member_order, vec![0]);
+        assert_eq!(orientation[&2].member_order, vec![2, 1, 0]);
+        assert_eq!(orientation[&1].reversed, vec![false]);
+        assert_eq!(orientation[&2].reversed, vec![true; 3]);
+
+        graph.loops = BTreeMap::from([
+            (1, loop_(1, vec![1, 3])),
+            (2, loop_(2, vec![1, 2])),
+            (3, loop_(3, vec![2, 3])),
+        ]);
+        assert!(orient_loop_members(
+            &graph,
+            BTreeMap::from([
+                (1, vec![false; 2]),
+                (2, vec![false; 2]),
+                (3, vec![false; 2]),
+            ]),
+        )
+        .is_none());
     }
 
     #[test]
