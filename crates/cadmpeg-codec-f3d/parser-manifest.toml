@@ -91,11 +91,11 @@ ledger_level = 0
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/sab.rs"
 status = "legacy"
-legacy_reason = "SAB record framer with a nested marker-probe walk (9 depth-parameter sites). The recursion must move to ctx.descend()/DepthGuard and the per-record leaf reads to View + req_* mirrors before graduation; migrating framing without the depth guard would leave the highest-risk recursion site uncovered. High-risk recursion site, scheduled next."
+legacy_reason = "SAB record framer. The subtype-scope `depth` handling in `payload_subtype_range` and `frame` is an iterative `i32`/`usize` counter inside a `while`/`loop` over the token stream, not stack recursion, so DepthGuard does not apply here (correcting the earlier characterization). The real graduation obligations are: thread a `View` through `frame`/`lex`/`payload_*` so the per-record leaf reads leave the `&[u8]` path, charge `work` per lexed token, and grow the unbounded `records`/`tokens`/`name_parts` accumulators through `grow_vec`. Blocked primarily by test coupling: `frame` and the `payload_*` helpers have 88 direct call sites in `tests.rs`, so changing their signatures to `View`/`DecodeContext` is a large edit that cannot land build-clean in a shared-worktree pass. `frame` returning records as `&[u8]` offsets is also the raw-byte egress that blocks `history.rs` graduation. High-risk unbounded-accumulation site; keystone for `history.rs`."
 input_spaces = ["entry:*"]
 fuzz_targets = ["f3d_sab_frame", "f3d_container"]
 charges = []
-cost_model = "target: work per record marker examined and nodes+edges per framing walk; depth gauge via DepthGuard"
+cost_model = "target: work per lexed token; grow_vec over records/tokens/name_parts accumulators; no depth charge (iterative counter, not recursion)"
 window_egress = []
 ledger_level = 0
 
@@ -124,11 +124,11 @@ ledger_level = 0
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/design.rs"
 status = "legacy"
-legacy_reason = "Design-record decoder with count-framed link/member loops and 5 disallowed reservation calls. Counts need BoundedCount + exact_vec and committed reads the req_* mirror before graduation."
+legacy_reason = "Design-record decoder. The one high-risk unfloored-count site, `decode_body_members`, is now MIGRATED: it reads through the entry `View` (`entry_view`, `seek_rel`), reserves the `BodiesRoot` member list through `View::counted(count, 11)` + `DecodeContext::exact_vec` (physical-floor proof over the 11-byte record stride), grows the cross-entry accumulator through `grow_vec`, and charges `work` for the prefix scan (once per window) and per member record; the `ctx` is threaded from the two `decode.rs` call sites (no direct `tests.rs` sites). It is truncation-tested at its record boundaries by `truncation_at_design_body_member_boundaries_is_deterministic_and_never_panics`, which also asserts deterministic output across cuts. The module now holds NO disallowed-method reservation at all: the four `parse_sketch_relation` member/return `Vec::with_capacity(count)` calls (domain-capped at 64) were converted to `Vec::new` + `push` because the record stride there is variable (`marked_u32` + `next_reference_marker`), so no fixed physical floor justifies an `exact_vec` reservation and the 64-cap already bounds the worst case. The module stays legacy for the remaining checklist gap only: the ~14 public reader functions still read `scan.entry_bytes` `&[u8]` via `cadmpeg_ir::le` rather than a threaded `View`, and their committed reads are not yet mirrored through `req_*`. Graduation with the module-level deny lint requires threading a `View` through those readers and adding the `req_*` mirrors; the deny lint itself would already pass clean (no disallowed methods remain), but marking `migrated` while the hostile reads stay on the raw `&[u8]` path would violate the migrated-means checklist. Lowest-risk legacy leaf: no unbounded and no floored reservation remains."
 input_spaces = ["entry:*"]
 fuzz_targets = ["f3d_container"]
 charges = []
-cost_model = "target: alloc_bytes via exact_vec per record count; work per record scanned"
+cost_model = "target: alloc_bytes via exact_vec under View::counted(count, min_element_size) per record count (11 bytes for body members); work per record scanned"
 window_egress = []
 ledger_level = 0
 

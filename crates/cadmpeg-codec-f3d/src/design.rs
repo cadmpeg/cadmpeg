@@ -14,6 +14,7 @@ use crate::records::{
     SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
 };
 use cadmpeg_ir::codec::CodecError;
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::le::{
     f64_at, f64s_at, lp_u32_bytes_at, u32_at, u32_at as read_u32, u64_at as read_u64, utf16le_at,
 };
@@ -376,9 +377,11 @@ pub fn decode_entity_headers(scan: &ContainerScan) -> Result<Vec<DesignEntityHea
             {
                 continue;
             }
-            let (optional_slot_present, string_offset) = match bytes[start + 20] {
-                0 => (false, start + 21),
-                1 if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
+            let (optional_slot_present, string_offset) = match bytes.get(start + 20) {
+                Some(0) => (false, start + 21),
+                Some(1) if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => {
+                    (true, start + 25)
+                }
                 _ => continue,
             };
             let Some((entity_id, end)) = lp_utf16(bytes, string_offset) else {
@@ -663,6 +666,10 @@ pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, Co
                 at += 1;
                 continue;
             }
+            let Some(raw_bytes) = payload.get(..112 + shift) else {
+                at += 1;
+                continue;
+            };
             if emitted.insert(record_index) {
                 out.push(SketchPoint {
                     id: format!("f3d:{}:sketch-point#{at}", entry.name),
@@ -674,7 +681,7 @@ pub fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, Co
                     persistent_id,
                     paired_reference,
                     coordinates: Point2::new(u, v),
-                    raw_bytes: payload[..112 + shift].to_vec(),
+                    raw_bytes: raw_bytes.to_vec(),
                 });
             }
             at += 112;
@@ -1006,8 +1013,13 @@ fn parse_sketch_relation(
         return None;
     }
     let mut cursor = 24;
-    let mut members = Vec::with_capacity(member_count);
-    let mut member_offsets = Vec::with_capacity(member_count);
+    // Member/offset lists grow through `push` under the 64-record domain cap
+    // above rather than reserving from the untrusted `member_count`: the record
+    // stride here is variable (`marked_u32` + `next_reference_marker`), so there
+    // is no fixed physical floor to justify an `exact_vec` reservation, and the
+    // cap already bounds the worst case to 64 elements.
+    let mut members = Vec::new();
+    let mut member_offsets = Vec::new();
     for _ in 0..member_count {
         let (value, end) = marked_u32(payload, cursor)?;
         members.push(value);
@@ -1038,8 +1050,10 @@ fn parse_sketch_relation(
         return None;
     }
     cursor += 4;
-    let mut return_members = Vec::with_capacity(return_count);
-    let mut return_member_offsets = Vec::with_capacity(return_count);
+    // Same variable-stride reasoning as the member loop above: grow through
+    // `push` under the 64-record cap, no untrusted-count reservation.
+    let mut return_members = Vec::new();
+    let mut return_member_offsets = Vec::new();
     for ordinal in 0..return_count {
         cursor = next_reference_marker(payload, cursor)?;
         let (value, end) = marked_u32(payload, cursor)?;
@@ -1130,70 +1144,114 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 /// suffix and flags. The decode is rejected (no members returned for that
 /// stream) unless the declared count is fully consumed and immediately
 /// followed by a zero byte.
-pub fn decode_body_members(scan: &ContainerScan) -> Result<Vec<DesignBodyMember>, CodecError> {
-    let mut out = Vec::new();
-    let mut prefix = Vec::new();
-    prefix.extend_from_slice(&10u32.to_le_bytes());
-    prefix.extend_from_slice(b"BodiesRoot");
-    prefix.extend_from_slice(&0u16.to_le_bytes());
-    prefix.extend_from_slice(&10u32.to_le_bytes());
-    prefix.extend_from_slice(b"BodiesRoot");
+pub fn decode_body_members(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+) -> Result<Vec<DesignBodyMember>, CodecError> {
+    const PREFIX: &[u8] = b"\x0a\x00\x00\x00BodiesRoot\x00\x00\x0a\x00\x00\x00BodiesRoot";
+    let mut out = ctx.grow_vec::<DesignBodyMember>();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(start) = bytes
-            .windows(prefix.len())
-            .position(|window| window == prefix)
-        else {
+        let Some(base) = scan.entry_view(&entry.name) else {
             continue;
         };
-        let count_offset = start + prefix.len();
-        let Some(count_raw) = bytes.get(count_offset..count_offset + 4) else {
+        // The prefix search examines the entry window once; charge the pass
+        // before scanning (the whole-window `windows` walk is the work cost).
+        ctx.charge_work(
+            body_members_win_len(base) as u64,
+            "design::decode_body_members::scan",
+            Some(base.location()),
+        )?;
+        let Some(start) = find_prefix(base, PREFIX) else {
             continue;
         };
-        let count =
-            usize::try_from(u32::from_le_bytes(count_raw.try_into().expect(
-                "invariant: count_raw is a 4-byte slice from bytes.get(range) of length 4",
-            )))
-            .unwrap_or(usize::MAX);
+        let count_offset = start + PREFIX.len();
+        let Some(count) = seek_rel(base, count_offset).and_then(|view| {
+            let mut view = view;
+            view.u32_le()
+        }) else {
+            continue;
+        };
         if count > 100_000 {
             continue;
         }
-        let mut cursor = count_offset + 4;
-        let mut decoded = Vec::with_capacity(count);
-        for _ in 0..count {
-            if bytes.get(cursor) != Some(&1) {
-                decoded.clear();
+        let cursor_start = count_offset + 4;
+        // Physical-floor proof: each member record is 11 bytes, so the count
+        // cannot reserve past the window's remaining extent.
+        let Some(bounded) =
+            seek_rel(base, cursor_start).and_then(|view| view.counted(count as u64, 11))
+        else {
+            continue;
+        };
+        let mut decoded = ctx.exact_vec::<DesignBodyMember>(bounded)?;
+        let mut cursor = cursor_start;
+        let mut ok = true;
+        for _ in 0..count as usize {
+            ctx.charge_work(
+                11,
+                "design::decode_body_members::record",
+                Some(base.location()),
+            )?;
+            if byte_at_rel(base, cursor) != Some(1) {
+                ok = false;
                 break;
             }
-            let Some(id_raw) = bytes.get(cursor + 1..cursor + 9) else {
-                decoded.clear();
-                break;
-            };
-            let Some(flags_raw) = bytes.get(cursor + 9..cursor + 11) else {
-                decoded.clear();
+            let (Some(entity_suffix), Some(flags)) = (
+                seek_rel(base, cursor + 1).and_then(|mut view| view.u64_le()),
+                seek_rel(base, cursor + 9).and_then(|mut view| view.u16_le()),
+            ) else {
+                ok = false;
                 break;
             };
             decoded.push(DesignBodyMember {
                 id: format!("f3d:{}:design-body-member#{cursor}", entry.name),
                 byte_offset: cursor as u64,
-                entity_suffix: u64::from_le_bytes(id_raw.try_into().expect(
-                    "invariant: id_raw is an 8-byte slice from bytes.get(range) of length 8",
-                )),
-                flags: u16::from_le_bytes(flags_raw.try_into().expect(
-                    "invariant: flags_raw is a 2-byte slice from bytes.get(range) of length 2",
-                )),
-            });
+                entity_suffix,
+                flags,
+            })?;
             cursor += 11;
         }
-        if decoded.len() == count && bytes.get(cursor) == Some(&0) {
-            out.extend(decoded);
+        if ok && decoded.len() == count as usize && byte_at_rel(base, cursor) == Some(0) {
+            for member in decoded.finish() {
+                out.try_push(member)?;
+            }
         }
     }
-    Ok(out)
+    Ok(out.finish())
+}
+
+/// Readable window length of `base`, in bytes; the entry-relative offset space
+/// the body-member records report their offsets in.
+fn body_members_win_len(base: View<'_>) -> usize {
+    base.end().saturating_sub(base.start())
+}
+
+/// A copy of `base` positioned at entry-relative offset `rel`, or `None` if the
+/// offset is out of the window. Reads stay bounded by the returned view.
+fn seek_rel(base: View<'_>, rel: usize) -> Option<View<'_>> {
+    let mut view = base;
+    let abs = base.start().checked_add(rel)?;
+    view.seek(abs)?;
+    Some(view)
+}
+
+/// The single byte at entry-relative offset `rel`, without advancing `base`.
+fn byte_at_rel(base: View<'_>, rel: usize) -> Option<u8> {
+    seek_rel(base, rel)?.u8()
+}
+
+/// Entry-relative offset of the first `needle` occurrence in `base`, scanning
+/// the window. The caller charges the scan cost separately.
+fn find_prefix(base: View<'_>, needle: &[u8]) -> Option<usize> {
+    let len = body_members_win_len(base);
+    let n = needle.len();
+    if n == 0 || len < n {
+        return None;
+    }
+    (0..=len - n).find(|&rel| seek_rel(base, rel).and_then(|mut view| view.take(n)) == Some(needle))
 }
 
 fn object_kind(name: &str) -> Option<DesignObjectKind> {

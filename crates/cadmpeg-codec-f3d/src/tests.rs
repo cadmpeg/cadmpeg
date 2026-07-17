@@ -9064,6 +9064,44 @@ fn truncation_at_act_record_boundaries_is_deterministic_and_never_panics() {
 }
 
 #[test]
+fn truncation_at_design_body_member_boundaries_is_deterministic_and_never_panics() {
+    // Every prefix of the Design bulk stream, framed in an otherwise valid
+    // archive, must decode without panicking and produce identical output across
+    // two runs (§10 Phase 2 migrated-means: truncation at the module's record
+    // boundaries, deterministic output). Exercises `design::decode_body_members`'
+    // migrated count-framed loop: the `BodiesRoot` prefix scan, the
+    // `View::counted` + `exact_vec` physical-floor reservation, and the
+    // per-record budgeted reads against committed-then-truncated bytes.
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    let smbh = synthetic_geometry_smbh();
+    let full_design = generated_design_bulkstream();
+    let build = |design: &[u8]| -> Vec<u8> {
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        zip.start_file("Manifest.dat", stored).unwrap();
+        zip.write_all(b"synthetic-manifest").unwrap();
+        zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+            .unwrap();
+        zip.write_all(&smbh).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(design).unwrap();
+        zip.finish().unwrap().into_inner()
+    };
+    for cut in 0..=full_design.len() {
+        let archive = build(&full_design[..cut]);
+        let first = F3dCodec.decode(&mut Cursor::new(archive.clone()), &DecodeOptions::default());
+        let second = F3dCodec.decode(&mut Cursor::new(archive), &DecodeOptions::default());
+        match (first, second) {
+            (Ok(a), Ok(b)) => {
+                assert_eq!(a.ir, b.ir, "design decode is deterministic at cut {cut}");
+            }
+            (Err(_), Err(_)) => {}
+            (a, b) => panic!("design decode nondeterministic at cut {cut}: {a:?} vs {b:?}"),
+        }
+    }
+}
+
+#[test]
 fn smbh_header_string_region_starts_at_byte_47() {
     // Regression: the three product strings begin at byte 47, not 48 — the
     // schema word `7` at offset 40 puts its low byte 0x07 at offset 47, which

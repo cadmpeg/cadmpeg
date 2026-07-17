@@ -18,7 +18,12 @@
 [crates]
 cadmpeg = 0
 cadmpeg-ir = 18
-cadmpeg-codec-f3d = 374
+# `cadmpeg-codec-f3d`'s count is entirely `std::io::Cursor` for zip container
+# I/O (`ZipWriter`/`ZipArchive` need a `Seek` reader/writer), not the domain
+# `Cursor` reader `View` replaces; it therefore cannot ratchet to zero and grows
+# by one per new zip-building test. Raised 374 -> 377 for the three
+# `std::io::Cursor` uses in `truncation_at_design_body_member_boundaries_is_deterministic_and_never_panics`.
+cadmpeg-codec-f3d = 377
 cadmpeg-codec-sldprt = 390
 cadmpeg-codec-catia = 20
 cadmpeg-codec-creo = 9
