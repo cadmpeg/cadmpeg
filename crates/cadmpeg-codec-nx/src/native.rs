@@ -5768,9 +5768,9 @@ pub fn feature_simple_hole_templates(
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
-    strings
-        .iter()
-        .filter_map(|string| {
+    let mut templates_by_operation = BTreeMap::<String, Vec<FeatureSimpleHoleTemplate>>::new();
+    for string in strings {
+        let Some(template) = (|| {
             let record = records_by_id.get(string.operation_record.as_str())?;
             let label = labels_by_id.get(record.operation_label.as_str())?;
             (label.value == "SIMPLE HOLE").then_some(())?;
@@ -5788,6 +5788,20 @@ pub fn feature_simple_hole_templates(
                 start_treatment,
                 end_treatment,
             })
+        })() else {
+            continue;
+        };
+        templates_by_operation
+            .entry(template.operation_label.clone())
+            .or_default()
+            .push(template);
+    }
+    templates_by_operation
+        .into_values()
+        .filter_map(|templates| {
+            let mut templates = templates.into_iter();
+            let template = templates.next()?;
+            templates.next().is_none().then_some(template)
         })
         .collect()
 }

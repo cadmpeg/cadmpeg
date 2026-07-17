@@ -3286,6 +3286,17 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     );
     assert_eq!(templates[0].end_treatment, SimpleHoleEndTreatment::Chamfer);
 
+    let mut duplicate = string.clone();
+    duplicate.id = "payload-string#3-1".to_string();
+    duplicate.ordinal = 1;
+    duplicate.source_offset += 64;
+    assert!(crate::native::feature_simple_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        &[string.clone(), duplicate],
+    )
+    .is_empty());
+
     let mut malformed = string;
     malformed.value = "Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string();
     assert!(
