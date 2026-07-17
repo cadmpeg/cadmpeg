@@ -5131,6 +5131,27 @@ fn native_design_inventory_excludes_records_inside_value_payloads() {
 }
 
 #[test]
+fn native_design_inventory_excludes_object_graphs_inside_value_payloads() {
+    let nested =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
+    let mut bytes = value_block_stream(&nested);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+    ]));
+
+    assert_eq!(crate::object_graph::parse_all(&bytes).len(), 1);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert!(native.object_graphs.is_empty());
+    assert!(native.design_objects.is_empty());
+    assert_eq!(native.value_blocks.len(), 1);
+    assert_eq!(native.catalogs.len(), 1);
+    assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);
+}
+
+#[test]
 fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 

@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 38;
+pub const CATIA_NATIVE_VERSION: u32 = 39;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -424,23 +424,55 @@ impl Default for CatiaNative {
     }
 }
 
+fn contains_extent(
+    owner_start: usize,
+    owner_len: usize,
+    candidate_start: usize,
+    candidate_len: usize,
+) -> bool {
+    owner_start < candidate_start
+        && owner_start
+            .checked_add(owner_len)
+            .zip(candidate_start.checked_add(candidate_len))
+            .is_some_and(|(owner_end, candidate_end)| candidate_end <= owner_end)
+}
+
 impl CatiaNative {
     /// Decode CATIA-native records directly from the complete file image.
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Self {
-        let mut catalogs: Vec<CatiaCatalog> = catalog::parse(bytes)
-            .into_iter()
-            .map(CatiaCatalog::from)
-            .collect();
+        let mut parsed_catalogs = catalog::parse(bytes);
         let mut alias_rows = object_graph::surface_aliases(bytes)
             .into_iter()
             .map(CatiaAliasRow::from)
             .collect::<Vec<_>>();
-        let object_graphs: Vec<CatiaObjectGraph> = object_graph::parse_all(bytes)
+        let mut parsed_object_graphs = object_graph::parse_all(bytes);
+        let mut parsed_value_blocks = value_block::parse(bytes);
+        parsed_value_blocks.retain(|block| {
+            !parsed_object_graphs.iter().any(|graph| {
+                contains_extent(graph.pos, graph.total_len, block.pos, block.total_len)
+            })
+        });
+        parsed_object_graphs.retain(|graph| {
+            !parsed_value_blocks.iter().any(|block| {
+                contains_extent(block.pos, block.total_len, graph.pos, graph.total_len)
+            })
+        });
+        parsed_catalogs.retain(|catalog| {
+            !parsed_object_graphs.iter().any(|graph| {
+                contains_extent(graph.pos, graph.total_len, catalog.pos, catalog.total_len)
+            }) && !parsed_value_blocks.iter().any(|block| {
+                contains_extent(block.pos, block.total_len, catalog.pos, catalog.total_len)
+            })
+        });
+        let catalogs: Vec<CatiaCatalog> = parsed_catalogs
+            .into_iter()
+            .map(CatiaCatalog::from)
+            .collect();
+        let object_graphs: Vec<CatiaObjectGraph> = parsed_object_graphs
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
-        let parsed_value_blocks = value_block::parse(bytes);
         alias_rows.retain(|row| {
             let row_start = row.byte_offset.saturating_sub(4);
             let row_end = row.byte_offset + 20;
@@ -448,15 +480,6 @@ impl CatiaNative {
                 row_start < graph.byte_offset + graph.byte_len && row_end > graph.byte_offset
             }) && !parsed_value_blocks.iter().any(|block| {
                 row_start < (block.pos + block.total_len) as u64 && row_end > block.pos as u64
-            })
-        });
-        catalogs.retain(|catalog| {
-            !object_graphs.iter().any(|graph| {
-                catalog.byte_offset >= graph.byte_offset
-                    && catalog.byte_offset < graph.byte_offset + graph.byte_len
-            }) && !parsed_value_blocks.iter().any(|block| {
-                catalog.byte_offset >= block.pos as u64
-                    && catalog.byte_offset < (block.pos + block.total_len) as u64
             })
         });
         let design_objects = design_objects(&object_graphs);
