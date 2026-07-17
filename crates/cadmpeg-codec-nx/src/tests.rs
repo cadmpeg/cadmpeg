@@ -3814,6 +3814,60 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
 }
 
 #[test]
+fn nx_sphere_offset_lineage_follows_signed_radius_orientation() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let sphere = |radius| SurfaceGeometry::Sphere {
+        center: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius,
+    };
+    assert_eq!(
+        crate::decode::analytic_surface_offset(&sphere(4.0), &sphere(6.5)),
+        Some(2.5)
+    );
+    assert_eq!(
+        crate::decode::analytic_surface_offset(&sphere(-4.0), &sphere(-6.5)),
+        Some(2.5)
+    );
+    assert_eq!(
+        crate::decode::analytic_surface_offset(&sphere(-6.5), &sphere(-4.0)),
+        Some(-2.5)
+    );
+    assert!(crate::decode::analytic_surface_offset(&sphere(4.0), &sphere(-6.5)).is_none());
+}
+
+#[test]
+fn nx_torus_offset_lineage_requires_one_ring_orientation() {
+    use cadmpeg_ir::geometry::SurfaceGeometry;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let torus = |minor_radius| SurfaceGeometry::Torus {
+        center: Point3::new(1.0, 2.0, 3.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        major_radius: 10.0,
+        minor_radius,
+    };
+    assert_eq!(
+        crate::decode::analytic_surface_offset(&torus(2.0), &torus(3.5)),
+        Some(1.5)
+    );
+    assert_eq!(
+        crate::decode::analytic_surface_offset(&torus(-2.0), &torus(-3.5)),
+        Some(1.5)
+    );
+    assert_eq!(
+        crate::decode::analytic_surface_offset(&torus(-3.5), &torus(-2.0)),
+        Some(-1.5)
+    );
+    assert!(crate::decode::analytic_surface_offset(&torus(2.0), &torus(-3.5)).is_none());
+    assert!(crate::decode::analytic_surface_offset(&torus(2.0), &torus(10.0)).is_none());
+}
+
+#[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
     use cadmpeg_ir::geometry::ProceduralSurface;

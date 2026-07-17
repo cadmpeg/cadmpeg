@@ -3602,9 +3602,10 @@ pub(crate) fn analytic_surface_offset(
             },
         ) if support_center == offset_center
             && support_axis == offset_axis
-            && support_ref == offset_ref =>
+            && support_ref == offset_ref
+            && support_radius.signum().to_bits() == offset_radius.signum().to_bits() =>
         {
-            Some(offset_radius - support_radius)
+            Some((offset_radius - support_radius) * support_radius.signum())
         }
         (
             SurfaceGeometry::Torus {
@@ -3624,9 +3625,12 @@ pub(crate) fn analytic_surface_offset(
         ) if support_center == offset_center
             && support_axis == offset_axis
             && support_ref == offset_ref
-            && support_major.to_bits() == offset_major.to_bits() =>
+            && support_major.to_bits() == offset_major.to_bits()
+            && support_minor.signum().to_bits() == offset_minor.signum().to_bits()
+            && *support_major > support_minor.abs()
+            && *offset_major > offset_minor.abs() =>
         {
-            Some(offset_minor - support_minor)
+            Some((offset_minor - support_minor) * support_minor.signum())
         }
         _ => None,
     }
