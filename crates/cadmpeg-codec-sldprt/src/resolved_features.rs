@@ -1952,7 +1952,7 @@ fn operand_kind(tag: [u8; 2]) -> Option<FeatureInputOperandKind> {
     }
 }
 
-fn feature_object_name<'a>(
+pub(crate) fn feature_object_name<'a>(
     feature: &crate::records::Feature,
     lane: &'a FeatureInputLane,
 ) -> Option<&'a FeatureInputName> {

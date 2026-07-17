@@ -9482,7 +9482,7 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
         .unwrap_err();
     assert!(error
         .to_string()
-        .contains("does not encode configuration-local feature states"));
+        .contains("configuration design-state edit has no complete native lane encoding"));
 }
 
 #[test]
@@ -17708,7 +17708,7 @@ fn decode_applies_owned_feature_units_to_resolved_scalar() {
 
 #[test]
 fn decode_preserves_configuration_local_parameter_values() {
-    use cadmpeg_ir::features::{Length, ParameterValue};
+    use cadmpeg_ir::features::{FeatureDefinition, Length, ParameterValue, RadiusSpec};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -17793,16 +17793,72 @@ fn decode_preserves_configuration_local_parameter_values() {
     );
 
     let parameter_id = parameter.id.clone();
-    let mut edited = decoded.ir;
-    edited.model.configurations[1]
+    let dependent_id = dependent.id.clone();
+    let feature_id = parameter.owner.clone();
+    let mut incoherent = decoded.ir.clone();
+    incoherent.model.configurations[1]
         .parameter_values
-        .insert(parameter_id, ParameterValue::Length(Length(75.0)));
+        .insert(parameter_id.clone(), ParameterValue::Length(Length(75.0)));
     let error = SldprtCodec
-        .write_preserved(&edited, &mut Vec::new())
+        .write_preserved(&incoherent, &mut Vec::new())
         .unwrap_err();
     assert!(error
         .to_string()
-        .contains("does not encode configuration-local parameter values"));
+        .contains("configuration parameter values are inconsistent with their expressions"));
+
+    let mut edited = decoded.ir;
+    edited.model.configurations[1]
+        .parameter_values
+        .insert(parameter_id.clone(), ParameterValue::Length(Length(75.0)));
+    edited.model.configurations[1]
+        .parameter_values
+        .insert(dependent_id, ParameterValue::Length(Length(150.0)));
+    let FeatureDefinition::Fillet { radius, .. } = &mut edited.model.configurations[1]
+        .feature_states
+        .get_mut(&feature_id)
+        .unwrap()
+        .definition
+    else {
+        panic!("configuration fillet state");
+    };
+    *radius = RadiusSpec::Constant {
+        radius: Length(75.0),
+    };
+
+    let mut encoded = Vec::new();
+    SldprtCodec.write_preserved(&edited, &mut encoded).unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let regenerated_parameter = regenerated
+        .ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .unwrap();
+    let regenerated_feature = regenerated
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Round1"))
+        .unwrap();
+    assert_eq!(
+        regenerated.ir.model.configurations[1]
+            .parameter_values
+            .get(&regenerated_parameter.id),
+        Some(&ParameterValue::Length(Length(75.0)))
+    );
+    assert!(matches!(
+        regenerated.ir.model.configurations[1].feature_states[&regenerated_feature.id].definition,
+        FeatureDefinition::Fillet {
+            radius: RadiusSpec::Constant {
+                radius: Length(75.0)
+            },
+            ..
+        }
+    ));
 }
 
 #[test]

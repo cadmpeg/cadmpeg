@@ -4281,6 +4281,126 @@ pub fn configuration_feature_state_hash(configurations: &[DesignConfiguration]) 
     hash_debug(&states)
 }
 
+/// Reproject configuration-local evaluated parameters and feature operations from native lanes.
+pub(crate) fn project_configuration_design_states(
+    ir: &mut cadmpeg_ir::CadIr,
+    histories: &[FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    pmi_dimensions: &[crate::records::PmiDimension],
+) {
+    use cadmpeg_ir::features::ConfigurationFeatureState;
+
+    for (configuration_index, lane_index) in
+        configuration_lane_assignments(&ir.model.configurations, lanes)
+    {
+        let scoped_lanes = &lanes[lane_index..=lane_index];
+        let mut projection = histories.to_vec();
+        crate::resolved_features::enrich_history_parameters(&mut projection, scoped_lanes, true);
+        crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
+        ir.model.configurations[configuration_index].parameter_values =
+            project_parameters(&projection)
+                .into_iter()
+                .filter_map(|parameter| parameter.value.map(|value| (parameter.id, value)))
+                .collect();
+
+        let mut projection = histories.to_vec();
+        crate::resolved_features::enrich_history_extrusion_terminations(
+            &mut projection,
+            scoped_lanes,
+        );
+        crate::resolved_features::enrich_history_combine_selections(&mut projection, scoped_lanes);
+        crate::resolved_features::enrich_history_sweep_paths(&mut projection, scoped_lanes);
+        crate::resolved_features::enrich_history_parameters(&mut projection, scoped_lanes, true);
+        crate::resolved_features::enrich_history_reference_planes(&mut projection, scoped_lanes);
+        crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
+        apply_evaluated_parameters(&mut projection);
+        let mut features = project_features(&projection);
+        crate::resolved_features::project_compact_body_selections(&mut features, scoped_lanes);
+        crate::resolved_features::project_compact_combine_paths(
+            &mut features,
+            &projection,
+            scoped_lanes,
+        );
+        crate::resolved_features::project_compact_edge_selections(&mut features, scoped_lanes);
+        crate::resolved_features::project_compact_surface_selections(&mut features, scoped_lanes);
+        crate::resolved_features::project_surface_sweep_profiles(
+            &mut features,
+            &projection,
+            scoped_lanes,
+        );
+        crate::resolved_features::project_helix_axes(&mut features, &projection, scoped_lanes);
+        crate::resolved_features::project_adjacent_extrusion_profiles(
+            &mut features,
+            &projection,
+            scoped_lanes,
+        );
+        crate::resolved_features::bind_extrusion_operations(&mut features, histories, scoped_lanes);
+        crate::resolved_features::bind_sweep_operations(&mut features, histories, scoped_lanes);
+        crate::resolved_features::bind_pattern_inputs(&mut features, histories, scoped_lanes);
+        crate::resolved_features::bind_sweep_adjacent_profiles(
+            &mut features,
+            histories,
+            scoped_lanes,
+        );
+        ir.model.configurations[configuration_index].feature_states = features
+            .into_iter()
+            .map(|feature| {
+                (
+                    feature.id,
+                    ConfigurationFeatureState {
+                        suppressed: feature.suppressed,
+                        dependencies: feature.dependencies,
+                        outputs: feature.outputs,
+                        definition: feature.definition,
+                    },
+                )
+            })
+            .collect();
+    }
+}
+
+pub(crate) fn configuration_lane_assignments(
+    configurations: &[DesignConfiguration],
+    lanes: &[crate::records::FeatureInputLane],
+) -> Vec<(usize, usize)> {
+    let mut lanes_by_configuration = BTreeMap::<u32, Vec<usize>>::new();
+    for (lane_index, lane) in lanes.iter().enumerate() {
+        let Some(source_index) = lane
+            .configuration
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        lanes_by_configuration
+            .entry(source_index)
+            .or_default()
+            .push(lane_index);
+    }
+    lanes_by_configuration
+        .into_iter()
+        .filter_map(|(source_index, lane_indices)| {
+            let [lane_index] = lane_indices.as_slice() else {
+                return None;
+            };
+            let candidates = configurations
+                .iter()
+                .enumerate()
+                .filter(|(_, configuration)| {
+                    configuration.source_index == Some(source_index)
+                        || configuration.source_index.is_none()
+                            && configuration.ordinal == source_index
+                })
+                .map(|(position, _)| position)
+                .collect::<Vec<_>>();
+            let [configuration_index] = candidates.as_slice() else {
+                return None;
+            };
+            Some((*configuration_index, *lane_index))
+        })
+        .collect()
+}
+
 /// Stable hash of native configuration records.
 pub fn native_configuration_hash(histories: &[FeatureHistory]) -> String {
     let mut configurations = histories
@@ -4836,35 +4956,30 @@ pub fn prepare_configurations_for_write(
             .attributes
             .get("sldprt_configuration_feature_states_sha256")
     });
-    if baseline_feature_states.is_some_and(|baseline| baseline != &feature_state_hash)
+    let feature_states_changed = baseline_feature_states
+        .is_some_and(|baseline| baseline != &feature_state_hash)
         || baseline_feature_states.is_none()
             && ir
                 .model
                 .configurations
                 .iter()
-                .any(|configuration| !configuration.feature_states.is_empty())
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT semantic writer does not encode configuration-local feature states".into(),
-        ));
-    }
+                .any(|configuration| !configuration.feature_states.is_empty());
     let parameter_value_hash = configuration_parameter_value_hash(&ir.model.configurations);
     let baseline_parameter_values = ir.source.as_ref().and_then(|source| {
         source
             .attributes
             .get("sldprt_configuration_parameter_values_sha256")
     });
-    if baseline_parameter_values.is_some_and(|baseline| baseline != &parameter_value_hash)
+    let parameter_values_changed = baseline_parameter_values
+        .is_some_and(|baseline| baseline != &parameter_value_hash)
         || baseline_parameter_values.is_none()
             && ir
                 .model
                 .configurations
                 .iter()
-                .any(|configuration| !configuration.parameter_values.is_empty())
-    {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT semantic writer does not encode configuration-local parameter values".into(),
-        ));
+                .any(|configuration| !configuration.parameter_values.is_empty());
+    if feature_states_changed || parameter_values_changed {
+        sync_configuration_design_state(ir, native)?;
     }
     let neutral_hash = configuration_hash(&ir.model.configurations);
     let native_hash = native
@@ -4908,6 +5023,169 @@ pub fn prepare_configurations_for_write(
             Ok(())
         }
     }
+}
+
+fn sync_configuration_design_state(
+    ir: &cadmpeg_ir::CadIr,
+    native: &mut Option<crate::native::SldprtNative>,
+) -> Result<(), CodecError> {
+    let feature_names = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .name
+                .as_ref()
+                .map(|name| (feature.id.clone(), name.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    if parameters_with_incoherent_evaluated_values(
+        &ir.model.parameters,
+        &feature_names,
+        &ir.model.configurations,
+    ) > 0
+    {
+        return Err(CodecError::Malformed(
+            "SLDPRT configuration parameter values are inconsistent with their expressions".into(),
+        ));
+    }
+    let Some(native) = native.as_mut() else {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration design state requires retained feature-input lanes".into(),
+        ));
+    };
+    patch_configuration_parameter_scalars(ir, native)?;
+
+    let mut projected = ir.clone();
+    project_configuration_design_states(
+        &mut projected,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+        &native.pmi_dimensions,
+    );
+    if configuration_parameter_value_hash(&projected.model.configurations)
+        != configuration_parameter_value_hash(&ir.model.configurations)
+        || configuration_feature_state_hash(&projected.model.configurations)
+            != configuration_feature_state_hash(&ir.model.configurations)
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT configuration design-state edit has no complete native lane encoding".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn patch_configuration_parameter_scalars(
+    ir: &cadmpeg_ir::CadIr,
+    native: &mut crate::native::SldprtNative,
+) -> Result<(), CodecError> {
+    let parameters = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, parameter))
+        .collect::<HashMap<_, _>>();
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (&feature.id, feature))
+        .collect::<HashMap<_, _>>();
+    for (configuration_index, lane_index) in
+        configuration_lane_assignments(&ir.model.configurations, &native.feature_input_lanes)
+    {
+        let configuration = &ir.model.configurations[configuration_index];
+        let lane = &mut native.feature_input_lanes[lane_index];
+        let names = lane
+            .names
+            .iter()
+            .map(|name| (name.id.as_str(), name.value.as_str()))
+            .collect::<HashMap<_, _>>();
+        let mut starts = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(|record| {
+                crate::resolved_features::feature_object_name(record, lane)
+                    .map(|name| (name.offset, record))
+            })
+            .collect::<Vec<_>>();
+        starts.sort_by_key(|(offset, _)| *offset);
+        for (parameter_id, value) in &configuration.parameter_values {
+            let Some(parameter) = parameters.get(parameter_id) else {
+                continue;
+            };
+            let Some(feature) = features.get(&parameter.owner) else {
+                continue;
+            };
+            let Some(native_ref) = feature.native_ref.as_deref() else {
+                continue;
+            };
+            let Some((position, (start, _))) = starts
+                .iter()
+                .enumerate()
+                .find(|(_, (_, record))| record.id == native_ref)
+            else {
+                continue;
+            };
+            let end = starts
+                .get(position + 1)
+                .map_or(u64::MAX, |(offset, _)| *offset);
+            let candidates = lane
+                .scalars
+                .iter()
+                .enumerate()
+                .filter(|(_, scalar)| scalar.offset > *start && scalar.offset < end)
+                .filter(|(_, scalar)| {
+                    names.get(scalar.name.as_str()) == Some(&parameter.name.as_str())
+                })
+                .collect::<Vec<_>>();
+            let driving = candidates
+                .iter()
+                .filter(|(_, scalar)| {
+                    scalar.role == crate::records::FeatureInputScalarRole::Driving
+                })
+                .map(|(index, _)| *index)
+                .collect::<Vec<_>>();
+            let candidates = if driving.is_empty() {
+                candidates
+                    .into_iter()
+                    .filter(|(_, scalar)| {
+                        scalar.role == crate::records::FeatureInputScalarRole::Native
+                    })
+                    .map(|(index, _)| index)
+                    .collect::<Vec<_>>()
+            } else {
+                driving
+            };
+            let [scalar_index] = candidates.as_slice() else {
+                continue;
+            };
+            let encoded = match value {
+                ParameterValue::Length(value) => value.0 / 1000.0,
+                ParameterValue::Angle(value) => value.0,
+                ParameterValue::Real(value) => *value,
+                ParameterValue::Integer(value) => *value as f64,
+                ParameterValue::Boolean(value) => f64::from(*value),
+            };
+            let scalar = &mut lane.scalars[*scalar_index];
+            let offset = usize::try_from(scalar.offset).map_err(|_| {
+                CodecError::Malformed("SLDPRT scalar offset exceeds address space".into())
+            })?;
+            lane.native_payload
+                .get_mut(offset..offset + 8)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "SLDPRT scalar {} lies outside its payload",
+                        scalar.id
+                    ))
+                })?
+                .copy_from_slice(&encoded.to_le_bytes());
+            scalar.value = encoded;
+        }
+    }
+    Ok(())
 }
 
 /// Resolve neutral/native parameter edit authority before writing.
