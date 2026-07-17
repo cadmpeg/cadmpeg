@@ -24,7 +24,8 @@
 //! distinguish derived, inferred, and unknown values. Native namespaces and
 //! unknown records retain source-specific data outside the neutral model.
 //!
-//! Assembly instancing, component trees, and joint constraints are reserved.
+//! Product prototypes and occurrence trees retain assembly identity and
+//! placement. Joint and mate constraints are reserved.
 
 pub mod annotations;
 pub mod appearance;
@@ -48,6 +49,9 @@ pub mod ids;
 pub mod le;
 pub mod math;
 pub mod native;
+pub mod pmi;
+pub mod presentation;
+pub mod product;
 mod provenance;
 pub mod read;
 pub mod report;
@@ -77,6 +81,12 @@ pub use features::{
     PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
+pub use pmi::{
+    DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
+    PmiQuantity, PmiTarget, PmiValue,
+};
+pub use presentation::{PresentationItem, PresentationLayer};
+pub use product::{OccurrenceParent, Product, ProductOccurrence};
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};

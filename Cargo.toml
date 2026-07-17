@@ -53,6 +53,7 @@ roxmltree = "0.21"
 assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
+encoding_rs = "0.8"
 
 [profile.release]
 lto = "thin"

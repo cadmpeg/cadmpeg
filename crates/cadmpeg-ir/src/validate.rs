@@ -31,6 +31,9 @@ mod carriers_parameterization;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
+mod pmi;
+mod presentation;
+mod product;
 mod sketches;
 mod subd;
 mod topology;
@@ -41,6 +44,9 @@ use carriers_parameterization::{check_carrier_reachability, check_parameter_doma
 use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
 use geometry_payloads::{check_bounds, check_tessellations};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
+use pmi::check_pmi;
+use presentation::check_presentation;
+use product::check_products;
 use sketches::check_sketches;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
@@ -65,6 +71,9 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     let all_ids = check_identity_and_order(ir, &mut findings);
     check_units(ir, &mut findings);
     check_references(ir, &ids, &mut findings);
+    check_products(ir, &mut findings);
+    check_pmi(ir, &mut findings);
+    check_presentation(ir, &mut findings);
     check_loops(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_wire_topology(ir, &mut findings);

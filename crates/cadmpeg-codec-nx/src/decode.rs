@@ -365,6 +365,7 @@ fn try_decode_geometry(
                 CurveGeometry::Parabola { .. }
                 | CurveGeometry::Hyperbola { .. }
                 | CurveGeometry::Degenerate { .. }
+                | CurveGeometry::Composite { .. }
                 | CurveGeometry::Nurbs(_)
                 | CurveGeometry::Unknown { .. } => {}
             }
@@ -1185,6 +1186,7 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Parabola { .. } => "PARABOLA",
         CurveGeometry::Hyperbola { .. } => "HYPERBOLA",
         CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
+        CurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }

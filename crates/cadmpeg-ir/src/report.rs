@@ -145,6 +145,12 @@ pub enum Check {
     Version,
     /// Entity identifiers are empty, duplicated, or not globally unique.
     Identity,
+    /// Product occurrence ownership, references, or acyclicity.
+    ProductStructure,
+    /// PMI targets and annotation-to-annotation references.
+    Pmi,
+    /// Presentation-layer membership and references.
+    Presentation,
     /// An arena is not sorted lexicographically by entity id.
     ArenaOrder,
     /// A referenced id does not resolve in its arena.
@@ -189,6 +195,9 @@ impl fmt::Display for Check {
         f.write_str(match self {
             Self::Version => "version",
             Self::Identity => "identity",
+            Self::ProductStructure => "product_structure",
+            Self::Pmi => "pmi",
+            Self::Presentation => "presentation",
             Self::ArenaOrder => "arena_order",
             Self::ReferentialIntegrity => "referential_integrity",
             Self::LoopClosure => "loop_closure",

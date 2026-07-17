@@ -16,7 +16,7 @@ use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::{Tolerances, Units};
-use crate::unknown::NativeUnknownRecord;
+use crate::unknown::{NativeUnknownRecord, UnknownRecord};
 
 macro_rules! arena_registry {
     ($macro:ident) => {
@@ -46,6 +46,10 @@ macro_rules! arena_registry {
             appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
             appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();
             attributes: SourceAttribute, "Attribute arena.", [] => |e| e.id.0.clone();
+            products: crate::product::Product, "Product prototype arena.", [serde(default)] => |e| e.id.0.clone();
+            occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
+            pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)] => |e| e.id.0.clone();
+            presentation_layers: crate::presentation::PresentationLayer, "Presentation layer arena.", [serde(default)] => |e| e.id.0.clone();
         }
     };
 }
@@ -164,6 +168,23 @@ impl CadIr {
             namespace.version = 1;
         }
         namespace.set_arena("unknowns", records)
+    }
+
+    /// Replace the reserved `unknowns` arena for `format`, consuming the records.
+    ///
+    /// Codecs retaining large source populations should use this form to avoid
+    /// keeping typed and generic native copies alive at the same time.
+    pub fn set_native_unknowns_owned(&mut self, format: &str, records: Vec<UnknownRecord>) {
+        let namespace = self.native.namespace_mut(format);
+        if namespace.version == 0 {
+            namespace.version = 1;
+        }
+        let mut converted = records
+            .into_iter()
+            .map(UnknownRecord::into_native_record)
+            .collect::<Vec<_>>();
+        converted.sort_by(|left, right| left.id.cmp(&right.id));
+        namespace.arenas.insert("unknowns".into(), converted);
     }
 
     /// Append one record to the reserved `unknowns` arena for `format`.

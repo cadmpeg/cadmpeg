@@ -24,6 +24,7 @@ pub(super) struct IdSets {
     curves: HashSet<String>,
     pcurves: HashSet<String>,
     appearances: HashSet<String>,
+    tessellations: HashSet<String>,
     unknowns: HashSet<String>,
 }
 
@@ -47,6 +48,12 @@ impl IdSets {
                 .appearances
                 .iter()
                 .map(|e| e.id.0.clone())
+                .collect(),
+            tessellations: ir
+                .model
+                .tessellations
+                .iter()
+                .map(|e| e.id.clone())
                 .collect(),
             unknowns: ir
                 .all_native_unknowns()
@@ -234,6 +241,24 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             AppearanceTarget::Face(face) if !ids.faces.contains(&face.0) => {
                 ref_error(findings, &owner, "face", &face.0);
             }
+            AppearanceTarget::Edge(edge) if !ids.edges.contains(&edge.0) => {
+                ref_error(findings, &owner, "edge", &edge.0);
+            }
+            AppearanceTarget::Surface(surface) if !ids.surfaces.contains(&surface.0) => {
+                ref_error(findings, &owner, "surface", &surface.0);
+            }
+            AppearanceTarget::Curve(curve) if !ids.curves.contains(&curve.0) => {
+                ref_error(findings, &owner, "curve", &curve.0);
+            }
+            AppearanceTarget::Point(point) if !ids.points.contains(&point.0) => {
+                ref_error(findings, &owner, "point", &point.0);
+            }
+            AppearanceTarget::Tessellation(tessellation)
+                if !ids.tessellations.contains(tessellation) =>
+            {
+                ref_error(findings, &owner, "tessellation", tessellation);
+            }
+            AppearanceTarget::Source { .. } => {}
             _ => {}
         }
     }
@@ -268,14 +293,49 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         }
     }
     for curve in &ir.model.curves {
-        if let CurveGeometry::Unknown {
-            record: Some(unknown),
-        } = &curve.geometry
-        {
-            if !ids.unknowns.contains(&unknown.0) {
-                ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
+        match &curve.geometry {
+            CurveGeometry::Unknown {
+                record: Some(unknown),
+            } => {
+                if !ids.unknowns.contains(&unknown.0) {
+                    ref_error(findings, &curve.id.0, "unknown record", &unknown.0);
+                }
             }
+            CurveGeometry::Composite { segments, .. } => {
+                for segment in segments {
+                    if !ids.curves.contains(&segment.curve.0) {
+                        ref_error(findings, &curve.id.0, "curve", &segment.curve.0);
+                    }
+                }
+            }
+            _ => {}
         }
+    }
+    let composite_segments = ir
+        .model
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Composite { segments, .. } => Some((
+                curve.id.0.as_str(),
+                segments
+                    .iter()
+                    .map(|segment| segment.curve.0.as_str())
+                    .collect::<Vec<_>>(),
+            )),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut complete = HashSet::new();
+    let mut active = HashSet::new();
+    for curve in composite_segments.keys().copied() {
+        check_composite_cycle(
+            curve,
+            &composite_segments,
+            &mut active,
+            &mut complete,
+            findings,
+        );
     }
     for procedural in &ir.model.procedural_surfaces {
         if !ids.surfaces.contains(&procedural.surface.0) {
@@ -595,7 +655,9 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 }
             }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-            | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
+            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. }
+            | ProceduralSurfaceDefinition::Revolution { directrix, .. }
+            | ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
                 if !ids.curves.contains(&directrix.0) {
                     ref_error(findings, &procedural.id.0, "curve", &directrix.0);
                 }
@@ -691,6 +753,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     ref_error(findings, &procedural.id.0, "surface", &support.0);
                 }
             }
+            ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
+                if !ids.surfaces.contains(&support.0) {
+                    ref_error(findings, &procedural.id.0, "surface", &support.0);
+                }
+            }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
                 for curve in [first, second] {
                     if !ids.curves.contains(&curve.0) {
@@ -758,7 +825,22 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
+            | ProceduralSurfaceDefinition::DegenerateTorus { .. }
             | ProceduralSurfaceDefinition::Unknown { record: None } => {}
+            ProceduralSurfaceDefinition::CurveBounded {
+                support,
+                boundaries,
+                ..
+            } => {
+                if !ids.surfaces.contains(&support.0) {
+                    ref_error(findings, &procedural.id.0, "surface", &support.0);
+                }
+                for boundary in boundaries {
+                    if !ids.curves.contains(&boundary.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &boundary.0);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::Deformable { construction } => {
                 if !ids.surfaces.contains(&construction.support.0) {
                     ref_error(
@@ -945,6 +1027,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     if !ids.curves.contains(&function.0) {
                         ref_error(findings, &procedural.id.0, "curve", &function.0);
                     }
+                }
+            }
+            ProceduralCurveDefinition::SpatialOffset { source, .. } => {
+                if !ids.curves.contains(&source.0) {
+                    ref_error(findings, &procedural.id.0, "curve", &source.0);
                 }
             }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
@@ -2440,9 +2527,11 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for vertex in &ir.model.vertices {
-        if !edge_vertices.contains(vertex.id.0.as_str())
-            && !loop_vertices.contains(vertex.id.0.as_str())
-            && free_owners.get(vertex.id.0.as_str()).copied().unwrap_or(0) != 1
+        let owner_count = free_owners.get(vertex.id.0.as_str()).copied().unwrap_or(0);
+        if owner_count > 1
+            || (!edge_vertices.contains(vertex.id.0.as_str())
+                && !loop_vertices.contains(vertex.id.0.as_str())
+                && owner_count != 1)
         {
             wire_error(
                 findings,
@@ -2465,6 +2554,17 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|shell| (shell.id.0.as_str(), shell))
         .collect::<HashMap<_, _>>();
     for body in &ir.model.bodies {
+        if body
+            .transform
+            .is_some_and(|transform| !transform.is_finite())
+        {
+            findings.push(Finding {
+                check: Check::Bounds,
+                severity: Severity::Error,
+                message: "body transform contains a non-finite coefficient".into(),
+                entity: Some(body.id.0.clone()),
+            });
+        }
         if body.kind == crate::topology::BodyKind::Wire
             && body.regions.iter().any(|region_id| {
                 regions.get(region_id.0.as_str()).is_some_and(|region| {
@@ -2478,6 +2578,44 @@ pub(super) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
         {
             wire_error(findings, &body.id.0, "wire body contains faces");
         }
+    }
+}
+
+fn check_composite_cycle<'a>(
+    curve: &'a str,
+    segments: &BTreeMap<&'a str, Vec<&'a str>>,
+    active: &mut HashSet<&'a str>,
+    complete: &mut HashSet<&'a str>,
+    findings: &mut Vec<Finding>,
+) {
+    if complete.contains(curve) {
+        return;
+    }
+    active.insert(curve);
+    let mut stack = vec![(curve, 0usize)];
+    while let Some((node, child_index)) = stack.last_mut() {
+        let children = &segments[*node];
+        if *child_index >= children.len() {
+            let (node, _) = stack.pop().expect("nonempty composite traversal stack");
+            active.remove(node);
+            complete.insert(node);
+            continue;
+        }
+        let child = children[*child_index];
+        *child_index += 1;
+        if !segments.contains_key(child) || complete.contains(child) {
+            continue;
+        }
+        if !active.insert(child) {
+            findings.push(Finding {
+                check: Check::ReferentialIntegrity,
+                severity: Severity::Error,
+                message: "composite curve graph contains a cycle".into(),
+                entity: Some(child.into()),
+            });
+            continue;
+        }
+        stack.push((child, 0));
     }
 }
 

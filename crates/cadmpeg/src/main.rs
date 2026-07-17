@@ -17,6 +17,54 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 
 use crate::registry::Registry;
 
+#[derive(Debug, Clone, Copy, Default, ValueEnum)]
+enum StepTarget {
+    Ap203e1,
+    Ap203e2,
+    #[default]
+    Ap214,
+    Ap242e1,
+    Ap242e2,
+    Ap242e3,
+}
+
+impl StepTarget {
+    fn schema(self) -> cadmpeg_step::StepSchema {
+        match self {
+            Self::Ap203e1 => cadmpeg_step::StepSchema::Ap203Edition1,
+            Self::Ap203e2 => cadmpeg_step::StepSchema::Ap203Edition2,
+            Self::Ap214 => cadmpeg_step::StepSchema::Ap214,
+            Self::Ap242e1 => cadmpeg_step::StepSchema::Ap242Edition1,
+            Self::Ap242e2 => cadmpeg_step::StepSchema::Ap242Edition2,
+            Self::Ap242e3 => cadmpeg_step::StepSchema::Ap242Edition3,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Args)]
+struct StepOutputArgs {
+    /// STEP application protocol and edition for STEP output.
+    #[arg(long, value_enum, default_value_t)]
+    step_target: StepTarget,
+    /// Reject STEP output before writing when any STEP loss note would be reported.
+    #[arg(long)]
+    reject_step_losses: bool,
+}
+
+impl StepOutputArgs {
+    fn options(&self) -> cadmpeg_step::StepWriteOptions {
+        cadmpeg_step::StepWriteOptions {
+            schema: self.step_target.schema(),
+            unsupported: if self.reject_step_losses {
+                cadmpeg_step::StepUnsupportedPolicy::Reject
+            } else {
+                cadmpeg_step::StepUnsupportedPolicy::Report
+            },
+            ..Default::default()
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 #[command(
     name = "cadmpeg",
@@ -246,6 +294,8 @@ enum Command {
         input_args: InputArgs,
         #[command(flatten)]
         decode: DecodeArgs,
+        #[command(flatten)]
+        step: StepOutputArgs,
     },
     /// Structurally compare two CADIR or supported native CAD models.
     Diff {
@@ -288,12 +338,21 @@ enum Command {
         input_args: InputArgs,
         #[command(flatten)]
         decode: DecodeArgs,
+        #[command(flatten)]
+        step: StepOutputArgs,
     },
 }
 
 fn main() -> ExitCode {
-    let registry = Registry::with_builtins();
-    let result = match Cli::parse().command {
+    let command = Cli::parse().command;
+    let mut registry = Registry::with_builtins();
+    match &command {
+        Command::Export { step, .. } | Command::Convert { step, .. } => {
+            registry.set_step_options(step.options());
+        }
+        _ => {}
+    }
+    let result = match command {
         Command::Inspect {
             input,
             json,
@@ -334,6 +393,7 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
+            step: _,
         } => commands::export(
             &registry,
             &input,
@@ -361,6 +421,7 @@ fn main() -> ExitCode {
             rhino_version,
             input_args,
             decode,
+            step: _,
         } => commands::convert(
             &registry,
             &input,

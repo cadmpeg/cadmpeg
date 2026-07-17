@@ -170,7 +170,7 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
                 )
             })
         }
-        CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Composite { .. } | CurveGeometry::Unknown { .. } => None,
     }
 }
 

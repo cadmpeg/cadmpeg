@@ -147,9 +147,9 @@ pub enum LoopBoundaryRole {
     Inner,
 }
 
-/// A closed boundary loop of a face, expressed as an ordered ring of coedges.
-/// The ordering in `coedges` is the ring order; each coedge's `next` should
-/// point to the following entry (validation enforces the ring closes).
+/// A closed boundary of a face, expressed as an ordered ring of coedges or one
+/// vertex use at a surface singularity. The ordering in `coedges` is the ring
+/// order; each coedge's `next` should point to the following entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Loop {
     /// Arena id.

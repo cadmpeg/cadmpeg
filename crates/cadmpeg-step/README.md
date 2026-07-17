@@ -19,12 +19,16 @@ use std::fs::File;
 use std::io::BufWriter;
 
 use cadmpeg_ir::examples::unit_cube;
-use cadmpeg_step::{write_step, StepWriteOptions};
+use cadmpeg_step::{
+    write_step, StepSchema, StepUnsupportedPolicy, StepWriteOptions,
+};
 
 let ir = unit_cube();
 let file = File::create("cube.step")?;
 let mut output = BufWriter::new(file);
 let options = StepWriteOptions {
+    schema: StepSchema::Ap242Edition3,
+    unsupported: StepUnsupportedPolicy::Reject,
     product_name: "cube".into(),
     author: "Example Author".into(),
     organization: "Example Organization".into(),

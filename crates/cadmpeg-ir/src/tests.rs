@@ -37,6 +37,70 @@ where
     assert!(serde_json::from_value::<T>(json).is_err());
 }
 
+#[test]
+fn product_occurrence_tree_validates_references_and_cycles() {
+    use crate::ids::{OccurrenceId, ProductId};
+    use crate::product::{OccurrenceParent, Product, ProductOccurrence};
+    use crate::transform::Transform;
+    use crate::units::Units;
+
+    let mut ir = CadIr::empty(Units::default());
+    ir.model.products.push(Product {
+        id: ProductId("test:product:product#assembly".into()),
+        product_id: "assembly".into(),
+        name: Some("Assembly".into()),
+        bodies: Vec::new(),
+    });
+    ir.model.occurrences.push(ProductOccurrence {
+        id: OccurrenceId("test:product:occurrence#root".into()),
+        product: ProductId("test:product:product#assembly".into()),
+        parent: OccurrenceParent::Root,
+        transform: Transform::identity(),
+        name: None,
+    });
+    ir.model.occurrences.push(ProductOccurrence {
+        id: OccurrenceId("test:product:occurrence#child".into()),
+        product: ProductId("test:product:product#assembly".into()),
+        parent: OccurrenceParent::Occurrence {
+            occurrence: OccurrenceId("test:product:occurrence#root".into()),
+        },
+        transform: Transform::identity(),
+        name: None,
+    });
+    ir.finalize();
+    assert!(crate::validate(&ir, Vec::new()).is_ok());
+
+    ir.model.occurrences[1].transform.rows[0][0] = f64::INFINITY;
+    assert!(crate::validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| {
+            finding.check == crate::report::Check::ProductStructure
+                && finding.message.contains("non-finite")
+        }));
+    ir.model.occurrences[1].transform = Transform::identity();
+
+    ir.model.occurrences[1].parent = OccurrenceParent::Occurrence {
+        occurrence: OccurrenceId("test:product:occurrence#child".into()),
+    };
+    let report = crate::validate(&ir, Vec::new());
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.check == crate::report::Check::ProductStructure));
+}
+
+#[test]
+fn non_finite_body_transform_is_invalid() {
+    let mut ir = unit_cube();
+    let mut transform = crate::transform::Transform::identity();
+    transform.rows[2][3] = f64::NAN;
+    ir.model.bodies[0].transform = Some(transform);
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::Bounds && finding.message.contains("non-finite")
+    }));
+}
+
 /// Replace the surface of the cube's first face with an unknown surface,
 /// optionally linking a preserved record, and return the face id and its
 /// surface id. Leaves every loop/coedge/edge of the face intact.
@@ -1537,6 +1601,56 @@ fn wire_and_free_topology_negative_cases_are_reported() {
             "missing `{message}` in {findings:?}"
         );
     }
+}
+
+#[test]
+fn singular_loop_vertex_cannot_have_multiple_free_shell_owners() {
+    let mut ir = unit_cube();
+    let vertex = ir.model.vertices[0].id.clone();
+    ir.model.loops[0].coedges.clear();
+    ir.model.loops[0].vertex_uses = vec![crate::topology::VertexUse {
+        vertex: vertex.clone(),
+        after: None,
+        pcurves: Vec::new(),
+    }];
+    ir.model.shells[0].free_vertices.push(vertex.clone());
+    let mut second_shell = ir.model.shells[0].clone();
+    second_shell.id.0 = "synthetic:test:shell#second".into();
+    second_shell.faces.clear();
+    second_shell.wire_edges.clear();
+    second_shell.free_vertices = vec![vertex];
+    ir.model.regions[0].shells.push(second_shell.id.clone());
+    ir.model.shells.push(second_shell);
+
+    assert!(validate(&ir, Vec::new()).findings.iter().any(|finding| {
+        finding.check == Check::WireTopology
+            && finding.message == "free vertex must belong to exactly one shell"
+    }));
+}
+
+#[test]
+fn self_referential_composite_curve_is_invalid() {
+    use crate::geometry::{CompositeCurveSegment, CompositeCurveTransition};
+
+    let mut ir = unit_cube();
+    let id = CurveId("synthetic:test:curve#recursive".into());
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        geometry: CurveGeometry::Composite {
+            segments: vec![CompositeCurveSegment {
+                curve: id,
+                same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            }],
+            self_intersect: Some(false),
+        },
+        source_object: None,
+    });
+
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ReferentialIntegrity));
 }
 
 #[test]

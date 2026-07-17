@@ -192,11 +192,21 @@ fn step_artifact_starts_with_step_header() {
     let input = fixture(dir.path(), "cube.json", &unit_cube());
     let output = Command::cargo_bin("cadmpeg")
         .unwrap()
-        .args(["convert", input.to_str().unwrap(), "-f", "step"])
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-f",
+            "step",
+            "--step-target",
+            "ap242e3",
+            "--reject-step-losses",
+        ])
         .output()
         .unwrap();
     assert!(output.status.success());
     assert!(output.stdout.starts_with(b"ISO-10303-21"));
+    assert!(String::from_utf8_lossy(&output.stdout)
+        .contains("AP242_MANAGED_MODEL_BASED_3D_ENGINEERING_MIM_LF { 1 0 10303 442 4 1 4 }"));
     assert!(!String::from_utf8_lossy(&output.stdout).contains("validation:"));
 }
 
