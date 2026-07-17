@@ -3775,13 +3775,13 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
         ratio: 1.0,
         half_angle: angle,
     };
-    let axial_shift = 3.0;
     let expected = 2.0;
+    let axial_shift = -expected * angle.sin();
     let offset = SurfaceGeometry::Cone {
         origin: Point3::new(0.0, 0.0, axial_shift),
         axis: Vector3::new(0.0, 0.0, 1.0),
         ref_direction: Vector3::new(1.0, 0.0, 0.0),
-        radius: 4.0 + (expected + axial_shift * angle.sin()) / angle.cos(),
+        radius: 4.0 + expected * angle.cos(),
         ratio: 1.0,
         half_angle: angle,
     };
@@ -3797,6 +3797,13 @@ fn nx_circular_cone_offsets_resolve_across_equivalent_axis_origins() {
     };
     origin.x = 0.1;
     assert!(crate::decode::analytic_surface_offset(&support, &lateral).is_none());
+
+    let mut shifted_parameterization = offset.clone();
+    let SurfaceGeometry::Cone { origin, .. } = &mut shifted_parameterization else {
+        unreachable!()
+    };
+    origin.z += 0.1;
+    assert!(crate::decode::analytic_surface_offset(&support, &shifted_parameterization).is_none());
 
     let mut elliptical = offset;
     let SurfaceGeometry::Cone { ratio, .. } = &mut elliptical else {

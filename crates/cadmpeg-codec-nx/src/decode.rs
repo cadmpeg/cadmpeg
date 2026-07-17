@@ -3598,6 +3598,8 @@ pub(crate) fn analytic_surface_offset(
             );
             let radial_delta = offset_radius - support_radius;
             let distance = radial_delta * support_angle.cos() - axial_delta * support_angle.sin();
+            let tangent_residual =
+                radial_delta * support_angle.sin() + axial_delta * support_angle.cos();
             let scale = [
                 support_origin.x,
                 support_origin.y,
@@ -3609,11 +3611,14 @@ pub(crate) fn analytic_surface_offset(
                 *offset_radius,
                 axial_delta,
                 distance,
+                tangent_residual,
             ]
             .into_iter()
             .fold(1.0_f64, |scale, value| scale.max(value.abs()));
             let tolerance = 64.0 * f64::EPSILON * scale;
-            (distance.is_finite() && dot_vector(residual, residual) <= tolerance * tolerance)
+            (distance.is_finite()
+                && dot_vector(residual, residual) <= tolerance * tolerance
+                && tangent_residual.abs() <= tolerance)
                 .then_some(distance)
         }
         (
