@@ -29,6 +29,7 @@ impl Registry {
                 Box::new(CreoCodec),
                 Box::new(NxCodec),
                 Box::new(RhinoCodec),
+                Box::new(StepCodec::default()),
             ],
             encoders: vec![
                 Box::new(F3dCodec),
@@ -65,6 +66,17 @@ impl Registry {
             .iter()
             .find(|encoder| encoder.id() == id)
             .map(Box::as_ref)
+    }
+
+    /// Replace the STEP encoder configuration used by subsequent exports.
+    pub fn set_step_options(&mut self, options: cadmpeg_step::StepWriteOptions) {
+        if let Some(encoder) = self
+            .encoders
+            .iter_mut()
+            .find(|encoder| encoder.id() == "step")
+        {
+            *encoder = Box::new(StepCodec { options });
+        }
     }
 
     /// Encode through the registered format path with optional target selection.
@@ -111,5 +123,16 @@ mod tests {
                 format.name()
             );
         }
+    }
+
+    #[test]
+    fn step_is_registered_as_a_reader() {
+        let registry = Registry::with_builtins();
+        let (codec, confidence) = registry
+            .detect(b"ISO-10303-21;HEADER;")
+            .expect("STEP codec detection");
+        assert_eq!(codec.id(), "step");
+        assert_eq!(confidence, cadmpeg_ir::codec::Confidence::High);
+        assert_eq!(registry.by_id("step").expect("STEP reader").id(), "step");
     }
 }

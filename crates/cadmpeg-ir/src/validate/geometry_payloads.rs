@@ -371,6 +371,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::LinearSweep { direction, .. } = &procedural.definition {
+            if ![direction.x, direction.y, direction.z]
+                .into_iter()
+                .all(f64::is_finite)
+                || degenerate(direction)
+            {
+                bounds_err(findings, &procedural.id.0, "invalid linear-sweep direction");
+            }
+        }
+        if let ProceduralSurfaceDefinition::ParallelOffset { distance, .. } = &procedural.definition
+        {
+            if !distance.is_finite() {
+                bounds_err(findings, &procedural.id.0, "non-finite parallel offset");
+            }
+        }
         if let ProceduralSurfaceDefinition::Exact {
             parameter_ranges, ..
         } = &procedural.definition
@@ -1432,6 +1447,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     bounds_err(findings, &c.id.0, "degenerate curve point is not finite");
                 }
             }
+            CurveGeometry::Composite { segments, .. } => {
+                if segments.is_empty() {
+                    bounds_err(findings, &c.id.0, "composite curve has no segments");
+                }
+            }
             CurveGeometry::Nurbs(n) => {
                 if n.control_points.len() < (n.degree as usize + 1) {
                     bounds_err(
@@ -1446,6 +1466,25 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::SpatialOffset {
+            distance,
+            reference_direction,
+            ..
+        } = &procedural.definition
+        {
+            if !distance.is_finite()
+                || ![
+                    reference_direction.x,
+                    reference_direction.y,
+                    reference_direction.z,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+                || (reference_direction.norm() - 1.0).abs() > 1e-9
+            {
+                bounds_err(findings, &procedural.id.0, "invalid spatial curve offset");
+            }
+        }
         if let ProceduralCurveDefinition::Deformable { data, .. } = &procedural.definition {
             if let crate::geometry::DeformableCurveData::VectorField {
                 vectors,

@@ -216,6 +216,13 @@ pub enum CurveGeometry {
         /// The collapsed curve point.
         point: Point3,
     },
+    /// Ordered child curves joined into one bounded carrier.
+    Composite {
+        /// Ordered curve uses and their continuity contracts.
+        segments: Vec<CompositeCurveSegment>,
+        /// Whether the source classifies the complete curve as self-intersecting.
+        self_intersect: Option<bool>,
+    },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
     /// Native curve carrier whose shape is not decoded.
@@ -224,6 +231,31 @@ pub enum CurveGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// One directed child use in a composite curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompositeCurveSegment {
+    /// Referenced child curve carrier.
+    pub curve: CurveId,
+    /// Whether the child parameter direction is retained.
+    pub same_sense: bool,
+    /// Required continuity from the preceding segment to this segment.
+    pub transition: CompositeCurveTransition,
+}
+
+/// STEP composite-curve transition continuity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositeCurveTransition {
+    /// No positional continuity is asserted.
+    Discontinuous,
+    /// Positional continuity.
+    Continuous,
+    /// Positional and tangent continuity.
+    ContSameGradient,
+    /// Positional, tangent, and curvature continuity.
+    ContSameGradientSameCurvature,
 }
 
 /// Derive a stable in-plane reference direction from an axis.
@@ -378,6 +410,13 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_position: Option<Point3>,
     },
+    /// Unbounded linear sweep of a directrix.
+    LinearSweep {
+        /// Curve swept along `direction`.
+        directrix: CurveId,
+        /// Length-bearing sweep vector.
+        direction: Vector3,
+    },
     /// Revolution of a directrix about an axis.
     Revolution {
         /// Curve revolved about the axis to form the surface.
@@ -392,6 +431,15 @@ pub enum ProceduralSurfaceDefinition {
         parameter_interval: [f64; 2],
         /// Whether the source parameter directions are transposed.
         transposed: bool,
+    },
+    /// Full revolution of a directrix about an axis.
+    AxisRevolution {
+        /// Curve revolved about the axis.
+        directrix: CurveId,
+        /// Point on the revolution axis.
+        axis_origin: Point3,
+        /// Unit revolution-axis direction.
+        axis_direction: Vector3,
     },
     /// Sum of two ordered curves from a base point.
     Sum {
@@ -439,6 +487,29 @@ pub enum ProceduralSurfaceDefinition {
         v_sense: i64,
         /// Ordered conditional ASM extension flags.
         extension_flags: Vec<bool>,
+    },
+    /// Parallel offset from a support surface.
+    ParallelOffset {
+        /// Surface being offset.
+        support: SurfaceId,
+        /// Signed offset distance.
+        distance: f64,
+        /// Whether the source classifies the result as self-intersecting.
+        self_intersect: Option<bool>,
+    },
+    /// Self-intersecting torus with an explicitly selected outer or inner sheet.
+    DegenerateTorus {
+        /// Whether the outer sheet is selected at the self-intersection.
+        select_outer: bool,
+    },
+    /// Surface domain bounded by ordered curves on a supporting surface.
+    CurveBounded {
+        /// Supporting surface whose parameterization defines the domain.
+        support: SurfaceId,
+        /// Boundary curves on the support.
+        boundaries: Vec<CurveId>,
+        /// Whether the support's natural outer boundary is implicit.
+        implicit_outer: bool,
     },
     /// Ruled surface joining two directrices.
     Ruled {
@@ -2133,6 +2204,17 @@ pub enum ProceduralCurveDefinition {
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
+    },
+    /// Free-space 3D offset using a reference direction.
+    SpatialOffset {
+        /// Curve being offset.
+        source: CurveId,
+        /// Signed offset distance.
+        distance: f64,
+        /// Reference direction controlling the offset frame.
+        reference_direction: Vector3,
+        /// Whether the source classifies the result as self-intersecting.
+        self_intersect: Option<bool>,
     },
     /// Intersection of two surfaces after applying independent signed offsets.
     TwoSidedOffset {

@@ -3,6 +3,7 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use std::collections::VecDeque;
 
 pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>) {
     let mut surfaces = ir
@@ -37,12 +38,45 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.as_str()))
         .collect::<HashSet<_>>();
-    let points = ir
+    let mut points = ir
         .model
         .vertices
         .iter()
         .map(|vertex| vertex.point.0.as_str())
         .collect::<HashSet<_>>();
+    for binding in &ir.model.appearance_bindings {
+        match &binding.target {
+            crate::appearance::AppearanceTarget::Surface(id) => {
+                surfaces.insert(id.0.as_str());
+            }
+            crate::appearance::AppearanceTarget::Curve(id) => {
+                curves.insert(id.0.as_str());
+            }
+            crate::appearance::AppearanceTarget::Point(id) => {
+                points.insert(id.0.as_str());
+            }
+            _ => {}
+        }
+    }
+    for item in ir
+        .model
+        .presentation_layers
+        .iter()
+        .flat_map(|layer| &layer.items)
+    {
+        match item {
+            crate::presentation::PresentationItem::Surface { surface } => {
+                surfaces.insert(surface.0.as_str());
+            }
+            crate::presentation::PresentationItem::Curve { curve } => {
+                curves.insert(curve.0.as_str());
+            }
+            crate::presentation::PresentationItem::Point { point } => {
+                points.insert(point.0.as_str());
+            }
+            _ => {}
+        }
+    }
 
     for procedural in &ir.model.procedural_surfaces {
         surfaces.insert(&procedural.surface.0);
@@ -250,7 +284,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                 }
             }
             ProceduralSurfaceDefinition::Extrusion { directrix, .. }
-            | ProceduralSurfaceDefinition::Revolution { directrix, .. } => {
+            | ProceduralSurfaceDefinition::LinearSweep { directrix, .. }
+            | ProceduralSurfaceDefinition::Revolution { directrix, .. }
+            | ProceduralSurfaceDefinition::AxisRevolution { directrix, .. } => {
                 curves.insert(&directrix.0);
             }
             ProceduralSurfaceDefinition::Sweep {
@@ -323,6 +359,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);
             }
+            ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
+                surfaces.insert(&support.0);
+            }
             ProceduralSurfaceDefinition::Ruled { first, second } => {
                 curves.extend([first.0.as_str(), second.0.as_str()]);
             }
@@ -360,7 +399,16 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             }
             ProceduralSurfaceDefinition::Helix { .. }
             | ProceduralSurfaceDefinition::TSpline { .. }
+            | ProceduralSurfaceDefinition::DegenerateTorus { .. }
             | ProceduralSurfaceDefinition::Unknown { .. } => {}
+            ProceduralSurfaceDefinition::CurveBounded {
+                support,
+                boundaries,
+                ..
+            } => {
+                surfaces.insert(&support.0);
+                curves.extend(boundaries.iter().map(|curve| curve.0.as_str()));
+            }
             ProceduralSurfaceDefinition::Deformable { construction } => {
                 surfaces.insert(&construction.support.0);
                 if let crate::geometry::DeformableSurfaceData::SurfaceCurve {
@@ -487,6 +535,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     surfaces.insert(&support.0);
                 }
             }
+            ProceduralCurveDefinition::SpatialOffset { source, .. } => {
+                curves.insert(&source.0);
+            }
             ProceduralCurveDefinition::TwoSidedOffset { context, .. } => {
                 for side in &context.sides {
                     if let Some(surface) = &side.surface {
@@ -512,6 +563,29 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
     for link in native_unknowns.iter().flat_map(|record| &record.links) {
         surfaces.insert(link);
         curves.insert(link);
+    }
+    let composite_segments = ir
+        .model
+        .curves
+        .iter()
+        .filter_map(|curve| match &curve.geometry {
+            CurveGeometry::Composite { segments, .. } => Some((
+                curve.id.0.as_str(),
+                segments
+                    .iter()
+                    .map(|segment| segment.curve.0.as_str())
+                    .collect::<Vec<_>>(),
+            )),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let mut reachable_curves = curves.iter().copied().collect::<VecDeque<_>>();
+    while let Some(curve) = reachable_curves.pop_front() {
+        for segment in composite_segments.get(curve).into_iter().flatten() {
+            if curves.insert(segment) {
+                reachable_curves.push_back(segment);
+            }
+        }
     }
 
     for (kind, id) in ir

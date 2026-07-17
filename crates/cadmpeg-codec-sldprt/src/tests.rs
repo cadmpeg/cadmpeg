@@ -3760,11 +3760,8 @@ fn semantic_writer_preserves_outer_header() {
 /// geometrically consistent: vertices remain on their edge curves and surfaces.
 fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
     use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
-    for point in &mut ir.model.points {
-        point.position.x += dx;
-    }
-    for curve in &mut ir.model.curves {
-        match &mut curve.geometry {
+    fn translate_curve_x(curve: &mut CurveGeometry, dx: f64) {
+        match curve {
             CurveGeometry::Line { origin, .. } => origin.x += dx,
             CurveGeometry::Circle { center, .. }
             | CurveGeometry::Ellipse { center, .. }
@@ -3776,8 +3773,15 @@ fn translate_model_x(ir: &mut cadmpeg_ir::document::CadIr, dx: f64) {
                     pole.x += dx;
                 }
             }
+            CurveGeometry::Composite { .. } => {}
             CurveGeometry::Unknown { .. } => {}
         }
+    }
+    for point in &mut ir.model.points {
+        point.position.x += dx;
+    }
+    for curve in &mut ir.model.curves {
+        translate_curve_x(&mut curve.geometry, dx);
     }
     for surface in &mut ir.model.surfaces {
         match &mut surface.geometry {

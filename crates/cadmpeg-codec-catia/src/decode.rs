@@ -632,6 +632,7 @@ fn transfer_e5_topology(
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 coedges: coedge_ids.clone(),
+                vertex: None,
             });
             for (index, ((&edge_ref, &pcurve_ref), &reversed)) in loop_
                 .edge_uses
@@ -1297,6 +1298,7 @@ fn attach_standard_topology(
                 id: loop_id.clone(),
                 face: FaceId(format!("catia:standard:face#{face_index}")),
                 coedges: coedge_ids,
+                vertex: None,
             });
             ir.model.faces[face_index].loops.push(loop_id);
         }

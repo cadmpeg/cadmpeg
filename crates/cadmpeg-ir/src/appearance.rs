@@ -48,6 +48,21 @@ pub enum AppearanceTarget {
     Body(BodyId),
     /// Per-face appearance override.
     Face(FaceId),
+    /// Topological edge appearance.
+    Edge(crate::ids::EdgeId),
+    /// Standalone surface geometry appearance.
+    Surface(crate::ids::SurfaceId),
+    /// Standalone curve geometry appearance.
+    Curve(crate::ids::CurveId),
+    /// Standalone point geometry appearance.
+    Point(crate::ids::PointId),
+    /// Tessellated geometry appearance.
+    Tessellation(String),
+    /// Native presentation carrier without a neutral geometry arena.
+    Source {
+        /// Native source entity identity.
+        source_id: String,
+    },
 }
 
 /// An explicit appearance assignment.

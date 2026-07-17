@@ -133,9 +133,8 @@ pub struct Face {
     pub tolerance: Option<f64>,
 }
 
-/// A closed boundary loop of a face, expressed as an ordered ring of coedges.
-/// The ordering in `coedges` is the ring order; each coedge's `next` should
-/// point to the following entry (validation enforces the ring closes).
+/// A closed boundary of a face. A loop contains either an ordered ring of
+/// coedges or one vertex at a surface singularity.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Loop {
     /// Arena id.
@@ -143,7 +142,11 @@ pub struct Loop {
     /// Owning face.
     pub face: FaceId,
     /// Coedges in ring order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub coedges: Vec<CoedgeId>,
+    /// Singleton vertex boundary at a surface singularity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vertex: Option<VertexId>,
 }
 
 /// One use of an edge by a loop.
