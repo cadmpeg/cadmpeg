@@ -555,7 +555,7 @@ shift by one additional byte. Multiplicity and knot references in type 136 are
 sequential encoded xmts, so an extended multiplicity reference shifts the knot
 reference.
 
-Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
+Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. Each support-record XMT is unique within its stream. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
 
 ### 6.3 Procedural intersection curves (type 38 / `0x5a`)
 

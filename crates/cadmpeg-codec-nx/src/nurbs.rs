@@ -6,7 +6,7 @@
 //! millimetres. Invalid references, dimensions, knots, control points, and
 //! weights cause the affected carrier to be omitted.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::topology::Graph;
 use cadmpeg_ir::be::{u16_at as be_u16, u32_at as be_u32};
@@ -235,8 +235,10 @@ struct Arrays {
 
 fn arrays(bytes: &[u8]) -> Arrays {
     let mut out = Arrays::default();
+    let mut duplicate_u16s = BTreeSet::new();
+    let mut duplicate_f64s = BTreeSet::new();
     for (tag, width) in [(127, 2usize), (128, 8)] {
-        for pos in 0..bytes.len().saturating_sub(8) {
+        for pos in 0..bytes.len().saturating_sub(7) {
             if bytes.get(pos..pos + 2) != Some(&[0, tag]) {
                 continue;
             }
@@ -261,7 +263,9 @@ fn arrays(bytes: &[u8]) -> Arrays {
                 continue;
             };
             if tag == 127 {
-                out.u16s.insert(
+                insert_unique(
+                    &mut out.u16s,
+                    &mut duplicate_u16s,
                     reference,
                     raw.chunks_exact(2)
                         .map(|b| u16::from_be_bytes([b[0], b[1]]))
@@ -278,7 +282,7 @@ fn arrays(bytes: &[u8]) -> Arrays {
                     })
                     .collect();
                 if values.iter().all(|value| value.is_finite()) {
-                    out.f64s.insert(reference, values);
+                    insert_unique(&mut out.f64s, &mut duplicate_f64s, reference, values);
                 }
             }
         }
@@ -292,67 +296,65 @@ struct Payload {
 }
 
 fn surface_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
-    (0..bytes.len().saturating_sub(97))
-        .filter_map(|pos| {
-            (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
-            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
-            let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-            (xmt > 10).then_some(())?;
-            let shift = escape + xmt_len - 2;
-            let count_escape = usize::from(bytes.get(pos + 91 + shift) == Some(&0xff));
-            let count_at = pos + 91 + shift + count_escape;
-            let count = be_u32(bytes, count_at)? as usize;
-            (count > 0 && count <= 0x40000).then_some(())?;
-            let (_, first_len) = read_xmt(bytes, count_at + 4)?;
-            let data = count_at + 4 + first_len;
-            let raw = bytes.get(data..data + count * 8)?;
-            let values: Vec<_> = raw
-                .chunks_exact(8)
-                .map(|b| {
-                    f64::from_be_bytes(
-                        b.try_into()
-                            .expect("invariant: chunks_exact(8) yields exactly 8-byte slices"),
-                    )
-                })
-                .collect();
-            values
-                .iter()
-                .all(|value| value.is_finite())
-                .then_some((xmt, Payload { values }))
-        })
-        .collect()
+    let records = (0..bytes.len().saturating_sub(96)).filter_map(|pos| {
+        (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
+        let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+        let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+        (xmt > 10).then_some(())?;
+        let shift = escape + xmt_len - 2;
+        let count_escape = usize::from(bytes.get(pos + 91 + shift) == Some(&0xff));
+        let count_at = pos + 91 + shift + count_escape;
+        let count = be_u32(bytes, count_at)? as usize;
+        (count > 0 && count <= 0x40000).then_some(())?;
+        let (_, first_len) = read_xmt(bytes, count_at + 4)?;
+        let data = count_at + 4 + first_len;
+        let raw = bytes.get(data..data + count * 8)?;
+        let values: Vec<_> = raw
+            .chunks_exact(8)
+            .map(|b| {
+                f64::from_be_bytes(
+                    b.try_into()
+                        .expect("invariant: chunks_exact(8) yields exactly 8-byte slices"),
+                )
+            })
+            .collect();
+        values
+            .iter()
+            .all(|value| value.is_finite())
+            .then_some((xmt, Payload { values }))
+    });
+    unique_records(records)
 }
 
 fn curve_payloads(bytes: &[u8]) -> BTreeMap<u32, Payload> {
-    (0..bytes.len().saturating_sub(15))
-        .filter_map(|pos| {
-            (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
-            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
-            let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-            (xmt > 10).then_some(())?;
-            let shift = escape + xmt_len - 2;
-            let count_escape = usize::from(bytes.get(pos + 9 + shift) == Some(&0xff));
-            let count_at = pos + 9 + shift + count_escape;
-            let count = be_u32(bytes, count_at)? as usize;
-            (count > 0 && count <= 0x40000).then_some(())?;
-            let (_, control_ref_len) = read_xmt(bytes, count_at + 4)?;
-            let data = count_at + 4 + control_ref_len;
-            let raw = bytes.get(data..data + count * 8)?;
-            let values: Vec<_> = raw
-                .chunks_exact(8)
-                .map(|b| {
-                    f64::from_be_bytes(
-                        b.try_into()
-                            .expect("invariant: chunks_exact(8) yields exactly 8-byte slices"),
-                    )
-                })
-                .collect();
-            values
-                .iter()
-                .all(|value| value.is_finite())
-                .then_some((xmt, Payload { values }))
-        })
-        .collect()
+    let records = (0..bytes.len().saturating_sub(14)).filter_map(|pos| {
+        (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
+        let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+        let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+        (xmt > 10).then_some(())?;
+        let shift = escape + xmt_len - 2;
+        let count_escape = usize::from(bytes.get(pos + 9 + shift) == Some(&0xff));
+        let count_at = pos + 9 + shift + count_escape;
+        let count = be_u32(bytes, count_at)? as usize;
+        (count > 0 && count <= 0x40000).then_some(())?;
+        let (_, control_ref_len) = read_xmt(bytes, count_at + 4)?;
+        let data = count_at + 4 + control_ref_len;
+        let raw = bytes.get(data..data + count * 8)?;
+        let values: Vec<_> = raw
+            .chunks_exact(8)
+            .map(|b| {
+                f64::from_be_bytes(
+                    b.try_into()
+                        .expect("invariant: chunks_exact(8) yields exactly 8-byte slices"),
+                )
+            })
+            .collect();
+        values
+            .iter()
+            .all(|value| value.is_finite())
+            .then_some((xmt, Payload { values }))
+    });
+    unique_records(records)
 }
 
 struct SurfaceDescriptor {
@@ -371,69 +373,68 @@ struct SurfaceDescriptor {
 }
 
 fn surface_descriptors(bytes: &[u8]) -> BTreeMap<u32, SurfaceDescriptor> {
-    (0..bytes.len().saturating_sub(48))
-        .filter_map(|pos| {
-            (bytes.get(pos..pos + 2) == Some(&[0, 126])).then_some(())?;
-            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
-            let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-            (xmt > 10).then_some(())?;
-            let shift = escape + xmt_len - 2;
-            let u_degree = be_u16(bytes, pos + 6 + shift)?;
-            let v_degree = be_u16(bytes, pos + 8 + shift)?;
-            let u_count = be_u16(bytes, pos + 12 + shift)? as usize;
-            let v_count = be_u16(bytes, pos + 16 + shift)? as usize;
-            let u_form = *bytes.get(pos + 18 + shift)?;
-            let v_form = *bytes.get(pos + 19 + shift)?;
-            let u_distinct = be_u32(bytes, pos + 20 + shift)? as usize;
-            let v_distinct = be_u32(bytes, pos + 24 + shift)? as usize;
-            ((1..=10).contains(&u_degree)
-                && (1..=10).contains(&v_degree)
-                && (2..=2000).contains(&u_count)
-                && (2..=2000).contains(&v_count)
-                && [1, 4, 5, 6].contains(&u_form)
-                && [1, 4, 5, 6].contains(&v_form)
-                && (2..2000).contains(&u_distinct)
-                && (2..2000).contains(&v_distinct))
-            .then_some(())?;
-            let short = be_u16(bytes, pos + 44 + shift) == Some(125);
-            let (u_mult, v_mult, u_knots, v_knots) = if short {
-                (
-                    u32::from(be_u16(bytes, pos + 36 + shift)?),
-                    u32::from(be_u16(bytes, pos + 38 + shift)?),
-                    u32::from(be_u16(bytes, pos + 40 + shift)?),
-                    u32::from(be_u16(bytes, pos + 42 + shift)?),
-                )
-            } else {
-                (be_u16(bytes, pos + 54 + shift) == Some(125)).then_some(())?;
-                let mut at = pos + 34 + shift;
-                let mut refs = [0u32; 5];
-                for reference in &mut refs {
-                    let (value, len) = read_xmt(bytes, at)?;
-                    *reference = value;
-                    at += len;
-                }
-                (at == pos + 54 + shift).then_some(())?;
-                (refs[1], refs[2], refs[3], refs[4])
-            };
-            Some((
-                xmt,
-                SurfaceDescriptor {
-                    u_degree,
-                    v_degree,
-                    u_count,
-                    v_count,
-                    u_form,
-                    v_form,
-                    u_distinct,
-                    v_distinct,
-                    u_mult,
-                    v_mult,
-                    u_knots,
-                    v_knots,
-                },
-            ))
-        })
-        .collect()
+    let records = (0..bytes.len().saturating_sub(47)).filter_map(|pos| {
+        (bytes.get(pos..pos + 2) == Some(&[0, 126])).then_some(())?;
+        let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+        let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+        (xmt > 10).then_some(())?;
+        let shift = escape + xmt_len - 2;
+        let u_degree = be_u16(bytes, pos + 6 + shift)?;
+        let v_degree = be_u16(bytes, pos + 8 + shift)?;
+        let u_count = be_u16(bytes, pos + 12 + shift)? as usize;
+        let v_count = be_u16(bytes, pos + 16 + shift)? as usize;
+        let u_form = *bytes.get(pos + 18 + shift)?;
+        let v_form = *bytes.get(pos + 19 + shift)?;
+        let u_distinct = be_u32(bytes, pos + 20 + shift)? as usize;
+        let v_distinct = be_u32(bytes, pos + 24 + shift)? as usize;
+        ((1..=10).contains(&u_degree)
+            && (1..=10).contains(&v_degree)
+            && (2..=2000).contains(&u_count)
+            && (2..=2000).contains(&v_count)
+            && [1, 4, 5, 6].contains(&u_form)
+            && [1, 4, 5, 6].contains(&v_form)
+            && (2..2000).contains(&u_distinct)
+            && (2..2000).contains(&v_distinct))
+        .then_some(())?;
+        let short = be_u16(bytes, pos + 44 + shift) == Some(125);
+        let (u_mult, v_mult, u_knots, v_knots) = if short {
+            (
+                u32::from(be_u16(bytes, pos + 36 + shift)?),
+                u32::from(be_u16(bytes, pos + 38 + shift)?),
+                u32::from(be_u16(bytes, pos + 40 + shift)?),
+                u32::from(be_u16(bytes, pos + 42 + shift)?),
+            )
+        } else {
+            (be_u16(bytes, pos + 54 + shift) == Some(125)).then_some(())?;
+            let mut at = pos + 34 + shift;
+            let mut refs = [0u32; 5];
+            for reference in &mut refs {
+                let (value, len) = read_xmt(bytes, at)?;
+                *reference = value;
+                at += len;
+            }
+            (at == pos + 54 + shift).then_some(())?;
+            (refs[1], refs[2], refs[3], refs[4])
+        };
+        Some((
+            xmt,
+            SurfaceDescriptor {
+                u_degree,
+                v_degree,
+                u_count,
+                v_count,
+                u_form,
+                v_form,
+                u_distinct,
+                v_distinct,
+                u_mult,
+                v_mult,
+                u_knots,
+                v_knots,
+            },
+        ))
+    });
+    unique_records(records)
 }
 
 struct CurveDescriptor {
@@ -447,40 +448,63 @@ struct CurveDescriptor {
 }
 
 fn curve_descriptors(bytes: &[u8]) -> BTreeMap<u32, CurveDescriptor> {
-    (0..bytes.len().saturating_sub(27))
-        .filter_map(|pos| {
-            (bytes.get(pos..pos + 2) == Some(&[0, 136])).then_some(())?;
-            let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
-            let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
-            (xmt > 10).then_some(())?;
-            let shift = escape + xmt_len - 2;
-            let degree = be_u16(bytes, pos + 4 + shift)?;
-            let poles = be_u16(bytes, pos + 8 + shift)? as usize;
-            let dimension = be_u16(bytes, pos + 10 + shift)?;
-            let distinct = be_u16(bytes, pos + 14 + shift)? as usize;
-            let form = *bytes.get(pos + 16 + shift)?;
-            ((1..=10).contains(&degree)
-                && (2..=2000).contains(&poles)
-                && matches!(dimension, 2 | 3)
-                && (2..=2000).contains(&distinct)
-                && [1, 4, 5, 6].contains(&form))
-            .then_some(())?;
-            let (mult, mult_len) = read_xmt(bytes, pos + 23 + shift)?;
-            let (knots, _) = read_xmt(bytes, pos + 23 + shift + mult_len)?;
-            Some((
-                xmt,
-                CurveDescriptor {
-                    degree,
-                    poles,
-                    dimension,
-                    distinct,
-                    form,
-                    mult,
-                    knots,
-                },
-            ))
-        })
-        .collect()
+    let records = (0..bytes.len().saturating_sub(26)).filter_map(|pos| {
+        (bytes.get(pos..pos + 2) == Some(&[0, 136])).then_some(())?;
+        let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+        let (xmt, xmt_len) = read_xmt(bytes, pos + 2 + escape)?;
+        (xmt > 10).then_some(())?;
+        let shift = escape + xmt_len - 2;
+        let degree = be_u16(bytes, pos + 4 + shift)?;
+        let poles = be_u16(bytes, pos + 8 + shift)? as usize;
+        let dimension = be_u16(bytes, pos + 10 + shift)?;
+        let distinct = be_u16(bytes, pos + 14 + shift)? as usize;
+        let form = *bytes.get(pos + 16 + shift)?;
+        ((1..=10).contains(&degree)
+            && (2..=2000).contains(&poles)
+            && matches!(dimension, 2 | 3)
+            && (2..=2000).contains(&distinct)
+            && [1, 4, 5, 6].contains(&form))
+        .then_some(())?;
+        let (mult, mult_len) = read_xmt(bytes, pos + 23 + shift)?;
+        let (knots, _) = read_xmt(bytes, pos + 23 + shift + mult_len)?;
+        Some((
+            xmt,
+            CurveDescriptor {
+                degree,
+                poles,
+                dimension,
+                distinct,
+                form,
+                mult,
+                knots,
+            },
+        ))
+    });
+    unique_records(records)
+}
+
+fn unique_records<T>(records: impl IntoIterator<Item = (u32, T)>) -> BTreeMap<u32, T> {
+    let mut unique = BTreeMap::new();
+    let mut duplicates = BTreeSet::new();
+    for (xmt, record) in records {
+        insert_unique(&mut unique, &mut duplicates, xmt, record);
+    }
+    unique
+}
+
+fn insert_unique<T>(
+    records: &mut BTreeMap<u32, T>,
+    duplicates: &mut BTreeSet<u32>,
+    xmt: u32,
+    record: T,
+) {
+    if duplicates.contains(&xmt) {
+        return;
+    }
+    if records.insert(xmt, record).is_some() {
+        records.remove(&xmt);
+        duplicates.insert(xmt);
+    }
 }
 
 fn read_xmt(bytes: &[u8], at: usize) -> Option<(u32, usize)> {

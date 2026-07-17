@@ -13339,6 +13339,68 @@ fn nurbs_carriers_reject_invalid_basis_cardinality() {
 }
 
 #[test]
+fn nurbs_carriers_reject_duplicate_support_identities() {
+    fn duplicate_record(stream: &mut Vec<u8>, tag: u8, xmt_offset: usize, xmt: u16, len: usize) {
+        let start = stream
+            .windows(len)
+            .position(|record| {
+                record[..2] == [0, tag] && record[xmt_offset..xmt_offset + 2] == xmt.to_be_bytes()
+            })
+            .expect("support record");
+        let duplicate = stream[start..start + len].to_vec();
+        stream.extend(duplicate);
+    }
+
+    for (tag, xmt_offset, xmt, len) in [
+        (126, 2, 20, 48),
+        (125, 2, 21, 193),
+        (127, 6, 30, 12),
+        (128, 6, 32, 24),
+    ] {
+        let mut stream = bspline_partition_stream();
+        duplicate_record(&mut stream, tag, xmt_offset, xmt, len);
+        assert!(
+            crate::nurbs::surfaces(&stream).is_empty(),
+            "duplicate type {tag}"
+        );
+    }
+
+    for (tag, xmt_offset, xmt, len) in [
+        (136, 2, 40, 27),
+        (135, 2, 41, 63),
+        (127, 6, 42, 12),
+        (128, 6, 43, 24),
+    ] {
+        let mut stream = bspline_partition_stream();
+        duplicate_record(&mut stream, tag, xmt_offset, xmt, len);
+        assert!(
+            crate::nurbs::curves(&stream).is_empty(),
+            "duplicate type {tag}"
+        );
+    }
+}
+
+#[test]
+fn nurbs_decodes_descriptors_at_the_stream_boundary() {
+    fn move_record_to_end(stream: &mut Vec<u8>, tag: u8, xmt: u16, len: usize) {
+        let start = stream
+            .windows(len)
+            .position(|record| record[..2] == [0, tag] && record[2..4] == xmt.to_be_bytes())
+            .expect("descriptor record");
+        let record = stream.drain(start..start + len).collect::<Vec<_>>();
+        stream.extend(record);
+    }
+
+    let mut surface = bspline_partition_stream();
+    move_record_to_end(&mut surface, 126, 20, 48);
+    assert_eq!(crate::nurbs::surfaces(&surface).len(), 1);
+
+    let mut curve = bspline_partition_stream();
+    move_record_to_end(&mut curve, 136, 40, 27);
+    assert_eq!(crate::nurbs::curves(&curve).len(), 1);
+}
+
+#[test]
 fn intersection_chart_rejects_nonfinite_millimeter_tolerance() {
     let mut stream = charted_intersection_curve_topology_partition_stream();
     let chart = stream
