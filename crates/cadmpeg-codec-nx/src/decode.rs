@@ -107,7 +107,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 
     if ctx.container_only() {
         let ir = build_metadata_ir(&scan)?;
-        let report = build_container_report(&scan, true);
+        let mut report = build_container_report(&scan, true);
+        report.source_fidelity = Some(crate::accounting::ledger(&scan));
         return Ok(DecodeResult::new(ir, report));
     }
 
@@ -116,7 +117,8 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     }
 
     let ir = build_metadata_ir(&scan)?;
-    let report = build_container_report(&scan, false);
+    let mut report = build_container_report(&scan, false);
+    report.source_fidelity = Some(crate::accounting::ledger(&scan));
     Ok(DecodeResult::new(ir, report))
 }
 
@@ -550,8 +552,8 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
     attach_free_topology(&mut ir, &mut annotations);
     ir.annotations = annotations.build();
     retain_live_annotations(&mut ir);
-    crate::accounting::install(&mut ir, scan);
-    let report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
+    let mut report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
+    report.source_fidelity = Some(crate::accounting::ledger(scan));
     Some((ir, report))
 }
 
@@ -1408,7 +1410,6 @@ fn build_metadata_ir(scan: &Scan) -> Result<CadIr, CodecError> {
     attach_native_object_model(&mut ir, scan)
         .map_err(|error| CodecError::Malformed(error.to_string()))?;
     ir.annotations = annotations.build();
-    crate::accounting::install(&mut ir, scan);
     Ok(ir)
 }
 

@@ -3011,25 +3011,14 @@ fn source_fidelity_serialization_is_deterministic() {
 
 #[test]
 fn decode_installs_validated_source_fidelity_sidecar() {
-    #[derive(serde::Deserialize)]
-    struct Stored {
-        #[allow(dead_code)]
-        id: String,
-        sidecar: cadmpeg_ir::SourceFidelity,
-    }
-
     let mut cur = Cursor::new(prt_with_arrangements());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let stored = result
-        .ir
-        .native
-        .namespace("nx")
-        .expect("NX namespace")
-        .arena_as::<Stored>("source_fidelity")
-        .unwrap();
-    assert_eq!(stored.len(), 1);
-    assert_eq!(stored[0].sidecar.level, cadmpeg_ir::LedgerLevel::L1);
-    assert_eq!(stored[0].sidecar.validate(), Ok(()));
+    let sidecar = result
+        .report
+        .source_fidelity
+        .expect("decode report carries the L1 source-fidelity sidecar");
+    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
+    assert_eq!(sidecar.validate(), Ok(()));
 }
 
 #[test]

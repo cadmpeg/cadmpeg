@@ -18,49 +18,31 @@
 //! an accounting-enabled result never carries a ledger that violates the
 //! conservation invariant.
 
-use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{
     AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
     SerializedOrigin, SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent,
     SpanClass,
 };
-use serde::Serialize;
 
 use crate::decode::Scan;
 
 /// The canonical part payload whose inflated members become derived spaces.
 const PART_PATH: &str = "/Root/UG_PART/UG_PART";
 
-/// The stable arena name and record id under which the sidecar is stored.
-const ARENA: &str = "source_fidelity";
-const RECORD_ID: &str = "nx:source:fidelity#0";
-
-/// One native-arena record wrapping the whole serialized sidecar.
-#[derive(Serialize)]
-struct FidelityRecord<'a> {
-    id: &'a str,
-    sidecar: &'a SourceFidelity,
-}
-
-/// Build the v2 sidecar, validate it, and store it in the `nx` native namespace.
+/// Build the validated v2 sidecar for a parsed NX container.
 ///
 /// The tiling is complete by construction, so validation is an invariant guard,
-/// not input-dependent control flow; a failure is a decoder bug.
-pub(crate) fn install(ir: &mut CadIr, scan: &Scan) {
+/// not input-dependent control flow; a failure is a decoder bug. The caller
+/// rides the result on [`DecodeReport::source_fidelity`](cadmpeg_ir::report::DecodeReport::source_fidelity),
+/// the platform's designated sidecar surface (§6.1), rather than a private
+/// native arena, so a consumer reading the standard slot sees the L1 ledger.
+pub(crate) fn ledger(scan: &Scan) -> SourceFidelity {
     let sidecar = build_sidecar(scan);
     sidecar
         .validate()
         .expect("nx source-fidelity ledger tiles completely and derives a valid origin DAG");
-    let record = FidelityRecord {
-        id: RECORD_ID,
-        sidecar: &sidecar,
-    };
-    let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(2);
-    namespace
-        .set_arena(ARENA, std::slice::from_ref(&record))
-        .expect("nx source-fidelity sidecar serializes to a native record");
+    sidecar
 }
 
 /// Build the complete coarse (L1) sidecar for a parsed NX container.

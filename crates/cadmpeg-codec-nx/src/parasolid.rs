@@ -140,9 +140,14 @@ pub fn extract_streams<'a>(
                     kind,
                     schema,
                 });
-                // Resume after this header; a valid stream will not start
-                // again inside its own compressed body at the very next byte.
-                i += 2;
+                // Resume past the bytes this member consumed, not at the next
+                // byte: a spurious `78 xx` zlib header inside the compressed
+                // body would otherwise inflate into a second stream whose source
+                // extent [file_offset, file_offset+consumed) overlaps this
+                // member's, double-attributing the same compressed bytes to two
+                // decompression origins. Skipping the consumed run keeps packed
+                // members' input extents disjoint.
+                i = i.saturating_add((consumed as usize).max(2));
                 continue;
             }
         }
