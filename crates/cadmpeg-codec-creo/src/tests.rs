@@ -4732,6 +4732,10 @@ fn decode_transfers_closed_plane_intersection_brep() {
         cadmpeg_ir::topology::Sense::Forward
     );
     assert_eq!(model.loops.len(), 4);
+    assert!(model
+        .loops
+        .iter()
+        .all(|lp| lp.boundary_role == cadmpeg_ir::topology::LoopBoundaryRole::Outer));
     assert_eq!(model.coedges.len(), 12);
     assert_eq!(model.shells.len(), 1);
     assert_eq!(model.regions.len(), 1);

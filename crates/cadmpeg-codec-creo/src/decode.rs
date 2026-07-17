@@ -7638,7 +7638,7 @@ fn transfer_resolved_circular_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
                 coedges: vec![cap_coedge.clone()],
                 vertex_uses: Vec::new(),
             });
@@ -8028,14 +8028,22 @@ fn transfer_resolved_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: bottom_loop.clone(),
                 face: bottom_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                boundary_role: if profile_index == 0 {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                },
                 coedges: bottom_coedges.clone(),
                 vertex_uses: Vec::new(),
             });
             ir.model.loops.push(IrLoop {
                 id: top_loop.clone(),
                 face: top_face.clone(),
-                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                boundary_role: if profile_index == 0 {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                } else {
+                    cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                },
                 coedges: top_coedges.clone(),
                 vertex_uses: Vec::new(),
             });
@@ -8139,7 +8147,7 @@ fn transfer_resolved_extrusion_breps(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
-                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Outer,
                     coedges: coedges.to_vec(),
                     vertex_uses: Vec::new(),
                 });
@@ -20675,7 +20683,9 @@ fn transfer_plane_brep(
                 color: None,
                 tolerance: None,
             });
-            for (native_loop, loop_id) in native_loops.iter().zip(loop_ids) {
+            for (boundary_index, (native_loop, loop_id)) in
+                native_loops.iter().zip(loop_ids).enumerate()
+            {
                 let coedge_ids = native_loop
                     .half_edges
                     .iter()
@@ -20689,7 +20699,11 @@ fn transfer_plane_brep(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face.clone(),
-                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                    boundary_role: if boundary_index == 0 {
+                        cadmpeg_ir::topology::LoopBoundaryRole::Outer
+                    } else {
+                        cadmpeg_ir::topology::LoopBoundaryRole::Inner
+                    },
                     coedges: coedge_ids.clone(),
                     vertex_uses: Vec::new(),
                 });

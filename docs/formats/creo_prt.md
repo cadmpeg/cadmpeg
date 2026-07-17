@@ -907,6 +907,11 @@ decoded components remain construction geometry. For `arcorient=0`, profile
 traversal reverses the analytic arc when it runs from the first `pointid` to
 the second.
 
+For a native planar face with multiple closed loops, exactly one loop must
+strictly contain every other loop. That containing loop is the outer boundary;
+every contained loop is an inner boundary. A planar face with one closed loop,
+and a non-planar face admitted under the one-loop rule, has one outer boundary.
+
 In a round-feature generated-entity table, a rowless face-use entry is a cylinder only when the table's following materialized `srf_array` entry is a cylinder. The two entries are angular sectors of one oriented cylinder; the rowless face use inherits the materialized sibling's carrier and orientation. The table class token alone does not identify the surface kind.
 
 Two parallel circular cylinders in strict secant position intersect in two
@@ -1260,12 +1265,17 @@ pcurve.
 
 Evaluating one closed linear-sweep profile produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The exact signed area is the sum of line chord terms and circular-arc sector terms. Its sign selects the cap and side face senses. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses. Cap-face pcurves are the section entities in the cap plane's `(u,v)` frame: lines remain lines and arcs become exact rational quadratic arcs. A planar side face uses profile distance and sweep offset as its parameters. A cylindrical side face uses profile angle and sweep offset. Its cap-edge pcurves hold the sweep offset constant and its longitudinal-edge pcurves hold the profile parameter constant. A multi-profile solid sweep has one outer profile that strictly contains every hole profile. Hole profiles are pairwise disjoint, unnested, and oriented opposite the outer profile.
 
+The cap loops produced from the outer profile are outer boundaries, cap loops
+produced from hole profiles are inner boundaries, and every single-loop side
+face has an outer boundary.
+
 Evaluating a one-circle linear-sweep profile produces two planar caps and one
 cylindrical side face. Each cap circle is one closed edge with one seam vertex.
 The cap and side coedges form a two-use radial pair. The side face has one
 closed loop at each axial bound. Cap pcurves retain the circle's section-space
 center and increasing full-turn parameterization; side pcurves run from zero
 through `2π` at constant sweep offset.
+Each cap's sole loop is its outer boundary.
 
 A feature owns each mixed generated-entity table bounded by its `AllFeatur` row. The array's compact-integer count is not limited to a one-byte or 64-entry range. Each declared entry has an optional `f7 1e` prefix, a canonical entity-reference identifier, a compact entry class, a positional body, and an `e3` close within the bounded feature row. A class `200` entry carries its source section entity's external identifier immediately after the class when that lane is populated; a structural marker in that position leaves the source absent. The record close follows these typed compact lanes; an `e3` byte can be the low byte of their canonical two-byte form. A table surface identifier denotes geometry generated or modified by that feature. When that surface is the carrier of a connected face, the face's owning body is an output of the feature.
 
