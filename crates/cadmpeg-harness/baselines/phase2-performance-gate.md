@@ -4,9 +4,13 @@
 Doc section 10 Phase 2 exit gate, items 5 and 8, plus the section 5.2
 alloc/work/depth freeze. This record aggregates the six per-crate calibration
 notes and the committed stage-1 harness baseline so the freeze rests on measured
-charge profiles and the regression gate has an auditable outcome. It is a
-report-only record, not a closure argument; the structural bounds it cites are
-each defended in the owning crate's calibration note.
+charge profiles and the regression gate has an auditable outcome. The freeze
+narrative below is a record, not a closure argument — the structural bounds it
+cites are each defended in the owning crate's calibration note — but the
+significant-regression gate it documents is live: the committed baseline records
+per-entry measured wall time and peak allocation, and `baseline::perf_regressions`
+fails the `cargo test` gate on an order-of-magnitude regression (see the
+automated ratchet section).
 
 ## Freeze outcome
 
@@ -103,4 +107,4 @@ catching the order-of-magnitude regression the envelope oracles miss.
 against this baseline; `--ignored bless_baselines` re-blesses it after an
 intended behavior change. The gate refuses to compare across a shifted
 calibration, so the committed baseline's `envelope_version` tracks
-`envelope-v2`.
+`envelope-v3`.
