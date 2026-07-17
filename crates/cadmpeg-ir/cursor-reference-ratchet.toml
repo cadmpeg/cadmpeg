@@ -22,18 +22,28 @@ cadmpeg-ir = 18
 # I/O (`ZipWriter`/`ZipArchive` need a `Seek` reader/writer), not the domain
 # `Cursor` reader `View` replaces; it therefore cannot ratchet to zero and grows
 # by one per new zip-building test. Raised 374 -> 377 for the three
-# `std::io::Cursor` uses in `truncation_at_design_body_member_boundaries_is_deterministic_and_never_panics`.
-cadmpeg-codec-f3d = 377
+# `std::io::Cursor` uses in `truncation_at_design_body_member_boundaries_is_deterministic_and_never_panics`,
+# then 377 -> 379 for the two `std::io::Cursor` decode drivers in the Phase 3D
+# record-ticket transfer-accounting tests.
+cadmpeg-codec-f3d = 379
 # Raised 390 -> 391 for the `std::io::Cursor` driver in the Phase 3C
 # `source_fidelity` determinism test, which exercises the reader-based codec
-# entry rather than the domain `Cursor` reader `View` replaces.
-cadmpeg-codec-sldprt = 391
-cadmpeg-codec-catia = 20
-cadmpeg-codec-creo = 9
+# entry rather than the domain `Cursor` reader `View` replaces, then 391 -> 393
+# for the two `std::io::Cursor` decode drivers in the Phase 3D transfer-accounting
+# tests.
+cadmpeg-codec-sldprt = 393
+# Raised 20 -> 25 for the five `std::io::Cursor` decode drivers in the Phase 3D
+# record-ticket transfer-accounting tests, not the domain `Cursor` reader `View`
+# replaces.
+cadmpeg-codec-catia = 25
+# Raised 9 -> 11 for the two `std::io::Cursor` decode drivers in the Phase 3D
+# record-ticket transfer-accounting test.
+cadmpeg-codec-creo = 11
 # Raised 58 -> 59 for the `std::io::Cursor` driver in the new Phase 3C
 # accounting test, an in-memory `ReadSeek` for decode, not the domain `Cursor`
-# reader `View` replaces.
-cadmpeg-codec-nx = 59
+# reader `View` replaces, then 59 -> 62 for the three `std::io::Cursor` decode
+# drivers in the Phase 3D record-ticket transfer-accounting tests.
+cadmpeg-codec-nx = 62
 cadmpeg-codec-rhino = 48
 cadmpeg-step = 0
 cadmpeg-harness = 3
