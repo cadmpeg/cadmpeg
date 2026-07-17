@@ -7291,6 +7291,13 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
+    #[derive(PartialEq)]
+    enum ProfileVote {
+        Missing,
+        Unique(String),
+        Ambiguous,
+    }
+
     let native_features = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -7301,26 +7308,34 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         .enumerate()
         .filter_map(|(index, feature)| Some((feature.native_ref.clone()?, index)))
         .collect::<HashMap<_, _>>();
+    let mut profiles = HashMap::<String, Vec<ProfileVote>>::new();
     for lane in lanes {
         let mut objects = native_features
             .values()
             .filter_map(|feature| Some((feature_object_name(feature, lane)?, *feature)))
             .collect::<Vec<_>>();
         objects.sort_by_key(|(name, _)| name.offset);
+        let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {
+            let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
+            if kind == NativeClassKind::Unknown && feature_inline_operation(lane, name).is_some() {
+                NativeClassKind::Extrusion
+            } else {
+                kind
+            }
+        };
+        for (name, feature) in &objects {
+            if object_kind(name, feature) == NativeClassKind::Extrusion
+                && !feature.properties.contains_key("DissectableChildren")
+            {
+                profiles
+                    .entry(feature.id.clone())
+                    .or_default()
+                    .push(ProfileVote::Missing);
+            }
+        }
         for pair in objects.windows(2) {
             let [(first_name, first), (second_name, second)] = pair else {
                 continue;
-            };
-            let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {
-                let kind =
-                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
-                if kind == NativeClassKind::Unknown
-                    && feature_inline_operation(lane, name).is_some()
-                {
-                    NativeClassKind::Extrusion
-                } else {
-                    kind
-                }
             };
             let first_kind = object_kind(first_name, first);
             let second_kind = object_kind(second_name, second);
@@ -7332,26 +7347,50 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             if extrusion.properties.contains_key("DissectableChildren") {
                 continue;
             }
-            let Some(&index) = neutral_indices.get(&extrusion.id) else {
-                continue;
-            };
-            let FeatureDefinition::Extrude {
-                profile: neutral_profile,
-                ..
-            } = &mut features[index].definition
+            let Some(vote) = profiles
+                .get_mut(&extrusion.id)
+                .and_then(|votes| votes.last_mut())
             else {
                 continue;
             };
-            if !matches!(neutral_profile, cadmpeg_ir::features::ProfileRef::Unresolved(owner) if owner == &extrusion.id)
-            {
-                continue;
-            }
-            *neutral_profile = cadmpeg_ir::features::ProfileRef::Native(profile.id.clone());
-            if let Some(&profile_index) = neutral_indices.get(&profile.id) {
-                let dependency = features[profile_index].id.clone();
-                if !features[index].dependencies.contains(&dependency) {
-                    features[index].dependencies.push(dependency);
+            *vote = match vote {
+                ProfileVote::Missing => ProfileVote::Unique(profile.id.clone()),
+                ProfileVote::Unique(existing) if existing == &profile.id => {
+                    ProfileVote::Unique(existing.clone())
                 }
+                ProfileVote::Unique(_) | ProfileVote::Ambiguous => ProfileVote::Ambiguous,
+            };
+        }
+    }
+    for (extrusion, votes) in profiles {
+        let Some(ProfileVote::Unique(profile)) = votes.first() else {
+            continue;
+        };
+        if !votes
+            .iter()
+            .all(|vote| matches!(vote, ProfileVote::Unique(candidate) if candidate == profile))
+        {
+            continue;
+        }
+        let Some(&index) = neutral_indices.get(&extrusion) else {
+            continue;
+        };
+        let FeatureDefinition::Extrude {
+            profile: neutral_profile,
+            ..
+        } = &mut features[index].definition
+        else {
+            continue;
+        };
+        if !matches!(neutral_profile, cadmpeg_ir::features::ProfileRef::Unresolved(owner) if owner == &extrusion)
+        {
+            continue;
+        }
+        *neutral_profile = cadmpeg_ir::features::ProfileRef::Native(profile.clone());
+        if let Some(&profile_index) = neutral_indices.get(profile) {
+            let dependency = features[profile_index].id.clone();
+            if !features[index].dependencies.contains(&dependency) {
+                features[index].dependencies.push(dependency);
             }
         }
     }
@@ -18899,10 +18938,17 @@ fn compressed_member(payload: &[u8], target: &[u8]) -> Option<(usize, usize)> {
         if payload[start] != 0x78 || !matches!(payload[start + 1], 0x01 | 0x9c | 0xda) {
             continue;
         }
-        let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..]);
-        let mut inflated = Vec::new();
+        // Cap inflation at `target.len() + 1` bytes: this scan only accepts a member
+        // whose inflated body equals `target`, so any stream that expands past the
+        // target length can never match and need not be materialized. Bounding the
+        // reader here keeps a crafted zlib member from expanding without limit
+        // (present-primitive floor; the general uncapped `inflate_zlib_prefix` path
+        // still awaits the platform `begin_expand`/`ExpandWriter` API).
+        let ceiling = target.len().saturating_add(1);
+        let mut decoder = flate2::read::ZlibDecoder::new(&payload[start..]).take(ceiling as u64);
+        let mut inflated = Vec::with_capacity(ceiling);
         if decoder.read_to_end(&mut inflated).is_ok() && inflated == target {
-            return Some((start, start + decoder.total_in() as usize));
+            return Some((start, start + decoder.into_inner().total_in() as usize));
         }
     }
     None

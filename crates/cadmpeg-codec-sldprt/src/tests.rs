@@ -9480,6 +9480,52 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
 }
 
 #[test]
+fn decode_does_not_globalize_configuration_local_adjacent_profile() {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Alternate"/><Sketch Name="Profile A" Type="Sketch" id="7"/><Sketch Name="Profile B" Type="Sketch" id="8"/><Extrusion Name="Boss" Type="Extrusion" id="9"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[
+            ("moProfileFeature_c", "Profile A", 7),
+            ("moExtrusion_c", "Boss", 9),
+        ]),
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-1-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[
+            ("moProfileFeature_c", "Profile B", 8),
+            ("moExtrusion_c", "Boss", 9),
+        ]),
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let extrusion = decoded
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Boss"))
+        .unwrap();
+    assert!(matches!(
+        &extrusion.definition,
+        FeatureDefinition::Extrude {
+            profile: ProfileRef::Unresolved(owner),
+            ..
+        } if owner == extrusion.native_ref.as_deref().unwrap()
+    ));
+}
+
+#[test]
 fn decode_binds_following_dissected_profile_to_compact_extrusion() {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
 
