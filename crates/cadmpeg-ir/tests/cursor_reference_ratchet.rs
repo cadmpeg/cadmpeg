@@ -1,21 +1,33 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Doc section 8.5 `Cursor`-reference ratchet.
 //!
-//! `Cursor` is the pre-migration byte reader that `View` supersedes. It is
-//! deliberately not `#[deprecated]` during migration — a workspace `-D
-//! warnings` build would turn its ~877 references red in one commit. Instead
-//! CI freezes each crate's `Cursor`-reference count and requires it to
-//! decrease monotonically, mirroring the section 8.8 `window()` egress
+//! `cadmpeg_ir::cursor::Cursor` is the pre-migration byte reader that `View`
+//! supersedes. It is deliberately not `#[deprecated]` during migration — a
+//! workspace `-D warnings` build would turn its references red in one commit.
+//! Instead CI freezes each crate's domain-`cursor` reference count and requires
+//! it to decrease monotonically, mirroring the section 8.8 `window()` egress
 //! ratchet; the `#[deprecated]` attribute lands per crate at count zero.
 //!
-//! This test counts `Cursor` substrings in the `src` and `fuzz_targets` trees
-//! of every workspace crate and fails if a crate exceeds the frozen ceiling
-//! in `cursor-reference-ratchet.toml`. Enrollment is filesystem-driven: the
-//! test discovers every crate directory under `crates/` and fails any crate
-//! with no ceiling entry, so a new crate cannot escape the ratchet by
-//! omission. Detection is textual, so a reference spelled to dodge the
-//! `Cursor` substring still bypasses the ceiling; that residual gap is held
-//! by review discipline rather than by this test.
+//! Detection counts the qualified module path `cursor::` (as in
+//! `cadmpeg_ir::cursor::Cursor` or `crate::cursor::bounded_len`) in the `src`
+//! and `fuzz_targets` trees of every workspace crate. This is deliberately
+//! narrower than the bare `Cursor` substring an earlier form used: that form
+//! counted `std::io::Cursor` test drivers and prose mentions, which have no
+//! bearing on the domain reader `View` replaces, and it forced the ceiling
+//! *upward* every time a test added an in-memory `std::io::Cursor` — the exact
+//! "monotonically decreasing" violation this ratchet exists to prevent. The
+//! qualified path never matches `io::Cursor`, so the count tracks only real
+//! migration targets.
+//!
+//! The ceiling is enforced by **exact equality**, not `<=`: a crate whose count
+//! drops must lower its ceiling in the same commit, so the toml can never carry
+//! stale slack that hides a later regression, and a count that rises fails
+//! outright. Enrollment is filesystem-driven: the test discovers every crate
+//! directory under `crates/` and fails any crate with no ceiling entry, so a
+//! new crate cannot escape the ratchet by omission. A reference spelled to
+//! dodge the `cursor::` path (a bare `Cursor` after a domain import) would
+//! bypass the count; no crate does this today, and that residual gap is held by
+//! review discipline.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -54,8 +66,9 @@ fn read_reference(path: &Path) -> BTreeMap<String, usize> {
     ceilings
 }
 
-/// Counts `Cursor` substring occurrences across every `.rs` file in the given
-/// trees.
+/// Counts qualified domain-`cursor::` path occurrences across every `.rs` file
+/// in the given trees. The lowercase module segment excludes `std::io::Cursor`
+/// (whose segment is `io`) and prose mentions of `Cursor`.
 fn count_cursor_refs(trees: &[PathBuf]) -> usize {
     let mut total = 0;
     let mut stack: Vec<PathBuf> = trees.iter().filter(|p| p.is_dir()).cloned().collect();
@@ -69,7 +82,7 @@ fn count_cursor_refs(trees: &[PathBuf]) -> usize {
                 stack.push(path);
             } else if path.extension().is_some_and(|ext| ext == "rs") {
                 let text = fs::read_to_string(&path).expect("source file is readable");
-                total += text.matches("Cursor").count();
+                total += text.matches("cursor::").count();
             }
         }
     }
@@ -111,8 +124,14 @@ fn cursor_references_within_frozen_ceilings() {
         let actual = count_cursor_refs(&[crate_dir.join("src"), crate_dir.join("fuzz_targets")]);
         if actual > *ceiling {
             violations.push(format!(
-                "{crate_name}: {actual} `Cursor` references exceed frozen ceiling {ceiling}; \
-                 migrate a reader to `View` and lower the ceiling in the same commit"
+                "{crate_name}: {actual} domain `cursor::` references exceed frozen ceiling \
+                 {ceiling}; a reader was reintroduced — remove it, this ratchet only decreases"
+            ));
+        } else if actual < *ceiling {
+            violations.push(format!(
+                "{crate_name}: {actual} domain `cursor::` references are below ceiling {ceiling}; \
+                 a reader was migrated — lower the ceiling to {actual} in the same commit so the \
+                 ratchet cannot carry stale slack"
             ));
         }
     }
