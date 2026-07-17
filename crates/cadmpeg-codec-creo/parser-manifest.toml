@@ -26,6 +26,20 @@
 # ===========================================================================
 # Migrated — context-independent primitive decoders.
 # ===========================================================================
+#
+# Errata (commit a9edf349). That commit's body claims `psb`, `scalar`, and
+# `datum` "read through the pre-`View` path and sized their token and scalar
+# buffers without a charged reservation" and were graduated by reading "through
+# a bounded `View` with the `req_*` mirror" and reserving "through the charged
+# `exact_vec`/`grow_vec` primitives". Both halves are false: these three modules
+# call no `View`/`DecodeContext`/`req_*`/`exact_vec`/`grow_vec`/`BoundedCount`
+# primitive, and they charge nothing (`charges = []` below). They graduate purely
+# on the "output bounded by input bytes / a compile-time constant, no untrusted-
+# count allocation" criterion recorded in their entries and doc comments, ratcheted
+# by the module-level `#![deny(clippy::disallowed_methods)]` — not on any bounded-
+# read migration. The genuine count-framed hostile paths (`surface`, `feature`,
+# `container`, and the other structural scanners) remain `legacy` and uncharged.
+# This note is the reconciliation; the commit body cannot be amended.
 
 # Pure primitive decoder over a caller-owned slice. `tokens` accumulates one
 # entry per structural form while walking `while offset < data.len()`, so its
