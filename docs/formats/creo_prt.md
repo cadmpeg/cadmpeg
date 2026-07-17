@@ -741,7 +741,8 @@ complete saved endpoint or center supplies a solved locus without introducing a
 section-point identity.
 A two-item type-seventeen incidence stores two endpoint or center loci that
 share one sketch coordinate. When exactly one of `u` and `v` is equal in the
-solved coordinates, that coordinate selects the neutral same-coordinate axis.
+solved coordinates, including complete saved-locus coordinates, that coordinate
+selects the neutral same-coordinate axis.
 An incidence with both coordinates equal or neither coordinate equal retains
 its native form because the selected axis is not established.
 An incidence item may reference a complete saved-section entity through its

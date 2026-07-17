@@ -8812,11 +8812,17 @@ fn section_skamp_same_coordinate(
     let first_locus = section_skamp_point_locus(definition, first)?;
     let second_locus = section_skamp_point_locus(definition, second)?;
     let points = resolved_section_points(definition);
-    let first_point = points.get(&section_skamp_selected_point_id(definition, first)?)?;
-    let second_point = points.get(&section_skamp_selected_point_id(definition, second)?)?;
+    let point = |item| {
+        Some(match section_skamp_selected_point(definition, item)? {
+            SectionPointSource::Point(point_id) => *points.get(&point_id)?,
+            SectionPointSource::Value(point) => point,
+        })
+    };
+    let first_point = point(first)?;
+    let second_point = point(second)?;
     let scale = first_point
         .iter()
-        .chain(second_point)
+        .chain(&second_point)
         .map(|coordinate| coordinate.abs())
         .fold(1.0, f64::max);
     let tolerance = 1e-9 * scale;
@@ -17001,6 +17007,42 @@ mod resolved_sketch_tests {
         assert_eq!(
             resolved_section_points(&saved_definition).get(&5),
             Some(&[3.0, 0.0])
+        );
+        let mut saved_same_coordinate = saved_definition.clone();
+        saved_same_coordinate
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![crate::feature::FeatureSkamp {
+            id: 36,
+            kind: 17,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 2,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 2,
+                },
+            ],
+            offset: 91,
+        }];
+        assert_eq!(
+            section_skamp_constraints(&saved_same_coordinate, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::SameCoordinate {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:99".to_string()
+                )),
+                second: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                axis: SketchCoordinateAxis::U,
+            }
         );
         let mut duplicate_saved = saved_definition
             .saved_section
