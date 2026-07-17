@@ -2222,7 +2222,10 @@ fn project_extrude(
     };
     let (extent, reverse_direction) = match (scope.extrude_extent?, along, against) {
         (DesignExtrudeExtent::OneSidedDistance, Some(along), None)
-            if along.0 != 0.0 && termination_groups.is_empty() && side_one_offset.is_none() =>
+            if along.0 != 0.0
+                && scope.extrude_direction_reversed == Some(false)
+                && termination_groups.is_empty()
+                && side_one_offset.is_none() =>
         {
             (
                 Extent::Blind {
@@ -2234,6 +2237,7 @@ fn project_extrude(
         (DesignExtrudeExtent::TwoSidedDistance, Some(along), Some(against))
             if along.0 != 0.0
                 && against.0 != 0.0
+                && scope.extrude_direction_reversed == Some(false)
                 && termination_groups.is_empty()
                 && side_one_offset.is_none() =>
         {
@@ -17233,6 +17237,16 @@ mod relation_tests {
                 ..
             } if profile == &neutral_sketch_id(&placement)
         ));
+        scope.extrude_direction_reversed = Some(true);
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &taper)],
+            &[],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .is_none());
+        scope.extrude_direction_reversed = Some(false);
         let unsupported = parameter("UnclassifiedControl", "mm", 1.0);
         assert!(project_extrude(
             &scope,
@@ -17413,6 +17427,16 @@ mod relation_tests {
                 ..
             }
         ));
+        scope.extrude_direction_reversed = Some(true);
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &against)],
+            &[],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .is_none());
+        scope.extrude_direction_reversed = Some(false);
 
         scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedDistance);
         let reversed_along = parameter("AlongDistance", "mm", -0.6);
@@ -17497,6 +17521,7 @@ mod relation_tests {
 
         scope.extrude_operation = Some(DesignExtrudeOperation::NewBody);
         scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
+        scope.extrude_direction_reversed = Some(false);
         let from_face_two_sided = project_extrude(
             &scope,
             &[
