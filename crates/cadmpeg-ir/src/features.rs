@@ -1150,6 +1150,8 @@ pub enum Extent {
     },
     /// Extends through all material.
     ThroughAll,
+    /// Extends until it exits the next material region.
+    ThroughNext,
     /// Extends until it reaches a target face.
     ToFace {
         /// Face terminating the operation.

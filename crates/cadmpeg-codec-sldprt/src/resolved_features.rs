@@ -364,19 +364,21 @@ mod marker_tests {
         arc_angle_relation_kind, compact_body_component_path_at, compact_body_path_at,
         compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
         compact_body_state_ids, compact_combine_operation_at, compact_edge_component_path_at,
-        compact_edge_selection_at, compact_extrusion_through_all_at, compact_extrusion_to_face_at,
-        compact_general_curve_ref_at, compact_line_chain_addresses, compact_line_region_addresses,
-        compact_profile_reference_plane_source, compact_reference_plane_source,
-        compact_single_face_reference_path_at, compact_surface_selection_at,
-        complete_ordered_compact_line_profile, component_path_features,
-        component_path_terminal_feature, component_profile_source_at,
+        compact_edge_selection_at, compact_extrusion_mid_plane_at,
+        compact_extrusion_through_all_at, compact_extrusion_through_next_at,
+        compact_extrusion_to_face_at, compact_general_curve_ref_at, compact_line_chain_addresses,
+        compact_line_region_addresses, compact_profile_reference_plane_source,
+        compact_reference_plane_source, compact_single_face_reference_path_at,
+        compact_surface_selection_at, complete_ordered_compact_line_profile,
+        component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, coordinate_marker_local_links, marker_coordinates,
         marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
         named_scalars, native_scalar_matches_discrete_parameter, object_names,
         ordered_compact_line_profile, ordered_rectangle_corners, principal_sketch_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         solved_tangent, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        unique_marker_candidate, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
+        SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -1181,6 +1183,86 @@ mod marker_tests {
 
         payload[88..92].fill(0);
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    }
+
+    #[test]
+    fn compact_extrusion_through_next_shares_the_traversal_tail() {
+        let mut payload = vec![0; 104];
+        payload[4] = 1;
+        payload[18] = 2;
+        payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
+        payload[92] = 1;
+        assert!(compact_extrusion_through_next_at(&payload, 0));
+        assert!(!compact_extrusion_through_all_at(&payload, 0));
+
+        payload[18] = 1;
+        assert!(compact_extrusion_through_all_at(&payload, 0));
+        assert!(!compact_extrusion_through_next_at(&payload, 0));
+        payload[18] = 2;
+        payload[103] = 1;
+        assert!(!compact_extrusion_through_next_at(&payload, 0));
+    }
+
+    #[test]
+    fn compact_extrusion_mid_plane_requires_the_dimension_child() {
+        let dimension_tail = |payload: &mut Vec<u8>| {
+            let block = payload.len();
+            payload.resize(block + 16, 0);
+            payload[block + 9] = 0x20;
+            payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+            payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+            payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+        };
+
+        let mut payload = vec![0; 26];
+        payload[4] = 1;
+        payload[18] = 6;
+        payload.extend_from_slice(&[0x6a, 0x81]);
+        dimension_tail(&mut payload);
+        assert!(compact_extrusion_mid_plane_at(&payload, 0));
+
+        payload[18] = 5;
+        assert!(!compact_extrusion_mid_plane_at(&payload, 0));
+        payload[18] = 6;
+        let last = payload.len() - 1;
+        payload[last] = 0;
+        assert!(!compact_extrusion_mid_plane_at(&payload, 0));
+
+        let mut payload = vec![0; 26];
+        payload[4] = 1;
+        payload[18] = 6;
+        payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
+        dimension_tail(&mut payload);
+        assert!(compact_extrusion_mid_plane_at(&payload, 0));
+    }
+
+    #[test]
+    fn object_names_follow_the_lane_name_class_token() {
+        let mut payload = vec![0x42, 0, 0, 0, 0x13, 0];
+        payload.extend_from_slice(CLASS_MARKER);
+        payload.extend_from_slice(&18u16.to_le_bytes());
+        payload.extend_from_slice(b"moFavoriteFolder_c");
+        payload.extend_from_slice(&[0x87, 0x80, 0xff, 0xfe, 0xff]);
+        payload.push(9);
+        for unit in "Favorites".encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.resize(payload.len() + 12, 0);
+        payload.extend_from_slice(&[0x87, 0x80, 0xff, 0xfe, 0xff]);
+        payload.push(4);
+        for unit in "Boss".encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.resize(payload.len() + 12, 0);
+
+        let names = object_names(&payload, "lane");
+        assert_eq!(
+            names
+                .iter()
+                .map(|name| name.value.as_str())
+                .collect::<Vec<_>>(),
+            ["Favorites", "Boss"]
+        );
     }
 
     #[test]
@@ -6480,12 +6562,11 @@ pub(crate) fn enrich_history_extrusion_terminations(
             else {
                 continue;
             };
-            if feature.xml_tag != "Extrusion"
-                || feature.parameters.contains_key("Depth")
-                || feature.parameters.contains_key("D1")
-            {
+            if feature.xml_tag != "Extrusion" {
                 continue;
             }
+            let has_depth =
+                feature.parameters.contains_key("Depth") || feature.parameters.contains_key("D1");
             let Ok(start) = usize::try_from(*start) else {
                 continue;
             };
@@ -6509,8 +6590,16 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 .unwrap_or(lane.native_payload.len());
             let candidates = (start..end.saturating_sub(103))
                 .filter_map(|offset| {
+                    if compact_extrusion_mid_plane_at(&lane.native_payload, offset) {
+                        return Some(("Symmetric".to_string(), None));
+                    }
+                    if has_depth {
+                        return None;
+                    }
                     if compact_extrusion_through_all_at(&lane.native_payload, offset) {
                         Some(("ThroughAll".to_string(), None))
+                    } else if compact_extrusion_through_next_at(&lane.native_payload, offset) {
+                        Some(("ThroughNext".to_string(), None))
                     } else {
                         compact_extrusion_to_face_at(&lane.native_payload, offset).map(
                             |reference| {
@@ -7138,7 +7227,16 @@ pub(crate) fn project_compact_combine_paths(
 
 pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 1)
-        && payload.get(offset + 22..offset + 30) == Some(&[0, 0, 0, 0, 0, 0, 0, 0])
+        && compact_extrusion_traversal_tail_at(payload, offset)
+}
+
+pub(crate) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
+    compact_extrusion_end_spec_header(payload, offset, 2)
+        && compact_extrusion_traversal_tail_at(payload, offset)
+}
+
+fn compact_extrusion_traversal_tail_at(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset + 22..offset + 30) == Some(&[0, 0, 0, 0, 0, 0, 0, 0])
         && payload.get(offset + 30..offset + 34) == Some(&[1, 0, 0, 1])
         && payload
             .get(offset + 34..offset + 90)
@@ -7147,6 +7245,38 @@ pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) ->
         && payload
             .get(offset + 94..offset + 104)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+}
+
+pub(crate) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
+    if !compact_extrusion_end_spec_header(payload, offset, 6)
+        || payload.get(offset + 22..offset + 26) != Some(&[0, 0, 0, 0])
+    {
+        return false;
+    }
+    let declaration = b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c";
+    let child = offset + 26;
+    let block = if payload.get(child..child + declaration.len()) == Some(declaration) {
+        child + declaration.len()
+    } else if payload
+        .get(child + 1)
+        .is_some_and(|byte| byte & 0x80 != 0 && *byte != 0xff)
+    {
+        child + 2
+    } else {
+        return false;
+    };
+    payload.get(block..block + 16).is_some_and(|bytes| {
+        bytes
+            .iter()
+            .enumerate()
+            .all(|(index, byte)| *byte == 0 || (index == 9 && *byte == 0x20))
+    }) && payload.get(block + 16..block + 20) == Some(&[0xff, 0xff, 0, 0])
+        && payload
+            .get(block + 20)
+            .is_some_and(|byte| *byte == 1 || *byte == 3)
+        && payload.get(block + 21..block + 25) == Some(&[0xff, 0xff, 0xff, 0xff])
+        && payload.get(block + 25..block + 31) == Some(&[0, 0, 0, 0, 0, 0])
+        && payload.get(block + 31..block + 33) == Some(&[0x80, 0xbf])
 }
 
 pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> {
@@ -15933,10 +16063,14 @@ fn operand_kind_name(kind: FeatureInputOperandKind) -> String {
 
 pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
+    let mut name_marker = NAME_MARKER.to_vec();
+    if let Some(token) = name_class_token(payload) {
+        name_marker[..2].copy_from_slice(&token.to_le_bytes());
+    }
     payload
-        .windows(NAME_MARKER.len())
+        .windows(name_marker.len())
         .enumerate()
-        .filter_map(|(offset, marker)| (marker == NAME_MARKER).then_some(offset))
+        .filter_map(|(offset, marker)| (marker == name_marker).then_some(offset))
         .filter_map(|offset| {
             let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
             if !(1..=128).contains(&length) {
@@ -15967,6 +16101,45 @@ pub(crate) fn object_names(payload: &[u8], parent: &str) -> Vec<FeatureInputName
             value,
         })
         .collect()
+}
+
+/// Lane-scoped repeated-class token carried by every feature-name record.
+///
+/// The token is established by the first name record in the lane: the first
+/// class declaration directly followed by a repeated-class token and the
+/// UTF-16 name prefix `ff fe ff`.
+fn name_class_token(payload: &[u8]) -> Option<u16> {
+    payload
+        .windows(CLASS_MARKER.len())
+        .enumerate()
+        .filter(|(_, window)| *window == CLASS_MARKER)
+        .find_map(|(offset, _)| {
+            let length = usize::from(u16::from_le_bytes(
+                payload.get(offset + 4..offset + 6)?.try_into().ok()?,
+            ));
+            if !(1..=128).contains(&length) {
+                return None;
+            }
+            let name = payload.get(offset + 6..offset + 6 + length)?;
+            if !name.iter().all(u8::is_ascii_graphic) {
+                return None;
+            }
+            let token_offset = offset + 6 + length;
+            let token = u16::from_le_bytes(
+                payload
+                    .get(token_offset..token_offset + 2)?
+                    .try_into()
+                    .ok()?,
+            );
+            if token & 0x8000 == 0 || token == 0xffff {
+                return None;
+            }
+            if payload.get(token_offset + 2..token_offset + 5) != Some(&[0xff, 0xfe, 0xff]) {
+                return None;
+            }
+            let units = usize::from(*payload.get(token_offset + 5)?);
+            (1..=128).contains(&units).then_some(token)
+        })
 }
 
 pub(crate) fn class_declarations(payload: &[u8], parent: &str) -> Vec<FeatureInputClass> {

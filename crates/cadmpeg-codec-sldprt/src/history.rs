@@ -2449,6 +2449,7 @@ fn project_extrude(
             second: length("Depth2")?,
         },
         Some("ThroughAll") => Extent::ThroughAll,
+        Some("ThroughNext") => Extent::ThroughNext,
         Some("ToFace") => Extent::ToFace {
             face: FaceSelection::Native(feature.properties.get("Face")?.clone()),
         },
@@ -6909,6 +6910,9 @@ pub fn sync_neutral_features(
                     }
                     Extent::ThroughAll => {
                         properties.insert("EndCondition".into(), "ThroughAll".into());
+                    }
+                    Extent::ThroughNext => {
+                        properties.insert("EndCondition".into(), "ThroughNext".into());
                     }
                     Extent::ToFace { face } if face_selection_value(face).is_some() => {
                         let selection = face_selection_value(face).expect("guarded above");
