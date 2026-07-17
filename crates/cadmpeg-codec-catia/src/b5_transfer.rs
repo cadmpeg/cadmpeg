@@ -500,29 +500,62 @@ fn transfer_complete(
         });
     }
 
-    let mut pcurve_ids = HashMap::new();
-    for (&object_id, (geometry, cylinder_reparameterized, parameter_range)) in &pcurve_plan {
-        let id = PcurveId(format!("catia:b5:pcurve#{object_id}"));
-        annotate(
-            annotations,
-            &id,
-            "object_stream_b5_03",
-            "21_pcurve",
-            Exactness::ByteExact,
-        );
-        if *cylinder_reparameterized {
-            annotations.derived(&id, "geometry.control_points");
+    let mut occurrence_groups = BTreeMap::<u32, BTreeMap<[u64; 2], Vec<(u32, usize)>>>::new();
+    for loop_ in graph.loops.values() {
+        for (index, (&object_id, &edge_id)) in loop_.pcurves.iter().zip(&loop_.edges).enumerate() {
+            let Some((_, _, native_range)) = pcurve_plan.get(&object_id) else {
+                continue;
+            };
+            let parameter_range = edge_pcurve_parameters(graph, edge_id, object_id)
+                .and_then(|parameters| ordered_subrange(parameters, *native_range))
+                .unwrap_or(*native_range);
+            occurrence_groups
+                .entry(object_id)
+                .or_default()
+                .entry(parameter_range.map(|parameter| {
+                    if parameter == 0.0 {
+                        0.0f64.to_bits()
+                    } else {
+                        parameter.to_bits()
+                    }
+                }))
+                .or_default()
+                .push((loop_.object_id, index));
         }
-        annotations.derived(&id, "parameter_range");
-        pcurve_ids.insert(object_id, id.clone());
-        ir.model.pcurves.push(Pcurve {
-            id,
-            geometry: geometry.clone(),
-            wrapper_reversed: None,
-            parameter_range: Some(*parameter_range),
-            fit_tolerance: None,
-            native_tail_flags: None,
-        });
+    }
+    let mut pcurve_ids = HashMap::new();
+    for (object_id, ranges) in occurrence_groups {
+        let (geometry, cylinder_reparameterized, _) = &pcurve_plan[&object_id];
+        let range_count = ranges.len();
+        for (rank, (range_bits, occurrences)) in ranges.into_iter().enumerate() {
+            let id = if range_count == 1 {
+                PcurveId(format!("catia:b5:pcurve#{object_id}"))
+            } else {
+                PcurveId(format!("catia:b5:pcurve#{object_id}@{rank}"))
+            };
+            annotate(
+                annotations,
+                &id,
+                "object_stream_b5_03",
+                "21_pcurve",
+                Exactness::ByteExact,
+            );
+            if *cylinder_reparameterized {
+                annotations.derived(&id, "geometry.control_points");
+            }
+            annotations.derived(&id, "parameter_range");
+            for occurrence in occurrences {
+                pcurve_ids.insert(occurrence, id.clone());
+            }
+            ir.model.pcurves.push(Pcurve {
+                id,
+                geometry: geometry.clone(),
+                wrapper_reversed: None,
+                parameter_range: Some(range_bits.map(f64::from_bits)),
+                fit_tolerance: None,
+                native_tail_flags: None,
+            });
+        }
     }
 
     let mut edge_id_map = HashMap::new();
@@ -734,13 +767,7 @@ fn transfer_complete(
                 face: face_id.clone(),
                 coedges: coedge_ids.clone(),
             });
-            for (index, ((&edge, &pcurve), &reversed)) in loop_
-                .edges
-                .iter()
-                .zip(&loop_.pcurves)
-                .zip(senses)
-                .enumerate()
-            {
+            for (index, (&edge, &reversed)) in loop_.edges.iter().zip(senses).enumerate() {
                 let id = coedge_ids[index].clone();
                 annotate(
                     annotations,
@@ -774,7 +801,7 @@ fn transfer_complete(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: pcurve_ids.get(&pcurve).cloned(),
+                    pcurve: pcurve_ids.get(&(loop_.object_id, index)).cloned(),
                 });
             }
         }
@@ -2104,7 +2131,7 @@ mod tests {
     }
 
     #[test]
-    fn repeated_pcurve_identity_is_shared_across_loop_occurrences() {
+    fn repeated_source_pcurve_has_independently_trimmed_occurrence_carriers() {
         let graph = B5Graph {
             complete: true,
             records: Vec::new(),
@@ -2147,11 +2174,43 @@ mod tests {
             )]),
             offset_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
-            parameter_incidences: BTreeMap::new(),
-            vertex_parameter_incidences: BTreeMap::new(),
-            vertex_points: vec![[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
-            logical_vertex_points: Vec::new(),
-            logical_vertex_refs: Vec::new(),
+            parameter_incidences: BTreeMap::from([
+                (
+                    40,
+                    B5ParameterIncidence {
+                        object_id: 40,
+                        curves: vec![20],
+                        parameters: vec![0.0],
+                        controls: vec![0],
+                    },
+                ),
+                (
+                    41,
+                    B5ParameterIncidence {
+                        object_id: 41,
+                        curves: vec![20],
+                        parameters: vec![0.5],
+                        controls: vec![0],
+                    },
+                ),
+                (
+                    42,
+                    B5ParameterIncidence {
+                        object_id: 42,
+                        curves: vec![20],
+                        parameters: vec![1.0],
+                        controls: vec![0],
+                    },
+                ),
+            ]),
+            vertex_parameter_incidences: BTreeMap::from([
+                (50, vec![40]),
+                (51, vec![41]),
+                (52, vec![42]),
+            ]),
+            vertex_points: Vec::new(),
+            logical_vertex_points: vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            logical_vertex_refs: vec![50, 51, 52],
             edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
@@ -2164,11 +2223,28 @@ mod tests {
             graph,
             &UnknownId("catia:test-payload".to_string()),
         ));
-        assert_eq!(ir.model.pcurves.len(), 1);
+        assert_eq!(ir.model.pcurves.len(), 3);
         assert_eq!(ir.model.coedges.len(), 3);
-        assert!(ir.model.coedges.iter().all(|coedge| {
-            coedge.pcurve.as_ref().map(|id| id.0.as_str()) == Some("catia:b5:pcurve#20")
-        }));
+        assert_eq!(
+            ir.model
+                .pcurves
+                .iter()
+                .map(|pcurve| pcurve.parameter_range)
+                .collect::<Vec<_>>(),
+            [Some([0.0, 0.5]), Some([0.0, 1.0]), Some([0.5, 1.0])]
+        );
+        assert_eq!(
+            ir.model
+                .coedges
+                .iter()
+                .filter_map(|coedge| coedge.pcurve.as_ref().map(|id| id.0.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                "catia:b5:pcurve#20@0",
+                "catia:b5:pcurve#20@2",
+                "catia:b5:pcurve#20@1",
+            ]
+        );
     }
 
     #[test]
