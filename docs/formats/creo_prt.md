@@ -711,7 +711,8 @@ parallel for type 7, and equal in length for type 8.
 A two-item type-6 incidence with sense zero on two arcs or circles makes their
 radii equal. A solved positive radius propagates through the connected radius
 component. A solved arc center and endpoint supply their Euclidean distance as
-the radius. Conflicting solved radii leave the component unresolved.
+the radius. A positive saved-arc or saved-circle radius anchors a connected
+`segtab` radius component. Conflicting solved radii leave the component unresolved.
 For an `arcorient = 0` arc these map to the neutral end and start loci,
 respectively, because the analytic arc orientation is reversed. A two-item
 type-four incidence makes the referenced entities tangent at their selected

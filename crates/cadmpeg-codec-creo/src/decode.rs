@@ -4430,26 +4430,23 @@ pub(crate) fn resolved_section_radii(
         if skamp.kind != 6 || first.sense != 0 || second.sense != 0 {
             continue;
         }
-        let Some(first_radius) = unique_section_skamp_segment(definition, first.entity_id)
-            .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
-            .and_then(|segment| segment.radius_ref)
-        else {
+        let Some(first_radius) = section_skamp_radius_source(definition, first) else {
             continue;
         };
-        let Some(second_radius) = unique_section_skamp_segment(definition, second.entity_id)
-            .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
-            .and_then(|segment| segment.radius_ref)
-        else {
+        let Some(second_radius) = section_skamp_radius_source(definition, second) else {
             continue;
         };
-        adjacency
-            .entry(first_radius)
-            .or_default()
-            .insert(second_radius);
-        adjacency
-            .entry(second_radius)
-            .or_default()
-            .insert(first_radius);
+        match (first_radius, second_radius) {
+            (SectionRadiusSource::Reference(first), SectionRadiusSource::Reference(second)) => {
+                adjacency.entry(first).or_default().insert(second);
+                adjacency.entry(second).or_default().insert(first);
+            }
+            (SectionRadiusSource::Reference(reference), SectionRadiusSource::Value(value))
+            | (SectionRadiusSource::Value(value), SectionRadiusSource::Reference(reference)) => {
+                candidates.entry(reference).or_default().push(value);
+            }
+            (SectionRadiusSource::Value(_), SectionRadiusSource::Value(_)) => {}
+        }
     }
     let mut remaining = candidates
         .keys()
@@ -4486,6 +4483,38 @@ pub(crate) fn resolved_section_radii(
         remaining.retain(|radius_id| !component.contains(radius_id));
     }
     radii
+}
+
+#[derive(Clone, Copy)]
+enum SectionRadiusSource {
+    Reference(u32),
+    Value(f64),
+}
+
+fn section_skamp_radius_source(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SectionRadiusSource> {
+    if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
+        return (segment.kind == crate::feature::FeatureSegmentKind::Arc)
+            .then_some(segment.radius_ref)
+            .flatten()
+            .map(SectionRadiusSource::Reference);
+    }
+    if definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .any(|segment| segment.external_id == item.entity_id)
+    {
+        return None;
+    }
+    let radius = match section_saved_entity(definition, item.entity_id)? {
+        crate::feature::FeatureSavedEntity::Arc(arc) => arc.radius,
+        crate::feature::FeatureSavedEntity::Circle(circle) => circle.radius,
+        _ => None,
+    }?;
+    (radius.is_finite() && radius > 0.0).then_some(SectionRadiusSource::Value(radius))
 }
 
 fn section_arc_carrier(
@@ -15665,6 +15694,60 @@ mod resolved_sketch_tests {
                 offset: 91,
             });
         assert!(resolved_section_radii(&equal_radius_definition).is_empty());
+        let mut saved_radius_definition = definition.clone();
+        saved_radius_definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows[1]
+            .radius_ref = Some(101);
+        saved_radius_definition.order_table = Some(crate::feature::FeatureOrderTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![crate::feature::FeatureOrderRow {
+                external_id: 99,
+                internal_id: 20,
+                bitmask: 1,
+                offset: 92,
+            }],
+            offset: 91,
+        });
+        saved_radius_definition.saved_section = Some(crate::feature::FeatureSavedSection {
+            entities: vec![crate::feature::FeatureSavedEntity::Circle(
+                crate::feature::FeatureSavedCircle {
+                    entity_id: 20,
+                    center: [Some(0.0), Some(0.0), Some(0.0)],
+                    radius: Some(4.0),
+                    offset: 93,
+                },
+            )],
+            offset: 93,
+        });
+        saved_radius_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![crate::feature::FeatureSkamp {
+            id: 18,
+            kind: 6,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 13,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+            ],
+            offset: 94,
+        }];
+        assert_eq!(
+            resolved_section_radii(&saved_radius_definition),
+            BTreeMap::from([(101, 4.0)])
+        );
         let constraints = section_skamp_constraints(&definition, &SketchId("sketch".into()));
 
         assert!(matches!(
