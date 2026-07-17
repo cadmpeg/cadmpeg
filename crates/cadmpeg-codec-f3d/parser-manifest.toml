@@ -128,7 +128,7 @@ legacy_reason = "Design-record decoder. The one high-risk unfloored-count site, 
 input_spaces = ["entry:*"]
 fuzz_targets = ["f3d_container"]
 charges = []
-cost_model = "target: alloc_bytes via exact_vec under View::counted(count, min_element_size) per record count (11 bytes for body members); work per record scanned"
+cost_model = "target: alloc_bytes via exact_vec under View::counted(count, min_element_size) per record count (11 bytes for body members) plus a per-member alloc_bytes charge for the `format!` id String heap (which exact_vec's inline element charge does not cover); work per record scanned"
 window_egress = []
 ledger_level = 0
 

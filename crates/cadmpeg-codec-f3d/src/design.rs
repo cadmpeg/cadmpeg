@@ -1206,8 +1206,19 @@ pub fn decode_body_members(
                 ok = false;
                 break;
             };
+            // `exact_vec` reserves only the inline `size_of::<DesignBodyMember>()`
+            // per element; the per-member `id` `String` is a separate heap
+            // allocation `format!` makes, so charge its bytes explicitly. Growth
+            // stays bounded by the window (count <= window/11), but the charge
+            // keeps the reservation honest rather than undercounting by the id.
+            let id = format!("f3d:{}:design-body-member#{cursor}", entry.name);
+            ctx.charge_alloc(
+                id.len() as u64,
+                "design::decode_body_members::id",
+                Some(base.location()),
+            )?;
             decoded.push(DesignBodyMember {
-                id: format!("f3d:{}:design-body-member#{cursor}", entry.name),
+                id,
                 byte_offset: cursor as u64,
                 entity_suffix,
                 flags,
