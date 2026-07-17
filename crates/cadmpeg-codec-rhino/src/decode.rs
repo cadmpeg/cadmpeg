@@ -1815,26 +1815,19 @@ impl<'a> DecodeContext<'a> {
             message: format!("decoded {decoded}/{total} Rhino object records"),
             provenance: None,
         });
+        let mut omissions: Vec<LossNote> = Vec::new();
         for (class, outcome) in &self.outcomes {
             if outcome.retained > 0 {
-                // Unsupported-concept-to-omission boundary (§10 Phase 4B): a
-                // retained object family has no typed geometry in the IR. The
-                // omission is expressed as a dropped `Transfer` so it cannot be
-                // taken without recording its loss note; the value it would have
-                // carried (typed geometry) does not exist, so resolution yields
-                // `None` and only the note survives.
-                let omitted: Option<()> =
-                    Builder::new(&mut losses).take(Transfer::omitted(LossNote {
-                        code: LossCode::UnsupportedObjectFamily,
-                        category: LossCategory::Geometry,
-                        severity: Severity::Warning,
-                        message: format!(
+                omissions.push(LossNote {
+                    code: LossCode::UnsupportedObjectFamily,
+                    category: LossCategory::Geometry,
+                    severity: Severity::Warning,
+                    message: format!(
                         "retained {} object record(s) for class {class}; geometry is not decoded",
                         outcome.retained
                     ),
-                        provenance: Some(loss_provenance(class, outcome)),
-                    }));
-                debug_assert!(omitted.is_none());
+                    provenance: Some(loss_provenance(class, outcome)),
+                });
             }
             if outcome.attribute_degraded > 0 {
                 losses.push(LossNote {
@@ -1860,6 +1853,17 @@ impl<'a> DecodeContext<'a> {
                     provenance: Some(loss_provenance(class, outcome)),
                 });
             }
+        }
+        // Unsupported-concept-to-omission boundary (§10 Phase 4B): each retained
+        // object family has no typed geometry in the IR. The omission drains
+        // through the module's shared `builder()` sink — the same construction
+        // path the brep topology fallback uses — so the note lands in
+        // `typed_losses` and cannot be taken without recording. The value the
+        // `Transfer` would have carried (typed geometry) does not exist, so
+        // resolution yields `None` and only the note survives.
+        for note in omissions {
+            let omitted: Option<()> = self.builder().take(Transfer::omitted(note));
+            debug_assert!(omitted.is_none());
         }
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(LossNote {
