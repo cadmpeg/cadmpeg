@@ -784,6 +784,19 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+    let unbound_feature_input_objects = native
+        .as_ref()
+        .map_or(0, unbound_feature_input_operation_objects);
+    if unbound_feature_input_objects > 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{unbound_feature_input_objects} native feature-input operation object(s) do not bind uniquely to a history feature."
+            ),
+            provenance: None,
+        });
+    }
 
     let incomplete_edge_selection = |selection: &EdgeSelection| match selection {
         EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges.is_empty(),
@@ -1060,6 +1073,52 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             provenance: None,
         });
     }
+}
+
+fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative) -> usize {
+    use crate::records::FeatureInputClassRole;
+
+    let mut source_counts = BTreeMap::<u32, usize>::new();
+    let mut binding_counts = BTreeMap::<(u32, &str), usize>::new();
+    for feature in native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+    {
+        let Some(source) = feature
+            .source_id
+            .as_deref()
+            .and_then(|source| source.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        *source_counts.entry(source).or_default() += 1;
+        if let Some(class) = feature.input_class.as_deref() {
+            *binding_counts.entry((source, class)).or_default() += 1;
+        }
+    }
+    native
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| {
+            lane.classes
+                .iter()
+                .filter(|class| class.role == FeatureInputClassRole::Feature)
+                .filter_map(|class| {
+                    let name_offset = class.offset + 6 + class.name.len() as u64;
+                    lane.names
+                        .iter()
+                        .find(|name| name.offset == name_offset)
+                        .map(|name| (class, name))
+                })
+        })
+        .filter(|(class, name)| {
+            name.object_id.is_none_or(|id| {
+                source_counts.get(&id).copied() != Some(1)
+                    || binding_counts.get(&(id, class.name.as_str())).copied() != Some(1)
+            })
+        })
+        .count()
 }
 
 fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::SldprtNative) -> usize {
@@ -2638,12 +2697,15 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 #[cfg(test)]
 mod design_loss_tests {
     use super::{
-        append_design_losses, assign_configuration_bodies, unprojected_sketch_relation_records,
+        append_design_losses, assign_configuration_bodies, unbound_feature_input_operation_objects,
+        unprojected_sketch_relation_records,
     };
     use crate::native::SldprtNative;
     use crate::records::{
-        FeatureInputLane, FeatureInputRelationBinding, FeatureInputRelationFamily,
-        FeatureInputRelationInstance, SketchInputEntity, SketchInputKind, SketchRelationKind,
+        Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+        FeatureInputLane, FeatureInputName, FeatureInputRelationBinding,
+        FeatureInputRelationFamily, FeatureInputRelationInstance, SketchInputEntity,
+        SketchInputKind, SketchRelationKind,
     };
     use cadmpeg_ir::features::{
         Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
@@ -3597,6 +3659,83 @@ mod design_loss_tests {
         };
 
         assert_eq!(unprojected_sketch_relation_records(&ir, &native), 3);
+    }
+
+    #[test]
+    fn direct_feature_input_operations_require_unique_history_bindings() {
+        let class_name = "moExtrusion_c";
+        let mut lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: vec![FeatureInputClass {
+                id: "class".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 10,
+                name: class_name.into(),
+                role: FeatureInputClassRole::Feature,
+            }],
+            names: vec![FeatureInputName {
+                id: "name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 10 + 6 + class_name.len() as u64,
+                object_id: Some(42),
+                value: "Boss".into(),
+            }],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let mut native = SldprtNative {
+            feature_input_lanes: vec![lane.clone()],
+            ..SldprtNative::default()
+        };
+        assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+
+        native.feature_histories.push(FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![NativeFeature {
+                id: "feature".into(),
+                parent: "history".into(),
+                xml_tag: "Extrusion".into(),
+                tree_parent: None,
+                source_id: Some("42".into()),
+                parent_source_id: None,
+                ordinal: 0,
+                name: "Boss".into(),
+                kind: "Extrusion".into(),
+                input_class: Some(class_name.into()),
+                suppressed: false,
+                parameters: BTreeMap::new(),
+                dimension_properties: BTreeMap::new(),
+                properties: BTreeMap::new(),
+                text: None,
+                content: Vec::new(),
+            }],
+        });
+        assert_eq!(unbound_feature_input_operation_objects(&native), 0);
+        native.feature_histories[0].features[0].input_class = Some("moSweep_c".into());
+        assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+        native.feature_histories[0].features[0].input_class = Some(class_name.into());
+        let mut duplicate = native.feature_histories[0].features[0].clone();
+        duplicate.id = "duplicate-feature".into();
+        native.feature_histories[0].features.push(duplicate);
+        assert_eq!(unbound_feature_input_operation_objects(&native), 1);
+
+        lane.names[0].offset += 1;
+        native.feature_input_lanes = vec![lane];
+        assert_eq!(unbound_feature_input_operation_objects(&native), 0);
     }
 
     #[test]
