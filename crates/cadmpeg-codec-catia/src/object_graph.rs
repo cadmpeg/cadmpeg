@@ -387,6 +387,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         if children.next().is_some() {
             return None;
         }
+        let lead = *data.get(head_start..child)?.first()?;
         let head = decode_head(&data[head_start..child]);
         let roles = if matches!(head.get(1), Some(HeadToken::Separator)) {
             &head[2..]
@@ -411,7 +412,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             index: records.len(),
             pos: at,
             total_len: record_len,
-            lead: data.get(head_start).copied().unwrap_or(0),
+            lead,
             head,
             owner_ref,
             class_ref,

@@ -4559,6 +4559,12 @@ fn outer_object_graph_requires_a_final_payload_terminator() {
 }
 
 #[test]
+fn outer_object_graph_requires_a_stored_head_lead() {
+    let bytes = object_graph_from_records(&[object_graph_record(&[], &[0xfe])]);
+    assert!(crate::object_graph::parse(&bytes).is_none());
+}
+
+#[test]
 fn outer_object_graph_accepts_one_length_closed_record() {
     let bytes =
         object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
