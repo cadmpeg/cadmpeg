@@ -61,10 +61,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     if ctx.container_only() {
         let ir = build_metadata_ir(&scan)?;
         let mut report = build_container_report(&scan, true);
-        report.source_fidelity = Some(
-            crate::ledger::container_ledger(&scan)
-                .map_err(|error| CodecError::Malformed(error.to_string()))?,
-        );
+        report.source_fidelity = Some(crate::ledger::container_ledger(&scan));
         return Ok(DecodeResult::new(ir, report));
     }
 
@@ -122,11 +119,9 @@ fn finish_decode<'a>(
     CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
     // L1 container accounting (§10 Phase 3C): the validated coarse ledger rides
     // the decode report so byte conservation over the source spaces is provable
-    // from the result. A tiling defect surfaces here as a `Malformed` failure.
-    report.source_fidelity = Some(
-        crate::ledger::container_ledger(scan)
-            .map_err(|error| CodecError::Malformed(error.to_string()))?,
-    );
+    // from the result. The tiling is total by construction, so a defect here is
+    // a builder bug that panics rather than a decode-time `Malformed` failure.
+    report.source_fidelity = Some(crate::ledger::container_ledger(scan));
     Ok(DecodeResult::new(ir, report))
 }
 

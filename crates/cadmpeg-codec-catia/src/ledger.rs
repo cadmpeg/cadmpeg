@@ -29,7 +29,7 @@
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerCapability, LedgerLevel, LedgerSpan,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
     SerializedOrigin, SerializedRange, SourceFidelity, SpaceExtent, SpanClass,
 };
 
@@ -53,18 +53,21 @@ struct Claim {
 /// `.CATPart`.
 ///
 /// The returned [`SourceFidelity`] is canonicalized and has passed
-/// [`SourceFidelity::validate`]; its spaces tile `[0, length)` exactly. Returns
-/// the validation [`FidelityError`] if the built tiling ever violates the
-/// conservation invariant — a defect in this builder, surfaced rather than
-/// serialized.
-pub(crate) fn container_ledger(scan: &ContainerScan<'_>) -> Result<SourceFidelity, FidelityError> {
+/// [`SourceFidelity::validate`]; its spaces tile `[0, length)` exactly. The
+/// tiling is total by construction — `source_space` backfills every gap with an
+/// opaque padding span and the BREP `Concat` references only in-bounds source
+/// extents — so validation cannot fail on any input; a failure would be a
+/// builder defect and panics rather than being serialized.
+pub(crate) fn container_ledger(scan: &ContainerScan<'_>) -> SourceFidelity {
     let mut spaces = vec![source_space(scan)];
     if let Some(stream) = brep_stream_space(scan) {
         spaces.push(stream);
     }
     let sidecar = SourceFidelity::new(LedgerLevel::L1, LedgerCapability::Accounted, spaces);
-    sidecar.validate()?;
-    Ok(sidecar)
+    sidecar
+        .validate()
+        .expect("catia source-fidelity ledger tiles completely and derives a valid origin DAG");
+    sidecar
 }
 
 /// Tiles the root input space: framing structural, stream extents opaque, every

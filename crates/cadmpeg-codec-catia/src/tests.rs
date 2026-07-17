@@ -3368,7 +3368,7 @@ mod ledger {
         ];
         for fixture in fixtures {
             with_scan(&fixture, |scan| {
-                let sidecar = container_ledger(scan).expect("ledger validates");
+                let sidecar = container_ledger(scan);
                 assert_eq!(sidecar.level, LedgerLevel::L1);
                 assert_eq!(sidecar.capability, LedgerCapability::Accounted);
                 for space in &sidecar.spaces {
@@ -3401,7 +3401,7 @@ mod ledger {
     #[test]
     fn ledger_serializes_brep_concat_stream() {
         with_scan(&standard_catpart(), |scan| {
-            let sidecar = container_ledger(scan).expect("ledger validates");
+            let sidecar = container_ledger(scan);
             let source = sidecar
                 .spaces
                 .iter()
@@ -3434,10 +3434,10 @@ mod ledger {
     fn ledger_serialization_is_deterministic() {
         let fixture = tetrahedron_topology_catpart();
         let first = with_scan(&fixture, |scan| {
-            container_ledger(scan).unwrap().to_canonical_json().unwrap()
+            container_ledger(scan).to_canonical_json().unwrap()
         });
         let second = with_scan(&fixture, |scan| {
-            container_ledger(scan).unwrap().to_canonical_json().unwrap()
+            container_ledger(scan).to_canonical_json().unwrap()
         });
         assert_eq!(first, second);
     }
@@ -3447,7 +3447,7 @@ mod ledger {
     #[test]
     fn ledger_covers_flat_container() {
         with_scan(&zero_entity_catpart(), |scan| {
-            let sidecar = container_ledger(scan).expect("ledger validates");
+            let sidecar = container_ledger(scan);
             assert_eq!(sidecar.spaces.len(), 1);
             assert!(sidecar.spaces[0].id.is_source());
         });
@@ -3466,7 +3466,7 @@ mod ledger {
         fixture[8..12].copy_from_slice(&16u32.to_be_bytes());
         fixture[12..16].copy_from_slice(&u32::MAX.to_be_bytes());
         with_scan(&fixture, |scan| {
-            let sidecar = container_ledger(scan).expect("ledger validates");
+            let sidecar = container_ledger(scan);
             let source = sidecar
                 .spaces
                 .iter()

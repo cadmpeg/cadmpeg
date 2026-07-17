@@ -206,21 +206,17 @@ fn block_space(source: &[u8], block: &Block, index: u32) -> AddressSpaceLedger {
     let (payload_start, payload_end) = block_payload_range(source, block);
     let path = block.section.as_deref().unwrap_or("block");
     let length = block.payload.len() as u64;
-    let spans = if length == 0 {
-        Vec::new()
-    } else {
-        vec![LedgerSpan {
-            range: SerializedRange {
-                start: 0,
-                end: length,
-            },
-            class: SpanClass::Opaque,
-            owner: OWNER.to_string(),
-            meaning: format!("block-payload:{}", block.family),
-            digest: sha256_hex(&block.payload),
-            retained: None,
-        }]
-    };
+    let spans = vec![LedgerSpan {
+        range: SerializedRange {
+            start: 0,
+            end: length,
+        },
+        class: SpanClass::Opaque,
+        owner: OWNER.to_string(),
+        meaning: format!("block-payload:{}", block.family),
+        digest: sha256_hex(&block.payload),
+        retained: None,
+    }];
     AddressSpaceLedger {
         id: CanonicalSpaceId::stream(path, index),
         length,

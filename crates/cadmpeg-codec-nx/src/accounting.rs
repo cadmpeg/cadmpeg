@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! L1 coarse source-fidelity accounting for the NX SPLMSSTR container.
 //!
-//! [`install`] builds a complete coarse tiling of every physical space the
+//! [`ledger`] builds a complete coarse tiling of every physical space the
 //! decode produces and stores it as the serialized v2 sidecar (§6.1). Two
 //! space families are tiled:
 //!
@@ -14,7 +14,7 @@
 //!
 //! The ledger is [`LedgerLevel::L1`] and [`LedgerCapability::Accounted`]: every
 //! byte of every space is classified, but opaque spans carry only digests, not
-//! retained bytes. [`install`] validates the sidecar before serializing it, so
+//! retained bytes. [`ledger`] validates the sidecar before returning it, so
 //! an accounting-enabled result never carries a ledger that violates the
 //! conservation invariant.
 
