@@ -137,9 +137,18 @@ fn minimal_rhino_archive(
     name: &str,
     version_text: &str,
 ) -> std::path::PathBuf {
+    minimal_rhino_archive_with_comment(dir, name, version_text, b"cadmpeg test")
+}
+
+fn minimal_rhino_archive_with_comment(
+    dir: &std::path::Path,
+    name: &str,
+    version_text: &str,
+    comment: &[u8],
+) -> std::path::PathBuf {
     let version = version_text.parse::<u64>().unwrap();
     let mut bytes = rhino_header(version_text);
-    bytes.extend(rhino_long_chunk(version, 0x0000_0001, b"cadmpeg test"));
+    bytes.extend(rhino_long_chunk(version, 0x0000_0001, comment));
     bytes.extend(rhino_table(version, 0x1000_0014));
     bytes.extend(rhino_table(version, 0x1000_0015));
     bytes.extend(rhino_table(version, 0x1000_0013));
@@ -447,6 +456,40 @@ fn diff_summarizes_the_source_fidelity_sidecar_for_native_inputs() {
         .success()
         .stdout(
             predicate::str::contains("\"source_fidelity\"")
+                .and(predicate::str::contains("\"present\": \"both\"")),
+        );
+}
+
+#[test]
+fn diff_renders_the_interpreted_fidelity_delta_when_only_sidecars_differ() {
+    let dir = tempdir().unwrap();
+    // Same-length comment bytes keep every table offset identical, so the IR is
+    // byte-for-byte equal while the comment span's digest differs. This drives
+    // the changed_spaces / content-changed rendering and the fidelity-aware exit
+    // code, which the identical-archive test never reaches.
+    let a = minimal_rhino_archive_with_comment(dir.path(), "a.3dm", "50", b"cadmpeg test");
+    let b = minimal_rhino_archive_with_comment(dir.path(), "b.3dm", "50", b"cadmpeg diff");
+
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .code(1)
+        .stdout(
+            predicate::str::contains("source fidelity:")
+                .and(predicate::str::contains("content changed"))
+                .and(predicate::str::contains("identical").not()),
+        );
+
+    // The JSON branch agrees: the IR is identical but the sidecars differ, so the
+    // top-level `different` flag is set.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", "--json", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .code(1)
+        .stdout(
+            predicate::str::contains("\"different\": true")
                 .and(predicate::str::contains("\"present\": \"both\"")),
         );
 }

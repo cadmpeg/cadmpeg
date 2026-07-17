@@ -396,21 +396,22 @@ pub fn diff(
     let right = loader::load_ir(registry, b, args.options(), None)?;
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
     let fidelity = fidelity_diff(left.decode_report.as_ref(), right.decode_report.as_ref());
+    let different = !result.is_empty() || fidelity_differs(&fidelity);
     if json {
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "schema_version": CLI_SCHEMA_VERSION,
                 "command": "diff",
-                "different": !result.is_empty(),
+                "different": different,
                 "diff": result,
                 "source_fidelity": fidelity_json(&fidelity),
             }))?
         );
-        return Ok(if result.is_empty() {
-            ExitCode::SUCCESS
-        } else {
+        return Ok(if different {
             ExitCode::from(1)
+        } else {
+            ExitCode::SUCCESS
         });
     }
     println!("diff {} vs {}", a.display(), b.display());
@@ -441,11 +442,11 @@ pub fn diff(
         print_id_delta("modified", &modified);
     }
     print_fidelity_summary(&fidelity);
-    if result.is_empty() {
+    if different {
+        Ok(ExitCode::from(1))
+    } else {
         println!("  identical");
         Ok(ExitCode::SUCCESS)
-    } else {
-        Ok(ExitCode::from(1))
     }
 }
 
@@ -473,6 +474,20 @@ fn fidelity_diff(left: Option<&DecodeReport>, right: Option<&DecodeReport>) -> F
         (Some(_), None) => FidelitySummary::OnlyLeft,
         (None, Some(_)) => FidelitySummary::OnlyRight,
         (None, None) => FidelitySummary::None,
+    }
+}
+
+/// Whether the two inputs' source-fidelity sidecars differ.
+///
+/// A sidecar present on one side only is a difference, as is a non-empty
+/// interpreted delta between two present sidecars. Absent on both sides is not a
+/// difference. Feeds the diff command's exit code and trailing `identical` line
+/// so byte-differing inputs whose IR happens to match are not reported identical.
+fn fidelity_differs(summary: &FidelitySummary) -> bool {
+    match summary {
+        FidelitySummary::None => false,
+        FidelitySummary::OnlyLeft | FidelitySummary::OnlyRight => true,
+        FidelitySummary::Both(diff) => !diff.is_empty(),
     }
 }
 
