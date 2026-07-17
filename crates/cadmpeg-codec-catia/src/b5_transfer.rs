@@ -225,11 +225,14 @@ fn transfer_complete(
                 parameter_range,
             ));
             let supports = edge_support_plan.entry(edge_id).or_default();
+            let support_range = edge_pcurve_parameters(graph, edge_id, pcurve_id)
+                .and_then(|parameters| ordered_subrange(parameters, parameter_range))
+                .unwrap_or(parameter_range);
             if !supports
                 .iter()
                 .any(|(surface, pcurve, _)| *surface == loop_.surface && *pcurve == pcurve_id)
             {
-                supports.push((loop_.surface, pcurve_id, parameter_range));
+                supports.push((loop_.surface, pcurve_id, support_range));
             }
             let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
                 let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
@@ -801,7 +804,10 @@ fn transfer_vertex_tolerances(
             else {
                 continue;
             };
-            let Some(lifted) = (*parameter_range)
+            let occurrence_parameters = edge_pcurve_parameters(graph, edge_id, pcurve_id)
+                .filter(|parameters| ordered_subrange(*parameters, *parameter_range).is_some())
+                .unwrap_or(*parameter_range);
+            let Some(lifted) = occurrence_parameters
                 .map(|parameter| {
                     let uv = pcurve_uv(pcurve, parameter)?;
                     let point = surface_point(&surface.geometry, uv.u, uv.v)?;
@@ -922,6 +928,26 @@ fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f6
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()
+}
+
+fn ordered_subrange(parameters: [f64; 2], domain: [f64; 2]) -> Option<[f64; 2]> {
+    const PARAMETER_TOLERANCE: f64 = 1e-9;
+
+    if !parameters.into_iter().all(f64::is_finite)
+        || parameters[0] == parameters[1]
+        || parameters.iter().any(|parameter| {
+            *parameter < domain[0] - PARAMETER_TOLERANCE
+                || *parameter > domain[1] + PARAMETER_TOLERANCE
+        })
+    {
+        return None;
+    }
+    let parameters = parameters.map(|parameter| parameter.clamp(domain[0], domain[1]));
+    Some(if parameters[0] < parameters[1] {
+        parameters
+    } else {
+        [parameters[1], parameters[0]]
+    })
 }
 
 fn oriented_line_plan(
@@ -2046,11 +2072,13 @@ mod tests {
     use super::{
         b5_edge_support_definition, body_kind_if_owned, cylinder_helix, cylinder_point,
         isocurve_endpoint_parameters, lifted_curve_geometry, merge_curve_plan,
-        neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
-        rational_arc, revolution_surface, revolve_nurbs, transfer, transfer_vertex_tolerances,
-        CurvePlan, SurfacePlan,
+        neutral_pcurve_point, ordered_subrange, oriented_circle_plan, oriented_line_plan,
+        oriented_nurbs_range, rational_arc, revolution_surface, revolve_nurbs, transfer,
+        transfer_vertex_tolerances, CurvePlan, SurfacePlan,
     };
-    use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
+    use crate::b5::{
+        B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile, B5Surface,
+    };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
     use cadmpeg_ir::geometry::{
@@ -2062,6 +2090,18 @@ mod tests {
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn occurrence_interval_orders_and_bounds_native_stations() {
+        assert_eq!(ordered_subrange([8.0, 2.0], [0.0, 10.0]), Some([2.0, 8.0]));
+        assert_eq!(
+            ordered_subrange([-5e-10, 10.0 + 5e-10], [0.0, 10.0]),
+            Some([0.0, 10.0])
+        );
+        assert!(ordered_subrange([2.0, 2.0], [0.0, 10.0]).is_none());
+        assert!(ordered_subrange([-2e-9, 8.0], [0.0, 10.0]).is_none());
+        assert!(ordered_subrange([2.0, 12.0], [0.0, 10.0]).is_none());
+    }
 
     #[test]
     fn repeated_pcurve_identity_is_shared_across_loop_occurrences() {
@@ -2280,11 +2320,30 @@ mod tests {
             surfaces: BTreeMap::new(),
             offset_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
-            parameter_incidences: BTreeMap::new(),
-            vertex_parameter_incidences: BTreeMap::new(),
-            vertex_points: vec![[0.0, 0.0, 0.1], [1.0, 0.0, 0.0]],
-            logical_vertex_points: Vec::new(),
-            logical_vertex_refs: Vec::new(),
+            parameter_incidences: BTreeMap::from([
+                (
+                    20,
+                    B5ParameterIncidence {
+                        object_id: 20,
+                        curves: vec![2],
+                        parameters: vec![0.25],
+                        controls: vec![0],
+                    },
+                ),
+                (
+                    21,
+                    B5ParameterIncidence {
+                        object_id: 21,
+                        curves: vec![2],
+                        parameters: vec![0.75],
+                        controls: vec![0],
+                    },
+                ),
+            ]),
+            vertex_parameter_incidences: BTreeMap::from([(10, vec![20]), (11, vec![21])]),
+            vertex_points: Vec::new(),
+            logical_vertex_points: vec![[0.25, 0.0, 0.1], [0.75, 0.0, 0.0]],
+            logical_vertex_refs: vec![10, 11],
             edge_vertices: BTreeMap::from([(3, [0, 1])]),
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
