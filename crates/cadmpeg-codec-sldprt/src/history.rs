@@ -1357,6 +1357,7 @@ fn project_extrude(
         extent,
         op,
         draft,
+        second_draft: None,
     })
 }
 
@@ -4576,6 +4577,7 @@ pub fn sync_neutral_features(
                 extent,
                 op,
                 draft,
+                second_draft,
             } => {
                 if *start != ExtrudeStart::ProfilePlane {
                     return Err(CodecError::NotImplemented(format!(
@@ -4586,6 +4588,12 @@ pub fn sync_neutral_features(
                 if *op == BooleanOp::Unresolved && existing.is_none() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} requires retained extrusion operation data",
+                        feature.id
+                    )));
+                }
+                if second_draft.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} uses independent opposite-side extrusion draft",
                         feature.id
                     )));
                 }

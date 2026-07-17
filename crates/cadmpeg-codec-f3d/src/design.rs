@@ -2206,9 +2206,6 @@ fn project_extrude(
         Some(parameter) => Some(design_angle(parameter)?),
         None => None,
     };
-    if side_two_draft.is_some_and(|angle| angle.0 != 0.0) {
-        return None;
-    }
     let start_groups = face_groups
         .iter()
         .filter(|group| group.extrude_face_role == Some(DesignExtrudeFaceRole::Start))
@@ -2308,6 +2305,10 @@ fn project_extrude(
         }
         None => None,
     };
+    let second_draft = side_two_draft.filter(|angle| angle.0 != 0.0);
+    if second_draft.is_some() && !matches!(extent, Extent::TwoSided { .. }) {
+        return None;
+    }
     let has_body_operands = scope_groups
         .iter()
         .any(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Bodies));
@@ -2325,6 +2326,7 @@ fn project_extrude(
         extent,
         op,
         draft,
+        second_draft,
     })
 }
 
@@ -17331,6 +17333,15 @@ mod relation_tests {
             std::slice::from_ref(&placement),
         )
         .is_none());
+        let side_two_taper = parameter("Side2TaperAngle", "deg", -0.3);
+        assert!(project_extrude(
+            &scope,
+            &[(0, &along), (1, &side_two_taper)],
+            &[],
+            &[],
+            std::slice::from_ref(&placement),
+        )
+        .is_none());
         let invalid_taper = parameter("TaperAngle", "native-unit", 0.2);
         assert!(project_extrude(
             &scope,
@@ -17509,7 +17520,7 @@ mod relation_tests {
         scope.extrude_extent = Some(DesignExtrudeExtent::TwoSidedDistance);
         let two_sided = project_extrude(
             &scope,
-            &[(0, &along), (1, &against)],
+            &[(0, &along), (1, &against), (2, &side_two_taper)],
             &[],
             &[],
             std::slice::from_ref(&placement),
@@ -17522,13 +17533,14 @@ mod relation_tests {
                     first: Length(5.5),
                     second: Length(0.5),
                 },
+                second_draft: Some(Angle(-0.3)),
                 ..
             }
         ));
         scope.extrude_direction_reversed = Some(true);
         assert!(project_extrude(
             &scope,
-            &[(0, &along), (1, &against)],
+            &[(0, &along), (1, &against), (2, &side_two_taper)],
             &[],
             &[],
             std::slice::from_ref(&placement),

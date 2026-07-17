@@ -1788,6 +1788,7 @@ fn encoder_writes_source_less_line_sketches() {
             },
             op: BooleanOp::Join,
             draft: None,
+            second_draft: None,
         },
         native_ref: None,
     });

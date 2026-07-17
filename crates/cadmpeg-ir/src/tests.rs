@@ -727,6 +727,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             },
             op: BooleanOp::NewBody,
             draft: None,
+            second_draft: None,
         },
         FeatureDefinition::Sweep {
             profile: Some(ProfileRef::Sketch(sketch.clone())),
@@ -810,6 +811,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
             },
             op: BooleanOp::NewBody,
             draft: None,
+            second_draft: None,
         },
         native_ref: None,
     });
@@ -2474,6 +2476,7 @@ fn feature_extent_magnitudes_are_validated() {
                 extent,
                 op: BooleanOp::NewBody,
                 draft: None,
+                second_draft: None,
             },
             native_ref: None,
         });
@@ -2481,6 +2484,78 @@ fn feature_extent_magnitudes_are_validated() {
             .findings
             .iter()
             .any(|finding| finding.message == "feature extent magnitude is invalid"));
+    }
+}
+
+#[test]
+fn opposite_side_extrusion_draft_requires_a_valid_two_sided_extent() {
+    use crate::features::{
+        Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
+
+    for (extent, second_draft, expected_message) in [
+        (
+            Extent::TwoSided {
+                first: Length(1.0),
+                second: Length(2.0),
+            },
+            Some(Angle(0.25)),
+            None,
+        ),
+        (
+            Extent::Blind {
+                length: Length(1.0),
+            },
+            Some(Angle(0.25)),
+            Some("opposite-side extrusion draft requires a two-sided extent"),
+        ),
+        (
+            Extent::TwoSided {
+                first: Length(1.0),
+                second: Length(2.0),
+            },
+            Some(Angle(f64::NAN)),
+            Some("extrusion draft is invalid"),
+        ),
+    ] {
+        let mut ir = unit_cube();
+        ir.model.features.push(Feature {
+            id: FeatureId("synthetic:test:feature#opposite-draft".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: std::collections::BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Extrude {
+                profile: ProfileRef::Native("profile".into()),
+                direction: None,
+                start: crate::features::ExtrudeStart::ProfilePlane,
+                extent,
+                op: BooleanOp::NewBody,
+                draft: None,
+                second_draft,
+            },
+            native_ref: None,
+        });
+        let findings = validate(&ir, Vec::new()).findings;
+        let has_opposite_draft_finding = findings.iter().any(|finding| {
+            matches!(
+                finding.message.as_str(),
+                "extrusion draft is invalid"
+                    | "opposite-side extrusion draft requires a two-sided extent"
+            )
+        });
+        assert_eq!(has_opposite_draft_finding, expected_message.is_some());
+        if let Some(expected_message) = expected_message {
+            assert!(findings
+                .iter()
+                .any(|finding| finding.message == expected_message));
+        }
     }
 }
 
@@ -2524,6 +2599,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             },
             op: BooleanOp::NewBody,
             draft: None,
+            second_draft: None,
         },
         native_ref: None,
     });
@@ -2597,6 +2673,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
             },
             op: BooleanOp::NewBody,
             draft: None,
+            second_draft: None,
         },
         native_ref: None,
     };

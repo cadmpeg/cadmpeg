@@ -1652,10 +1652,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 profile,
                 start,
                 extent,
+                draft,
+                second_draft,
                 ..
             } => {
                 profiles.push(profile);
                 extents.push(extent);
+                if draft.is_some_and(|angle| !angle.0.is_finite())
+                    || second_draft.is_some_and(|angle| !angle.0.is_finite())
+                {
+                    feature_geometry_error(findings, feature, "extrusion draft is invalid");
+                }
+                if second_draft.is_some() && !matches!(extent, Extent::TwoSided { .. }) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "opposite-side extrusion draft requires a two-sided extent",
+                    );
+                }
                 match start {
                     ExtrudeStart::ProfilePlane => {}
                     ExtrudeStart::OffsetProfilePlane { offset } => {
