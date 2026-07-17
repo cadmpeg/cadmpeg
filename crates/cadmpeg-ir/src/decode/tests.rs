@@ -672,6 +672,130 @@ fn transfer_accounting_accepts_consistent_dispositions() {
     assert!(ctx.finish(Ok(result_with_bodies(&["body/0"]))).is_ok());
 }
 
+/// Builds a single-space `source` ledger tiling `[0, length)` with one span of
+/// `class`, for the ledger-reconciliation tests.
+fn source_ledger(length: u64, class: crate::source_fidelity::SpanClass) -> DecodeResult {
+    use crate::source_fidelity::{
+        AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
+        SerializedOrigin, SerializedRange, SourceFidelity,
+    };
+
+    let mut result = dummy_result();
+    result.report.source_fidelity = Some(SourceFidelity::new(
+        LedgerLevel::L1,
+        LedgerCapability::Accounted,
+        vec![AddressSpaceLedger {
+            id: CanonicalSpaceId::source(),
+            length,
+            origin: SerializedOrigin::Root,
+            spans: vec![LedgerSpan {
+                range: SerializedRange {
+                    start: 0,
+                    end: length,
+                },
+                class,
+                owner: "test".to_string(),
+                meaning: "test".to_string(),
+                digest: String::new(),
+                retained: None,
+            }],
+        }],
+    ));
+    result
+}
+
+#[test]
+fn transfer_accounting_accepts_disposition_tiled_by_the_ledger() {
+    // A ticket committed in the root (`source`) space at an offset the ledger
+    // tiles reconciles: its bytes are corroborated by the serialized §6.1
+    // ledger, not merely by the disposition table (§6.2). At L1 the span class
+    // is coarse (`Opaque`) yet backs a `Typed` disposition — only span
+    // existence is asserted, never class coherence.
+    let bytes: &[u8] = &[0u8; 16];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let typed = ctx.commit_record(root.location(), RecordKind("body"));
+    ctx.resolve(
+        typed,
+        RecordDisposition::Typed {
+            outputs: vec!["body/0".to_owned()],
+        },
+    );
+
+    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
+    result.ir = result_with_bodies(&["body/0"]).ir;
+    assert!(ctx.finish(Ok(result)).is_ok());
+}
+
+#[test]
+fn transfer_accounting_rejects_disposition_absent_from_the_ledger_in_strict() {
+    // The disposition table validates in isolation, but the ticket's byte
+    // location lies past the serialized ledger's tiling: the two artifacts claim
+    // disjoint accounts, the cross-artifact conservation §6.2 assigns the check
+    // forbids. The offset 32 falls outside a `source` ledger of length 16.
+    let bytes: &[u8] = &[0u8; 64];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(
+        root.child(32, 33)
+            .map_or_else(|| root.location(), View::location),
+        RecordKind("body"),
+    );
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Typed {
+            outputs: vec!["body/0".to_owned()],
+        },
+    );
+
+    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
+    result.ir = result_with_bodies(&["body/0"]).ir;
+    match ctx.finish(Ok(result)) {
+        Err(CodecError::Malformed(message)) => {
+            assert!(
+                message.contains("absent from the serialized ledger"),
+                "{message}"
+            );
+        }
+        other => panic!("expected strict ledger-reconciliation error, got {other:?}"),
+    }
+}
+
+#[test]
+fn transfer_accounting_ledger_violation_degrades_to_loss_in_salvage() {
+    // In salvage mode the same disjoint account never fails the decode: it is
+    // appended as an accountable loss note, matching the mode's discipline.
+    let bytes: &[u8] = &[0u8; 64];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(
+        root.child(32, 33)
+            .map_or_else(|| root.location(), View::location),
+        RecordKind("body"),
+    );
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Typed {
+            outputs: vec!["body/0".to_owned()],
+        },
+    );
+
+    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
+    result.ir = result_with_bodies(&["body/0"]).ir;
+    let finished = ctx.finish(Ok(result)).unwrap();
+    assert!(
+        finished
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("absent from the serialized ledger")),
+        "expected a ledger-reconciliation loss note"
+    );
+}
+
 fn result_with_unknown(id: &str) -> DecodeResult {
     use crate::ids::UnknownId;
     use crate::unknown::UnknownRecord;

@@ -404,6 +404,29 @@ impl SourceFidelity {
         self.spaces.sort_by(|a, b| a.id.cmp(&b.id));
     }
 
+    /// Returns the classification of the span covering `offset` in the space
+    /// named `space`, or `None` when no space carries that id or no span covers
+    /// the offset.
+    ///
+    /// This is the ledger's disposition-facing query: `Check::TransferAccounting`
+    /// (§6.2) uses it to confirm every resolved record disposition names bytes
+    /// the §6.1 ledger actually tiles. A `Some` result proves the disposition's
+    /// span exists in the ledger; a `None` result — the space is absent, or the
+    /// offset lies in a tiling gap — is the cross-artifact conservation failure
+    /// the check reports, closing the gap between a codec's disposition table
+    /// and its serialized ledger.
+    pub fn class_at(&self, space: &CanonicalSpaceId, offset: u64) -> Option<SpanClass> {
+        let ledger = self
+            .spaces
+            .iter()
+            .find(|space_ledger| &space_ledger.id == space)?;
+        ledger
+            .spans
+            .iter()
+            .find(|span| span.range.start <= offset && offset < span.range.end)
+            .map(|span| span.class)
+    }
+
     /// Validates the conservation invariant.
     ///
     /// Checks the schema version, unique ids, origin/id consistency, that every

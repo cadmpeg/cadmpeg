@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
 use crate::document::Model;
 use crate::report::{LossCategory, LossCode, LossNote, ProfileVersions, Severity};
+use crate::source_fidelity::{CanonicalSpaceId, SourceFidelity};
 
 use super::arena::DecodeArena;
 use super::budget::BudgetCells;
@@ -30,6 +31,19 @@ use super::view::{BoundedCount, View};
 /// Initial per-expand reservation clamp: an attacker's declared size cannot
 /// force a large up-front reservation before any output is produced.
 const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
+
+/// Resolves a runtime [`SpaceId`] to the canonical ledger id it serializes as,
+/// when that mapping is fixed.
+///
+/// The root space is always serialized as `source`, so a ticket committed in it
+/// reconciles against the ledger's `source` space (§6.1). Derived spaces receive
+/// canonical ids only when the registry serialization pass (Phase 3A) assigns
+/// them; until then a ticket in a derived space returns `None` and its ledger
+/// coverage is not asserted. Every codec that issues tickets today commits them
+/// in the root space, so the mapping covers all live issuance.
+fn canonical_space(space: SpaceId) -> Option<CanonicalSpaceId> {
+    (space == SpaceId::ROOT).then(CanonicalSpaceId::source)
+}
 
 /// The in-memory charge for one element of type `T`, floored at one byte so a
 /// hostile count of zero-sized elements still pays.
@@ -734,8 +748,11 @@ impl<'a> DecodeContext<'a> {
     /// resolve in the retained store, a [`RecordDisposition::Preserved`] must
     /// name at least one unknown record and every named record must resolve in
     /// the document's native unknowns, and a [`RecordDisposition::Dropped`]'s
-    /// loss note must be reflected in the report's losses. A codec that issues
-    /// no tickets has an empty table and passes trivially. A violation is a
+    /// loss note must be reflected in the report's losses. When the report
+    /// carries a §6.1 ledger, every resolved ticket in a canonically-named space
+    /// must additionally land inside a span the ledger tiles, so a disposition
+    /// and the serialized ledger cannot claim disjoint byte accounts. A codec
+    /// that issues no tickets has an empty table and passes trivially. A violation is a
     /// codec contract error in strict mode (`Malformed`); in salvage mode each
     /// violation is appended as an accountable [`LossNote`] and never fails the
     /// decode, matching the mode's degrade-not-fail discipline.
@@ -794,6 +811,7 @@ impl<'a> DecodeContext<'a> {
             &self.retained,
             &unknown_ids,
             &result.report.losses,
+            result.report.source_fidelity.as_ref(),
         );
         if !violations.is_empty() {
             match self.policy.mode {
@@ -1432,9 +1450,10 @@ impl TicketTable {
             .count()
     }
 
-    /// Validates the resolved disposition table against the retained ledger and
-    /// the report's losses (`Check::TransferAccounting`, §6.2), returning one
-    /// message per violation in ticket order.
+    /// Validates the resolved disposition table against the retained ledger, the
+    /// serialized §6.1 ledger, and the report's losses
+    /// (`Check::TransferAccounting`, §6.2), returning one message per violation
+    /// in ticket order.
     ///
     /// The checks: a [`RecordDisposition::Typed`] names at least one output
     /// entity and every named entity resolves in `model`; a
@@ -1446,7 +1465,19 @@ impl TicketTable {
     /// `losses`. An unresolved ticket is not re-reported here —
     /// [`finish`](DecodeContext::finish) handles resolution before this runs.
     /// [`RecordDisposition::Structural`] carries no semantic content and is
-    /// unconstrained.
+    /// unconstrained by the retained ledger and the model.
+    ///
+    /// When `ledger` is present, every ticket whose space maps to a canonical
+    /// id (see [`canonical_space`]) is additionally reconciled against the §6.1
+    /// ledger: its byte location must fall inside a span the ledger tiles. This
+    /// is the cross-artifact conservation §6.2 assigns the check — a disposition
+    /// whose bytes the ledger does not tile (a span absent from the ledger, or a
+    /// location in a tiling gap) is a violation, closing the gap between the
+    /// disposition table and the serialized ledger that would otherwise let both
+    /// validate independently. Class coherence is not asserted: at L1 a coarse
+    /// `Opaque` span legitimately backs a `Typed` disposition, so only span
+    /// existence — not span class — is the conserved property at ledger
+    /// granularity below L2.
     ///
     /// Dropped reflection consumes one report loss per disposition: each
     /// `Dropped` claims a distinct un-consumed `LossNote` matching its key, so
@@ -1459,6 +1490,7 @@ impl TicketTable {
         retained: &RetainedStore,
         unknown_ids: &BTreeSet<String>,
         losses: &[LossNote],
+        ledger: Option<&SourceFidelity>,
     ) -> Vec<String> {
         let mut violations = Vec::new();
         let mut consumed = vec![false; losses.len()];
@@ -1470,6 +1502,22 @@ impl TicketTable {
                 location.space.index(),
                 location.offset
             );
+            // §6.1 reconciliation: when the codec serialized a ledger, the bytes
+            // this disposition accounts for must be tiled by it. A resolved
+            // ticket whose canonical space is absent from the ledger, or whose
+            // offset lands in a tiling gap, is a disposition the ledger does not
+            // corroborate. Derived spaces without a canonical id yet (Phase 3A)
+            // carry no ledger assertion.
+            if let (Some(ledger), Some(space)) = (ledger, canonical_space(location.space)) {
+                if state.disposition.is_some() && ledger.class_at(&space, location.offset).is_none()
+                {
+                    violations.push(format!(
+                        "{at} resolved a disposition but its bytes are absent from the \
+                         serialized ledger space `{}`",
+                        space.as_str()
+                    ));
+                }
+            }
             match &state.disposition {
                 Some(RecordDisposition::Typed { outputs }) => {
                     if outputs.is_empty() {
