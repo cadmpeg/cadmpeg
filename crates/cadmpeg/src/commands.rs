@@ -392,9 +392,10 @@ pub fn diff(
     args: &DecodeArgs,
     json: bool,
 ) -> Result<ExitCode> {
-    let left = loader::load_ir(registry, a, args.options(), None)?.ir;
-    let right = loader::load_ir(registry, b, args.options(), None)?.ir;
-    let result = cadmpeg_ir::diff(&left, &right);
+    let left = loader::load_ir(registry, a, args.options(), None)?;
+    let right = loader::load_ir(registry, b, args.options(), None)?;
+    let result = cadmpeg_ir::diff(&left.ir, &right.ir);
+    let fidelity = fidelity_diff(left.decode_report.as_ref(), right.decode_report.as_ref());
     if json {
         println!(
             "{}",
@@ -403,6 +404,7 @@ pub fn diff(
                 "command": "diff",
                 "different": !result.is_empty(),
                 "diff": result,
+                "source_fidelity": fidelity_json(&fidelity),
             }))?
         );
         return Ok(if result.is_empty() {
@@ -438,11 +440,110 @@ pub fn diff(
             .collect();
         print_id_delta("modified", &modified);
     }
+    print_fidelity_summary(&fidelity);
     if result.is_empty() {
         println!("  identical");
         Ok(ExitCode::SUCCESS)
     } else {
         Ok(ExitCode::from(1))
+    }
+}
+
+/// The source-fidelity comparison between two decode reports.
+enum FidelitySummary {
+    /// Neither decode reported a sidecar (e.g. both inputs were CADIR JSON, or
+    /// both codecs are below L1).
+    None,
+    /// Only the left input reported a sidecar.
+    OnlyLeft,
+    /// Only the right input reported a sidecar.
+    OnlyRight,
+    /// Both inputs reported a sidecar; the interpreted delta between them.
+    Both(cadmpeg_ir::FidelityDiff),
+}
+
+/// Compare the source-fidelity sidecars of two decode reports, when present.
+fn fidelity_diff(left: Option<&DecodeReport>, right: Option<&DecodeReport>) -> FidelitySummary {
+    let left = left.and_then(|report| report.source_fidelity.as_ref());
+    let right = right.and_then(|report| report.source_fidelity.as_ref());
+    match (left, right) {
+        (Some(left), Some(right)) => {
+            FidelitySummary::Both(cadmpeg_ir::diff_source_fidelity(left, right))
+        }
+        (Some(_), None) => FidelitySummary::OnlyLeft,
+        (None, Some(_)) => FidelitySummary::OnlyRight,
+        (None, None) => FidelitySummary::None,
+    }
+}
+
+/// Render the fidelity summary as JSON, or null when neither side reported one.
+fn fidelity_json(summary: &FidelitySummary) -> serde_json::Value {
+    match summary {
+        FidelitySummary::None => serde_json::Value::Null,
+        FidelitySummary::OnlyLeft => serde_json::json!({ "present": "left_only" }),
+        FidelitySummary::OnlyRight => serde_json::json!({ "present": "right_only" }),
+        FidelitySummary::Both(diff) => serde_json::json!({
+            "present": "both",
+            "different": !diff.is_empty(),
+            "diff": diff,
+        }),
+    }
+}
+
+/// Print the interpreted source-fidelity delta under a `source fidelity:` head.
+fn print_fidelity_summary(summary: &FidelitySummary) {
+    let diff = match summary {
+        FidelitySummary::None => return,
+        FidelitySummary::OnlyLeft => {
+            println!("  source fidelity: present on left only (not comparable)");
+            return;
+        }
+        FidelitySummary::OnlyRight => {
+            println!("  source fidelity: present on right only (not comparable)");
+            return;
+        }
+        FidelitySummary::Both(diff) => diff,
+    };
+    if diff.is_empty() {
+        println!("  source fidelity: identical");
+        return;
+    }
+    println!("  source fidelity:");
+    if let Some((before, after)) = &diff.level {
+        println!("    level: {before:?} → {after:?}");
+    }
+    if let Some((before, after)) = &diff.capability {
+        println!("    capability: {before:?} → {after:?}");
+    }
+    for id in &diff.removed_spaces {
+        println!("    - space {id}");
+    }
+    for id in &diff.added_spaces {
+        println!("    + space {id}");
+    }
+    for space in &diff.changed_spaces {
+        let before = &space.class_bytes_before;
+        let after = &space.class_bytes_after;
+        print!("    ~ {}", space.id);
+        if let Some((lb, la)) = space.length {
+            print!(" {lb}→{la} B");
+        }
+        println!(
+            ": typed {}→{}, structural {}→{}, opaque {}→{}, spans {}→{}{}",
+            before.typed,
+            after.typed,
+            before.structural,
+            after.structural,
+            before.opaque,
+            after.opaque,
+            space.spans.0,
+            space.spans.1,
+            if space.content_changed {
+                ", content changed"
+            } else {
+                ""
+            }
+        );
     }
 }
 

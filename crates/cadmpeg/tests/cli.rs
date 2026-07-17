@@ -426,6 +426,32 @@ fn diff_reports_modified_entities_and_uses_diff_exit_codes() {
 }
 
 #[test]
+fn diff_summarizes_the_source_fidelity_sidecar_for_native_inputs() {
+    let dir = tempdir().unwrap();
+    let a = minimal_rhino_archive(dir.path(), "a.3dm", "50");
+    let b = minimal_rhino_archive(dir.path(), "b.3dm", "50");
+
+    // Two byte-identical archives: the L2 sidecars match.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("source fidelity: identical"));
+
+    // JSON diff exposes the interpreted sidecar comparison, not raw spans.
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args(["diff", "--json", a.to_str().unwrap(), b.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("\"source_fidelity\"")
+                .and(predicate::str::contains("\"present\": \"both\"")),
+        );
+}
+
+#[test]
 fn garbage_reports_supported_formats() {
     let dir = tempdir().unwrap();
     let input = dir.path().join("garbage.bin");

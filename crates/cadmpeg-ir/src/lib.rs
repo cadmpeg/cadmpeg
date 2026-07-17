@@ -53,6 +53,7 @@ pub mod read;
 pub mod report;
 pub mod sketches;
 pub mod source_fidelity;
+pub mod source_fidelity_diff;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
@@ -90,6 +91,7 @@ pub use source_fidelity::{
     LedgerSpan, RetainedRef, SerializedOrigin, SerializedRange, SerializedTransformKind,
     SourceFidelity, SpaceExtent, SpanClass, SOURCE_FIDELITY_VERSION,
 };
+pub use source_fidelity_diff::{diff_source_fidelity, ClassBytes, FidelityDiff, SpaceDelta};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
