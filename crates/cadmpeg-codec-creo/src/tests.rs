@@ -3281,6 +3281,17 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         curve.geometry,
         cadmpeg_ir::geometry::CurveGeometry::Circle { radius: 1.0, .. }
     )));
+    let circle = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:arc_z#45")
+        .expect("canonically identified arc_z");
+    assert_eq!(
+        circle.source_object.as_ref().unwrap().object_id,
+        "MdlRefInfo:arc_z:45"
+    );
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_circles"][0];
     assert_eq!(record.fields["entity_id"], 45);
     assert_eq!(record.fields["center_source"], "endpoint_midpoint");
@@ -3317,6 +3328,43 @@ fn decode_retains_line3d_original_length() {
     assert_eq!(record.fields["family"], "line3d");
     assert_eq!(record.fields["entity_id"], 35);
     assert_eq!(record.fields["original_length"], 1.0);
+    let curve = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:line3d#35")
+        .expect("canonically identified line3d");
+    assert_eq!(
+        curve.source_object.as_ref().unwrap().object_id,
+        "MdlRefInfo:line3d:35"
+    );
+}
+
+#[test]
+fn decode_disambiguates_repeated_line3d_entity_ids() {
+    let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+        \x0f\x0f\x0f\xe4\x0f\x0f\xe4\
+        \x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+        \x0f\x0f\x0f\x43\xf0\x00\x0f\x0f\xe4"
+        .to_vec();
+    let data = build_prt("c", &[("MdlRefInfo", payload)]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let ids = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            curve
+                .id
+                .as_str()
+                .starts_with("creo:mdl_ref_info:line3d#35@")
+        })
+        .map(|curve| curve.id.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(ids.len(), 2);
+    assert_ne!(ids[0], ids[1]);
 }
 
 #[test]

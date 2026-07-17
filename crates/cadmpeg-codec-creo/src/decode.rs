@@ -22256,16 +22256,32 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("reference_ellipses", &records)?;
     }
+    let line3d_id_counts =
+        scan.reference_lines
+            .iter()
+            .fold(BTreeMap::<u32, usize>::new(), |mut counts, line| {
+                if let crate::reference::ReferenceLineKind::Line3d { entity_id, .. } = &line.kind {
+                    *counts.entry(*entity_id).or_default() += 1;
+                }
+                counts
+            });
     for line in &scan.reference_lines {
         let direction = std::array::from_fn(|axis| line.end[axis] - line.start[axis]);
         let Some(direction) = normalized(direction) else {
             continue;
         };
-        let family = match &line.kind {
-            crate::reference::ReferenceLineKind::Line => "line",
-            crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
+        let (family, native_identity) = match &line.kind {
+            crate::reference::ReferenceLineKind::Line => ("line", line.offset.to_string()),
+            crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => {
+                let identity = if line3d_id_counts.get(entity_id) == Some(&1) {
+                    entity_id.to_string()
+                } else {
+                    format!("{entity_id}@{}", line.offset)
+                };
+                ("line3d", identity)
+            }
         };
-        let prefix = format!("creo:mdl_ref_info:{family}#{}", line.offset);
+        let prefix = format!("creo:mdl_ref_info:{family}#{native_identity}");
         let id = CurveId(prefix);
         annotate(
             &mut annotations,
@@ -22283,7 +22299,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             },
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
-                object_id: format!("MdlRefInfo:{family}:{}", line.offset),
+                object_id: format!("MdlRefInfo:{family}:{native_identity}"),
                 name: None,
                 color: None,
                 visible: None,
@@ -22292,12 +22308,24 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
+    let circle_id_counts =
+        scan.reference_circles
+            .iter()
+            .fold(BTreeMap::<u32, usize>::new(), |mut counts, circle| {
+                *counts.entry(circle.entity_id).or_default() += 1;
+                counts
+            });
     for circle in &scan.reference_circles {
         let radial = std::array::from_fn(|axis| circle.start[axis] - circle.center[axis]);
         let Some(reference) = normalized(radial) else {
             continue;
         };
-        let id = CurveId(format!("creo:mdl_ref_info:arc_z#{}", circle.offset));
+        let native_identity = if circle_id_counts.get(&circle.entity_id) == Some(&1) {
+            circle.entity_id.to_string()
+        } else {
+            format!("{}@{}", circle.entity_id, circle.offset)
+        };
+        let id = CurveId(format!("creo:mdl_ref_info:arc_z#{native_identity}"));
         annotate(
             &mut annotations,
             &id,
@@ -22316,7 +22344,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             },
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
-                object_id: format!("MdlRefInfo:arc_z:{}", circle.offset),
+                object_id: format!("MdlRefInfo:arc_z:{native_identity}"),
                 name: None,
                 color: None,
                 visible: None,
