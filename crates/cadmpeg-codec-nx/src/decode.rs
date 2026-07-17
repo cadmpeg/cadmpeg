@@ -34,7 +34,6 @@ use cadmpeg_ir::report::{
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::transfer::{Builder, Transfer};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
@@ -617,7 +616,7 @@ fn try_decode_geometry(
                         let first = intersection_side(
                             &ir,
                             &surfaces_by_xmt,
-                            charted.supports[0],
+                            Some(charted.primary_support),
                             charted.support_uv[0]
                                 .as_deref()
                                 .map(|uv| (uv, charted.parameters.as_slice())),
@@ -625,7 +624,7 @@ fn try_decode_geometry(
                         let second = intersection_side(
                             &ir,
                             &surfaces_by_xmt,
-                            charted.supports[1],
+                            charted.secondary_support,
                             charted.support_uv[1]
                                 .as_deref()
                                 .map(|uv| (uv, charted.parameters.as_slice())),
@@ -1036,10 +1035,10 @@ fn linear_knots(parameters: &[f64]) -> Vec<f64> {
 fn intersection_side(
     ir: &CadIr,
     surfaces_by_xmt: &BTreeMap<u32, SurfaceId>,
-    surface_xmt: u32,
+    surface_xmt: Option<u32>,
     uv: Option<(&[[f64; 2]], &[f64])>,
 ) -> IntcurveSupportSide {
-    let surface = surfaces_by_xmt.get(&surface_xmt).cloned();
+    let surface = surface_xmt.and_then(|xmt| surfaces_by_xmt.get(&xmt).cloned());
     let pcurve = surface.as_ref().and_then(|surface_id| {
         let geometry = ir
             .model
@@ -1450,19 +1449,17 @@ fn source_meta(scan: &Scan) -> SourceMeta {
 }
 
 fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> DecodeReport {
-    // The geometry report's losses are constructed through the Phase-4B typed
-    // [`Builder`] over the report's own loss vector (§6.2, §10). Every note that
-    // stands in for content the codec could not transfer — an untransferred
-    // topology graph or intersection surface (unsupported concept → omission),
-    // an inferred deltas/Boolean gauge (resolver → fallback), the undecoded
-    // attribute serialization (omission) — is a `Transfer` resolved through the
-    // one sink, so a graduated module cannot record a substitution or drop
-    // without surrendering its note. The carrier census carries no loss and is
-    // recorded directly.
+    // The geometry report is pure loss-note emission: every entry describes
+    // content the codec did not transfer (an untransferred topology graph or
+    // intersection surface, an inferred deltas/Boolean gauge, the undecoded
+    // attribute serialization) or a carrier census. No value crosses a Phase-4B
+    // boundary here — the report vector is only accumulated — so the notes are
+    // pushed directly. The codec's one real resolver-to-fallback boundary, the
+    // intersection secondary support, is represented honestly in
+    // [`crate::intersection`] as an `Option` rather than a fabricated reference.
     let mut losses = Vec::new();
-    let mut builder = Builder::new(&mut losses);
 
-    builder.record_loss(LossNote {
+    losses.push(LossNote {
         code: LossCode::CarrierSummary,
         category: LossCategory::Geometry,
         severity: Severity::Info,
@@ -1487,7 +1484,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     });
 
     if !has_topology {
-        let _: Option<()> = builder.take(Transfer::omitted(LossNote {
+        losses.push(LossNote {
             code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
@@ -1499,10 +1496,10 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                       then remains unattached."
                 .to_string(),
             provenance: None,
-        }));
+        });
     }
 
-    let _: Option<()> = builder.take(Transfer::omitted(LossNote {
+    losses.push(LossNote {
         code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
         severity: Severity::Warning,
@@ -1513,10 +1510,10 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                   available."
                 .to_string(),
         provenance: None,
-    }));
+    });
 
     if scan.count(StreamKind::Deltas) > 0 {
-        let _: Option<()> = builder.take(Transfer::fallback((), LossNote {
+        losses.push(LossNote {
             code: LossCode::TopologyGaugeSubstituted,
             category: LossCategory::Topology,
             severity: Severity::Warning,
@@ -1528,11 +1525,11 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                 scan.count(StreamKind::Deltas)
             ),
             provenance: None,
-        }));
+        });
     }
 
     if scan.count(StreamKind::Partition) > 1 {
-        let _: Option<()> = builder.take(Transfer::fallback((), LossNote {
+        losses.push(LossNote {
             code: LossCode::TopologyGaugeSubstituted,
             category: LossCategory::Topology,
             severity: Severity::Warning,
@@ -1544,10 +1541,10 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                 scan.count(StreamKind::Partition)
             ),
             provenance: None,
-        }));
+        });
     }
 
-    let _: Option<()> = builder.take(Transfer::omitted(LossNote {
+    losses.push(LossNote {
         code: LossCode::AttributesNotTransferred,
         category: LossCategory::Attribute,
         severity: Severity::Warning,
@@ -1556,7 +1553,7 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
                   per-class field serialization, which is not decoded."
             .to_string(),
         provenance: None,
-    }));
+    });
 
     DecodeReport {
         retention_degraded: false,
@@ -1616,13 +1613,12 @@ fn attach_native_object_model(
 }
 
 fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
-    // Constructed through the Phase-4B typed [`Builder`] (§6.2, §10): the
-    // no-geometry note is an omission `Transfer` that must surrender its loss,
-    // while the assembly external-dependency note and the operator-requested
-    // container-only note carry no substituted or dropped value and are
-    // recorded directly.
+    // Pure loss-note emission (§6.2, §10): the no-geometry note, the assembly
+    // external-dependency note, and the operator-requested container-only note
+    // each describe content this decode did not carry into the model. No value
+    // crosses a boundary, so the notes are pushed directly onto the report
+    // vector.
     let mut losses = Vec::new();
-    let mut builder = Builder::new(&mut losses);
 
     let assembly = scan
         .container
@@ -1632,7 +1628,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
         && !scan.has_parasolid();
 
     if assembly {
-        builder.record_loss(LossNote {
+        losses.push(LossNote {
             code: LossCode::AssemblyComponentsExternal,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
@@ -1644,7 +1640,7 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
             provenance: None,
         });
     } else {
-        let _: Option<()> = builder.take(Transfer::omitted(LossNote {
+        losses.push(LossNote {
             code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
             severity: Severity::Blocking,
@@ -1654,11 +1650,11 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
                       unknown passthrough records."
                 .to_string(),
             provenance: None,
-        }));
+        });
     }
 
     if container_only {
-        builder.record_loss(LossNote {
+        losses.push(LossNote {
             code: LossCode::ContainerOnly,
             category: LossCategory::Geometry,
             severity: Severity::Info,

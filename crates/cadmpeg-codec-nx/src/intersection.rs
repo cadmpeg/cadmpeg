@@ -21,8 +21,12 @@ pub struct IntersectionCurve {
     pub xmt: u32,
     /// Six ordered construction references.
     pub references: [u32; 6],
-    /// Resolved primary and secondary support-surface references.
-    pub supports: [u32; 2],
+    /// Resolved primary support-surface reference.
+    pub primary_support: u32,
+    /// Resolved secondary support-surface reference, when the source names one.
+    /// `None` when no secondary surface resolves: the second side is left empty
+    /// rather than fabricating a reference the source never named.
+    pub secondary_support: Option<u32>,
     /// Type-tag offset of the construction record.
     pub pos: usize,
     /// Chart points in millimetres.
@@ -83,16 +87,20 @@ fn enrich(
     } else {
         return None;
     };
+    // The secondary support is resolved only when the source names one (through
+    // a blend bridge or a surface-typed second reference). When nothing
+    // resolves, it stays `None`: fabricating a placeholder reference here would
+    // enter a support the source never named into the model.
     let secondary = bridges
         .get(&bridge)
         .copied()
         .or_else(|| is_surface(graph, bridge).then_some(bridge))
-        .filter(|secondary| *secondary != primary)
-        .unwrap_or(1);
+        .filter(|secondary| *secondary != primary);
     (support_uv[0].as_ref()?.len() == chart.points.len()).then_some(IntersectionCurve {
         xmt: construction.xmt,
         references: construction.references,
-        supports: [primary, secondary],
+        primary_support: primary,
+        secondary_support: secondary,
         pos: construction.pos,
         points: chart.points.clone(),
         parameters: chart.parameters.clone(),
