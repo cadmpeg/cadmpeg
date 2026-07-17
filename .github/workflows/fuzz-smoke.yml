@@ -1,6 +1,7 @@
-name: Fuzz smoke
+name: Fuzz
 
 on:
+  pull_request:
   schedule:
     # Nightly at 03:17 UTC (off the hour to avoid the cron rush).
     - cron: "17 3 * * *"
@@ -12,12 +13,106 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Per-target wall time for a smoke/nightly run. Short enough for a PR gate,
+  # long enough to reach committed decode paths from the seed corpus.
+  FUZZ_TIME: "60"
 
 jobs:
-  # Compile-only check that the fuzz targets still build on the Rust
-  # nightly toolchain. Non-blocking for regular development.
-  fuzz-smoke:
-    name: fuzz target smoke build (rust nightly)
+  # Section 7 fuzz promotion, PR gate. Runs the fuzz targets whose codec
+  # changed, and fans out to every target when `cadmpeg-ir` or any shared
+  # platform crate changes ("ir-change fan-out is not optional", section 11.7).
+  # Blocking: a crash on committed seeds fails the PR instead of surfacing on
+  # the next non-gating nightly cron.
+  fuzz-pr:
+    name: fuzz smoke (changed targets)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Full history so the base..head diff can classify changed crates.
+          fetch-depth: 0
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      # A codec change runs that codec's targets; a change to `cadmpeg-ir`,
+      # the fuzz harness, or the workspace manifests fans out to every target,
+      # because the platform sits under every codec's decode path.
+      - name: Select fuzz targets from the diff
+        id: select
+        run: |
+          base="origin/${{ github.base_ref }}"
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          changed=$(git diff --name-only "$base"...HEAD)
+          echo "changed files:"; echo "$changed"
+
+          all=$(cargo +nightly fuzz list --fuzz-dir crates/cadmpeg-fuzz)
+
+          fanout=0
+          declare -A prefixes=()
+          while IFS= read -r f; do
+            case "$f" in
+              crates/cadmpeg-ir/*|crates/cadmpeg-fuzz/*|Cargo.toml|Cargo.lock|.github/workflows/fuzz-smoke.yml)
+                fanout=1 ;;
+              crates/cadmpeg-codec-catia/*)  prefixes[catia_]=1 ;;
+              crates/cadmpeg-codec-creo/*)   prefixes[creo_]=1 ;;
+              crates/cadmpeg-codec-f3d/*)    prefixes[f3d_]=1 ;;
+              crates/cadmpeg-codec-nx/*)     prefixes[nx_]=1 ;;
+              crates/cadmpeg-codec-rhino/*)  prefixes[rhino_]=1 ;;
+              crates/cadmpeg-codec-sldprt/*) prefixes[sldprt_]=1 ;;
+              crates/cadmpeg-step/*)         prefixes[step_]=1 ;;
+            esac
+          done <<< "$changed"
+
+          if [ "$fanout" -eq 1 ]; then
+            targets="$all"
+          else
+            targets=""
+            for t in $all; do
+              for p in "${!prefixes[@]}"; do
+                case "$t" in "$p"*) targets="$targets $t" ;; esac
+              done
+            done
+          fi
+          targets=$(echo "$targets" | tr ' ' '\n' | sed '/^$/d' | sort -u)
+          echo "selected targets:"; echo "$targets"
+          {
+            echo "targets<<EOF"
+            echo "$targets"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build fuzz targets (no run)
+        if: steps.select.outputs.targets != ''
+        run: cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
+
+      - name: Run selected targets against committed seeds
+        if: steps.select.outputs.targets != ''
+        run: |
+          echo "${{ steps.select.outputs.targets }}" | \
+            ./crates/cadmpeg-fuzz/run-targets.sh
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-artifacts-pr
+          path: crates/cadmpeg-fuzz/artifacts/
+
+  # Nightly smoke over every target, seeded from the committed corpus and
+  # dictionaries so magic-gated container/leaf targets reach real decode paths
+  # instead of failing the format preamble from an empty corpus.
+  fuzz-nightly:
+    name: fuzz smoke (all targets, nightly)
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -39,15 +134,14 @@ jobs:
       - name: Build fuzz targets (no run)
         run: cargo +nightly fuzz build --fuzz-dir crates/cadmpeg-fuzz
 
-      - name: Run each fuzz target briefly
+      - name: Run every target against committed seeds
         run: |
-          for t in $(cargo +nightly fuzz list --fuzz-dir crates/cadmpeg-fuzz); do
-            cargo +nightly fuzz run "$t" --fuzz-dir crates/cadmpeg-fuzz -- -max_total_time=60
-          done
+          cargo +nightly fuzz list --fuzz-dir crates/cadmpeg-fuzz | \
+            ./crates/cadmpeg-fuzz/run-targets.sh
 
       - name: Upload crash artifacts
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: fuzz-artifacts
+          name: fuzz-artifacts-nightly
           path: crates/cadmpeg-fuzz/artifacts/
