@@ -3476,7 +3476,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         definition,
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Native(_),
-            distance: Some(cadmpeg_ir::features::Length(30.0)),
+            distance: None,
         }
     ));
 
@@ -3495,8 +3495,41 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         definition,
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Resolved { faces, .. },
-            ..
+            distance: Some(cadmpeg_ir::features::Length(30.0)),
         } if faces.len() == 2
+    ));
+
+    for face in ir.model.faces.iter_mut().filter(|face| {
+        face.surface.0 == "nx:s4:nurbs-surf#0" || face.surface.0 == "nx:s4:nurbs-surf#1"
+    }) {
+        face.sense = cadmpeg_ir::topology::Sense::Reversed;
+    }
+    let (definition, _) =
+        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+            .expect("uniformly reversed support faces");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::OffsetSurface {
+            distance: Some(cadmpeg_ir::features::Length(-30.0)),
+            ..
+        }
+    ));
+
+    ir.model
+        .faces
+        .iter_mut()
+        .find(|face| face.surface == SurfaceId("nx:s4:nurbs-surf#0".into()))
+        .expect("first support face")
+        .sense = cadmpeg_ir::topology::Sense::Forward;
+    let (definition, _) =
+        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+            .expect("mixed support-face orientations retain offset family");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Resolved { .. },
+            distance: None,
+        }
     ));
 
     let mut ambiguous = ir.clone();
@@ -3512,7 +3545,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
         definition,
         FeatureDefinition::OffsetSurface {
             faces: FaceSelection::Native(_),
-            ..
+            distance: None,
         }
     ));
 

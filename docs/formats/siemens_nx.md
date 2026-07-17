@@ -812,15 +812,18 @@ is retained, so the neutral retained side is unresolved.
 
 Bodies named by validated segment binding tuples exist at the start of retained feature history. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
 
-An `OFFSET` operation projects as a neutral surface-offset feature. Its support
-selection and distance remain unresolved unless exactly one segment-bound output
-image has a region, shell, and face ownership graph containing at least one
-OFFSET_SURF and every owned OFFSET_SURF construction carries the same bit-exact
-signed distance. The distinct base-surface identities form the native face
-selection. The selection resolves to neutral faces when each distinct base
-surface is owned by exactly one face and those faces are distinct; a missing or
-multiply owned base surface retains only the native selection. Procedural
-surfaces in other bodies of the same stream do not participate.
+An `OFFSET` operation projects as a neutral surface-offset feature. Exactly one
+segment-bound output image establishes a native support selection when its
+region, shell, and face ownership graph contains at least one OFFSET_SURF and
+every owned OFFSET_SURF construction carries the same bit-exact signed
+distance. The distinct base-surface identities form that selection. Each base
+surface resolves to a neutral face only when exactly one distinct face owns it.
+The neutral distance is the carrier distance when every resolved face has
+forward sense and its negation when every resolved face has reversed sense. A
+missing or multiply owned base surface, or mixed resolved face senses, leaves
+the neutral distance unresolved; missing or multiply owned base surfaces retain
+only the native selection. Procedural surfaces in other bodies of the same
+stream do not participate.
 
 A `BLEND` operation with exactly one segment-bound output image projects as a fillet when that body's region, shell, and face ownership graph contains at least one BLEND_SURF and every owned BLEND_SURF has a circular cross-section. Procedural surfaces in other bodies of the same stream do not participate. The output body's BLEND_SURF identities define the result set; the input-edge selection remains unresolved. When every construction has a finite nonzero constant radius with one common absolute bit pattern, that magnitude is the fillet radius. Multiple constant magnitudes retain constant-law form without assigning one radius. Exclusively linear or curve-driven laws retain variable-law form. Mixed laws retain an unresolved radius form. An unbound output, an incomplete ownership graph, a body without BLEND_SURF, or any owned conic or polynomial blend cross-section leaves the operation native.
 

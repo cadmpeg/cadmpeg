@@ -10431,11 +10431,18 @@ pub(crate) fn offset_surface_feature_definition(
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
     let native = format!("{}:offset-support-surfaces", body.0);
-    let (faces, _) = support_face_projection(ir, &supports, native);
+    let (faces, senses) = support_face_projection(ir, &supports, native);
+    let distance = senses
+        .as_deref()
+        .and_then(uniform_face_sense)
+        .map(|sense| match sense {
+            Sense::Forward => distance,
+            Sense::Reversed => -distance,
+        });
     Some((
         FeatureDefinition::OffsetSurface {
             faces,
-            distance: Some(Length(distance)),
+            distance: distance.map(Length),
         },
         supports,
     ))
@@ -10497,13 +10504,10 @@ pub(crate) fn thicken_feature_definition(
     let (faces, senses) = support_face_projection(ir, &supports, native);
     let side = match direction {
         ThickenDirection::Both => Some(ThickenSide::Both),
-        ThickenDirection::Signed(distance) => senses.and_then(|senses| {
-            let (first, rest) = senses.split_first()?;
-            let first = thicken_side(distance, *first);
-            rest.iter()
-                .all(|sense| thicken_side(distance, *sense) == first)
-                .then_some(first)
-        }),
+        ThickenDirection::Signed(distance) => senses
+            .as_deref()
+            .and_then(uniform_face_sense)
+            .map(|sense| thicken_side(distance, sense)),
     };
     Some((
         FeatureDefinition::Thicken {
@@ -10621,6 +10625,11 @@ fn thicken_side(distance: f64, sense: Sense) -> ThickenSide {
         (true, Sense::Forward) | (false, Sense::Reversed) => ThickenSide::Forward,
         (true, Sense::Reversed) | (false, Sense::Forward) => ThickenSide::Reverse,
     }
+}
+
+fn uniform_face_sense(senses: &[Sense]) -> Option<Sense> {
+    let (first, rest) = senses.split_first()?;
+    rest.iter().all(|sense| sense == first).then_some(*first)
 }
 
 pub(crate) fn feature_source_content(
