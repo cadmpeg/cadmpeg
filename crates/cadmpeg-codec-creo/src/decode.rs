@@ -40,7 +40,8 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
-    Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, Point, Region, Sense, Shell, Vertex,
+    Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
+    Vertex,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -7151,7 +7152,10 @@ fn revolution_boundary_pcurve(
             let v = axial.atan2(signed_ring - major_radius);
             Some(line_pcurve([u, v], [u + std::f64::consts::TAU, v]))
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -7350,6 +7354,7 @@ fn transfer_resolved_revolution_breps(
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: Point3::new(position[0], position[1], position[2]),
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
@@ -7410,7 +7415,9 @@ fn transfer_resolved_revolution_breps(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
+                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                     coedges: vec![coedge_id.clone()],
+                    vertex_uses: Vec::new(),
                 });
                 ir.model.coedges.push(Coedge {
                     id: coedge_id.clone(),
@@ -7422,7 +7429,10 @@ fn transfer_resolved_revolution_breps(
                         "{prefix}:coedge:{radial_index}:{radial_boundary}"
                     )),
                     sense,
-                    pcurve: Some(pcurve),
+                    pcurves: vec![PcurveUse {
+                        pcurve,
+                        isoparametric: None,
+                    }],
                 });
                 loops.push(loop_id);
             }
@@ -7610,6 +7620,7 @@ fn transfer_resolved_circular_extrusion_breps(
                     seam[1] + offset * transform.normal[1],
                     seam[2] + offset * transform.normal[2],
                 ),
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
@@ -7627,7 +7638,9 @@ fn transfer_resolved_circular_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: cap_loop.clone(),
                 face: cap_face.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: vec![cap_coedge.clone()],
+                vertex_uses: Vec::new(),
             });
             ir.model.coedges.push(Coedge {
                 id: cap_coedge.clone(),
@@ -7641,7 +7654,10 @@ fn transfer_resolved_circular_extrusion_breps(
                 } else {
                     Sense::Forward
                 },
-                pcurve: Some(cap_pcurve),
+                pcurves: vec![PcurveUse {
+                    pcurve: cap_pcurve,
+                    isoparametric: None,
+                }],
             });
             ir.model.faces.push(Face {
                 id: cap_face.clone(),
@@ -7689,7 +7705,9 @@ fn transfer_resolved_circular_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face: side_face.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: vec![coedge.clone()],
+                vertex_uses: Vec::new(),
             });
             ir.model.coedges.push(Coedge {
                 id: coedge.clone(),
@@ -7703,7 +7721,10 @@ fn transfer_resolved_circular_extrusion_breps(
                 } else {
                     Sense::Reversed
                 },
-                pcurve: Some(pcurve),
+                pcurves: vec![PcurveUse {
+                    pcurve,
+                    isoparametric: None,
+                }],
             });
             side_loops.push(loop_id);
         }
@@ -7865,6 +7886,7 @@ fn transfer_resolved_extrusion_breps(
                             position[1] + offset * transform.normal[1],
                             position[2] + offset * transform.normal[2],
                         ),
+                        source_object: None,
                     });
                     ir.model.vertices.push(Vertex {
                         id: vertex_id.clone(),
@@ -8006,12 +8028,16 @@ fn transfer_resolved_extrusion_breps(
             ir.model.loops.push(IrLoop {
                 id: bottom_loop.clone(),
                 face: bottom_face.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: bottom_coedges.clone(),
+                vertex_uses: Vec::new(),
             });
             ir.model.loops.push(IrLoop {
                 id: top_loop.clone(),
                 face: top_face.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: top_coedges.clone(),
+                vertex_uses: Vec::new(),
             });
             for ring_index in 0..count {
                 let edge_index = count - 1 - ring_index;
@@ -8036,7 +8062,10 @@ fn transfer_resolved_extrusion_breps(
                         "{prefix}:coedge:{profile_index}:{edge_index}:side-bottom"
                     )),
                     sense: Sense::Reversed,
-                    pcurve: Some(bottom_pcurve),
+                    pcurves: vec![PcurveUse {
+                        pcurve: bottom_pcurve,
+                        isoparametric: None,
+                    }],
                 });
                 let id = top_coedges[ring_index].clone();
                 let (geometry, reversed, start, end) = &profile[ring_index];
@@ -8059,7 +8088,10 @@ fn transfer_resolved_extrusion_breps(
                         "{prefix}:coedge:{profile_index}:{ring_index}:side-top"
                     )),
                     sense: Sense::Forward,
-                    pcurve: Some(top_pcurve),
+                    pcurves: vec![PcurveUse {
+                        pcurve: top_pcurve,
+                        isoparametric: None,
+                    }],
                 });
             }
 
@@ -8107,7 +8139,9 @@ fn transfer_resolved_extrusion_breps(
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face_id.clone(),
+                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                     coedges: coedges.to_vec(),
+                    vertex_uses: Vec::new(),
                 });
                 let edge_uses = [
                     (bottom_edges[index].clone(), Sense::Forward),
@@ -8146,7 +8180,10 @@ fn transfer_resolved_extrusion_breps(
                         previous: coedges[(use_index + 3) % 4].clone(),
                         radial_next,
                         sense: edge_uses[use_index].1,
-                        pcurve: Some(pcurve),
+                        pcurves: vec![PcurveUse {
+                            pcurve,
+                            isoparametric: None,
+                        }],
                     });
                 }
                 ir.model.faces.push(Face {
@@ -8384,6 +8421,9 @@ fn reconcile_constraint_entity_references(
         SketchConstraintDefinition::Midpoint { point, entity } => {
             locus_emitted(point) && emitted.contains(entity)
         }
+        SketchConstraintDefinition::PointOnObject { point, entity } => {
+            locus_emitted(point) && emitted.contains(entity)
+        }
         SketchConstraintDefinition::Symmetric {
             first,
             second,
@@ -8403,6 +8443,19 @@ fn reconcile_constraint_entity_references(
         | SketchConstraintDefinition::Fixed { entity }
         | SketchConstraintDefinition::Radius { entity, .. }
         | SketchConstraintDefinition::Diameter { entity, .. } => emitted.contains(entity),
+        SketchConstraintDefinition::SnellsLaw {
+            incident,
+            refracted,
+            interface,
+            ..
+        } => locus_emitted(incident) && locus_emitted(refracted) && emitted.contains(interface),
+        SketchConstraintDefinition::Weight { entity, .. } => emitted.contains(entity),
+        SketchConstraintDefinition::InternalAlignment { helper, parent, .. } => {
+            emitted.contains(helper) && emitted.contains(parent)
+        }
+        SketchConstraintDefinition::Group { elements }
+        | SketchConstraintDefinition::Text { elements, .. } => elements.iter().all(locus_emitted),
+        SketchConstraintDefinition::Disabled => true,
     }
 }
 
@@ -8427,6 +8480,8 @@ fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinition::Angle { parameter, .. }
         | SketchConstraintDefinition::Radius { parameter, .. }
         | SketchConstraintDefinition::Diameter { parameter, .. } => emitted.contains(parameter),
+        SketchConstraintDefinition::SnellsLaw { parameter, .. }
+        | SketchConstraintDefinition::Weight { parameter, .. } => emitted.contains(parameter),
         SketchConstraintDefinition::Coincident { .. }
         | SketchConstraintDefinition::CoincidentLoci { .. }
         | SketchConstraintDefinition::SameCoordinate { .. }
@@ -8442,6 +8497,11 @@ fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinition::TangentLoci { .. }
         | SketchConstraintDefinition::Equal { .. }
         | SketchConstraintDefinition::Fixed { .. } => true,
+        SketchConstraintDefinition::Disabled
+        | SketchConstraintDefinition::PointOnObject { .. }
+        | SketchConstraintDefinition::InternalAlignment { .. }
+        | SketchConstraintDefinition::Group { .. }
+        | SketchConstraintDefinition::Text { .. } => true,
     }
 }
 
@@ -8714,6 +8774,15 @@ fn section_dimension_constraints(
                     }),
                     sketch: sketch.clone(),
                     definition: constraint_definition,
+                    name: None,
+                    driving: None,
+                    active: None,
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                 },
                 relation.offset,
@@ -9114,6 +9183,15 @@ fn section_skamp_constraints(
                     }),
                     sketch: sketch.clone(),
                     definition: constraint_definition,
+                    name: None,
+                    driving: None,
+                    active: None,
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                 },
                 skamp.offset,
@@ -10070,6 +10148,15 @@ fn transfer_resolved_sketches(
                     id,
                     sketch: sketch_id.clone(),
                     definition: constraint_definition,
+                    name: None,
+                    driving: None,
+                    active: None,
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
                     native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
                 })
             })
@@ -10227,7 +10314,8 @@ fn surface_kind_for_geometry(geometry: &SurfaceGeometry) -> Option<crate::surfac
             Some(crate::surface::SurfaceKind::TorusOrSphere)
         }
         SurfaceGeometry::Nurbs(_) => Some(crate::surface::SurfaceKind::Spline),
-        SurfaceGeometry::Unknown { .. } => None,
+        SurfaceGeometry::Transformed { basis, .. } => surface_kind_for_geometry(basis),
+        SurfaceGeometry::Polygonal { .. } | SurfaceGeometry::Unknown { .. } => None,
     }
 }
 
@@ -10678,7 +10766,8 @@ fn transfer_resolved_revolution_surfaces(
                     parameter_interval: [
                         *directrix.knots.first().expect("validated spline knots"),
                         *directrix.knots.last().expect("validated spline knots"),
-                    ],
+                    ]
+                    .into(),
                     transposed: false,
                 },
                 cache_fit_tolerance: None,
@@ -11972,6 +12061,8 @@ fn schema_feature_definition(
             },
         );
         return IrFeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
             face,
             position,
             direction,
@@ -11988,6 +12079,10 @@ fn schema_feature_definition(
             },
             diameter,
             extent,
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
         };
     }
     if schema_class == 913 {
@@ -12005,6 +12100,7 @@ fn schema_feature_definition(
         return IrFeatureDefinition::Chamfer {
             edges: feature_edge_selection(scan, feature_id).unwrap_or(EdgeSelection::Unresolved),
             spec: ChamferSpec::Unresolved { form: None },
+            flip_direction: false,
         };
     }
     if schema_class == 917
@@ -12068,6 +12164,11 @@ fn schema_feature_definition(
                     profile,
                     axis,
                     extent,
+                    axis_reference: None,
+                    solid: None,
+                    face_maker_class: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
                 },
                 op: section_sweep_boolean_operation(
                     feature_recipe_effect(scan, feature_id),
@@ -12117,6 +12218,15 @@ fn schema_feature_definition(
                             preceding_features_establish_body(ir),
                         ),
                         draft: None,
+                        reverse_draft: None,
+                        direction_source: None,
+                        solid: None,
+                        face_maker: None,
+                        inner_wire_taper: None,
+                        first_offset: None,
+                        second_offset: None,
+                        length_along_profile_normal: None,
+                        allow_multi_profile_faces: None,
                     };
                 }
             }
@@ -12202,7 +12312,11 @@ fn named_feature_definition(
         "Cross Section" | "Querschnitt" => Some(FeatureTreeNodeRole::CrossSections),
         _ => None,
     } {
-        return Some(IrFeatureDefinition::TreeNode { role });
+        return Some(IrFeatureDefinition::TreeNode {
+            role,
+            children: Vec::new(),
+            active_child: None,
+        });
     }
     if kind == "Mirror" {
         return Some(IrFeatureDefinition::Pattern {
@@ -12598,6 +12712,15 @@ fn circular_sweep_feature_definition(
         extent: sweep.extent.clone(),
         op,
         draft: None,
+        reverse_draft: None,
+        direction_source: None,
+        solid: None,
+        face_maker: None,
+        inner_wire_taper: None,
+        first_offset: None,
+        second_offset: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
     }
 }
 
@@ -13650,6 +13773,15 @@ mod resolved_sketch_tests {
                 },
                 op: BooleanOp::Join,
                 draft: None,
+                reverse_draft: None,
+                direction_source: None,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                first_offset: None,
+                second_offset: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             }
         );
     }
@@ -17431,6 +17563,7 @@ mod resolved_sketch_tests {
         ir.model.points.push(Point {
             id: PointId("point".to_string()),
             position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
         });
         assert!(has_transferred_geometry(&ir));
     }
@@ -19426,6 +19559,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(position[0], position[1], position[2]),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: vertex,
@@ -19655,7 +19789,9 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                 ir.model.loops.push(IrLoop {
                     id: loop_id.clone(),
                     face: face.clone(),
+                    boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                     coedges: coedge_ids.clone(),
+                    vertex_uses: Vec::new(),
                 });
                 for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                     let id = coedge_ids[index].clone();
@@ -19692,7 +19828,7 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
                         } else {
                             Sense::Reversed
                         },
-                        pcurve: None,
+                        pcurves: Vec::new(),
                     });
                 }
             }
@@ -22037,22 +22173,29 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
-    if options.container_only {
-        let ir = build_container_ir(&scan)?;
-        let report = build_report(&scan, &ir, true);
-        return Ok(DecodeResult::new(ir, report));
-    }
-
-    let ir = build_ir(&scan)?;
-    let report = build_report(&scan, &ir, false);
-    Ok(DecodeResult::new(ir, report))
+    let (mut ir, annotations, unknowns) = if options.container_only {
+        build_container_ir(&scan)?
+    } else {
+        build_ir(&scan)?
+    };
+    let report = build_report(&scan, &ir, options.container_only);
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        source_fidelity,
+    ))
 }
 
 fn preserve_passthrough_sections(
     scan: &ContainerScan,
-    ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) -> Result<(), CodecError> {
+) -> Vec<UnknownRecord> {
+    let mut unknowns = Vec::new();
     for section in scan
         .sections
         .iter()
@@ -22087,37 +22230,37 @@ fn preserve_passthrough_sections(
             tag,
             exactness,
         );
-        ir.push_native_unknown(
-            "creo",
-            UnknownRecord {
-                id,
-                offset: offset as u64,
-                byte_len: bytes.len() as u64,
-                sha256: sha256_hex(bytes),
-                data: Some(bytes.to_vec()),
-                links: Vec::new(),
-            },
-        )?;
+        unknowns.push(UnknownRecord {
+            id,
+            offset: offset as u64,
+            byte_len: bytes.len() as u64,
+            sha256: sha256_hex(bytes),
+            data: Some(bytes.to_vec()),
+            links: Vec::new(),
+        });
     }
-    Ok(())
+    unknowns
 }
 
-fn build_container_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_container_ir(
+    scan: &ContainerScan,
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
+    let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     attach_expanded_sections(scan, &mut ir, &mut annotations)?;
-    ir.annotations = annotations.build();
-    Ok(ir)
+    Ok((ir, annotations.build(), unknowns))
 }
 
 /// Build source metadata, preserved geometry records, and transferred entities.
-fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_ir(
+    scan: &ContainerScan,
+) -> Result<(CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
-    preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
+    let unknowns = preserve_passthrough_sections(scan, &mut annotations);
     if !scan.reference_lines.is_empty() {
         let family = |kind: &crate::reference::ReferenceLineKind| match kind {
             crate::reference::ReferenceLineKind::Line => "line",
@@ -22428,6 +22571,8 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         ir.model.tessellations.push(Tessellation {
             id,
             body: None,
+            faces: Vec::new(),
+            chordal_deflection: None,
             source_object: None,
             vertices: strip
                 .positions
@@ -23548,8 +23693,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         namespace.version = 1;
         namespace.set_arena("configuration", &[family_table])?;
     }
-    ir.annotations = annotations.build();
-    Ok(ir)
+    Ok((ir, annotations.build(), unknowns))
 }
 
 fn annotate(

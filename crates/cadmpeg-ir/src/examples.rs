@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 
-use crate::annotations::AnnotationBuilder;
 use crate::document::CadIr;
 use crate::geometry::{
     derive_reference_direction, Curve, CurveGeometry, ProceduralSurface,
@@ -13,7 +12,6 @@ use crate::ids::{
     CoedgeId, CurveId, EdgeId, PointId, ProceduralSurfaceId, SubdId, SurfaceId, VertexId,
 };
 use crate::math::{Point3, Vector3};
-use crate::provenance::Exactness;
 use crate::subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
@@ -113,6 +111,7 @@ pub fn unit_cube() -> CadIr {
         ir.model.points.push(Point {
             id: PointId(format!("synthetic:cube:point#{i}")),
             position: Point3::new(*x, *y, *z),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: VertexId(format!("synthetic:cube:vertex#{i}")),
@@ -180,7 +179,7 @@ pub fn unit_cube() -> CadIr {
                 } else {
                     Sense::Reversed
                 },
-                pcurve: None,
+                pcurves: Vec::new(),
             });
             edge_to_coedges
                 .entry(*edge_index)
@@ -191,7 +190,9 @@ pub fn unit_cube() -> CadIr {
         ir.model.loops.push(Loop {
             id: loop_id.clone().into(),
             face: format!("synthetic:cube:face#{name}").into(),
+            boundary_role: crate::topology::LoopBoundaryRole::Outer,
             coedges: coedge_ids.iter().map(|c| CoedgeId(c.clone())).collect(),
+            vertex_uses: Vec::new(),
         });
         ir.model.faces.push(Face {
             id: format!("synthetic:cube:face#{name}").into(),
@@ -243,53 +244,6 @@ pub fn unit_cube() -> CadIr {
         visible: None,
     });
 
-    let mut annotations = AnnotationBuilder::new();
-    let synthetic = annotations.stream("synthetic:");
-    for id in ir.model.points.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.vertices.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.curves.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.edges.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.surfaces.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.coedges.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.loops.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.faces.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.shells.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.regions.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    for id in ir.model.bodies.iter().map(|entity| entity.id.to_string()) {
-        annotations.note(&id, synthetic, 0);
-        annotations.exactness(id, Exactness::Inferred);
-    }
-    ir.annotations = annotations.build();
     ir.finalize();
 
     ir
@@ -397,32 +351,6 @@ pub fn directed_subd_sum() -> CadIr {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provenance::Exactness;
-
-    #[test]
-    fn unit_cube_annotates_every_entity() {
-        let ir = unit_cube();
-        let entity_count = ir.model.points.len()
-            + ir.model.vertices.len()
-            + ir.model.curves.len()
-            + ir.model.edges.len()
-            + ir.model.surfaces.len()
-            + ir.model.coedges.len()
-            + ir.model.loops.len()
-            + ir.model.faces.len()
-            + ir.model.shells.len()
-            + ir.model.regions.len()
-            + ir.model.bodies.len();
-
-        assert_eq!(ir.annotations.streams, ["synthetic:"]);
-        assert_eq!(ir.annotations.provenance.len(), entity_count);
-        assert_eq!(ir.annotations.exactness.len(), entity_count);
-        assert!(ir
-            .annotations
-            .exactness
-            .values()
-            .all(|note| note.entity == Exactness::Inferred && note.fields.is_empty()));
-    }
 
     #[test]
     fn directed_subd_sum_fixture_round_trips_validates_and_matches_schema_shape() {

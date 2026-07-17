@@ -10,7 +10,6 @@ use std::collections::BTreeSet;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
@@ -146,22 +145,22 @@ fn jpeg_payload() -> Vec<u8> {
 }
 
 fn assert_annotation(
-    ir: &CadIr,
+    annotations: &cadmpeg_ir::Annotations,
     id: &str,
     stream: &str,
     offset: u64,
     tag: &str,
     exactness: Exactness,
 ) {
-    let provenance = &ir.annotations.provenance[id];
-    assert_eq!(ir.annotations.streams[provenance.stream as usize], stream);
+    let provenance = &annotations.provenance[id];
+    assert_eq!(annotations.streams[provenance.stream as usize], stream);
     assert_eq!(provenance.offset, offset);
     assert_eq!(provenance.tag.as_deref(), Some(tag));
     if exactness == Exactness::ByteExact {
-        assert!(!ir.annotations.exactness.contains_key(id));
+        assert!(!annotations.exactness.contains_key(id));
     } else {
-        assert_eq!(ir.annotations.exactness[id].entity, exactness);
-        assert!(ir.annotations.exactness[id].fields.is_empty());
+        assert_eq!(annotations.exactness[id].entity, exactness);
+        assert!(annotations.exactness[id].fields.is_empty());
     }
 }
 
@@ -316,12 +315,18 @@ fn decode_extracts_jpeg_thumbnail_as_native_asset() {
     assert!(!result.report.geometry_transferred);
     let unknowns = result.ir.native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].data.as_deref(), Some(jpeg_payload().as_slice()));
+    let retained = result
+        .source_fidelity
+        .retained_records
+        .iter()
+        .find(|record| record.id == unknowns[0].id.as_str())
+        .expect("retained thumbnail");
+    assert_eq!(retained.data.as_deref(), Some(jpeg_payload().as_slice()));
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         unknowns[0].id.as_str(),
         "creo:THMB_IMG_MAIN",
-        unknowns[0].offset,
+        retained.offset,
         "jpeg_thumbnail",
         Exactness::ByteExact,
     );
@@ -448,7 +453,9 @@ fn scan_bounds_tabulated_cylinder_cubic_curve_replay() {
     assert_eq!(native.fields["control_point_bodies"][3][8], 0x46);
     assert_eq!(native.fields["control_points"][2][0], -3.0);
     assert_eq!(
-        result.ir.annotations.provenance[&native.id].tag.as_deref(),
+        result.source_fidelity.annotations.provenance[&native.id]
+            .tag
+            .as_deref(),
         Some("tabulated_cylinder_curve_replay")
     );
     assert!(result
@@ -708,7 +715,7 @@ fn decode_preserves_surface_parameter_slots_in_native_ir() {
     assert_eq!(row.fields["boundary_type"], 0);
     assert_eq!(row.fields["next_surface"], 0);
     assert_eq!(
-        result.ir.annotations.provenance["creo:visibgeom:surface_row#7"]
+        result.source_fidelity.annotations.provenance["creo:visibgeom:surface_row#7"]
             .tag
             .as_deref(),
         Some("surface_namespace_row")
@@ -907,7 +914,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         }
     );
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         surface.id.as_str(),
         "creo:VisibGeom",
         expected_offset,
@@ -1138,7 +1145,9 @@ fn scan_decodes_named_surface_prototype_parameter_wrappers() {
     assert_eq!(native.fields["parameters"][8]["name"], "dum_array");
     assert_eq!(native.fields["parameters"][8]["value_kind"], "opaque");
     assert_eq!(
-        result.ir.annotations.provenance[&native.id].tag.as_deref(),
+        result.source_fidelity.annotations.provenance[&native.id]
+            .tag
+            .as_deref(),
         Some("surface_prototype_record")
     );
 }
@@ -1264,7 +1273,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     assert_eq!(tables[0].fields["entries"][0]["source_entity_id"], 1);
     assert_eq!(tables[0].fields["entries"][1]["prefixed"], true);
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         &tables[0].id,
         "creo:AllFeatur",
         table.offset as u64,
@@ -1441,6 +1450,7 @@ fn decode_types_class_911_as_unresolved_hole() {
             kind: cadmpeg_ir::features::HoleKind::Unresolved { form: None, .. },
             diameter: None,
             extent: None,
+            ..
         }
     ));
 }
@@ -1474,6 +1484,7 @@ fn decode_types_class_914_as_unresolved_chamfer() {
         cadmpeg_ir::features::FeatureDefinition::Chamfer {
             edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
             spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
+            ..
         }
     ));
 }
@@ -1632,7 +1643,7 @@ fn scan_resolves_allfeatur_walker_order_entity_references() {
     assert_eq!(forward.fields["source_entity_id"], 1);
     assert_eq!(forward.fields["target_resolved"], true);
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         &entities[0].id,
         "creo:AllFeatur",
         scan.feature_entities[0].offset as u64,
@@ -1761,6 +1772,7 @@ fn decode_types_named_annotation_feature_as_a_tree_node() {
         result.ir.model.features[0].definition,
         cadmpeg_ir::features::FeatureDefinition::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
+            ..
         }
     ));
 }
@@ -1781,6 +1793,7 @@ fn decode_types_localized_cross_section_nodes() {
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::TreeNode {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::CrossSections,
+            ..
         }
     )));
 }
@@ -1861,7 +1874,7 @@ fn scan_decodes_allfeatur_generated_geometry_manifest() {
     assert_eq!(tables[2].fields["entry_ids"][0], 42);
     assert_eq!(tables[2].fields["entry_ids"][1], 43);
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         &tables[0].id,
         "creo:AllFeatur",
         scan.feature_geometry_tables[0].offset as u64,
@@ -2147,6 +2160,7 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
                 extent: Some(cadmpeg_ir::features::Extent::Angle {
                     angle: cadmpeg_ir::features::Angle(angle)
                 }),
+                ..
             },
             op: cadmpeg_ir::features::BooleanOp::NewBody,
         } if (*angle - std::f64::consts::TAU).abs() < 1e-12
@@ -2366,7 +2380,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables[1]["homogeneity"], 0);
     assert_eq!(variables[1]["uvar_id"], 4);
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         "creo:featdefs:sketch#40",
         "creo:FeatDefs",
         offset,
@@ -3296,7 +3310,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
     assert_eq!(record.fields["entity_id"], 45);
     assert_eq!(record.fields["center_source"], "endpoint_midpoint");
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         &record.id,
         "creo:MdlRefInfo",
         scan.reference_circles[0].offset as u64,
@@ -3413,7 +3427,7 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
             .contains("Transferred 1 elliptical reference carrier")
     }));
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         &record.id,
         "creo:MdlRefInfo",
         scan.reference_ellipses[0].offset as u64,
@@ -3535,7 +3549,7 @@ fn decode_preserves_counted_curve_expression_programs() {
             .collect::<Vec<_>>()
     );
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         &records[0].id,
         "creo:DEPDB_DATA",
         scan.curve_expressions[0].expression_offset as u64,
@@ -3737,7 +3751,7 @@ fn scan_discovers_curve_halfedge_topology() {
     assert_eq!(row.fields["next_edges"][0], 7);
     assert_eq!(row.fields["next_edges"][1], 7);
     assert_eq!(
-        result.ir.annotations.provenance["creo:visibgeom:curve_topology#7"]
+        result.source_fidelity.annotations.provenance["creo:visibgeom:curve_topology#7"]
             .tag
             .as_deref(),
         Some("curve_topology_row")
@@ -3807,7 +3821,7 @@ fn scan_bounds_curve_parameter_body_before_topology_suffix() {
     assert_eq!(record.fields["suffix"], "unique");
     assert!(record.fields["suffix_candidate_count"].is_null());
     assert_eq!(
-        result.ir.annotations.provenance["creo:visibgeom:curve_parameter#7"]
+        result.source_fidelity.annotations.provenance["creo:visibgeom:curve_parameter#7"]
             .tag
             .as_deref(),
         Some("curve_parameter_record")
@@ -4838,18 +4852,24 @@ fn decode_annotations_cover_every_emitted_entity() {
             .and_then(|suffix| suffix.split_once(":section#"))
             .map(|(name, _)| name)
             .expect("unknown id contains its source section");
+        let retained = result
+            .source_fidelity
+            .retained_records
+            .iter()
+            .find(|record| record.id == unknown.id.as_str())
+            .expect("unknown source record");
         assert_annotation(
-            &result.ir,
+            &result.source_fidelity.annotations,
             unknown.id.as_str(),
             &format!("creo:{section_name}"),
-            unknown.offset,
+            retained.offset,
             "psb_geometry_section",
             Exactness::Unknown,
         );
     }
     for surface in &result.ir.model.surfaces {
         assert_annotation(
-            &result.ir,
+            &result.source_fidelity.annotations,
             surface.id.as_str(),
             "creo:ActDatums",
             datum_offset,
@@ -4859,8 +4879,14 @@ fn decode_annotations_cover_every_emitted_entity() {
     }
     let emitted_entity_count =
         unknowns.len() + result.ir.model.surfaces.len() + result.ir.model.features.len();
-    assert_eq!(result.ir.annotations.provenance.len(), emitted_entity_count);
-    assert_eq!(result.ir.annotations.exactness.len(), emitted_entity_count);
+    assert_eq!(
+        result.source_fidelity.annotations.provenance.len(),
+        emitted_entity_count
+    );
+    assert_eq!(
+        result.source_fidelity.annotations.exactness.len(),
+        emitted_entity_count
+    );
 }
 
 #[test]
@@ -4981,7 +5007,7 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
         Some("y")
     );
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         "creo:model:feature#41",
         "creo:MdlStatus",
         scan.feature_operations[0].offset as u64,
@@ -5111,7 +5137,7 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
         Some("protextrude")
     );
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         "creo:model:feature#8053",
         "creo:DEPDB_DATA",
         operation.offset as u64,
@@ -5210,7 +5236,7 @@ fn scan_binds_standalone_depdb_section_to_its_recipe_owner() {
     let records = &result.ir.native.namespace("creo").unwrap().arenas["feature_definitions"];
     assert_eq!(records[0].fields["source_section"], "DEPDB_DATA");
     assert_annotation(
-        &result.ir,
+        &result.source_fidelity.annotations,
         "creo:featdefs:feature_definition#2",
         "creo:DEPDB_DATA",
         definition.offset as u64,

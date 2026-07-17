@@ -32,11 +32,11 @@ pub fn decode(
     let scan = container::scan(reader)?;
 
     if options.container_only {
-        let mut ir = build_metadata_ir(&scan)?;
-        populate_annotations(&mut ir, &scan, &F3dNative::default(), None);
-        preserve_source_image(&scan, &mut ir)?;
+        let (mut ir, unknowns) = build_metadata_ir(&scan);
+        let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None, &unknowns);
+        let source_image = preserve_source_image(&scan, &mut ir);
         let report = build_container_report(&scan, true);
-        return Ok(DecodeResult::new(ir, report));
+        return decode_result(ir, report, annotations, &unknowns, &source_image);
     }
 
     // `try_decode_brep` returns `Some` after producing carriers or points.
@@ -69,7 +69,7 @@ pub fn decode(
                 }
             }
             let annotation_records = std::mem::take(&mut brep.annotation_records);
-            let (mut ir, mut native) = build_geometry_ir(&scan, &active, brep)?;
+            let (mut ir, mut native, unknowns) = build_geometry_ir(&scan, &active, brep);
             native.body_visibilities = body_visibilities;
             if let Some(history) = decode_asm_history(&scan, &active)? {
                 native.asm_histories.push(history);
@@ -138,19 +138,20 @@ pub fn decode(
                 }
             }
             native.store(ir.native.namespace_mut("f3d"))?;
-            populate_annotations(
-                &mut ir,
+            let annotations = populate_annotations(
+                &ir,
                 &scan,
                 &native,
                 Some((&active.name, &annotation_records)),
+                &unknowns,
             );
-            preserve_source_image(&scan, &mut ir)?;
-            return Ok(DecodeResult::new(ir, report));
+            let source_image = preserve_source_image(&scan, &mut ir);
+            return decode_result(ir, report, annotations, &unknowns, &source_image);
         }
     }
 
     // No decodable SAB stream: use container metadata.
-    let mut ir = build_metadata_ir(&scan)?;
+    let (mut ir, unknowns) = build_metadata_ir(&scan);
     let mut native = F3dNative::default();
     if let Some(active) = container::select_active_brep(&scan) {
         if let Some(history) = decode_asm_history(&scan, active)? {
@@ -188,31 +189,52 @@ pub fn decode(
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
     native.store(ir.native.namespace_mut("f3d"))?;
-    populate_annotations(&mut ir, &scan, &native, None);
-    preserve_source_image(&scan, &mut ir)?;
+    let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
+    let source_image = preserve_source_image(&scan, &mut ir);
     let report = build_container_report(&scan, false);
-    Ok(DecodeResult::new(ir, report))
+    decode_result(ir, report, annotations, &unknowns, &source_image)
 }
 
-fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> Result<(), CodecError> {
+fn decode_result(
+    mut ir: CadIr,
+    report: DecodeReport,
+    annotations: cadmpeg_ir::Annotations,
+    unknowns: &[UnknownRecord],
+    source_image: &UnknownRecord,
+) -> Result<DecodeResult, CodecError> {
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..cadmpeg_ir::SourceFidelity::default()
+    };
+    source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
+    source_fidelity.retain_unknown_records("f3d", std::slice::from_ref(source_image));
+    ir.finalize();
+    let hash = semantic_hash(&ir);
+    if let Some(source) = &mut ir.source {
+        source.attributes.insert("semantic_sha256".into(), hash);
+    }
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        source_fidelity,
+    ))
+}
+
+fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> UnknownRecord {
     let id = "f3d:file:source-image#0";
-    ir.push_native_unknown(
-        "f3d",
-        UnknownRecord {
-            id: UnknownId(id.into()),
-            offset: 0,
-            byte_len: scan.source_image.len() as u64,
-            sha256: sha256_hex(&scan.source_image),
-            data: Some(scan.source_image.clone()),
-            links: Vec::new(),
-        },
-    )?;
     ir.finalize();
     let hash = semantic_hash(ir);
     if let Some(source) = &mut ir.source {
         source.attributes.insert("semantic_sha256".into(), hash);
     }
-    Ok(())
+    UnknownRecord {
+        id: UnknownId(id.into()),
+        offset: 0,
+        byte_len: scan.source_image.len() as u64,
+        sha256: sha256_hex(&scan.source_image),
+        data: Some(scan.source_image.clone()),
+        links: Vec::new(),
+    }
 }
 
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
@@ -243,11 +265,12 @@ pub(crate) fn semantic_hash(ir: &CadIr) -> String {
 }
 
 fn populate_annotations(
-    ir: &mut CadIr,
+    ir: &CadIr,
     scan: &ContainerScan,
     native: &F3dNative,
     brep: Option<(&str, &[brep::AnnotationRecord])>,
-) {
+    unknowns: &[UnknownRecord],
+) -> cadmpeg_ir::Annotations {
     let mut annotations = AnnotationBuilder::new();
     if let Some((stream_name, records)) = brep {
         let stream = annotations.stream(format!("f3d:{stream_name}"));
@@ -352,14 +375,14 @@ fn populate_annotations(
     if brep.is_none() {
         if let Some(active) = container::select_active_brep(scan) {
             let stream = annotations.stream(format!("f3d:{}", active.name));
-            for unknown in ir.native_unknowns("f3d").unwrap_or_default() {
+            for unknown in unknowns {
                 annotations
                     .note(&unknown.id.0, stream, unknown.offset)
                     .tag("opaque_brep");
             }
         }
     }
-    ir.annotations = annotations.build();
+    annotations.build()
 }
 
 fn trailing_offset(id: &str) -> u64 {
@@ -441,7 +464,7 @@ fn build_geometry_ir(
     scan: &ContainerScan,
     active: &BrepFacts,
     brep: Brep,
-) -> Result<(CadIr, F3dNative), CodecError> {
+) -> (CadIr, F3dNative, Vec<UnknownRecord>) {
     let mut ir = CadIr::empty(Units::default());
     let (source, tolerances) = source_and_tolerances(scan, active);
     ir.source = Some(source);
@@ -477,8 +500,7 @@ fn build_geometry_ir(
         ..F3dNative::default()
     };
     ir.model.attributes = brep.attributes;
-    ir.set_native_unknowns("f3d", &brep.unknowns)?;
-    Ok((ir, native))
+    (ir, native, brep.unknowns)
 }
 
 /// Source metadata attributes and kernel tolerances from the active BREP header.
@@ -645,8 +667,9 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
 }
 
-fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
+fn build_metadata_ir(scan: &ContainerScan) -> (CadIr, Vec<UnknownRecord>) {
     let mut ir = CadIr::empty(Units::default());
+    let mut unknowns = Vec::new();
 
     let mut attributes = std::collections::BTreeMap::new();
     if let Some(folder) = &scan.asset_folder {
@@ -681,24 +704,21 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }
         }
 
-        ir.push_native_unknown(
-            "f3d",
-            UnknownRecord {
-                id: UnknownId(format!("f3d:{}:unknown#0", brep.name)),
-                offset: 0,
-                byte_len: brep.uncompressed_len,
-                sha256: brep.sha256.clone(),
-                data: None,
-                links: Vec::new(),
-            },
-        )?;
+        unknowns.push(UnknownRecord {
+            id: UnknownId(format!("f3d:{}:unknown#0", brep.name)),
+            offset: 0,
+            byte_len: brep.uncompressed_len,
+            sha256: brep.sha256.clone(),
+            data: None,
+            links: Vec::new(),
+        });
     }
 
     ir.source = Some(SourceMeta {
         format: "f3d".to_string(),
         attributes,
     });
-    Ok(ir)
+    (ir, unknowns)
 }
 
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {

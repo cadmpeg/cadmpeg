@@ -315,11 +315,17 @@ fn transform_surface(
             .control_points
             .iter_mut()
             .for_each(|point| *point = transform_point(transform, *point)),
+        SurfaceGeometry::Polygonal { vertices, .. } => vertices
+            .iter_mut()
+            .for_each(|point| *point = transform_point(transform, *point)),
         SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "SLDPRT cannot transform an opaque surface".into(),
             ))
         }
+        SurfaceGeometry::Transformed {
+            transform: carrier, ..
+        } => *carrier = multiply(transform, *carrier),
     }
     Ok(())
 }
@@ -348,6 +354,9 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
             .control_points
             .iter_mut()
             .for_each(|point| *point = transform_point(transform, *point)),
+        CurveGeometry::Polyline { points, .. } => points
+            .iter_mut()
+            .for_each(|point| *point = transform_point(transform, *point)),
         CurveGeometry::Parabola {
             vertex,
             axis,
@@ -371,8 +380,24 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
         CurveGeometry::Degenerate { point } => {
             *point = transform_point(transform, *point);
         }
+        CurveGeometry::Composite { .. } => {}
         CurveGeometry::Unknown { .. } => {}
+        CurveGeometry::Transformed {
+            transform: carrier, ..
+        } => *carrier = multiply(transform, *carrier),
     }
+}
+
+fn multiply(left: Transform, right: Transform) -> Transform {
+    let mut rows = [[0.0; 4]; 4];
+    for (row, values) in rows.iter_mut().enumerate() {
+        for (column, value) in values.iter_mut().enumerate() {
+            *value = (0..4)
+                .map(|inner| left.rows[row][inner] * right.rows[inner][column])
+                .sum();
+        }
+    }
+    Transform { rows }
 }
 
 fn dot(left: Vector3, right: Vector3) -> f64 {

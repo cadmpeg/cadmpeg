@@ -133,17 +133,61 @@ pub struct Face {
     pub tolerance: Option<f64>,
 }
 
-/// A closed boundary loop of a face, expressed as an ordered ring of coedges.
-/// The ordering in `coedges` is the ring order; each coedge's `next` should
-/// point to the following entry (validation enforces the ring closes).
+/// A loop's boundary role within its owning face.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LoopBoundaryRole {
+    /// The source does not classify this loop as outer or inner.
+    #[default]
+    Unspecified,
+    /// The loop is the explicit exterior boundary of the face.
+    Outer,
+    /// The loop bounds material excluded from the face; all loops may be inner
+    /// when the surface parameter domain supplies the exterior boundary.
+    Inner,
+}
+
+/// A closed boundary of a face, expressed as an ordered ring of coedges or one
+/// vertex use at a surface singularity. The ordering in `coedges` is the ring
+/// order; each coedge's `next` should point to the following entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct Loop {
     /// Arena id.
     pub id: LoopId,
     /// Owning face.
     pub face: FaceId,
-    /// Coedges in ring order.
+    /// Boundary role within the owning face.
+    #[serde(default)]
+    pub boundary_role: LoopBoundaryRole,
+    /// Coedges in ring order for an edge loop.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub coedges: Vec<CoedgeId>,
+    /// Ordered pole-vertex occurrences within the cyclic loop traversal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub vertex_uses: Vec<VertexUse>,
+}
+
+/// One ordered parameter-space representation of a coedge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct PcurveUse {
+    /// Parameter-space curve carrier.
+    pub pcurve: PcurveId,
+    /// Whether the source declares this curve isoparametric on the face surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isoparametric: Option<bool>,
+}
+
+/// One pole-vertex occurrence in a loop traversal.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct VertexUse {
+    /// Referenced pole vertex.
+    pub vertex: VertexId,
+    /// Preceding coedge in the cyclic traversal, absent for a vertex-only loop.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after: Option<CoedgeId>,
+    /// Ordered parameter-space images associated with this pole occurrence.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pcurves: Vec<PcurveUse>,
 }
 
 /// One use of an edge by a loop.
@@ -166,9 +210,9 @@ pub struct Coedge {
     pub radial_next: CoedgeId,
     /// Direction relative to the edge curve.
     pub sense: Sense,
-    /// Optional parameter-space image of this coedge on the face surface.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub pcurve: Option<PcurveId>,
+    /// Ordered parameter-space images of this coedge on the face surface.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pcurves: Vec<PcurveUse>,
 }
 
 /// An edge: a bounded segment of a 3D curve between two vertices.
@@ -215,4 +259,7 @@ pub struct Point {
     pub id: PointId,
     /// Coordinates in the document's length unit.
     pub position: Point3,
+    /// Source object carrying this free point, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_object: Option<crate::provenance::SourceObjectAssociation>,
 }

@@ -126,11 +126,13 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
     let vertices = vertex_positions(ir);
 
     for coedge in &ir.model.coedges {
-        let Some(pcurve) = coedge
-            .pcurve
-            .as_ref()
-            .and_then(|id| pcurves.get(id.0.as_str()))
-        else {
+        let Some((first, last)) = coedge.pcurves.first().zip(coedge.pcurves.last()) else {
+            continue;
+        };
+        let (Some(first), Some(last)) = (
+            pcurves.get(first.pcurve.0.as_str()),
+            pcurves.get(last.pcurve.0.as_str()),
+        ) else {
             continue;
         };
         let Some(face) = loops
@@ -151,12 +153,15 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
         ) else {
             continue;
         };
-        let Some([t0, t1]) = pcurve_parameter_extremes(pcurve) else {
+        let (Some([t0, _]), Some([_, t1])) = (
+            pcurve_parameter_extremes(first),
+            pcurve_parameter_extremes(last),
+        ) else {
             continue;
         };
         let (Some(uv0), Some(uv1)) = (
-            pcurve_uv(&pcurve.geometry, t0),
-            pcurve_uv(&pcurve.geometry, t1),
+            pcurve_uv(&first.geometry, t0),
+            pcurve_uv(&last.geometry, t1),
         ) else {
             continue;
         };
@@ -184,15 +189,25 @@ pub(super) fn check_pcurve_surface_consistency(ir: &CadIr, findings: &mut Vec<Fi
     }
 }
 
-/// The parameter extremes over which a pcurve is checked. A NURBS pcurve is
-/// evaluated over its own knot domain, its native parameterization; the stored
-/// `parameter_range` is a separately retained native interval in an unrelated
-/// parameterization and must not override the knot domain. A line pcurve has no
-/// intrinsic extent, so its stored `parameter_range` supplies the endpoints,
-/// and a line without one is skipped.
+/// The parameter extremes over which a pcurve is checked. Geometry is evaluated
+/// in its own parameterization: NURBS knot bounds and explicit trimmed bounds.
+/// The top-level retained range may use a source parameterization unrelated to
+/// the neutral geometry and therefore does not override either domain.
 fn pcurve_parameter_extremes(pcurve: &crate::geometry::Pcurve) -> Option<[f64; 2]> {
-    match &pcurve.geometry {
+    pcurve_geometry_parameter_extremes(&pcurve.geometry)
+}
+
+fn pcurve_geometry_parameter_extremes(geometry: &PcurveGeometry) -> Option<[f64; 2]> {
+    match geometry {
         PcurveGeometry::Nurbs { knots, .. } => Some([*knots.first()?, *knots.last()?]),
-        PcurveGeometry::Line { .. } => pcurve.parameter_range,
+        PcurveGeometry::Trimmed {
+            parameter_range, ..
+        } => Some(*parameter_range),
+        PcurveGeometry::Offset { basis, .. } => pcurve_geometry_parameter_extremes(basis),
+        PcurveGeometry::Line { .. }
+        | PcurveGeometry::Circle { .. }
+        | PcurveGeometry::Ellipse { .. }
+        | PcurveGeometry::Parabola { .. }
+        | PcurveGeometry::Hyperbola { .. } => None,
     }
 }
