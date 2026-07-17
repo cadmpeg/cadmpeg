@@ -42,6 +42,8 @@ pub struct FaceColor {
 #[derive(Debug, Clone, Default)]
 pub struct Facts {
     pub bodies: Vec<BodyRecord>,
+    /// Cluster-key chain bodies ([spec §6]); consulted when `bodies` binds no face.
+    pub cluster_bodies: Vec<BodyRecord>,
     pub face_colors: Vec<FaceColor>,
 }
 
@@ -213,8 +215,98 @@ pub fn scan(body: &[u8]) -> Facts {
     }
     Facts {
         bodies: bodies(&entities),
+        cluster_bodies: cluster_chain_bodies(&entities),
         face_colors: face_colors.into_values().collect(),
     }
+}
+
+/// Decode cluster-key chain bodies ([spec §6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#6-body-records)).
+///
+/// A body list head is a `flo == 2` record shaped `[key, root, 1, 1, ...]`
+/// whose root is a record with `slot0 == key` and `slot2` naming the
+/// head back. The root begins a descending chain of records sharing
+/// `slot0 == key` linked through `slot1`; each valid chain is one stored body.
+/// The entity records between one head and the next, in stream order, form the
+/// body's section interval; a body owns the face entities in its interval.
+fn cluster_chain_bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
+    let mut by_attr: HashMap<u16, &EntityRecord> = HashMap::new();
+    for record in entities {
+        if by_attr
+            .get(&record.attr)
+            .is_none_or(|current| record.seq >= current.seq)
+        {
+            by_attr.insert(record.attr, record);
+        }
+    }
+    let mut heads = Vec::new();
+    for head in by_attr.values() {
+        if head.flo() != 2 || head.refs.len() < 3 || head.refs[2..].iter().any(|slot| *slot != 1) {
+            continue;
+        }
+        let (key, root_attr) = (head.refs[0], head.refs[1]);
+        if key <= 1 || root_attr <= 1 {
+            continue;
+        }
+        let Some(root) = by_attr.get(&root_attr).copied() else {
+            continue;
+        };
+        if root.refs.first() != Some(&key) || root.refs.get(2) != Some(&head.attr) {
+            continue;
+        }
+        // Walk the descending chain; a body needs the root plus one member.
+        let mut chain = vec![root.attr];
+        let mut cursor = root;
+        loop {
+            let next = cursor.refs.get(1).copied().unwrap_or(1);
+            if next <= 1 {
+                break;
+            }
+            let Some(node) = by_attr.get(&next).copied() else {
+                break;
+            };
+            if node.refs.first() != Some(&key) || chain.contains(&node.attr) {
+                break;
+            }
+            chain.push(node.attr);
+            cursor = node;
+        }
+        if chain.len() >= 2 {
+            heads.push((head.offset, key, root, chain));
+        }
+    }
+    heads.sort_by_key(|(offset, ..)| *offset);
+    let mut out = Vec::new();
+    for (index, (offset, _key, root, chain)) in heads.iter().enumerate() {
+        let start = if index == 0 { 0 } else { *offset };
+        let end = heads
+            .get(index + 1)
+            .map_or(usize::MAX, |(next_offset, ..)| *next_offset);
+        let mut refs: Vec<u16> = entities
+            .iter()
+            .filter(|record| (start..end).contains(&record.offset))
+            .map(|record| record.attr)
+            .chain(chain.iter().copied())
+            .collect();
+        refs.sort_unstable();
+        refs.dedup();
+        out.push(BodyRecord {
+            attr: root.attr,
+            kind: BodyKind::Solid,
+            refs: refs.clone(),
+            offset: root.offset,
+            regions: vec![RegionRecord {
+                attr: root.attr,
+                offset: root.offset,
+                shells: vec![ShellRecord {
+                    attr: root.attr,
+                    offset: root.offset,
+                    refs,
+                }],
+            }],
+        });
+    }
+    out.sort_by_key(|record| record.attr);
+    out
 }
 
 /// Decode explicit `MANIFOLD_SOLID_BREP` entity-51 records.
@@ -659,6 +751,44 @@ mod tests {
             .map(|record| (record.attr, record))
             .collect::<HashMap<_, _>>();
         assert!(schema_36001_compact_root_body(&incomplete).is_empty());
+    }
+
+    fn flo2(attr: u16, disc: u16, refs: [u16; 6]) -> EntityRecord {
+        let mut out = record(attr, disc, refs);
+        out.flags = 2;
+        out
+    }
+
+    #[test]
+    fn cluster_key_chain_heads_partition_bodies() {
+        let records = vec![
+            flo2(5, 0x04, [3, 32, 1, 1, 1, 1]),
+            flo2(32, 0x0f, [3, 36, 5, 1, 1, 1]),
+            flo2(36, 0x11, [3, 1, 32, 1, 1, 1]),
+            record(57, 0x0d, [56, 59, 1, 60, 1, 61]),
+            flo2(100, 0x04, [7, 132, 1, 1, 1, 1]),
+            record(120, 0x0d, [119, 122, 1, 57, 1, 124]),
+            flo2(132, 0x0f, [7, 136, 100, 1, 1, 1]),
+            flo2(136, 0x11, [7, 1, 132, 1, 1, 1]),
+        ];
+
+        let bodies = cluster_chain_bodies(&records);
+        let [first, second] = bodies.as_slice() else {
+            panic!("two chain bodies, got {bodies:?}");
+        };
+        assert_eq!(first.attr, 32);
+        assert_eq!(second.attr, 132);
+        assert!(first.refs.contains(&57) && !first.refs.contains(&120));
+        assert!(second.refs.contains(&120) && !second.refs.contains(&57));
+        assert_eq!(first.regions[0].shells[0].attr, 32);
+        assert_eq!(second.regions[0].shells[0].attr, 132);
+
+        // A head without a mutual root produces no chain body.
+        let broken = vec![
+            flo2(5, 0x04, [3, 32, 1, 1, 1, 1]),
+            flo2(32, 0x0f, [4, 36, 5, 1, 1, 1]),
+        ];
+        assert!(cluster_chain_bodies(&broken).is_empty());
     }
 }
 

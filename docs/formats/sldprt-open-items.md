@@ -2,7 +2,8 @@
 
 ## Body classification
 
-- The class-root vector following `index_map_offset` and its relation to body, shell, and face-use heads is unresolved.
+- The class-root vector following `index_map_offset` is unresolved. Body, shell, and face-use heads bind through the disc-keyed layouts and the cluster-key chain form; sites whose list heads satisfy neither shape remain unresolved.
+- Deltas-stream face entities outside a multi-chain site's partition intervals have no resolved body assignment.
 
 ## Geometry carriers
 

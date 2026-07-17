@@ -314,6 +314,9 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                 if facts.bodies.is_empty() {
                     facts.bodies = scanned_facts.bodies;
                 }
+                if facts.cluster_bodies.is_empty() {
+                    facts.cluster_bodies = scanned_facts.cluster_bodies;
+                }
                 facts.face_colors.append(&mut scanned_facts.face_colors);
             } else {
                 tables = scanned_tables;
@@ -342,7 +345,8 @@ fn decode_graph(
     entity_facts: entity::Facts,
     stream: &str,
 ) -> Brep {
-    let body_records = entity_facts.bodies;
+    let mut body_records = entity_facts.bodies;
+    let cluster_bodies = entity_facts.cluster_bodies;
 
     let mut out = Brep {
         face_colors: entity_facts.face_colors,
@@ -633,25 +637,54 @@ fn decode_graph(
     let loop_set = kept_loops;
 
     // Surfaces + faces.
-    let mut bridge_group = HashMap::new();
-    let mut bridge_shell = HashMap::new();
-    for (group, body_record) in body_records.iter().enumerate() {
-        for face in &faces {
-            let owner = t.bridges.get(&face.bridge_attr).and_then(|r| r.owner);
-            if body_record.refs.contains(&face.bridge_attr)
-                || owner.is_some_and(|owner| body_record.refs.contains(&owner))
-            {
-                bridge_group.insert(face.bridge_attr, group);
-                if let Some(shell) = body_record
-                    .regions
-                    .iter()
-                    .flat_map(|region| &region.shells)
-                    .find(|shell| {
-                        shell.refs.contains(&face.bridge_attr)
-                            || owner.is_some_and(|owner| shell.refs.contains(&owner))
-                    })
+    let bind_bridges = |body_records: &[entity::BodyRecord],
+                        faces: &[WalkedFace]|
+     -> (HashMap<u16, usize>, HashMap<u16, u16>) {
+        let mut bridge_group = HashMap::new();
+        let mut bridge_shell = HashMap::new();
+        for (group, body_record) in body_records.iter().enumerate() {
+            for face in faces {
+                let owner = t.bridges.get(&face.bridge_attr).and_then(|r| r.owner);
+                if body_record.refs.contains(&face.bridge_attr)
+                    || owner.is_some_and(|owner| body_record.refs.contains(&owner))
                 {
-                    bridge_shell.insert(face.bridge_attr, shell.attr);
+                    bridge_group.insert(face.bridge_attr, group);
+                    if let Some(shell) = body_record
+                        .regions
+                        .iter()
+                        .flat_map(|region| &region.shells)
+                        .find(|shell| {
+                            shell.refs.contains(&face.bridge_attr)
+                                || owner.is_some_and(|owner| shell.refs.contains(&owner))
+                        })
+                    {
+                        bridge_shell.insert(face.bridge_attr, shell.attr);
+                    }
+                }
+            }
+        }
+        (bridge_group, bridge_shell)
+    };
+    let (mut bridge_group, mut bridge_shell) = bind_bridges(&body_records, &faces);
+    // Primary body records that own no face are superseded by cluster-key
+    // chain bodies; a sole chain owns every canonical face in the site.
+    if !body_records.is_empty() && bridge_group.is_empty() && !cluster_bodies.is_empty() {
+        let (cluster_group, cluster_shell) = bind_bridges(&cluster_bodies, &faces);
+        if !cluster_group.is_empty() {
+            body_records = cluster_bodies;
+            bridge_group = cluster_group;
+            bridge_shell = cluster_shell;
+            if let [sole] = body_records.as_slice() {
+                let shell_attr = sole
+                    .regions
+                    .first()
+                    .and_then(|region| region.shells.first())
+                    .map(|shell| shell.attr);
+                for face in &faces {
+                    bridge_group.entry(face.bridge_attr).or_insert(0);
+                    if let Some(shell_attr) = shell_attr {
+                        bridge_shell.entry(face.bridge_attr).or_insert(shell_attr);
+                    }
                 }
             }
         }
