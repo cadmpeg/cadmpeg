@@ -17,8 +17,10 @@
 //! charges the whole-image directory scan as `work` before any directory walk,
 //! charges the per-extent runtime-graph footprint against `alloc_bytes` in
 //! [`register_extent_spaces`], and defers the reconstructed BREP copy to
-//! [`DecodeContext::begin_derived_space`], which charges `decompressed_bytes`
-//! for the assembled `Concat`. The only residual `View::window()` egress is the
+//! [`DecodeContext::begin_derived_space`], which charges the assembled `Concat`
+//! copy against `alloc_bytes` (reason `derived_concat`) — a `Concat` derived
+//! space charges `alloc_bytes`, not `decompressed_bytes` (doc §4.5). The only
+//! residual `View::window()` egress is the
 //! extent child views handed to that derived-space writer. Every directory
 //! accumulator is a lint-invisible `Vec::new`+push (doc section 8.3): each is
 //! floored and capped by a structural gate — extent counts by
@@ -592,11 +594,15 @@ fn identify_variant(
 ///
 /// `read_root` already enforced the platform `max_input_bytes` policy limit; the
 /// `V5_CFV2` container carries no separate deployment ceiling to dual-enforce.
-/// The record-family census, the E5-stream search, and the directory
-/// self-consistency scan are all linear in the input, so their bytes are charged
-/// once as `work` before scanning. Both `inspect` and `decode` enter through
-/// this function, so they run one shared container policy (graduation-gate item
-/// 6).
+/// The directory self-consistency scan and each census pass are linear in the
+/// input, so their bytes are charged as `work` before scanning. The census is
+/// not a single pass: [`identify`] scans the whole image for the `A9`/`E5`
+/// markers and for the E5 record stream (three image passes), then scans the
+/// reconstructed BREP body for FBB runs, edge delimiters, and vertex markers
+/// (three BREP passes); every one of those examined-byte passes is charged so
+/// the `work` counter reflects the real linear-multiple, not a single
+/// `data.len()`. Both `inspect` and `decode` enter through this function, so
+/// they run one shared container policy (graduation-gate item 6).
 pub fn scan_view<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -617,7 +623,25 @@ pub fn scan_view<'a>(
     // path must not — that copy would be a second, uncharged reconstruction of
     // the whole BREP body on every decode and inspect.
     let brep = build_brep_space(ctx, root, inner.as_ref())?;
-    let (census, variant) = identify(data, inner.as_ref(), brep.as_ref().map(|v| v.window()));
+    let brep_window = brep.as_ref().map(|v| v.window());
+    // `identify` examines the whole image three times (A9 count, E5 count, E5
+    // record-stream search) and the reconstructed BREP three times (FBB runs,
+    // edge delimiters, vertex markers). Charge those examined bytes as `work`
+    // before running the census so the counter matches the §5.1 per-byte
+    // semantics rather than the single directory-scan charge above.
+    ctx.charge_work(
+        (data.len() as u64).saturating_mul(3),
+        "catia_container_census",
+        Some(root.location()),
+    )?;
+    if let Some(b) = brep_window {
+        ctx.charge_work(
+            (b.len() as u64).saturating_mul(3),
+            "catia_brep_census",
+            Some(root.location()),
+        )?;
+    }
+    let (census, variant) = identify(data, inner.as_ref(), brep_window);
     Ok(ContainerScan {
         data,
         outer_dir_offset,
