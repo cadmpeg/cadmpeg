@@ -247,15 +247,14 @@ fn transfer_complete(
                     return false;
                 };
                 let oriented_plan = if matches!(surface, B5Surface::Plane { .. }) {
+                    edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
+                        oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
+                    })
+                } else if matches!(surface, B5Surface::Nurbs(_)) {
                     edge_pcurve_parameters(graph, edge_id, pcurve_id)
+                        .and_then(|parameters| isocurve_endpoint_parameters(pcurve, parameters))
                         .and_then(|parameters| {
                             oriented_nurbs_range(geometry.clone(), parameters, edge_start, edge_end)
-                        })
-                        .map(|(geometry, parameter_range)| CurvePlan {
-                            geometry,
-                            parameter_range: Some(parameter_range),
-                            edge_tolerance: None,
-                            cache_fit_tolerance: None,
                         })
                 } else if matches!(geometry, CurveGeometry::Line { .. }) {
                     oriented_line_plan(&geometry, edge_start, edge_end)
@@ -1086,7 +1085,7 @@ fn oriented_nurbs_range(
     endpoint_parameters: [f64; 2],
     edge_start: [f64; 3],
     edge_end: [f64; 3],
-) -> Option<(CurveGeometry, [f64; 2])> {
+) -> Option<CurvePlan> {
     let CurveGeometry::Nurbs(mut curve) = geometry else {
         return None;
     };
@@ -1123,12 +1122,61 @@ fn oriented_nurbs_range(
     let geometry = CurveGeometry::Nurbs(curve);
     let start = curve_point(&geometry, range[0])?;
     let end = curve_point(&geometry, range[1])?;
-    if distance([start.x, start.y, start.z], edge_start) > POINT_TOLERANCE
-        || distance([end.x, end.y, end.z], edge_end) > POINT_TOLERANCE
+    let residual = distance([start.x, start.y, start.z], edge_start)
+        .max(distance([end.x, end.y, end.z], edge_end));
+    if residual > POINT_TOLERANCE {
+        return None;
+    }
+    Some(CurvePlan {
+        geometry,
+        parameter_range: Some(range),
+        edge_tolerance: (residual > 1e-9).then_some(residual + 1e-9),
+        cache_fit_tolerance: None,
+    })
+}
+
+fn isocurve_endpoint_parameters(
+    pcurve: &B5Pcurve,
+    endpoint_parameters: [f64; 2],
+) -> Option<[f64; 2]> {
+    let varying_dimension = if constant_coordinate(&pcurve.control_points, 0).is_some() {
+        1
+    } else if constant_coordinate(&pcurve.control_points, 1).is_some() {
+        0
+    } else {
+        return None;
+    };
+    if let Some(weights) = &pcurve.weights {
+        if weights.len() != pcurve.control_points.len()
+            || weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        {
+            return None;
+        }
+    }
+    if pcurve
+        .control_points
+        .iter()
+        .any(|point| !point[varying_dimension].is_finite())
+        || (!pcurve
+            .control_points
+            .windows(2)
+            .all(|pair| pair[0][varying_dimension] <= pair[1][varying_dimension])
+            && !pcurve
+                .control_points
+                .windows(2)
+                .all(|pair| pair[0][varying_dimension] >= pair[1][varying_dimension]))
     {
         return None;
     }
-    Some((geometry, range))
+    let values = endpoint_parameters
+        .map(|parameter| crate::b5::evaluate_pcurve(pcurve, parameter))
+        .map(|uv| uv.map(|point| point[varying_dimension]));
+    let [Some(start), Some(end)] = values else {
+        return None;
+    };
+    Some([start, end])
 }
 
 fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
@@ -1997,9 +2045,10 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::{
         b5_edge_support_definition, body_kind_if_owned, cylinder_helix, cylinder_point,
-        lifted_curve_geometry, merge_curve_plan, neutral_pcurve_point, oriented_circle_plan,
-        oriented_line_plan, oriented_nurbs_range, rational_arc, revolution_surface, revolve_nurbs,
-        transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
+        isocurve_endpoint_parameters, lifted_curve_geometry, merge_curve_plan,
+        neutral_pcurve_point, oriented_circle_plan, oriented_line_plan, oriented_nurbs_range,
+        rational_arc, revolution_surface, revolve_nurbs, transfer, transfer_vertex_tolerances,
+        CurvePlan, SurfacePlan,
     };
     use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::document::CadIr;
@@ -2387,25 +2436,26 @@ mod tests {
             weights: None,
             periodic: false,
         });
-        let (forward, forward_range) = oriented_nurbs_range(
+        let forward = oriented_nurbs_range(
             geometry.clone(),
             [2.0, 8.0],
             [2.0, 0.0, 2.0],
             [8.0, 0.0, 2.0],
         )
         .expect("forward trimmed range");
-        assert_eq!(forward, geometry);
-        assert_eq!(forward_range, [2.0, 8.0]);
+        assert_eq!(forward.geometry, geometry);
+        assert_eq!(forward.parameter_range, Some([2.0, 8.0]));
+        assert_eq!(forward.edge_tolerance, None);
 
-        let (reversed, reversed_range) = oriented_nurbs_range(
+        let reversed = oriented_nurbs_range(
             geometry.clone(),
             [8.0, 2.0],
             [8.0, 0.0, 2.0],
             [2.0, 0.0, 2.0],
         )
         .expect("reversed trimmed range");
-        assert_eq!(reversed_range, [2.0, 8.0]);
-        let CurveGeometry::Nurbs(reversed) = reversed else {
+        assert_eq!(reversed.parameter_range, Some([2.0, 8.0]));
+        let CurveGeometry::Nurbs(reversed) = reversed.geometry else {
             unreachable!();
         };
         assert_eq!(
@@ -2415,6 +2465,60 @@ mod tests {
         assert!(
             oriented_nurbs_range(geometry, [2.0, 8.0], [3.0, 0.0, 2.0], [8.0, 0.0, 2.0]).is_none()
         );
+
+        let tolerant = oriented_nurbs_range(
+            CurveGeometry::Nurbs(NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 10.0, 10.0],
+                control_points: vec![Point3::new(0.0, 0.0, 2.0), Point3::new(10.0, 0.0, 2.0)],
+                weights: None,
+                periodic: false,
+            }),
+            [2.0, 8.0],
+            [2.0, 0.0, 2.0 + 1e-4],
+            [8.0, 0.0, 2.0],
+        )
+        .expect("tolerant trimmed range");
+        assert!((tolerant.edge_tolerance.expect("edge tolerance") - (1e-4 + 1e-9)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn isocurve_range_uses_monotone_varying_surface_coordinate() {
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 2,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![3, 3],
+            control_points: vec![[4.0, 2.0], [4.0, 6.0], [4.0, 10.0]],
+            weights: Some(vec![1.0, 2.0, 1.0]),
+            lifted_endpoints: None,
+        };
+        assert_eq!(
+            isocurve_endpoint_parameters(&pcurve, [0.25, 0.75]),
+            Some([50.0 / 11.0, 82.0 / 11.0])
+        );
+
+        let decreasing = B5Pcurve {
+            control_points: pcurve.control_points.iter().copied().rev().collect(),
+            ..pcurve.clone()
+        };
+        assert_eq!(
+            isocurve_endpoint_parameters(&decreasing, [0.25, 0.75]),
+            Some([82.0 / 11.0, 50.0 / 11.0])
+        );
+
+        let turnback = B5Pcurve {
+            control_points: vec![[4.0, 2.0], [4.0, 10.0], [4.0, 6.0]],
+            ..pcurve.clone()
+        };
+        assert!(isocurve_endpoint_parameters(&turnback, [0.0, 1.0]).is_none());
+
+        let nonpositive_weight = B5Pcurve {
+            weights: Some(vec![1.0, 0.0, 1.0]),
+            ..pcurve
+        };
+        assert!(isocurve_endpoint_parameters(&nonpositive_weight, [0.0, 1.0]).is_none());
     }
 
     #[test]
