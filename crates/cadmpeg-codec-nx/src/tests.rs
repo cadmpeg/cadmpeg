@@ -1525,7 +1525,7 @@ fn segment_stream_payload() -> Vec<u8> {
     payload
 }
 
-fn segment_body_binding_payload() -> Vec<u8> {
+fn segment_body_binding_payload(stream_kind: &str) -> Vec<u8> {
     let mut payload = Vec::new();
     for word in [7u32, 9, 11, 1, 1, 48, 64, 0, 94, 150, 19, 0] {
         payload.extend_from_slice(&word.to_le_bytes());
@@ -1535,7 +1535,12 @@ fn segment_body_binding_payload() -> Vec<u8> {
     payload.extend_from_slice(&0u32.to_le_bytes());
     let mut encoder = ZlibEncoder::new(Vec::new(), Compression::fast());
     encoder
-        .write_all(b"PS\0\0 (partition) SCH_test segment body binding payload with more than sixty-four inflated bytes........")
+        .write_all(
+            format!(
+                "PS\0\0 ({stream_kind}) SCH_test segment body binding payload with more than sixty-four inflated bytes........"
+            )
+            .as_bytes(),
+        )
         .unwrap();
     payload.extend_from_slice(&encoder.finish().unwrap());
     payload
@@ -2587,8 +2592,10 @@ fn decode_links_segment_index_word_to_validated_stream_wrapper() {
 
 #[test]
 fn decode_binds_segment_body_object_index_to_partition_stream() {
-    let file =
-        prt_with_named_payloads(&[("/Root/UG_PART/UG_PART", segment_body_binding_payload())]);
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        segment_body_binding_payload("partition"),
+    )]);
     let result = NxCodec
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
@@ -2606,6 +2613,30 @@ fn decode_binds_segment_body_object_index_to_partition_stream() {
     assert_eq!(bindings[0].body_alias_object_index, 150);
     assert_eq!(bindings[0].stream_role, 19);
     assert_eq!(bindings[0].source_offset, 104);
+}
+
+#[test]
+fn decode_binds_segment_body_object_index_to_plain_cached_body_stream() {
+    let file = prt_with_named_payloads(&[(
+        "/Root/UG_PART/UG_PART",
+        segment_body_binding_payload("plain"),
+    )]);
+    let result = NxCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    let bindings = result
+        .ir
+        .native
+        .namespace("nx")
+        .unwrap()
+        .arena_as::<crate::native::SegmentBodyBinding>("segment_body_bindings")
+        .unwrap();
+    assert_eq!(bindings.len(), 1);
+    assert_eq!(bindings[0].stream_ordinal, 0);
+    assert_eq!(bindings[0].stream_kind, "plain");
+    assert_eq!(bindings[0].body_object_index, 94);
+    assert_eq!(bindings[0].body_alias_object_index, 150);
+    assert_eq!(bindings[0].stream_role, 19);
 }
 
 #[test]
@@ -6071,24 +6102,25 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         tool_object_indices: vec![21],
         source_offset: 1,
     }];
-    let binding = |id: &str, stream_ordinal: u32, body, alias| SegmentBodyBinding {
-        id: id.to_string(),
-        stream_link: format!("stream#{stream_ordinal}"),
-        stream_ordinal,
-        stream_kind: "partition".to_string(),
-        body_object_index: body,
-        body_alias_object_index: alias,
-        stream_role: 19,
-        source_offset: u64::from(stream_ordinal),
-    };
+    let binding =
+        |id: &str, stream_ordinal: u32, stream_kind: &str, body, alias| SegmentBodyBinding {
+            id: id.to_string(),
+            stream_link: format!("stream#{stream_ordinal}"),
+            stream_ordinal,
+            stream_kind: stream_kind.to_string(),
+            body_object_index: body,
+            body_alias_object_index: alias,
+            stream_role: 19,
+            source_offset: u64::from(stream_ordinal),
+        };
     let statuses = segment_body_lineage_statuses(
         &labels,
         &references,
         &booleans,
         &[],
         &[
-            binding("binding#0", 0, 10, 11),
-            binding("binding#1", 1, 20, 21),
+            binding("binding#0", 0, "partition", 10, 11),
+            binding("binding#1", 1, "plain", 20, 21),
         ],
     )
     .unwrap();

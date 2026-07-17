@@ -1766,16 +1766,12 @@ fn select_terminal_feature_bodies(ir: &mut CadIr, scan: &Scan) -> bool {
     };
     let mut mapped = BTreeSet::new();
     let mut selected = BTreeSet::new();
-    for (binding, status) in bindings
-        .iter()
-        .filter(|binding| binding.stream_kind == "partition")
-        .filter_map(|binding| {
-            statuses
-                .iter()
-                .find(|status| status.segment_body_binding == binding.id)
-                .map(|status| (binding, status))
-        })
-    {
+    for (binding, status) in bindings.iter().filter_map(|binding| {
+        statuses
+            .iter()
+            .find(|status| status.segment_body_binding == binding.id)
+            .map(|status| (binding, status))
+    }) {
         let prefix = format!("nx:s{}:", binding.stream_ordinal);
         let stream_bodies = ir
             .model
