@@ -17862,17 +17862,15 @@ mod resolved_sketch_tests {
         let generators = parallel_plane_cylinder_generator_candidates(secant, cylinder);
         assert_eq!(generators.len(), 2);
         assert!(matches!(
-            select_parallel_plane_cylinder_generator(
-                secant,
-                cylinder,
+            select_unique_curve_candidate(
+                parallel_plane_cylinder_generator_candidates(secant, cylinder),
                 [[0.0, 2.0, -1.0], [0.0, 2.0, 4.0]],
             ),
             Some((CurveGeometry::Line { origin, direction }, "plane_cylinder_secant_generator"))
                 if (origin.y - 2.0).abs() < 1e-12 && direction.z == 1.0
         ));
-        assert!(select_parallel_plane_cylinder_generator(
-            secant,
-            cylinder,
+        assert!(select_unique_curve_candidate(
+            parallel_plane_cylinder_generator_candidates(secant, cylinder),
             [[0.0, 0.0, -1.0], [0.0, 0.0, 4.0]],
         )
         .is_none());
@@ -17912,6 +17910,33 @@ mod resolved_sketch_tests {
         assert!(carrier_intersection_curve(
             parallel_cylinder([0.0, 0.0, 0.0], 3.0),
             parallel_cylinder([4.0, 0.0, 0.0], 3.0),
+        )
+        .is_none());
+        let secant_cylinders = [
+            parallel_cylinder([0.0, 0.0, 0.0], 3.0),
+            parallel_cylinder([4.0, 0.0, 1.0], 3.0),
+        ];
+        assert_eq!(
+            parallel_cylinder_generator_candidates(secant_cylinders[0], secant_cylinders[1]).len(),
+            2
+        );
+        let height = 5.0_f64.sqrt();
+        assert!(matches!(
+            select_unique_curve_candidate(
+                parallel_cylinder_generator_candidates(
+                    secant_cylinders[0],
+                    secant_cylinders[1]
+                ),
+                [[2.0, height, -2.0], [2.0, height, 4.0]],
+            ),
+            Some((CurveGeometry::Line { origin, direction }, "parallel_cylinder_secant_generator"))
+                if (origin.x - 2.0).abs() < 1e-12
+                    && (origin.y - height).abs() < 1e-12
+                    && direction.z == 1.0
+        ));
+        assert!(select_unique_curve_candidate(
+            parallel_cylinder_generator_candidates(secant_cylinders[0], secant_cylinders[1]),
+            [[2.0, 0.0, -2.0], [2.0, 0.0, 4.0]],
         )
         .is_none());
 
@@ -21278,6 +21303,66 @@ fn parallel_plane_cylinder_generator_candidates(
         .collect()
 }
 
+fn parallel_cylinder_generator_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let (CarrierEquation::Cylinder(first), CarrierEquation::Cylinder(second)) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let (Some(first_axis), Some(second_axis)) = (normalized(first.axis), normalized(second.axis))
+    else {
+        return Vec::new();
+    };
+    if (dot(first_axis, second_axis).abs() - 1.0).abs() > 1e-10
+        || first.radius <= 0.0
+        || second.radius <= 0.0
+    {
+        return Vec::new();
+    }
+    let relative: [f64; 3] =
+        std::array::from_fn(|index| second.origin[index] - first.origin[index]);
+    let axial = dot(relative, first_axis);
+    let transverse: [f64; 3] =
+        std::array::from_fn(|index| relative[index] - axial * first_axis[index]);
+    let distance = dot(transverse, transverse).sqrt();
+    let scale = first.radius.max(second.radius).max(distance).max(1.0);
+    if distance <= 1e-12 * scale
+        || distance >= first.radius + second.radius - 1e-9 * scale
+        || distance <= (first.radius - second.radius).abs() + 1e-9 * scale
+    {
+        return Vec::new();
+    }
+    let center_direction = transverse.map(|value| value / distance);
+    let along = (first.radius * first.radius - second.radius * second.radius + distance * distance)
+        / (2.0 * distance);
+    let height_squared = first.radius.mul_add(first.radius, -(along * along));
+    if height_squared <= 1e-12 * scale * scale {
+        return Vec::new();
+    }
+    let Some(perpendicular) = normalized(cross(first_axis, center_direction)) else {
+        return Vec::new();
+    };
+    let base: [f64; 3] =
+        std::array::from_fn(|index| first.origin[index] + along * center_direction[index]);
+    let height = height_squared.sqrt();
+    [-height, height]
+        .into_iter()
+        .map(|offset| {
+            let origin: [f64; 3] =
+                std::array::from_fn(|index| base[index] + offset * perpendicular[index]);
+            (
+                CurveGeometry::Line {
+                    origin: Point3::new(origin[0], origin[1], origin[2]),
+                    direction: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                },
+                "parallel_cylinder_secant_generator",
+            )
+        })
+        .collect()
+}
+
 fn apex_plane_cone_generator_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
@@ -21695,17 +21780,6 @@ fn curve_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> boo
     }
 }
 
-fn select_parallel_plane_cylinder_generator(
-    first: CarrierEquation,
-    second: CarrierEquation,
-    points: [[f64; 3]; 2],
-) -> Option<(CurveGeometry, &'static str)> {
-    select_unique_curve_candidate(
-        parallel_plane_cylinder_generator_candidates(first, second),
-        points,
-    )
-}
-
 fn select_unique_curve_candidate(
     candidates: Vec<(CurveGeometry, &'static str)>,
     points: [[f64; 3]; 2],
@@ -21758,11 +21832,21 @@ fn transfer_carrier_intersection_curves(
                 *solved_vertices.get(&forward.start_vertex_id)?,
                 *solved_vertices.get(&end)?,
             ];
-            select_parallel_plane_cylinder_generator(first, second, points).or_else(|| {
+            select_unique_curve_candidate(
+                parallel_plane_cylinder_generator_candidates(first, second),
+                points,
+            )
+            .or_else(|| {
                 select_unique_curve_candidate(
-                    apex_plane_cone_generator_candidates(first, second),
+                    parallel_cylinder_generator_candidates(first, second),
                     points,
                 )
+                .or_else(|| {
+                    select_unique_curve_candidate(
+                        apex_plane_cone_generator_candidates(first, second),
+                        points,
+                    )
+                })
                 .or_else(|| {
                     select_unique_curve_candidate(
                         coaxial_cone_sphere_circle_candidates(first, second),
