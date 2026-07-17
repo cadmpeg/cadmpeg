@@ -18027,6 +18027,25 @@ mod resolved_sketch_tests {
         assert!(
             carrier_intersection_curve(parallel_cylinder([0.0, 0.0, 0.0], 1.0), sphere,).is_none()
         );
+        let coaxial_secant = parallel_cylinder([0.0, 0.0, 0.0], 1.0);
+        let sphere_offset = 3.0_f64.sqrt();
+        assert_eq!(
+            coaxial_cylinder_sphere_circle_candidates(coaxial_secant, sphere).len(),
+            2
+        );
+        assert!(matches!(
+            select_unique_curve_candidate(
+                coaxial_cylinder_sphere_circle_candidates(coaxial_secant, sphere),
+                [[1.0, 0.0, sphere_offset], [-1.0, 0.0, sphere_offset]],
+            ),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cylinder_sphere_secant_circle"))
+                if (center.z - sphere_offset).abs() < 1e-12 && radius == 1.0
+        ));
+        assert!(select_unique_curve_candidate(
+            coaxial_cylinder_sphere_circle_candidates(coaxial_secant, sphere),
+            [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]],
+        )
+        .is_none());
 
         let cone = CarrierEquation::Cone(ConeEquation {
             origin: [0.0, 0.0, 0.0],
@@ -21363,6 +21382,57 @@ fn parallel_cylinder_generator_candidates(
         .collect()
 }
 
+fn coaxial_cylinder_sphere_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Cylinder(cylinder), CarrierEquation::Sphere(sphere))
+    | (CarrierEquation::Sphere(sphere), CarrierEquation::Cylinder(cylinder))) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let Some(axis) = normalized(cylinder.axis) else {
+        return Vec::new();
+    };
+    let relative: [f64; 3] =
+        std::array::from_fn(|index| sphere.center[index] - cylinder.origin[index]);
+    let axial = dot(relative, axis);
+    let transverse: [f64; 3] = std::array::from_fn(|index| relative[index] - axial * axis[index]);
+    let scale = sphere.radius.max(cylinder.radius).max(1.0);
+    if sphere.radius <= 0.0
+        || cylinder.radius <= 0.0
+        || dot(transverse, transverse).sqrt() > 1e-9 * scale
+    {
+        return Vec::new();
+    }
+    let offset_squared = sphere
+        .radius
+        .mul_add(sphere.radius, -(cylinder.radius * cylinder.radius));
+    if offset_squared <= 1e-9 * scale * scale {
+        return Vec::new();
+    }
+    let Some(reference) = normalized(cylinder.ref_direction) else {
+        return Vec::new();
+    };
+    let offset = offset_squared.sqrt();
+    [-offset, offset]
+        .into_iter()
+        .map(|offset| {
+            let center: [f64; 3] =
+                std::array::from_fn(|index| sphere.center[index] + offset * axis[index]);
+            (
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(axis[0], axis[1], axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius: cylinder.radius,
+                },
+                "coaxial_cylinder_sphere_secant_circle",
+            )
+        })
+        .collect()
+}
+
 fn apex_plane_cone_generator_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
@@ -21745,6 +21815,22 @@ fn coaxial_tori_circle_candidates(
     .collect()
 }
 
+fn multi_component_intersection_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let mut candidates = parallel_plane_cylinder_generator_candidates(first, second);
+    candidates.extend(parallel_cylinder_generator_candidates(first, second));
+    candidates.extend(coaxial_cylinder_sphere_circle_candidates(first, second));
+    candidates.extend(apex_plane_cone_generator_candidates(first, second));
+    candidates.extend(coaxial_cone_sphere_circle_candidates(first, second));
+    candidates.extend(coaxial_cylinder_torus_circle_candidates(first, second));
+    candidates.extend(coaxial_sphere_torus_circle_candidates(first, second));
+    candidates.extend(coaxial_tori_circle_candidates(first, second));
+    candidates.extend(axis_normal_plane_torus_circle_candidates(first, second));
+    candidates
+}
+
 fn curve_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> bool {
     match geometry {
         CurveGeometry::Line { origin, direction } => {
@@ -21833,51 +21919,9 @@ fn transfer_carrier_intersection_curves(
                 *solved_vertices.get(&end)?,
             ];
             select_unique_curve_candidate(
-                parallel_plane_cylinder_generator_candidates(first, second),
+                multi_component_intersection_candidates(first, second),
                 points,
             )
-            .or_else(|| {
-                select_unique_curve_candidate(
-                    parallel_cylinder_generator_candidates(first, second),
-                    points,
-                )
-                .or_else(|| {
-                    select_unique_curve_candidate(
-                        apex_plane_cone_generator_candidates(first, second),
-                        points,
-                    )
-                })
-                .or_else(|| {
-                    select_unique_curve_candidate(
-                        coaxial_cone_sphere_circle_candidates(first, second),
-                        points,
-                    )
-                })
-                .or_else(|| {
-                    select_unique_curve_candidate(
-                        coaxial_cylinder_torus_circle_candidates(first, second),
-                        points,
-                    )
-                })
-                .or_else(|| {
-                    select_unique_curve_candidate(
-                        coaxial_sphere_torus_circle_candidates(first, second),
-                        points,
-                    )
-                })
-                .or_else(|| {
-                    select_unique_curve_candidate(
-                        coaxial_tori_circle_candidates(first, second),
-                        points,
-                    )
-                })
-                .or_else(|| {
-                    select_unique_curve_candidate(
-                        axis_normal_plane_torus_circle_candidates(first, second),
-                        points,
-                    )
-                })
-            })
         });
         let Some((geometry, tag)) = resolved else {
             continue;
