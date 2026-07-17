@@ -19964,19 +19964,17 @@ fn transfer_first_instance_prototype_surfaces(
         let following = adjacent_rows
             .filter(|row| row.offset > record.offset)
             .min_by_key(|row| row.offset);
-        let candidates = [previous, following]
-            .into_iter()
-            .flatten()
-            .filter(|row| row.kind == row_kind)
-            .filter(|row| {
-                crate::surface::unique_surface_row(&scan.surface_rows, row.id)
-                    .is_some_and(|unique| unique.offset == row.offset)
-            })
-            .collect::<Vec<_>>();
-        let [row] = candidates.as_slice() else {
+        let previous = previous.filter(|row| row.kind == row_kind);
+        let following = following.filter(|row| row.kind == row_kind);
+        let Some(row) = previous.or(following) else {
             continue;
         };
-        associations.push((record, *row, section));
+        if crate::surface::unique_surface_row(&scan.surface_rows, row.id)
+            .is_none_or(|unique| unique.offset != row.offset)
+        {
+            continue;
+        }
+        associations.push((record, row, section));
     }
     let mut association_counts = BTreeMap::<usize, usize>::new();
     for (_, row, _) in &associations {

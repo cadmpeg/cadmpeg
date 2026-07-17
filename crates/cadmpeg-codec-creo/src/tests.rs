@@ -3977,7 +3977,7 @@ fn decode_places_named_prototype_before_its_surface_row() {
 }
 
 #[test]
-fn decode_withholds_prototype_between_two_same_family_rows() {
+fn decode_binds_prototype_between_same_family_rows_to_the_preceding_instance() {
     let mut payload = b"srf_array\0\xf8\x02".to_vec();
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     push_named_analytic_prototype(&mut payload, "plane", &[]);
@@ -3991,12 +3991,23 @@ fn decode_withholds_prototype_between_two_same_family_rows() {
     )
     .expect("decode");
 
-    assert!(result.ir.model.surfaces.iter().all(|surface| {
-        !matches!(
-            surface.id.as_str(),
-            "creo:visibgeom:surface#7" | "creo:visibgeom:surface#8"
-        )
-    }));
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .any(|surface| surface.id.as_str() == "creo:visibgeom:surface#7"));
+    assert!(result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .all(|surface| surface.id.as_str() != "creo:visibgeom:surface#8"));
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes
+            ["transferred_first_instance_prototype_surface_count"],
+        "1"
+    );
 }
 
 #[test]
