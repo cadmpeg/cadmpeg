@@ -1937,6 +1937,7 @@ fn project_design_history(
     crate::pmi::enrich_history_parameters(&mut parameter_projection, pmi_dimensions);
     ir.model.parameters = crate::history::project_parameters(&parameter_projection);
     project_configuration_parameter_values(ir, histories, lanes, pmi_dimensions);
+    project_configuration_feature_states(ir, histories, lanes, pmi_dimensions);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "sldprt_neutral_feature_sha256".into(),
@@ -1955,6 +1956,10 @@ fn project_design_history(
             crate::history::configuration_parameter_value_hash(&ir.model.configurations),
         );
         source.attributes.insert(
+            "sldprt_configuration_feature_states_sha256".into(),
+            crate::history::configuration_feature_state_hash(&ir.model.configurations),
+        );
+        source.attributes.insert(
             "sldprt_native_configuration_sha256".into(),
             crate::history::native_configuration_hash(histories),
         );
@@ -1969,52 +1974,131 @@ fn project_design_history(
     }
 }
 
+fn project_configuration_feature_states(
+    ir: &mut CadIr,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+    pmi_dimensions: &[crate::records::PmiDimension],
+) {
+    use cadmpeg_ir::features::ConfigurationFeatureState;
+
+    for (configuration_index, scoped_lane_index) in
+        configuration_lane_assignments(&ir.model.configurations, lanes)
+    {
+        let scoped_lanes = &lanes[scoped_lane_index..=scoped_lane_index];
+        let mut projection = histories.to_vec();
+        crate::resolved_features::enrich_history_extrusion_terminations(
+            &mut projection,
+            scoped_lanes,
+        );
+        crate::resolved_features::enrich_history_combine_selections(&mut projection, scoped_lanes);
+        crate::resolved_features::enrich_history_sweep_paths(&mut projection, scoped_lanes);
+        crate::resolved_features::enrich_history_parameters(&mut projection, scoped_lanes, true);
+        crate::resolved_features::enrich_history_reference_planes(&mut projection, scoped_lanes);
+        crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
+        crate::history::apply_evaluated_parameters(&mut projection);
+        let mut features = crate::history::project_features(&projection);
+        crate::resolved_features::project_compact_body_selections(&mut features, scoped_lanes);
+        crate::resolved_features::project_compact_combine_paths(
+            &mut features,
+            &projection,
+            scoped_lanes,
+        );
+        crate::resolved_features::project_compact_edge_selections(&mut features, scoped_lanes);
+        crate::resolved_features::project_compact_surface_selections(&mut features, scoped_lanes);
+        crate::resolved_features::project_surface_sweep_profiles(
+            &mut features,
+            &projection,
+            scoped_lanes,
+        );
+        crate::resolved_features::project_helix_axes(&mut features, &projection, scoped_lanes);
+        crate::resolved_features::project_adjacent_extrusion_profiles(
+            &mut features,
+            &projection,
+            scoped_lanes,
+        );
+        crate::resolved_features::bind_extrusion_operations(&mut features, histories, scoped_lanes);
+        crate::resolved_features::bind_sweep_operations(&mut features, histories, scoped_lanes);
+        crate::resolved_features::bind_pattern_inputs(&mut features, histories, scoped_lanes);
+        crate::resolved_features::bind_sweep_adjacent_profiles(
+            &mut features,
+            histories,
+            scoped_lanes,
+        );
+        ir.model.configurations[configuration_index].feature_states = features
+            .into_iter()
+            .map(|feature| {
+                (
+                    feature.id,
+                    ConfigurationFeatureState {
+                        suppressed: feature.suppressed,
+                        definition: feature.definition,
+                    },
+                )
+            })
+            .collect();
+    }
+}
+
+fn configuration_lane_assignments(
+    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    lanes: &[crate::records::FeatureInputLane],
+) -> Vec<(usize, usize)> {
+    let mut lanes_by_configuration = BTreeMap::<u32, Vec<usize>>::new();
+    for (lane_index, lane) in lanes.iter().enumerate() {
+        let Some(source_index) = lane
+            .configuration
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        lanes_by_configuration
+            .entry(source_index)
+            .or_default()
+            .push(lane_index);
+    }
+    lanes_by_configuration
+        .into_iter()
+        .filter_map(|(source_index, lane_indices)| {
+            let [lane_index] = lane_indices.as_slice() else {
+                return None;
+            };
+            let candidates = configurations
+                .iter()
+                .enumerate()
+                .filter(|(_, configuration)| {
+                    configuration.source_index == Some(source_index)
+                        || configuration.source_index.is_none()
+                            && configuration.ordinal == source_index
+                })
+                .map(|(position, _)| position)
+                .collect::<Vec<_>>();
+            let [configuration_index] = candidates.as_slice() else {
+                return None;
+            };
+            Some((*configuration_index, *lane_index))
+        })
+        .collect()
+}
+
 fn project_configuration_parameter_values(
     ir: &mut CadIr,
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
 ) {
-    let mut lanes_by_configuration =
-        BTreeMap::<String, Vec<&crate::records::FeatureInputLane>>::new();
-    for lane in lanes {
-        let Some(configuration) = lane.configuration.as_ref() else {
-            continue;
-        };
-        lanes_by_configuration
-            .entry(configuration.clone())
-            .or_default()
-            .push(lane);
-    }
-    for (source_key, scoped_lanes) in lanes_by_configuration {
-        let [scoped_lane] = scoped_lanes.as_slice() else {
-            continue;
-        };
-        let Ok(source_index) = source_key.parse::<u32>() else {
-            continue;
-        };
-        let candidates = ir
-            .model
-            .configurations
-            .iter()
-            .enumerate()
-            .filter(|(_, configuration)| {
-                configuration.source_index == Some(source_index)
-                    || configuration.source_index.is_none() && configuration.ordinal == source_index
-            })
-            .map(|(position, _)| position)
-            .collect::<Vec<_>>();
-        let [configuration_index] = candidates.as_slice() else {
-            continue;
-        };
+    for (configuration_index, scoped_lane_index) in
+        configuration_lane_assignments(&ir.model.configurations, lanes)
+    {
         let mut projection = histories.to_vec();
         crate::resolved_features::enrich_history_parameters(
             &mut projection,
-            std::iter::once(*scoped_lane),
+            std::iter::once(&lanes[scoped_lane_index]),
             true,
         );
         crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
-        ir.model.configurations[*configuration_index].parameter_values =
+        ir.model.configurations[configuration_index].parameter_values =
             crate::history::project_parameters(&projection)
                 .into_iter()
                 .filter_map(|parameter| parameter.value.map(|value| (parameter.id, value)))
@@ -2205,6 +2289,7 @@ fn assign_configuration_bodies(
                 properties: std::collections::BTreeMap::new(),
                 bodies,
                 parameter_values: std::collections::BTreeMap::new(),
+                feature_states: std::collections::BTreeMap::new(),
                 native_ref: None,
             });
     }
@@ -2214,6 +2299,8 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
     let hash = crate::history::configuration_hash(&ir.model.configurations);
     let parameter_value_hash =
         crate::history::configuration_parameter_value_hash(&ir.model.configurations);
+    let feature_state_hash =
+        crate::history::configuration_feature_state_hash(&ir.model.configurations);
     if let Some(source) = &mut ir.source {
         source
             .attributes
@@ -2221,6 +2308,10 @@ fn stamp_configuration_baseline(ir: &mut CadIr) {
         source.attributes.insert(
             "sldprt_configuration_parameter_values_sha256".into(),
             parameter_value_hash,
+        );
+        source.attributes.insert(
+            "sldprt_configuration_feature_states_sha256".into(),
+            feature_state_hash,
         );
     }
 }
@@ -2796,6 +2887,7 @@ mod design_loss_tests {
             properties: BTreeMap::new(),
             bodies: Vec::new(),
             parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
             native_ref: Some(format!("native:{id}")),
         };
         ir.model
@@ -2840,6 +2932,7 @@ mod design_loss_tests {
                 properties: BTreeMap::new(),
                 bodies: Vec::new(),
                 parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
                 native_ref: Some(format!("native:{id}")),
             });
         }
@@ -2876,6 +2969,7 @@ mod design_loss_tests {
                 properties: BTreeMap::new(),
                 bodies: Vec::new(),
                 parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
                 native_ref: Some(format!("native:{position}")),
             });
         }
@@ -2915,6 +3009,7 @@ mod design_loss_tests {
             properties: BTreeMap::new(),
             bodies: Vec::new(),
             parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
             native_ref: Some("native:configuration".into()),
         });
         let mut report = DecodeReport {
@@ -2947,6 +3042,7 @@ mod design_loss_tests {
             properties: BTreeMap::new(),
             bodies,
             parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
             native_ref: Some(format!("native:{id}")),
         };
         ir.model.configurations = vec![

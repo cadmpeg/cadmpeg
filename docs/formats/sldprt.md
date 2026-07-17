@@ -279,6 +279,8 @@ A uniquely owned feature-input scalar is the evaluated value of the same-named K
 
 A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot `N`. Scalars from configuration-scoped lanes do not replace the document-level parameter value or its native identity. Every evaluable document expression and every scalar resolved in the scoped lane contributes its typed value to that configuration's parameter state.
 
+The same lane supplies configuration-local feature operation state. Feature classes, operation discriminators, compact termination records, profile adjacency, path references, and selection records are evaluated within their `Config-N-ResolvedFeatures` lane. They do not define document-global feature semantics unless every applicable lane yields the same state. A resolved configuration carries one evaluated feature state for every document feature.
+
 Keywords length literals use the suffixes `uin`, `mil`, `mm`, `cm`, `in`, `ft`, `nm`, `um`, `µm`, `μm`, `Å`, `A`, and `m`. Their millimetre scale factors are respectively `0.0000254`, `0.0254`, `1`, `10`, `25.4`, `304.8`, `0.000001`, `0.001`, `0.001`, `0.001`, `0.0000001`, `0.0000001`, and `1000`. A unit suffix is part of the numeric literal and determines its length dimension before expression evaluation.
 
 Point-reference object indices address sketch-marker local identifiers within the owning feature object. A reference resolves when that local identifier is unique in the feature object.

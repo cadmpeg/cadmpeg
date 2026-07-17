@@ -930,7 +930,10 @@ fn tessellation_counts_must_be_consistent() {
 
 #[test]
 fn configuration_body_membership_round_trips_and_validates() {
-    use crate::features::{ConfigurationId, DesignConfiguration, ParameterId, ParameterValue};
+    use crate::features::{
+        ConfigurationFeatureState, ConfigurationId, DesignConfiguration, FeatureDefinition,
+        FeatureId, FeatureTreeNodeRole, ParameterId, ParameterValue,
+    };
     use crate::ids::BodyId;
     use std::collections::BTreeMap;
 
@@ -947,6 +950,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         properties: BTreeMap::new(),
         bodies: vec![body.clone()],
         parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
         native_ref: None,
     });
     ir.finalize();
@@ -968,6 +972,26 @@ fn configuration_body_membership_round_trips_and_validates() {
             && finding.message.contains("non-finite value")
     }));
     ir.model.configurations[0].parameter_values.clear();
+
+    ir.model.configurations[0].feature_states.insert(
+        FeatureId("synthetic:test:feature#missing".into()),
+        ConfigurationFeatureState {
+            suppressed: false,
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+            },
+        },
+    );
+    let report = validate(&ir, Vec::new());
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("missing configuration feature")
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.entity.as_deref() == Some(configuration_id.0.as_str())
+            && finding.message.contains("feature state is incomplete")
+    }));
+    ir.model.configurations[0].feature_states.clear();
 
     ir.model.configurations[0].bodies = vec![
         BodyId("synthetic:test:body#missing".into()),
@@ -993,6 +1017,7 @@ fn configuration_body_membership_round_trips_and_validates() {
         properties: BTreeMap::new(),
         bodies: Vec::new(),
         parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
         native_ref: None,
     });
     ir.model.configurations[0].active = true;

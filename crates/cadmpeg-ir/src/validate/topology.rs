@@ -1282,6 +1282,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|parameter| parameter.id.0.as_str())
         .collect::<HashSet<_>>();
+    let features = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
+        .collect::<HashMap<_, _>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if configuration.name.is_empty() {
@@ -1355,6 +1361,26 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 });
             }
         }
+        if !configuration.feature_states.is_empty() {
+            for feature in configuration.feature_states.keys() {
+                if !features.contains_key(feature.0.as_str()) {
+                    ref_error(
+                        findings,
+                        &configuration.id.0,
+                        "configuration feature",
+                        &feature.0,
+                    );
+                }
+            }
+            if configuration.feature_states.len() != features.len() {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: "configuration feature state is incomplete".into(),
+                    entity: Some(configuration.id.0.clone()),
+                });
+            }
+        }
     }
     if active_configurations > 1 {
         findings.push(Finding {
@@ -1364,12 +1390,6 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             entity: None,
         });
     }
-    let features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| (feature.id.0.as_str(), feature.ordinal))
-        .collect::<HashMap<_, _>>();
     let parameters_by_id = ir
         .model
         .parameters

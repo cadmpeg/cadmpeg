@@ -69,9 +69,22 @@ pub struct DesignConfiguration {
     /// Evaluated parameter state when this configuration is active.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub parameter_values: BTreeMap<ParameterId, ParameterValue>,
+    /// Evaluated feature operation state when this configuration is active.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub feature_states: BTreeMap<FeatureId, ConfigurationFeatureState>,
     /// Identifier of the full-fidelity record in a native namespace.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+/// Configuration-local evaluation state for one construction feature.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct ConfigurationFeatureState {
+    /// Whether evaluation of this feature is disabled in the configuration.
+    #[serde(default)]
+    pub suppressed: bool,
+    /// Evaluated construction semantics in the configuration.
+    pub definition: FeatureDefinition,
 }
 
 /// Identifies a neutral design parameter.

@@ -505,6 +505,7 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
             properties: configuration.properties.clone(),
             bodies: Vec::new(),
             parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
             native_ref: Some(configuration.id.clone()),
         })
         .collect()
@@ -1512,6 +1513,7 @@ mod history_reference_tests {
                 properties: BTreeMap::new(),
                 bodies: Vec::new(),
                 parameter_values: BTreeMap::new(),
+                feature_states: BTreeMap::new(),
                 native_ref: Some("native-configuration".into()),
             }],
             &mut native,
@@ -4155,6 +4157,17 @@ pub fn configuration_parameter_value_hash(configurations: &[DesignConfiguration]
     hash_debug(&values)
 }
 
+/// Stable hash of configuration-local evaluated feature state.
+pub fn configuration_feature_state_hash(configurations: &[DesignConfiguration]) -> String {
+    let mut states = configurations
+        .iter()
+        .filter(|configuration| !configuration.feature_states.is_empty())
+        .map(|configuration| (&configuration.id, &configuration.feature_states))
+        .collect::<Vec<_>>();
+    states.sort_by(|left, right| left.0.cmp(right.0));
+    hash_debug(&states)
+}
+
 /// Stable hash of native configuration records.
 pub fn native_configuration_hash(histories: &[FeatureHistory]) -> String {
     let mut configurations = histories
@@ -4704,6 +4717,24 @@ pub fn prepare_configurations_for_write(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
 ) -> Result<(), CodecError> {
+    let feature_state_hash = configuration_feature_state_hash(&ir.model.configurations);
+    let baseline_feature_states = ir.source.as_ref().and_then(|source| {
+        source
+            .attributes
+            .get("sldprt_configuration_feature_states_sha256")
+    });
+    if baseline_feature_states.is_some_and(|baseline| baseline != &feature_state_hash)
+        || baseline_feature_states.is_none()
+            && ir
+                .model
+                .configurations
+                .iter()
+                .any(|configuration| !configuration.feature_states.is_empty())
+    {
+        return Err(CodecError::NotImplemented(
+            "SLDPRT semantic writer does not encode configuration-local feature states".into(),
+        ));
+    }
     let parameter_value_hash = configuration_parameter_value_hash(&ir.model.configurations);
     let baseline_parameter_values = ir.source.as_ref().and_then(|source| {
         source

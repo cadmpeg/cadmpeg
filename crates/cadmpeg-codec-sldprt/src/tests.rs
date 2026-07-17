@@ -4293,6 +4293,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         properties: BTreeMap::from([("Finish".into(), "Ground".into())]),
         bodies: vec![ir.model.bodies[0].id.clone()],
         parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
         native_ref: None,
     });
     ir.model.configurations.push(DesignConfiguration {
@@ -4305,6 +4306,7 @@ fn encoder_writes_source_less_neutral_configurations() {
         properties: BTreeMap::new(),
         bodies: Vec::new(),
         parameter_values: BTreeMap::new(),
+        feature_states: BTreeMap::new(),
         native_ref: None,
     });
     ir.finalize();
@@ -4528,6 +4530,7 @@ fn encoder_partitions_source_less_bodies_by_configuration() {
             properties: BTreeMap::new(),
             bodies: vec![body.clone()],
             parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
             native_ref: None,
         })
         .collect();
@@ -9428,6 +9431,58 @@ fn decode_does_not_globalize_configuration_local_extrusion_termination() {
             ..
         }
     ));
+    let feature_id = feature.id.clone();
+    assert!(matches!(
+        decoded.ir.model.configurations[0]
+            .feature_states
+            .get(&feature_id)
+            .map(|state| &state.definition),
+        Some(FeatureDefinition::Extrude {
+            extent: Extent::ThroughAll,
+            ..
+        })
+    ));
+    assert!(matches!(
+        decoded.ir.model.configurations[1]
+            .feature_states
+            .get(&feature_id)
+            .map(|state| &state.definition),
+        Some(FeatureDefinition::Extrude {
+            extent: Extent::Unresolved,
+            ..
+        })
+    ));
+    assert!(
+        decoded
+            .ir
+            .model
+            .configurations
+            .iter()
+            .all(|configuration| configuration.feature_states.len()
+                == decoded.ir.model.features.len())
+    );
+    let round_trip =
+        cadmpeg_ir::CadIr::from_json(&serde_json::to_string(&decoded.ir).unwrap()).unwrap();
+    assert_eq!(
+        round_trip.model.configurations[0]
+            .feature_states
+            .get(&feature_id),
+        decoded.ir.model.configurations[0]
+            .feature_states
+            .get(&feature_id)
+    );
+
+    let mut edited = decoded.ir;
+    let replacement = edited.model.configurations[0].feature_states[&feature_id].clone();
+    edited.model.configurations[1]
+        .feature_states
+        .insert(feature_id, replacement);
+    let error = SldprtCodec
+        .write_preserved(&edited, &mut Vec::new())
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("does not encode configuration-local feature states"));
 }
 
 #[test]
