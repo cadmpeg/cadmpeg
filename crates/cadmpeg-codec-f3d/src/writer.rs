@@ -5907,6 +5907,7 @@ fn native_procedural_surface(
             pcurve,
             parameter,
             taper,
+            revision_form,
         } => {
             let support = target
                 .model
@@ -5932,6 +5933,45 @@ fn native_procedural_surface(
                 cadmpeg_ir::geometry::TaperSurfaceKind::Ruled { .. } => "ruled_tpr_spl_sur",
                 cadmpeg_ir::geometry::TaperSurfaceKind::Swept { .. } => "swept_tpr_spl_sur",
             };
+            if let Some(form) = revision_form {
+                if form.revision <= 0
+                    || !matches!(
+                        taper,
+                        cadmpeg_ir::geometry::TaperSurfaceKind::Orthogonal { .. }
+                    )
+                {
+                    return Err(CodecError::Malformed(
+                        "revision-gated taper generation requires the orthogonal subtype".into(),
+                    ));
+                }
+                native_surface_base(bytes, "spline")?;
+                bytes.push(0x0f);
+                native_ident(bytes, "ortho_spl_sur")?;
+                native_i64(bytes, form.revision);
+                native_embedded_surface_with_bounds(
+                    bytes,
+                    &support.geometry,
+                    &form.support_bounds,
+                )?;
+                native_nurbs_curve(bytes, &reference)?;
+                for value in form.reference_endpoints {
+                    native_optional_f64(bytes, value);
+                }
+                if let Some(pcurve) = pcurve {
+                    native_nurbs_pcurve_block(bytes, pcurve)?;
+                } else {
+                    native_ident(bytes, "nullbs")?;
+                }
+                native_f64(bytes, *parameter);
+                native_revision_surface_tail(
+                    bytes,
+                    form,
+                    solved_cache,
+                    procedural.cache_fit_tolerance,
+                )?;
+                bytes.push(0x10);
+                return Ok(true);
+            }
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, subtype)?;
@@ -5988,6 +6028,7 @@ fn native_procedural_surface(
         }
         ProceduralSurfaceDefinition::Loft {
             sections,
+            revision_form,
             parameter_ranges,
             closures,
             singularities,
@@ -5998,6 +6039,7 @@ fn native_procedural_surface(
             target,
             procedural,
             sections,
+            revision_form.as_ref(),
             parameter_ranges,
             closures,
             singularities,
@@ -6214,6 +6256,7 @@ fn native_procedural_surface(
             u_sense,
             v_sense,
             extension_flags,
+            revision_form,
         } => {
             let support = target
                 .model
@@ -6226,6 +6269,35 @@ fn native_procedural_surface(
                         procedural.id
                     ))
                 })?;
+            if let Some(form) = revision_form {
+                if form.revision <= 0 || form.flags.len() != 4 {
+                    return Err(CodecError::Malformed(
+                        "revision-gated off_spl_sur requires a positive revision and four flags"
+                            .into(),
+                    ));
+                }
+                native_surface_base(bytes, "spline")?;
+                bytes.push(0x0f);
+                native_ident(bytes, "off_spl_sur")?;
+                native_i64(bytes, form.revision);
+                native_embedded_surface_with_bounds(
+                    bytes,
+                    &support.geometry,
+                    &form.support_bounds,
+                )?;
+                native_f64(bytes, *distance / 10.0);
+                for flag in &form.flags {
+                    bytes.push(native_bool(*flag));
+                }
+                native_revision_surface_tail(
+                    bytes,
+                    form,
+                    solved_cache,
+                    procedural.cache_fit_tolerance,
+                )?;
+                bytes.push(0x10);
+                return Ok(true);
+            }
             let valid_flags = matches!(
                 extension_flags.as_slice(),
                 [] | [false] | [true, _] | [true, _, _]
@@ -6539,6 +6611,10 @@ fn native_loft_subdata(
             native_f64(bytes, column[0]);
             native_f64(bytes, column[1]);
         }
+        if let Some(extra) = row.extra {
+            native_f64(bytes, extra[0]);
+            native_f64(bytes, extra[1]);
+        }
     }
     Ok(())
 }
@@ -6565,18 +6641,34 @@ fn native_loft_section(
             native_i64(bytes, member.type_code);
             let curve = native_loft_curve_in_range(target, &member.curve, parameter_range)?;
             native_nurbs_curve(bytes, &curve)?;
-            let surface = target
-                .model
-                .surfaces
-                .iter()
-                .find(|surface| surface.id == member.data.surface)
-                .ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "loft references missing surface {}",
-                        member.data.surface
-                    ))
-                })?;
-            native_embedded_surface(bytes, &surface.geometry)?;
+            if let Some(endpoints) = member.endpoints {
+                for value in endpoints {
+                    native_optional_f64(bytes, value);
+                }
+            }
+            if let Some(surface_id) = &member.data.surface {
+                let surface = target
+                    .model
+                    .surfaces
+                    .iter()
+                    .find(|surface| surface.id == *surface_id)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "loft references missing surface {surface_id}"
+                        ))
+                    })?;
+                if member.endpoints.is_some() {
+                    native_embedded_surface_with_bounds(
+                        bytes,
+                        &surface.geometry,
+                        &member.data.support_bounds,
+                    )?;
+                } else {
+                    native_embedded_surface(bytes, &surface.geometry)?;
+                }
+            } else {
+                native_ident(bytes, "null_surface")?;
+            }
             if let Some(pcurve) = &member.data.pcurve {
                 native_nurbs_pcurve_block(bytes, pcurve)?;
             } else {
@@ -6590,8 +6682,17 @@ fn native_loft_section(
                 native_vector(bytes, [direction.x, direction.y, direction.z]);
             }
         }
-        let path = native_loft_curve_in_range(target, &entry.path.curve, parameter_range)?;
-        native_nurbs_curve(bytes, &path)?;
+        if let Some(path_curve) = &entry.path.curve {
+            let path = native_loft_curve_in_range(target, path_curve, parameter_range)?;
+            native_nurbs_curve(bytes, &path)?;
+            if let Some(endpoints) = entry.path.endpoints {
+                for value in endpoints {
+                    native_optional_f64(bytes, value);
+                }
+            }
+        } else {
+            native_ident(bytes, "null_curve")?;
+        }
         native_i64(
             bytes,
             i64::try_from(entry.path.auxiliaries.len()).map_err(|_| {
@@ -6654,15 +6755,17 @@ fn native_compound_loft_scale(
             native_pcurve_knot_domain(member.data.pcurve.as_ref())?,
         )?;
         native_nurbs_curve(bytes, &curve)?;
+        let surface_id = member.data.surface.as_ref().ok_or_else(|| {
+            CodecError::Malformed("compound loft members require a support surface".into())
+        })?;
         let surface = target
             .model
             .surfaces
             .iter()
-            .find(|surface| surface.id == member.data.surface)
+            .find(|surface| surface.id == *surface_id)
             .ok_or_else(|| {
                 CodecError::Malformed(format!(
-                    "compound loft references missing surface {}",
-                    member.data.surface
+                    "compound loft references missing surface {surface_id}"
                 ))
             })?;
         native_embedded_surface(bytes, &surface.geometry)?;
@@ -7175,7 +7278,11 @@ fn native_law_expression(
                 native_enum(bytes, *value);
             }
         }
-        LawExpression::Edge { curve, parameters } => {
+        LawExpression::Edge {
+            curve,
+            endpoints,
+            parameters,
+        } => {
             native_string(bytes, "EDGE")?;
             let curve = target
                 .model
@@ -7187,6 +7294,11 @@ fn native_law_expression(
                 })?;
             let curve = native_interval_curve(&curve.geometry, *parameters)?;
             native_nurbs_curve(bytes, &curve)?;
+            if let Some(endpoints) = endpoints {
+                for value in endpoints {
+                    native_optional_f64(bytes, *value);
+                }
+            }
             for parameter in parameters {
                 native_f64(bytes, *parameter);
             }
@@ -7349,13 +7461,16 @@ fn native_skin_profile_data(
     target: &CadIr,
     data: &cadmpeg_ir::geometry::LoftProfileData,
 ) -> Result<(), CodecError> {
+    let surface_id = data.surface.as_ref().ok_or_else(|| {
+        CodecError::Malformed("skin profiles require a support surface".into())
+    })?;
     let surface = target
         .model
         .surfaces
         .iter()
-        .find(|surface| surface.id == data.surface)
+        .find(|surface| surface.id == *surface_id)
         .ok_or_else(|| {
-            CodecError::Malformed(format!("skin references missing surface {}", data.surface))
+            CodecError::Malformed(format!("skin references missing surface {surface_id}"))
         })?;
     native_embedded_surface(bytes, &surface.geometry)?;
     native_optional_pcurve(bytes, data.pcurve.as_ref())?;
@@ -7513,6 +7628,78 @@ fn encode_native_sweep_surface(
     let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
         CodecError::Malformed("sweep surface requires a native cache-fit tolerance".into())
     })?;
+    if let Some(form) = &construction.revision_form {
+        let SweepSurfaceLayout::ExplicitFormula {
+            mode,
+            profile_range,
+            profile_frame,
+            origin,
+            directions,
+            trajectory_flag,
+            path_range,
+            path_parameter,
+            formula_flag,
+            formula,
+            trailing_flag,
+        } = &construction.layout
+        else {
+            return Err(CodecError::Malformed(
+                "revision-gated sweep generation requires the explicit formula layout".into(),
+            ));
+        };
+        if form.revision <= 0 {
+            return Err(CodecError::Malformed(
+                "revision-gated sweep requires a positive serializer revision".into(),
+            ));
+        }
+        native_surface_base(bytes, "spline")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "sweep_sur")?;
+        native_i64(bytes, form.revision);
+        bytes.push(native_bool(form.primary_flag));
+        native_i64(bytes, *mode);
+        let profile = native_loft_curve_in_range(target, profile, Some(*profile_range))?;
+        native_nurbs_curve(bytes, &profile)?;
+        for value in form.profile_endpoints {
+            native_optional_f64(bytes, value);
+        }
+        for value in profile_range {
+            native_optional_f64(bytes, Some(*value));
+        }
+        bytes.push(native_bool(profile_frame.is_some()));
+        if let Some((point, direction)) = profile_frame {
+            native_point(bytes, [point.x / 10.0, point.y / 10.0, point.z / 10.0]);
+            native_vector(bytes, [direction.x, direction.y, direction.z]);
+        }
+        native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+        for direction in directions {
+            native_vector(bytes, [direction.x, direction.y, direction.z]);
+        }
+        native_i64(bytes, 1);
+        bytes.push(native_bool(*trajectory_flag));
+        let native_path_range = [path_range[0] / 10.0, path_range[1] / 10.0];
+        let spine = native_loft_curve_in_range(target, spine, Some(native_path_range))?;
+        native_nurbs_curve(bytes, &spine)?;
+        for value in form.path_endpoints {
+            native_optional_f64(bytes, value);
+        }
+        for value in path_range {
+            native_optional_f64(bytes, Some(*value / 10.0));
+        }
+        native_f64(bytes, *path_parameter);
+        bytes.push(native_bool(*formula_flag));
+        native_law_formula(bytes, target, formula)?;
+        bytes.push(native_bool(*trailing_flag));
+        native_enum(bytes, form.tail_enum);
+        native_nurbs_surface(bytes, solved_cache)?;
+        native_f64(bytes, cache_fit_tolerance / 10.0);
+        for values in &construction.discontinuities {
+            native_compound_loft_float_array(bytes, values)?;
+        }
+        bytes.push(native_bool(construction.discontinuity_flag));
+        bytes.push(0x10);
+        return Ok(());
+    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "sweep_spl_sur")?;
@@ -7770,6 +7957,7 @@ fn encode_native_loft(
     target: &CadIr,
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     sections: &[cadmpeg_ir::geometry::LoftSection; 2],
+    revision_form: Option<&cadmpeg_ir::geometry::LoftRevisionForm>,
     parameter_ranges: &[[f64; 2]; 2],
     closures: &[i64; 2],
     singularities: &[i64; 2],
@@ -7777,6 +7965,47 @@ fn encode_native_loft(
     bridge: &[cadmpeg_ir::geometry::LoftBridgeToken],
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
+    if let Some(form) = revision_form {
+        if form.revision <= 0 {
+            return Err(CodecError::Malformed(
+                "revision-gated loft requires a positive serializer revision".into(),
+            ));
+        }
+        native_surface_base(bytes, "spline")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "loft_spl_sur")?;
+        native_i64(bytes, form.revision);
+        for (section, range) in sections.iter().zip(parameter_ranges) {
+            native_loft_section(bytes, target, section, Some(*range))?;
+        }
+        for range in parameter_ranges {
+            native_optional_f64(bytes, Some(range[0]));
+            native_optional_f64(bytes, Some(range[1]));
+        }
+        for flag in form.flags {
+            bytes.push(native_bool(flag));
+        }
+        for value in form.ints {
+            native_i64(bytes, value);
+        }
+        native_enum(bytes, form.tail_enum);
+        native_nurbs_surface(bytes, solved_cache)?;
+        native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+        for discontinuities in &form.discontinuities {
+            native_i64(
+                bytes,
+                i64::try_from(discontinuities.len()).map_err(|_| {
+                    CodecError::NotImplemented("discontinuity count exceeds i64".into())
+                })?,
+            );
+            for value in discontinuities {
+                native_f64(bytes, *value);
+            }
+        }
+        bytes.push(native_bool(form.tail_flag));
+        bytes.push(0x10);
+        return Ok(());
+    }
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "loft_spl_sur")?;
@@ -9816,6 +10045,58 @@ fn native_optional_f64(bytes: &mut Vec<u8>, value: Option<f64>) {
         }
         None => bytes.push(0x0b),
     }
+}
+
+/// Emit an embedded support surface followed by its four optional U/V bound
+/// fields when the surface kind carries them.
+fn native_embedded_surface_with_bounds(
+    bytes: &mut Vec<u8>,
+    geometry: &SurfaceGeometry,
+    bounds: &[Option<f64>; 4],
+) -> Result<(), CodecError> {
+    native_embedded_surface(bytes, geometry)?;
+    if matches!(
+        geometry,
+        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Plane { .. }
+    ) {
+        for bound in bounds {
+            native_optional_f64(bytes, *bound);
+        }
+    } else if bounds.iter().any(Option::is_some) {
+        return Err(CodecError::Malformed(
+            "support bounds require a spline or plane support".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Emit the shared revision-gated surface tail: enum, solved cache, fit
+/// tolerance, six discontinuity arrays, tail boolean, and trailing booleans.
+fn native_revision_surface_tail(
+    bytes: &mut Vec<u8>,
+    form: &cadmpeg_ir::geometry::RevisionSurfaceForm,
+    solved_cache: &cadmpeg_ir::geometry::NurbsSurface,
+    cache_fit_tolerance: Option<f64>,
+) -> Result<(), CodecError> {
+    native_enum(bytes, form.tail_enum);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for discontinuities in &form.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                CodecError::NotImplemented("discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in discontinuities {
+            native_f64(bytes, *value);
+        }
+    }
+    bytes.push(native_bool(form.tail_flag));
+    for flag in &form.trailing_flags {
+        bytes.push(native_bool(*flag));
+    }
+    Ok(())
 }
 
 /// Emit the shared cache-first intcurve context: revision, enum zero, solved

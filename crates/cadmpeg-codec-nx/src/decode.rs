@@ -268,6 +268,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                     distance: offset.distance,
                     u_sense: 0,
                     v_sense: 0,
+                    revision_form: None,
                     extension_flags: Vec::new(),
                 },
                 cache_fit_tolerance: None,

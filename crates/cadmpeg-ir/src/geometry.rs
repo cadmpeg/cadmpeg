@@ -331,6 +331,9 @@ pub enum ProceduralSurfaceDefinition {
         parameter: f64,
         /// Subtype-specific taper tail.
         taper: TaperSurfaceKind,
+        /// Revision-gated form fields; absent from the pre-revision layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_form: Option<RevisionSurfaceForm>,
     },
     /// Native loft defined by two section graphs and closure contracts.
     Loft {
@@ -346,6 +349,9 @@ pub enum ProceduralSurfaceDefinition {
         mode: i64,
         /// Variable native tokens between the mode and solved cache.
         bridge: Vec<LoftBridgeToken>,
+        /// Revision-gated form fields; absent from the pre-revision layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_form: Option<LoftRevisionForm>,
     },
     /// Native compound-loft construction.
     CompoundLoft {
@@ -461,6 +467,9 @@ pub enum ProceduralSurfaceDefinition {
         v_sense: i64,
         /// Ordered conditional ASM extension flags.
         extension_flags: Vec<bool>,
+        /// Revision-gated form fields; absent from the pre-revision layout.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_form: Option<RevisionSurfaceForm>,
     },
     /// Ruled surface joining two directrices.
     Ruled {
@@ -820,6 +829,35 @@ pub enum BlendCrossSection {
     Polynomial,
 }
 
+/// Shared fields of a revision-gated spline-surface form: the revision
+/// integer, optional support bounds and reference-curve endpoints, a
+/// carrier-specific boolean run, and the shared tail enum, discontinuity
+/// arrays, tail boolean, and post-tail boolean run.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct RevisionSurfaceForm {
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: i64,
+    /// Optional U/V bound fields following the support surface.
+    #[serde(default)]
+    pub support_bounds: [Option<f64>; 4],
+    /// Optional parameter endpoints following the embedded reference curve.
+    #[serde(default)]
+    pub reference_endpoints: [Option<f64>; 2],
+    /// Carrier-specific boolean run preceding the shared tail.
+    #[serde(default)]
+    pub flags: Vec<bool>,
+    /// Enum opening the shared revision-gated surface tail.
+    pub tail_enum: i64,
+    /// Six ordered discontinuity arrays following the fit tolerance.
+    #[serde(default)]
+    pub discontinuities: [Vec<f64>; 6],
+    /// Boolean terminating the shared tail.
+    pub tail_flag: bool,
+    /// Boolean run following the shared tail.
+    #[serde(default)]
+    pub trailing_flags: Vec<bool>,
+}
+
 /// Subtype-specific tail of a native taper spline surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -874,6 +912,9 @@ pub struct LoftSubdataRow {
     pub parameters: [f64; 2],
     /// Ordered per-column scalar pairs; empty for subdata type 211.
     pub columns: Vec<[f64; 2]>,
+    /// Trailing scalar pair stored by the revision-gated row encoding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extra: Option<[f64; 2]>,
 }
 
 /// Native loft constraint table.
@@ -892,8 +933,14 @@ pub struct LoftSubdata {
 /// Surface-side constraint attached to one loft profile curve.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LoftProfileData {
-    /// Constraint support surface.
-    pub surface: SurfaceId,
+    /// Constraint support surface, absent for the native `null_surface`
+    /// sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<SurfaceId>,
+    /// Optional U/V bound fields following the support surface in the
+    /// revision-gated encoding.
+    #[serde(default)]
+    pub support_bounds: [Option<f64>; 4],
     /// UV curve on the support, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pcurve: Option<PcurveGeometry>,
@@ -915,6 +962,10 @@ pub struct LoftProfileMember {
     pub type_code: i64,
     /// Profile curve.
     pub curve: CurveId,
+    /// Optional parameter endpoints following the curve in the revision-gated
+    /// encoding; absent from the pre-revision encoding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoints: Option<[Option<f64>; 2]>,
     /// Surface-side constraint data.
     pub data: LoftProfileData,
 }
@@ -922,8 +973,13 @@ pub struct LoftProfileMember {
 /// Native path data attached to one loft section entry.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LoftPath {
-    /// Primary path curve.
-    pub curve: CurveId,
+    /// Primary path curve, absent for the native `null_curve` sentinel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub curve: Option<CurveId>,
+    /// Optional parameter endpoints following a present curve in the
+    /// revision-gated encoding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoints: Option<[Option<f64>; 2]>,
     /// Ordered auxiliary BS3 curves.
     pub auxiliaries: Vec<CurveId>,
     /// Native path tail integer.
@@ -939,6 +995,26 @@ pub struct LoftSectionEntry {
     pub profile: Vec<LoftProfileMember>,
     /// Native path data.
     pub path: LoftPath,
+}
+
+/// Revision-gated `loft_spl_sur` form fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct LoftRevisionForm {
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: i64,
+    /// Four booleans following the parameter intervals.
+    #[serde(default)]
+    pub flags: [bool; 4],
+    /// Two integers preceding the shared tail.
+    #[serde(default)]
+    pub ints: [i64; 2],
+    /// Enum opening the shared revision-gated surface tail.
+    pub tail_enum: i64,
+    /// Six ordered discontinuity arrays following the fit tolerance.
+    #[serde(default)]
+    pub discontinuities: [Vec<f64>; 6],
+    /// Boolean terminating the shared tail.
+    pub tail_flag: bool,
 }
 
 /// Ordered native loft section.
@@ -1732,6 +1808,10 @@ pub enum LawExpression {
     Edge {
         /// Embedded curve carrier.
         curve: CurveId,
+        /// Two optional parameter endpoints following the curve in the
+        /// revision-gated encoding; absent from the pre-revision encoding.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoints: Option<[Option<f64>; 2]>,
         /// Two native curve parameters.
         parameters: [f64; 2],
     },
@@ -1987,11 +2067,31 @@ pub enum SweepSurfaceLayout {
     },
 }
 
+/// Revision-gated `sweep_sur` form fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema, Default)]
+pub struct SweepRevisionForm {
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: i64,
+    /// Boolean replacing the pre-revision primary enum.
+    pub primary_flag: bool,
+    /// Optional parameter endpoints following the embedded profile curve.
+    #[serde(default)]
+    pub profile_endpoints: [Option<f64>; 2],
+    /// Optional parameter endpoints following the embedded path curve.
+    #[serde(default)]
+    pub path_endpoints: [Option<f64>; 2],
+    /// Enum opening the shared revision-gated surface tail.
+    pub tail_enum: i64,
+}
+
 /// Complete native `sweep_spl_sur` construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SweepSurfaceConstruction {
     /// Leading native sweep enum.
     pub primary_kind: i64,
+    /// Revision-gated form fields; absent from the pre-revision layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_form: Option<SweepRevisionForm>,
     /// Structurally selected sweep layout.
     pub layout: SweepSurfaceLayout,
     /// Six ordered solved-surface discontinuity arrays.

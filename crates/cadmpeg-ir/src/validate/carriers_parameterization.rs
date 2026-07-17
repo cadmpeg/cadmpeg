@@ -69,11 +69,15 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             }
             ProceduralSurfaceDefinition::Loft { sections, .. } => {
                 for entry in sections.iter().flat_map(|section| &section.entries) {
-                    curves.insert(&entry.path.curve.0);
+                    if let Some(curve) = &entry.path.curve {
+                        curves.insert(&curve.0);
+                    }
                     curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &entry.profile {
                         curves.insert(&member.curve.0);
-                        surfaces.insert(&member.data.surface.0);
+                        if let Some(surface) = &member.data.surface {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
             }
@@ -104,7 +108,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &scale.members {
                         curves.insert(&member.curve.0);
-                        surfaces.insert(&member.data.surface.0);
+                        if let Some(surface) = &member.data.surface {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
             }
@@ -139,7 +145,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     curves.extend(scale.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &scale.members {
                         curves.insert(&member.curve.0);
-                        surfaces.insert(&member.data.surface.0);
+                        if let Some(surface) = &member.data.surface {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
             }
@@ -165,7 +173,9 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                         curves.insert(&path.0);
                         for profile in profiles {
                             curves.insert(&profile.curve.0);
-                            surfaces.insert(&profile.data.surface.0);
+                            if let Some(surface) = &profile.data.surface {
+                                surfaces.insert(&surface.0);
+                            }
                         }
                     }
                     crate::geometry::SkinSurfaceLayout::Compact {
@@ -229,11 +239,15 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .iter()
                     .flat_map(|section| &section.entries)
                 {
-                    curves.insert(&entry.path.curve.0);
+                    if let Some(curve) = &entry.path.curve {
+                        curves.insert(&curve.0);
+                    }
                     curves.extend(entry.path.auxiliaries.iter().map(|curve| curve.0.as_str()));
                     for member in &entry.profile {
                         curves.insert(&member.curve.0);
-                        surfaces.insert(&member.data.surface.0);
+                        if let Some(surface) = &member.data.surface {
+                            surfaces.insert(&surface.0);
+                        }
                     }
                 }
                 for formula in construction.formulas.iter() {

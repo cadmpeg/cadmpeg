@@ -384,7 +384,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
             ProceduralSurfaceDefinition::Loft { sections, .. } => {
                 for entry in sections.iter().flat_map(|section| &section.entries) {
-                    for curve in std::iter::once(&entry.path.curve)
+                    for curve in entry
+                        .path
+                        .curve
+                        .iter()
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.curve))
                     {
@@ -393,13 +396,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         }
                     }
                     for member in &entry.profile {
-                        if !ids.surfaces.contains(&member.data.surface.0) {
-                            ref_error(
-                                findings,
-                                &procedural.id.0,
-                                "surface",
-                                &member.data.surface.0,
-                            );
+                        if let Some(surface) = &member.data.surface {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
                         }
                     }
                 }
@@ -438,13 +438,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                     for member in &scale.members {
                         check_curve(&member.curve, findings);
-                        if !ids.surfaces.contains(&member.data.surface.0) {
-                            ref_error(
-                                findings,
-                                &procedural.id.0,
-                                "surface",
-                                &member.data.surface.0,
-                            );
+                        if let Some(surface) = &member.data.surface {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
                         }
                     }
                 }
@@ -487,13 +484,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                     for member in &scale.members {
                         check_curve(&member.curve, findings);
-                        if !ids.surfaces.contains(&member.data.surface.0) {
-                            ref_error(
-                                findings,
-                                &procedural.id.0,
-                                "surface",
-                                &member.data.surface.0,
-                            );
+                        if let Some(surface) = &member.data.surface {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
                         }
                     }
                 }
@@ -529,13 +523,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         check_curve(path, findings);
                         for profile in profiles {
                             check_curve(&profile.curve, findings);
-                            if !ids.surfaces.contains(&profile.data.surface.0) {
-                                ref_error(
-                                    findings,
-                                    &procedural.id.0,
-                                    "surface",
-                                    &profile.data.surface.0,
-                                );
+                            if let Some(surface) = &profile.data.surface {
+                                if !ids.surfaces.contains(&surface.0) {
+                                    ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                                }
                             }
                         }
                     }
@@ -608,7 +599,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     .iter()
                     .flat_map(|section| &section.entries)
                 {
-                    for curve in std::iter::once(&entry.path.curve)
+                    for curve in entry
+                        .path
+                        .curve
+                        .iter()
                         .chain(entry.path.auxiliaries.iter())
                         .chain(entry.profile.iter().map(|member| &member.curve))
                     {
@@ -617,13 +611,10 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                         }
                     }
                     for member in &entry.profile {
-                        if !ids.surfaces.contains(&member.data.surface.0) {
-                            ref_error(
-                                findings,
-                                &procedural.id.0,
-                                "surface",
-                                &member.data.surface.0,
-                            );
+                        if let Some(surface) = &member.data.surface {
+                            if !ids.surfaces.contains(&surface.0) {
+                                ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                            }
                         }
                     }
                 }

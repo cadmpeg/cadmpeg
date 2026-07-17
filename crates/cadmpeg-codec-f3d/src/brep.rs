@@ -1626,6 +1626,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             pcurve,
                             parameter,
                             taper,
+                            revision_form,
                         } => {
                             let support_id =
                                 SurfaceId(format!("f3d:brep:procedural_surface#{i}:support"));
@@ -1654,6 +1655,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 pcurve,
                                 parameter,
                                 taper,
+                                revision_form,
                             }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::Loft(embedded) => {
@@ -1671,13 +1673,16 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                         geometry: CurveGeometry::Nurbs(member.curve),
                                                         source_object: None,
                                                     });
-                                                    let surface = SurfaceId(format!(
-                                                        "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:support:{member_index}"
-                                                    ));
-                                                    out.surfaces.push(Surface {
-                                                        id: surface.clone(),
-                                                        geometry: member.data.surface,
-                                                        source_object: None,
+                                                    let surface = member.data.surface.map(|geometry| {
+                                                        let surface = SurfaceId(format!(
+                                                            "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:support:{member_index}"
+                                                        ));
+                                                        out.surfaces.push(Surface {
+                                                            id: surface.clone(),
+                                                            geometry,
+                                                            source_object: None,
+                                                        });
+                                                        surface
                                                     });
                                                     let pcurve = member.data.pcurve.map(|pcurve| PcurveGeometry::Nurbs {
                                                         degree: pcurve.degree,
@@ -1689,8 +1694,10 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     cadmpeg_ir::geometry::LoftProfileMember {
                                                         type_code: member.type_code,
                                                         curve,
+                                                        endpoints: member.endpoints,
                                                         data: cadmpeg_ir::geometry::LoftProfileData {
                                                             surface,
+                                                            support_bounds: member.data.support_bounds,
                                                             pcurve,
                                                             first_flag: member.data.first_flag,
                                                             asm_extension: member.data.asm_extension,
@@ -1700,13 +1707,16 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     }
                                                 },
                                             ).collect();
-                                            let path_curve = CurveId(format!(
-                                                "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:path"
-                                            ));
-                                            out.curves.push(Curve {
-                                                id: path_curve.clone(),
-                                                geometry: CurveGeometry::Nurbs(entry.path.curve),
-                                                source_object: None,
+                                            let path_curve = entry.path.curve.map(|geometry| {
+                                                let path_curve = CurveId(format!(
+                                                    "f3d:brep:procedural_surface#{i}:loft:{section_index}:{entry_index}:path"
+                                                ));
+                                                out.curves.push(Curve {
+                                                    id: path_curve.clone(),
+                                                    geometry: CurveGeometry::Nurbs(geometry),
+                                                    source_object: None,
+                                                });
+                                                path_curve
                                             });
                                             let auxiliaries = entry.path.auxiliaries.into_iter().enumerate().map(
                                                 |(auxiliary_index, geometry)| {
@@ -1726,6 +1736,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                 profile,
                                                 path: cadmpeg_ir::geometry::LoftPath {
                                                     curve: path_curve,
+                                                    endpoints: entry.path.endpoints,
                                                     auxiliaries,
                                                     flag: entry.path.flag,
                                                 },
@@ -1737,6 +1748,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             ).collect::<Vec<_>>().try_into().expect("two loft sections");
                             ProceduralSurfaceDefinition::Loft {
                                 sections,
+                                revision_form: embedded.revision_form,
                                 parameter_ranges: embedded.parameter_ranges,
                                 closures: embedded.closures,
                                 singularities: embedded.singularities,
@@ -1762,19 +1774,23 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                             geometry: CurveGeometry::Nurbs(member.curve),
                                             source_object: None,
                                         });
-                                        let surface = SurfaceId(format!(
-                                            "f3d:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:surface"
-                                        ));
-                                        out.surfaces.push(Surface {
-                                            id: surface.clone(),
-                                            geometry: member.data.surface,
-                                            source_object: None,
-                                        });
+                                        let surface = member.data.surface.map(|geometry| {
+                                                let surface = SurfaceId(format!(
+                                                    "f3d:brep:procedural_surface#{i}:cloft:{name}:member:{member_index}:surface"
+                                                ));
+                                                out.surfaces.push(Surface {
+                                                    id: surface.clone(),
+                                                    geometry,
+                                                    source_object: None,
+                                                });
+                                                surface
+                                            });
                                         cadmpeg_ir::geometry::CompoundLoftScaleMember {
                                             type_code: member.type_code,
                                             curve,
                                             data: cadmpeg_ir::geometry::LoftProfileData {
                                                 surface,
+                                                support_bounds: member.data.support_bounds,
                                                 pcurve: member
                                                     .data
                                                     .pcurve
@@ -1945,19 +1961,23 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                             geometry: CurveGeometry::Nurbs(member.curve),
                                             source_object: None,
                                         });
-                                        let surface = SurfaceId(format!(
-                                            "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:surface"
-                                        ));
-                                        out.surfaces.push(Surface {
-                                            id: surface.clone(),
-                                            geometry: member.data.surface,
-                                            source_object: None,
-                                        });
+                                        let surface = member.data.surface.map(|geometry| {
+                                                let surface = SurfaceId(format!(
+                                                    "f3d:brep:procedural_surface#{i}:scaled_cloft:{name}:member:{member_index}:surface"
+                                                ));
+                                                out.surfaces.push(Surface {
+                                                    id: surface.clone(),
+                                                    geometry,
+                                                    source_object: None,
+                                                });
+                                                surface
+                                            });
                                         cadmpeg_ir::geometry::CompoundLoftScaleMember {
                                             type_code: member.type_code,
                                             curve,
                                             data: cadmpeg_ir::geometry::LoftProfileData {
                                                 surface,
+                                                support_bounds: member.data.support_bounds,
                                                 pcurve: member
                                                     .data
                                                     .pcurve
@@ -2160,7 +2180,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                             enums,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                    nurbs::EmbeddedLawExpression::Edge {
+                                        curve,
+                                        endpoints,
+                                        parameters,
+                                    } => {
                                         let id = CurveId(format!(
                                             "f3d:brep:procedural_surface#{owner}:law:{path}:edge"
                                         ));
@@ -2171,6 +2195,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         });
                                         cadmpeg_ir::geometry::LawExpression::Edge {
                                             curve: id,
+                                            endpoints,
                                             parameters,
                                         }
                                     }
@@ -2275,7 +2300,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                             enums,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                    nurbs::EmbeddedLawExpression::Edge {
+                                        curve,
+                                        endpoints,
+                                        parameters,
+                                    } => {
                                         let id = CurveId(format!(
                                             "f3d:brep:procedural_surface#{owner}:skin:law:{path}:edge"
                                         ));
@@ -2286,6 +2315,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         });
                                         cadmpeg_ir::geometry::LawExpression::Edge {
                                             curve: id,
+                                            endpoints,
                                             parameters,
                                         }
                                     }
@@ -2370,19 +2400,23 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                 geometry: CurveGeometry::Nurbs(profile.curve),
                                                 source_object: None,
                                             });
-                                            let surface = SurfaceId(format!(
-                                                "f3d:brep:procedural_surface#{i}:skin:profile:{index}:surface"
-                                            ));
-                                            out.surfaces.push(Surface {
-                                                id: surface.clone(),
-                                                geometry: profile.data.surface,
-                                                source_object: None,
-                                            });
+                                            let surface = profile.data.surface.map(|geometry| {
+                                                    let surface = SurfaceId(format!(
+                                                        "f3d:brep:procedural_surface#{i}:skin:profile:{index}:surface"
+                                                    ));
+                                                    out.surfaces.push(Surface {
+                                                        id: surface.clone(),
+                                                        geometry,
+                                                        source_object: None,
+                                                    });
+                                                    surface
+                                                });
                                             cadmpeg_ir::geometry::SkinSurfaceProfile {
                                                 type_code: profile.type_code,
                                                 curve,
                                                 data: cadmpeg_ir::geometry::LoftProfileData {
                                                     surface,
+                                                    support_bounds: profile.data.support_bounds,
                                                     pcurve: profile
                                                         .data
                                                         .pcurve
@@ -2484,7 +2518,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                             enums,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                    nurbs::EmbeddedLawExpression::Edge {
+                                        curve,
+                                        endpoints,
+                                        parameters,
+                                    } => {
                                         let id = CurveId(format!(
                                             "f3d:brep:procedural_surface#{owner}:net:law:{path}:edge"
                                         ));
@@ -2495,6 +2533,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         });
                                         cadmpeg_ir::geometry::LawExpression::Edge {
                                             curve: id,
+                                            endpoints,
                                             parameters,
                                         }
                                     }
@@ -2552,19 +2591,24 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                         geometry: CurveGeometry::Nurbs(member.curve),
                                                         source_object: None,
                                                     });
-                                                    let surface = SurfaceId(format!(
-                                                        "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:surface"
-                                                    ));
-                                                    out.surfaces.push(Surface {
-                                                        id: surface.clone(),
-                                                        geometry: member.data.surface,
-                                                        source_object: None,
-                                                    });
+                                                    let surface = member.data.surface.map(|geometry| {
+                                                            let surface = SurfaceId(format!(
+                                                                "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:member:{member_index}:surface"
+                                                            ));
+                                                            out.surfaces.push(Surface {
+                                                                id: surface.clone(),
+                                                                geometry,
+                                                                source_object: None,
+                                                            });
+                                                            surface
+                                                        });
                                                     cadmpeg_ir::geometry::LoftProfileMember {
                                                         type_code: member.type_code,
                                                         curve,
+                                                        endpoints: member.endpoints,
                                                         data: cadmpeg_ir::geometry::LoftProfileData {
                                                             surface,
+                                                            support_bounds: member.data.support_bounds,
                                                             pcurve: member.data.pcurve.map(
                                                                 embedded_pcurve_geometry,
                                                             ),
@@ -2578,13 +2622,16 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                     }
                                                 })
                                                 .collect();
-                                            let path = CurveId(format!(
-                                                "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:path"
-                                            ));
-                                            out.curves.push(Curve {
-                                                id: path.clone(),
-                                                geometry: CurveGeometry::Nurbs(entry.path.curve),
-                                                source_object: None,
+                                            let path = entry.path.curve.map(|geometry| {
+                                                let path = CurveId(format!(
+                                                    "f3d:brep:procedural_surface#{i}:net:{section_index}:{entry_index}:path"
+                                                ));
+                                                out.curves.push(Curve {
+                                                    id: path.clone(),
+                                                    geometry: CurveGeometry::Nurbs(geometry),
+                                                    source_object: None,
+                                                });
+                                                path
                                             });
                                             let auxiliaries = entry
                                                 .path
@@ -2608,6 +2655,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                                 profile,
                                                 path: cadmpeg_ir::geometry::LoftPath {
                                                     curve: path,
+                                                    endpoints: entry.path.endpoints,
                                                     auxiliaries,
                                                     flag: entry.path.flag,
                                                 },
@@ -2687,7 +2735,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                             enums,
                                         }
                                     }
-                                    nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                    nurbs::EmbeddedLawExpression::Edge {
+                                        curve,
+                                        endpoints,
+                                        parameters,
+                                    } => {
                                         let id = CurveId(format!(
                                             "f3d:brep:procedural_surface#{owner}:sweep:law:{path}:edge"
                                         ));
@@ -2698,6 +2750,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         });
                                         cadmpeg_ir::geometry::LawExpression::Edge {
                                             curve: id,
+                                            endpoints,
                                             parameters,
                                         }
                                     }
@@ -3019,6 +3072,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 native: Some(Box::new(
                                     cadmpeg_ir::geometry::SweepSurfaceConstruction {
                                         primary_kind: embedded.primary_kind,
+                                        revision_form: embedded.revision_form,
                                         layout,
                                         discontinuities: embedded.discontinuities,
                                         discontinuity_flag: embedded.discontinuity_flag,
@@ -3205,6 +3259,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             u_sense,
                             v_sense,
                             extension_flags,
+                            revision_form,
                         } => {
                             let support_id =
                                 SurfaceId(format!("f3d:brep:procedural_surface#{i}:support"));
@@ -3219,6 +3274,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 u_sense,
                                 v_sense,
                                 extension_flags,
+                                revision_form,
                             }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::Extrusion {
@@ -4110,7 +4166,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         enums,
                                     }
                                 }
-                                nurbs::EmbeddedLawExpression::Edge { curve, parameters } => {
+                                nurbs::EmbeddedLawExpression::Edge {
+                                    curve,
+                                    endpoints,
+                                    parameters,
+                                } => {
                                     let id = CurveId(format!(
                                         "f3d:brep:procedural_curve#{owner}:law:{path}"
                                     ));
@@ -4121,6 +4181,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     });
                                     cadmpeg_ir::geometry::LawExpression::Edge {
                                         curve: id,
+                                        endpoints,
                                         parameters,
                                     }
                                 }

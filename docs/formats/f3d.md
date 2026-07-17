@@ -28,11 +28,11 @@
 
 The following small entries are STORED:
 
-| Entry                                           | Bytes                   | Meaning                                      |
-| ----------------------------------------------- | ----------------------- | -------------------------------------------- |
-| `Properties.dat`                                | `00 00 00 00` (u32 `0`) | empty document-properties slot               |
+| Entry                                           | Bytes                   | Meaning                                                            |
+| ----------------------------------------------- | ----------------------- | ------------------------------------------------------------------ |
+| `Properties.dat`                                | `00 00 00 00` (u32 `0`) | empty document-properties slot                                     |
 | `.../DesignConfigurationTable.<uuid>.dsgcfg`    | JSON object             | configuration table, including parameter and suppression overrides |
-| `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | JSON object             | configuration activation rules                 |
+| `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | JSON object             | configuration activation rules                                     |
 
 Configuration tables and rules are complete JSON objects. A table's `configurations` member is an object keyed by variant name. Each variant value is an object; its `parameters` member is an object, `suppressed` is an array of strings, and `material` is a string. The table's `active` string equals one key in `configurations`. A rule's paired `when` and `activate` members are strings containing its activation condition and target variant name. Unknown object members remain part of the configuration document. ZIP entry name and extension select table versus rule; duplicate entry names are invalid.
 
@@ -114,8 +114,8 @@ Streams begin with the 15-byte magic `ASM BinaryFile8` or `ASM BinaryFile4`; byt
 | -------- | -------------------------------------------------------------------------------------- |
 | `0..15`  | magic `ASM BinaryFile8`                                                                |
 | `15..19` | little-endian u32 ASM release word (`23000` on ASM 230, `23100` on ASM 231 streams)    |
-| `19..31` | zero                                                                                    |
-| `31..39` | little-endian u64 entity-count word                                                     |
+| `19..31` | zero                                                                                   |
+| `31..39` | little-endian u64 entity-count word                                                    |
 | `39..47` | little-endian u64 flags; bit 0 is set iff the stream carries a history partition (§4a) |
 
 The string region begins at byte 47.
@@ -445,7 +445,7 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 
 **`rot_spl_sur` / `rotsur`**: one profile curve, a model-space axis origin, and an axis direction followed by the solved NURBS surface and fit tolerance. The profile knot domain is the construction's profile interval; the solved surface V domain is its angular interval. The native layout is not transposed. Native generation uses `rot_spl_sur`.
 
-**Revision-gated spline-surface forms**: a positive serializer-revision integer directly after a spline-surface subtype name selects that subtype's revision-gated layout. In these layouts, interval endpoints use the optional bool-gated encoding, support surfaces carry the optional bound fields of cache-first `int_int_cur`, and every embedded curve is followed by two optional parameter endpoints. The shared revision-gated surface tail is an enum, the solved NURBS surface, its fit tolerance, six discontinuity integers, and one boolean, and it ends the subtype payload.
+**Revision-gated spline-surface forms**: a positive serializer-revision integer directly after a spline-surface subtype name selects that subtype's revision-gated layout. In these layouts, interval endpoints use the optional bool-gated encoding, support surfaces carry the optional bound fields of cache-first `int_int_cur`, and every embedded curve is followed by two optional parameter endpoints. The shared revision-gated surface tail is an enum, the solved NURBS surface, its fit tolerance, six counted discontinuity arrays, and one boolean, and it ends the subtype payload.
 
 **`off_spl_sur` / `offsur`**: one support surface, signed offset distance, and U/V sense enums followed by the solved NURBS surface and fit tolerance. The modern name additionally carries a conditional one-to-three-boolean ASM tail: a false first flag ends the tail; a true first flag requires a second flag and permits a third. The legacy name has no ASM boolean tail. Native generation retains the form selected by the stored tail. The revision-gated form stores the revision integer, the support surface with its optional bound fields, the offset distance, four booleans, and the shared revision-gated surface tail.
 

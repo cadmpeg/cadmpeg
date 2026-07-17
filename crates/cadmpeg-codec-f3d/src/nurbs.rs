@@ -720,6 +720,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         parameter: f64,
         /// Subtype-specific tail.
         taper: cadmpeg_ir::geometry::TaperSurfaceKind,
+        /// Revision-gated form fields.
+        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
     },
     /// Native loft construction graph with embedded carriers.
     Loft(EmbeddedLoft),
@@ -784,6 +786,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         v_sense: i64,
         /// Ordered conditional ASM flags.
         extension_flags: Vec<bool>,
+        /// Revision-gated form fields.
+        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
     },
     /// Translation of an embedded directrix along a length-bearing direction.
     Extrusion {
@@ -1131,7 +1135,8 @@ fn decode_g2_blend_spl_sur(
 }
 
 pub(crate) struct EmbeddedLoftProfileData {
-    pub(crate) surface: SurfaceGeometry,
+    pub(crate) surface: Option<SurfaceGeometry>,
+    pub(crate) support_bounds: [Option<f64>; 4],
     pub(crate) pcurve: Option<NurbsPcurve>,
     pub(crate) first_flag: bool,
     pub(crate) asm_extension: i64,
@@ -1142,11 +1147,13 @@ pub(crate) struct EmbeddedLoftProfileData {
 pub(crate) struct EmbeddedLoftProfileMember {
     pub(crate) type_code: i64,
     pub(crate) curve: NurbsCurve,
+    pub(crate) endpoints: Option<[Option<f64>; 2]>,
     pub(crate) data: EmbeddedLoftProfileData,
 }
 
 pub(crate) struct EmbeddedLoftPath {
-    pub(crate) curve: NurbsCurve,
+    pub(crate) curve: Option<NurbsCurve>,
+    pub(crate) endpoints: Option<[Option<f64>; 2]>,
     pub(crate) auxiliaries: Vec<NurbsCurve>,
     pub(crate) flag: i64,
 }
@@ -1160,6 +1167,7 @@ pub(crate) struct EmbeddedLoftSectionEntry {
 /// Embedded native loft graph before its carriers receive stable IR ids.
 pub struct EmbeddedLoft {
     pub(crate) sections: [Vec<EmbeddedLoftSectionEntry>; 2],
+    pub(crate) revision_form: Option<cadmpeg_ir::geometry::LoftRevisionForm>,
     pub(crate) parameter_ranges: [[f64; 2]; 2],
     pub(crate) closures: [i64; 2],
     pub(crate) singularities: [i64; 2],
@@ -1270,6 +1278,7 @@ pub(crate) enum EmbeddedLawExpression {
     },
     Edge {
         curve: NurbsCurve,
+        endpoints: Option<[Option<f64>; 2]>,
         parameters: [f64; 2],
     },
     Spline {
@@ -1428,6 +1437,7 @@ pub(crate) enum EmbeddedSweepSurfaceLayout {
 /// Embedded native sweep surface before stable IR ids are assigned.
 pub struct EmbeddedSweepSurface {
     pub(crate) primary_kind: i64,
+    pub(crate) revision_form: Option<cadmpeg_ir::geometry::SweepRevisionForm>,
     pub(crate) layout: EmbeddedSweepSurfaceLayout,
     pub(crate) discontinuities: [Vec<f64>; 6],
     pub(crate) discontinuity_flag: bool,
@@ -1495,6 +1505,7 @@ fn decode_compound_loft_scale(
         members.push(EmbeddedLoftProfileMember {
             type_code,
             curve: curve.curve,
+            endpoints: None,
             data,
         });
     }
@@ -1523,10 +1534,203 @@ fn decode_compound_loft_scale(
     }))
 }
 
+/// Exact rational quadratic NURBS of a full native ellipse.
+fn ellipse_to_nurbs(
+    center: [f64; 3],
+    normal: [f64; 3],
+    major: [f64; 3],
+    ratio: f64,
+) -> Option<NurbsCurve> {
+    let length =
+        (major[0] * major[0] + major[1] * major[1] + major[2] * major[2]).sqrt();
+    (length.is_finite() && length > 0.0).then_some(())?;
+    let minor_direction = [
+        normal[1] * major[2] - normal[2] * major[1],
+        normal[2] * major[0] - normal[0] * major[2],
+        normal[0] * major[1] - normal[1] * major[0],
+    ];
+    let minor_length = (minor_direction[0] * minor_direction[0]
+        + minor_direction[1] * minor_direction[1]
+        + minor_direction[2] * minor_direction[2])
+        .sqrt();
+    (minor_length.is_finite() && minor_length > 0.0).then_some(())?;
+    let minor_scale = ratio * length / minor_length;
+    let minor = [
+        minor_direction[0] * minor_scale,
+        minor_direction[1] * minor_scale,
+        minor_direction[2] * minor_scale,
+    ];
+    let at = |mj: f64, mn: f64| {
+        Point3::new(
+            (center[0] + mj * major[0] + mn * minor[0]) * LEN_TO_MM,
+            (center[1] + mj * major[1] + mn * minor[1]) * LEN_TO_MM,
+            (center[2] + mj * major[2] + mn * minor[2]) * LEN_TO_MM,
+        )
+    };
+    let w = std::f64::consts::FRAC_1_SQRT_2;
+    Some(NurbsCurve {
+        degree: 2,
+        knots: vec![0.0, 0.0, 0.0, 0.25, 0.25, 0.5, 0.5, 0.75, 0.75, 1.0, 1.0, 1.0],
+        control_points: vec![
+            at(1.0, 0.0),
+            at(1.0, 1.0),
+            at(0.0, 1.0),
+            at(-1.0, 1.0),
+            at(-1.0, 0.0),
+            at(-1.0, -1.0),
+            at(0.0, -1.0),
+            at(1.0, -1.0),
+            at(1.0, 0.0),
+        ],
+        weights: Some(vec![1.0, w, 1.0, w, 1.0, w, 1.0, w, 1.0]),
+        periodic: false,
+    })
+}
+
+/// Revision-gated loft profile data: bounded support, nullable pcurve, flags,
+/// and constraint subdata with trailing row pairs.
+fn decode_revision_loft_profile_data(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<EmbeddedLoftProfileData> {
+    let (surface, support_bounds) = decode_optional_embedded_surface_with_bounds(
+        bytes,
+        position,
+        int_width,
+        active_bytes,
+        tables,
+    )?;
+    let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+    let first_flag = take_bool(bytes, position)?;
+    let asm_extension = take_tagged_int(bytes, position, 0x04, int_width)?;
+    let subdata = decode_loft_subdata_form(bytes, position, int_width, true)?;
+    let direction = if take_bool(bytes, position)? {
+        let value = take_native_vec3(bytes, position, 0x14)?;
+        Some(Vector3::new(value[0], value[1], value[2]))
+    } else {
+        None
+    };
+    Some(EmbeddedLoftProfileData {
+        surface,
+        support_bounds,
+        pcurve,
+        first_flag,
+        asm_extension,
+        subdata,
+        direction,
+    })
+}
+
+fn decode_revision_loft_section(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<Vec<EmbeddedLoftSectionEntry>> {
+    let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    let count = bounded_len(count as u64, 9, bytes.len().saturating_sub(*position))?;
+    let mut entries = Vec::with_capacity(count);
+    for _ in 0..count {
+        let parameter = take_f64(bytes, position)?;
+        let member_count =
+            usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+        let member_count = bounded_len(
+            member_count as u64,
+            1 + int_width,
+            bytes.len().saturating_sub(*position),
+        )?;
+        let mut profile = Vec::with_capacity(member_count);
+        for _ in 0..member_count {
+            let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
+            let curve = decode_embedded_base_curve_resolving_refs(
+                bytes,
+                position,
+                int_width,
+                active_bytes,
+                tables,
+            )?;
+            let endpoints = [
+                take_optional_range_value(bytes, position)?,
+                take_optional_range_value(bytes, position)?,
+            ];
+            let data = decode_revision_loft_profile_data(
+                bytes,
+                position,
+                int_width,
+                active_bytes,
+                tables,
+            )?;
+            profile.push(EmbeddedLoftProfileMember {
+                type_code,
+                curve,
+                endpoints: Some(endpoints),
+                data,
+            });
+        }
+        let saved = *position;
+        let (path_curve, path_endpoints) =
+            if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
+                (None, None)
+            } else {
+                *position = saved;
+                let curve = decode_embedded_base_curve_resolving_refs(
+                    bytes,
+                    position,
+                    int_width,
+                    active_bytes,
+                    tables,
+                )?;
+                let endpoints = [
+                    take_optional_range_value(bytes, position)?,
+                    take_optional_range_value(bytes, position)?,
+                ];
+                (Some(curve), Some(endpoints))
+            };
+        let auxiliary_count =
+            usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+        let auxiliary_count = bounded_len(
+            auxiliary_count as u64,
+            6,
+            bytes.len().saturating_sub(*position),
+        )?;
+        let mut auxiliaries = Vec::with_capacity(auxiliary_count);
+        for _ in 0..auxiliary_count {
+            let auxiliary = decode_curve_block(bytes, *position, int_width)?;
+            *position = auxiliary.end;
+            auxiliaries.push(auxiliary.curve);
+        }
+        let flag = take_tagged_int(bytes, position, 0x04, int_width)?;
+        entries.push(EmbeddedLoftSectionEntry {
+            parameter,
+            profile,
+            path: EmbeddedLoftPath {
+                curve: path_curve,
+                endpoints: path_endpoints,
+                auxiliaries,
+                flag,
+            },
+        });
+    }
+    Some(entries)
+}
+
 fn decode_loft_subdata(
     bytes: &[u8],
     position: &mut usize,
     int_width: usize,
+) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
+    decode_loft_subdata_form(bytes, position, int_width, false)
+}
+
+fn decode_loft_subdata_form(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    revision: bool,
 ) -> Option<cadmpeg_ir::geometry::LoftSubdata> {
     use cadmpeg_ir::geometry::{LoftSubdata, LoftSubdataRow};
     let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
@@ -1554,9 +1758,15 @@ fn decode_loft_subdata(
                 columns.push([take_f64(bytes, position)?, take_f64(bytes, position)?]);
             }
         }
+        let extra = if revision && type_code != 211 {
+            Some([take_f64(bytes, position)?, take_f64(bytes, position)?])
+        } else {
+            None
+        };
         rows.push(LoftSubdataRow {
             parameters,
             columns,
+            extra,
         });
     }
     Some(LoftSubdata {
@@ -1592,7 +1802,8 @@ fn decode_loft_profile_data(
         None
     };
     Some(EmbeddedLoftProfileData {
-        surface,
+        surface: Some(surface),
+        support_bounds: [None; 4],
         pcurve,
         first_flag,
         asm_extension,
@@ -1629,6 +1840,7 @@ fn decode_loft_section(
             profile.push(EmbeddedLoftProfileMember {
                 type_code,
                 curve: curve.curve,
+                endpoints: None,
                 data,
             });
         }
@@ -1653,7 +1865,8 @@ fn decode_loft_section(
             parameter,
             profile,
             path: EmbeddedLoftPath {
-                curve: curve.curve,
+                curve: Some(curve.curve),
+                endpoints: None,
                 auxiliaries,
                 flag,
             },
@@ -1662,7 +1875,11 @@ fn decode_loft_section(
     Some(entries)
 }
 
-fn decode_loft_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+fn decode_loft_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::LoftBridgeToken;
     let names: [&[u8]; 2] = [b"loft_spl_sur", b"loftsur"];
     let (start, name_len) = names.into_iter().find_map(|name| {
@@ -1678,6 +1895,54 @@ fn decode_loft_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
+    if span.get(position) == Some(&0x04) {
+        let (active_bytes, tables) = resolver?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        let sections = [
+            decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
+            decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
+        ];
+        let parameter_ranges = [
+            [
+                take_optional_range_value(span, &mut position)??,
+                take_optional_range_value(span, &mut position)??,
+            ],
+            [
+                take_optional_range_value(span, &mut position)??,
+                take_optional_range_value(span, &mut position)??,
+            ],
+        ];
+        let mut flags = [false; 4];
+        for flag in &mut flags {
+            *flag = take_bool(span, &mut position)?;
+        }
+        let ints = [
+            take_tagged_int(span, &mut position, 0x04, int_width)?,
+            take_tagged_int(span, &mut position, 0x04, int_width)?,
+        ];
+        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+            decode_revision_surface_tail(span, &mut position, int_width)?;
+        return Some(DecodedProceduralSurface {
+            definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
+                sections,
+                revision_form: Some(cadmpeg_ir::geometry::LoftRevisionForm {
+                    revision,
+                    flags,
+                    ints,
+                    tail_enum,
+                    discontinuities,
+                    tail_flag,
+                }),
+                parameter_ranges,
+                closures: [0, 0],
+                singularities: [0, 0],
+                mode: 0,
+                bridge: Vec::new(),
+            }),
+            cache_fit_tolerance: Some(fit_tolerance),
+        });
+    }
     let sections = [
         decode_loft_section(span, &mut position, int_width)?,
         decode_loft_section(span, &mut position, int_width)?,
@@ -1737,6 +2002,7 @@ fn decode_loft_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
+            revision_form: None,
             parameter_ranges,
             closures,
             singularities,
@@ -2018,6 +2284,16 @@ fn decode_law_expression(
     int_width: usize,
     depth: usize,
 ) -> Option<EmbeddedLawExpression> {
+    decode_law_expression_resolving(bytes, position, int_width, depth, None)
+}
+
+fn decode_law_expression_resolving(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    depth: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<EmbeddedLawExpression> {
     if depth > 64 {
         return None;
     }
@@ -2060,11 +2336,37 @@ fn decode_law_expression(
             Some(EmbeddedLawExpression::Transform { scalars, enums })
         }
         "EDGE" => {
-            let curve = decode_curve_block(bytes, *position, int_width)?;
-            *position = curve.end;
+            let (curve, endpoints) =
+                if let Some(block) = decode_curve_block(bytes, *position, int_width) {
+                    *position = block.end;
+                    let endpoints = matches!(bytes.get(*position), Some(0x0a | 0x0b))
+                        .then(|| {
+                            Some([
+                                take_optional_range_value(bytes, position)?,
+                                take_optional_range_value(bytes, position)?,
+                            ])
+                        })
+                        .flatten();
+                    (block.curve, endpoints)
+                } else {
+                    let (active_bytes, tables) = resolver?;
+                    let curve = decode_embedded_base_curve_resolving_refs(
+                        bytes,
+                        position,
+                        int_width,
+                        active_bytes,
+                        tables,
+                    )?;
+                    let endpoints = Some([
+                        take_optional_range_value(bytes, position)?,
+                        take_optional_range_value(bytes, position)?,
+                    ]);
+                    (curve, endpoints)
+                };
             let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
             Some(EmbeddedLawExpression::Edge {
-                curve: curve.curve,
+                curve,
+                endpoints,
                 parameters,
             })
         }
@@ -2096,7 +2398,9 @@ fn decode_law_expression(
                 _ => return None,
             };
             let operands = (0..arity)
-                .map(|_| decode_law_expression(bytes, position, int_width, depth + 1))
+                .map(|_| {
+                    decode_law_expression_resolving(bytes, position, int_width, depth + 1, resolver)
+                })
                 .collect::<Option<Vec<_>>>()?;
             Some(EmbeddedLawExpression::Algebraic { operator, operands })
         }
@@ -2107,6 +2411,15 @@ fn decode_law_formula(
     bytes: &[u8],
     position: &mut usize,
     int_width: usize,
+) -> Option<EmbeddedLawFormula> {
+    decode_law_formula_resolving(bytes, position, int_width, None)
+}
+
+fn decode_law_formula_resolving(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<EmbeddedLawFormula> {
     let name = take_native_string(bytes, position)?;
     if name == "null_law" {
@@ -2120,7 +2433,7 @@ fn decode_law_formula(
         return None;
     }
     let variables = (0..count)
-        .map(|_| decode_law_expression(bytes, position, int_width, 0))
+        .map(|_| decode_law_expression_resolving(bytes, position, int_width, 0, resolver))
         .collect::<Option<Vec<_>>>()?;
     Some(EmbeddedLawFormula { name, variables })
 }
@@ -2175,6 +2488,7 @@ fn decode_skin_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
             profiles.push(EmbeddedLoftProfileMember {
                 type_code,
                 curve: curve.curve,
+                endpoints: None,
                 data,
             });
         }
@@ -2449,7 +2763,11 @@ fn decode_net_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
     })
 }
 
-fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+fn decode_sweep_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 3] = [b"sweep_spl_sur", b"sweep_sur", b"sweepsur"];
     let (start, name_len) = names.into_iter().find_map(|name| {
         record_bytes
@@ -2464,6 +2782,9 @@ fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
+    if span.get(position) == Some(&0x04) {
+        return decode_revision_sweep_sur(span, position, int_width, resolver?);
+    }
     let primary_kind = take_tagged_int(span, &mut position, 0x15, int_width)?;
     let layout = if matches!(span.get(position), Some(0x0d | 0x0e)) {
         let profile = decode_curve_block(span, position, int_width)?;
@@ -2702,6 +3023,7 @@ fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
             primary_kind,
+            revision_form: None,
             layout,
             discontinuities,
             discontinuity_flag,
@@ -2710,7 +3032,129 @@ fn decode_sweep_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     })
 }
 
-fn decode_taper_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+/// Revision-gated `sweep_sur` explicit-formula layout.
+fn decode_revision_sweep_sur(
+    span: &[u8],
+    mut position: usize,
+    int_width: usize,
+    (active_bytes, tables): (&[u8], &SubtypeTables),
+) -> Option<DecodedProceduralSurface> {
+    let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    (revision > 0).then_some(())?;
+    let primary_flag = take_bool(span, &mut position)?;
+    let mode = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let profile = decode_embedded_base_curve_resolving_refs(
+        span,
+        &mut position,
+        int_width,
+        active_bytes,
+        tables,
+    )?;
+    let profile_endpoints = [
+        take_optional_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
+    ];
+    let profile_range = [
+        take_optional_range_value(span, &mut position)??,
+        take_optional_range_value(span, &mut position)??,
+    ];
+    let profile_frame = if take_bool(span, &mut position)? {
+        let point = take_native_vec3(span, &mut position, 0x13)?;
+        let vector = take_native_vec3(span, &mut position, 0x14)?;
+        Some((
+            Point3::new(
+                point[0] * LEN_TO_MM,
+                point[1] * LEN_TO_MM,
+                point[2] * LEN_TO_MM,
+            ),
+            Vector3::new(vector[0], vector[1], vector[2]),
+        ))
+    } else {
+        None
+    };
+    let point = take_native_vec3(span, &mut position, 0x13)?;
+    let origin = Point3::new(
+        point[0] * LEN_TO_MM,
+        point[1] * LEN_TO_MM,
+        point[2] * LEN_TO_MM,
+    );
+    let mut directions = [Vector3::new(0.0, 0.0, 0.0); 3];
+    for direction in &mut directions {
+        let value = take_native_vec3(span, &mut position, 0x14)?;
+        *direction = Vector3::new(value[0], value[1], value[2]);
+    }
+    (take_tagged_int(span, &mut position, 0x04, int_width)? == 1).then_some(())?;
+    let trajectory_flag = take_bool(span, &mut position)?;
+    let path = decode_embedded_base_curve_resolving_refs(
+        span,
+        &mut position,
+        int_width,
+        active_bytes,
+        tables,
+    )?;
+    let path_endpoints = [
+        take_optional_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
+    ];
+    let path_range = [
+        take_optional_range_value(span, &mut position)?? * LEN_TO_MM,
+        take_optional_range_value(span, &mut position)?? * LEN_TO_MM,
+    ];
+    let path_parameter = take_f64(span, &mut position)?;
+    let formula_flag = take_bool(span, &mut position)?;
+    let formula =
+        decode_law_formula_resolving(span, &mut position, int_width, Some((active_bytes, tables)))?;
+    let trailing_flag = take_bool(span, &mut position)?;
+    let tail_enum = take_tagged_int(span, &mut position, 0x15, int_width)?;
+    let cache = decode_surface_block(span, position, int_width)?;
+    position = cache.end;
+    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+    let discontinuities = [
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+    ];
+    let discontinuity_flag = take_bool(span, &mut position)?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::Sweep(Box::new(EmbeddedSweepSurface {
+            primary_kind: 0,
+            revision_form: Some(cadmpeg_ir::geometry::SweepRevisionForm {
+                revision,
+                primary_flag,
+                profile_endpoints,
+                path_endpoints,
+                tail_enum,
+            }),
+            layout: EmbeddedSweepSurfaceLayout::ExplicitFormula {
+                profile,
+                mode,
+                profile_range,
+                profile_frame,
+                origin,
+                directions,
+                trajectory_flag,
+                path,
+                path_range,
+                path_parameter,
+                formula_flag,
+                formula,
+                trailing_flag,
+            },
+            discontinuities,
+            discontinuity_flag,
+        })),
+        cache_fit_tolerance,
+    })
+}
+
+fn decode_taper_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<DecodedProceduralSurface> {
     use cadmpeg_ir::geometry::TaperSurfaceKind;
     let names: &[(&[u8], u8)] = &[
         (b"taper_spl_sur", 0),
@@ -2737,6 +3181,57 @@ fn decode_taper_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
+    if span.get(position) == Some(&0x04) {
+        // Revision-gated form, stored by the orthogonal subtype.
+        (kind == 1).then_some(())?;
+        let (active_bytes, tables) = resolver?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        let (support, support_bounds) = decode_optional_embedded_surface_with_bounds(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let support = support?;
+        let reference = decode_embedded_base_curve_resolving_refs(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let reference_endpoints = [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ];
+        let pcurve = decode_nullable_embedded_pcurve(span, &mut position, int_width)?;
+        let parameter = take_f64(span, &mut position)?;
+        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let trailing_flags = vec![take_bool(span, &mut position)?];
+        return Some(DecodedProceduralSurface {
+            definition: DecodedProceduralSurfaceDefinition::Taper {
+                support,
+                reference,
+                pcurve,
+                parameter,
+                taper: TaperSurfaceKind::Orthogonal { sense: false },
+                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds,
+                    reference_endpoints,
+                    flags: Vec::new(),
+                    tail_enum,
+                    discontinuities,
+                    tail_flag,
+                    trailing_flags,
+                }),
+            },
+            cache_fit_tolerance: Some(fit_tolerance),
+        });
+    }
     let support = decode_embedded_surface(span, &mut position, int_width)?;
     let reference = decode_curve_block(span, position, int_width)?;
     position = reference.end;
@@ -2795,6 +3290,7 @@ fn decode_taper_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
             pcurve,
             parameter,
             taper,
+            revision_form: None,
         },
         cache_fit_tolerance,
     })
@@ -2830,7 +3326,34 @@ fn decode_comp_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedP
     })
 }
 
-fn decode_off_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+/// Parse the shared revision-gated surface tail: enum, solved cache, fit
+/// tolerance, six discontinuity arrays, and one boolean.
+fn decode_revision_surface_tail(
+    span: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<(i64, f64, [Vec<f64>; 6], bool)> {
+    let tail_enum = take_tagged_int(span, position, 0x15, int_width)?;
+    let cache = decode_surface_block(span, *position, int_width)?;
+    *position = cache.end;
+    let fit_tolerance = take_f64(span, position)? * LEN_TO_MM;
+    let discontinuities = [
+        take_float_array(span, position, int_width)?,
+        take_float_array(span, position, int_width)?,
+        take_float_array(span, position, int_width)?,
+        take_float_array(span, position, int_width)?,
+        take_float_array(span, position, int_width)?,
+        take_float_array(span, position, int_width)?,
+    ];
+    let tail_flag = take_bool(span, position)?;
+    Some((tail_enum, fit_tolerance, discontinuities, tail_flag))
+}
+
+fn decode_off_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"off_spl_sur", b"offsur"];
     let (start, name_len, modern) = names.into_iter().find_map(|name| {
         record_bytes
@@ -2845,6 +3368,46 @@ fn decode_off_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
+    if span.get(position) == Some(&0x04) {
+        let (active_bytes, tables) = resolver?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        let (support, support_bounds) = decode_optional_embedded_surface_with_bounds(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let support = support?;
+        let distance = take_f64(span, &mut position)? * LEN_TO_MM;
+        let mut flags = Vec::with_capacity(4);
+        for _ in 0..4 {
+            flags.push(take_bool(span, &mut position)?);
+        }
+        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+            decode_revision_surface_tail(span, &mut position, int_width)?;
+        return Some(DecodedProceduralSurface {
+            definition: DecodedProceduralSurfaceDefinition::Offset {
+                support,
+                distance,
+                u_sense: 0,
+                v_sense: 0,
+                extension_flags: Vec::new(),
+                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds,
+                    reference_endpoints: [None; 2],
+                    flags,
+                    tail_enum,
+                    discontinuities,
+                    tail_flag,
+                    trailing_flags: Vec::new(),
+                }),
+            },
+            cache_fit_tolerance: Some(fit_tolerance),
+        });
+    }
     let support = decode_embedded_surface(span, &mut position, int_width)?;
     let distance = take_f64(span, &mut position)? * LEN_TO_MM;
     let u_sense = take_tagged_int(span, &mut position, 0x15, int_width)?;
@@ -2874,6 +3437,7 @@ fn decode_off_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
             u_sense,
             v_sense,
             extension_flags,
+            revision_form: None,
         },
         cache_fit_tolerance,
     })
@@ -4690,20 +5254,20 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_t_spl_sur(bytes, int_width))
         .or_else(|| decode_exact_spl_sur(bytes, int_width))
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
-        .or_else(|| decode_taper_spl_sur(bytes, int_width))
-        .or_else(|| decode_loft_spl_sur(bytes, int_width))
+        .or_else(|| decode_taper_spl_sur(bytes, int_width, Some((active_bytes, tables))))
+        .or_else(|| decode_loft_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_scaled_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_sub_spl_sur(bytes, int_width))
         .or_else(|| decode_law_spl_sur(bytes, int_width))
         .or_else(|| decode_skin_spl_sur(bytes, int_width))
         .or_else(|| decode_net_spl_sur(bytes, int_width))
-        .or_else(|| decode_sweep_spl_sur(bytes, int_width))
+        .or_else(|| decode_sweep_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_g2_blend_spl_sur(bytes, int_width))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
         .or_else(|| decode_sum_spl_sur(bytes, int_width))
         .or_else(|| decode_rot_spl_sur(bytes, int_width))
-        .or_else(|| decode_off_spl_sur(bytes, int_width))
+        .or_else(|| decode_off_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
         .or_else(|| decode_var_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_vertex_blend_spl_sur(bytes, int_width))
@@ -5641,11 +6205,40 @@ fn decode_embedded_base_curve_resolving_refs(
                 periodic: false,
             })
         }
+        "ellipse" => {
+            let center = take_native_vec3(bytes, position, 0x13)?;
+            let normal = take_native_vec3(bytes, position, 0x14)?;
+            let major = take_native_vec3(bytes, position, 0x14)?;
+            let ratio = take_f64(bytes, position)?;
+            ellipse_to_nurbs(center, normal, major, ratio)
+        }
+        "degenerate_curve" => {
+            let point = take_native_vec3(bytes, position, 0x13)?;
+            let at = Point3::new(
+                point[0] * LEN_TO_MM,
+                point[1] * LEN_TO_MM,
+                point[2] * LEN_TO_MM,
+            );
+            Some(NurbsCurve {
+                degree: 1,
+                knots: vec![0.0, 0.0, 1.0, 1.0],
+                control_points: vec![at, at],
+                weights: None,
+                periodic: false,
+            })
+        }
         "intcurve" => {
             take_bool(bytes, position)?;
             let reference = *position;
             let marker = b"\x0f\x0d\x03ref\x04";
             if !bytes.get(reference..)?.starts_with(marker) {
+                if bytes.get(reference) == Some(&0x0f) {
+                    // Inline subtype scope: resolve its solved curve cache.
+                    let scope = subtype_span(bytes, reference, int_width)?;
+                    let curve = decode_curve_cache_resolving_refs(scope, active_bytes, tables)?;
+                    *position = reference + scope.len();
+                    return Some(curve);
+                }
                 *position = saved;
                 return None;
             }
