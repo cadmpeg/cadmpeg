@@ -1285,27 +1285,7 @@ pub(crate) fn parameters_with_unevaluable_expressions(
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> usize {
     let aliases = parameter_aliases(parameters, feature_names);
-    let global_values = parameters
-        .iter()
-        .filter_map(|parameter| {
-            parameter
-                .value
-                .clone()
-                .map(|value| (parameter.id.clone(), value))
-        })
-        .collect::<HashMap<_, _>>();
-    let mut states = if configurations.is_empty() {
-        vec![global_values]
-    } else {
-        configurations
-            .iter()
-            .map(|configuration| {
-                let mut values = global_values.clone();
-                values.extend(configuration.parameter_values.clone());
-                values
-            })
-            .collect()
-    };
+    let mut states = parameter_value_states(parameters, configurations, false);
     parameters
         .iter()
         .filter(|parameter| {
@@ -1335,6 +1315,81 @@ pub(crate) fn parameters_with_incoherent_dependencies(
         .zip(projected)
         .filter(|(actual, projected)| actual.dependencies != projected.dependencies)
         .count()
+}
+
+pub(crate) fn parameters_with_incoherent_evaluated_values(
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+) -> usize {
+    let aliases = parameter_aliases(parameters, feature_names);
+    let mut states = parameter_value_states(parameters, configurations, true);
+    parameters
+        .iter()
+        .filter(|parameter| !parameter.dependencies.is_empty())
+        .filter(|parameter| {
+            states.iter_mut().any(|values| {
+                let actual = values.remove(&parameter.id);
+                let evaluated =
+                    ParameterExpressionParser::new(&parameter.expression, &aliases, values)
+                        .parse()
+                        .filter(parameter_value_is_finite);
+                if let Some(value) = actual.clone() {
+                    values.insert(parameter.id.clone(), value);
+                }
+                actual.zip(evaluated).is_some_and(|(actual, evaluated)| {
+                    !equivalent_parameter_values(&actual, &evaluated)
+                })
+            })
+        })
+        .count()
+}
+
+fn parameter_value_states(
+    parameters: &[DesignParameter],
+    configurations: &[cadmpeg_ir::features::DesignConfiguration],
+    include_global: bool,
+) -> Vec<HashMap<ParameterId, ParameterValue>> {
+    let global_values = parameters
+        .iter()
+        .filter_map(|parameter| {
+            parameter
+                .value
+                .clone()
+                .map(|value| (parameter.id.clone(), value))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut states = include_global
+        .then(|| global_values.clone())
+        .into_iter()
+        .collect::<Vec<_>>();
+    states.extend(configurations.iter().map(|configuration| {
+        let mut values = global_values.clone();
+        values.extend(configuration.parameter_values.clone());
+        values
+    }));
+    if states.is_empty() {
+        states.push(global_values);
+    }
+    states
+}
+
+fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) -> bool {
+    let close = |left: f64, right: f64| {
+        (left - right).abs() <= 1.0e-9 * (1.0 + left.abs().max(right.abs()))
+    };
+    match (left, right) {
+        (ParameterValue::Length(Length(left)), ParameterValue::Length(Length(right)))
+        | (ParameterValue::Angle(Angle(left)), ParameterValue::Angle(Angle(right)))
+        | (ParameterValue::Real(left), ParameterValue::Real(right)) => close(*left, *right),
+        (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left == right,
+        (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left == right,
+        (ParameterValue::Integer(integer), ParameterValue::Real(real))
+        | (ParameterValue::Real(real), ParameterValue::Integer(integer)) => {
+            close(*integer as f64, *real)
+        }
+        _ => false,
+    }
 }
 
 fn definite_parameter_reference(identifier: &ExpressionIdentifier) -> bool {

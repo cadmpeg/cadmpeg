@@ -422,17 +422,23 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         &ir.model.parameters,
         &feature_names,
     );
+    let incoherent_parameter_values = crate::history::parameters_with_incoherent_evaluated_values(
+        &ir.model.parameters,
+        &feature_names,
+        &ir.model.configurations,
+    );
     if incomplete_parameters > 0
         || unresolved_parameter_references > 0
         || unevaluable_parameter_expressions > 0
         || invalid_parameter_dependency_order > 0
         || incoherent_parameter_dependencies > 0
+        || incoherent_parameter_values > 0
     {
         report.losses.push(LossNote {
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
-                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {unevaluable_parameter_expressions} parameter expression(s) cannot regenerate a finite typed value; {invalid_parameter_dependency_order} parameter record(s) contain missing or non-preceding dependency edges; {incoherent_parameter_dependencies} parameter record(s) have dependency edges inconsistent with their expressions."
+                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {unevaluable_parameter_expressions} parameter expression(s) cannot regenerate a finite typed value; {invalid_parameter_dependency_order} parameter record(s) contain missing or non-preceding dependency edges; {incoherent_parameter_dependencies} parameter record(s) have dependency edges inconsistent with their expressions; {incoherent_parameter_values} dependency-driven parameter(s) disagree with their evaluated expressions."
             ),
             provenance: None,
         });
@@ -3086,7 +3092,7 @@ mod design_loss_tests {
             name: "D4".into(),
             expression: "D5".into(),
             display: None,
-            value: Some(cadmpeg_ir::features::ParameterValue::Real(1.0)),
+            value: Some(cadmpeg_ir::features::ParameterValue::Real(2.0)),
             dependencies: vec![future.clone()],
             properties: BTreeMap::new(),
             pmi: None,
@@ -3163,7 +3169,7 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; 4 parameter expression(s) cannot regenerate a finite typed value; 1 parameter record(s) contain missing or non-preceding dependency edges; 2 parameter record(s) have dependency edges inconsistent with their expressions."
+                == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; 4 parameter expression(s) cannot regenerate a finite typed value; 1 parameter record(s) contain missing or non-preceding dependency edges; 2 parameter record(s) have dependency edges inconsistent with their expressions; 1 dependency-driven parameter(s) disagree with their evaluated expressions."
         }));
         assert!(report.losses.iter().any(|loss| {
             loss.message
