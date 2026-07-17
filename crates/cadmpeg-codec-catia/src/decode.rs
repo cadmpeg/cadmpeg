@@ -159,7 +159,7 @@ fn admit_neutral_model(ir: &mut CadIr, annotations: &mut AnnotationBuilder) -> b
 
 fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let decoded = geometry::zero_entity_surfaces(&scan.data);
-    let points = geometry::direct_vertices(&scan.data);
+    let points = crate::zero_entity::unframed_vertices(&scan.data);
     let topology = crate::zero_entity::parse(&scan.data);
     if decoded.is_empty() && points.is_empty() && topology.is_none() {
         return None;

@@ -184,6 +184,32 @@ fn standard_counted_vertex_table_excludes_incidental_markers() {
 }
 
 #[test]
+fn zero_entity_vertices_exclude_framed_payload_markers() {
+    let mut bytes = vec![0u8; 16];
+    bytes[..8].copy_from_slice(OUTER_MAGIC);
+    let mut record = vec![0u8; 0x15 + 12];
+    record[..4].copy_from_slice(&[0xa9, 0x03, 0x10, 0x15]);
+    record[4..7].copy_from_slice(&[0x05, 0x08, 0x01]);
+    for (index, value) in [90.0f32, 91.0, 92.0].into_iter().enumerate() {
+        record[7 + index * 4..11 + index * 4].copy_from_slice(&le_f32(value));
+    }
+    bytes.extend_from_slice(&record);
+    bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+    for value in [1.0f32, 2.0, 3.0] {
+        bytes.extend_from_slice(&le_f32(value));
+    }
+
+    assert_eq!(
+        crate::zero_entity::unframed_vertices(&bytes),
+        [cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)]
+    );
+
+    let mut malformed = vec![0xa9, 0x03, 0x10, 0xff, 0x05, 0x08, 0x01];
+    malformed.extend_from_slice(&[0; 12]);
+    assert!(crate::zero_entity::unframed_vertices(&malformed).is_empty());
+}
+
+#[test]
 fn standard_topology_accepts_delimiters_between_counted_edge_tables() {
     let mut bytes = standard_quad_topology_stream();
     let header = bytes

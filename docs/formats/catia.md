@@ -521,6 +521,8 @@ The low 24 bits of `tag` are the persistent roster tag; the high byte remains pa
 
 Record framing `a9 03 XX YY <payload[YY+8]>`, `record_length = YY + 12`; records reference each other by **global record ordinal** into the `a9 03` stream.
 
+Unframed `05 08 01` coordinate rows lie outside every declared record extent and outside the extended logical extents of support records whose inline data continues past the nominal frame. Marker-like bytes within either extent are record payload, not vertex rows. Connected zero-entity topology derives logical vertex coordinates from lifted support endpoints; unframed coordinate rows are independent fallback geometry.
+
 Record families: `5f 0c` face (24 B), `5e 1a` edge-stride (38 B), `62 xx` edge-loop, `06 38` coedge (68 B, two per edge), `5d 06` vertex marker, `25 69` edge side-pair header, `21 71` curve-support-on-surface, `27 6a` plane, `28 8a` cylinder-family, `29 b8` cone-family, `2b c8` circle/arc/torus, `34 c8`/`34 5e` bspline carriers, `05 0b/10/15` vertex-incidence.
 
 - **`62xx` loop** is an alternating even/odd lane; `edge_count = (flag_at_+12 − 0x81)/2`. The even lane satisfies `A[j] = T − g − j`. **Loop-class byte = location:** `0x50` = inner (hole) loop, `0x41`/`0xc1` = non-inner; the `0x50` count equals the hole count. The outer loop is first, followed by inner loops in ascending terminal-id order.

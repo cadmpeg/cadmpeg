@@ -1622,6 +1622,30 @@ pub fn parse(bytes: &[u8]) -> Option<ZeroEntityTopology> {
     })
 }
 
+/// Read unframed `05 08 01` coordinate rows outside every declared or extended
+/// `a9 03` record extent. These rows support partial geometry fallback only;
+/// connected topology derives its logical vertices from lifted incidences.
+#[must_use]
+pub fn unframed_vertices(bytes: &[u8]) -> Vec<Point3> {
+    let records = walk_records(bytes);
+    if records.is_empty() {
+        return Vec::new();
+    }
+    let mut vertices = Vec::new();
+    let mut region_start = 0usize;
+    for record in &records {
+        if region_start <= record.offset {
+            vertices.extend(crate::geometry::direct_vertices(
+                &bytes[region_start..record.offset],
+            ));
+        }
+        let logical_len = support_logical_len(record.tag).unwrap_or(record.bytes.len());
+        region_start = record.offset.saturating_add(logical_len).min(bytes.len());
+    }
+    vertices.extend(crate::geometry::direct_vertices(&bytes[region_start..]));
+    vertices
+}
+
 fn parse_vertices(records: &[ZeroEntityRecord]) -> Option<Vec<ZeroVertex>> {
     let mut vertices = Vec::new();
     for (index, record) in records.iter().enumerate() {
