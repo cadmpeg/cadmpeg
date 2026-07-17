@@ -2089,7 +2089,7 @@ fn segment_table_body(
             cursor += 1;
         }
     }
-    (!rows.is_empty()).then_some(FeatureSegmentTable {
+    Some(FeatureSegmentTable {
         declared_count,
         entity_ref,
         rows,
@@ -6472,6 +6472,22 @@ mod tests {
         assert_eq!(segments.rows.len(), 2);
         assert_eq!(segments.rows[0].external_id, 42);
         assert_eq!(segments.rows[1].external_id, 43);
+    }
+
+    #[test]
+    fn segment_tables_retain_extents_without_decoded_rows() {
+        let named = b"segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
+        let segments = segment_table(named, 0, named.len()).expect("named segtab header");
+        assert_eq!(segments.declared_count, 2);
+        assert_eq!(segments.entity_ref, Some(1));
+        assert!(segments.rows.is_empty());
+
+        let positional = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
+        let segments = segment_table_body(positional, 0, 0, positional.len())
+            .expect("positional segtab header");
+        assert_eq!(segments.declared_count, 2);
+        assert_eq!(segments.entity_ref, Some(1));
+        assert!(segments.rows.is_empty());
     }
 
     #[test]
