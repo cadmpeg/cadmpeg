@@ -1694,6 +1694,35 @@ fn nx_expression_graph_evaluates_exact_qualified_dependencies() {
 }
 
 #[test]
+fn nx_expression_graph_substitutes_dependencies_as_atomic_operands() {
+    let expression = |name: &str, formula: &str, value| crate::native::Expression {
+        id: format!("nx:test:expression#{name}"),
+        object_id: None,
+        record: None,
+        declaration: None,
+        name: name.into(),
+        parameter_index: None,
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: formula.into(),
+        value,
+        source_entry: "part".into(),
+        source_table: "table".into(),
+        source_offset: 0,
+    };
+    let mut expressions = vec![
+        expression("p1", "-2", Some(-2.0)),
+        expression("p2", "p1^2", None),
+        expression("p3", "-p1^2", None),
+    ];
+
+    crate::native::evaluate_expression_graphs(&mut expressions);
+
+    assert_eq!(expressions[1].value, Some(4.0));
+    assert_eq!(expressions[2].value, Some(-4.0));
+}
+
+#[test]
 fn nx_expression_graph_scopes_names_to_their_expression_table() {
     let expression =
         |id: &str, table: &str, name: &str, formula: &str, value| crate::native::Expression {

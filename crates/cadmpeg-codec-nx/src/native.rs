@@ -11680,7 +11680,9 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                         complete = false;
                         break;
                     }
+                    substituted.push('(');
                     substituted.push_str(&value.to_string());
+                    substituted.push(')');
                     continue;
                 }
                 substituted.push(char::from(bytes[at]));
