@@ -5002,6 +5002,8 @@ fn procedural_surface_definition_is_exact_carrier(
     match definition {
         nurbs::DecodedProceduralSurfaceDefinition::Extrusion { .. }
         | nurbs::DecodedProceduralSurfaceDefinition::Helix(_)
+        | nurbs::DecodedProceduralSurfaceDefinition::Ruled { .. }
+        | nurbs::DecodedProceduralSurfaceDefinition::Sum { .. }
         | nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(_)
         | nurbs::DecodedProceduralSurfaceDefinition::SubSurface { .. } => true,
         nurbs::DecodedProceduralSurfaceDefinition::Law(construction) => !matches!(

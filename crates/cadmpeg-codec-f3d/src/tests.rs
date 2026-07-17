@@ -2343,7 +2343,7 @@ fn synthetic_exact_spl_sur_with_decoy_sense_smbh() -> Vec<u8> {
     bytes
 }
 
-fn synthetic_ruled_spl_sur_smbh(name: &str) -> Vec<u8> {
+fn synthetic_ruled_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -2360,15 +2360,17 @@ fn synthetic_ruled_spl_sur_smbh(name: &str) -> Vec<u8> {
     t_ident(&mut surface, name);
     surface.extend_from_slice(&generated_curve_block());
     surface.extend_from_slice(&generated_curve_block());
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.0025);
+    if include_cache {
+        surface.extend_from_slice(&generated_surface_block());
+        t_dbl(&mut surface, 0.0025);
+    }
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old.offset..old.offset + old.len, surface);
     bytes
 }
 
-fn synthetic_sum_spl_sur_smbh(name: &str) -> Vec<u8> {
+fn synthetic_sum_spl_sur_smbh(name: &str, include_cache: bool) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -2386,8 +2388,10 @@ fn synthetic_sum_spl_sur_smbh(name: &str) -> Vec<u8> {
     surface.extend_from_slice(&generated_curve_block());
     surface.extend_from_slice(&generated_curve_block());
     t_pos(&mut surface, [1.0, -2.0, 3.0]);
-    surface.extend_from_slice(&generated_surface_block());
-    t_dbl(&mut surface, 0.0035);
+    if include_cache {
+        surface.extend_from_slice(&generated_surface_block());
+        t_dbl(&mut surface, 0.0035);
+    }
     surface.push(0x10);
     t_end(&mut surface);
     bytes.splice(old.offset..old.offset + old.len, surface);
@@ -12002,7 +12006,7 @@ fn generated_ruled_spline_surfaces_decode_and_write_source_less() {
     for name in ["rule_sur", "rulesur"] {
         let result = F3dCodec
             .decode(
-                &mut Cursor::new(f3d_with_smbh(&synthetic_ruled_spl_sur_smbh(name))),
+                &mut Cursor::new(f3d_with_smbh(&synthetic_ruled_spl_sur_smbh(name, true))),
                 &DecodeOptions::default(),
             )
             .expect("ruled spline surface decode");
@@ -12075,7 +12079,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
     for name in ["sum_spl_sur", "sumsur"] {
         let result = F3dCodec
             .decode(
-                &mut Cursor::new(f3d_with_smbh(&synthetic_sum_spl_sur_smbh(name))),
+                &mut Cursor::new(f3d_with_smbh(&synthetic_sum_spl_sur_smbh(name, true))),
                 &DecodeOptions::default(),
             )
             .expect("sum spline surface decode");
@@ -12138,6 +12142,60 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
                 },
                 ..
             }
+        ));
+    }
+}
+
+#[test]
+fn generated_cacheless_ruled_and_sum_surfaces_are_exact_carriers() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SurfaceGeometry};
+
+    for bytes in [
+        synthetic_ruled_spl_sur_smbh("rule_sur", false),
+        synthetic_sum_spl_sur_smbh("sum_spl_sur", false),
+    ] {
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&bytes)),
+                &DecodeOptions::default(),
+            )
+            .expect("cacheless exact surface decode");
+        let procedural = result
+            .ir
+            .model
+            .procedural_surfaces
+            .first()
+            .expect("cacheless procedural surface");
+        assert!(procedural.cache_fit_tolerance.is_none());
+        assert!(matches!(
+            procedural.definition,
+            ProceduralSurfaceDefinition::Ruled { .. } | ProceduralSurfaceDefinition::Sum { .. }
+        ));
+        assert!(matches!(
+            result
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == procedural.surface)
+                .map(|surface| &surface.geometry),
+            Some(SurfaceGeometry::Procedural { construction })
+                if construction == &procedural.id
+        ));
+
+        let mut source_less = result.ir;
+        source_less.source = None;
+        source_less.set_native_unknowns("f3d", &[]).unwrap();
+        let mut encoded = Vec::new();
+        F3dCodec
+            .encode(&source_less, &mut encoded)
+            .expect("cacheless exact surface source-less encode");
+        let round_trip = F3dCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .expect("cacheless exact surface source-less round trip");
+        assert!(matches!(
+            round_trip.ir.model.procedural_surfaces[0].definition,
+            ProceduralSurfaceDefinition::Ruled { .. } | ProceduralSurfaceDefinition::Sum { .. }
         ));
     }
 }
@@ -13661,8 +13719,8 @@ fn generated_procedural_surface_tolerance_presence_matches_native_grammar() {
     let optional = [
         (synthetic_comp_spl_sur_smbh(), "compound"),
         (synthetic_taper_spl_sur_smbh("taper_spl_sur"), "taper"),
-        (synthetic_ruled_spl_sur_smbh("rule_sur"), "ruled"),
-        (synthetic_sum_spl_sur_smbh("sum_spl_sur"), "sum"),
+        (synthetic_ruled_spl_sur_smbh("rule_sur", true), "ruled"),
+        (synthetic_sum_spl_sur_smbh("sum_spl_sur", true), "sum"),
         (synthetic_rot_spl_sur_smbh("rot_spl_sur"), "revolution"),
         (synthetic_off_spl_sur_smbh("off_spl_sur"), "offset"),
         (synthetic_cyl_spl_sur_smbh(), "extrusion"),

@@ -7058,6 +7058,43 @@ fn native_cacheless_procedural_surface(
         bytes.push(0x10);
         return Ok(true);
     }
+    if let ProceduralSurfaceDefinition::Ruled { first, second } = &procedural.definition {
+        if procedural.cache_fit_tolerance.is_some() {
+            return Err(CodecError::Malformed(
+                "cacheless ruled surface cannot carry a cache-fit tolerance".into(),
+            ));
+        }
+        native_surface_base(bytes, "spline")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "rule_sur")?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, first)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, second)?)?;
+        bytes.push(0x10);
+        return Ok(true);
+    }
+    if let ProceduralSurfaceDefinition::Sum {
+        first,
+        second,
+        basepoint,
+    } = &procedural.definition
+    {
+        if procedural.cache_fit_tolerance.is_some() {
+            return Err(CodecError::Malformed(
+                "cacheless sum surface cannot carry a cache-fit tolerance".into(),
+            ));
+        }
+        native_surface_base(bytes, "spline")?;
+        bytes.push(0x0f);
+        native_ident(bytes, "sum_spl_sur")?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, first)?)?;
+        native_nurbs_curve(bytes, &native_loft_curve(target, second)?)?;
+        native_point(
+            bytes,
+            [basepoint.x / 10.0, basepoint.y / 10.0, basepoint.z / 10.0],
+        );
+        bytes.push(0x10);
+        return Ok(true);
+    }
     if let ProceduralSurfaceDefinition::ScaledCompoundLoft { construction } = &procedural.definition
     {
         if matches!(

@@ -2959,10 +2959,12 @@ fn decode_sum_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
     let cache = marker_positions(span)
         .into_iter()
         .filter_map(|at| decode_surface_block(span, at, int_width))
-        .next_back()?;
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
+        .next_back();
+    let cache_fit_tolerance = cache.and_then(|cache| {
+        (span.get(cache.end) == Some(&0x06))
+            .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+            .flatten()
+    });
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sum {
             first: first.curve,
@@ -2992,10 +2994,12 @@ fn decode_ruled_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     let cache = marker_positions(span)
         .into_iter()
         .filter_map(|at| decode_surface_block(span, at, int_width))
-        .next_back()?;
-    let cache_fit_tolerance = (span.get(cache.end) == Some(&0x06))
-        .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
-        .flatten();
+        .next_back();
+    let cache_fit_tolerance = cache.and_then(|cache| {
+        (span.get(cache.end) == Some(&0x06))
+            .then(|| read_f64(span, cache.end + 1).map(|value| value * LEN_TO_MM))
+            .flatten()
+    });
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Ruled { first, second },
         cache_fit_tolerance,
