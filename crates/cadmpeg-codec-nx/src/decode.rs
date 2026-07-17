@@ -935,7 +935,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                     supports: [None, None],
                     spine: None,
                     radius: BlendRadiusLaw::Constant {
-                        signed_radius: blend.offsets[0].abs(),
+                        signed_radius: blend.offsets[0],
                     },
                     cross_section: BlendCrossSection::Circular,
                     native: None,

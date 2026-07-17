@@ -9275,6 +9275,21 @@ fn blend_surface_topology_partition_stream() -> Vec<u8> {
     stream
 }
 
+#[test]
+fn nx_blend_surface_requires_a_nonzero_rolling_ball_radius() {
+    let mut stream = blend_surface_topology_partition_stream();
+    let blend = stream
+        .windows(4)
+        .position(|window| window == [0, 56, 0, 12])
+        .expect("blend record");
+    put_f64(&mut stream, blend + 26, 0.0);
+    put_f64(&mut stream, blend + 34, 0.0);
+    assert!(crate::topology::blend_surfaces(&stream).is_empty());
+
+    put_f64(&mut stream, blend + 26, 0.5e-9);
+    assert!(crate::topology::blend_surfaces(&stream).is_empty());
+}
+
 fn blend_surface_with_extended_support_reference() -> Vec<u8> {
     let mut stream = blend_surface_topology_partition_stream();
     let blend = stream
@@ -12037,7 +12052,12 @@ fn decode_emits_rolling_ball_blend_surface() {
         panic!("blend definition");
     };
     assert_eq!(*cross_section, BlendCrossSection::Circular);
-    assert_eq!(*radius, BlendRadiusLaw::Constant { signed_radius: 3.0 });
+    assert_eq!(
+        *radius,
+        BlendRadiusLaw::Constant {
+            signed_radius: -3.0
+        }
+    );
     assert_eq!(supports[0].as_ref().map(|side| side.reversed), Some(true));
     assert_eq!(supports[1].as_ref().map(|side| side.reversed), Some(false));
     assert!(spine.is_none());

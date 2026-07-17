@@ -662,7 +662,7 @@ cross-section remain in the construction. The source record retains both
 signed support offsets and both dimensionless thumb weights in serialized
 support order.
 
-`values[0:2]` are signed support offsets `range[2]` in meters. Their magnitude gives the rolling-ball radius `r = |range|`. `values[2:4]` are dimensionless `thumb_weight[2]`. Support reference 2 identifies the ball-centre spine. Spine families include:
+`values[0:2]` are nonzero signed support offsets `range[2]` in meters. Their magnitudes are equal within `1e-9` meter and give the rolling-ball radius `r = |range|`. The neutral constant-radius law retains the sign of `range[0]`; each oriented support independently retains its own range sign. `values[2:4]` are dimensionless `thumb_weight[2]`. Support reference 2 identifies the ball-centre spine. Spine families include:
 
 - **Offset-intersection spine:** a type-38 whose two supports are both OFFSET_SURF, with base refs and offsets mirroring the blend's supports and `range` (`O_i = base_i + range_i · oriented_normal_i`). Freeform (NURBS-offset) bases.
 - **Direct-supports spine:** a type-38 on the original analytic supports directly.

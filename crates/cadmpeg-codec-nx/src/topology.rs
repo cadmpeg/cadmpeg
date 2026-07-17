@@ -546,6 +546,8 @@ pub fn blend_surfaces(stream: &[u8]) -> Vec<BlendSurface> {
                 || node.bytes.get(at + 32..at + 40)? != [0, 1, 0, 1, 0, 1, 0, 1]
                 || refs[0] <= 1
                 || refs[1] <= 1
+                || values[0] == 0.0
+                || values[1] == 0.0
                 || (values[0].abs() - values[1].abs()).abs() > 1.0e-9
             {
                 return None;
