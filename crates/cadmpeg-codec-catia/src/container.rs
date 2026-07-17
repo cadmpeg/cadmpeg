@@ -12,22 +12,6 @@
 //! physical extents in the runtime space graph, and records the structural
 //! census used to select a [`crate::variant::Variant`]. [`summarize`] converts
 //! the scan into the container view returned by codec inspection.
-//!
-//! Migrated per doc section 10 Phase 2. On the session path [`scan_view`]
-//! charges the whole-image directory scan as `work` before any directory walk,
-//! charges the per-extent runtime-graph footprint against `alloc_bytes` in
-//! [`register_extent_spaces`], and defers the reconstructed BREP copy to
-//! [`DecodeContext::begin_derived_space`], which charges the assembled `Concat`
-//! copy against `alloc_bytes` (reason `derived_concat`) — a `Concat` derived
-//! space charges `alloc_bytes`, not `decompressed_bytes` (doc §4.5). The only
-//! residual `View::window()` egress is the
-//! extent child views handed to that derived-space writer. Every directory
-//! accumulator is a lint-invisible `Vec::new`+push (doc section 8.3): each is
-//! floored and capped by a structural gate — extent counts by
-//! [`MAX_EXTENTS_PER_DESCRIPTOR`], the reconstructed length by the file length —
-//! so no untrusted count drives a reservation. The context-free [`scan_bytes`],
-//! [`parse_stream_directory`], and [`brep_stream`] entries run the same bounded
-//! walk without a session for tests, census, and fuzzers.
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
@@ -282,9 +266,8 @@ pub struct Census {
 
 /// Everything read from a `.CATPart`, shared by `inspect` and `decode`.
 ///
-/// Borrows the session root bytes directly (§10 Phase 1A): the whole file is
-/// never re-buffered. The reconstructed BREP stream is a `Concat` derived space
-/// registered in the runtime space graph (§10 Phase 1C), not a loose copy.
+/// The scan borrows the root bytes without re-buffering the file. The
+/// reconstructed BREP stream is a `Concat` derived space in the runtime graph.
 pub struct ContainerScan<'a> {
     /// The whole file image, borrowed from the session root view.
     pub data: &'a [u8],
@@ -599,14 +582,6 @@ fn identify_variant(
     }
 }
 
-/// Consume the session root view directly (§10 Phase 1A), charge the file-wide
-/// container scan as work, register each physical stream extent as a
-/// [`SpaceOrigin::Slice`](cadmpeg_ir::decode::SpaceOrigin) space, reconstruct the
-/// logical BREP stream as a [`SpaceOrigin::Concat`](cadmpeg_ir::decode::SpaceOrigin)
-/// derived space (§10 Phase 1C), and return the borrowed scan.
-///
-/// `read_root` already enforced the platform `max_input_bytes` policy limit; the
-/// `V5_CFV2` container carries no separate deployment ceiling to dual-enforce.
 /// The directory self-consistency scan and each census pass are linear in the
 /// input, so their bytes are charged as `work` before scanning. The census is
 /// not a single pass: [`identify`] scans the whole image for the `A9`/`E5`
@@ -614,8 +589,7 @@ fn identify_variant(
 /// reconstructed BREP body for FBB runs, edge delimiters, and vertex markers
 /// (three BREP passes); every one of those examined-byte passes is charged so
 /// the `work` counter reflects the real linear-multiple, not a single
-/// `data.len()`. Both `inspect` and `decode` enter through this function, so
-/// they run one shared container policy (graduation-gate item 6).
+/// `data.len()`.
 pub fn scan_view<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -668,8 +642,7 @@ pub fn scan_view<'a>(
 
 /// Register every catalogued physical extent as a stored `Slice` child of the
 /// root space, making the container framing visible in the runtime space graph
-/// ("L1-ready", §10 Phase 1A; the v2 ledger schema is not yet serialized). Each
-/// extent aliases already-admitted root bytes, so registration copies nothing,
+/// Each extent aliases already-admitted root bytes, so registration copies nothing,
 /// but each pushes a space-graph record whose count the input does not bound
 /// byte-for-byte; charge the fixed per-extent footprint against the allocation
 /// budget up front so registration is bounded by policy.
@@ -713,7 +686,7 @@ fn register_extent_spaces(
 
 /// Reassemble the logical BREP stream as a `Concat` derived space over its
 /// physical extent child views, so the reconstruction is named in the runtime
-/// graph and its segments are the exact bytes assembled (§10 Phase 1C). The
+/// graph and its segments are the exact bytes assembled. The
 /// per-extent `alloc_bytes` charge inside `begin_derived_space` bounds the
 /// assembled copy. Returns `Ok(None)` when the directory catalogues no BREP body.
 fn build_brep_space<'a>(

@@ -1,14 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C02` string catalogs.
-//!
-//! Migrated per doc section 10 Phase 2. [`parse`] takes the session
-//! [`DecodeContext`] and a [`View`] over the whole file image. The `7C02`
-//! marker probe is charged as `work`; the per-catalog entry vector is sized
-//! through a [`View::counted`] [`BoundedCount`] proof and filled through an
-//! [`DecodeContext::exact_vec`] builder, so a declared entry count that could
-//! not physically fit the frame is refused before any capacity is reserved.
-//! The one residual `View::window()` egress feeds the marker scan; it is
-//! recorded in `parser-manifest.toml` under `window_egress`.
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::codec::CodecError;

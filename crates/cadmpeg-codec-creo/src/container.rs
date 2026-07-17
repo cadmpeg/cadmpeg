@@ -42,7 +42,7 @@ pub const MAGIC: &[u8] = b"#UGC:2";
 /// End of the UGC header block.
 const UGC_HEADER_END: &[u8] = b"#-END_OF_UGC_HEADER";
 
-/// Allocation charged per section registered as a runtime space (§10 Phase 1A).
+/// Allocation charged per section registered as a runtime space.
 ///
 /// A conservative constant covering the retained space-graph record each
 /// enumerated section adds: the [`SpaceId`](cadmpeg_ir::decode::SpaceId) parent,
@@ -142,9 +142,7 @@ pub struct GeomCensus {
 
 /// Structural data read from one `.prt` file.
 ///
-/// Borrows the session root bytes directly (§10 Phase 1A): the scan holds a
-/// `&[u8]` into the root address space rather than copying the file, removing
-/// the transitional double buffer the legacy `read_to_end` path imposed.
+/// The scan borrows the root address space without copying the file.
 pub struct ContainerScan<'a> {
     /// Complete source bytes, borrowed from the root address space.
     pub data: &'a [u8],
@@ -904,18 +902,9 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
-/// Consume the session root view directly (§10 Phase 1A), charge the file-wide
-/// container scan as work, register each enumerated section as a
-/// [`SpaceOrigin::Slice`](cadmpeg_ir::decode::SpaceOrigin) space, and return the
-/// borrowed scan.
-///
-/// `read_root` already enforced the platform `max_input_bytes` policy limit;
-/// the PSB container has no separate deployment ceiling to dual-enforce here.
 /// The framing walk and the file-wide marker searches (`principal_unit`, the
 /// header/TOC finds, section enumeration) are all linear in the input, so their
-/// bytes are charged once, before scanning begins. Both `inspect` and `decode`
-/// enter through this function, so they run one shared container policy
-/// (graduation-gate item 6).
+/// bytes are charged once before scanning begins.
 pub fn scan_view<'a>(
     ctx: &DecodeContext<'_>,
     root: View<'a>,
@@ -933,15 +922,13 @@ pub fn scan_view<'a>(
 
 /// Register each enumerated section as a stored [`SpaceOrigin::Slice`] child of
 /// the root space, making the physical container framing visible in the runtime
-/// space graph ("L1-ready", §10 Phase 1A; the v2 ledger schema is not yet
-/// serialized). A section is an alias of already-admitted root bytes, so
+/// space graph. A section is an alias of already-admitted root bytes, so
 /// registration copies nothing, but each registered span retains a space-graph
 /// record whose count the input does not bound byte-for-byte (a container packed
 /// with minimal `\n#<alnum>\n` headers yields one section per few bytes). Charge
 /// that fixed per-section footprint against the input-proportional allocation
 /// budget up front so section registration is bounded by policy, not only by
-/// `max_input_bytes`. The returned views are unused because Phase 1 records the
-/// spans without refining their interiors.
+/// `max_input_bytes`.
 fn register_section_spaces(
     ctx: &DecodeContext<'_>,
     root: View<'_>,

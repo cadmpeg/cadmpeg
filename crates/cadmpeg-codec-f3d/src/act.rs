@@ -1,20 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![deny(clippy::disallowed_methods)]
 //! Fusion ACT entity table and change-version channel groups.
-//!
-//! Migrated to the platform read path (doc section 8 / 10 Phase 2): every
-//! hostile read goes through a [`View`] rather than a raw `&[u8]`, the
-//! `ACTTable` count-framed record loop reserves through
-//! [`DecodeContext::exact_vec`] under a [`BoundedCount`] physical-floor proof,
-//! the entity/guid/root-component accumulators grow through
-//! [`DecodeContext::grow_vec`], each whole-stream marker scan charges the
-//! work budget for the position-stepping pass, and every `lp_ascii`/`lp_utf16`
-//! probe charges the bytes it examines before it reads and allocates, so a
-//! hostile stream that forces a large-string probe at every scan position
-//! charges CPU proportionally rather than a flat unit per position. Random-access marker
-//! probes read at offsets relative to the entry window through [`seek_rel`], so
-//! the record fields keep their entry-relative byte offsets while the reads
-//! stay bounded by the view.
 
 use std::collections::BTreeMap;
 

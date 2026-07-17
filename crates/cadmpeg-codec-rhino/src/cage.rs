@@ -1,17 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! NURBS cage payload decoding.
-//!
-//! Migrated module (doc section 10 Phase 2). The record body is read through a
-//! bounded [`View`] over the caller's threaded platform
-//! [`DecodeContext`](cadmpeg_ir::decode::DecodeContext): the count-framed knot
-//! and control-point loops are sized by [`View::counted`] proofs and reserved
-//! through [`exact_vec`](cadmpeg_ir::decode::DecodeContext::exact_vec),
-//! committed scalar reads use the `req_*` mirror, and per-element work is
-//! charged against the document-level budget carried by [`MeshExpand`]. Only
-//! the outer chunk framing (`chunk_at`) still runs through the shared
-//! `chunks.rs` plumbing to locate this record's body window; every
-//! hostile-count read past that boundary is on the `View`. The module carries
-//! the graduated `deny(clippy::disallowed_methods)`.
 #![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
