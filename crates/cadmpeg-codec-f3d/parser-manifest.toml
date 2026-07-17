@@ -45,6 +45,25 @@ window_egress = []
 ledger_level = 0
 
 # ---------------------------------------------------------------------------
+# Phase-4B typed lossy construction (doc section 6.2 / 10 Phase 4B). The single
+# construction path for f3d's incomplete-transfer notes: `omit` resolves an
+# unsupported-concept-to-omission through `Transfer::omitted`, `reduce` records
+# an accountable reduction or census through the platform `Builder`. `decode.rs`
+# routes every geometry- and container-report loss through this module, so the
+# bare `losses.push` spelling that would let a drop go unrecorded is not written
+# on the transfer path. The migrated basename `builder.rs` is the section 7
+# capability signal that gates the `no_silent_fallback` stage-2 oracle for f3d.
+[[module]]
+path = "crates/cadmpeg-codec-f3d/src/builder.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["f3d_container", "f3d_decode_modes"]
+charges = []
+cost_model = "no budget charge; constructs and resolves loss notes through the typed builder, no untrusted byte reads"
+window_egress = []
+ledger_level = 0
+
+# ---------------------------------------------------------------------------
 # Pure record model. Struct definitions plus deterministic serde and id
 # derivation; no hostile-byte read path of their own, so they graduate with
 # the deny lint and no `req_*`/`BoundedCount`/`DepthGuard` obligations (same

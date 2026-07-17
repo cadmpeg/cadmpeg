@@ -15,13 +15,13 @@ use crate::native::F3dNative;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
 use cadmpeg_ir::decode::{
-    DecodeContext, RecordDisposition, RecordKind, SourceLocation, SpaceId, View,
+    DecodeContext, DecodeMode, RecordDisposition, RecordKind, SourceLocation, SpaceId, View,
 };
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity, StrictConsequence,
 };
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -115,16 +115,22 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
             if !native.lost_edge_references.is_empty() {
-                report.losses.push(LossNote {
-                    code: LossCode::AttributesNotTransferred,
-                    category: LossCategory::Attribute,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and cannot be replayed without repair.",
-                        native.lost_edge_references.len()
-                    ),
-                    provenance: None,
-                });
+                // Lost parametric edge references are an attribute concept the
+                // decode cannot replay: route the omission through the Phase-4B
+                // builder module so it is not a bare silent push.
+                crate::builder::omit(
+                    &mut report.losses,
+                    LossNote {
+                        code: LossCode::AttributesNotTransferred,
+                        category: LossCategory::Attribute,
+                        severity: Severity::Warning,
+                        message: format!(
+                            "{} source parametric edge reference(s) were marked EDGE_REFERENCE_LOST and cannot be replayed without repair.",
+                            native.lost_edge_references.len()
+                        ),
+                        provenance: None,
+                    },
+                );
             }
             ir.model.appearances = decoded_materials.appearances;
             ir.model.appearance_bindings = decoded_materials.bindings;
@@ -165,6 +171,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 &decoded_materials.appearance_origins,
                 &mut report,
             );
+            enforce_strict(ctx.mode(), &report)?;
             return Ok(DecodeResult::new(ir, report));
         }
     }
@@ -218,7 +225,58 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         &decoded_materials.appearance_origins,
         &mut report,
     );
+    enforce_strict(ctx.mode(), &report)?;
     Ok(DecodeResult::new(ir, report))
+}
+
+/// Reject a decode in strict mode when the report carries a loss whose code
+/// removes mandatory, unreconstructable semantics (§10 Phase 4).
+///
+/// Phase 4 requires strict mode to refuse a decode that could only be completed
+/// by dropping semantics the target model treats as mandatory, rather than
+/// silently returning a partial model. The decision keys on
+/// [`LossCode::strict_consequence`] together with severity: a
+/// [`Reject`](StrictConsequence::Reject) code (untransferred geometry or
+/// topology) carried at [`Severity::Blocking`] marks mandatory, unreconstructable
+/// semantics strict mode cannot tolerate — this is the f3d metadata-only
+/// fallback, where the active B-rep stream was not a decodable SAB and no typed
+/// geometry or topology was produced. The same Reject code at a lower severity is
+/// an accountable partial loss over content that *was* transferred (faces on
+/// undecoded spline surfaces standing beside a decoded topology graph); it,
+/// accountable approximations ([`ProceduralReduced`](LossCode::ProceduralReduced)),
+/// retained passthrough, and operator-requested omissions
+/// [`Tolerate`](StrictConsequence::Tolerate) and pass through. Salvage mode never
+/// rejects; it returns the same report with the loss code recorded, so every
+/// strict rejection has a salvage counterpart that names the loss.
+///
+/// The refusal is surfaced as [`CodecError::Malformed`] with a `strict:` prefix:
+/// the error taxonomy (§3.1) has no dedicated semantic-refusal decode variant,
+/// and `Malformed` is the codebase's established spelling for a strict-mode
+/// refusal (a classified error the stage-2 salvage/strict oracles accept).
+/// Container-only decode never reaches here — the caller returns before entity
+/// decode — so an operator-requested skip is never a strict rejection.
+fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecError> {
+    if mode != DecodeMode::Strict {
+        return Ok(());
+    }
+    let mut codes: Vec<&'static str> = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.severity == Severity::Blocking
+                && loss.code.strict_consequence() == StrictConsequence::Reject
+        })
+        .map(|loss| loss.code.as_str())
+        .collect();
+    if codes.is_empty() {
+        return Ok(());
+    }
+    codes.sort_unstable();
+    codes.dedup();
+    Err(CodecError::Malformed(format!(
+        "strict: mandatory semantics could not be represented (loss codes: {})",
+        codes.join(", ")
+    )))
 }
 
 /// Issue and resolve one record ticket per container entry the decode walked
@@ -335,8 +393,12 @@ fn account_records(
                 }
             }
             role::PARAMESH | role::PREVIEW | role::IMAGE => {
+                // A walked secondary asset the codec does not transfer: an
+                // omission that drains through the Phase-4B builder module so its
+                // report entry cannot be skipped, then backs its `Dropped`
+                // disposition (§6.2).
                 let loss = untransferred_asset_loss(role_label, &entry.name);
-                report.losses.push(loss.clone());
+                crate::builder::omit(&mut report.losses, loss.clone());
                 RecordDisposition::Dropped { loss }
             }
             _ => RecordDisposition::Structural,
@@ -758,119 +820,156 @@ fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMet
 }
 
 /// Loss report for a successful geometry decode.
+///
+/// Every note is constructed through the [`crate::builder`] Phase-4B module
+/// (§10): a concept the decode did not carry into typed IR goes through
+/// [`crate::builder::omit`] so the omission cannot be reached without recording
+/// its note, while a reduction that survives approximately (spline/procedural
+/// forms solved into cached NURBS carriers) or an informational census goes
+/// through [`crate::builder::reduce`]. The bare `losses.push` spelling is not
+/// used here, so a silent drop is a construction that does not typecheck.
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
+    use crate::builder::{omit, reduce};
+
     let s = &decoded.stats;
-    let mut losses = Vec::new();
+    let mut losses: Vec<LossNote> = Vec::new();
 
     if s.nurbs_surfaces > 0 {
-        losses.push(LossNote {
-            code: LossCode::ProceduralReduced,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "{} spline surface record(s) were decoded into NURBS carriers from their inline \
-                 cached B-spline block.",
-                s.nurbs_surfaces
-            ),
-            provenance: None,
-        });
+        reduce(
+            &mut losses,
+            LossNote {
+                code: LossCode::ProceduralReduced,
+                category: LossCategory::Geometry,
+                severity: Severity::Info,
+                message: format!(
+                    "{} spline surface record(s) were decoded into NURBS carriers from their inline \
+                     cached B-spline block.",
+                    s.nurbs_surfaces
+                ),
+                provenance: None,
+            },
+        );
     }
     if s.nurbs_curves > 0 {
-        losses.push(LossNote {
-            code: LossCode::ProceduralReduced,
-            category: LossCategory::Geometry,
-            severity: Severity::Info,
-            message: format!(
-                "{} procedural curve record(s) were decoded into NURBS carriers from their inline \
-                 cached 3D B-spline block.",
-                s.nurbs_curves
-            ),
-            provenance: None,
-        });
+        reduce(
+            &mut losses,
+            LossNote {
+                code: LossCode::ProceduralReduced,
+                category: LossCategory::Geometry,
+                severity: Severity::Info,
+                message: format!(
+                    "{} procedural curve record(s) were decoded into NURBS carriers from their \
+                     inline cached 3D B-spline block.",
+                    s.nurbs_curves
+                ),
+                provenance: None,
+            },
+        );
     }
     if s.unknown_surface_faces > 0 {
-        losses.push(LossNote {
-            code: LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into a \
-                 typed carrier (no inline cached B-spline block — the cache is reached through a \
-                 subtype reference, or the record is a procedural form this codec does not \
-                 evaluate); the face, its loops, and trims are emitted with an unknown-geometry \
-                 surface linking to the preserved record bytes. Topology is transferred; the \
-                 underlying surface shape is not.",
-                s.unknown_surface_faces
-            ),
-            provenance: None,
-        });
+        // Unsupported-concept-to-omission boundary: the underlying surface shape
+        // was not decoded into a typed carrier. Topology transfers; the shape
+        // does not, so the omitted value does not exist.
+        omit(
+            &mut losses,
+            LossNote {
+                code: LossCode::GeometryNotTransferred,
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: format!(
+                    "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into \
+                     a typed carrier (no inline cached B-spline block — the cache is reached \
+                     through a subtype reference, or the record is a procedural form this codec \
+                     does not evaluate); the face, its loops, and trims are emitted with an \
+                     unknown-geometry surface linking to the preserved record bytes. Topology is \
+                     transferred; the underlying surface shape is not.",
+                    s.unknown_surface_faces
+                ),
+                provenance: None,
+            },
+        );
     }
     if s.procedural_curve_edges > 0 {
-        losses.push(LossNote {
-            code: LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable inline \
-                 B-spline cache; the edge was emitted with its vertices and parameter range but no \
-                 attributed curve carrier.",
-                s.procedural_curve_edges
-            ),
-            provenance: None,
-        });
+        omit(
+            &mut losses,
+            LossNote {
+                code: LossCode::GeometryNotTransferred,
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: format!(
+                    "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable \
+                     inline B-spline cache; the edge was emitted with its vertices and parameter \
+                     range but no attributed curve carrier.",
+                    s.procedural_curve_edges
+                ),
+                provenance: None,
+            },
+        );
     }
     if s.undecoded_pcurve_refs > 0 {
-        losses.push(LossNote {
-            code: LossCode::PcurveOmitted,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
-                 carrier on the face surface's parameterization; those coedges were emitted \
-                 without a pcurve.",
-                s.undecoded_pcurve_refs
-            ),
-            provenance: None,
-        });
+        omit(
+            &mut losses,
+            LossNote {
+                code: LossCode::PcurveOmitted,
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: format!(
+                    "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
+                     carrier on the face surface's parameterization; those coedges were emitted \
+                     without a pcurve.",
+                    s.undecoded_pcurve_refs
+                ),
+                provenance: None,
+            },
+        );
     }
     if s.partial_procedural_supports > 0 {
-        losses.push(LossNote {
-            code: LossCode::CarrierSummary,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{} rolling-ball blend definition(s) retain their signed radius and solved cache, but only one of two native supports resolved.",
-                s.partial_procedural_supports
-            ),
-            provenance: None,
-        });
+        reduce(
+            &mut losses,
+            LossNote {
+                code: LossCode::CarrierSummary,
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: format!(
+                    "{} rolling-ball blend definition(s) retain their signed radius and solved cache, but only one of two native supports resolved.",
+                    s.partial_procedural_supports
+                ),
+                provenance: None,
+            },
+        );
     }
     if s.other_records > 0 {
-        losses.push(LossNote {
-            code: LossCode::AttributesNotTransferred,
-            category: LossCategory::Attribute,
-            severity: Severity::Warning,
-            message: format!(
-                "{} active-slice application/refinement record(s) were not transferred: {}.",
-                s.other_records,
-                s.other_record_kinds
-                    .iter()
-                    .map(|(name, count)| format!("{name}={count}"))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            provenance: None,
-        });
+        omit(
+            &mut losses,
+            LossNote {
+                code: LossCode::AttributesNotTransferred,
+                category: LossCategory::Attribute,
+                severity: Severity::Warning,
+                message: format!(
+                    "{} active-slice application/refinement record(s) were not transferred: {}.",
+                    s.other_records,
+                    s.other_record_kinds
+                        .iter()
+                        .map(|(name, count)| format!("{name}={count}"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+                provenance: None,
+            },
+        );
     }
-    losses.push(LossNote {
-        code: LossCode::MaterialNotTransferred,
-        category: LossCategory::Material,
-        severity: Severity::Warning,
-        message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
-                  transferred."
-            .to_string(),
-        provenance: None,
-    });
+    omit(
+        &mut losses,
+        LossNote {
+            code: LossCode::MaterialNotTransferred,
+            category: LossCategory::Material,
+            severity: Severity::Warning,
+            message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
+                      transferred."
+                .to_string(),
+            provenance: None,
+        },
+    );
 
     DecodeReport {
         retention_degraded: false,
@@ -948,7 +1047,13 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     let summary = container::summarize(scan);
     let brep_count = scan.breps.len();
 
-    let mut losses = vec![
+    // The metadata-only fallback: geometry, topology, and materials are all
+    // concepts this decode did not carry into typed IR. Each resolves through
+    // the Phase-4B builder module as an omission (§10) so no drop is silent;
+    // retained source bytes remain available for native replay.
+    let mut losses: Vec<LossNote> = Vec::new();
+    crate::builder::omit(
+        &mut losses,
         LossNote {
             code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
@@ -960,16 +1065,21 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             ),
             provenance: None,
         },
+    );
+    crate::builder::omit(
+        &mut losses,
         LossNote {
             code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
             severity: Severity::Blocking,
-            message:
-                "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
-                      built for this stream."
-                    .to_string(),
+            message: "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was \
+                      not built for this stream."
+                .to_string(),
             provenance: None,
         },
+    );
+    crate::builder::omit(
+        &mut losses,
         LossNote {
             code: LossCode::MaterialNotTransferred,
             category: LossCategory::Material,
@@ -979,16 +1089,19 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
                 .to_string(),
             provenance: None,
         },
-    ];
+    );
 
     if container::select_active_brep(scan).is_none() {
-        losses.push(LossNote {
-            code: LossCode::MissingGeometryStream,
-            category: LossCategory::Geometry,
-            severity: Severity::Error,
-            message: "no ASM BREP stream (.smb/.smbh) was found in the container".to_string(),
-            provenance: None,
-        });
+        crate::builder::omit(
+            &mut losses,
+            LossNote {
+                code: LossCode::MissingGeometryStream,
+                category: LossCategory::Geometry,
+                severity: Severity::Error,
+                message: "no ASM BREP stream (.smb/.smbh) was found in the container".to_string(),
+                provenance: None,
+            },
+        );
     }
 
     DecodeReport {

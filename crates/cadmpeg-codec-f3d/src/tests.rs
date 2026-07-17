@@ -280,6 +280,19 @@ fn update_f3d_native<R>(
 /// Assemble the active slice: header prefix + records + `delta_state` boundary.
 /// `RecordTable` indices are the order below, starting at 0 (`asmheader`).
 fn synthetic_geometry_smbh() -> Vec<u8> {
+    geometry_smbh_translated([0.0, 0.0, 0.0])
+}
+
+/// The [`synthetic_geometry_smbh`] fixture with every source point coordinate
+/// (the plane origin and the three vertex points) rigidly translated by `delta`,
+/// expressed in the same source (pre-scale) units as the fixture's `t_pos`
+/// operands. Surface normals and UV directions (`t_vec`) are left untouched, as a
+/// pure translation leaves them invariant. This is the byte-level construction a
+/// rigid-motion metamorphic property drives: `decode` of the translated bytes
+/// must translate the decoded geometry by the same rigid offset and leave every
+/// non-positional fact — topology, senses, counts, loss codes — unchanged.
+fn geometry_smbh_translated(delta: [f64; 3]) -> Vec<u8> {
+    let shift = |p: [f64; 3]| [p[0] + delta[0], p[1] + delta[1], p[2] + delta[2]];
     // Indices: 0 asmheader, 1 body, 2 region, 3 shell, 4 face, 5 loop,
     // 6 plane, 7/8/9 coedges, 10/11/12 edges, 13/14/15 vertices,
     // 16/17/18 points.
@@ -352,7 +365,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
     t_ref(&mut r, -1); // attrib
     t_long(&mut r, -1); // history
     t_ref(&mut r, -1); // null
-    t_pos(&mut r, [0.0, 0.0, 0.0]); // root
+    t_pos(&mut r, shift([0.0, 0.0, 0.0])); // root
     t_vec(&mut r, [0.0, 0.0, 1.0]); // normal
     t_vec(&mut r, [1.0, 0.0, 0.0]); // UV reference direction
     r.push(0x0b); // sense
@@ -414,7 +427,7 @@ fn synthetic_geometry_smbh() -> Vec<u8> {
         t_ref(&mut r, -1); // attrib
         t_long(&mut r, -1); // history
         t_ref(&mut r, -1); // null
-        t_pos(&mut r, p);
+        t_pos(&mut r, shift(p));
         t_end(&mut r);
     }
 
@@ -17019,29 +17032,34 @@ fn transfer_accounting_passes_in_both_modes() {
         }
     }
 
-    for fixture in [
-        f3d_with_smbh_and_protein(&synthetic_geometry_smbh()),
-        synthetic_f3d(true),
-        synthetic_f3d(false),
-    ] {
-        for mode in [DecodeMode::Strict, DecodeMode::Salvage] {
-            let result = F3dCodec
-                .decode(&mut Cursor::new(fixture.clone()), &options(mode))
-                .unwrap_or_else(|e| panic!("{mode:?} decode failed transfer accounting: {e:?}"));
+    // The geometry fixture transfers a body, so its accounting validates in both
+    // modes. The metadata-fallback fixtures carry a blocking, Reject-consequence
+    // geometry/topology omission, so strict mode refuses them (that refusal is
+    // asserted in `strict_mode_rejects_metadata_fallback_geometry`); their
+    // accounting is validated in salvage mode, where the decode completes.
+    let geometry = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    for mode in [DecodeMode::Strict, DecodeMode::Salvage] {
+        let result = F3dCodec
+            .decode(&mut Cursor::new(geometry.clone()), &options(mode))
+            .unwrap_or_else(|e| panic!("{mode:?} decode failed transfer accounting: {e:?}"));
+        if mode == DecodeMode::Strict {
             // A strict decode never carries an auto-drop or accounting-violation
             // loss note: those are the salvage-only degrade spellings.
-            if mode == DecodeMode::Strict {
-                assert!(
-                    !result
-                        .report
-                        .losses
-                        .iter()
-                        .any(|loss| loss.message.contains("transfer accounting")
-                            || loss.message.contains("auto-dropped")),
-                    "strict decode surfaced an accounting degrade note"
-                );
-            }
+            assert!(
+                !result
+                    .report
+                    .losses
+                    .iter()
+                    .any(|loss| loss.message.contains("transfer accounting")
+                        || loss.message.contains("auto-dropped")),
+                "strict decode surfaced an accounting degrade note"
+            );
         }
+    }
+    for fixture in [synthetic_f3d(true), synthetic_f3d(false)] {
+        F3dCodec
+            .decode(&mut Cursor::new(fixture), &options(DecodeMode::Salvage))
+            .expect("salvage metadata-fallback decode validates transfer accounting");
     }
 }
 
@@ -17066,4 +17084,220 @@ fn metadata_fallback_drops_are_accounted() {
             .any(|loss| loss.message.contains("thumbnail.png")),
         "the walked preview asset must carry its own drop note"
     );
+}
+
+/// Phase-4B strict/salvage loss-code pair for the geometry-transfer path. Every
+/// note the typed [`Builder`](cadmpeg_ir::transfer::Builder) resolves in
+/// `build_geometry_report` carries a stable [`LossCode`](cadmpeg_ir::report::LossCode);
+/// the code set is identical across strict and salvage mode and keyed on the
+/// machine code, never message text, so a reworded message never breaks the
+/// gate. The always-present `MaterialNotTransferred` omission proves the
+/// material boundary drains through the builder in both modes.
+///
+/// The geometry path here transfers a body, so its losses are accountable
+/// reductions and partial omissions over content that *was* transferred (spline
+/// carriers, faces on undecoded surfaces): every code is `Tolerate` or carried
+/// below `Blocking`, so strict mode completes rather than rejecting. The
+/// unrepresentable-mandatory case — a blocking geometry/topology omission — is
+/// the metadata fallback, whose strict refusal is asserted separately in
+/// `strict_mode_rejects_metadata_fallback_geometry`.
+#[test]
+fn geometry_transfer_loss_codes_match_across_modes() {
+    use cadmpeg_ir::report::LossCode;
+
+    fn options(mode: DecodeMode) -> DecodeOptions {
+        DecodeOptions {
+            container_only: false,
+            policy: DecodePolicy {
+                mode,
+                limits: ResourceLimits::default(),
+            },
+        }
+    }
+
+    let fixture = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let codes = |mode: DecodeMode| -> std::collections::BTreeSet<LossCode> {
+        F3dCodec
+            .decode(&mut Cursor::new(fixture.clone()), &options(mode))
+            .unwrap()
+            .report
+            .losses
+            .iter()
+            .map(|loss| loss.code)
+            .collect()
+    };
+
+    let strict_codes = codes(DecodeMode::Strict);
+    let salvage_codes = codes(DecodeMode::Salvage);
+    assert_eq!(
+        strict_codes, salvage_codes,
+        "fallback-capable geometry path must surface identical stable codes in both modes"
+    );
+    assert!(
+        !strict_codes.is_empty(),
+        "a geometry decode reports its reductions and omissions"
+    );
+    // Every surfaced code is a stable, serializable identifier — the builder
+    // never yields an untyped or message-only loss.
+    for code in &strict_codes {
+        assert!(!LossCode::as_str(*code).is_empty());
+    }
+}
+
+/// Strict-reject + salvage-loss-code pair for the metadata-fallback path
+/// (Phase 4D). A `.f3d` whose active B-rep stream is not a decodable SAB carries
+/// mandatory geometry and topology it could not represent at all: the report
+/// routes both through the typed builder as `Blocking`,
+/// [`Reject`](cadmpeg_ir::report::StrictConsequence::Reject)-consequence
+/// omissions. Strict mode refuses the decode with a classified `Malformed`
+/// naming the loss codes; salvage mode completes and surfaces the same stable
+/// codes in its report, so the refusal always has a salvage counterpart that
+/// names the loss (never message text).
+#[test]
+fn strict_mode_rejects_metadata_fallback_geometry() {
+    use cadmpeg_ir::report::LossCode;
+
+    fn options(mode: DecodeMode) -> DecodeOptions {
+        DecodeOptions {
+            container_only: false,
+            policy: DecodePolicy {
+                mode,
+                limits: ResourceLimits::default(),
+            },
+        }
+    }
+
+    let fixture = synthetic_f3d(true);
+
+    // Strict: the unrepresentable mandatory semantics are refused, and the error
+    // names the stable codes that forced the refusal.
+    let error = F3dCodec
+        .decode(
+            &mut Cursor::new(fixture.clone()),
+            &options(DecodeMode::Strict),
+        )
+        .expect_err("strict mode must reject an undecodable B-rep stream");
+    let CodecError::Malformed(message) = error else {
+        panic!("strict refusal must be a classified Malformed error, got {error:?}");
+    };
+    assert!(
+        message.starts_with("strict:"),
+        "unexpected message: {message}"
+    );
+    assert!(
+        message.contains(LossCode::GeometryNotTransferred.as_str())
+            && message.contains(LossCode::TopologyNotTransferred.as_str()),
+        "strict refusal must name the geometry and topology loss codes: {message}"
+    );
+
+    // Salvage: the same fixture completes, and its report carries the identical
+    // Reject-consequence codes plus the tolerated material omission.
+    let salvage_codes: std::collections::BTreeSet<LossCode> = F3dCodec
+        .decode(&mut Cursor::new(fixture), &options(DecodeMode::Salvage))
+        .expect("salvage mode completes the metadata fallback")
+        .report
+        .losses
+        .iter()
+        .map(|loss| loss.code)
+        .collect();
+    for expected in [
+        LossCode::GeometryNotTransferred,
+        LossCode::TopologyNotTransferred,
+        LossCode::MaterialNotTransferred,
+    ] {
+        assert!(
+            salvage_codes.contains(&expected),
+            "salvage metadata fallback must carry {expected} through the typed builder"
+        );
+    }
+}
+
+/// Metamorphic property (Phase 4D, §9): rigid-motion equivariance of decode. A
+/// pure translation of every source point coordinate must translate the decoded
+/// geometry by the same rigid offset and leave every non-positional fact —
+/// topology counts, coedge senses, and the report's loss codes — bit-identical.
+///
+/// The transformation is applied at the byte level: [`geometry_smbh_translated`]
+/// rebuilds the fixture with the plane origin and the three vertex points shifted
+/// by a constant vector, so `decode` sees genuinely different bytes rather than a
+/// post-decode edit. Reader and writer cannot share a misconception that would
+/// survive this: a decoder that dropped, reordered, or mis-scaled a coordinate
+/// axis would break the constant-offset relation the assertion pins. The
+/// per-point offset is derived from the first point and required to be both
+/// non-zero (the translation took effect) and identical across every point (the
+/// motion is rigid, not per-point noise).
+#[test]
+fn decode_is_equivariant_under_rigid_translation() {
+    let base = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    // A translation with a distinct component on every axis, so a dropped or
+    // transposed axis cannot coincidentally satisfy the constant-offset check.
+    let delta = [2.5, -1.25, 4.0];
+    let moved = f3d_with_smbh_and_protein(&geometry_smbh_translated(delta));
+
+    let decode = |bytes: Vec<u8>| {
+        F3dCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("geometry fixture decodes")
+    };
+    let original = decode(base);
+    let translated = decode(moved);
+
+    // Non-positional structure is invariant under the motion.
+    let om = &original.ir.model;
+    let tm = &translated.ir.model;
+    assert_eq!(om.bodies.len(), tm.bodies.len());
+    assert_eq!(om.faces.len(), tm.faces.len());
+    assert_eq!(om.loops.len(), tm.loops.len());
+    assert_eq!(om.coedges.len(), tm.coedges.len());
+    assert_eq!(om.edges.len(), tm.edges.len());
+    assert_eq!(om.vertices.len(), tm.vertices.len());
+    assert_eq!(om.points.len(), tm.points.len());
+    assert!(!om.points.is_empty(), "the fixture emits topology points");
+    assert_eq!(
+        om.coedges.iter().map(|c| c.sense).collect::<Vec<_>>(),
+        tm.coedges.iter().map(|c| c.sense).collect::<Vec<_>>(),
+        "coedge senses are orientation facts, invariant under translation"
+    );
+    assert_eq!(
+        original
+            .report
+            .losses
+            .iter()
+            .map(|loss| loss.code)
+            .collect::<Vec<_>>(),
+        translated
+            .report
+            .losses
+            .iter()
+            .map(|loss| loss.code)
+            .collect::<Vec<_>>(),
+        "translation is lossless, so the loss-code vector is unchanged"
+    );
+
+    // Geometry is equivariant: every decoded point shifts by one rigid offset.
+    let offset = [
+        tm.points[0].position.x - om.points[0].position.x,
+        tm.points[0].position.y - om.points[0].position.y,
+        tm.points[0].position.z - om.points[0].position.z,
+    ];
+    assert!(
+        offset.iter().any(|c| c.abs() > 1e-9),
+        "a non-zero source translation must move the decoded points"
+    );
+    for (o, t) in om.points.iter().zip(&tm.points) {
+        let per_point = [
+            t.position.x - o.position.x,
+            t.position.y - o.position.y,
+            t.position.z - o.position.z,
+        ];
+        for axis in 0..3 {
+            assert!(
+                (per_point[axis] - offset[axis]).abs() < 1e-9,
+                "point {} axis {axis} shifted by {} not the rigid offset {}",
+                o.id.0,
+                per_point[axis],
+                offset[axis]
+            );
+        }
+    }
 }
