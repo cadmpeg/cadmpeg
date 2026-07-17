@@ -1173,13 +1173,15 @@ impl Codec for FcstdCodec {
             attributes.insert("thumbnail_bytes".into(), thumbnail.len().to_string());
         }
         let mut ir = CadIr::empty(Units::default());
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity::default();
         let mut geometry_transferred = false;
         ir.source = Some(SourceMeta {
             format: "fcstd".into(),
             attributes,
         });
         if let Some((name, bytes)) = thumbnail {
-            ir.set_native_unknowns(
+            source_fidelity.attach_native_unknown_records(
+                &mut ir,
                 "fcstd",
                 &[UnknownRecord {
                     id: UnknownId(native::native_id("thumbnail", name)),
@@ -1395,7 +1397,7 @@ impl Codec for FcstdCodec {
         } else {
             semantic_losses(&ir)
         };
-        Ok(DecodeResult::new(
+        Ok(DecodeResult::with_source_fidelity(
             ir,
             DecodeReport {
                 format: "fcstd".into(),
@@ -1404,6 +1406,7 @@ impl Codec for FcstdCodec {
                 losses,
                 notes: container::summarize(&scan).notes,
             },
+            source_fidelity,
         ))
     }
 }
@@ -1662,6 +1665,9 @@ fn append_text_curve(
                     distance: *distance,
                     direction: Some(*direction),
                     support: None,
+                    distance_law: None,
+                    normal: None,
+                    parameter_range: None,
                 },
                 cache_fit_tolerance: None,
             });

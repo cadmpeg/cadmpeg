@@ -4997,7 +4997,7 @@ Co 1001000 +2 0 *
         .model
         .coedges
         .iter()
-        .all(|coedge| coedge.pcurve.is_some()));
+        .all(|coedge| !coedge.pcurves.is_empty()));
     let report = cadmpeg_ir::validate(&result.ir, Vec::new());
     assert!(
         report
@@ -5241,8 +5241,8 @@ Co 1001000 +2 0 *
     let second = &result.ir.model.coedges[1];
     assert_eq!(first.radial_next, second.id);
     assert_eq!(second.radial_next, first.id);
-    assert_ne!(first.pcurve, second.pcurve);
-    assert!(first.pcurve.is_some() && second.pcurve.is_some());
+    assert_ne!(first.pcurves, second.pcurves);
+    assert!(!first.pcurves.is_empty() && !second.pcurves.is_empty());
     let errors = cadmpeg_ir::validate(&result.ir, Vec::new())
         .findings
         .into_iter()
@@ -5463,7 +5463,10 @@ fn thumbnail_bytes_are_retained_with_digest() {
             },
         )
         .expect("decode");
-    let unknowns = result.ir.native_unknowns("fcstd").expect("unknowns");
+    let unknowns = result
+        .source_fidelity
+        .native_unknown_records(&result.ir, "fcstd")
+        .expect("unknowns");
     assert_eq!(unknowns.len(), 1);
     assert_eq!(unknowns[0].data.as_deref(), Some(b"png".as_slice()));
 }

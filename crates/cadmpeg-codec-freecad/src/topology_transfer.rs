@@ -59,7 +59,8 @@ pub(crate) fn transfer(
         .model
         .coedges
         .iter()
-        .filter_map(|coedge| coedge.pcurve.as_ref())
+        .flat_map(|coedge| &coedge.pcurves)
+        .map(|use_| &use_.pcurve)
         .collect::<HashSet<_>>();
     ir.model
         .pcurves
@@ -654,13 +655,21 @@ impl<'a> Builder<'a> {
                     previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
                     radial_next: id,
                     sense: sense(is_reversed(edge_use.orientation) ^ wire_reversed),
-                    pcurve,
+                    pcurves: pcurve
+                        .into_iter()
+                        .map(|pcurve| cadmpeg_ir::topology::PcurveUse {
+                            pcurve,
+                            isoparametric: None,
+                        })
+                        .collect(),
                 });
             }
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
                 coedges: coedge_ids,
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
+                vertex_uses: Vec::new(),
             });
             loops.push(loop_id);
         }

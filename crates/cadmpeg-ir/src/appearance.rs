@@ -52,6 +52,19 @@ pub enum AppearanceTarget {
     Edge(EdgeId),
     /// Per-vertex point appearance.
     Vertex(VertexId),
+    /// Standalone surface geometry appearance.
+    Surface(crate::ids::SurfaceId),
+    /// Standalone curve geometry appearance.
+    Curve(crate::ids::CurveId),
+    /// Standalone point geometry appearance.
+    Point(crate::ids::PointId),
+    /// Tessellated geometry appearance.
+    Tessellation(String),
+    /// Native presentation carrier without a neutral geometry arena.
+    Source {
+        /// Native source entity identity.
+        source_id: String,
+    },
 }
 
 /// An explicit appearance assignment.

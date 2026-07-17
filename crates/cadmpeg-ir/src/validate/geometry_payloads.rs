@@ -4,28 +4,6 @@
 
 use super::*;
 
-pub(super) fn check_unknown_payloads(ir: &CadIr, findings: &mut Vec<Finding>) {
-    let native_unknowns = ir.all_native_unknowns().unwrap_or_default();
-    for record in &native_unknowns {
-        let Some(data) = &record.data else { continue };
-        let hash = Sha256::digest(data)
-            .iter()
-            .fold(String::new(), |mut acc, byte| {
-                use std::fmt::Write as _;
-                let _ = write!(acc, "{byte:02x}");
-                acc
-            });
-        if data.len() as u64 != record.byte_len || hash != record.sha256 {
-            findings.push(Finding {
-                check: Check::PayloadIntegrity,
-                severity: Severity::Error,
-                message: "preserved payload length or hash does not match its record".into(),
-                entity: Some(record.id.0.clone()),
-            });
-        }
-    }
-}
-
 pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
     for mesh in &ir.model.tessellations {
         if mesh.body.as_ref().is_some_and(|body| {
@@ -409,6 +387,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     &procedural.id.0,
                     "extrusion interval, direction, or native position is non-finite",
                 );
+            }
+        }
+        if let ProceduralSurfaceDefinition::LinearSweep { direction, .. } = &procedural.definition {
+            if ![direction.x, direction.y, direction.z]
+                .into_iter()
+                .all(f64::is_finite)
+                || degenerate(direction)
+            {
+                bounds_err(findings, &procedural.id.0, "invalid linear-sweep direction");
+            }
+        }
+        if let ProceduralSurfaceDefinition::ParallelOffset { distance, .. } = &procedural.definition
+        {
+            if !distance.is_finite() {
+                bounds_err(findings, &procedural.id.0, "non-finite parallel offset");
             }
         }
         if let ProceduralSurfaceDefinition::Exact {
@@ -1487,6 +1480,11 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     bounds_err(findings, &c.id.0, "degenerate curve point is not finite");
                 }
             }
+            CurveGeometry::Composite { segments, .. } => {
+                if segments.is_empty() {
+                    bounds_err(findings, &c.id.0, "composite curve has no segments");
+                }
+            }
             CurveGeometry::Nurbs(n) => {
                 if n.control_points.len() < (n.degree as usize + 1) {
                     bounds_err(
@@ -1518,6 +1516,73 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
     for procedural in &ir.model.procedural_curves {
+        if let ProceduralCurveDefinition::Offset {
+            distance,
+            normal,
+            parameter_range,
+            distance_law,
+            ..
+        } = &procedural.definition
+        {
+            let normal_valid = normal.is_none_or(|normal| {
+                normal.x.is_finite()
+                    && normal.y.is_finite()
+                    && normal.z.is_finite()
+                    && (normal.norm() - 1.0).abs() <= 1.0e-10
+            });
+            let range_valid = parameter_range.is_none_or(|range| {
+                range.iter().all(|value| value.is_finite()) && range[0] < range[1]
+            });
+            let law_valid = distance_law.as_ref().is_none_or(|law| match law {
+                crate::geometry::CurveOffsetDistanceLaw::Linear {
+                    distances,
+                    control_range,
+                    ..
+                } => {
+                    distances.iter().all(|value| value.is_finite())
+                        && control_range.iter().all(|value| value.is_finite())
+                        && control_range[0] < control_range[1]
+                }
+                crate::geometry::CurveOffsetDistanceLaw::Coordinate {
+                    coordinate,
+                    function_parameter_offset,
+                    function_parameter_scale,
+                    ..
+                } => {
+                    matches!(coordinate, 1..=3)
+                        && function_parameter_offset.is_finite()
+                        && function_parameter_scale.is_finite()
+                        && *function_parameter_scale != 0.0
+                }
+            });
+            if !distance.is_finite() || !normal_valid || !range_valid || !law_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "curve offset distance, normal, range, or law is invalid",
+                );
+            }
+            continue;
+        }
+        if let ProceduralCurveDefinition::SpatialOffset {
+            distance,
+            reference_direction,
+            ..
+        } = &procedural.definition
+        {
+            if !distance.is_finite()
+                || ![
+                    reference_direction.x,
+                    reference_direction.y,
+                    reference_direction.z,
+                ]
+                .into_iter()
+                .all(f64::is_finite)
+                || (reference_direction.norm() - 1.0).abs() > 1e-9
+            {
+                bounds_err(findings, &procedural.id.0, "invalid spatial curve offset");
+            }
+        }
         if let ProceduralCurveDefinition::Deformable { data, .. } = &procedural.definition {
             if let crate::geometry::DeformableCurveData::VectorField {
                 vectors,
@@ -1925,6 +1990,7 @@ fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
         CurveGeometry::Transformed { basis, transform } => {
             valid_affine_transform(*transform) && valid_curve_basis(basis)
         }
+        CurveGeometry::Composite { .. } => true,
         CurveGeometry::Unknown { .. } => true,
     }
 }

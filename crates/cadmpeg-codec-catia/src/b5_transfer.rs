@@ -337,7 +337,9 @@ pub(crate) fn transfer(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids.clone(),
+                vertex_uses: Vec::new(),
             });
             for (index, ((&edge, &pcurve), &reversed)) in loop_
                 .edges
@@ -361,7 +363,7 @@ pub(crate) fn transfer(
                     "previous",
                     "radial_next",
                     "sense",
-                    "pcurve",
+                    "pcurves",
                 ] {
                     annotations.derived(&id, field);
                 }
@@ -379,7 +381,10 @@ pub(crate) fn transfer(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: Some(pcurve_ids[&pcurve].clone()),
+                    pcurves: vec![cadmpeg_ir::topology::PcurveUse {
+                        pcurve: pcurve_ids[&pcurve].clone(),
+                        isoparametric: None,
+                    }],
                 });
             }
         }

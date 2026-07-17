@@ -1783,7 +1783,7 @@ fn sketch_brep(
                 } else {
                     Sense::Forward
                 },
-                pcurve: None,
+                pcurves: Vec::new(),
             });
         }
         let count = coedge_ids.len();
@@ -1802,7 +1802,9 @@ fn sketch_brep(
         ir.model.loops.push(Loop {
             id: loop_id,
             face: face_id.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: coedge_ids,
+            vertex_uses: Vec::new(),
         });
     }
     for (ordinal, entity) in ordered_entities.iter().enumerate() {
@@ -1840,12 +1842,14 @@ fn sketch_brep(
             previous: coedge_id.clone(),
             radial_next: coedge_id.clone(),
             sense: Sense::Forward,
-            pcurve: None,
+            pcurves: Vec::new(),
         });
         ir.model.loops.push(Loop {
             id: loop_id.clone(),
             face: face_id.clone(),
+            boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
             coedges: vec![coedge_id],
+            vertex_uses: Vec::new(),
         });
         face_loops.push(loop_id);
     }

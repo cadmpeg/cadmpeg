@@ -5,12 +5,14 @@ use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_codec_f3d::F3dCodec;
 use cadmpeg_codec_freecad::FcstdCodec;
+use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{CadirEncoder, Codec, CodecError, Confidence, Encoder};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::ExportReport;
+use cadmpeg_ir::SourceFidelity;
 use cadmpeg_step::StepCodec;
 
 /// Native codecs available to the CLI.
@@ -31,6 +33,8 @@ impl Registry {
                 Box::new(CreoCodec),
                 Box::new(NxCodec),
                 Box::new(RhinoCodec),
+                Box::new(StepCodec::default()),
+                Box::new(IgesCodec),
             ],
             encoders: vec![
                 Box::new(FcstdCodec),
@@ -70,12 +74,24 @@ impl Registry {
             .map(Box::as_ref)
     }
 
+    /// Replace the STEP encoder configuration used by subsequent exports.
+    pub fn set_step_options(&mut self, options: cadmpeg_step::StepWriteOptions) {
+        if let Some(encoder) = self
+            .encoders
+            .iter_mut()
+            .find(|encoder| encoder.id() == "step")
+        {
+            *encoder = Box::new(StepCodec { options });
+        }
+    }
+
     /// Encode through the registered format path with optional target selection.
     pub fn encode_by_id(
         &self,
         id: &str,
         rhino_version: Option<cadmpeg_codec_rhino::RhinoArchiveVersion>,
         ir: &CadIr,
+        source_fidelity: Option<&SourceFidelity>,
         output: &mut dyn std::io::Write,
     ) -> Option<Result<ExportReport, CodecError>> {
         if rhino_version.is_some() && id != "rhino" {
@@ -85,11 +101,17 @@ impl Registry {
         }
         if id == "rhino" {
             if let Some(version) = rhino_version {
-                return Some(cadmpeg_codec_rhino::RhinoEncoder::new(version).encode(ir, output));
+                return Some(
+                    cadmpeg_codec_rhino::RhinoEncoder::new(version).encode_with_source_fidelity(
+                        ir,
+                        source_fidelity,
+                        output,
+                    ),
+                );
             }
         }
         self.encoder_by_id(id)
-            .map(|encoder| encoder.encode(ir, output))
+            .map(|encoder| encoder.encode_with_source_fidelity(ir, source_fidelity, output))
     }
 }
 
@@ -123,5 +145,16 @@ mod tests {
         let (codec, confidence) = registry.detect(b"PK\x03\x04 markerless").unwrap();
         assert_eq!(codec.id(), "f3d");
         assert_eq!(confidence, cadmpeg_ir::codec::Confidence::Low);
+    }
+
+    #[test]
+    fn step_is_registered_as_a_reader() {
+        let registry = Registry::with_builtins();
+        let (codec, confidence) = registry
+            .detect(b"ISO-10303-21;HEADER;")
+            .expect("STEP codec detection");
+        assert_eq!(codec.id(), "step");
+        assert_eq!(confidence, cadmpeg_ir::codec::Confidence::High);
+        assert_eq!(registry.by_id("step").expect("STEP reader").id(), "step");
     }
 }

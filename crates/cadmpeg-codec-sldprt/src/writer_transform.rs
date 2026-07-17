@@ -380,6 +380,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) {
         CurveGeometry::Degenerate { point } => {
             *point = transform_point(transform, *point);
         }
+        CurveGeometry::Composite { .. } => {}
         CurveGeometry::Unknown { .. } => {}
         CurveGeometry::Transformed {
             transform: carrier, ..

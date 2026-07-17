@@ -233,6 +233,13 @@ pub enum CurveGeometry {
         /// The collapsed curve point.
         point: Point3,
     },
+    /// Ordered child curves joined into one bounded carrier.
+    Composite {
+        /// Ordered curve uses and their continuity contracts.
+        segments: Vec<CompositeCurveSegment>,
+        /// Whether the source classifies the complete curve as self-intersecting.
+        self_intersect: Option<bool>,
+    },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
     /// Source-native polyline with an explicit chordal error bound.
@@ -258,6 +265,31 @@ pub enum CurveGeometry {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
     },
+}
+
+/// One directed child use in a composite curve.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CompositeCurveSegment {
+    /// Referenced child curve carrier.
+    pub curve: CurveId,
+    /// Whether the child parameter direction is retained.
+    pub same_sense: bool,
+    /// Required continuity from the preceding segment to this segment.
+    pub transition: CompositeCurveTransition,
+}
+
+/// STEP composite-curve transition continuity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CompositeCurveTransition {
+    /// No positional continuity is asserted.
+    Discontinuous,
+    /// Positional continuity.
+    Continuous,
+    /// Positional and tangent continuity.
+    ContSameGradient,
+    /// Positional, tangent, and curvature continuity.
+    ContSameGradientSameCurvature,
 }
 
 /// Derive a stable in-plane reference direction from an axis.
@@ -412,6 +444,13 @@ pub enum ProceduralSurfaceDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         native_position: Option<Point3>,
     },
+    /// Unbounded linear sweep of a directrix.
+    LinearSweep {
+        /// Curve swept along `direction`.
+        directrix: CurveId,
+        /// Length-bearing sweep vector.
+        direction: Vector3,
+    },
     /// Revolution of a directrix about an axis.
     Revolution {
         /// Curve revolved about the axis to form the surface.
@@ -428,6 +467,15 @@ pub enum ProceduralSurfaceDefinition {
         parameter_interval: Option<[f64; 2]>,
         /// Whether the source parameter directions are transposed.
         transposed: bool,
+    },
+    /// Full revolution of a directrix about an axis.
+    AxisRevolution {
+        /// Curve revolved about the axis.
+        directrix: CurveId,
+        /// Point on the revolution axis.
+        axis_origin: Point3,
+        /// Unit revolution-axis direction.
+        axis_direction: Vector3,
     },
     /// Sum of two ordered curves from a base point.
     Sum {
@@ -484,6 +532,29 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Ordered U and V parameter intervals.
         parameter_ranges: [[f64; 2]; 2],
+    },
+    /// Parallel offset from a support surface.
+    ParallelOffset {
+        /// Surface being offset.
+        support: SurfaceId,
+        /// Signed offset distance.
+        distance: f64,
+        /// Whether the source classifies the result as self-intersecting.
+        self_intersect: Option<bool>,
+    },
+    /// Self-intersecting torus with an explicitly selected outer or inner sheet.
+    DegenerateTorus {
+        /// Whether the outer sheet is selected at the self-intersection.
+        select_outer: bool,
+    },
+    /// Surface domain bounded by ordered curves on a supporting surface.
+    CurveBounded {
+        /// Supporting surface whose parameterization defines the domain.
+        support: SurfaceId,
+        /// Boundary curves on the support.
+        boundaries: Vec<CurveId>,
+        /// Whether the support's natural outer boundary is implicit.
+        implicit_outer: bool,
     },
     /// Ruled surface joining two directrices.
     Ruled {
@@ -2182,6 +2253,26 @@ pub enum ProceduralCurveDefinition {
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         support: Option<SurfaceId>,
+        /// Unit normal defining the positive offset side for planar offsets.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        normal: Option<Vector3>,
+        /// Parameter interval on the source curve used by the offset.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_range: Option<[f64; 2]>,
+        /// Variable distance law; absent when `distance` is uniform.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance_law: Option<CurveOffsetDistanceLaw>,
+    },
+    /// Free-space 3D offset using a reference direction.
+    SpatialOffset {
+        /// Curve being offset.
+        source: CurveId,
+        /// Signed offset distance.
+        distance: f64,
+        /// Reference direction controlling the offset frame.
+        reference_direction: Vector3,
+        /// Whether the source classifies the result as self-intersecting.
+        self_intersect: Option<bool>,
     },
     /// Intersection of two surfaces after applying independent signed offsets.
     TwoSidedOffset {
@@ -2223,6 +2314,44 @@ pub enum ProceduralCurveDefinition {
         /// Reference to the preserved raw source record, when retained.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         record: Option<UnknownId>,
+    },
+}
+
+/// Independent variable used by a curve-offset distance law.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveOffsetLawBasis {
+    /// Distance measured along the source curve from the offset interval start.
+    ArcLength,
+    /// Native source-curve parameter.
+    Parameter,
+}
+
+/// Variable signed distance law for a planar curve offset.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CurveOffsetDistanceLaw {
+    /// Linear interpolation between two distance controls.
+    Linear {
+        /// Independent-variable interpretation.
+        basis: CurveOffsetLawBasis,
+        /// Ordered signed distances in document length units.
+        distances: [f64; 2],
+        /// Ordered arc-length or neutral carrier-parameter controls.
+        control_range: [f64; 2],
+    },
+    /// One coordinate of another curve defines the signed distance.
+    Coordinate {
+        /// Curve carrying the distance function.
+        function: CurveId,
+        /// One-based coordinate number on `function`.
+        coordinate: u8,
+        /// Independent-variable interpretation.
+        basis: CurveOffsetLawBasis,
+        /// Function parameter at zero source parameter or arc length.
+        function_parameter_offset: f64,
+        /// Function-parameter change per neutral source parameter or length unit.
+        function_parameter_scale: f64,
     },
 }
 

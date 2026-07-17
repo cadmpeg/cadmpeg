@@ -51,6 +51,7 @@ harnesses call format detection, inspection, and decoding:
 - `catia_container`
 - `creo_container`
 - `nx_container`
+- `iges_container`
 
 Use a parser target for focused binary-format coverage:
 
@@ -66,6 +67,10 @@ Use a parser target for focused binary-format coverage:
   `nx_geometry_curves`, `nx_nurbs_surfaces`, `nx_nurbs_curves`
 - FCStd: `fcstd_xml`, `fcstd_gui`, `fcstd_brep`, `fcstd_element_map`,
   `fcstd_auxiliary`
+- IGES uses `iges_container` for bounded representation detection, physical-card parsing,
+  Global and Directory fields, Parameter tokens, reference graphs, semantic geometry and
+  topology projection, and byte-ledger accounting. Generate its valid 5.3 point and trimmed-sheet
+  seeds with `cargo run --bin generate_iges_seeds` from `crates/cadmpeg-fuzz`.
 
 Use an IR or STEP target when the input is JSON or the behavior under test is
 format-independent:
@@ -79,6 +84,10 @@ format-independent:
 - `step_writer` parses IR and writes STEP with default options.
 - `step_writer_custom` derives STEP header fields from an eight-byte prefix,
   then parses the remaining bytes as IR.
+- `step_lexer` tokenizes arbitrary Part 21 bytes.
+- `step_parser` parses arbitrary Part 21 exchange structures and resolves
+  instance references.
+- `step_reader` exercises public STEP inspection on arbitrary bytes.
 - `step_geometry_degenerate` parses IR and exercises STEP export with any
   degenerate geometry present in the document.
 - `ir_validate_mutated` uses the first byte to select a semantic mutation,

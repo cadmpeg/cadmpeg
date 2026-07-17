@@ -144,6 +144,27 @@ pub(super) fn check_procedural_surfaces(ir: &CadIr, findings: &mut Vec<Finding>)
                 );
             }
         }
+        if let crate::geometry::ProceduralSurfaceDefinition::AxisRevolution {
+            axis_origin,
+            axis_direction,
+            ..
+        } = &procedural.definition
+        {
+            if ![
+                axis_origin.x,
+                axis_origin.y,
+                axis_origin.z,
+                axis_direction.x,
+                axis_direction.y,
+                axis_direction.z,
+            ]
+            .into_iter()
+            .all(f64::is_finite)
+                || (axis_direction.norm() - 1.0).abs() > 1e-9
+            {
+                bounds_err(findings, &procedural.id.0, "invalid revolution axis");
+            }
+        }
         if let crate::geometry::ProceduralSurfaceDefinition::Sum { basepoint, .. } =
             &procedural.definition
         {

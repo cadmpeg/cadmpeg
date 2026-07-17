@@ -6,8 +6,8 @@
 //! angles from the reference/major direction, line parameters are signed
 //! distances along the unit direction, and B-splines evaluate by Cox–de Boor
 //! over their stored knot vectors. Carriers without a typed parameterization
-//! ([`CurveGeometry::Unknown`], [`SurfaceGeometry::Unknown`], parabolas, and
-//! hyperbolas) evaluate to `None`.
+//! ([`CurveGeometry::Unknown`], [`CurveGeometry::Composite`],
+//! [`SurfaceGeometry::Unknown`], parabolas, and hyperbolas) evaluate to `None`.
 
 use crate::geometry::{CurveGeometry, NurbsSurface, PcurveGeometry, SurfaceGeometry};
 use crate::math::{Point2, Point3, Vector3};
@@ -213,6 +213,31 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
                 (minor_radius * t.sin(), cross(*axis, *major_direction)),
             ],
         )),
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => Some(offset(
+            *vertex,
+            &[
+                (focal_distance * t * t, *major_direction),
+                (2.0 * focal_distance * t, cross(*axis, *major_direction)),
+            ],
+        )),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => Some(offset(
+            *center,
+            &[
+                (major_radius * t.cosh(), *major_direction),
+                (minor_radius * t.sinh(), cross(*axis, *major_direction)),
+            ],
+        )),
         CurveGeometry::Degenerate { point } => Some(*point),
         CurveGeometry::Nurbs(nurbs) => nurbs_curve_point(
             nurbs.degree,
@@ -227,9 +252,7 @@ fn curve_point_inner(geometry: &CurveGeometry, t: f64, depth: usize) -> Option<P
         CurveGeometry::Transformed { basis, transform } => {
             curve_point_inner(basis, t, depth + 1).map(|point| affine_point(*transform, point))
         }
-        CurveGeometry::Parabola { .. }
-        | CurveGeometry::Hyperbola { .. }
-        | CurveGeometry::Unknown { .. } => None,
+        CurveGeometry::Composite { .. } | CurveGeometry::Unknown { .. } => None,
     }
 }
 

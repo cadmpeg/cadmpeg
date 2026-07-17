@@ -2,8 +2,30 @@
 //! Retained source records without a typed IR interpretation.
 
 use crate::ids::UnknownId;
+use crate::native::NativeRecord;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Number, Value};
+
+/// A format-specific product record without source-byte accounting.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NativeUnknownRecord {
+    /// Arena id.
+    pub id: UnknownId,
+    /// Related entity IDs from any document arena.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<String>,
+}
+
+impl From<&UnknownRecord> for NativeUnknownRecord {
+    fn from(record: &UnknownRecord) -> Self {
+        Self {
+            id: record.id.clone(),
+            links: record.links.clone(),
+        }
+    }
+}
 
 /// A recognized source record represented by location, digest, links, and
 /// optional retained bytes.
@@ -28,4 +50,29 @@ pub struct UnknownRecord {
     /// Related entity IDs from any document arena.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub links: Vec<String>,
+}
+
+impl UnknownRecord {
+    pub(crate) fn into_native_record(self) -> NativeRecord {
+        let mut fields = Map::new();
+        fields.insert("offset".into(), Value::Number(Number::from(self.offset)));
+        fields.insert(
+            "byte_len".into(),
+            Value::Number(Number::from(self.byte_len)),
+        );
+        fields.insert("sha256".into(), Value::String(self.sha256));
+        if let Some(data) = self.data {
+            fields.insert("data".into(), Value::String(STANDARD.encode(data)));
+        }
+        if !self.links.is_empty() {
+            fields.insert(
+                "links".into(),
+                Value::Array(self.links.into_iter().map(Value::String).collect()),
+            );
+        }
+        NativeRecord {
+            id: self.id.0,
+            fields,
+        }
+    }
 }

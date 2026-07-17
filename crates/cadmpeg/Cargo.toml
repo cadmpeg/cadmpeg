@@ -27,6 +27,7 @@ cadmpeg-codec-catia.workspace = true
 cadmpeg-codec-creo.workspace = true
 cadmpeg-codec-nx.workspace = true
 cadmpeg-codec-rhino.workspace = true
+cadmpeg-codec-iges.workspace = true
 cadmpeg-step.workspace = true
 clap.workspace = true
 anyhow.workspace = true
