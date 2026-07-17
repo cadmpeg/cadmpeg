@@ -4840,6 +4840,32 @@ fn native_value_blocks_require_a_complete_adjacent_catalog() {
 }
 
 #[test]
+fn native_design_inventory_excludes_records_inside_object_payloads() {
+    let mut nested = value_block_stream(&[0x81]);
+    nested.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+    ]));
+    let mut payload = vec![0xe5];
+    payload.extend_from_slice(
+        &u32::try_from(nested.len())
+            .expect("fixture nested design length")
+            .to_le_bytes(),
+    );
+    payload.extend_from_slice(&nested);
+    payload.push(0xfe);
+    let bytes =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)]);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.object_graphs.len(), 1);
+    assert!(native.catalogs.is_empty());
+    assert!(native.value_blocks.is_empty());
+}
+
+#[test]
 fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 

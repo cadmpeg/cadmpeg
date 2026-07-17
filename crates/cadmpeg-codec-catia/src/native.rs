@@ -427,7 +427,7 @@ impl CatiaNative {
     /// Decode CATIA-native records directly from the complete file image.
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Self {
-        let catalogs: Vec<CatiaCatalog> = catalog::parse(bytes)
+        let mut catalogs: Vec<CatiaCatalog> = catalog::parse(bytes)
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
@@ -439,6 +439,12 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
+        catalogs.retain(|catalog| {
+            !object_graphs.iter().any(|graph| {
+                catalog.byte_offset >= graph.byte_offset
+                    && catalog.byte_offset < graph.byte_offset + graph.byte_len
+            })
+        });
         let design_objects = design_objects(&object_graphs);
         let maximum_records = object_graphs
             .iter()
