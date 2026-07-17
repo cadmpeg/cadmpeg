@@ -1469,7 +1469,10 @@ mod chart_tests {
                 pcurves: vec![300 + record_id],
                 edge_uses: vec![10],
                 reversed: vec![false],
-                absolute_reversed: Some(vec![false]),
+                oriented_members: Some(vec![crate::e5::E5OrientedMember {
+                    serialized_index: 0,
+                    reversed: false,
+                }]),
                 outer: Some(true),
                 orientation_signs: Vec::new(),
             }],
@@ -3257,8 +3260,15 @@ fn transfer_e5_topology(
 
         for loop_ in &face.loops {
             let loop_id = LoopId(format!("catia:e5:loop#{}", loop_.record_id));
-            let coedge_ids: Vec<CoedgeId> = (0..loop_.edge_uses.len())
+            let coedge_ids_by_member: Vec<CoedgeId> = (0..loop_.edge_uses.len())
                 .map(|index| CoedgeId(format!("catia:e5:coedge#{}-{index}", loop_.record_id)))
+                .collect();
+            let Some(members) = loop_.resolved_members() else {
+                return false;
+            };
+            let coedge_ids: Vec<CoedgeId> = members
+                .iter()
+                .map(|member| coedge_ids_by_member[member.serialized_index].clone())
                 .collect();
             annotate(
                 annotations,
@@ -3276,17 +3286,11 @@ fn transfer_e5_topology(
                 face: face_id.clone(),
                 coedges: coedge_ids.clone(),
             });
-            let Some(senses) = loop_.resolved_reversed() else {
-                return false;
-            };
-            for (index, ((&edge_ref, &pcurve_ref), &reversed)) in loop_
-                .edge_uses
-                .iter()
-                .zip(&loop_.pcurves)
-                .zip(senses)
-                .enumerate()
-            {
-                let id = coedge_ids[index].clone();
+            for (position, member) in members.iter().enumerate() {
+                let index = member.serialized_index;
+                let edge_ref = loop_.edge_uses[index];
+                let pcurve_ref = loop_.pcurves[index];
+                let id = coedge_ids_by_member[index].clone();
                 annotate(
                     annotations,
                     &id,
@@ -3307,10 +3311,11 @@ fn transfer_e5_topology(
                     id: id.clone(),
                     owner_loop: loop_id.clone(),
                     edge: edge_ids[&edge_ref].clone(),
-                    next: coedge_ids[(index + 1) % coedge_ids.len()].clone(),
-                    previous: coedge_ids[(index + coedge_ids.len() - 1) % coedge_ids.len()].clone(),
+                    next: coedge_ids[(position + 1) % coedge_ids.len()].clone(),
+                    previous: coedge_ids[(position + coedge_ids.len() - 1) % coedge_ids.len()]
+                        .clone(),
                     radial_next: id,
-                    sense: if reversed {
+                    sense: if member.reversed {
                         Sense::Reversed
                     } else {
                         Sense::Forward

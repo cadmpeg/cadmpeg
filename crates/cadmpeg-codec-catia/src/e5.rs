@@ -217,11 +217,10 @@ pub struct E5Loop {
     /// solved by [`solve_loop_chain`]; `true` means the edge is traversed
     /// end-to-start.
     pub reversed: Vec<bool>,
-    /// Per-edge-use sense after folding in the loop's global orientation
-    /// sign `g_loop` ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant)); `None` until [`solve_absolute_orientation`]
-    /// resolves it, which it can decline to do (frustrated or ambiguous
-    /// sign system).
-    pub absolute_reversed: Option<Vec<bool>>,
+    /// Shell-consistent member order and traversal senses after folding in
+    /// the loop's global orientation sign. `None` when the radial parity
+    /// system is frustrated or ambiguous.
+    pub(crate) oriented_members: Option<Vec<E5OrientedMember>>,
     /// Loop role bit from the trailing sign tape: `Some(true)` =
     /// `FACE_OUTER_BOUND`, `Some(false)` = `FACE_BOUND`, `None` for a
     /// two-edge digon loop (no trailing role tape).
@@ -232,11 +231,20 @@ pub struct E5Loop {
 }
 
 impl E5Loop {
-    /// Shell-consistent traversal senses when the radial parity system closes.
+    /// Shell-consistent member order and senses when radial parity closes.
     #[must_use]
-    pub fn resolved_reversed(&self) -> Option<&[bool]> {
-        self.absolute_reversed.as_deref()
+    pub fn resolved_members(&self) -> Option<&[E5OrientedMember]> {
+        self.oriented_members.as_deref()
     }
+}
+
+/// One E5 loop member in shell-consistent traversal order.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct E5OrientedMember {
+    /// Index of the member in the serialized loop arrays.
+    pub serialized_index: usize,
+    /// Whether the physical edge is traversed end-to-start.
+    pub reversed: bool,
 }
 
 /// A resolved class-`0xff` trimmed edge-use record ([spec §9](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#9-e5-0d-03-stream-variant), grammar `85
@@ -376,7 +384,7 @@ pub fn parse_topology(bytes: &[u8]) -> Option<E5Topology> {
                 pcurves: raw.pcurves.clone(),
                 edge_uses: raw.edges.clone(),
                 reversed,
-                absolute_reversed: None,
+                oriented_members: None,
                 outer: raw.outer,
                 orientation_signs: raw.orientation_signs.clone(),
             });
@@ -693,11 +701,18 @@ fn solve_absolute_orientation(faces: &mut [E5Face]) -> bool {
             continue;
         };
         let loop_ = &mut faces[face_index].loops[loop_index];
-        loop_.absolute_reversed = Some(
-            loop_
-                .reversed
-                .iter()
-                .map(|reversed| g * if *reversed { -1 } else { 1 } < 0)
+        let flip = g < 0;
+        let mut indices: Vec<usize> = (0..loop_.reversed.len()).collect();
+        if flip {
+            indices.reverse();
+        }
+        loop_.oriented_members = Some(
+            indices
+                .into_iter()
+                .map(|serialized_index| E5OrientedMember {
+                    serialized_index,
+                    reversed: loop_.reversed[serialized_index] ^ flip,
+                })
                 .collect(),
         );
     }
@@ -1050,14 +1065,14 @@ mod tests {
     }
 
     #[test]
-    fn frustrated_radial_parity_has_no_absolute_orientation() {
+    fn radial_parity_rejects_frustration_and_reverses_negative_gauge() {
         let loop_ = |record_id, edge_uses| E5Loop {
             record_id,
             surface: record_id + 100,
             pcurves: vec![record_id + 200; 2],
             edge_uses,
             reversed: vec![false, false],
-            absolute_reversed: None,
+            oriented_members: None,
             outer: Some(true),
             orientation_signs: Vec::new(),
         };
@@ -1086,6 +1101,26 @@ mod tests {
         assert!(faces
             .iter()
             .flat_map(|face| &face.loops)
-            .all(|loop_| loop_.absolute_reversed.is_none()));
+            .all(|loop_| loop_.oriented_members.is_none()));
+
+        let mut faces = vec![
+            E5Face {
+                record_id: 1,
+                surface: 101,
+                trailer_sign: 1,
+                loops: vec![loop_(11, vec![1, 2])],
+            },
+            E5Face {
+                record_id: 2,
+                surface: 102,
+                trailer_sign: 1,
+                loops: vec![loop_(12, vec![1, 3])],
+            },
+        ];
+        assert!(solve_absolute_orientation(&mut faces));
+        let second = faces[1].loops[0].resolved_members().unwrap();
+        assert_eq!(second[0].serialized_index, 1);
+        assert_eq!(second[1].serialized_index, 0);
+        assert!(second.iter().all(|member| member.reversed));
     }
 }
