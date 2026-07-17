@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 27;
+pub const CATIA_NATIVE_VERSION: u32 = 28;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",

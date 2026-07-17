@@ -5137,6 +5137,12 @@ fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
 }
 
 #[test]
+fn outer_surface_alias_parser_requires_the_lead_word() {
+    let bytes = surface_alias_stream();
+    assert!(crate::object_graph::surface_aliases(&bytes[4..]).is_empty());
+}
+
+#[test]
 fn native_namespace_retains_surface_alias_core() {
     let native = crate::native::CatiaNative::decode(&surface_alias_stream());
     let [row] = native.alias_rows.as_slice() else {

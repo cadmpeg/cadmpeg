@@ -260,10 +260,7 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
             if pos + 20 > data.len() {
                 return None;
             }
-            let lead_raw = pos
-                .checked_sub(4)
-                .and_then(|at| u32_le(data, at))
-                .unwrap_or(0);
+            let lead_raw = u32_le(data, pos.checked_sub(4)?)?;
             let lead = if lead_raw & 0xff == 1 {
                 AliasLead::SurfaceSupportStorage
             } else if lead_raw == 0x8e {
