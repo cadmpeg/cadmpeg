@@ -4542,6 +4542,17 @@ fn outer_object_graph_requires_records_to_cover_the_root_extent() {
 }
 
 #[test]
+fn outer_object_graph_accepts_one_length_closed_record() {
+    let bytes =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
+    let graph = crate::object_graph::parse(&bytes).expect("one-record object graph");
+
+    assert_eq!(graph.records.len(), 1);
+    assert_eq!(graph.records[0].owner_ref, Some(1));
+    assert_eq!(graph.records[0].class_ref, Some(1));
+}
+
+#[test]
 fn object_graph_payload_reads_fixed_width_escaped_values() {
     use crate::object_graph::PayloadField;
 
