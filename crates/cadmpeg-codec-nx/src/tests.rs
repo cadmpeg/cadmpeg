@@ -2961,11 +2961,19 @@ fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
     let output = ir.model.bodies[0].id.clone();
 
     assert_eq!(
-        crate::decode::block_placement(&ir, dimensions, std::slice::from_ref(&output)),
-        Some(cadmpeg_ir::transform::Transform::identity())
+        crate::decode::block_projection(&ir, Some(dimensions), std::slice::from_ref(&output)),
+        Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
     );
     assert_eq!(
-        crate::decode::block_placement(&ir, [10.0, 10.0, 30.0], std::slice::from_ref(&output),),
+        crate::decode::block_projection(&ir, None, std::slice::from_ref(&output)),
+        Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
+    );
+    assert_eq!(
+        crate::decode::block_projection(
+            &ir,
+            Some([10.0, 10.0, 30.0]),
+            std::slice::from_ref(&output),
+        ),
         None
     );
 
@@ -2997,7 +3005,7 @@ fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
         .push(intermediate_face.id.clone());
     stepped.model.faces.push(intermediate_face);
     assert_eq!(
-        crate::decode::block_placement(&stepped, dimensions, std::slice::from_ref(&output)),
+        crate::decode::block_projection(&stepped, Some(dimensions), std::slice::from_ref(&output)),
         None
     );
 
@@ -3009,11 +3017,18 @@ fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
         radius: 1.0,
     };
     assert_eq!(
-        crate::decode::block_placement(&nonplanar, dimensions, std::slice::from_ref(&output)),
+        crate::decode::block_projection(
+            &nonplanar,
+            Some(dimensions),
+            std::slice::from_ref(&output)
+        ),
         None
     );
 
-    assert_eq!(crate::decode::block_placement(&ir, dimensions, &[]), None);
+    assert_eq!(
+        crate::decode::block_projection(&ir, Some(dimensions), &[]),
+        None
+    );
 }
 
 #[test]

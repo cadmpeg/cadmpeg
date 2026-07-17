@@ -10085,8 +10085,12 @@ fn attach_feature_operations(
         let block_dimension_values = block_dimensions_by_operation
             .get(label.id.as_str())
             .map(|dimensions| dimensions.values);
-        let block_placement =
-            block_dimension_values.and_then(|dimensions| block_placement(ir, dimensions, &outputs));
+        let block_projection = (label.value == "BLOCK")
+            .then(|| block_projection(ir, block_dimension_values, &outputs))
+            .flatten();
+        let projected_block_dimensions =
+            block_dimension_values.or_else(|| block_projection.map(|(dimensions, _)| dimensions));
+        let block_placement = block_projection.map(|(_, placement)| placement);
         let sew_projection = (label.value == "SEW")
             .then(|| {
                 sew_body_feature_definition(
@@ -10185,7 +10189,7 @@ fn attach_feature_operations(
                         non_boolean_feature_definition_with_parameters(
                             &label.value,
                             &operation_payload_strings,
-                            block_dimension_values,
+                            projected_block_dimensions,
                             block_placement,
                             simple_hole_diameters
                                 .get(label.id.as_str())
@@ -10722,12 +10726,11 @@ pub(crate) fn simple_hole_native_properties(
     properties
 }
 
-pub(crate) fn block_placement(
+pub(crate) fn block_projection(
     ir: &CadIr,
-    dimensions: [f64; 3],
+    dimensions: Option<[f64; 3]>,
     outputs: &[BodyId],
-) -> Option<Transform> {
-    #[derive(Clone)]
+) -> Option<([f64; 3], Transform)> {
     struct PlaneBand {
         normal: Vector3,
         offsets: Vec<f64>,
@@ -10753,10 +10756,11 @@ pub(crate) fn block_placement(
 
     let linear_tolerance = ir.tolerances.linear;
     let angular_tolerance = ir.tolerances.angular;
-    if dimensions
-        .iter()
-        .any(|dimension| !dimension.is_finite() || *dimension <= linear_tolerance)
-    {
+    if dimensions.is_some_and(|dimensions| {
+        dimensions
+            .iter()
+            .any(|dimension| !dimension.is_finite() || *dimension <= linear_tolerance)
+    }) {
         return None;
     }
     let [body] = outputs else {
@@ -10825,27 +10829,50 @@ pub(crate) fn block_placement(
             })
         })
         .collect::<Option<Vec<_>>>()?;
-    let permutations = [
-        [0usize, 1usize, 2usize],
-        [0, 2, 1],
-        [1, 0, 2],
-        [1, 2, 0],
-        [2, 0, 1],
-        [2, 1, 0],
-    ];
-    let matches = permutations
-        .into_iter()
-        .filter(|permutation| {
-            (0..3).all(|axis| {
-                let band = bands[permutation[axis]];
-                ((band.maximum - band.minimum) - dimensions[axis]).abs() <= linear_tolerance
+    let mut ordered = if let Some(dimensions) = dimensions {
+        let permutations = [
+            [0usize, 1usize, 2usize],
+            [0, 2, 1],
+            [1, 0, 2],
+            [1, 2, 0],
+            [2, 0, 1],
+            [2, 1, 0],
+        ];
+        let matches = permutations
+            .into_iter()
+            .filter(|permutation| {
+                (0..3).all(|axis| {
+                    let band = bands[permutation[axis]];
+                    ((band.maximum - band.minimum) - dimensions[axis]).abs() <= linear_tolerance
+                })
             })
-        })
-        .collect::<Vec<_>>();
-    let [permutation] = matches.as_slice() else {
-        return None;
+            .collect::<Vec<_>>();
+        let [permutation] = matches.as_slice() else {
+            return None;
+        };
+        permutation.map(|index| bands[index])
+    } else {
+        let mut bands: [PlaneExtent; 3] = bands.try_into().ok()?;
+        bands.sort_by(|left, right| {
+            right
+                .normal
+                .x
+                .total_cmp(&left.normal.x)
+                .then_with(|| right.normal.y.total_cmp(&left.normal.y))
+                .then_with(|| right.normal.z.total_cmp(&left.normal.z))
+        });
+        bands
     };
-    let ordered = permutation.map(|index| bands[index]);
+    if dot_vector(
+        cross_vector(ordered[0].normal, ordered[1].normal),
+        ordered[2].normal,
+    ) < 0.0
+    {
+        let third = &mut ordered[2];
+        third.normal = Vector3::new(-third.normal.x, -third.normal.y, -third.normal.z);
+        (third.minimum, third.maximum) = (-third.maximum, -third.minimum);
+    }
+    let dimensions = ordered.map(|band| band.maximum - band.minimum);
     let origin = Point3::new(
         ordered
             .iter()
@@ -10861,14 +10888,17 @@ pub(crate) fn block_placement(
             .sum(),
     );
     let [x_axis, y_axis, z_axis] = ordered.map(|band| band.normal);
-    Some(Transform {
-        rows: [
-            [x_axis.x, y_axis.x, z_axis.x, origin.x],
-            [x_axis.y, y_axis.y, z_axis.y, origin.y],
-            [x_axis.z, y_axis.z, z_axis.z, origin.z],
-            [0.0, 0.0, 0.0, 1.0],
-        ],
-    })
+    Some((
+        dimensions,
+        Transform {
+            rows: [
+                [x_axis.x, y_axis.x, z_axis.x, origin.x],
+                [x_axis.y, y_axis.y, z_axis.y, origin.y],
+                [x_axis.z, y_axis.z, z_axis.z, origin.z],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        },
+    ))
 }
 
 #[cfg(test)]
