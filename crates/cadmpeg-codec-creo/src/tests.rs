@@ -1755,6 +1755,234 @@ fn inspect_summary_has_layout_and_census_notes() {
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));
 }
 
+/// Typed lossy construction at the §10 Phase 4B boundaries: the datum-plane
+/// u-axis fallback, the incomplete-frame and unplaced-sketch omissions, plus
+/// the metamorphic rigid-motion property. Creo has no writer, so there is no
+/// decode-encode-decode fixpoint; every typed record it emits is representable
+/// by construction (basis normals, normalized frame bases, and a scalar decoder
+/// that masks its leading byte so no value is ever non-finite), so the value
+/// level carries no unrepresentable mandatory semantic and strict-mode
+/// rejection is the platform's unresolved-ticket / transfer-accounting path.
+mod phase4b {
+    use super::*;
+    use cadmpeg_ir::decode::{DecodeMode, DecodePolicy, ResourceLimits};
+    use cadmpeg_ir::geometry::{derive_reference_direction, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    /// Encode one datum outline coordinate: `0.0` as the zero token, otherwise
+    /// an eight-byte IEEE image with the sign-carrying leading byte the decoder
+    /// masks. Values must have IEEE top byte `0x40`/`0xc0` to round-trip, i.e.
+    /// magnitudes in `[2.0, 4.0)`.
+    fn datum_scalar(value: f64) -> Vec<u8> {
+        if value == 0.0 {
+            return vec![0x0f];
+        }
+        let mut bytes = value.to_be_bytes();
+        bytes[0] = if value.is_sign_negative() { 0x2d } else { 0x46 };
+        bytes.to_vec()
+    }
+
+    /// An `ActDatums` section carrying one datum plane whose outline corners are
+    /// `[a, b]` in model-space XYZ.
+    fn datum_section(geom_id: u8, a: [f64; 3], b: [f64; 3]) -> Vec<u8> {
+        let mut section = vec![geom_id, 0x22, 1, 1, 0, 0];
+        section.extend([0x0f; 4]);
+        for value in a.into_iter().chain(b) {
+            section.extend(datum_scalar(value));
+        }
+        section
+    }
+
+    fn strict() -> DecodeOptions {
+        DecodeOptions {
+            container_only: false,
+            policy: DecodePolicy {
+                mode: DecodeMode::Strict,
+                limits: ResourceLimits::desktop(),
+            },
+        }
+    }
+
+    /// Resolver-to-fallback-axis boundary: a datum plane stores no in-plane
+    /// reference, so the u-axis is synthesized from the normal and the
+    /// substitution surrenders exactly one `CarrierAxisInferred` note per plane.
+    /// The emitted geometry is the golden: the derived u-axis is the value the
+    /// fallback carried.
+    #[test]
+    fn datum_plane_u_axis_is_an_accountable_fallback() {
+        let data = build_prt(
+            "c",
+            &[(
+                "ActDatums",
+                datum_section(4, [2.0, 3.0, 3.0], [-2.0, 3.0, -3.0]),
+            )],
+        );
+        let result = CreoCodec
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("salvage decode");
+
+        assert_eq!(result.ir.model.surfaces.len(), 1);
+        let normal = Vector3::new(0.0, 1.0, 0.0);
+        assert_eq!(
+            result.ir.model.surfaces[0].geometry,
+            SurfaceGeometry::Plane {
+                origin: Point3::new(0.0, 3.0, 0.0),
+                normal,
+                u_axis: derive_reference_direction(normal),
+            }
+        );
+        let inferred = result
+            .report
+            .losses
+            .iter()
+            .filter(|loss| loss.code == LossCode::CarrierAxisInferred)
+            .count();
+        assert_eq!(inferred, 1, "one inferred-axis note per datum plane");
+    }
+
+    /// The fallback note is not silently dropped under strict policy either: the
+    /// plane is still representable, so the decode succeeds and still records the
+    /// substitution.
+    #[test]
+    fn datum_plane_u_axis_fallback_is_recorded_in_strict_mode() {
+        let data = build_prt(
+            "c",
+            &[(
+                "ActDatums",
+                datum_section(4, [2.0, 2.0, 3.0], [-2.0, 2.0, -3.0]),
+            )],
+        );
+        let result = CreoCodec
+            .decode(&mut Cursor::new(data), &strict())
+            .expect("strict decode of a representable datum plane");
+        assert!(result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.code == LossCode::CarrierAxisInferred));
+    }
+
+    /// Metamorphic rigid-motion property: translating the model along a datum
+    /// plane's normal by `d` shifts the decoded plane origin by exactly `normal *
+    /// d` and leaves the normal invariant. The two fixtures differ only by the
+    /// shared y-coordinate of the outline corners.
+    #[test]
+    fn datum_plane_decode_is_rigid_motion_covariant() {
+        let base = build_prt(
+            "c",
+            &[(
+                "ActDatums",
+                datum_section(4, [2.0, 2.0, 3.0], [-2.0, 2.0, -3.0]),
+            )],
+        );
+        let shifted = build_prt(
+            "c",
+            &[(
+                "ActDatums",
+                datum_section(4, [2.0, 3.0, 3.0], [-2.0, 3.0, -3.0]),
+            )],
+        );
+        let base = CreoCodec
+            .decode(&mut Cursor::new(base), &DecodeOptions::default())
+            .expect("decode base");
+        let shifted = CreoCodec
+            .decode(&mut Cursor::new(shifted), &DecodeOptions::default())
+            .expect("decode shifted");
+
+        let SurfaceGeometry::Plane {
+            origin: base_origin,
+            normal: base_normal,
+            ..
+        } = base.ir.model.surfaces[0].geometry
+        else {
+            panic!("base datum plane");
+        };
+        let SurfaceGeometry::Plane {
+            origin: shifted_origin,
+            normal: shifted_normal,
+            ..
+        } = shifted.ir.model.surfaces[0].geometry
+        else {
+            panic!("shifted datum plane");
+        };
+        assert_eq!(
+            base_normal, shifted_normal,
+            "normal is rigid-motion invariant"
+        );
+        let translation = 1.0;
+        assert_eq!(
+            shifted_origin.x - base_origin.x,
+            base_normal.x * translation
+        );
+        assert_eq!(
+            shifted_origin.y - base_origin.y,
+            base_normal.y * translation
+        );
+        assert_eq!(
+            shifted_origin.z - base_origin.z,
+            base_normal.z * translation
+        );
+    }
+
+    /// Incomplete `VisibGeom` support frame: an omission that reports
+    /// `GeometryNotTransferred` in salvage and decodes cleanly (the same
+    /// accountable drop) in strict, because a partial carrier is not a mandatory
+    /// semantic. The frame's fifth plane row has mismatched axis magnitudes so
+    /// `plane_frame` recovers neither a u-axis nor a normal.
+    #[test]
+    fn incomplete_frame_omission_salvage_and_strict_pair() {
+        let mut payload = b"srf_array\0\xf8\x01".to_vec();
+        push_generated_plane_row(
+            &mut payload,
+            5,
+            [1.0, 0.0, 0.0],
+            [2.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+        );
+
+        let data = build_prt("c", &[("VisibGeom", payload)]);
+        let salvage = CreoCodec
+            .decode(&mut Cursor::new(data.clone()), &DecodeOptions::default())
+            .expect("salvage decode");
+        assert!(salvage.ir.model.surfaces.is_empty());
+        assert!(salvage
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.code == LossCode::GeometryNotTransferred));
+
+        CreoCodec
+            .decode(&mut Cursor::new(data), &strict())
+            .expect("strict decode accounts the same omission cleanly");
+    }
+
+    /// Unplaced `FeatDefs` sketch: a native design record with no `MdlStatus`
+    /// feature to carry it is an omission reporting `PassthroughRecordOmitted` in
+    /// salvage and decoding cleanly in strict.
+    #[test]
+    fn unplaced_sketch_omission_salvage_and_strict_pair() {
+        let mut payload =
+            b"feat_defs_40\0var_arr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf1\xf7\x01\xe2".to_vec();
+        payload.extend_from_slice(&[1, 7, 0xe4, 0x0f, 1, 0, 3, 0xe2]);
+        payload.extend_from_slice(&[2, 7, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 1, 0, 4, 0xe2]);
+        let data = build_prt("c", &[("FeatDefs", payload)]);
+
+        let salvage = CreoCodec
+            .decode(&mut Cursor::new(data.clone()), &DecodeOptions::default())
+            .expect("salvage decode");
+        assert!(salvage.ir.model.features.is_empty());
+        assert!(salvage
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.code == LossCode::PassthroughRecordOmitted));
+
+        CreoCodec
+            .decode(&mut Cursor::new(data), &strict())
+            .expect("strict decode accounts the unplaced sketch cleanly");
+    }
+}
+
 mod fidelity {
     use cadmpeg_ir::source_fidelity::{
         CanonicalSpaceId, LedgerCapability, LedgerLevel, SerializedOrigin, SpanClass,

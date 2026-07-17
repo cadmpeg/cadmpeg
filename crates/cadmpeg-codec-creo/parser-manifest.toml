@@ -249,3 +249,27 @@ charges = []
 cost_model = "no budget charge; builds the L1 source-fidelity ledger from already-scanned container facts, digesting bounded source spans; output proportional to the section count"
 window_egress = []
 ledger_level = 1
+
+# ===========================================================================
+# Typed lossy construction at the named boundaries (doc section 6.2 / 10
+# Phase 4B).
+# ===========================================================================
+
+# Typed lossy builder. Not a byte parser: wraps the platform
+# `cadmpeg_ir::transfer::Builder` over the decode's loss channel and is the
+# codec's single lossy-construction path. The datum-plane u-axis resolves a
+# `Transfer::fallback` and every incomplete-frame / unplaced-sketch omission
+# resolves a `Transfer::omitted`, so no fallback or drop reaches the model
+# without surrendering its `LossNote`. No hostile read, no `.window()` egress,
+# and no budget charge of its own. Its migrated presence is the doc section 7
+# capability-matrix signal that creo has adopted the typed lossy builder, gating
+# the `no_silent_fallback` stage-2 oracle.
+[[module]]
+path = "crates/cadmpeg-codec-creo/src/builder.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = []
+charges = []
+cost_model = "no budget charge; typed lossy construction over the decode loss channel, output proportional to the resolved-boundary count"
+window_egress = []
+ledger_level = 1

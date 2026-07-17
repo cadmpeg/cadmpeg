@@ -39,6 +39,7 @@ use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::{Exactness, SourceObjectAssociation};
 use serde::Serialize;
 
+use crate::builder::{self, LossBuilder};
 use crate::container::{self, role, ContainerScan};
 use crate::fidelity;
 use crate::topology::HalfEdgeId;
@@ -602,9 +603,19 @@ fn commit(
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
 ///
 /// Every record-shaped unit is committed and resolved against the disposition
-/// ledger (§6.2). The returned loss notes account each `Dropped` disposition —
-/// a record skipped on a salvage path — and the caller merges them into the
-/// report so `Check::TransferAccounting` finds a matching loss for each drop.
+/// ledger (§6.2). Value substitutions and omissions at the §10 Phase 4B
+/// boundaries — a datum plane's conventionally derived u-axis (resolver to
+/// fallback axis), an incomplete plane carrier (unsupported concept to
+/// omission), an unplaced sketch record (decoder record to omission) — resolve
+/// through a [`Builder`] threaded over the returned loss channel, so no fallback
+/// or drop reaches the model without surrendering its note. Every typed record
+/// creo emits is representable by construction (datum normals are basis vectors,
+/// frame bases are normalized, and the scalar decoder masks its leading byte so
+/// no value is ever non-finite), so no value-level mandatory semantic can be
+/// unrepresentable; the strict-mode mandatory rejection is the platform's
+/// unresolved-ticket and transfer-accounting path. The returned loss notes also
+/// account each `Dropped` disposition so `Check::TransferAccounting` finds a
+/// matching loss for every drop.
 fn build_ir(
     ctx: &DecodeContext<'_>,
     space: SpaceId,
@@ -659,15 +670,24 @@ fn build_ir(
     }
     for plane in &scan.datum_planes {
         let plane_ticket = commit(ctx, space, plane.offset_in_payload as u64, "datum_plane");
+        let offset = plane.offset_in_payload as u64;
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
         let output = id.0.clone();
         annotate(
             &mut annotations,
             &id,
             "ActDatums",
-            plane.offset_in_payload as u64,
+            offset,
             "datum_plane_outline",
             Exactness::Derived,
+        );
+        // Resolver-to-fallback-axis boundary (§10 Phase 4B): the source stores
+        // no in-plane reference, so the u-axis is synthesized from the normal
+        // through the typed lossy builder, which records the substitution note.
+        let u_axis = LossBuilder::new(&mut dropped_losses).datum_u_axis(
+            Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
+            plane.id,
+            offset,
         );
         ir.model.surfaces.push(Surface {
             id,
@@ -678,11 +698,7 @@ fn build_ir(
                     plane.normal[2] * plane.offset,
                 ),
                 normal: Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
-                u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
-                    plane.normal[0],
-                    plane.normal[1],
-                    plane.normal[2],
-                )),
+                u_axis,
             },
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
@@ -705,22 +721,13 @@ fn build_ir(
         let frame_ticket = commit(ctx, space, frame.offset as u64, "plane_local_system");
         let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
         else {
-            // Salvage skip: an incomplete support frame is not transferred as a
-            // placed carrier. Resolve `Dropped` with an accountable loss rather
-            // than leaving the record silent (§6.2).
-            let loss = LossNote {
-                code: LossCode::GeometryNotTransferred,
-                category: LossCategory::Geometry,
-                severity: Severity::Info,
-                message: format!(
-                    "VisibGeom plane local system surface#{} at offset {} is an incomplete \
-                     support frame (missing origin, normal, or u-axis); not transferred as a \
-                     model-space plane carrier.",
-                    frame.surface_id, frame.offset
-                ),
-                provenance: None,
-            };
-            dropped_losses.push(loss.clone());
+            // Unsupported-concept-to-omission boundary (§10 Phase 4B): an
+            // incomplete support frame is not transferred as a placed carrier.
+            // Drain the omission through the typed lossy builder so the record
+            // cannot be skipped without recording its note, and reflect the same
+            // note on its `Dropped` disposition (§6.2).
+            let loss = builder::incomplete_frame_note(frame.surface_id, frame.offset as u64);
+            LossBuilder::new(&mut dropped_losses).omit(loss.clone());
             ctx.resolve(frame_ticket, RecordDisposition::Dropped { loss });
             continue;
         };
@@ -902,25 +909,16 @@ fn build_ir(
                     },
                 );
             } else {
-                // The message carries the sketch's unique record id so each
-                // `Dropped` note is structurally distinct from every other. The
-                // `finish`-time loss match (category+message) consumes one note
-                // per `Dropped` disposition, so distinct notes keep the count of
-                // pushed notes tied to the count of resolutions even if two
-                // definitions ever shared a `feature_id` and offset (§6.2).
-                let loss = LossNote {
-                    code: LossCode::PassthroughRecordOmitted,
-                    category: LossCategory::Attribute,
-                    severity: Severity::Info,
-                    message: format!(
-                        "FeatDefs sketch record {} (definition #{}) at offset {} was preserved as \
-                         a native design record but has no placed feature operation to carry it \
-                         into the typed model.",
-                        sketch.id, sketch.feature_id, offset
-                    ),
-                    provenance: None,
-                };
-                dropped_losses.push(loss.clone());
+                // Decoder-record-to-omission boundary (§10 Phase 4B). The note
+                // carries the sketch's unique record id so each `Dropped` note is
+                // structurally distinct from every other: the `finish`-time loss
+                // match (category+message) consumes one note per `Dropped`
+                // disposition, so distinct notes keep the count of pushed notes
+                // tied to the count of resolutions even if two definitions ever
+                // shared a `feature_id` and offset (§6.2).
+                let loss =
+                    builder::unplaced_sketch_note(&sketch.id, sketch.feature_id, offset as u64);
+                LossBuilder::new(&mut dropped_losses).omit(loss.clone());
                 ctx.resolve(sketch_ticket, RecordDisposition::Dropped { loss });
             }
         }

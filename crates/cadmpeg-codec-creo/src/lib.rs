@@ -51,6 +51,7 @@
 //! The decode report identifies these losses and reports whether any datum
 //! planes were transferred.
 
+mod builder;
 pub mod container;
 pub mod curve;
 pub mod datum;
