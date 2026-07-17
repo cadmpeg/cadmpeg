@@ -119,8 +119,10 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         definition: ProceduralSurfaceDefinition::Exact {
             parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
             extension: 0,
+            revision_form: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     let report = validate(&ir, Vec::new());
     assert!(report.is_ok(), "{:?}", report.findings);
@@ -1716,8 +1718,10 @@ fn revolution_rejects_equal_intervals() {
             angular_interval: [1.0, 1.0],
             parameter_interval: [0.0, 1.0],
             transposed: false,
+            revision_form: None,
         },
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     assert!(validate(&ir, Vec::new())
         .findings
@@ -2360,8 +2364,10 @@ fn pcurve_surface_mismatch_is_flagged() {
                 angular_interval: [0.0, std::f64::consts::TAU],
                 parameter_interval: [0.0, 1.0],
                 transposed: false,
+                revision_form: None,
             },
             cache_fit_tolerance: Some(0.01),
+            record_bounds: None,
         });
     let procedural_report = validate(&procedural, Vec::new());
     assert!(

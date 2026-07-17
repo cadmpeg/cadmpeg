@@ -5570,6 +5570,36 @@ fn native_procedural_surface(
     solved_surface: &Surface,
     solved_cache: &NurbsSurface,
 ) -> Result<bool, CodecError> {
+    let written =
+        native_procedural_surface_definition(bytes, target, solved_surface, solved_cache)?;
+    if written {
+        native_record_bounds(bytes, target, &solved_surface.id);
+    }
+    Ok(written)
+}
+
+/// Emit the four optional record-level U/V bound fields retained on the
+/// surface's procedural construction, after its subtype scope closes.
+fn native_record_bounds(bytes: &mut Vec<u8>, target: &CadIr, surface: &cadmpeg_ir::ids::SurfaceId) {
+    let bounds = target
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|procedural| procedural.surface == *surface)
+        .and_then(|procedural| procedural.record_bounds);
+    if let Some(bounds) = bounds {
+        for bound in bounds {
+            native_optional_f64(bytes, bound);
+        }
+    }
+}
+
+fn native_procedural_surface_definition(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    solved_surface: &Surface,
+    solved_cache: &NurbsSurface,
+) -> Result<bool, CodecError> {
     let mut definitions = target
         .model
         .procedural_surfaces
@@ -5795,18 +5825,37 @@ fn native_procedural_surface(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "t_spl_sur")?;
-            native_nurbs_surface(bytes, solved_cache)?;
-            native_f64(bytes, cache_fit_tolerance / 10.0);
-            for values in &construction.discontinuities {
-                native_compound_loft_float_array(bytes, values)?;
-            }
-            bytes.push(native_bool(construction.discontinuity_flag));
-            for range in &construction.parameter_ranges {
-                for value in range {
-                    native_f64(bytes, *value / 10.0);
+            if let Some(form) = &construction.revision_form {
+                if form.revision <= 0 {
+                    return Err(CodecError::Malformed(
+                        "revision-gated t_spl_sur requires a positive revision".into(),
+                    ));
                 }
+                native_i64(bytes, form.revision);
+                native_revision_surface_tail(
+                    bytes,
+                    form,
+                    solved_cache,
+                    procedural.cache_fit_tolerance,
+                )?;
+                for bound in &form.support_bounds {
+                    native_optional_f64(bytes, *bound);
+                }
+                native_enum(bytes, construction.type_code);
+            } else {
+                native_nurbs_surface(bytes, solved_cache)?;
+                native_f64(bytes, cache_fit_tolerance / 10.0);
+                for values in &construction.discontinuities {
+                    native_compound_loft_float_array(bytes, values)?;
+                }
+                bytes.push(native_bool(construction.discontinuity_flag));
+                for range in &construction.parameter_ranges {
+                    for value in range {
+                        native_f64(bytes, *value / 10.0);
+                    }
+                }
+                native_i64(bytes, construction.type_code);
             }
-            native_i64(bytes, construction.type_code);
             bytes.push(0x0f);
             match &construction.subtransform {
                 TSplineSubtransform::Inline {
@@ -5884,6 +5933,7 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::Exact {
             parameter_ranges,
             extension,
+            revision_form,
         } => {
             let cache_fit_tolerance = procedural.cache_fit_tolerance.ok_or_else(|| {
                 CodecError::Malformed(
@@ -5893,6 +5943,26 @@ fn native_procedural_surface(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "exact_spl_sur")?;
+            if let Some(form) = revision_form {
+                if form.revision <= 0 {
+                    return Err(CodecError::Malformed(
+                        "revision-gated exact_spl_sur requires a positive revision".into(),
+                    ));
+                }
+                native_i64(bytes, form.revision);
+                native_revision_surface_tail(
+                    bytes,
+                    form,
+                    solved_cache,
+                    procedural.cache_fit_tolerance,
+                )?;
+                for bound in &form.support_bounds {
+                    native_optional_f64(bytes, *bound);
+                }
+                native_enum(bytes, *extension);
+                bytes.push(0x10);
+                return Ok(true);
+            }
             native_nurbs_surface(bytes, solved_cache)?;
             native_f64(bytes, cache_fit_tolerance / 10.0);
             for range in parameter_ranges {
@@ -6139,6 +6209,9 @@ fn native_procedural_surface(
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
+        ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
+            encode_native_revision_g2_blend(bytes, target, procedural, construction, solved_cache)?;
+        }
         ProceduralSurfaceDefinition::VariableBlend { construction } => {
             encode_native_variable_blend(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -6190,7 +6263,45 @@ fn native_procedural_surface(
             first,
             second,
             basepoint,
+            revision_form,
         } => {
+            if let Some(form) = revision_form {
+                if form.revision <= 0 {
+                    return Err(CodecError::Malformed(
+                        "revision-gated sum_spl_sur requires a positive revision".into(),
+                    ));
+                }
+                native_surface_base(bytes, "spline")?;
+                bytes.push(0x0f);
+                native_ident(bytes, "sum_spl_sur")?;
+                native_i64(bytes, form.revision);
+                for (curve, endpoints) in [
+                    (first, &form.reference_endpoints),
+                    (second, &form.second_endpoints),
+                ] {
+                    let range = match endpoints {
+                        [Some(lower), Some(upper)] => Some([*lower, *upper]),
+                        _ => None,
+                    };
+                    let curve = native_loft_curve_in_range(target, curve, range)?;
+                    native_nurbs_curve(bytes, &curve)?;
+                    for endpoint in endpoints {
+                        native_optional_f64(bytes, *endpoint);
+                    }
+                }
+                native_point(
+                    bytes,
+                    [basepoint.x / 10.0, basepoint.y / 10.0, basepoint.z / 10.0],
+                );
+                native_revision_surface_tail(
+                    bytes,
+                    form,
+                    solved_cache,
+                    procedural.cache_fit_tolerance,
+                )?;
+                bytes.push(0x10);
+                return Ok(true);
+            }
             let curves = [first, second]
                 .map(|id| {
                     target
@@ -6248,7 +6359,48 @@ fn native_procedural_surface(
             angular_interval,
             parameter_interval,
             transposed,
+            revision_form,
         } => {
+            if let Some(form) = revision_form {
+                if form.revision <= 0 {
+                    return Err(CodecError::Malformed(
+                        "revision-gated rot_spl_sur requires a positive revision".into(),
+                    ));
+                }
+                native_surface_base(bytes, "spline")?;
+                bytes.push(0x0f);
+                native_ident(bytes, "rot_spl_sur")?;
+                native_i64(bytes, form.revision);
+                let range = match form.reference_endpoints {
+                    [Some(lower), Some(upper)] => Some([lower, upper]),
+                    _ => None,
+                };
+                let profile = native_loft_curve_in_range(target, directrix, range)?;
+                native_nurbs_curve(bytes, &profile)?;
+                for endpoint in &form.reference_endpoints {
+                    native_optional_f64(bytes, *endpoint);
+                }
+                native_point(
+                    bytes,
+                    [
+                        axis_origin.x / 10.0,
+                        axis_origin.y / 10.0,
+                        axis_origin.z / 10.0,
+                    ],
+                );
+                native_vector(
+                    bytes,
+                    [axis_direction.x, axis_direction.y, axis_direction.z],
+                );
+                native_revision_surface_tail(
+                    bytes,
+                    form,
+                    solved_cache,
+                    procedural.cache_fit_tolerance,
+                )?;
+                bytes.push(0x10);
+                return Ok(true);
+            }
             let directrix = target
                 .model
                 .curves
@@ -7114,6 +7266,18 @@ fn native_cacheless_procedural_surface(
     target: &CadIr,
     surface: &Surface,
 ) -> Result<bool, CodecError> {
+    let written = native_cacheless_procedural_surface_definition(bytes, target, surface)?;
+    if written {
+        native_record_bounds(bytes, target, &surface.id);
+    }
+    Ok(written)
+}
+
+fn native_cacheless_procedural_surface_definition(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    surface: &Surface,
+) -> Result<bool, CodecError> {
     let mut definitions = target
         .model
         .procedural_surfaces
@@ -7230,6 +7394,7 @@ fn native_cacheless_procedural_surface(
         first,
         second,
         basepoint,
+        revision_form: None,
     } = &procedural.definition
     {
         if procedural.cache_fit_tolerance.is_some() {
@@ -8201,6 +8366,11 @@ fn native_variable_blend_value(
                 native_f64(bytes, *radius / 10.0);
             }
         }
+        VariableBlendValuePayload::FixedWidth { parameters, width } => {
+            native_f64(bytes, parameters[0]);
+            native_f64(bytes, parameters[1]);
+            native_f64(bytes, *width);
+        }
         VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
             let expected = if value.discriminator == 0 {
                 (2, 1)
@@ -8258,13 +8428,18 @@ fn native_variable_blend_value(
             radius,
             function,
             enum_count,
+            enum_tagged,
             points,
             tail,
         } => {
             native_f64(bytes, *parameter);
             native_f64(bytes, *radius / 10.0);
             native_nurbs_pcurve_block(bytes, function)?;
-            native_i64(bytes, *enum_count);
+            if *enum_tagged {
+                native_enum(bytes, *enum_count);
+            } else {
+                native_i64(bytes, *enum_count);
+            }
             native_i64(
                 bytes,
                 i64::try_from(points.len()).map_err(|_| {
@@ -8287,7 +8462,11 @@ fn native_variable_blend_value(
                 );
                 native_vector(bytes, [point.normal.x, point.normal.y, point.normal.z]);
             }
-            native_i64(bytes, i64::from(tail.is_some()));
+            if *enum_tagged {
+                native_enum(bytes, i64::from(tail.is_some()));
+            } else {
+                native_i64(bytes, i64::from(tail.is_some()));
+            }
             if let Some(tail) = tail {
                 native_f64(bytes, tail[0]);
                 native_f64(bytes, tail[1]);
@@ -8314,6 +8493,7 @@ fn native_vertex_blend_boundary(
     bytes: &mut Vec<u8>,
     target: &CadIr,
     boundary: &cadmpeg_ir::geometry::VertexBlendBoundary,
+    revision: bool,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::VertexBlendBoundaryGeometry;
     let kind = match &boundary.geometry {
@@ -8322,22 +8502,38 @@ fn native_vertex_blend_boundary(
         VertexBlendBoundaryGeometry::Pcurve { .. } => "pcurve",
         VertexBlendBoundaryGeometry::Plane { .. } => "plane",
     };
-    native_string(bytes, kind)?;
+    if revision {
+        native_ident(bytes, kind)?;
+    } else {
+        native_string(bytes, kind)?;
+    }
     native_vertex_blend_bool(bytes, boundary.boundary_type)?;
-    native_point(
-        bytes,
-        [
-            boundary.magic.x / 10.0,
-            boundary.magic.y / 10.0,
-            boundary.magic.z / 10.0,
-        ],
-    );
+    if revision {
+        native_vector(
+            bytes,
+            [
+                boundary.magic.x / 10.0,
+                boundary.magic.y / 10.0,
+                boundary.magic.z / 10.0,
+            ],
+        );
+    } else {
+        native_point(
+            bytes,
+            [
+                boundary.magic.x / 10.0,
+                boundary.magic.y / 10.0,
+                boundary.magic.z / 10.0,
+            ],
+        );
+    }
     native_vertex_blend_bool(bytes, boundary.u_smoothing)?;
     native_vertex_blend_bool(bytes, boundary.v_smoothing)?;
     native_f64(bytes, boundary.fullness);
     match &boundary.geometry {
         VertexBlendBoundaryGeometry::Circle {
             curve,
+            curve_endpoints,
             form,
             twists,
             parameters,
@@ -8358,11 +8554,21 @@ fn native_vertex_blend_boundary(
                     "vertex-blend circle twist count conflicts with its form".into(),
                 ));
             }
-            let curve = native_loft_curve_in_range(target, curve, Some(*parameters))?;
+            let range = if revision { None } else { Some(*parameters) };
+            let curve = native_loft_curve_in_range(target, curve, range)?;
             native_nurbs_curve(bytes, &curve)?;
+            if revision {
+                for endpoint in curve_endpoints {
+                    native_optional_f64(bytes, *endpoint);
+                }
+            }
             native_enum(bytes, *form);
             for twist in twists {
-                native_point(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
+                if revision {
+                    native_vector(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
+                } else {
+                    native_point(bytes, [twist.x / 10.0, twist.y / 10.0, twist.z / 10.0]);
+                }
             }
             native_f64(bytes, parameters[0]);
             native_f64(bytes, parameters[1]);
@@ -8379,6 +8585,7 @@ fn native_vertex_blend_boundary(
         }
         VertexBlendBoundaryGeometry::Pcurve {
             surface,
+            support_bounds,
             pcurve,
             sense,
             fit_tolerance,
@@ -8391,7 +8598,11 @@ fn native_vertex_blend_boundary(
                 .ok_or_else(|| {
                     CodecError::Malformed(format!("vertex-blend support {surface} is missing"))
                 })?;
-            native_embedded_surface(bytes, &surface.geometry)?;
+            if revision {
+                native_embedded_surface_with_bounds(bytes, &surface.geometry, support_bounds)?;
+            } else {
+                native_embedded_surface(bytes, &surface.geometry)?;
+            }
             native_optional_pcurve(bytes, pcurve.as_ref())?;
             native_vertex_blend_bool(bytes, *sense)?;
             native_f64(bytes, *fit_tolerance);
@@ -8400,12 +8611,19 @@ fn native_vertex_blend_boundary(
             normal,
             parameters,
             curve,
+            curve_endpoints,
         } => {
             native_vector(bytes, [normal.x, normal.y, normal.z]);
             native_f64(bytes, parameters[0]);
             native_f64(bytes, parameters[1]);
-            let curve = native_loft_curve_in_range(target, curve, Some(*parameters))?;
+            let range = if revision { None } else { Some(*parameters) };
+            let curve = native_loft_curve_in_range(target, curve, range)?;
             native_nurbs_curve(bytes, &curve)?;
+            if revision {
+                for endpoint in curve_endpoints {
+                    native_optional_f64(bytes, *endpoint);
+                }
+            }
         }
     }
     Ok(())
@@ -8419,6 +8637,14 @@ fn encode_native_vertex_blend(
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "VBL_SURF")?;
+    if let Some(revision) = construction.revision {
+        if revision <= 0 {
+            return Err(CodecError::Malformed(
+                "revision-gated VBL_SURF requires a positive revision".into(),
+            ));
+        }
+        native_i64(bytes, revision);
+    }
     native_i64(
         bytes,
         i64::try_from(construction.boundaries.len()).map_err(|_| {
@@ -8426,10 +8652,76 @@ fn encode_native_vertex_blend(
         })?,
     );
     for boundary in &construction.boundaries {
-        native_vertex_blend_boundary(bytes, target, boundary)?;
+        native_vertex_blend_boundary(bytes, target, boundary, construction.revision.is_some())?;
     }
     native_i64(bytes, construction.grid_size);
     native_f64(bytes, construction.fit_tolerance / 10.0);
+    bytes.push(0x10);
+    Ok(())
+}
+
+fn encode_native_revision_g2_blend(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::RevisionG2BlendConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    if construction.revision <= 0 {
+        return Err(CodecError::Malformed(
+            "revision-gated g2_blend_spl_sur requires a positive revision".into(),
+        ));
+    }
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "g2_blend_spl_sur")?;
+    native_i64(bytes, construction.revision);
+    for parameter in construction.leading_parameters {
+        native_f64(bytes, parameter);
+    }
+    for side in construction.sides.iter() {
+        native_rolling_ball_side(bytes, target, side)?;
+    }
+    let center_range = match construction.center_range {
+        [Some(lower), Some(upper)] => Some([lower, upper]),
+        _ => None,
+    };
+    let center = native_loft_curve_in_range(target, &construction.center, center_range)?;
+    native_nurbs_curve(bytes, &center)?;
+    for endpoint in construction.center_range {
+        native_optional_f64(bytes, endpoint);
+    }
+    for radius in construction.radii {
+        native_f64(bytes, radius / 10.0);
+    }
+    native_enum(bytes, construction.radius_selector);
+    for range in [construction.u_range, construction.v_range] {
+        for endpoint in range {
+            native_optional_f64(bytes, endpoint);
+        }
+    }
+    native_i64(bytes, construction.shape_prefix);
+    native_f64(bytes, construction.shape_parameter);
+    native_f64(bytes, construction.shape_length / 10.0);
+    native_i64(bytes, construction.shape_tail);
+    native_enum(bytes, construction.tail_enum);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for discontinuities in &construction.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                CodecError::NotImplemented("discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in discontinuities {
+            native_f64(bytes, *value);
+        }
+    }
+    bytes.push(native_bool(construction.tail_flag));
+    for extension in construction.tail_extensions {
+        native_i64(bytes, extension);
+    }
     bytes.push(0x10);
     Ok(())
 }
@@ -8448,7 +8740,7 @@ fn encode_native_variable_blend(
     native_surface_base(bytes, "spline")?;
     bytes.push(0x0f);
     native_ident(bytes, "srf_srf_v_bl_spl_sur")?;
-    native_i64(bytes, construction.definition_index);
+    native_i64(bytes, construction.revision);
     for side in construction.sides.iter() {
         native_rolling_ball_side(bytes, target, side)?;
     }
@@ -8491,15 +8783,24 @@ fn encode_native_variable_blend(
             CodecError::Malformed("two-radii variable blend lacks its second value".into())
         })?;
         native_variable_blend_value(bytes, second, 0)?;
-        if let Some(chamfer) = &construction.chamfer {
-            native_enum(
-                bytes,
-                match chamfer.kind {
-                    cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded => 3,
-                },
-            );
-            native_enum(bytes, chamfer.chamfer_type);
-            native_variable_blend_value(bytes, &chamfer.value, 0)?;
+        match (construction.chamfer_selector, &construction.chamfer) {
+            (Some(0), None) => native_enum(bytes, 0),
+            (Some(3) | None, Some(chamfer)) => {
+                native_enum(
+                    bytes,
+                    match chamfer.kind {
+                        cadmpeg_ir::geometry::VariableBlendChamferKind::Rounded => 3,
+                    },
+                );
+                native_enum(bytes, chamfer.chamfer_type);
+                native_variable_blend_value(bytes, &chamfer.value, 0)?;
+            }
+            (None, None) => {}
+            _ => {
+                return Err(CodecError::Malformed(
+                    "variable-blend chamfer selector conflicts with its chamfer payload".into(),
+                ));
+            }
         }
     } else {
         if construction.second_value.is_some() || construction.chamfer.is_some() {
@@ -8546,9 +8847,6 @@ fn encode_native_variable_blend(
         for value in values {
             native_f64(bytes, *value);
         }
-    }
-    for extension in construction.shape_extensions {
-        native_i64(bytes, extension);
     }
     bytes.push(native_bool(construction.tail_flag));
     for extension in construction.tail_extensions {

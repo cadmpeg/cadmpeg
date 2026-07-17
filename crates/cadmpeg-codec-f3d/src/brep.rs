@@ -1575,9 +1575,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         nurbs::DecodedProceduralSurfaceDefinition::Exact {
                             parameter_ranges,
                             extension,
+                            revision_form,
                         } => ProceduralSurfaceDefinition::Exact {
                             parameter_ranges,
                             extension,
+                            revision_form,
                         },
                         nurbs::DecodedProceduralSurfaceDefinition::Compound {
                             parameters,
@@ -3209,6 +3211,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             first,
                             second,
                             basepoint,
+                            revision_form,
                         } => {
                             let first_id =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:curve0"));
@@ -3216,18 +3219,19 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:curve1"));
                             out.curves.push(Curve {
                                 id: first_id.clone(),
-                                geometry: CurveGeometry::Nurbs(first),
+                                geometry: first,
                                 source_object: None,
                             });
                             out.curves.push(Curve {
                                 id: second_id.clone(),
-                                geometry: CurveGeometry::Nurbs(second),
+                                geometry: second,
                                 source_object: None,
                             });
                             ProceduralSurfaceDefinition::Sum {
                                 first: first_id,
                                 second: second_id,
                                 basepoint,
+                                revision_form,
                             }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::Revolution {
@@ -3236,12 +3240,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             axis_direction,
                             angular_interval,
                             parameter_interval,
+                            revision_form,
                         } => {
                             let directrix_id =
                                 CurveId(format!("f3d:brep:procedural_surface#{i}:directrix"));
                             out.curves.push(Curve {
                                 id: directrix_id.clone(),
-                                geometry: CurveGeometry::Nurbs(directrix),
+                                geometry: directrix,
                                 source_object: None,
                             });
                             ProceduralSurfaceDefinition::Revolution {
@@ -3251,6 +3256,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 angular_interval,
                                 parameter_interval,
                                 transposed: false,
+                                revision_form,
                             }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::Offset {
@@ -3361,7 +3367,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 .map(|curve| add_curve("post", CurveGeometry::Nurbs(curve)));
                             ProceduralSurfaceDefinition::VariableBlend {
                                 construction: Box::new(VariableBlendConstruction {
-                                    definition_index: construction.definition_index,
+                                    revision: construction.revision,
                                     sides: Box::new([first, second]),
                                     slice,
                                     slice_range: construction.slice_range,
@@ -3369,6 +3375,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     radius_kind: construction.radius_kind,
                                     first_value: construction.first_value,
                                     second_value: construction.second_value,
+                                    chamfer_selector: construction.chamfer_selector,
                                     chamfer: construction.chamfer,
                                     single_radius_tail: construction.single_radius_tail,
                                     u_range: construction.u_range,
@@ -3379,7 +3386,6 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     shape_tail: construction.shape_tail,
                                     cache_selector: construction.cache_selector,
                                     discontinuities: construction.discontinuities,
-                                    shape_extensions: construction.shape_extensions,
                                     tail_flag: construction.tail_flag,
                                     tail_extensions: construction.tail_extensions,
                                     secondary_curve,
@@ -3394,6 +3400,82 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 }),
                             }
                         }
+                        nurbs::DecodedProceduralSurfaceDefinition::RevisionG2Blend(
+                            construction,
+                        ) => {
+                            let mut sides = Vec::with_capacity(2);
+                            for (side_index, side) in construction.sides.into_iter().enumerate() {
+                                let prefix =
+                                    format!("f3d:brep:procedural_surface#{i}:g2_side{side_index}");
+                                let surface = side.surface.map(|geometry| {
+                                    let id = SurfaceId(format!("{prefix}:surface"));
+                                    out.surfaces.push(Surface {
+                                        id: id.clone(),
+                                        geometry,
+                                        source_object: None,
+                                    });
+                                    id
+                                });
+                                let curve = side.curve.map(|geometry| {
+                                    let id = CurveId(format!("{prefix}:curve"));
+                                    out.curves.push(Curve {
+                                        id: id.clone(),
+                                        geometry,
+                                        source_object: None,
+                                    });
+                                    id
+                                });
+                                sides.push(RollingBallSide {
+                                    support_kind: side.support_kind,
+                                    surface,
+                                    surface_ranges: side.surface_ranges,
+                                    curve,
+                                    curve_range: side.curve_range,
+                                    pcurve: side.pcurve.map(embedded_pcurve_geometry),
+                                    location: side.location,
+                                    secondary_pcurve: side
+                                        .secondary_pcurve
+                                        .map(embedded_pcurve_geometry),
+                                    extension: side.extension,
+                                    tertiary_pcurve: side
+                                        .tertiary_pcurve
+                                        .map(embedded_pcurve_geometry),
+                                });
+                            }
+                            let [first, second]: [RollingBallSide; 2] = sides
+                                .try_into()
+                                .expect("invariant: revision g2 blend has two sides");
+                            let center_id =
+                                CurveId(format!("f3d:brep:procedural_surface#{i}:g2_center"));
+                            out.curves.push(Curve {
+                                id: center_id.clone(),
+                                geometry: construction.center,
+                                source_object: None,
+                            });
+                            ProceduralSurfaceDefinition::RevisionG2Blend {
+                                construction: Box::new(
+                                    cadmpeg_ir::geometry::RevisionG2BlendConstruction {
+                                        revision: construction.revision,
+                                        leading_parameters: construction.leading_parameters,
+                                        sides: Box::new([first, second]),
+                                        center: center_id,
+                                        center_range: construction.center_range,
+                                        radii: construction.radii,
+                                        radius_selector: construction.radius_selector,
+                                        u_range: construction.u_range,
+                                        v_range: construction.v_range,
+                                        shape_prefix: construction.shape_prefix,
+                                        shape_parameter: construction.shape_parameter,
+                                        shape_length: construction.shape_length,
+                                        shape_tail: construction.shape_tail,
+                                        tail_enum: construction.tail_enum,
+                                        discontinuities: construction.discontinuities,
+                                        tail_flag: construction.tail_flag,
+                                        tail_extensions: construction.tail_extensions,
+                                    },
+                                ),
+                            }
+                        }
                         nurbs::DecodedProceduralSurfaceDefinition::VertexBlend(construction) => {
                             let mut boundaries = Vec::with_capacity(construction.boundaries.len());
                             for (boundary_index, boundary) in
@@ -3405,6 +3487,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 let geometry = match boundary.geometry {
                                     nurbs::EmbeddedVertexBlendBoundaryGeometry::Circle {
                                         curve,
+                                        curve_endpoints,
                                         form,
                                         twists,
                                         parameters,
@@ -3413,11 +3496,12 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         let id = CurveId(format!("{prefix}:curve"));
                                         out.curves.push(Curve {
                                             id: id.clone(),
-                                            geometry: CurveGeometry::Nurbs(curve),
+                                            geometry: curve,
                                             source_object: None,
                                         });
                                         VertexBlendBoundaryGeometry::Circle {
                                             curve: id,
+                                            curve_endpoints,
                                             form,
                                             twists,
                                             parameters,
@@ -3433,6 +3517,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     },
                                     nurbs::EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                                         surface,
+                                        support_bounds,
                                         pcurve,
                                         sense,
                                         fit_tolerance,
@@ -3445,6 +3530,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         });
                                         VertexBlendBoundaryGeometry::Pcurve {
                                             surface: id,
+                                            support_bounds,
                                             pcurve: pcurve.map(embedded_pcurve_geometry),
                                             sense,
                                             fit_tolerance,
@@ -3454,17 +3540,19 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         normal,
                                         parameters,
                                         curve,
+                                        curve_endpoints,
                                     } => {
                                         let id = CurveId(format!("{prefix}:curve"));
                                         out.curves.push(Curve {
                                             id: id.clone(),
-                                            geometry: CurveGeometry::Nurbs(curve),
+                                            geometry: curve,
                                             source_object: None,
                                         });
                                         VertexBlendBoundaryGeometry::Plane {
                                             normal,
                                             parameters,
                                             curve: id,
+                                            curve_endpoints,
                                         }
                                     }
                                 };
@@ -3479,6 +3567,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             }
                             ProceduralSurfaceDefinition::VertexBlend {
                                 construction: Box::new(VertexBlendConstruction {
+                                    revision: construction.revision,
                                     boundaries,
                                     grid_size: construction.grid_size,
                                     fit_tolerance: construction.fit_tolerance,
@@ -3655,6 +3744,9 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         surface: SurfaceId(id(i)),
                         definition,
                         cache_fit_tolerance: procedural.cache_fit_tolerance,
+                        record_bounds: nurbs::record_trailing_surface_bounds(record_slice(
+                            r, bytes,
+                        )),
                     });
                 } else if cached_unknown_procedural_surfaces.contains(&i) {
                     out.procedural_surfaces.push(ProceduralSurface {
@@ -3664,6 +3756,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             record: Some(UnknownId(unknown_record_id(r))),
                         },
                         cache_fit_tolerance: None,
+                        record_bounds: None,
                     });
                 }
             }

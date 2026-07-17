@@ -160,6 +160,9 @@ fn variable_blend_value_valid(value: &crate::geometry::VariableBlendValue) -> bo
         VariableBlendValuePayload::TwoEnds { parameters, radii } => {
             finite(parameters) && finite(radii)
         }
+        VariableBlendValuePayload::FixedWidth { parameters, width } => {
+            finite(parameters) && width.is_finite()
+        }
         VariableBlendValuePayload::EdgeOffset { scalars, lengths } => {
             finite(scalars) && finite(lengths)
         }

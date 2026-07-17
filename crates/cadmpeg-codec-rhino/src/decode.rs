@@ -2223,12 +2223,14 @@ impl<'a> DecodeContext<'a> {
                 angular_interval,
                 parameter_interval,
                 transposed,
+                revision_form: None,
             },
             crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
                 ProceduralSurfaceDefinition::Sum {
                     first: child_ids.remove(0),
                     second: child_ids.remove(0),
                     basepoint,
+                    revision_form: None,
                 }
             }
         };
@@ -2237,6 +2239,7 @@ impl<'a> DecodeContext<'a> {
             surface: surface_id.clone(),
             definition: ir_definition,
             cache_fit_tolerance: None,
+            record_bounds: None,
         });
         for id in [surface_id.to_string(), procedural_id.to_string()] {
             candidate.annotations.exactness.insert(
@@ -2316,6 +2319,7 @@ impl<'a> DecodeContext<'a> {
                     native_position: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
             annotate_derived(&mut candidate, &surface_id.to_string());
             annotate_derived(&mut candidate, &procedure_id.to_string());
@@ -3663,12 +3667,14 @@ fn stage_brep_procedural_surface(
             angular_interval,
             parameter_interval,
             transposed,
+            revision_form: None,
         },
         crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
             ProceduralSurfaceDefinition::Sum {
                 first: child_ids[0].clone(),
                 second: child_ids[1].clone(),
                 basepoint,
+                revision_form: None,
             }
         }
     };
@@ -3682,6 +3688,7 @@ fn stage_brep_procedural_surface(
         surface: surface_id.clone(),
         definition,
         cache_fit_tolerance: None,
+        record_bounds: None,
     });
     staged
         .exactness

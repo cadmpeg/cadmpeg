@@ -291,6 +291,17 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .map(|curve| curve.0.as_str()),
                 );
             }
+            ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
+                for side in construction.sides.iter() {
+                    if let Some(surface) = &side.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                    if let Some(curve) = &side.curve {
+                        curves.insert(&curve.0);
+                    }
+                }
+                curves.insert(construction.center.0.as_str());
+            }
             ProceduralSurfaceDefinition::VertexBlend { construction } => {
                 for boundary in &construction.boundaries {
                     match &boundary.geometry {

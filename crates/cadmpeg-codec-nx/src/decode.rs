@@ -272,6 +272,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                     extension_flags: Vec::new(),
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
             surfaces_by_xmt.insert(offset.xmt, surface_id);
             counts.offset_surfaces += 1;
@@ -329,6 +330,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
                     native: None,
                 },
                 cache_fit_tolerance: None,
+                record_bounds: None,
             });
             surfaces_by_xmt.insert(blend.xmt, surface_id);
             counts.blend_surfaces += 1;

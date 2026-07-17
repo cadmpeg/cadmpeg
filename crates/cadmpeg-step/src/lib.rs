@@ -1041,6 +1041,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Skin { .. }
                 | ProceduralSurfaceDefinition::Net { .. }
                 | ProceduralSurfaceDefinition::G2Blend { .. }
+                | ProceduralSurfaceDefinition::RevisionG2Blend { .. }
                 | ProceduralSurfaceDefinition::VariableBlend { .. }
                 | ProceduralSurfaceDefinition::VertexBlend { .. }
                 | ProceduralSurfaceDefinition::Extrusion { .. }

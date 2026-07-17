@@ -4348,10 +4348,18 @@ fn append_generated_variable_blend_value(
 }
 
 fn synthetic_variable_blend_smbh(name: &str) -> Vec<u8> {
-    synthetic_variable_blend_smbh_with_branch(name, false)
+    synthetic_variable_blend_smbh_with_selector(name, false, None)
 }
 
 fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) -> Vec<u8> {
+    synthetic_variable_blend_smbh_with_selector(name, rounded_chamfer, rounded_chamfer.then_some(3))
+}
+
+fn synthetic_variable_blend_smbh_with_selector(
+    name: &str,
+    two_radii: bool,
+    chamfer_selector: Option<i64>,
+) -> Vec<u8> {
     let mut bytes = synthetic_mixed_smbh();
     let start = asm_header::record_stream_start(&bytes).unwrap();
     let limit = asm_header::first_delta_state_offset(&bytes).unwrap();
@@ -4373,15 +4381,19 @@ fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) 
     t_dbl(&mut surface, -0.2);
     t_dbl(&mut surface, 0.4);
     surface.push(0x15);
-    surface.extend_from_slice(&i64::from(rounded_chamfer).to_le_bytes());
+    surface.extend_from_slice(&i64::from(two_radii).to_le_bytes());
     append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
-    if rounded_chamfer {
+    if two_radii {
         append_generated_variable_blend_value(&mut surface, [0.1, 0.9], [3.5, 4.5]);
-        surface.push(0x15);
-        surface.extend_from_slice(&3i64.to_le_bytes());
-        surface.push(0x15);
-        surface.extend_from_slice(&2i64.to_le_bytes());
-        append_generated_variable_blend_value(&mut surface, [0.0, 1.0], [5.5, 6.5]);
+        if let Some(selector) = chamfer_selector {
+            surface.push(0x15);
+            surface.extend_from_slice(&selector.to_le_bytes());
+            if selector == 3 {
+                surface.push(0x15);
+                surface.extend_from_slice(&2i64.to_le_bytes());
+                append_generated_variable_blend_value(&mut surface, [0.0, 1.0], [5.5, 6.5]);
+            }
+        }
     }
     for value in [-1.0, 2.0] {
         surface.push(0x0a);
@@ -4396,14 +4408,18 @@ fn synthetic_variable_blend_smbh_with_branch(name: &str, rounded_chamfer: bool) 
     push_tagged_i64(&mut surface, 0x15, 0);
     surface.extend_from_slice(&generated_surface_block());
     t_dbl(&mut surface, 0.004);
-    for values in [&[0.125][..], &[][..], &[0.25, 0.375][..]] {
+    for values in [
+        &[0.125][..],
+        &[][..],
+        &[0.25, 0.375][..],
+        &[][..],
+        &[0.5][..],
+        &[][..],
+    ] {
         t_long(&mut surface, i64::try_from(values.len()).unwrap());
         for value in values {
             t_dbl(&mut surface, *value);
         }
-    }
-    for value in [21, 22, 23] {
-        t_long(&mut surface, value);
     }
     surface.push(0x0a);
     for value in [31, 32, 33] {
@@ -12500,6 +12516,7 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
             ProceduralSurfaceDefinition::Exact {
                 parameter_ranges: [[-2.0, 3.0], [-4.0, 5.0]],
                 extension: 7,
+                revision_form: None,
             }
         );
 
@@ -12518,6 +12535,7 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
             ProceduralSurfaceDefinition::Exact {
                 parameter_ranges: [[-2.0, 3.0], [-4.0, 5.0]],
                 extension: 7,
+                revision_form: None,
             }
         );
     }
@@ -12612,6 +12630,7 @@ fn generated_sum_spline_surfaces_decode_and_write_source_less() {
             first,
             second,
             basepoint,
+            revision_form: None,
         } = &procedural.definition
         else {
             panic!("expected sum surface construction")
@@ -12743,6 +12762,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             angular_interval,
             parameter_interval,
             transposed,
+            revision_form: None,
         } = &procedural.definition
         else {
             panic!("expected revolution surface construction")
@@ -15718,7 +15738,7 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         else {
             panic!("expected variable blend")
         };
-        assert_eq!(construction.definition_index, 23100);
+        assert_eq!(construction.revision, 23100);
         assert_eq!(
             construction.sides[0].support_kind,
             cadmpeg_ir::geometry::VariableBlendSupportKind::Surface
@@ -15756,9 +15776,15 @@ fn generated_variable_blends_decode_complete_single_radius_graphs() {
         assert_eq!(construction.cache_selector, 0);
         assert_eq!(
             construction.discontinuities,
-            [vec![0.125], vec![], vec![0.25, 0.375]]
+            [
+                vec![0.125],
+                vec![],
+                vec![0.25, 0.375],
+                vec![],
+                vec![0.5],
+                vec![]
+            ]
         );
-        assert_eq!(construction.shape_extensions, [21, 22, 23]);
         assert!(construction.tail_flag);
         assert_eq!(construction.tail_extensions, [31, 32, 33]);
         assert!(construction.secondary_curve.is_some());
@@ -15973,6 +15999,237 @@ fn generated_two_radii_variable_blend_round_trips_rounded_chamfer() {
         ProceduralSurfaceDefinition::VariableBlend { construction }
             if construction == &expected
     ));
+}
+
+#[test]
+fn generated_two_radii_variable_blend_consumes_zero_chamfer_selector() {
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, VariableBlendRadiusKind};
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_selector(
+                "srf_srf_v_bl_spl_sur",
+                true,
+                Some(0),
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("two-radii selector-zero decode");
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected variable blend")
+    };
+    assert_eq!(construction.radius_kind, VariableBlendRadiusKind::TwoRadii);
+    assert_eq!(construction.chamfer_selector, Some(0));
+    assert!(construction.chamfer.is_none());
+    let expected = construction.clone();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("selector-zero source-less encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("selector-zero round trip");
+    assert!(matches!(
+        &round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::VariableBlend { construction }
+            if construction == &expected
+    ));
+}
+
+fn push_optional_value_quartet(surface: &mut Vec<u8>) {
+    for value in [1.0, 0.0, 1.0, 0.0] {
+        surface.push(0x0a);
+        t_dbl(surface, value);
+    }
+}
+
+#[test]
+fn generated_revision_exact_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        push_optional_value_quartet(surface);
+        push_tagged_i64(surface, 0x15, 0);
+    });
+    assert_revision_surface_round_trip(smbh, "exact");
+}
+
+#[test]
+fn generated_revision_sum_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("sum_spl_sur", |surface| {
+        for (lower, upper) in [(0.0, 1.0), (-2.0, 2.0)] {
+            surface.extend_from_slice(&generated_curve_block());
+            surface.push(0x0a);
+            t_dbl(surface, lower);
+            surface.push(0x0a);
+            t_dbl(surface, upper);
+        }
+        t_pos(surface, [1.0, 2.0, 3.0]);
+        push_revision_surface_tail(surface);
+    });
+    assert_revision_surface_round_trip(smbh, "sum");
+}
+
+#[test]
+fn generated_revision_rot_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("rot_spl_sur", |surface| {
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, 0.0);
+        surface.push(0x0a);
+        t_dbl(surface, 1.0);
+        t_pos(surface, [0.0, 0.0, 0.0]);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        push_revision_surface_tail(surface);
+    });
+    assert_revision_surface_round_trip(smbh, "revolution");
+}
+
+#[test]
+fn generated_revision_t_spline_surface_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("t_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        push_optional_value_quartet(surface);
+        push_tagged_i64(surface, 0x15, 0);
+        surface.push(0x0f);
+        t_ident(surface, "t_spl_subtrans_object");
+        t_u16_string(
+            surface,
+            "degree 3\nunits mm\nv 1 0 0 0\nv 2 1 0 0\ne 1 1 2\n",
+        );
+        surface.push(0x0b);
+        t_u16_string(surface, "100verts 1 2\n");
+        surface.push(0x10);
+        t_long(surface, 2);
+    });
+    assert_revision_surface_round_trip(smbh, "t_spline");
+}
+
+#[test]
+fn generated_revision_g2_blend_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("g2_blend_spl_sur", |surface| {
+        t_dbl(surface, 1.0);
+        t_dbl(surface, 1.0);
+        append_generated_variable_blend_side(surface, "left", 1.0);
+        append_generated_variable_blend_side(surface, "right", 4.0);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, -1.5);
+        surface.push(0x0a);
+        t_dbl(surface, 2.5);
+        t_dbl(surface, 0.125);
+        t_dbl(surface, 0.125);
+        push_tagged_i64(surface, 0x15, -1);
+        surface.extend_from_slice(&[0x0b; 4]);
+        t_long(surface, 1);
+        t_dbl(surface, 0.001);
+        t_dbl(surface, 0.0001);
+        t_long(surface, 1);
+        push_revision_surface_tail(surface);
+        for value in [0, 0, 0] {
+            t_long(surface, value);
+        }
+    });
+    assert_revision_surface_round_trip(smbh, "revision_g2_blend");
+}
+
+#[test]
+fn generated_revision_vertex_blend_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("VBL_SURF", |surface| {
+        t_long(surface, 2);
+
+        t_ident(surface, "circle");
+        surface.push(0x0a);
+        t_vec(surface, [0.0, 0.0, 0.0]);
+        surface.push(0x0b);
+        surface.push(0x0a);
+        t_dbl(surface, 1.0);
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, 0.1);
+        surface.push(0x0a);
+        t_dbl(surface, 0.9);
+        push_tagged_i64(surface, 0x15, 3);
+        t_vec(surface, [0.0, 0.0, 0.5]);
+        t_vec(surface, [0.5, 0.0, 0.0]);
+        t_dbl(surface, 0.1);
+        t_dbl(surface, 0.9);
+        surface.push(0x0b);
+
+        t_ident(surface, "pcurve");
+        surface.push(0x0b);
+        t_vec(surface, [0.0, 0.0, 0.0]);
+        surface.push(0x0a);
+        surface.push(0x0a);
+        t_dbl(surface, 1.0);
+        t_ident(surface, "plane");
+        t_pos(surface, [0.0, 0.0, 0.0]);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        t_vec(surface, [1.0, 0.0, 0.0]);
+        surface.push(0x0b);
+        surface.extend_from_slice(&[0x0b; 4]);
+        surface.extend_from_slice(&generated_pcurve_block());
+        surface.push(0x0a);
+        t_dbl(surface, 0.002);
+
+        t_long(surface, 9);
+        t_dbl(surface, 0.003);
+    });
+    assert_revision_surface_round_trip(smbh, "vertex_blend");
+}
+
+#[test]
+fn generated_revision_offset_with_inline_untyped_support_decodes() {
+    let smbh = synthetic_revision_surface_smbh("off_spl_sur", |surface| {
+        t_ident(surface, "spline");
+        surface.push(0x0b);
+        surface.push(0x0f);
+        t_ident(surface, "mystery_spl_sur");
+        t_long(surface, 23100);
+        surface.extend_from_slice(&generated_surface_block());
+        surface.push(0x10);
+        surface.extend_from_slice(&[0x0b; 4]);
+        t_dbl(surface, 0.3);
+        surface.extend_from_slice(&[0x0b; 4]);
+        push_revision_surface_tail(surface);
+    });
+    assert_revision_surface_round_trip(smbh, "offset");
+}
+
+#[test]
+fn record_level_surface_bounds_round_trip() {
+    let smbh = synthetic_revision_surface_smbh("exact_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        push_optional_value_quartet(surface);
+        push_tagged_i64(surface, 0x15, 0);
+    });
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&smbh)),
+            &DecodeOptions::default(),
+        )
+        .expect("exact revision decode");
+    let mut source_less = decoded.ir;
+    assert_eq!(source_less.model.procedural_surfaces[0].record_bounds, None);
+    source_less.model.procedural_surfaces[0].record_bounds =
+        Some([Some(0.1), None, Some(0.2), None]);
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("record-bounds encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("record-bounds round trip");
+    assert_eq!(
+        round_trip.ir.model.procedural_surfaces[0].record_bounds,
+        Some([Some(0.1), None, Some(0.2), None])
+    );
 }
 
 #[test]

@@ -291,6 +291,10 @@ pub struct ProceduralSurface {
     /// Fit contract for the solved cache.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_fit_tolerance: Option<f64>,
+    /// Four optional U/V parameter bounds following the record's subtype
+    /// scope. `None` when the record stores no bound fields.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub record_bounds: Option<[Option<f64>; 4]>,
 }
 
 /// Neutral semantics for a procedural surface.
@@ -303,6 +307,12 @@ pub enum ProceduralSurfaceDefinition {
         parameter_ranges: [[f64; 2]; 2],
         /// Native ASM extension integer following the intervals.
         extension: i64,
+        /// Revision-gated form fields; absent from the pre-revision layout.
+        /// The revision layout stores the shared tail first, then four
+        /// optional parameter values (`support_bounds`) and the extension
+        /// as an enum.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_form: Option<RevisionSurfaceForm>,
     },
     /// Ordered native compound of a solved surface and component surfaces.
     Compound {
@@ -383,6 +393,12 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native G2 construction graph.
         construction: Box<G2BlendConstruction>,
     },
+    /// Revision-gated curvature-continuous blend in the variable-blend side
+    /// layout.
+    RevisionG2Blend {
+        /// Complete native revision-gated G2 construction graph.
+        construction: Box<RevisionG2BlendConstruction>,
+    },
     /// Native variable-radius two-sided blend.
     VariableBlend {
         /// Complete native variable-blend construction graph.
@@ -420,6 +436,10 @@ pub enum ProceduralSurfaceDefinition {
         parameter_interval: [f64; 2],
         /// Whether the source parameter directions are transposed.
         transposed: bool,
+        /// Revision-gated form fields; absent from the pre-revision layout.
+        /// The profile curve's optional endpoints are `reference_endpoints`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_form: Option<RevisionSurfaceForm>,
     },
     /// Sum of two ordered curves from a base point.
     Sum {
@@ -429,6 +449,11 @@ pub enum ProceduralSurfaceDefinition {
         second: CurveId,
         /// Surface base point.
         basepoint: Vector3,
+        /// Revision-gated form fields; absent from the pre-revision layout.
+        /// The first curve's optional endpoints are `reference_endpoints`
+        /// and the second curve's are `second_endpoints`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        revision_form: Option<RevisionSurfaceForm>,
     },
     /// Sweep of a profile along a spine.
     Sweep {
@@ -724,6 +749,12 @@ pub struct TSplineSurfaceConstruction {
     pub discontinuities: [Vec<f64>; 6],
     /// Native discontinuity tail flag.
     pub discontinuity_flag: bool,
+    /// Revision-gated form fields; absent from the pre-revision layout. The
+    /// revision layout stores the shared tail first, then four optional
+    /// parameter values (`support_bounds`), the type code as an enum, the
+    /// nested subtransform scope, and the trailing integer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision_form: Option<RevisionSurfaceForm>,
 }
 
 /// Parsed line-oriented T-spline subtransform program.
@@ -843,6 +874,10 @@ pub struct RevisionSurfaceForm {
     /// Optional parameter endpoints following the embedded reference curve.
     #[serde(default)]
     pub reference_endpoints: [Option<f64>; 2],
+    /// Optional parameter endpoints following a second embedded curve, used
+    /// by two-curve carriers such as `sum_spl_sur`.
+    #[serde(default)]
+    pub second_endpoints: [Option<f64>; 2],
     /// Carrier-specific boolean run preceding the shared tail.
     #[serde(default)]
     pub flags: Vec<bool>,
@@ -1304,6 +1339,14 @@ pub enum VariableBlendValuePayload {
         /// Endpoint radii in document length units.
         radii: [f64; 2],
     },
+    /// Fixed-width branch: two endpoint parameters and one native width
+    /// scalar, stored unscaled.
+    FixedWidth {
+        /// Endpoint parameters.
+        parameters: [f64; 2],
+        /// Native width scalar.
+        width: f64,
+    },
     /// Edge-offset branch.
     EdgeOffset {
         /// Ordered native scalar payload.
@@ -1345,6 +1388,10 @@ pub enum VariableBlendValuePayload {
         function: PcurveGeometry,
         /// Native interpolation enum count.
         enum_count: i64,
+        /// Whether the enum count and tail flag are stored as `0x15` enum
+        /// tokens (revision-gated streams) rather than `0x04` integers.
+        #[serde(default)]
+        enum_tagged: bool,
         /// Ordered interpolation controls.
         points: Vec<VariableBlendInterpolationPoint>,
         /// Optional two-scalar tail selected by a nonzero flag.
@@ -1384,8 +1431,9 @@ pub struct VariableBlendChamfer {
 /// Complete native variable-radius blend construction graph.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableBlendConstruction {
-    /// Native subtype definition-table index.
-    pub definition_index: i64,
+    /// Native serializer-revision integer following the subtype name.
+    #[serde(alias = "definition_index")]
+    pub revision: i64,
     /// Two ordered support-side graphs in the rolling-ball side layout.
     pub sides: Box<[RollingBallSide; 2]>,
     /// Stored slice curve.
@@ -1402,6 +1450,12 @@ pub struct VariableBlendConstruction {
     /// Second radius-control payload for a two-radii construction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub second_value: Option<VariableBlendValue>,
+    /// Chamfer-selector enum stored after the second radius value of a
+    /// two-radii blend. `0` selects no chamfer, `3` selects the rounded
+    /// chamfer carried in `chamfer`. `None` when the source stored no
+    /// selector token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chamfer_selector: Option<i64>,
     /// Optional rounded-chamfer payload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chamfer: Option<Box<VariableBlendChamfer>>,
@@ -1422,11 +1476,9 @@ pub struct VariableBlendConstruction {
     pub shape_tail: i64,
     /// Native selector preceding the solved surface cache.
     pub cache_selector: i64,
-    /// Three ordered ASM discontinuity arrays following the fit tolerance.
-    pub discontinuities: [Vec<f64>; 3],
-    /// Three ASM integers following the discontinuity arrays.
-    pub shape_extensions: [i64; 3],
-    /// Native Boolean following the shape extensions.
+    /// Six ordered ASM discontinuity arrays following the fit tolerance.
+    pub discontinuities: [Vec<f64>; 6],
+    /// Native Boolean following the discontinuity arrays.
     pub tail_flag: bool,
     /// Three ASM integers following the tail Boolean.
     pub tail_extensions: [i64; 3],
@@ -1448,6 +1500,50 @@ pub struct VariableBlendConstruction {
     /// Native post-shape BS2 pcurve, absent for `nullbs`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub post_pcurve: Option<PcurveGeometry>,
+}
+
+/// Complete native revision-gated `g2_blend_spl_sur` construction. The
+/// revision layout stores the two support sides in the variable-blend side
+/// layout and ends with the shared revision-gated surface tail.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RevisionG2BlendConstruction {
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: i64,
+    /// Two native scalars following the revision integer.
+    pub leading_parameters: [f64; 2],
+    /// Two ordered support-side graphs in the variable-blend side layout.
+    pub sides: Box<[RollingBallSide; 2]>,
+    /// Stored center curve.
+    pub center: CurveId,
+    /// Optional native center-curve parameter endpoints.
+    #[serde(default)]
+    pub center_range: [Option<f64>; 2],
+    /// Two signed blend radii in document length units.
+    pub radii: [f64; 2],
+    /// Radius-selector enum following the radii; `-1` selects the
+    /// absent-radius branch.
+    pub radius_selector: i64,
+    /// Native optional U interval endpoints.
+    pub u_range: [Option<f64>; 2],
+    /// Native optional V interval endpoints.
+    pub v_range: [Option<f64>; 2],
+    /// Native integer before the solved shape.
+    pub shape_prefix: i64,
+    /// Native scalar before the solved shape.
+    pub shape_parameter: f64,
+    /// Native length before the solved shape, in document units.
+    pub shape_length: f64,
+    /// Native integer immediately before the shared tail.
+    pub shape_tail: i64,
+    /// Enum opening the shared revision-gated surface tail.
+    pub tail_enum: i64,
+    /// Six ordered discontinuity arrays following the fit tolerance.
+    #[serde(default)]
+    pub discontinuities: [Vec<f64>; 6],
+    /// Boolean terminating the shared tail.
+    pub tail_flag: bool,
+    /// Three ASM integers following the shared tail.
+    pub tail_extensions: [i64; 3],
 }
 
 /// One boundary record in a native vertex-blend patch.
@@ -1475,9 +1571,15 @@ pub enum VertexBlendBoundaryGeometry {
     Circle {
         /// Boundary curve.
         curve: CurveId,
+        /// Optional native curve parameter endpoints stored by the
+        /// revision-gated layout.
+        #[serde(default)]
+        curve_endpoints: [Option<f64>; 2],
         /// Native circle-form enum.
         form: i64,
-        /// Zero, one, or two model-space twist locations selected by `form`.
+        /// Zero, one, or two twist entries selected by `form`. Pre-revision
+        /// layouts store model-space locations; the revision-gated layout
+        /// stores unscaled twist vectors.
         twists: Vec<Point3>,
         /// Two ordered curve parameters.
         parameters: [f64; 2],
@@ -1495,6 +1597,10 @@ pub enum VertexBlendBoundaryGeometry {
     Pcurve {
         /// Support surface.
         surface: SurfaceId,
+        /// Optional U/V bound fields stored after the support by the
+        /// revision-gated layout.
+        #[serde(default)]
+        support_bounds: [Option<f64>; 4],
         /// Native BS2 pcurve, absent for `nullbs`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pcurve: Option<PcurveGeometry>,
@@ -1511,12 +1617,20 @@ pub enum VertexBlendBoundaryGeometry {
         parameters: [f64; 2],
         /// Boundary curve.
         curve: CurveId,
+        /// Optional native curve parameter endpoints stored by the
+        /// revision-gated layout.
+        #[serde(default)]
+        curve_endpoints: [Option<f64>; 2],
     },
 }
 
 /// Complete native vertex-blend surface construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VertexBlendConstruction {
+    /// Positive serializer-revision integer selecting the revision-gated
+    /// layout; absent from the pre-revision layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub revision: Option<i64>,
     /// Ordered boundary records.
     pub boundaries: Vec<VertexBlendBoundary>,
     /// Native grid-size integer.

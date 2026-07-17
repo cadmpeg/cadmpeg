@@ -693,6 +693,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         parameter_ranges: [[f64; 2]; 2],
         /// Native ASM extension integer.
         extension: i64,
+        /// Revision-gated form fields.
+        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
     },
     /// Native compound surface with ordered scalar/component pairs.
     Compound {
@@ -745,6 +747,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     Deformable(Box<EmbeddedDeformableSurface>),
     /// Native G2 blend construction with embedded carriers.
     G2Blend(Box<EmbeddedG2Blend>),
+    /// Revision-gated G2 blend in the variable-blend side layout.
+    RevisionG2Blend(Box<EmbeddedRevisionG2Blend>),
     /// Ruled interpolation between two ordered profile curves.
     Ruled {
         /// First embedded profile.
@@ -755,16 +759,18 @@ pub enum DecodedProceduralSurfaceDefinition {
     /// Translational sum of two curves around a stored origin.
     Sum {
         /// First embedded curve.
-        first: NurbsCurve,
+        first: CurveGeometry,
         /// Second embedded curve.
-        second: NurbsCurve,
+        second: CurveGeometry,
         /// Native model-space origin.
         basepoint: Vector3,
+        /// Revision-gated form fields.
+        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
     },
     /// Revolution of an embedded profile around an axis.
     Revolution {
         /// Embedded profile curve.
-        directrix: NurbsCurve,
+        directrix: CurveGeometry,
         /// Point on the axis in model space.
         axis_origin: Point3,
         /// Unit axis direction.
@@ -773,6 +779,8 @@ pub enum DecodedProceduralSurfaceDefinition {
         angular_interval: [f64; 2],
         /// Native profile parameter interval.
         parameter_interval: [f64; 2],
+        /// Revision-gated form fields.
+        revision_form: Option<cadmpeg_ir::geometry::RevisionSurfaceForm>,
     },
     /// Signed offset from an embedded support surface.
     Offset {
@@ -832,6 +840,27 @@ pub(crate) struct EmbeddedRollingBallSide {
     pub(crate) tertiary_pcurve: Option<NurbsPcurve>,
 }
 
+/// Embedded revision-gated G2 blend before stable IR ids are assigned.
+pub struct EmbeddedRevisionG2Blend {
+    pub(crate) revision: i64,
+    pub(crate) leading_parameters: [f64; 2],
+    pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
+    pub(crate) center: CurveGeometry,
+    pub(crate) center_range: [Option<f64>; 2],
+    pub(crate) radii: [f64; 2],
+    pub(crate) radius_selector: i64,
+    pub(crate) u_range: [Option<f64>; 2],
+    pub(crate) v_range: [Option<f64>; 2],
+    pub(crate) shape_prefix: i64,
+    pub(crate) shape_parameter: f64,
+    pub(crate) shape_length: f64,
+    pub(crate) shape_tail: i64,
+    pub(crate) tail_enum: i64,
+    pub(crate) discontinuities: [Vec<f64>; 6],
+    pub(crate) tail_flag: bool,
+    pub(crate) tail_extensions: [i64; 3],
+}
+
 pub(crate) struct EmbeddedRollingBallThirdSide {
     pub(crate) label: String,
     pub(crate) surface: SurfaceGeometry,
@@ -846,7 +875,7 @@ pub(crate) struct EmbeddedRollingBallThirdSide {
 
 /// Embedded native variable blend before stable IR ids are assigned.
 pub struct EmbeddedVariableBlend {
-    pub(crate) definition_index: i64,
+    pub(crate) revision: i64,
     pub(crate) sides: Box<[EmbeddedRollingBallSide; 2]>,
     pub(crate) slice: CurveGeometry,
     pub(crate) slice_range: [Option<f64>; 2],
@@ -854,6 +883,7 @@ pub struct EmbeddedVariableBlend {
     pub(crate) radius_kind: cadmpeg_ir::geometry::VariableBlendRadiusKind,
     pub(crate) first_value: cadmpeg_ir::geometry::VariableBlendValue,
     pub(crate) second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
+    pub(crate) chamfer_selector: Option<i64>,
     pub(crate) chamfer: Option<Box<cadmpeg_ir::geometry::VariableBlendChamfer>>,
     pub(crate) single_radius_tail: Option<cadmpeg_ir::geometry::VariableBlendSingleRadiusTail>,
     pub(crate) u_range: [Option<f64>; 2],
@@ -863,8 +893,7 @@ pub struct EmbeddedVariableBlend {
     pub(crate) shape_length: f64,
     pub(crate) shape_tail: i64,
     pub(crate) cache_selector: i64,
-    pub(crate) discontinuities: [Vec<f64>; 3],
-    pub(crate) shape_extensions: [i64; 3],
+    pub(crate) discontinuities: [Vec<f64>; 6],
     pub(crate) tail_flag: bool,
     pub(crate) tail_extensions: [i64; 3],
     pub(crate) secondary_curve: Option<CurveGeometry>,
@@ -878,7 +907,8 @@ pub struct EmbeddedVariableBlend {
 
 pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
     Circle {
-        curve: NurbsCurve,
+        curve: CurveGeometry,
+        curve_endpoints: [Option<f64>; 2],
         form: i64,
         twists: Vec<Point3>,
         parameters: [f64; 2],
@@ -890,6 +920,7 @@ pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
     },
     Pcurve {
         surface: SurfaceGeometry,
+        support_bounds: [Option<f64>; 4],
         pcurve: Option<NurbsPcurve>,
         sense: i64,
         fit_tolerance: f64,
@@ -897,7 +928,8 @@ pub(crate) enum EmbeddedVertexBlendBoundaryGeometry {
     Plane {
         normal: Vector3,
         parameters: [f64; 2],
-        curve: NurbsCurve,
+        curve: CurveGeometry,
+        curve_endpoints: [Option<f64>; 2],
     },
 }
 
@@ -912,6 +944,7 @@ pub(crate) struct EmbeddedVertexBlendBoundary {
 
 /// Embedded native vertex blend before stable IR ids are assigned.
 pub struct EmbeddedVertexBlend {
+    pub(crate) revision: Option<i64>,
     pub(crate) boundaries: Vec<EmbeddedVertexBlendBoundary>,
     pub(crate) grid_size: i64,
     pub(crate) fit_tolerance: f64,
@@ -1032,6 +1065,7 @@ fn take_bridge_token(
 fn decode_g2_blend_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"g2_blend_spl_sur", b"g2blnsur"];
     let (start, name_len) = names.into_iter().find_map(|name| {
@@ -1047,6 +1081,84 @@ fn decode_g2_blend_spl_sur(
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
+    if span.get(position) == Some(&0x04) {
+        // Revision-gated layout: revision integer, two scalars, two sides in
+        // the variable-blend side layout, center curve with endpoints, two
+        // radii, radius selector, optional U/V bounds, shape prologue,
+        // shared tail, and three trailing integers.
+        (first_construction_subtype(record_bytes).as_deref() == Some("g2_blend_spl_sur"))
+            .then_some(())?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        let leading_parameters = [
+            take_f64(span, &mut position)?,
+            take_f64(span, &mut position)?,
+        ];
+        let sides = Box::new([
+            decode_rolling_ball_side(span, &mut position, int_width, resolver)?,
+            decode_rolling_ball_side(span, &mut position, int_width, resolver)?,
+        ]);
+        let (active_bytes, tables) = resolver?;
+        let center = decode_embedded_base_curve_resolving_refs(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let center_range = [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ];
+        let radii = [
+            take_f64(span, &mut position)? * LEN_TO_MM,
+            take_f64(span, &mut position)? * LEN_TO_MM,
+        ];
+        let radius_selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        let u_range = [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ];
+        let v_range = [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ];
+        let shape_prefix = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let shape_parameter = take_f64(span, &mut position)?;
+        let shape_length = take_f64(span, &mut position)? * LEN_TO_MM;
+        let shape_tail = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let tail_extensions = [
+            take_tagged_int(span, &mut position, 0x04, int_width)?,
+            take_tagged_int(span, &mut position, 0x04, int_width)?,
+            take_tagged_int(span, &mut position, 0x04, int_width)?,
+        ];
+        return Some(DecodedProceduralSurface {
+            definition: DecodedProceduralSurfaceDefinition::RevisionG2Blend(Box::new(
+                EmbeddedRevisionG2Blend {
+                    revision,
+                    leading_parameters,
+                    sides,
+                    center: CurveGeometry::Nurbs(center),
+                    center_range,
+                    radii,
+                    radius_selector,
+                    u_range,
+                    v_range,
+                    shape_prefix,
+                    shape_parameter,
+                    shape_length,
+                    shape_tail,
+                    tail_enum,
+                    discontinuities,
+                    tail_flag,
+                    tail_extensions,
+                },
+            )),
+            cache_fit_tolerance: Some(fit_tolerance),
+        });
+    }
     let first = decode_g2_side(span, &mut position, int_width)?;
     let singularity = take_tagged_int(span, &mut position, 0x15, int_width)?;
     let first_shape = if matches!(span.get(position), Some(0x0d | 0x0e)) {
@@ -3239,6 +3351,7 @@ fn decode_taper_spl_sur(
                     revision,
                     support_bounds,
                     reference_endpoints,
+                    second_endpoints: [None; 2],
                     flags: Vec::new(),
                     tail_enum,
                     discontinuities,
@@ -3417,6 +3530,7 @@ fn decode_off_spl_sur(
                     revision,
                     support_bounds,
                     reference_endpoints: [None; 2],
+                    second_endpoints: [None; 2],
                     flags,
                     tail_enum,
                     discontinuities,
@@ -3462,17 +3576,86 @@ fn decode_off_spl_sur(
     })
 }
 
-fn decode_rot_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+fn decode_rot_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"rot_spl_sur", b"rotsur"];
-    let start = names.into_iter().find_map(|name| {
-        record_bytes.windows(name.len() + 3).position(|window| {
-            window[0] == 0x0f
-                && matches!(window[1], 0x0d | 0x0e)
-                && usize::from(window[2]) == name.len()
-                && &window[3..] == name
-        })
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    if span.get(position) == Some(&0x04) {
+        // Revision-gated layout: revision integer, profile curve with two
+        // optional endpoints, axis origin and direction, shared tail.
+        (first_construction_subtype(record_bytes).as_deref() == Some("rot_spl_sur"))
+            .then_some(())?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        let (active_bytes, tables) = resolver?;
+        let profile = decode_embedded_base_curve_resolving_refs(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let profile_endpoints = [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ];
+        let origin = take_native_vec3(span, &mut position, 0x13)?;
+        let axis = take_native_vec3(span, &mut position, 0x14)?;
+        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let cache = marker_positions(span)
+            .into_iter()
+            .filter_map(|at| decode_surface_block(span, at, int_width))
+            .next_back()?;
+        let angular_interval = [
+            *cache.surface.v_knots.first()?,
+            *cache.surface.v_knots.last()?,
+        ];
+        let parameter_interval = [
+            profile_endpoints[0].unwrap_or(*profile.knots.first()?),
+            profile_endpoints[1].unwrap_or(*profile.knots.last()?),
+        ];
+        return Some(DecodedProceduralSurface {
+            definition: DecodedProceduralSurfaceDefinition::Revolution {
+                directrix: CurveGeometry::Nurbs(profile),
+                axis_origin: Point3::new(
+                    origin[0] * LEN_TO_MM,
+                    origin[1] * LEN_TO_MM,
+                    origin[2] * LEN_TO_MM,
+                ),
+                axis_direction: normalized(axis)?,
+                angular_interval,
+                parameter_interval,
+                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds: [None; 4],
+                    reference_endpoints: profile_endpoints,
+                    second_endpoints: [None; 2],
+                    flags: Vec::new(),
+                    tail_enum,
+                    discontinuities,
+                    tail_flag,
+                    trailing_flags: Vec::new(),
+                }),
+            },
+            cache_fit_tolerance: Some(fit_tolerance),
+        });
+    }
     let directrix = marker_positions(span)
         .into_iter()
         .find_map(|at| decode_curve_block(span, at, int_width))?;
@@ -3502,27 +3685,93 @@ fn decode_rot_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
         .flatten();
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Revolution {
-            directrix: directrix.curve,
+            directrix: CurveGeometry::Nurbs(directrix.curve),
             axis_origin,
             axis_direction,
             angular_interval,
             parameter_interval,
+            revision_form: None,
         },
         cache_fit_tolerance,
     })
 }
 
-fn decode_sum_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProceduralSurface> {
+fn decode_sum_spl_sur(
+    record_bytes: &[u8],
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"sum_spl_sur", b"sumsur"];
-    let start = names.into_iter().find_map(|name| {
-        record_bytes.windows(name.len() + 3).position(|window| {
-            window[0] == 0x0f
-                && matches!(window[1], 0x0d | 0x0e)
-                && usize::from(window[2]) == name.len()
-                && &window[3..] == name
-        })
+    let (start, name_len) = names.into_iter().find_map(|name| {
+        record_bytes
+            .windows(name.len() + 3)
+            .position(|window| {
+                window[0] == 0x0f
+                    && matches!(window[1], 0x0d | 0x0e)
+                    && usize::from(window[2]) == name.len()
+                    && &window[3..] == name
+            })
+            .map(|start| (start, name.len()))
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name_len + 3;
+    if span.get(position) == Some(&0x04) {
+        // Revision-gated layout: revision integer, two curves each with two
+        // optional endpoints, model-space origin, shared tail.
+        (first_construction_subtype(record_bytes).as_deref() == Some("sum_spl_sur"))
+            .then_some(())?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        let (active_bytes, tables) = resolver?;
+        let first = decode_embedded_base_curve_resolving_refs(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let first_endpoints = [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ];
+        let second = decode_embedded_base_curve_resolving_refs(
+            span,
+            &mut position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let second_endpoints = [
+            take_optional_range_value(span, &mut position)?,
+            take_optional_range_value(span, &mut position)?,
+        ];
+        let origin = take_native_vec3(span, &mut position, 0x13)?;
+        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+            decode_revision_surface_tail(span, &mut position, int_width)?;
+        return Some(DecodedProceduralSurface {
+            definition: DecodedProceduralSurfaceDefinition::Sum {
+                first: CurveGeometry::Nurbs(first),
+                second: CurveGeometry::Nurbs(second),
+                basepoint: Vector3::new(
+                    origin[0] * LEN_TO_MM,
+                    origin[1] * LEN_TO_MM,
+                    origin[2] * LEN_TO_MM,
+                ),
+                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds: [None; 4],
+                    reference_endpoints: first_endpoints,
+                    second_endpoints,
+                    flags: Vec::new(),
+                    tail_enum,
+                    discontinuities,
+                    tail_flag,
+                    trailing_flags: Vec::new(),
+                }),
+            },
+            cache_fit_tolerance: Some(fit_tolerance),
+        });
+    }
     let mut decoded_curves = marker_positions(span)
         .into_iter()
         .filter_map(|at| decode_curve_block(span, at, int_width));
@@ -3546,9 +3795,10 @@ fn decode_sum_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedPr
     });
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Sum {
-            first: first.curve,
-            second: second.curve,
+            first: CurveGeometry::Nurbs(first.curve),
+            second: CurveGeometry::Nurbs(second.curve),
             basepoint,
+            revision_form: None,
         },
         cache_fit_tolerance,
     })
@@ -3599,6 +3849,43 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
             .map(|start| (start, name))
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
+    let mut position = name.len() + 3;
+    if span.get(position) == Some(&0x04) {
+        // Revision-gated layout: revision integer, shared tail, four optional
+        // parameter values, and the extension as an enum.
+        (first_construction_subtype(record_bytes).as_deref() == Some("exact_spl_sur"))
+            .then_some(())?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let mut bounds = [None; 4];
+        for bound in &mut bounds {
+            *bound = take_optional_range_value(span, &mut position)?;
+        }
+        let extension = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        return Some(DecodedProceduralSurface {
+            definition: DecodedProceduralSurfaceDefinition::Exact {
+                parameter_ranges: [
+                    [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
+                    [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
+                ],
+                extension,
+                revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+                    revision,
+                    support_bounds: bounds,
+                    reference_endpoints: [None; 2],
+                    second_endpoints: [None; 2],
+                    flags: Vec::new(),
+                    tail_enum,
+                    discontinuities,
+                    tail_flag,
+                    trailing_flags: Vec::new(),
+                }),
+            },
+            cache_fit_tolerance: Some(fit_tolerance),
+        });
+    }
     let cache = marker_positions(span)
         .into_iter()
         .filter_map(|at| decode_surface_block(span, at, int_width))
@@ -3623,6 +3910,7 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
         definition: DecodedProceduralSurfaceDefinition::Exact {
             parameter_ranges,
             extension,
+            revision_form: None,
         },
         cache_fit_tolerance,
     })
@@ -3640,29 +3928,72 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
-    let cache = decode_surface_block(span, position, int_width)?;
-    position = cache.end;
-    let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
-    let discontinuities = [
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-        take_float_array(span, &mut position, int_width)?,
-    ];
-    let discontinuity_flag = take_bool(span, &mut position)?;
-    let parameter_ranges = [
-        [
-            take_f64(span, &mut position)? * LEN_TO_MM,
-            take_f64(span, &mut position)? * LEN_TO_MM,
-        ],
-        [
-            take_f64(span, &mut position)? * LEN_TO_MM,
-            take_f64(span, &mut position)? * LEN_TO_MM,
-        ],
-    ];
-    let type_code = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let (
+        cache_fit_tolerance,
+        discontinuities,
+        discontinuity_flag,
+        parameter_ranges,
+        type_code,
+        revision_form,
+    );
+    if span.get(position) == Some(&0x04) {
+        // Revision-gated layout: revision integer, shared tail, four optional
+        // parameter values, the type code as an enum, then the nested
+        // subtransform scope and trailing integer.
+        (first_construction_subtype(record_bytes).as_deref() == Some("t_spl_sur")).then_some(())?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        let (tail_enum, fit_tolerance, tail_discontinuities, tail_flag) =
+            decode_revision_surface_tail(span, &mut position, int_width)?;
+        let mut bounds = [None; 4];
+        for bound in &mut bounds {
+            *bound = take_optional_range_value(span, &mut position)?;
+        }
+        cache_fit_tolerance = Some(fit_tolerance);
+        discontinuities = tail_discontinuities.clone();
+        discontinuity_flag = tail_flag;
+        parameter_ranges = [
+            [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
+            [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
+        ];
+        type_code = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        revision_form = Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
+            revision,
+            support_bounds: bounds,
+            reference_endpoints: [None; 2],
+            second_endpoints: [None; 2],
+            flags: Vec::new(),
+            tail_enum,
+            discontinuities: tail_discontinuities,
+            tail_flag,
+            trailing_flags: Vec::new(),
+        });
+    } else {
+        let cache = decode_surface_block(span, position, int_width)?;
+        position = cache.end;
+        cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
+        discontinuities = [
+            take_float_array(span, &mut position, int_width)?,
+            take_float_array(span, &mut position, int_width)?,
+            take_float_array(span, &mut position, int_width)?,
+            take_float_array(span, &mut position, int_width)?,
+            take_float_array(span, &mut position, int_width)?,
+            take_float_array(span, &mut position, int_width)?,
+        ];
+        discontinuity_flag = take_bool(span, &mut position)?;
+        parameter_ranges = [
+            [
+                take_f64(span, &mut position)? * LEN_TO_MM,
+                take_f64(span, &mut position)? * LEN_TO_MM,
+            ],
+            [
+                take_f64(span, &mut position)? * LEN_TO_MM,
+                take_f64(span, &mut position)? * LEN_TO_MM,
+            ],
+        ];
+        type_code = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        revision_form = None;
+    }
     if span.get(position) != Some(&0x0f) {
         return None;
     }
@@ -3717,6 +4048,7 @@ fn decode_t_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<DecodedProc
                 trailing_value,
                 discontinuities,
                 discontinuity_flag,
+                revision_form,
             },
         )),
         cache_fit_tolerance,
@@ -4484,6 +4816,10 @@ fn decode_variable_blend_value(
         false
     };
     let payload = match name.as_str() {
+        "fixed_width" => VariableBlendValuePayload::FixedWidth {
+            parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
+            width: take_f64(bytes, position)?,
+        },
         "two_ends" => VariableBlendValuePayload::TwoEnds {
             parameters: [take_f64(bytes, position)?, take_f64(bytes, position)?],
             radii: [
@@ -4543,7 +4879,11 @@ fn decode_variable_blend_value(
             let radius = take_f64(bytes, position)? * LEN_TO_MM;
             let (function, end) = decode_pcurve_block_with_end(bytes, *position, int_width)?;
             *position = end;
-            let enum_count = take_tagged_int(bytes, position, 0x04, int_width)?;
+            // Revision-gated streams store the enum count and trailing flag
+            // as 0x15 enum tokens; pre-revision streams use 0x04 integers.
+            let enum_tagged = bytes.get(*position) == Some(&0x15);
+            let count_tag = if enum_tagged { 0x15 } else { 0x04 };
+            let enum_count = take_tagged_int(bytes, position, count_tag, int_width)?;
             let count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
             if count > 100_000 {
                 return None;
@@ -4567,7 +4907,7 @@ fn decode_variable_blend_value(
                     normal: Vector3::new(normal[0], normal[1], normal[2]),
                 });
             }
-            let tail = if take_tagged_int(bytes, position, 0x04, int_width)? != 0 {
+            let tail = if take_tagged_int(bytes, position, count_tag, int_width)? != 0 {
                 Some([take_f64(bytes, position)?, take_f64(bytes, position)?])
             } else {
                 None
@@ -4583,6 +4923,7 @@ fn decode_variable_blend_value(
                     periodic: function.periodic,
                 },
                 enum_count,
+                enum_tagged,
                 points,
                 tail,
             }
@@ -4668,6 +5009,84 @@ mod variable_blend_value_tests {
             VariableBlendValuePayload::TwoEnds { .. }
         ));
     }
+
+    #[test]
+    fn decodes_generated_fixed_width_value() {
+        let mut bytes = Vec::new();
+        text(&mut bytes, "fixed_width");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        for value in [0.0, 2.5, 1.5] {
+            double(&mut bytes, value);
+        }
+        let mut position = 0;
+        let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
+            .expect("generated fixed-width value");
+        assert_eq!(position, bytes.len());
+        let VariableBlendValuePayload::FixedWidth { parameters, width } = decoded.payload else {
+            panic!("expected fixed-width payload")
+        };
+        assert_eq!(parameters, [0.0, 2.5]);
+        assert_eq!(width, 1.5);
+    }
+
+    #[test]
+    fn decodes_generated_enum_tagged_interp_counts() {
+        let mut bytes = Vec::new();
+        text(&mut bytes, "interp");
+        integer(&mut bytes, 0x15, 0);
+        bytes.push(0x0a);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        // Minimal degree-1 BS2 function block.
+        bytes.push(0x0d);
+        bytes.push(4);
+        bytes.extend_from_slice(b"nubs");
+        integer(&mut bytes, 0x04, 1);
+        integer(&mut bytes, 0x15, 0);
+        integer(&mut bytes, 0x04, 2);
+        double(&mut bytes, 0.0);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 1.0);
+        integer(&mut bytes, 0x04, 1);
+        for value in [0.0, 0.0, 1.0, 1.0] {
+            double(&mut bytes, value);
+        }
+        // Enum-tagged count pair and trailing flag.
+        integer(&mut bytes, 0x15, 2);
+        integer(&mut bytes, 0x04, 1);
+        double(&mut bytes, 0.5);
+        double(&mut bytes, 1.5);
+        double(&mut bytes, 0.0);
+        double(&mut bytes, 1.0);
+        bytes.push(0x13);
+        for value in [1.0f64, 2.0, 3.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.push(0x14);
+        for value in [0.0f64, 0.0, 1.0] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        integer(&mut bytes, 0x15, 0);
+        let mut position = 0;
+        let decoded = decode_variable_blend_value(&bytes, &mut position, 8, true, 0)
+            .expect("generated enum-tagged interp value");
+        assert_eq!(position, bytes.len());
+        let VariableBlendValuePayload::Interpolated {
+            enum_count,
+            enum_tagged,
+            points,
+            tail,
+            ..
+        } = decoded.payload
+        else {
+            panic!("expected interpolated payload")
+        };
+        assert_eq!(enum_count, 2);
+        assert!(enum_tagged);
+        assert_eq!(points.len(), 1);
+        assert!(tail.is_none());
+    }
 }
 
 fn decode_var_blend_spl_sur(
@@ -4716,7 +5135,7 @@ fn decode_var_blend_spl_sur(
     }
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
-    let definition_index = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let sides = Box::new([
         decode_rolling_ball_side(span, &mut position, int_width, reference_context)?,
         decode_rolling_ball_side(span, &mut position, int_width, reference_context)?,
@@ -4746,20 +5165,27 @@ fn decode_var_blend_spl_sur(
     } else {
         None
     };
+    // A two-radii blend always stores one chamfer-selector enum after its
+    // second radius value: 0 selects no chamfer, 3 selects the rounded
+    // chamfer with its type and third value. Other selector values are
+    // rejected rather than guessed at.
+    let mut chamfer_selector = None;
     let chamfer = if matches!(
         radius_kind,
         cadmpeg_ir::geometry::VariableBlendRadiusKind::TwoRadii
     ) && span.get(position) == Some(&0x15)
-        && read_int(span, position + 1, int_width) == Some(3)
     {
-        Some(Box::new(VariableBlendChamfer {
-            kind: match take_tagged_int(span, &mut position, 0x15, int_width)? {
-                3 => VariableBlendChamferKind::Rounded,
-                _ => return None,
-            },
-            chamfer_type: take_tagged_int(span, &mut position, 0x15, int_width)?,
-            value: decode_variable_blend_value(span, &mut position, int_width, true, 0)?,
-        }))
+        let selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        chamfer_selector = Some(selector);
+        match selector {
+            0 => None,
+            3 => Some(Box::new(VariableBlendChamfer {
+                kind: VariableBlendChamferKind::Rounded,
+                chamfer_type: take_tagged_int(span, &mut position, 0x15, int_width)?,
+                value: decode_variable_blend_value(span, &mut position, int_width, true, 0)?,
+            })),
+            _ => return None,
+        }
     } else {
         None
     };
@@ -4804,11 +5230,9 @@ fn decode_var_blend_spl_sur(
         take_float_array(span, &mut position, int_width)?,
         take_float_array(span, &mut position, int_width)?,
         take_float_array(span, &mut position, int_width)?,
-    ];
-    let shape_extensions = [
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
-        take_tagged_int(span, &mut position, 0x04, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
+        take_float_array(span, &mut position, int_width)?,
     ];
     let tail_flag = take_bool(span, &mut position)?;
     let tail_extensions = [
@@ -4853,7 +5277,7 @@ fn decode_var_blend_spl_sur(
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::VariableBlend(Box::new(
             EmbeddedVariableBlend {
-                definition_index,
+                revision,
                 sides,
                 slice: slice.geometry,
                 slice_range: slice.parameter_range,
@@ -4861,6 +5285,7 @@ fn decode_var_blend_spl_sur(
                 radius_kind,
                 first_value,
                 second_value,
+                chamfer_selector,
                 chamfer,
                 single_radius_tail,
                 u_range,
@@ -4871,7 +5296,6 @@ fn decode_var_blend_spl_sur(
                 shape_tail,
                 cache_selector,
                 discontinuities,
-                shape_extensions,
                 tail_flag,
                 tail_extensions,
                 secondary_curve,
@@ -4921,7 +5345,8 @@ fn decode_vertex_blend_boundary(
             let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
             let sense = i64::from(take_bool(bytes, position)?);
             EmbeddedVertexBlendBoundaryGeometry::Circle {
-                curve: curve.curve,
+                curve: CurveGeometry::Nurbs(curve.curve),
+                curve_endpoints: [None; 2],
                 form,
                 twists,
                 parameters,
@@ -4951,6 +5376,7 @@ fn decode_vertex_blend_boundary(
             let fit_tolerance = take_f64(bytes, position)?;
             EmbeddedVertexBlendBoundaryGeometry::Pcurve {
                 surface,
+                support_bounds: [None; 4],
                 pcurve,
                 sense,
                 fit_tolerance,
@@ -4964,7 +5390,137 @@ fn decode_vertex_blend_boundary(
             EmbeddedVertexBlendBoundaryGeometry::Plane {
                 normal: Vector3::new(normal[0], normal[1], normal[2]),
                 parameters,
-                curve: curve.curve,
+                curve: CurveGeometry::Nurbs(curve.curve),
+                curve_endpoints: [None; 2],
+            }
+        }
+        _ => return None,
+    };
+    Some(EmbeddedVertexBlendBoundary {
+        boundary_type,
+        magic: Point3::new(
+            magic[0] * LEN_TO_MM,
+            magic[1] * LEN_TO_MM,
+            magic[2] * LEN_TO_MM,
+        ),
+        u_smoothing,
+        v_smoothing,
+        fullness,
+        geometry,
+    })
+}
+
+/// Decode one revision-gated vertex-blend boundary: ident-token type name,
+/// cross boolean, magic vector, smoothing booleans, fullness, and the
+/// type-selected payload with bound-carrying supports and endpoint-carrying
+/// curves.
+fn decode_revision_vertex_blend_boundary(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<EmbeddedVertexBlendBoundary> {
+    let (active_bytes, tables) = resolver?;
+    let kind = take_native_ident(bytes, position)?;
+    let boundary_type = i64::from(take_bool(bytes, position)?);
+    let magic = take_native_vec3(bytes, position, 0x14)?;
+    let u_smoothing = i64::from(take_bool(bytes, position)?);
+    let v_smoothing = i64::from(take_bool(bytes, position)?);
+    let fullness = take_f64(bytes, position)?;
+    let geometry = match kind.as_str() {
+        "circle" => {
+            let curve = decode_embedded_base_curve_resolving_refs(
+                bytes,
+                position,
+                int_width,
+                active_bytes,
+                tables,
+            )?;
+            let curve_endpoints = [
+                take_optional_range_value(bytes, position)?,
+                take_optional_range_value(bytes, position)?,
+            ];
+            let form = take_tagged_int(bytes, position, 0x15, int_width)?;
+            let twist_count = match form {
+                0 => 0,
+                1 => 1,
+                3 => 2,
+                _ => return None,
+            };
+            let mut twists = Vec::with_capacity(twist_count);
+            for _ in 0..twist_count {
+                let twist = take_native_vec3(bytes, position, 0x14)?;
+                twists.push(Point3::new(
+                    twist[0] * LEN_TO_MM,
+                    twist[1] * LEN_TO_MM,
+                    twist[2] * LEN_TO_MM,
+                ));
+            }
+            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+            let sense = i64::from(take_bool(bytes, position)?);
+            EmbeddedVertexBlendBoundaryGeometry::Circle {
+                curve: CurveGeometry::Nurbs(curve),
+                curve_endpoints,
+                form,
+                twists,
+                parameters,
+                sense,
+            }
+        }
+        "deg" => {
+            let location = take_native_vec3(bytes, position, 0x13)?;
+            let first = take_native_vec3(bytes, position, 0x14)?;
+            let second = take_native_vec3(bytes, position, 0x14)?;
+            EmbeddedVertexBlendBoundaryGeometry::Degenerate {
+                location: Point3::new(
+                    location[0] * LEN_TO_MM,
+                    location[1] * LEN_TO_MM,
+                    location[2] * LEN_TO_MM,
+                ),
+                normals: [
+                    Vector3::new(first[0], first[1], first[2]),
+                    Vector3::new(second[0], second[1], second[2]),
+                ],
+            }
+        }
+        "pcurve" => {
+            let (surface, support_bounds) = decode_optional_embedded_surface_with_bounds(
+                bytes,
+                position,
+                int_width,
+                active_bytes,
+                tables,
+            )?;
+            let pcurve = decode_nullable_embedded_pcurve(bytes, position, int_width)?;
+            let sense = i64::from(take_bool(bytes, position)?);
+            let fit_tolerance = take_f64(bytes, position)?;
+            EmbeddedVertexBlendBoundaryGeometry::Pcurve {
+                surface: surface?,
+                support_bounds,
+                pcurve,
+                sense,
+                fit_tolerance,
+            }
+        }
+        "plane" => {
+            let normal = take_native_vec3(bytes, position, 0x14)?;
+            let parameters = [take_f64(bytes, position)?, take_f64(bytes, position)?];
+            let curve = decode_embedded_base_curve_resolving_refs(
+                bytes,
+                position,
+                int_width,
+                active_bytes,
+                tables,
+            )?;
+            let curve_endpoints = [
+                take_optional_range_value(bytes, position)?,
+                take_optional_range_value(bytes, position)?,
+            ];
+            EmbeddedVertexBlendBoundaryGeometry::Plane {
+                normal: Vector3::new(normal[0], normal[1], normal[2]),
+                parameters,
+                curve: CurveGeometry::Nurbs(curve),
+                curve_endpoints,
             }
         }
         _ => return None,
@@ -4986,6 +5542,7 @@ fn decode_vertex_blend_boundary(
 fn decode_vertex_blend_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let names: [&[u8]; 2] = [b"VBL_SURF", b"vertexblendsur"];
     let (start, name_len) = names.into_iter().find_map(|name| {
@@ -5001,23 +5558,40 @@ fn decode_vertex_blend_spl_sur(
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
+    // The revision-gated layout stores the revision integer before the
+    // boundary count; boundary names are ident tokens and boundary payloads
+    // carry optional bounds and endpoints. The count is a `0x04` integer in
+    // both layouts, so the revision layout is recognized by the second
+    // `0x04` token: a legacy count is directly followed by a boundary type
+    // string, a revision integer by the count integer.
+    let revision = if span.get(position) == Some(&0x04)
+        && span.get(position + 1 + int_width) == Some(&0x04)
+    {
+        (first_construction_subtype(record_bytes).as_deref() == Some("VBL_SURF")).then_some(())?;
+        let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+        (revision > 0).then_some(())?;
+        Some(revision)
+    } else {
+        None
+    };
     let count = usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
     if count > 100_000 {
         return None;
     }
     let mut boundaries = Vec::with_capacity(count);
     for _ in 0..count {
-        boundaries.push(decode_vertex_blend_boundary(
-            span,
-            &mut position,
-            int_width,
-        )?);
+        boundaries.push(if revision.is_some() {
+            decode_revision_vertex_blend_boundary(span, &mut position, int_width, resolver)?
+        } else {
+            decode_vertex_blend_boundary(span, &mut position, int_width)?
+        });
     }
     let grid_size = take_tagged_int(span, &mut position, 0x04, int_width)?;
     let fit_tolerance = take_f64(span, &mut position)? * LEN_TO_MM;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::VertexBlend(Box::new(
             EmbeddedVertexBlend {
+                revision,
                 boundaries,
                 grid_size,
                 fit_tolerance,
@@ -5282,14 +5856,14 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_skin_spl_sur(bytes, int_width))
         .or_else(|| decode_net_spl_sur(bytes, int_width))
         .or_else(|| decode_sweep_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_g2_blend_spl_sur(bytes, int_width))
+        .or_else(|| decode_g2_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_ruled_spl_sur(bytes, int_width))
-        .or_else(|| decode_sum_spl_sur(bytes, int_width))
-        .or_else(|| decode_rot_spl_sur(bytes, int_width))
+        .or_else(|| decode_sum_spl_sur(bytes, int_width, Some((active_bytes, tables))))
+        .or_else(|| decode_rot_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_off_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_cyl_spl_sur_at(bytes, int_width))
         .or_else(|| decode_var_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_vertex_blend_spl_sur(bytes, int_width))
+        .or_else(|| decode_vertex_blend_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_full_rb_blend_spl_sur(bytes, int_width, active_bytes, tables))
         .or_else(|| decode_rb_blend_spl_sur_fallback(bytes, int_width))
     {
@@ -7557,14 +8131,39 @@ fn decode_optional_embedded_surface_with_bounds(
         }
     }
     *position = saved;
-    let surface = decode_embedded_surface(bytes, position, int_width)?;
-    let mut bounds = [None; 4];
-    if kind.as_deref() == Some("plane") || kind.as_deref() == Some("spline") {
-        for bound in &mut bounds {
-            *bound = take_optional_range_value(bytes, position)?;
+    if let Some(surface) = decode_embedded_surface(bytes, position, int_width) {
+        let mut bounds = [None; 4];
+        if kind.as_deref() == Some("plane") || kind.as_deref() == Some("spline") {
+            for bound in &mut bounds {
+                *bound = take_optional_range_value(bytes, position)?;
+            }
+        }
+        return Some((Some(surface), bounds));
+    }
+    // Inline `spline { <subtype> }` support scope whose construction grammar
+    // the embedded decoder does not type, including nested revision-gated
+    // subtypes: resolve the scope's solved surface cache (following nested
+    // subtype-table references) and consume the scope, then read the four
+    // optional bound fields.
+    *position = saved;
+    if kind.as_deref() == Some("spline") {
+        take_native_ident(bytes, position)?;
+        if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
+            take_bool(bytes, position)?;
+        }
+        if bytes.get(*position) == Some(&0x0f) {
+            let scope = subtype_span(bytes, *position, int_width)?;
+            let surface = decode_surface_cache_resolving_refs(scope, active_bytes, tables)?;
+            *position += scope.len();
+            let mut bounds = [None; 4];
+            for bound in &mut bounds {
+                *bound = take_optional_range_value(bytes, position)?;
+            }
+            return Some((Some(SurfaceGeometry::Nurbs(surface)), bounds));
         }
     }
-    Some((Some(surface), bounds))
+    *position = saved;
+    None
 }
 
 fn take_f64(bytes: &[u8], position: &mut usize) -> Option<f64> {
@@ -7833,6 +8432,50 @@ fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64> {
     let value = read_f64(bytes, *position + 1)?;
     *position += 9;
     Some(value)
+}
+
+/// Four optional U/V parameter bounds following a surface record's first
+/// top-level subtype scope, or `None` when the record stores no bound
+/// fields. `record_bytes` starts at the record's name chain.
+pub fn record_trailing_surface_bounds(record_bytes: &[u8]) -> Option<[Option<f64>; 4]> {
+    INT_WIDTHS
+        .into_iter()
+        .find_map(|int_width| record_trailing_surface_bounds_at(record_bytes, int_width))
+}
+
+fn record_trailing_surface_bounds_at(
+    record_bytes: &[u8],
+    int_width: usize,
+) -> Option<[Option<f64>; 4]> {
+    // Walk the fixed spline-record header: name tokens, attrib ref, history
+    // int, geometry ref, sense boolean, then the subtype scope.
+    let mut position = 0usize;
+    while matches!(record_bytes.get(position), Some(0x0d | 0x0e)) {
+        position += 2 + usize::from(*record_bytes.get(position + 1)?);
+    }
+    for tag in [0x0c, 0x04, 0x0c] {
+        if record_bytes.get(position) != Some(&tag) {
+            return None;
+        }
+        position += 1 + int_width;
+    }
+    if !matches!(record_bytes.get(position), Some(0x0a | 0x0b)) {
+        return None;
+    }
+    position += 1;
+    if record_bytes.get(position) != Some(&0x0f) {
+        return None;
+    }
+    let scope = subtype_span(record_bytes, position, int_width)?;
+    position += scope.len();
+    if !matches!(record_bytes.get(position), Some(0x0a | 0x0b)) {
+        return None;
+    }
+    let mut bounds = [None; 4];
+    for bound in &mut bounds {
+        *bound = take_optional_range_value(record_bytes, &mut position)?;
+    }
+    Some(bounds)
 }
 
 #[allow(clippy::option_option)] // Outer None is parse failure; inner None is an absent bound.
