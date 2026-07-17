@@ -24,10 +24,16 @@ cadmpeg-ir = 18
 # by one per new zip-building test. Raised 374 -> 377 for the three
 # `std::io::Cursor` uses in `truncation_at_design_body_member_boundaries_is_deterministic_and_never_panics`.
 cadmpeg-codec-f3d = 377
-cadmpeg-codec-sldprt = 390
+# Raised 390 -> 391 for the `std::io::Cursor` driver in the Phase 3C
+# `source_fidelity` determinism test, which exercises the reader-based codec
+# entry rather than the domain `Cursor` reader `View` replaces.
+cadmpeg-codec-sldprt = 391
 cadmpeg-codec-catia = 20
 cadmpeg-codec-creo = 9
-cadmpeg-codec-nx = 58
+# Raised 58 -> 59 for the `std::io::Cursor` driver in the new Phase 3C
+# accounting test, an in-memory `ReadSeek` for decode, not the domain `Cursor`
+# reader `View` replaces.
+cadmpeg-codec-nx = 59
 cadmpeg-codec-rhino = 48
 cadmpeg-step = 0
 cadmpeg-harness = 3

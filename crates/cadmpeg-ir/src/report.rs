@@ -153,6 +153,12 @@ pub struct DecodeReport {
     /// by the decode session at `finish`.
     #[serde(default)]
     pub profile_versions: ProfileVersions,
+    /// Validated source-fidelity ledger proving byte conservation over the
+    /// source container's physical spaces (§10 Phase 3C), when the codec has
+    /// adopted container accounting. `None` for codecs that have not, keeping
+    /// the field absent from serialized reports predating the accounting work.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_fidelity: Option<crate::source_fidelity::SourceFidelity>,
 }
 
 impl DecodeReport {
@@ -325,6 +331,7 @@ mod tests {
             notes: Vec::new(),
             retention_degraded: false,
             profile_versions,
+            source_fidelity: None,
         }
     }
 

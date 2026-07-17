@@ -1893,6 +1893,7 @@ impl<'a> DecodeContext<'a> {
             DecodeReport {
                 retention_degraded: false,
                 profile_versions: ProfileVersions::default(),
+                source_fidelity: None,
                 format: "rhino".to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,

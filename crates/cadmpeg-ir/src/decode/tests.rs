@@ -44,6 +44,7 @@ fn dummy_result() -> DecodeResult {
         notes: Vec::new(),
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
     };
     DecodeResult::new(ir, report)
 }
