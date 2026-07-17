@@ -43,9 +43,6 @@ pub struct B5Graph {
     pub supported_surfaces: BTreeMap<u32, B5SupportedSurface>,
     /// Native class-`06` curve-parameter incidences, keyed by object id.
     pub parameter_incidences: BTreeMap<u32, B5ParameterIncidence>,
-    /// Ordered class-`06` incidence ids owned by each native class-`5d`
-    /// vertex identity.
-    pub vertex_parameter_incidences: BTreeMap<u32, Vec<u32>>,
     /// World-frame `05 08 01` vertex coordinates, in stream order.
     pub vertex_points: Vec<[f64; 3]>,
     /// Logical vertex coordinates resolved from native `5d` identity. Their
@@ -56,6 +53,9 @@ pub struct B5Graph {
     /// Per-edge pair of vertex indices. Raw `vertex_points` occupy the first
     /// index range; native `5d` logical vertices occupy the following range.
     pub edge_vertices: BTreeMap<u32, [usize; 2]>,
+    /// Ordered class-`06` start/end parameter-incidence references from each
+    /// native class-`5e` edge.
+    pub edge_parameter_incidences: BTreeMap<u32, [u32; 2]>,
     /// Maximum incident endpoint residual for each logical vertex, keyed by
     /// the combined vertex index used by `edge_vertices`.
     pub vertex_tolerances: BTreeMap<usize, f64>,
@@ -545,17 +545,22 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             parse_edge_vertex_refs(record).map(|vertices| (record.object_id, vertices))
         })
         .collect();
+    let edge_parameter_incidences: BTreeMap<u32, [u32; 2]> = records
+        .iter()
+        .filter_map(|record| {
+            let parameters = parse_edge_parameter_refs(record)?;
+            parameters
+                .iter()
+                .all(|parameter| parameter_incidences.contains_key(parameter))
+                .then_some((record.object_id, parameters))
+        })
+        .collect();
     let native_vertex_coordinates = incidence_vertex_coordinates(
         &native_edge_vertices,
         &by_id,
         &pcurves,
         &surfaces,
         &profiles,
-    );
-    let vertex_parameter_incidences = native_vertex_parameter_incidences(
-        native_edge_vertices.values().flatten().copied(),
-        &by_id,
-        &parameter_incidences,
     );
     let bound_vertices = bind_native_vertices(
         &loops,
@@ -606,34 +611,14 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         offset_surfaces,
         supported_surfaces,
         parameter_incidences,
-        vertex_parameter_incidences,
         vertex_points,
         logical_vertex_points,
         logical_vertex_refs,
         edge_vertices,
+        edge_parameter_incidences,
         vertex_tolerances,
         profiles,
     })
-}
-
-fn native_vertex_parameter_incidences(
-    vertices: impl IntoIterator<Item = u32>,
-    by_id: &HashMap<u32, &B5Record>,
-    parameter_incidences: &BTreeMap<u32, B5ParameterIncidence>,
-) -> BTreeMap<u32, Vec<u32>> {
-    vertices
-        .into_iter()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .filter_map(|vertex| {
-            let incidence = vertex_incidence_ref(by_id.get(&vertex)?)?;
-            let records = counted_references(by_id.get(&incidence)?, 0x05)?;
-            records
-                .iter()
-                .all(|record| parameter_incidences.contains_key(record))
-                .then_some((vertex, records))
-        })
-        .collect()
 }
 
 /// Return native start/end vertex identities for every framed `b5 03 5e`
@@ -685,6 +670,11 @@ fn parse_edge_refs(record: &B5Record) -> Option<[u32; 5]> {
 fn parse_edge_vertex_refs(record: &B5Record) -> Option<[u32; 2]> {
     let references = parse_edge_refs(record)?;
     Some([references[1], references[2]])
+}
+
+fn parse_edge_parameter_refs(record: &B5Record) -> Option<[u32; 2]> {
+    let references = parse_edge_refs(record)?;
+    Some([references[3], references[4]])
 }
 
 fn incidence_vertex_coordinates(
@@ -2861,6 +2851,7 @@ mod tests {
             payload: vec![0x85, 0x92, 0x8f, 0x95, 0x93, 0x94, 0x21],
         };
         assert_eq!(parse_edge_vertex_refs(&record), Some([15, 21]));
+        assert_eq!(parse_edge_parameter_refs(&record), Some([19, 20]));
 
         let mut standard = record;
         *standard.payload.last_mut().expect("tail") = 0x01;
@@ -2963,56 +2954,6 @@ mod tests {
         assert_eq!(incidence.curves, [9, 10]);
         assert_eq!(incidence.parameters, [1.25, 2.5]);
         assert_eq!(incidence.controls, [5, 11]);
-    }
-
-    #[test]
-    fn native_vertex_retains_its_ordered_parameter_incidences() {
-        let records = vec![
-            B5Record {
-                offset: 0,
-                family: 0xb5,
-                class: 0x5d,
-                object_id: 6,
-                payload: vec![0x81, 0x87, 0x00],
-            },
-            B5Record {
-                offset: 1,
-                family: 0xb5,
-                class: 0x05,
-                object_id: 7,
-                payload: vec![0x82, 0x88, 0x89],
-            },
-        ];
-        let by_id = records
-            .iter()
-            .map(|record| (record.object_id, record))
-            .collect();
-        let incidences = BTreeMap::from([
-            (
-                8,
-                B5ParameterIncidence {
-                    object_id: 8,
-                    curves: vec![2],
-                    parameters: vec![0.0],
-                    controls: vec![5],
-                },
-            ),
-            (
-                9,
-                B5ParameterIncidence {
-                    object_id: 9,
-                    curves: vec![2],
-                    parameters: vec![1.0],
-                    controls: vec![5],
-                },
-            ),
-        ]);
-
-        assert_eq!(
-            native_vertex_parameter_incidences([6], &by_id, &incidences),
-            BTreeMap::from([(6, vec![8, 9])])
-        );
-        assert!(native_vertex_parameter_incidences([6], &by_id, &BTreeMap::new()).is_empty());
     }
 
     #[test]

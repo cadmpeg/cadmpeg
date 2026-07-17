@@ -932,20 +932,15 @@ fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]> {
 
 fn edge_pcurve_parameters(graph: &B5Graph, edge: u32, pcurve: u32) -> Option<[f64; 2]> {
     graph
-        .edge_vertices
+        .edge_parameter_incidences
         .get(&edge)?
-        .map(|vertex| {
-            let logical_index = vertex.checked_sub(graph.vertex_points.len())?;
-            let vertex_ref = *graph.logical_vertex_refs.get(logical_index)?;
-            let incidence_ids = graph.vertex_parameter_incidences.get(&vertex_ref)?;
-            let mut parameters = incidence_ids.iter().flat_map(|incidence_id| {
-                graph
-                    .parameter_incidences
-                    .get(incidence_id)
-                    .into_iter()
-                    .flat_map(|incidence| incidence.curves.iter().zip(&incidence.parameters))
-                    .filter_map(|(&curve, &parameter)| (curve == pcurve).then_some(parameter))
-            });
+        .map(|incidence_id| {
+            let incidence = graph.parameter_incidences.get(&incidence_id)?;
+            let mut parameters = incidence
+                .curves
+                .iter()
+                .zip(&incidence.parameters)
+                .filter_map(|(&curve, &parameter)| (curve == pcurve).then_some(parameter));
             let parameter = parameters.next()?;
             parameters
                 .all(|other| other == parameter)
@@ -2098,10 +2093,10 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 mod tests {
     use super::{
         b5_edge_support_definition, body_kind_if_owned, cylinder_helix, cylinder_point,
-        isocurve_endpoint_parameters, lifted_curve_geometry, merge_curve_plan,
-        neutral_pcurve_point, ordered_subrange, oriented_circle_plan, oriented_line_plan,
-        oriented_nurbs_range, rational_arc, revolution_surface, revolve_nurbs, transfer,
-        transfer_vertex_tolerances, CurvePlan, SurfacePlan,
+        edge_pcurve_parameters, isocurve_endpoint_parameters, lifted_curve_geometry,
+        merge_curve_plan, neutral_pcurve_point, ordered_subrange, oriented_circle_plan,
+        oriented_line_plan, oriented_nurbs_range, rational_arc, revolution_surface, revolve_nurbs,
+        transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
     };
     use crate::b5::{
         B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile, B5Surface,
@@ -2128,6 +2123,53 @@ mod tests {
         assert!(ordered_subrange([2.0, 2.0], [0.0, 10.0]).is_none());
         assert!(ordered_subrange([-2e-9, 8.0], [0.0, 10.0]).is_none());
         assert!(ordered_subrange([2.0, 12.0], [0.0, 10.0]).is_none());
+    }
+
+    #[test]
+    fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
+        let mut graph = B5Graph {
+            complete: false,
+            records: Vec::new(),
+            faces: Vec::new(),
+            loops: BTreeMap::new(),
+            pcurves: BTreeMap::new(),
+            opaque_pcurves: BTreeMap::new(),
+            implicit_pcurves: BTreeMap::new(),
+            surfaces: BTreeMap::new(),
+            offset_surfaces: BTreeMap::new(),
+            supported_surfaces: BTreeMap::new(),
+            parameter_incidences: BTreeMap::from([
+                (
+                    40,
+                    B5ParameterIncidence {
+                        object_id: 40,
+                        curves: vec![20],
+                        parameters: vec![0.0],
+                        controls: vec![0],
+                    },
+                ),
+                (
+                    41,
+                    B5ParameterIncidence {
+                        object_id: 41,
+                        curves: vec![20],
+                        parameters: vec![1.0],
+                        controls: vec![0],
+                    },
+                ),
+            ]),
+            vertex_points: Vec::new(),
+            logical_vertex_points: vec![[0.0, 0.0, 0.0]],
+            logical_vertex_refs: vec![50],
+            edge_vertices: BTreeMap::from([(30, [0, 0])]),
+            edge_parameter_incidences: BTreeMap::from([(30, [40, 41])]),
+            vertex_tolerances: BTreeMap::new(),
+            profiles: BTreeMap::new(),
+        };
+
+        assert_eq!(edge_pcurve_parameters(&graph, 30, 20), Some([0.0, 1.0]));
+        graph.edge_parameter_incidences.insert(30, [41, 40]);
+        assert_eq!(edge_pcurve_parameters(&graph, 30, 20), Some([1.0, 0.0]));
     }
 
     #[test]
@@ -2203,15 +2245,15 @@ mod tests {
                     },
                 ),
             ]),
-            vertex_parameter_incidences: BTreeMap::from([
-                (50, vec![40]),
-                (51, vec![41]),
-                (52, vec![42]),
-            ]),
             vertex_points: Vec::new(),
             logical_vertex_points: vec![[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.0, 0.0, 0.0]],
             logical_vertex_refs: vec![50, 51, 52],
             edge_vertices: BTreeMap::from([(30, [0, 1]), (31, [1, 2]), (32, [2, 0])]),
+            edge_parameter_incidences: BTreeMap::from([
+                (30, [40, 41]),
+                (31, [41, 42]),
+                (32, [42, 40]),
+            ]),
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
@@ -2351,11 +2393,11 @@ mod tests {
             offset_surfaces: BTreeMap::new(),
             supported_surfaces: BTreeMap::new(),
             parameter_incidences: BTreeMap::new(),
-            vertex_parameter_incidences: BTreeMap::new(),
             vertex_points: vec![[0.0; 3], [1.0, 0.0, 0.0]],
             logical_vertex_points: Vec::new(),
             logical_vertex_refs: Vec::new(),
             edge_vertices: BTreeMap::from([(3, [0, 1])]),
+            edge_parameter_incidences: BTreeMap::new(),
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
@@ -2416,11 +2458,11 @@ mod tests {
                     },
                 ),
             ]),
-            vertex_parameter_incidences: BTreeMap::from([(10, vec![20]), (11, vec![21])]),
             vertex_points: Vec::new(),
             logical_vertex_points: vec![[0.25, 0.0, 1e-4], [0.75, 0.0, 0.0]],
             logical_vertex_refs: vec![10, 11],
             edge_vertices: BTreeMap::from([(3, [0, 1])]),
+            edge_parameter_incidences: BTreeMap::from([(3, [20, 21])]),
             vertex_tolerances: BTreeMap::new(),
             profiles: BTreeMap::new(),
         };
