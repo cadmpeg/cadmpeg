@@ -1463,6 +1463,31 @@ fn extend_related_design_records(
     )?;
     native.design_parameter_scopes =
         crate::design::decode_parameter_scopes(scan, &native.design_entity_headers)?;
+    let mut existing = native
+        .design_record_headers
+        .iter()
+        .filter_map(|record| {
+            Some((
+                crate::design::native_stream(&record.id)?.to_owned(),
+                record.record_index,
+            ))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    for scope in &native.design_parameter_scopes {
+        let Some(stream) = crate::design::native_stream(&scope.id) else {
+            continue;
+        };
+        if existing.insert((stream.to_owned(), scope.record_index)) {
+            native
+                .design_record_headers
+                .push(crate::records::DesignRecordHeader {
+                    id: format!("{stream}:design-record-header#{}", scope.byte_offset),
+                    record_index: scope.record_index,
+                    class_tag: scope.class_tag.clone(),
+                    byte_offset: scope.byte_offset,
+                });
+        }
+    }
     let indices = native
         .design_parameter_scopes
         .iter()
