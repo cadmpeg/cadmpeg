@@ -17,7 +17,7 @@ use crate::records::{
     EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
     PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
     SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantEdgeTail,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
+    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology, XrefDesign, XrefReference,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -78,6 +78,8 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "transform_hints",
     "vertex_ownerships",
     "wire_topologies",
+    "xref_designs",
+    "xref_references",
 ];
 
 macro_rules! f3d_arenas {
@@ -132,6 +134,8 @@ macro_rules! f3d_arenas {
             tolerant_vertex_tails: TolerantVertexTail;
             transform_hints: TransformHints;
             wire_topologies: WireTopology;
+            xref_designs: XrefDesign;
+            xref_references: XrefReference;
             asm_histories: AsmHistory;
         }
     };
@@ -332,6 +336,14 @@ pub struct F3dNative {
     /// Native wire records and their side classifications.
     #[serde(default)]
     pub wire_topologies: Vec<WireTopology>,
+    /// Container external-reference design entries
+    /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+    #[serde(default)]
+    pub xref_designs: Vec<XrefDesign>,
+    /// Container outgoing XREF placements
+    /// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+    #[serde(default)]
+    pub xref_references: Vec<XrefReference>,
     /// ASM construction-history containers and their linked delta states.
     #[serde(default)]
     pub asm_histories: Vec<AsmHistory>,
@@ -390,6 +402,8 @@ impl Default for F3dNative {
             tolerant_vertex_tails: Vec::new(),
             transform_hints: Vec::new(),
             wire_topologies: Vec::new(),
+            xref_designs: Vec::new(),
+            xref_references: Vec::new(),
             asm_histories: Vec::new(),
         }
     }

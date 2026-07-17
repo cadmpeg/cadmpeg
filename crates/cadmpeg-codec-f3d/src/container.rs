@@ -67,8 +67,13 @@ pub mod role {
     pub const PARAMESH: &str = "paramesh";
     /// An empty/placeholder design-configuration entry.
     pub const DESIGN_CONFIG: &str = "design-config";
-    /// The empty top-level document-properties slot.
+    /// The top-level document-properties slot: empty, or a JSON `docstruct`
+    /// document-type declaration.
     pub const PROPERTIES: &str = "properties";
+    /// The top-level external-reference table (`RedirectionsStream.dat`).
+    pub const REDIRECTIONS: &str = "redirections";
+    /// The top-level component-reference slot (`ComponentReferenceData.json`).
+    pub const COMPONENT_REFERENCES: &str = "component-reference-data";
     /// A directory entry.
     pub const DIRECTORY: &str = "directory";
     /// Anything not matched by a known family.
@@ -83,6 +88,10 @@ pub const DETECT_MARKERS: &[&[u8]] = &[
     b"FusionDocType",
     b".smbh",
 ];
+
+/// The `.f3z` marker substrings: an archive-level JSON member name or a
+/// `.f3d` document member name in a ZIP local file header.
+pub const F3Z_DETECT_MARKERS: &[&[u8]] = &[b"DesignDescription.json", b".f3d"];
 
 /// Classify an entry by its name using the spec's naming families ([§1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#1-container-layer), [§7](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#7-geometry-carriers)).
 pub fn classify(name: &str) -> &'static str {
@@ -114,6 +123,10 @@ pub fn classify(name: &str) -> &'static str {
         role::BULKSTREAM
     } else if base == "Properties.dat" {
         role::PROPERTIES
+    } else if base == "RedirectionsStream.dat" {
+        role::REDIRECTIONS
+    } else if base == "ComponentReferenceData.json" {
+        role::COMPONENT_REFERENCES
     } else if name.contains("Previews/") {
         role::PREVIEW
     } else if name.contains("Images.BlobParts") {

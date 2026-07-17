@@ -20222,3 +20222,207 @@ fn face_appearance_assignment_rejects_entity_id_and_uppercase_targets() {
         assert!(crate::materials::face_appearance_assignments(&bytes).is_empty());
     }
 }
+
+/// A `RedirectionsStream.dat` body with one self design entry plus one design
+/// and one XREF reference per `(relative_path, role)` pair.
+fn redirections_json(own_name: &str, targets: &[(&str, &str)]) -> String {
+    let mut designs = vec![format!(
+        r#"{{"file-version":1,"targetFileName":"{own_name}","displayName":"root","lineageUrn":"urn:adsk.wipprod:dm.lineage:RootKey","versionUrn":"urn:adsk.wipprod:fs.file:vf.RootKey?version=1"}}"#
+    )];
+    let mut references = Vec::new();
+    for (ordinal, (path, role)) in targets.iter().enumerate() {
+        designs.push(format!(
+            r#"{{"file-version":1,"targetFileName":"{path}","displayName":"component{ordinal}","lineageUrn":"urn:adsk.wipprod:dm.lineage:Key{ordinal}","versionUrn":"urn:adsk.wipprod:fs.file:vf.Key{ordinal}?version=1"}}"#
+        ));
+        references.push(format!(
+            r#"{{"from":"{own_name}","relativePath":"{path}","type":"XREF","properties":[{{"neutronRole":{{"value":"{role}","dataType":"STRING"}}}},{{"neutronData":{{"value":"{role}","dataType":"STRING"}}}}]}}"#
+        ));
+    }
+    format!(
+        r#"{{"name":"RedirectionsStream","schema-version":0,"designs":[{}],"references":[{}]}}"#,
+        designs.join(","),
+        references.join(",")
+    )
+}
+
+/// A BREP-less `.f3d` with a docstruct `Properties.dat` and a redirections
+/// table referencing `targets`.
+fn f3d_without_brep(doc_type: &str, own_name: &str, targets: &[(&str, &str)]) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    zip.start_file("Manifest.dat", stored).unwrap();
+    zip.write_all(b"synthetic-manifest").unwrap();
+    zip.start_file("Properties.dat", stored).unwrap();
+    let properties = format!(
+        r#"{{"docstruct":{{"version":"1.0.0","type":"{doc_type}","subtype":"synthetic","attributes":{{}}}}}}"#
+    );
+    zip.write_all(&u32::try_from(properties.len()).unwrap().to_le_bytes())
+        .unwrap();
+    zip.write_all(properties.as_bytes()).unwrap();
+    zip.start_file("ComponentReferenceData.json", stored)
+        .unwrap();
+    zip.write_all(b"{}").unwrap();
+    zip.start_file("RedirectionsStream.dat", stored).unwrap();
+    zip.write_all(redirections_json(own_name, targets).as_bytes())
+        .unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+/// Wrap members into a `.f3z` archive with `Manifest.json` naming the root.
+fn f3z_archive(root_name: &str, members: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+    for (name, bytes) in members {
+        zip.start_file(*name, stored).unwrap();
+        zip.write_all(bytes).unwrap();
+    }
+    zip.start_file("Manifest.json", stored).unwrap();
+    zip.write_all(format!(r#"{{"root":"{root_name}"}}"#).as_bytes())
+        .unwrap();
+    zip.start_file("DesignDescription.json", stored).unwrap();
+    zip.write_all(br#"{"name":"Autodesk Design Description","version":"0.1","designDescription":{"id":"0","designGraphs":[]}}"#)
+        .unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+const XREF_ROLE: &str = "aaaabbbb-cccc-dddd-eeee-ffff00001111";
+
+#[test]
+fn assembly_root_without_brep_is_not_a_blocking_loss() {
+    let archive = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        decoded
+            .report
+            .losses
+            .iter()
+            .all(|loss| loss.severity < cadmpeg_ir::report::Severity::Error),
+        "assembly document must not report blocking/error losses: {:?}",
+        decoded.report.losses
+    );
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("assembly document")));
+    assert!(decoded
+        .report
+        .notes
+        .iter()
+        .any(|note| note.contains("comp.f3d") && note.contains(XREF_ROLE)));
+    let native =
+        crate::native::F3dNative::load(decoded.ir.native.namespace("f3d").unwrap()).unwrap();
+    assert_eq!(native.xref_designs.len(), 2);
+    assert_eq!(native.xref_references.len(), 1);
+    assert_eq!(native.xref_references[0].relative_path, "comp.f3d");
+    assert_eq!(native.xref_references[0].neutron_role, XREF_ROLE);
+    let source = decoded.ir.source.unwrap();
+    assert_eq!(
+        source.attributes.get("docstruct_type").map(String::as_str),
+        Some("assembly-design")
+    );
+}
+
+#[test]
+fn part_without_brep_keeps_blocking_losses() {
+    // A leaf redirections table (no outgoing references) does not make a
+    // BREP-less part a valid assembly.
+    let archive = f3d_without_brep("part-design", "part.f3d", &[]);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.severity == cadmpeg_ir::report::Severity::Blocking));
+}
+
+#[test]
+fn redirections_leaf_form_parses_empty_object_references() {
+    let table = crate::xref::parse(
+        br#"{"name":"RedirectionsStream","schema-version":0,"designs":[{"file-version":1,"targetFileName":"part.f3d","displayName":"part","lineageUrn":"urn:l","versionUrn":"urn:v"}],"references":{}}"#,
+    )
+    .unwrap();
+    assert_eq!(table.designs.len(), 1);
+    assert_eq!(table.designs[0].target_file_name, "part.f3d");
+    assert!(table.references.is_empty());
+}
+
+#[test]
+fn f3z_archive_merges_identity_occurrences() {
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let component_alone = F3dCodec
+        .decode(
+            &mut Cursor::new(component.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("comp.f3d", component.as_slice()),
+        ],
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.report.geometry_transferred);
+    assert!(
+        decoded
+            .report
+            .losses
+            .iter()
+            .all(|loss| loss.severity < cadmpeg_ir::report::Severity::Error),
+        "{:?}",
+        decoded.report.losses
+    );
+    assert!(decoded
+        .report
+        .notes
+        .iter()
+        .any(|note| note.contains("merged 1 of 1")));
+    assert_eq!(
+        decoded.ir.model.bodies.len(),
+        component_alone.ir.model.bodies.len()
+    );
+    assert_eq!(
+        decoded.ir.model.faces.len(),
+        component_alone.ir.model.faces.len()
+    );
+    assert_eq!(
+        decoded.ir.model.points.len(),
+        component_alone.ir.model.points.len()
+    );
+    let prefix = format!("f3d:xref/{XREF_ROLE}/");
+    let body = &decoded.ir.model.bodies[0];
+    assert!(body.id.0.starts_with(&prefix), "{}", body.id.0);
+    for shell_owner in &decoded.ir.model.shells {
+        assert!(
+            shell_owner.id.0.starts_with(&prefix),
+            "occurrence graph must stay internally consistent: {}",
+            shell_owner.id.0
+        );
+    }
+}
+
+#[test]
+fn f3z_prefix_detects_as_f3d() {
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("comp.f3d", component.as_slice()),
+        ],
+    );
+    assert_eq!(
+        F3dCodec.detect(&archive[..512.min(archive.len())]),
+        Confidence::High
+    );
+}

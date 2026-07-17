@@ -2223,3 +2223,46 @@ pub struct ActRootComponent {
     /// Byte offset of the UTF-16 `display_name` code units.
     pub display_name_offset: u64,
 }
+
+/// One design entry of the top-level `RedirectionsStream.dat` table
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+/// The first source entry describes the document itself; each further entry
+/// describes one referenced document.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct XrefDesign {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Position of this entry in the source `designs` array; entry 0 is the
+    /// document itself.
+    pub ordinal: u32,
+    /// Source `file-version` integer.
+    pub file_version: i64,
+    /// The document's `.f3d` file name.
+    pub target_file_name: String,
+    /// The document's display name.
+    pub display_name: String,
+    /// `urn:adsk.wipprod:dm.lineage:<key>` lineage identity.
+    pub lineage_urn: String,
+    /// `urn:adsk.wipprod:fs.file:vf.<key>?version=N` version identity.
+    pub version_urn: String,
+}
+
+/// One outgoing XREF placement of the top-level `RedirectionsStream.dat` table
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct XrefReference {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Position of this reference in the source `references` array.
+    pub ordinal: u32,
+    /// The referencing document's own file name.
+    pub from: String,
+    /// The target design entry's `target_file_name`.
+    pub relative_path: String,
+    /// Occurrence-role GUID joining this reference to the Design-segment
+    /// `DcXRefPCIFeature` record and the ACT GUID pool.
+    pub neutron_role: String,
+    /// The `neutronData` property GUID; carries the same GUID as
+    /// `neutron_role`.
+    pub neutron_data: String,
+}

@@ -73,6 +73,7 @@ pub mod brep;
 pub mod container;
 pub mod decode;
 pub mod design;
+pub mod f3z;
 pub mod history;
 mod history_records;
 pub mod materials;
@@ -81,6 +82,7 @@ pub mod nurbs;
 pub mod records;
 pub mod sab;
 mod writer;
+pub mod xref;
 
 use cadmpeg_ir::codec::{
     Codec, CodecError, Confidence, ContainerSummary, DecodeOptions, DecodeResult, Encoder, ReadSeek,
@@ -2508,11 +2510,12 @@ impl Codec for F3dCodec {
         if !prefix.starts_with(ZIP_MAGIC) {
             return Confidence::No;
         }
-        // A ZIP alone is a weak signal (many formats are ZIPs). An f3d marker
-        // string in the prefix — entry names are stored in cleartext in ZIP
-        // local headers — makes it conclusive.
+        // A ZIP alone is a weak signal (many formats are ZIPs). An f3d or f3z
+        // marker string in the prefix — entry names are stored in cleartext in
+        // ZIP local headers — makes it conclusive.
         if container::DETECT_MARKERS
             .iter()
+            .chain(container::F3Z_DETECT_MARKERS)
             .any(|m| contains_subslice(prefix, m))
         {
             Confidence::High

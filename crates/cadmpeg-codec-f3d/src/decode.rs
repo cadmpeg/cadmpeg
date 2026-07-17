@@ -589,11 +589,19 @@ pub fn decode(
 ) -> Result<DecodeResult, CodecError> {
     let scan = container::scan(reader)?;
 
+    if crate::f3z::is_f3z(&scan) {
+        return crate::f3z::decode(&scan, options);
+    }
+
     if options.container_only {
         let mut ir = build_metadata_ir(&scan)?;
+        annotate_docstruct(&mut ir, &scan);
         populate_annotations(&mut ir, &scan, &F3dNative::default(), None);
         preserve_source_image(&scan, &mut ir)?;
-        let report = build_container_report(&scan, true);
+        let mut report = build_container_report(&scan, true);
+        if let Ok(Some(table)) = crate::xref::decode(&scan) {
+            apply_assembly_classification(&mut report, &scan, &table);
+        }
         return Ok(DecodeResult::new(ir, report));
     }
 
@@ -867,6 +875,15 @@ pub fn decode(
                         .retain(|loss| loss.category != LossCategory::Material);
                 }
             }
+            annotate_docstruct(&mut ir, &scan);
+            match crate::xref::decode(&scan) {
+                Ok(Some(table)) => {
+                    native.xref_designs = table.designs;
+                    native.xref_references = table.references;
+                }
+                Ok(None) => {}
+                Err(error) => report.losses.push(xref_parse_loss(&error)),
+            }
             native.store(ir.native.namespace_mut("f3d"))?;
             populate_annotations(
                 &mut ir,
@@ -1080,12 +1097,96 @@ pub fn decode(
     let decoded_materials = materials::decode(reader, &scan)?;
     ir.model.appearances = decoded_materials.appearances;
     ir.model.appearance_bindings = decoded_materials.bindings;
+    annotate_docstruct(&mut ir, &scan);
+    let xref_table = crate::xref::decode(&scan);
+    if let Ok(Some(table)) = &xref_table {
+        native.xref_designs.clone_from(&table.designs);
+        native.xref_references.clone_from(&table.references);
+    }
     native.store(ir.native.namespace_mut("f3d"))?;
     populate_annotations(&mut ir, &scan, &native, None);
     preserve_source_image(&scan, &mut ir)?;
     let mut report = build_container_report(&scan, false);
     report_unresolved_dimension_companions(&mut report, &native);
+    match &xref_table {
+        Ok(Some(table)) => apply_assembly_classification(&mut report, &scan, table),
+        Ok(None) => {}
+        Err(error) => report.losses.push(xref_parse_loss(error)),
+    }
     Ok(DecodeResult::new(ir, report))
+}
+
+/// Record the `Properties.dat` docstruct declaration on the source metadata.
+fn annotate_docstruct(ir: &mut CadIr, scan: &ContainerScan) {
+    let Some(docstruct) = crate::xref::docstruct(scan) else {
+        return;
+    };
+    if let Some(source) = &mut ir.source {
+        source
+            .attributes
+            .insert("docstruct_type".into(), docstruct.doc_type);
+        source
+            .attributes
+            .insert("docstruct_subtype".into(), docstruct.subtype);
+    }
+}
+
+/// A warning for a present but unparseable `RedirectionsStream.dat`.
+fn xref_parse_loss(error: &CodecError) -> LossNote {
+    LossNote {
+        category: LossCategory::Metadata,
+        severity: Severity::Warning,
+        message: format!("external-reference table was not decoded: {error}"),
+        provenance: None,
+    }
+}
+
+/// Reclassify a BREP-less assembly document: its model is the placement of
+/// its XREF targets, so producing no geometry is not a loss
+/// ([spec §1.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#14-external-references)).
+fn apply_assembly_classification(
+    report: &mut DecodeReport,
+    scan: &ContainerScan,
+    table: &crate::xref::XrefTable,
+) {
+    if !crate::xref::is_assembly(scan, Some(table)) {
+        return;
+    }
+    report.losses.retain(|loss| {
+        !(loss.severity >= Severity::Error
+            && matches!(
+                loss.category,
+                LossCategory::Geometry | LossCategory::Topology
+            ))
+    });
+    report.losses.push(LossNote {
+        category: LossCategory::Geometry,
+        severity: Severity::Info,
+        message: format!(
+            "assembly document: geometry is defined by {} external reference(s); decode the \
+             containing .f3z archive to resolve them",
+            table.references.len()
+        ),
+        provenance: None,
+    });
+    for reference in &table.references {
+        let note = match crate::xref::design_for(table, reference) {
+            Some(design) => format!(
+                "xref {}: {} -> {} (lineage {}, version {}, neutronRole {})",
+                reference.ordinal,
+                design.display_name,
+                design.target_file_name,
+                design.lineage_urn,
+                design.version_urn,
+                reference.neutron_role
+            ),
+            None => format!(
+                "xref {}: -> {} (neutronRole {})",
+                reference.ordinal, reference.relative_path, reference.neutron_role
+            ),
+        };
+        report.notes.push(note);
+    }
 }
 
 fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr) -> Result<(), CodecError> {

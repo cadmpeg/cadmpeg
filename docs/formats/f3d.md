@@ -32,11 +32,11 @@ The following small entries are STORED:
 
 | Entry                                           | Bytes                   | Meaning                                                            |
 | ----------------------------------------------- | ----------------------- | ------------------------------------------------------------------ |
-| `Properties.dat`                                | `00 00 00 00` (u32 `0`) or JSON object | empty document-properties slot, or a `docstruct` document-type declaration |
+| `Properties.dat`                                | u32 byte count + JSON payload | empty document-properties slot (u32 `0`), or a `docstruct` document-type declaration |
 | `.../DesignConfigurationTable.<uuid>.dsgcfg`    | JSON object             | configuration table, including parameter and suppression overrides |
 | `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | JSON object             | configuration activation rules                                     |
 
-A non-empty `Properties.dat` is a JSON object whose `docstruct` member declares the document type: `version` (string), `type` (`assembly-design` or `part-design`), `subtype` (`assembly-standard`, `part-standard`, `part-sheetmetal`), and an `attributes` object. An `assembly-design` document carries no B-rep streams; its model is the placement of its external-reference targets (§1.4).
+`Properties.dat` is a u32 payload byte count followed by that many JSON bytes; count 0 (`00 00 00 00`) is the empty slot. A non-empty payload is a JSON object whose `docstruct` member declares the document type: `version` (string), `type` (`assembly-design` or `part-design`), `subtype` (`assembly-standard`, `part-standard`, `part-sheetmetal`), and an `attributes` object. An `assembly-design` document carries no B-rep streams; its model is the placement of its external-reference targets (§1.4).
 
 Configuration tables and rules are complete JSON objects. A table's `configurations` member is an object keyed by variant name. Each variant value is an object; its `parameters` member is an object, `suppressed` is an array of strings, and `material` is a string. The table's `active` string equals one key in `configurations`. A rule's paired `when` and `activate` members are strings containing its activation condition and target variant name. Unknown object members remain part of the configuration document. ZIP entry name and extension select table versus rule; duplicate entry names are invalid.
 
