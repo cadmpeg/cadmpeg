@@ -1123,6 +1123,7 @@ midpoints. Both cylinder uses share this carrier. Layouts with additional
 entries do not use this simple-hole rule. The midpoint of the entry square is
 the neutral hole position, twice the square half-span is its diameter, and the
 four-entry form is a simple cylindrical hole.
+The termination plane is the flat blind bottom of that simple hole.
 
 A class-917 circular section sweep uses the same four-entry order: first cap
 plane, second cap plane, first cylinder use, and second cylinder use. The cap

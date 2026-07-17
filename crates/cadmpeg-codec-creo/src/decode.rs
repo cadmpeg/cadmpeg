@@ -17,9 +17,9 @@ use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
     FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, HoleKind, Length, ParameterId, ParameterValue,
-    PatternForm, PatternKind, ProfileRef, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    SketchSpace,
+    FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, Length, ParameterId,
+    ParameterValue, PatternForm, PatternKind, ProfileRef, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, NurbsSurface, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -12023,10 +12023,10 @@ fn schema_feature_definition(
     if schema_class == 911 {
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let solved = simple_hole_geometry(scan, feature_id);
-        let (face, position, direction, diameter, extent) = solved.map_or_else(
+        let (face, position, direction, diameter, extent, bottom) = solved.map_or_else(
             || {
                 placement.map_or(
-                    (None, None, None, None, None),
+                    (None, None, None, None, None, None),
                     |(entry_surface_id, direction, extent)| {
                         (
                             Some(FaceSelection::Native(format!(
@@ -12036,6 +12036,7 @@ fn schema_feature_definition(
                             Some(Vector3::new(direction[0], direction[1], direction[2])),
                             None,
                             Some(extent),
+                            None,
                         )
                     },
                 )
@@ -12057,6 +12058,7 @@ fn schema_feature_definition(
                     )),
                     Some(Length(2.0 * radius)),
                     Some(hole.extent),
+                    Some(HoleBottom::Flat),
                 )
             },
         );
@@ -12079,7 +12081,7 @@ fn schema_feature_definition(
             },
             diameter,
             extent,
-            bottom: None,
+            bottom,
             taper_angle: None,
             specification: None,
             allow_multi_profile_faces: None,
