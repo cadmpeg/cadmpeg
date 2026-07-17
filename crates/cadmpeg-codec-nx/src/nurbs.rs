@@ -66,6 +66,8 @@ pub fn surfaces(bytes: &[u8]) -> Vec<Surface> {
             let v_knots = v_knots.get(..descriptor.v_distinct)?;
             let full_u = expand_knots(u_knots, u_mult)?;
             let full_v = expand_knots(v_knots, v_mult)?;
+            valid_basis(descriptor.u_degree, descriptor.u_count, &full_u)?;
+            valid_basis(descriptor.v_degree, descriptor.v_count, &full_v)?;
             let poles = descriptor.u_count.checked_mul(descriptor.v_count)?;
             let stride = payload.values.len().checked_div(poles)?;
             if !(stride == 3 || stride == 4) || payload.values.len() != poles * stride {
@@ -123,6 +125,7 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
                 .get(&descriptor.knots)?
                 .get(..descriptor.distinct)?;
             let knots = expand_knots(distinct, mult)?;
+            valid_basis(descriptor.degree, descriptor.poles, &knots)?;
             let stride = control.values.len().checked_div(descriptor.poles)?;
             if !(stride == 2 || stride == 3) || control.values.len() != descriptor.poles * stride {
                 return None;
@@ -134,7 +137,7 @@ pub fn pcurves(bytes: &[u8]) -> Vec<Pcurve> {
                 if !weight.is_finite() || weight == 0.0 {
                     return None;
                 }
-                control_points.push(Point2::new(pole[0] / weight, pole[1] / weight));
+                control_points.push(weighted_point2(pole, weight)?);
                 if let Some(weights) = &mut weights {
                     weights.push(weight);
                 }
@@ -177,6 +180,7 @@ pub fn curves(bytes: &[u8]) -> Vec<Curve> {
                 .get(&descriptor.knots)?
                 .get(..descriptor.distinct)?;
             let knots = expand_knots(distinct, mult)?;
+            valid_basis(descriptor.degree, descriptor.poles, &knots)?;
             let stride = control.values.len().checked_div(descriptor.poles)?;
             if !(stride == 3 || stride == 4) || control.values.len() != descriptor.poles * stride {
                 return None;
@@ -213,6 +217,14 @@ fn weighted_mm_point(pole: &[f64], weight: f64) -> Option<Point3> {
         .into_iter()
         .all(f64::is_finite)
         .then(|| Point3::new(coordinates[0], coordinates[1], coordinates[2]))
+}
+
+fn weighted_point2(pole: &[f64], weight: f64) -> Option<Point2> {
+    let coordinates = [pole[0] / weight, pole[1] / weight];
+    coordinates
+        .into_iter()
+        .all(f64::is_finite)
+        .then(|| Point2::new(coordinates[0], coordinates[1]))
 }
 
 #[derive(Default)]
@@ -491,4 +503,10 @@ fn expand_knots(distinct: &[f64], multiplicities: &[u16]) -> Option<Vec<f64>> {
         out.extend(std::iter::repeat_n(value, count as usize));
     }
     Some(out)
+}
+
+fn valid_basis(degree: u16, control_count: usize, knots: &[f64]) -> Option<()> {
+    let degree = usize::from(degree);
+    let required_knots = control_count.checked_add(degree)?.checked_add(1)?;
+    (control_count > degree && knots.len() == required_knots).then_some(())
 }

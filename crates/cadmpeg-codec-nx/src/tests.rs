@@ -13297,6 +13297,45 @@ fn nurbs_carriers_reject_nonfinite_millimeter_control_points() {
         .expect("curve payload");
     put_f64(&mut curve, payload + 15, f64::MAX);
     assert!(crate::nurbs::curves(&curve).is_empty());
+
+    let descriptor = curve
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    put_ref(&mut curve, descriptor + 10, 2);
+    put_f64(&mut curve, payload + 15, f64::MAX);
+    put_f64(&mut curve, payload + 31, f64::MIN_POSITIVE);
+    assert!(crate::nurbs::pcurves(&curve).is_empty());
+}
+
+#[test]
+fn nurbs_carriers_reject_invalid_basis_cardinality() {
+    let mut surface = bspline_partition_stream();
+    let descriptor = surface
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    put_ref(&mut surface, descriptor + 6, 2);
+    assert!(crate::nurbs::surfaces(&surface).is_empty());
+
+    let mut curve = bspline_partition_stream();
+    let descriptor = curve
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    put_ref(&mut curve, descriptor + 4, 2);
+    assert!(crate::nurbs::curves(&curve).is_empty());
+
+    put_ref(&mut curve, descriptor + 10, 2);
+    assert!(crate::nurbs::pcurves(&curve).is_empty());
+
+    let mut short_knots = bspline_partition_stream();
+    let multiplicities = short_knots
+        .windows(12)
+        .position(|record| record[..2] == [0, 127] && record[6..8] == 42u16.to_be_bytes())
+        .expect("curve multiplicities");
+    put_ref(&mut short_knots, multiplicities + 10, 1);
+    assert!(crate::nurbs::curves(&short_knots).is_empty());
 }
 
 #[test]
