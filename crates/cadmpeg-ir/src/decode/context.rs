@@ -1503,6 +1503,7 @@ impl TicketTable {
                         !consumed[*index]
                             && note.code == loss.code
                             && note.category == loss.category
+                            && note.message == loss.message
                     });
                     match matched {
                         Some((index, _)) => consumed[index] = true,
