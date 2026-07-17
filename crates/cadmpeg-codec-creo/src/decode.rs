@@ -749,7 +749,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             id,
             ordinal: ordinal as u64,
             name: Some(format!("{} id {}", operation.kind, operation.feature_id)),
-            suppressed: false,
+            suppressed: None,
             parent,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),

@@ -1236,7 +1236,7 @@ pub(crate) fn project(
         id: feature_id.clone(),
         ordinal: u64::try_from(dimension.source_range.start).expect("source offset fits u64"),
         name,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: BTreeMap::new(),

@@ -31,6 +31,37 @@ fn update_sldprt_native<R>(
 }
 
 #[test]
+fn source_less_writer_rejects_unresolved_feature_suppression() {
+    let feature = cadmpeg_ir::features::Feature {
+        id: cadmpeg_ir::features::FeatureId("synthetic:test:feature#unresolved".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::History,
+        },
+        native_ref: None,
+    };
+    let mut native = None;
+
+    let error = crate::history::sync_neutral_features(&[feature], &[], &[], &mut native)
+        .expect_err("unresolved suppression must not be written as active");
+
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::CodecError::NotImplemented(message)
+            if message.contains("requires resolved suppression")
+    ));
+}
+
+#[test]
 fn native_arenas_have_pinned_shape_and_typed_round_trip() {
     let decoded = SldprtCodec
         .decode(
@@ -1696,7 +1727,7 @@ fn encoder_writes_source_less_line_sketches() {
         id: sketch_feature_id.clone(),
         ordinal: 0,
         name: Some("Profile".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -1755,7 +1786,7 @@ fn encoder_writes_source_less_line_sketches() {
             id: FeatureId(format!("synthetic:test:feature#profile-op-{index}")),
             ordinal: index as u64 + 2,
             name: Some(format!("Profile op {index}")),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -1771,7 +1802,7 @@ fn encoder_writes_source_less_line_sketches() {
         id: FeatureId("synthetic:test:feature#extrude".into()),
         ordinal: 1,
         name: Some("Boss".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: Some(sketch_feature_id),
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2137,7 +2168,7 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
             id: FeatureId(format!("synthetic:test:feature#named-{ordinal}")),
             ordinal: ordinal as u64,
             name: Some(name.into()),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -2208,7 +2239,7 @@ fn encoder_writes_source_less_native_features() {
         id: seed_id.clone(),
         ordinal: 0,
         name: Some("Boss".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2301,7 +2332,7 @@ fn encoder_writes_source_less_native_features() {
             id: FeatureId(format!("synthetic:test:feature#direct-{index}")),
             ordinal: index as u64 + 1,
             name: Some(format!("Direct {index}")),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -2335,7 +2366,7 @@ fn encoder_writes_source_less_native_features() {
             id: FeatureId(format!("synthetic:test:feature#pattern-{index}")),
             ordinal: index as u64 + 10,
             name: Some(format!("Pattern {index}")),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -3070,7 +3101,7 @@ fn encoder_writes_source_less_datum_features() {
             id: FeatureId(format!("synthetic:test:feature#datum-{ordinal}")),
             ordinal: ordinal as u64,
             name: Some(format!("Datum {ordinal}")),
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -3612,7 +3643,7 @@ fn encoder_writes_source_less_neutral_parameters() {
         id: feature_id.clone(),
         ordinal: 0,
         name: Some("Equation".into()),
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -12042,6 +12073,28 @@ fn semantic_writer_applies_neutral_feature_edits() {
             ..
         }
     ));
+}
+
+#[test]
+fn semantic_writer_preserves_native_suppression_when_neutral_state_is_unresolved() {
+    let mut decoded = SldprtCodec
+        .decode(
+            &mut Cursor::new(sldprt_with_body_and_history(&triangle_body())),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(decoded.ir.model.features[0].suppressed, Some(false));
+    decoded.ir.model.features[0].suppressed = None;
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.model.features[0].suppressed, Some(false));
 }
 
 #[test]

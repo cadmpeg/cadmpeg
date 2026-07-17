@@ -4127,6 +4127,7 @@ fn decode_retains_role_scoped_om_record_area_header() {
     assert_eq!(body_reference_occurrences[0].body_object_index, 6466);
     let feature = result.ir.model.features.first().expect("neutral feature");
     assert_eq!(feature.name.as_deref(), Some("UNITE"));
+    assert_eq!(feature.suppressed, None);
     assert_eq!(feature.native_ref.as_deref(), Some(labels[0].id.as_str()));
     assert_eq!(
         feature.source_properties.get("body_reference.0"),
@@ -10703,6 +10704,7 @@ fn decode_retains_typed_nx_numeric_expression() {
             role: cadmpeg_ir::features::FeatureTreeNodeRole::Equations
         }
     ));
+    assert_eq!(result.ir.model.features[0].suppressed, Some(false));
     assert_eq!(result.ir.model.parameters.len(), 1);
     assert_eq!(result.ir.model.parameters[0].expression, "120");
     let parameter = &result.ir.model.parameters[0];

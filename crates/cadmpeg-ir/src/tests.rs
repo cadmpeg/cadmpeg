@@ -611,7 +611,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
         id: FeatureId("synthetic:test:feature#sketch-ref".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -698,6 +698,34 @@ fn unresolved_block_dimensions_round_trip_through_json() {
 }
 
 #[test]
+fn unresolved_feature_suppression_round_trips_through_json() {
+    let feature = crate::features::Feature {
+        id: crate::features::FeatureId("synthetic:test:feature#suppression".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: crate::features::FeatureDefinition::TreeNode {
+            role: crate::features::FeatureTreeNodeRole::History,
+        },
+        native_ref: None,
+    };
+
+    let json = serde_json::to_value(&feature).unwrap();
+    assert!(json.get("suppressed").is_none());
+    assert_eq!(
+        serde_json::from_value::<crate::features::Feature>(json).unwrap(),
+        feature
+    );
+}
+
+#[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
@@ -712,7 +740,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         id: feature_id.clone(),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: Some(feature_id.clone()),
         dependencies: vec![feature_id.clone(), feature_id.clone()],
         source_properties: std::collections::BTreeMap::new(),
@@ -740,7 +768,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         id: FeatureId("synthetic:test:feature#duplicate-order".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -804,7 +832,7 @@ fn feature_source_content_allows_shared_repeated_parameters() {
             id,
             ordinal,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: BTreeMap::new(),
@@ -850,7 +878,7 @@ fn feature_parameters_require_unique_names_and_ordinals() {
         id: owner.clone(),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -903,7 +931,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
         id: owner.clone(),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2427,7 +2455,7 @@ fn feature_extent_magnitudes_are_validated() {
             id: FeatureId("synthetic:test:feature#invalid-extent".into()),
             ordinal: 0,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -2474,7 +2502,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         id: FeatureId("synthetic:test:feature#consumer".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2498,7 +2526,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
             id: FeatureId(format!("synthetic:test:feature#{suffix}")),
             ordinal,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -2543,7 +2571,7 @@ fn spatial_sketch_cannot_own_planar_geometry() {
         id: FeatureId("synthetic:test:feature#spatial-sketch".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),
@@ -2773,7 +2801,7 @@ fn feature_operation_geometry_is_validated() {
             id: FeatureId(format!("synthetic:test:feature#invalid-{ordinal}")),
             ordinal: ordinal as u64,
             name: None,
-            suppressed: false,
+            suppressed: Some(false),
             parent: None,
             dependencies: Vec::new(),
             source_properties: std::collections::BTreeMap::new(),
@@ -2811,7 +2839,7 @@ fn flex_modes_round_trip_and_validate() {
         id: FeatureId("synthetic:test:feature#flex".into()),
         ordinal: 0,
         name: None,
-        suppressed: false,
+        suppressed: Some(false),
         parent: None,
         dependencies: Vec::new(),
         source_properties: std::collections::BTreeMap::new(),

@@ -301,7 +301,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                     id: neutral_feature_id(&feature.id),
                     ordinal: u64::from(feature.ordinal),
                     name: (!feature.name.is_empty()).then(|| feature.name.clone()),
-                    suppressed: feature.suppressed,
+                    suppressed: Some(feature.suppressed),
                     parent: feature
                         .tree_parent
                         .as_deref()
@@ -3744,6 +3744,15 @@ pub fn sync_neutral_features(
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
+        let suppressed = feature
+            .suppressed
+            .or_else(|| existing.as_deref().map(|record| record.suppressed))
+            .ok_or_else(|| {
+                CodecError::NotImplemented(format!(
+                    "SLDPRT writing requires resolved suppression for feature {}",
+                    feature.id
+                ))
+            })?;
         let (kind, parameters, mut properties) = match &feature.definition {
             FeatureDefinition::TreeNode { role } => {
                 if existing
@@ -6628,7 +6637,7 @@ pub fn sync_neutral_features(
             existing.ordinal = ordinal;
             existing.name = feature.name.clone().unwrap_or_default();
             existing.kind = kind;
-            existing.suppressed = feature.suppressed;
+            existing.suppressed = suppressed;
             existing.parent_source_id = parent_source_id;
             existing.tree_parent = tree_parent;
             existing.parameters = parameters;
@@ -6659,7 +6668,7 @@ pub fn sync_neutral_features(
                 name: feature.name.clone().unwrap_or_default(),
                 kind,
                 input_class: None,
-                suppressed: feature.suppressed,
+                suppressed,
                 parameters,
                 dimension_properties: BTreeMap::new(),
                 properties,

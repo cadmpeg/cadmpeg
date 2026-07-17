@@ -218,9 +218,9 @@ pub struct Feature {
     /// Source display name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Whether evaluation of this feature is disabled.
-    #[serde(default)]
-    pub suppressed: bool,
+    /// Whether evaluation of this feature is disabled, when established.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppressed: Option<bool>,
     /// Containing or logically preceding feature, when represented by the source.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<FeatureId>,
