@@ -3676,6 +3676,150 @@ fn encoder_bakes_rigid_body_transform() {
         .all(|body| body.transform.is_none()));
 }
 
+/// Metamorphic property (§10 Phase 4): the encode/decode round trip is
+/// equivariant under rigid motion. Baking a rigid body transform into geometry
+/// and decoding must land every point and plane normal exactly where applying
+/// the same rotation and translation to the untransformed decode would, across
+/// a family of rotations and translations — not just the single case
+/// `encoder_bakes_rigid_body_transform` fixes.
+#[test]
+fn decode_encode_is_equivariant_under_rigid_motion() {
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::transform::Transform;
+
+    // A quarter-turn about +Z with a translation, and a quarter-turn about +X
+    // with a different translation. Both are right-handed rigid motions.
+    let motions = [
+        (
+            [
+                [0.0, -1.0, 0.0, 10.0],
+                [1.0, 0.0, 0.0, 20.0],
+                [0.0, 0.0, 1.0, 30.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            (|p: Point3| Point3::new(-p.y + 10.0, p.x + 20.0, p.z + 30.0)) as fn(Point3) -> Point3,
+        ),
+        (
+            [
+                [1.0, 0.0, 0.0, -5.0],
+                [0.0, 0.0, -1.0, 7.0],
+                [0.0, 1.0, 0.0, 3.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            |p: Point3| Point3::new(p.x - 5.0, -p.z + 7.0, p.y + 3.0),
+        ),
+    ];
+
+    // The `.sldprt` semantic writer refuses a body or face name without a
+    // material, so strip the labels the round trip does not exercise here.
+    let prepare = |ir: &mut cadmpeg_ir::document::CadIr| {
+        ir.model.bodies[0].name = None;
+        ir.model.faces.iter_mut().for_each(|face| face.name = None);
+        ir.model
+            .edges
+            .iter_mut()
+            .for_each(|edge| edge.param_range = None);
+    };
+
+    // The untransformed reference decode: the identity round trip.
+    let mut base = cadmpeg_ir::examples::unit_cube();
+    prepare(&mut base);
+    base.model.bodies[0].transform = None;
+    let mut base_bytes = Vec::new();
+    SldprtCodec.encode(&base, &mut base_bytes).unwrap();
+    let reference = SldprtCodec
+        .decode(&mut Cursor::new(base_bytes), &DecodeOptions::default())
+        .unwrap();
+    let reference_points: Vec<Point3> = reference
+        .ir
+        .model
+        .points
+        .iter()
+        .map(|point| point.position)
+        .collect();
+
+    for (rows, apply) in motions {
+        let mut moved = cadmpeg_ir::examples::unit_cube();
+        prepare(&mut moved);
+        moved.model.bodies[0].transform = Some(Transform { rows });
+        let mut bytes = Vec::new();
+        SldprtCodec.encode(&moved, &mut bytes).unwrap();
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+
+        // Every point of the reference, moved by the rigid motion, must appear
+        // in the transformed decode: decode ∘ encode commutes with the motion.
+        for reference_point in &reference_points {
+            let expected = apply(*reference_point);
+            assert!(
+                decoded.ir.model.points.iter().any(|point| {
+                    (point.position.x - expected.x).abs() < 1e-9
+                        && (point.position.y - expected.y).abs() < 1e-9
+                        && (point.position.z - expected.z).abs() < 1e-9
+                }),
+                "rigid motion not preserved for point {reference_point:?}"
+            );
+        }
+        // The motion is fully baked: no residual body transform survives.
+        assert!(decoded
+            .ir
+            .model
+            .bodies
+            .iter()
+            .all(|body| body.transform.is_none()));
+    }
+}
+
+/// Decode-encode-decode fixpoint (§10 Phase 4): once a `.sldprt` has been
+/// decoded and re-encoded, decoding the re-encoded bytes reproduces the same
+/// typed IR. The `.sldprt` writer replays the retained source image verbatim,
+/// so the second decode is byte-identical to the first; the differential
+/// evidence is the equality of every decoded geometry and topology arena.
+#[test]
+fn decode_encode_decode_reaches_fixpoint() {
+    let fixture = sldprt_with_body_and_history(&triangle_body());
+
+    let first = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+        .expect("first decode");
+    assert!(first.report.geometry_transferred);
+
+    let mut reencoded = Vec::new();
+    SldprtCodec
+        .encode(&first.ir, &mut reencoded)
+        .expect("re-encode");
+
+    let second = SldprtCodec
+        .decode(&mut Cursor::new(reencoded), &DecodeOptions::default())
+        .expect("second decode");
+
+    assert_eq!(
+        first.ir.model.points, second.ir.model.points,
+        "points diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.ir.model.surfaces, second.ir.model.surfaces,
+        "surfaces diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.ir.model.faces, second.ir.model.faces,
+        "faces diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.ir.model.edges, second.ir.model.edges,
+        "edges diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.ir.model.coedges, second.ir.model.coedges,
+        "coedges diverged at the fixpoint"
+    );
+    assert_eq!(
+        first.report.geometry_transferred, second.report.geometry_transferred,
+        "geometry-transferred flag diverged at the fixpoint"
+    );
+}
+
 #[test]
 fn semantic_writer_regenerates_modified_planar_brep() {
     let source = sldprt_with_body(&triangle_body());
@@ -3923,16 +4067,95 @@ fn transfer_accounting_passes_in_both_modes_for_geometry() {
 
 #[test]
 fn transfer_accounting_passes_in_both_modes_for_metadata_fallback() {
-    // Metadata fallback and container-only paths still resolve every committed
-    // ticket; a strict decode surfaces any unresolved or invalid disposition.
+    // The metadata fallback resolves every committed ticket in salvage mode;
+    // `Ok` is the accounting proof independent of the semantic loss it carries.
     let fixture = synthetic_sldprt();
-    for container_only in [false, true] {
-        let mut options = strict_options();
-        options.container_only = container_only;
-        SldprtCodec
-            .decode(&mut Cursor::new(fixture.clone()), &options)
-            .expect("strict metadata decode passes transfer accounting");
+    SldprtCodec
+        .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
+        .expect("salvage metadata decode passes transfer accounting");
+}
+
+#[test]
+fn strict_accepts_operator_requested_container_only() {
+    // Container-only is an operator-requested truncation, not a failed faithful
+    // decode, so strict mode accepts it even though the same file carries a
+    // reject-consequence geometry loss on the full path.
+    let fixture = synthetic_sldprt();
+    let mut options = strict_options();
+    options.container_only = true;
+    SldprtCodec
+        .decode(&mut Cursor::new(fixture), &options)
+        .expect("strict container-only decode is accepted");
+}
+
+/// Strict mode rejects a metadata-only decode whose mandatory B-rep geometry
+/// could only be accounted as a loss; salvage keeps the partial result and
+/// surfaces the same stable loss codes. The two arms are the strict-reject and
+/// salvage-loss-code pair for the geometry fallback path (§10 Phase 4).
+#[test]
+fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
+    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+
+    let fixture = synthetic_sldprt();
+
+    // Salvage: the decode succeeds and every mandatory-semantics loss carries a
+    // reject-consequence code so the report explains the missing geometry.
+    let salvaged = SldprtCodec
+        .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
+        .expect("salvage decode keeps the partial result");
+    assert!(!salvaged.report.geometry_transferred);
+    assert!(salvaged
+        .report
+        .losses
+        .iter()
+        .any(|note| note.code == LossCode::GeometryNotTransferred));
+    assert!(salvaged
+        .report
+        .losses
+        .iter()
+        .any(|note| note.code == LossCode::TopologyNotTransferred));
+    assert!(salvaged
+        .report
+        .losses
+        .iter()
+        .any(|note| note.code.strict_consequence() == StrictConsequence::Reject));
+
+    // Strict: the same input is refused with a classified `Malformed` error
+    // naming the reject-consequence loss.
+    let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
+    match strict {
+        Err(cadmpeg_ir::CodecError::Malformed(message)) => {
+            assert!(
+                message.contains("unrepresentable mandatory semantics"),
+                "unexpected message: {message}"
+            );
+        }
+        other => panic!("strict decode must reject unrepresentable geometry, got {other:?}"),
     }
+}
+
+#[test]
+fn strict_accepts_tolerable_gauge_substitution_geometry() {
+    use cadmpeg_ir::report::{LossCode, StrictConsequence};
+
+    // The triangle body types fully but derives its body hierarchy, so its only
+    // loss is the tolerate-consequence gauge substitution. Strict accepts it,
+    // proving rejection keys on the loss code's consequence, not on presence.
+    let fixture = sldprt_with_body_and_history(&triangle_body());
+    let strict = SldprtCodec
+        .decode(&mut Cursor::new(fixture), &strict_options())
+        .expect("strict decode accepts a tolerable-loss geometry result");
+    assert!(strict.report.geometry_transferred);
+    assert!(strict
+        .report
+        .losses
+        .iter()
+        .all(|note| note.code.strict_consequence() == StrictConsequence::Tolerate));
+    assert!(strict
+        .report
+        .losses
+        .iter()
+        .any(|note| note.code == LossCode::TopologyGaugeSubstituted));
 }
 
 #[test]

@@ -19,14 +19,16 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::be::u32_at as be_u32;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, RecordDisposition, RecordKind, RecordTicket, View};
+use cadmpeg_ir::decode::{
+    DecodeContext, DecodeMode, RecordDisposition, RecordKind, RecordTicket, View,
+};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 use cadmpeg_ir::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
 use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity, StrictConsequence,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -67,6 +69,9 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let tickets = commit_record_tickets(ctx, root, &scan);
 
     if ctx.container_only() {
+        // Container-only is an operator-requested truncation, not a failed
+        // faithful decode, so strict rejection does not apply to it (§10
+        // Phase 4).
         let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         resolve_record_tickets(ctx, tickets, None, &[]);
@@ -76,6 +81,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         if let Some((decoded, report)) = try_decode_brep(&scan, &streams) {
+            reject_unrepresentable_in_strict(ctx, &report)?;
             let typed_offset = streams[decoded.selected].block.offset;
             let ir = build_geometry_ir(
                 &scan,
@@ -92,8 +98,41 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
+    reject_unrepresentable_in_strict(ctx, &report)?;
     resolve_record_tickets(ctx, tickets, None, &[]);
     Ok(DecodeResult::new(ir, report))
+}
+
+/// Enforce the §10 Phase-4 strict-mode contract: a decode that could only
+/// account mandatory geometry or topology as a loss — a [`LossCode`] whose
+/// [`strict_consequence`](LossCode::strict_consequence) is
+/// [`Reject`](StrictConsequence::Reject) — is not a faithful result, so strict
+/// mode refuses it with a classified error rather than returning a model that
+/// silently omits mandatory semantics. Salvage mode keeps the partial result
+/// and its stable loss code. Operator-requested container-only truncation is
+/// exempt (its caller asked for less) and is filtered before this runs.
+///
+/// The refusal is `Malformed`: the taxonomy carries no dedicated
+/// semantic-rejection variant, and `Malformed` is the platform's general
+/// cannot-produce-a-faithful-result classification, never a `ResourceLimit`.
+fn reject_unrepresentable_in_strict(
+    ctx: &DecodeContext<'_>,
+    report: &DecodeReport,
+) -> Result<(), CodecError> {
+    if ctx.mode() != DecodeMode::Strict {
+        return Ok(());
+    }
+    if let Some(note) = report
+        .losses
+        .iter()
+        .find(|note| note.code.strict_consequence() == StrictConsequence::Reject)
+    {
+        return Err(CodecError::Malformed(format!(
+            "strict mode rejects unrepresentable mandatory semantics ({}): {}",
+            note.code, note.message
+        )));
+    }
+    Ok(())
 }
 
 /// One committed record ticket awaiting resolution, carried from the §3.3 commit
@@ -867,43 +906,59 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let mut losses = Vec::new();
 
     if s.unknown_surface_faces > 0 {
-        losses.push(LossNote {
-            code: LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{} face(s) rest on a support surface this codec does not type (offset, swept, \
-                 blended, intersection, or spline-on-surface); \
-                 the face, its loops, and trims are emitted with an unknown-geometry surface \
-                 linking to the preserved record bytes. Topology is transferred; the underlying \
-                 surface shape is not.",
-                s.unknown_surface_faces
-            ),
-            provenance: None,
-        });
+        // Census boundary: the opaque surface carrier already lives in the IR;
+        // this aggregate note accounts for the untyped support shape.
+        crate::builder::census(
+            &mut losses,
+            LossNote {
+                code: LossCode::GeometryNotTransferred,
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: format!(
+                    "{} face(s) rest on a support surface this codec does not type (offset, \
+                     swept, blended, intersection, or spline-on-surface); the face, its loops, \
+                     and trims are emitted with an unknown-geometry surface linking to the \
+                     preserved record bytes. Topology is transferred; the underlying surface \
+                     shape is not.",
+                    s.unknown_surface_faces
+                ),
+                provenance: None,
+            },
+        );
     }
     if s.unknown_curve_edges > 0 {
-        losses.push(LossNote {
-            code: LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Warning,
-            message: format!(
-                "{} edge(s) reference an untyped support curve; topology references an opaque \
-                 curve carrier linked to the retained partition.",
-                s.unknown_curve_edges
-            ),
-            provenance: None,
-        });
+        crate::builder::census(
+            &mut losses,
+            LossNote {
+                code: LossCode::GeometryNotTransferred,
+                category: LossCategory::Geometry,
+                severity: Severity::Warning,
+                message: format!(
+                    "{} edge(s) reference an untyped support curve; topology references an \
+                     opaque curve carrier linked to the retained partition.",
+                    s.unknown_curve_edges
+                ),
+                provenance: None,
+            },
+        );
     }
     if s.synthetic_body_grouping {
-        losses.push(LossNote {
-            code: LossCode::TopologyGaugeSubstituted,
-            category: LossCategory::Topology,
-            severity: Severity::Warning,
-            message: "No body record was available; one body/region/shell hierarchy was derived."
-                .to_string(),
-            provenance: None,
-        });
+        // Fallback boundary: a deterministic body/region/shell hierarchy stands
+        // in for an absent body record. The gauged hierarchy is already in the
+        // IR arenas; `substitute` records the accountable note for it.
+        crate::builder::substitute(
+            &mut losses,
+            (),
+            LossNote {
+                code: LossCode::TopologyGaugeSubstituted,
+                category: LossCategory::Topology,
+                severity: Severity::Warning,
+                message:
+                    "No body record was available; one body/region/shell hierarchy was derived."
+                        .to_string(),
+                provenance: None,
+            },
+        );
     }
     DecodeReport {
         retention_degraded: false,
@@ -1301,7 +1356,12 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         .filter(|b| b.family == "parasolid")
         .count();
 
-    let mut losses = vec![
+    // Omission boundary: mandatory B-rep geometry and topology never reached
+    // typed IR. Each drop resolves through the typed builder so no omission is
+    // recorded by a bare push.
+    let mut losses = Vec::new();
+    crate::builder::omit(
+        &mut losses,
         LossNote {
             code: LossCode::GeometryNotTransferred,
             category: LossCategory::Geometry,
@@ -1315,6 +1375,9 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             ),
             provenance: None,
         },
+    );
+    crate::builder::omit(
+        &mut losses,
         LossNote {
             code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
@@ -1325,6 +1388,9 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
                     .to_string(),
             provenance: None,
         },
+    );
+    crate::builder::omit(
+        &mut losses,
         LossNote {
             code: LossCode::MaterialNotTransferred,
             category: LossCategory::Material,
@@ -1334,17 +1400,20 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
                 .to_string(),
             provenance: None,
         },
-    ];
+    );
 
     if container::select_active_parasolid(scan).is_none() {
-        losses.push(LossNote {
-            code: LossCode::MissingGeometryStream,
-            category: LossCategory::Geometry,
-            severity: Severity::Error,
-            message: "no Parasolid partition/deltas stream was located in the container"
-                .to_string(),
-            provenance: None,
-        });
+        crate::builder::omit(
+            &mut losses,
+            LossNote {
+                code: LossCode::MissingGeometryStream,
+                category: LossCategory::Geometry,
+                severity: Severity::Error,
+                message: "no Parasolid partition/deltas stream was located in the container"
+                    .to_string(),
+                provenance: None,
+            },
+        );
     }
 
     DecodeReport {

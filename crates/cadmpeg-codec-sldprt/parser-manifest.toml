@@ -284,3 +284,25 @@ charges = []
 cost_model = "no budget charge; builds the L1 source-fidelity ledger from already-scanned container facts, digesting bounded source spans; output proportional to the block count"
 window_egress = []
 ledger_level = 1
+
+# ---------------------------------------------------------------------------
+# Typed lossy builder (doc section 10 Phase 4B). Not a byte parser: wraps the
+# platform `cadmpeg_ir::transfer::Builder` over the decode's loss channel and is
+# the codec's single lossy-construction path. `omit` resolves a
+# `Transfer::omitted` for an unsupported concept that never reached typed IR,
+# `substitute` resolves a `Transfer::fallback` for a deterministic gauge that
+# stands in for an absent source field, and `census` threads an accountable
+# aggregate note; so no fallback or drop reaches the model without surrendering
+# its `LossNote`. No hostile read, no `.window()` egress, and no budget charge
+# of its own. Its migrated presence is the doc section 7 capability-matrix signal
+# that sldprt has adopted the typed lossy builder, gating the
+# `no_silent_fallback` stage-2 oracle.
+[[module]]
+path = "crates/cadmpeg-codec-sldprt/src/builder.rs"
+status = "migrated"
+input_spaces = []
+fuzz_targets = ["sldprt_decode_modes"]
+charges = []
+cost_model = "no budget charge; typed lossy construction over the decode loss channel, output proportional to the resolved-boundary count"
+window_egress = []
+ledger_level = 0

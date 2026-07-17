@@ -399,6 +399,110 @@ mod tests {
         assert!(carriers.curve(8).is_some());
     }
 
+    /// Value-level goldens for every analytic carrier family (§8.1). Each tag's
+    /// f64 run decodes to a fixed IR geometry with the ×1000 length rule applied
+    /// to coordinates and radii and unit-normalized directions, so a change to
+    /// the field layout or the scale rule breaks a concrete value here.
+    #[test]
+    fn analytic_carrier_family_goldens() {
+        let line = parse_carrier(
+            &compact_carrier(tag::LINE, 1, &[0.001, 0.002, 0.003, 0.0, 0.0, 2.0]),
+            0,
+        )
+        .unwrap();
+        assert!(matches!(
+            line.geometry,
+            CarrierGeometry::Curve(CurveGeometry::Line { origin, direction })
+                if origin == Point3::new(1.0, 2.0, 3.0)
+                    && direction == Vector3::new(0.0, 0.0, 1.0)
+        ));
+
+        let circle = parse_carrier(
+            &compact_carrier(
+                tag::CIRCLE,
+                2,
+                &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.005],
+            ),
+            0,
+        )
+        .unwrap();
+        assert!(matches!(
+            circle.geometry,
+            CarrierGeometry::Curve(CurveGeometry::Circle { center, axis, ref_direction, radius })
+                if center == Point3::new(0.0, 0.0, 0.0)
+                    && axis == Vector3::new(0.0, 0.0, 1.0)
+                    && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                    && (radius - 5.0).abs() < 1e-12
+        ));
+
+        let ellipse = parse_carrier(
+            &compact_carrier(
+                tag::ELLIPSE,
+                3,
+                &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.004, 0.002],
+            ),
+            0,
+        )
+        .unwrap();
+        assert!(matches!(
+            ellipse.geometry,
+            CarrierGeometry::Curve(CurveGeometry::Ellipse {
+                center, major_radius, minor_radius, ..
+            }) if center == Point3::new(0.0, 0.0, 0.0)
+                && (major_radius - 4.0).abs() < 1e-12
+                && (minor_radius - 2.0).abs() < 1e-12
+        ));
+
+        let plane = parse_carrier(
+            &compact_carrier(
+                tag::PLANE,
+                4,
+                &[0.0, 0.0, 0.001, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+            ),
+            0,
+        )
+        .unwrap();
+        assert!(matches!(
+            plane.geometry,
+            CarrierGeometry::Surface(SurfaceGeometry::Plane { origin, normal, u_axis })
+                if origin == Point3::new(0.0, 0.0, 1.0)
+                    && normal == Vector3::new(0.0, 0.0, 1.0)
+                    && u_axis == Vector3::new(1.0, 0.0, 0.0)
+        ));
+
+        let cylinder = parse_carrier(
+            &compact_carrier(
+                tag::CYLINDER,
+                5,
+                &[0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.003, 1.0, 0.0, 0.0],
+            ),
+            0,
+        )
+        .unwrap();
+        assert!(matches!(
+            cylinder.geometry,
+            CarrierGeometry::Surface(SurfaceGeometry::Cylinder { axis, ref_direction, radius, .. })
+                if axis == Vector3::new(0.0, 0.0, 1.0)
+                    && ref_direction == Vector3::new(1.0, 0.0, 0.0)
+                    && (radius - 3.0).abs() < 1e-12
+        ));
+
+        let sphere = parse_carrier(
+            &compact_carrier(
+                tag::SPHERE,
+                6,
+                &[0.0, 0.0, 0.0, 0.006, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0],
+            ),
+            0,
+        )
+        .unwrap();
+        assert!(matches!(
+            sphere.geometry,
+            CarrierGeometry::Surface(SurfaceGeometry::Sphere { center, radius, .. })
+                if center == Point3::new(0.0, 0.0, 0.0) && (radius - 6.0).abs() < 1e-12
+        ));
+    }
+
     #[test]
     fn parses_verified_cone_layout() {
         let root_half = std::f64::consts::FRAC_1_SQRT_2;
