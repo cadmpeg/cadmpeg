@@ -4800,8 +4800,8 @@ fn attach_standard_faces(
         return;
     }
     let body_id = BodyId("catia:standard:body#0".to_string());
-    let region_id = RegionId("catia:standard:region#0".to_string());
-    let shell_id = ShellId("catia:standard:shell#0".to_string());
+    let region_id = RegionId("catia:standard:region#0-0".to_string());
+    let shell_id = ShellId("catia:standard:shell#0-0".to_string());
     let mut face_ids = Vec::with_capacity(face_count);
     for (face_index, (surface, forward, offset)) in bindings.iter().enumerate() {
         let face_id = FaceId(format!("catia:standard:face#{face_index}"));
@@ -4928,6 +4928,97 @@ fn attach_standard_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBui
             .map(|vertex| vertex.id.clone())
             .collect(),
     });
+}
+
+fn partition_standard_face_components(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    components: &[Vec<usize>],
+) -> bool {
+    if components.is_empty()
+        || components.iter().any(Vec::is_empty)
+        || components.iter().flatten().count() != ir.model.faces.len()
+    {
+        return false;
+    }
+    let body_id = BodyId("catia:standard:body#0".to_string());
+    let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == body_id) else {
+        return false;
+    };
+    let region_ids: Vec<RegionId> = (0..components.len())
+        .map(|component| RegionId(format!("catia:standard:region#0-{component}")))
+        .collect();
+    body.regions.clone_from(&region_ids);
+    annotations.derived(&body_id, "regions");
+
+    for (component, faces) in components.iter().enumerate() {
+        let region_id = region_ids[component].clone();
+        let shell_id = ShellId(format!("catia:standard:shell#0-{component}"));
+        let face_ids: Vec<FaceId> = faces
+            .iter()
+            .map(|face| FaceId(format!("catia:standard:face#{face}")))
+            .collect();
+        for &face in faces {
+            let Some(face) = ir.model.faces.get_mut(face) else {
+                return false;
+            };
+            face.shell = shell_id.clone();
+            annotations.derived(&face.id, "shell");
+        }
+        if component == 0 {
+            let Some(region) = ir
+                .model
+                .regions
+                .iter_mut()
+                .find(|region| region.id == region_id)
+            else {
+                return false;
+            };
+            region.shells = vec![shell_id.clone()];
+            let Some(shell) = ir
+                .model
+                .shells
+                .iter_mut()
+                .find(|shell| shell.id == shell_id)
+            else {
+                return false;
+            };
+            shell.faces = face_ids;
+            continue;
+        }
+        for (id, tag) in [
+            (&region_id.0, "derived_region"),
+            (&shell_id.0, "derived_shell"),
+        ] {
+            annotate(
+                annotations,
+                id,
+                "MainDataStream+SurfacicReps",
+                0,
+                tag,
+                Exactness::Inferred,
+            );
+        }
+        annotations
+            .derived(&region_id, "body")
+            .derived(&region_id, "shells");
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id.clone(),
+            shells: vec![shell_id.clone()],
+        });
+        annotations
+            .derived(&shell_id, "region")
+            .derived(&shell_id, "faces");
+        ir.model.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: face_ids,
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+    }
+    true
 }
 
 fn attach_standard_topology(
@@ -5534,6 +5625,9 @@ fn attach_standard_topology(
     };
     for (&arena_index, &kind) in body_arena_indices.iter().zip(&body_kinds) {
         ir.model.bodies[arena_index].kind = kind;
+    }
+    if !partition_standard_face_components(ir, annotations, &topology.face_components()) {
+        return false;
     }
 
     for (edge_index, (support, logical_vertices)) in supports.iter().zip(&edge_vertices).enumerate()

@@ -133,6 +133,19 @@ pub struct StandardTopology {
     logical_vertex_count: usize,
 }
 
+fn component_root(parents: &mut [usize], index: usize) -> usize {
+    if parents[index] != index {
+        parents[index] = component_root(parents, parents[index]);
+    }
+    parents[index]
+}
+
+fn union_components(parents: &mut [usize], left: usize, right: usize) {
+    let left = component_root(parents, left);
+    let right = component_root(parents, right);
+    parents[left] = right;
+}
+
 impl StandardTopology {
     /// Number of faces, equal to the largest contiguous `30 04 04 ff` FBB
     /// run's row count ([spec ?5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
@@ -146,6 +159,38 @@ impl StandardTopology {
     #[must_use]
     pub fn faces(&self) -> &[FaceTopology] {
         &self.faces
+    }
+
+    /// Face-index components connected through shared physical edge rows, in
+    /// first-face order.
+    #[must_use]
+    pub fn face_components(&self) -> Vec<Vec<usize>> {
+        let mut parents: Vec<usize> = (0..self.faces.len()).collect();
+        let mut first_face_by_edge = HashMap::<usize, usize>::new();
+        for (face, topology) in self.faces.iter().enumerate() {
+            for edge in topology
+                .boundaries
+                .iter()
+                .flat_map(|boundary| &boundary.coedges)
+                .map(|coedge| coedge.edge_row)
+            {
+                if let Some(other) = first_face_by_edge.insert(edge, face) {
+                    union_components(&mut parents, face, other);
+                }
+            }
+        }
+        let mut labels = HashMap::<usize, usize>::new();
+        let mut components = Vec::<Vec<usize>>::new();
+        for face in 0..self.faces.len() {
+            let root = component_root(&mut parents, face);
+            let next = labels.len();
+            let component = *labels.entry(root).or_insert(next);
+            if component == components.len() {
+                components.push(Vec::new());
+            }
+            components[component].push(face);
+        }
+        components
     }
 
     /// The counted spine's physical edge rows, in table order ([spec ?5.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#52-spine-grammar)).
@@ -9302,6 +9347,7 @@ mod motif_tests {
             topology.body_kinds(&[2, 1]),
             Some(vec![BodyKind::Solid, BodyKind::Sheet])
         );
+        assert_eq!(topology.face_components(), vec![vec![0, 1], vec![2]]);
         topology
             .orient_solid_body_cycles(&[2, 1])
             .expect("closed group orientation");
