@@ -4833,6 +4833,29 @@ fn incomplete_object_list_tags_do_not_consume_the_payload_terminator() {
 }
 
 #[test]
+fn incomplete_object_list_headers_do_not_consume_the_payload_terminator() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x81, 0x81],
+        &[0x3b, 0xfe],
+    )]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let record = &native.object_graphs[0].records[0];
+
+    assert_eq!(
+        record.payload.fields,
+        [
+            crate::object_graph::PayloadField::Atom {
+                value: 0x3b,
+                offset: 0,
+            },
+            crate::object_graph::PayloadField::Terminator,
+        ]
+    );
+    assert!(record.references.is_empty());
+    assert!(native.design_objects[0].dependencies.is_empty());
+}
+
+#[test]
 fn outer_object_graph_resolves_class_names_from_following_schema() {
     let mut bytes = object_graph_stream();
     let graph_len = bytes.len();

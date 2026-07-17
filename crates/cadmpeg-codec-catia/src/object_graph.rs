@@ -526,6 +526,14 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
                 }
             }
             0x3b => {
+                if bytes.get(at + 1) == Some(&0xfe) {
+                    fields.push(PayloadField::Atom {
+                        value: 0x3b,
+                        offset,
+                    });
+                    at += 1;
+                    continue;
+                }
                 let Some((declared_count, advance)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
                         value: 0x3b,
