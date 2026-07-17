@@ -5222,6 +5222,11 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
         loss.category != cadmpeg_ir::report::LossCategory::Topology
             || loss.severity != cadmpeg_ir::report::Severity::Blocking
     }));
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Topology
+            && loss.severity == cadmpeg_ir::report::Severity::Warning
+            && loss.message.contains("two trailing orientation signs")
+    }));
 
     let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);

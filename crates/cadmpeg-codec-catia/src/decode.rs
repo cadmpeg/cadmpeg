@@ -964,7 +964,20 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     }
     ir.annotations = annotations.build();
     let mut losses = if topology_transferred {
-        Vec::new()
+        let message = if topology
+            .as_ref()
+            .is_some_and(|topology| topology.bodies.is_empty())
+        {
+            "The E5 reference graph is closed; body ownership and shell orientation use an incidence-derived gauge because the stream has no class-0x01 body root."
+        } else {
+            "The E5 reference graph is closed; face and loop orientation transfer, but body/shell orientation uses an incidence-derived gauge because the root's two trailing orientation signs remain unresolved."
+        };
+        vec![LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Warning,
+            message: message.to_string(),
+            provenance: None,
+        }]
     } else {
         vec![LossNote {
             category: LossCategory::Topology,
