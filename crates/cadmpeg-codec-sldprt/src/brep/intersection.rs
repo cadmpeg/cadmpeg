@@ -137,33 +137,42 @@ fn chart_at(bytes: &[u8], body: usize) -> Option<(u16, Chart)> {
     ))
 }
 
-/// Parse a terminator body: `count:u32 attr:u16` then `L?` (count 1) or
-/// `TF`/`TS` (count 2) and the endpoint.
-fn term_at(bytes: &[u8], body: usize) -> Option<(u16, [f64; 3])> {
-    let count = u32_at(bytes, body)?;
-    let attr = u16_at(bytes, body + 4)?;
-    let label = bytes.get(body + 6..body + 8)?;
-    let valid = (count == 1 && label == b"L?") || (count == 2 && matches!(label, b"TF" | b"TS"));
-    if !valid {
-        return None;
+/// Parse a terminator body: `count:u32 attr:u16`, a kind label, then the
+/// endpoint. The label is one kind character (`L` limit, `H` ring, `T`
+/// terminator) with an optional second character (`?`, `F`, or `S`). Both
+/// label widths yield a candidate endpoint; composite validation selects the
+/// candidate that matches the chart.
+fn term_at(bytes: &[u8], body: usize, out: &mut HashMap<u16, Vec<[f64; 3]>>) {
+    let (Some(count), Some(attr)) = (u32_at(bytes, body), u16_at(bytes, body + 4)) else {
+        return;
+    };
+    if !(1..=2).contains(&count) {
+        return;
     }
-    Some((attr, finite_point(bytes, body + 8)?))
+    if !matches!(bytes.get(body + 6), Some(b'L' | b'H' | b'T')) {
+        return;
+    }
+    let two_char = matches!(bytes.get(body + 7), Some(b'?' | b'F' | b'S'));
+    for label_len in [2usize, 1] {
+        if label_len == 2 && !two_char {
+            continue;
+        }
+        if let Some(point) = finite_point(bytes, body + 6 + label_len) {
+            out.entry(attr).or_default().push(point);
+        }
+    }
 }
 
 /// Every `00 29` or inline `term_use` terminator, keyed by attribute.
 fn term_records(bytes: &[u8]) -> HashMap<u16, Vec<[f64; 3]>> {
     let mut out: HashMap<u16, Vec<[f64; 3]>> = HashMap::new();
     for body in record_bodies(bytes, 0x29) {
-        if let Some((attr, point)) = term_at(bytes, body) {
-            out.entry(attr).or_default().push(point);
-        }
+        term_at(bytes, body, &mut out);
     }
     for label in find_bytes(bytes, b"term_use") {
         let tail = label + b"term_use".len();
         if bytes.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
-            if let Some((attr, point)) = term_at(bytes, tail + INLINE_TERM_TAIL.len()) {
-                out.entry(attr).or_default().push(point);
-            }
+            term_at(bytes, tail + INLINE_TERM_TAIL.len(), &mut out);
         }
     }
     out
@@ -252,13 +261,14 @@ fn solved_curve(chart: &Chart, start: [f64; 3], end: [f64; 3]) -> CurveGeometry 
 /// The composite body is `attr:u16 ordinal:u32 refs:u16[5] marker:u8(0x2b|0x2d)`
 /// then six payload references `[support0, support1, chart, term_start,
 /// term_end, uv]`. Both terminators must sit within the chart chordal error of
-/// the corresponding chart endpoint, and the UV value count must cover the
-/// chart points (with an optional extra row at a periodic seam).
+/// the corresponding chart endpoint (a ring names one terminator twice), and a
+/// resolvable UV record must cover the chart points (with an optional extra
+/// row at a periodic seam).
 pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> {
     let charts = chart_records(bytes);
     let terms = term_records(bytes);
     let uvs = uv_records(bytes);
-    if charts.is_empty() || terms.is_empty() || uvs.is_empty() {
+    if charts.is_empty() || terms.is_empty() {
         return HashMap::new();
     }
     let mut out = HashMap::new();
@@ -293,9 +303,12 @@ pub(super) fn scan_intersection_carriers(bytes: &[u8]) -> HashMap<u16, Carrier> 
                 .iter()
                 .find(|point| distance(**point, last) <= chart.chordal_error)?;
             let n = chart.points.len();
-            uvs.get(&uv_ref)?
-                .iter()
-                .any(|(width, count)| *count == width * n || *count == width * (n + 1))
+            uvs.get(&uv_ref)
+                .is_none_or(|shapes| {
+                    shapes
+                        .iter()
+                        .any(|(width, count)| *count == width * n || *count == width * (n + 1))
+                })
                 .then(|| solved_curve(chart, *start, *end))
         });
         if let Some(geometry) = geometry {
@@ -455,6 +468,34 @@ mod tests {
         bytes.extend(term(6, POINTS[2]));
         bytes.extend(uv(7, POINTS.len()));
         assert!(scan_intersection_carriers(&bytes).is_empty());
+    }
+
+    #[test]
+    fn ring_composite_with_one_char_label_and_no_uv_record_decodes() {
+        let ring = [
+            [0.0, 0.0, 0.0],
+            [0.01, 0.0, 0.0],
+            [0.01, 0.01, 0.0],
+            [0.0, 0.0, 0.0],
+        ];
+        let mut bytes = composite(9, [2, 3, 4, 5, 5, 6]);
+        bytes.extend(chart(4, &ring));
+        let mut term = vec![0u8, 0x29];
+        term.extend_from_slice(&1u32.to_be_bytes());
+        term.extend_from_slice(&5u16.to_be_bytes());
+        term.push(b'H');
+        for value in ring[0] {
+            term.extend_from_slice(&value.to_be_bytes());
+        }
+        bytes.extend(term);
+        let carriers = scan_intersection_carriers(&bytes);
+        let CarrierGeometry::Curve(CurveGeometry::Nurbs(curve)) =
+            &carriers.get(&9).expect("ring composite decoded").geometry
+        else {
+            panic!("expected a NURBS polyline");
+        };
+        assert_eq!(curve.control_points.len(), 4);
+        assert_eq!(curve.control_points[0], curve.control_points[3]);
     }
 
     #[test]
