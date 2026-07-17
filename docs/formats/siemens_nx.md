@@ -817,8 +817,10 @@ selection and distance remain unresolved unless exactly one segment-bound output
 image has a region, shell, and face ownership graph containing at least one
 OFFSET_SURF and every owned OFFSET_SURF construction carries the same bit-exact
 signed distance. The distinct base-surface identities form the native face
-selection. Procedural surfaces in other bodies of the same stream do not
-participate.
+selection. The selection resolves to neutral faces when each distinct base
+surface is owned by exactly one face and those faces are distinct; a missing or
+multiply owned base surface retains only the native selection. Procedural
+surfaces in other bodies of the same stream do not participate.
 
 A `BLEND` operation with exactly one segment-bound output image projects as a fillet when that body's region, shell, and face ownership graph contains at least one BLEND_SURF and every owned BLEND_SURF has a circular cross-section. Procedural surfaces in other bodies of the same stream do not participate. The output body's BLEND_SURF identities define the result set; the input-edge selection remains unresolved. When every construction has a finite nonzero constant radius with one common absolute bit pattern, that magnitude is the fillet radius. Multiple constant magnitudes retain constant-law form without assigning one radius. Exclusively linear or curve-driven laws retain variable-law form. Mixed laws retain an unresolved radius form. An unbound output, an incomplete ownership graph, a body without BLEND_SURF, or any owned conic or polynomial blend cross-section leaves the operation native.
 
@@ -865,7 +867,7 @@ The `SIMPLE HOLE` payload template is underscore-delimited. `Hole_GeneralHole_Si
 
 The operation labels `HOLE PACKAGE`, `RIB`, `CHAMFER`, and `THICKEN_SHEET` identify their corresponding construction families. Neutral projection preserves the family as a hole, rib, edge chamfer, or face-thickening operation. Undeclared operands, sidedness, draft, Boolean state, and dimensions outside the rules below remain unresolved.
 
-A `THICKEN_SHEET` operation with exactly one output body has a resolved thickness when that body's complete topology owns one or more `OFFSET_SURF` carriers and every owned carrier has the same bit-exact finite nonzero signed distance. The absolute distance is the thickness. Distinct owned signed distances, including opposite signs of equal magnitude, leave the thickness unresolved. The selected support surfaces retain their native identities; the thickening side remains unresolved.
+A `THICKEN_SHEET` operation with exactly one output body has a resolved thickness when that body's complete topology owns one or more `OFFSET_SURF` carriers and every owned carrier has the same bit-exact finite nonzero signed distance. The absolute distance is the thickness. Distinct owned signed distances, including opposite signs of equal magnitude, leave the thickness unresolved. The selected support surfaces retain their native identities. They resolve to neutral faces only under the same one-support-to-one-distinct-face ownership rule as `OFFSET`; otherwise the selection remains native. The thickening side remains unresolved.
 
 The operation labels `Pattern Feature` and `Pattern Geometry` identify repetition constructions. Neutral projection preserves an unresolved pattern with an unresolved seed selection until its input records supply the pattern form, transform, and seeds.
 

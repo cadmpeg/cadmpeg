@@ -10430,9 +10430,10 @@ pub(crate) fn offset_surface_feature_definition(
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
+    let native = format!("{}:offset-support-surfaces", body.0);
     Some((
         FeatureDefinition::OffsetSurface {
-            faces: FaceSelection::Native(format!("{}:offset-support-surfaces", body.0)),
+            faces: support_face_selection(ir, &supports, native),
             distance: Some(Length(distance)),
         },
         supports,
@@ -10482,14 +10483,40 @@ pub(crate) fn thicken_feature_definition(
     if !distance.is_finite() || distance == 0.0 {
         return None;
     }
+    let native = format!("{}:thicken-support-surfaces", body.0);
     Some((
         FeatureDefinition::Thicken {
-            faces: FaceSelection::Native(format!("{}:thicken-support-surfaces", body.0)),
+            faces: support_face_selection(ir, &supports, native),
             thickness: Some(Length(distance.abs())),
             side: None,
         },
         supports,
     ))
+}
+
+fn support_face_selection(ir: &CadIr, supports: &[SurfaceId], native: String) -> FaceSelection {
+    let faces = supports
+        .iter()
+        .map(|support| {
+            let matches = ir
+                .model
+                .faces
+                .iter()
+                .filter(|face| face.surface == *support)
+                .map(|face| face.id.clone())
+                .collect::<Vec<_>>();
+            let [face] = matches.as_slice() else {
+                return None;
+            };
+            Some(face.clone())
+        })
+        .collect::<Option<Vec<_>>>();
+    match faces {
+        Some(faces) if faces.iter().collect::<BTreeSet<_>>().len() == faces.len() => {
+            FaceSelection::Resolved { faces, native }
+        }
+        _ => FaceSelection::Native(native),
+    }
 }
 
 pub(crate) fn feature_source_content(

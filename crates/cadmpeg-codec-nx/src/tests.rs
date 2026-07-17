@@ -3444,7 +3444,7 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
 
 #[test]
 fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
-    use cadmpeg_ir::features::FeatureDefinition;
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -3475,7 +3475,43 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
     assert!(matches!(
         definition,
         FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Native(_),
             distance: Some(cadmpeg_ir::features::Length(30.0)),
+        }
+    ));
+
+    let input = BodyId("nx:s4:body#input".into());
+    for ordinal in 0..2 {
+        attach_test_body_surface(
+            &mut ir,
+            &input,
+            SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+        );
+    }
+    let (definition, _) =
+        crate::decode::offset_surface_feature_definition(&ir, std::slice::from_ref(&output))
+            .expect("uniquely faced supports");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Resolved { faces, .. },
+            ..
+        } if faces.len() == 2
+    ));
+
+    let mut ambiguous = ir.clone();
+    attach_test_body_surface(
+        &mut ambiguous,
+        &BodyId("nx:s4:body#duplicate".into()),
+        SurfaceId("nx:s4:nurbs-surf#0".into()),
+    );
+    let (definition, _) =
+        crate::decode::offset_surface_feature_definition(&ambiguous, std::slice::from_ref(&output))
+            .expect("offset semantics survive ambiguous face identity");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::OffsetSurface {
+            faces: FaceSelection::Native(_),
             ..
         }
     ));
@@ -3495,7 +3531,7 @@ fn nx_offset_feature_requires_one_output_image_and_one_exact_distance() {
 
 #[test]
 fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
-    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
     use cadmpeg_ir::geometry::ProceduralSurface;
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
@@ -3526,10 +3562,29 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
     assert!(matches!(
         definition,
         FeatureDefinition::Thicken {
+            faces: FaceSelection::Native(_),
             thickness: Some(Length(12.5)),
             side: None,
-            ..
         }
+    ));
+
+    let input = BodyId("nx:s4:body#input".into());
+    for ordinal in 0..2 {
+        attach_test_body_surface(
+            &mut ir,
+            &input,
+            SurfaceId(format!("nx:s4:nurbs-surf#{ordinal}")),
+        );
+    }
+    let (definition, _) =
+        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output))
+            .expect("uniquely faced supports");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Resolved { faces, .. },
+            ..
+        } if faces.len() == 2
     ));
 
     ir.model.procedural_surfaces.push(make_offset(99, 40.0));
