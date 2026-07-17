@@ -30,6 +30,26 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use crate::container::{role, ContainerScan};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum DesignFeatureFamily {
+    Sketch,
+    Extrude,
+    Fillet,
+    Chamfer,
+}
+
+/// Return the canonical operation family while preserving `kind` verbatim on
+/// the native scope. Fusion serializes this field through its UI localization.
+pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
+    match kind {
+        "Sketch" | "Esquisse" => Some(DesignFeatureFamily::Sketch),
+        "Extrude" | "Extrusion" => Some(DesignFeatureFamily::Extrude),
+        "Fillet" | "Congé" => Some(DesignFeatureFamily::Fillet),
+        "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
+        _ => None,
+    }
+}
+
 const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
     (b"body_recipe_data", ConstructionRecipeKind::Body),
     (b"face_recipe_data", ConstructionRecipeKind::Face),
@@ -528,14 +548,15 @@ pub fn project_parameter_design(
                         .map(|parameter| (owner.local_ordinal, parameter))
                 })
                 .collect::<Vec<_>>();
-            let definition = if scope.kind == "Sketch" {
+            let family = design_feature_family(&scope.kind);
+            let definition = if family == Some(DesignFeatureFamily::Sketch) {
                 FeatureDefinition::Sketch {
                     space: SketchSpace::Planar,
                     sketch: sketches_by_scope
                         .get(&(native_scope, scope.record_index))
                         .cloned(),
                 }
-            } else if scope.kind == "Extrude" {
+            } else if family == Some(DesignFeatureFamily::Extrude) {
                 project_extrude(
                     scope,
                     &parameters,
@@ -553,7 +574,7 @@ pub fn project_parameter_design(
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 })
-            } else if scope.kind == "Fillet" {
+            } else if family == Some(DesignFeatureFamily::Fillet) {
                 let mut assignments = fillet_radius_groups
                     .iter()
                     .filter(|assignment| {
@@ -680,7 +701,7 @@ pub fn project_parameter_design(
                         },
                     }
                 }
-            } else if scope.kind == "Chamfer" {
+            } else if family == Some(DesignFeatureFamily::Chamfer) {
                 project_chamfer(scope, &parameters, construction_groups, edge_operands)
                     .unwrap_or_else(|| FeatureDefinition::Native {
                         kind: scope.kind.clone(),
@@ -708,8 +729,14 @@ pub fn project_parameter_design(
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
                 ordinal: scope.byte_offset,
                 name: Some(format!("{} {}", scope.kind, scope.feature_ordinal)),
-                suppressed: matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer")
-                    && scope.history_state_id.is_none()
+                suppressed: matches!(
+                    family,
+                    Some(
+                        DesignFeatureFamily::Extrude
+                            | DesignFeatureFamily::Fillet
+                            | DesignFeatureFamily::Chamfer
+                    )
+                ) && scope.history_state_id.is_none()
                     && scope.previous_history_state_id.is_none(),
                 parent: None,
                 dependencies: Vec::new(),
@@ -7952,7 +7979,7 @@ pub fn decode_parameter_scopes(
             let Some(mut scope) = parse_parameter_scope(bytes, &header) else {
                 continue;
             };
-            if scope.kind == "Sketch" {
+            if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch) {
                 let start = usize::try_from(scope.byte_offset).ok();
                 let end = usize::try_from(scope.paired_byte_offset).ok();
                 let frame = start
@@ -8041,10 +8068,12 @@ pub fn decode_edge_operands(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Chamfer"))
-    {
+    for scope in scopes.iter().filter(|scope| {
+        matches!(
+            design_feature_family(&scope.kind),
+            Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
+        )
+    }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8252,7 +8281,10 @@ pub fn bind_extrude_profiles(
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
-    for scope in scopes.iter_mut().filter(|scope| scope.kind == "Extrude") {
+    for scope in scopes
+        .iter_mut()
+        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude))
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8293,7 +8325,10 @@ pub fn decode_extrude_selection_groups(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "Extrude") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude))
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8336,10 +8371,16 @@ pub fn decode_construction_operand_groups(
         .filter_map(|h| Some(((native_stream(&h.id)?, h.record_index), h)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer"))
-    {
+    for scope in scopes.iter().filter(|scope| {
+        matches!(
+            design_feature_family(&scope.kind),
+            Some(
+                DesignFeatureFamily::Extrude
+                    | DesignFeatureFamily::Fillet
+                    | DesignFeatureFamily::Chamfer
+            )
+        )
+    }) {
         let scope_group_start = out.len();
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -8367,7 +8408,7 @@ pub fn decode_construction_operand_groups(
                 out.push(group);
             }
         }
-        if scope.kind == "Extrude" {
+        if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
@@ -8409,7 +8450,10 @@ pub fn decode_fillet_radius_groups(
         })
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "Fillet") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Fillet))
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8506,7 +8550,7 @@ fn parse_construction_operand_group(
     }
     let identity_record_index = u32_at(bytes, position + 7)?;
     let role = read_u64(bytes, position + 17)?;
-    let extrude_role = if scope.kind == "Extrude" {
+    let extrude_role = if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
         Some(match role {
             0x0000_0008_0000_0000 => DesignExtrudeOperandRole::Bodies,
             0x0000_0041_0000_0000 => DesignExtrudeOperandRole::Profile,
@@ -9683,7 +9727,9 @@ fn parse_parameter_scope(
     else {
         return None;
     };
-    if kind == "Sketch" && reference_members.len() != 1 {
+    if design_feature_family(kind) == Some(DesignFeatureFamily::Sketch)
+        && reference_members.len() != 1
+    {
         return None;
     }
     let (
@@ -9695,7 +9741,7 @@ fn parse_parameter_scope(
         extrude_direction_reversed_offset,
         extrude_start,
         extrude_start_offset,
-    ) = if kind == "Extrude" {
+    ) = if design_feature_family(kind) == Some(DesignFeatureFamily::Extrude) {
         let direct_offset = start.checked_add(28)?;
         let referenced_offset = start.checked_add(38)?;
         let operation_offset = if bytes.get(start.checked_add(25)?) == Some(&1)
@@ -9793,7 +9839,10 @@ pub fn decode_sketch_placements(
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "Sketch") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch))
+    {
         let (Some(entity_id), Some(entity_suffix)) =
             (scope.entity_id.as_deref(), scope.entity_suffix)
         else {
@@ -11837,15 +11886,15 @@ mod relation_tests {
         bind_extrude_selection_geometry, bind_extrude_selection_identities,
         bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
         bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
-        contiguous_i32_program, decode_fillet_radius_groups, design_parameter_prefix,
-        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, expression_identifiers,
-        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
-        find_dimension_null_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
-        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
-        neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
-        offset_parameter_factor, parse_construction_operand_group,
+        contiguous_i32_program, decode_fillet_radius_groups, design_feature_family,
+        design_parameter_prefix, directional_point_dimension, exact_atomic_constraint,
+        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
+        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
+        find_dimension_locus_pair, find_dimension_null_locus_pair, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
+        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
+        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
+        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
         parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
         parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
@@ -11861,7 +11910,7 @@ mod relation_tests {
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
         unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
         unresolved_parameter_expression_dependency_count, untyped_parameter_unit_count,
-        validate_configuration_payload,
+        validate_configuration_payload, DesignFeatureFamily,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
@@ -11887,6 +11936,27 @@ mod relation_tests {
         SketchEntityUse, SketchGeometry, SketchId,
     };
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn feature_family_tokens_are_localized() {
+        assert_eq!(
+            design_feature_family("Esquisse"),
+            Some(DesignFeatureFamily::Sketch)
+        );
+        assert_eq!(
+            design_feature_family("Extrusion"),
+            Some(DesignFeatureFamily::Extrude)
+        );
+        assert_eq!(
+            design_feature_family("Congé"),
+            Some(DesignFeatureFamily::Fillet)
+        );
+        assert_eq!(
+            design_feature_family("Chanfrein"),
+            Some(DesignFeatureFamily::Chamfer)
+        );
+        assert_eq!(design_feature_family("Réseau C"), None);
+    }
 
     #[test]
     fn configuration_identity_is_stable_across_table_order_and_delimiter_names() {
