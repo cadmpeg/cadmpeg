@@ -3058,6 +3058,23 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         None
     );
 
+    let mut disconnected = ir.clone();
+    let mut second_region = disconnected.model.regions[0].clone();
+    second_region.id = cadmpeg_ir::ids::RegionId("second-region".into());
+    second_region.shells.clear();
+    disconnected.model.bodies[0]
+        .regions
+        .push(second_region.id.clone());
+    disconnected.model.regions.push(second_region);
+    assert_eq!(
+        crate::decode::block_projection(
+            &disconnected,
+            Some(dimensions),
+            std::slice::from_ref(&output)
+        ),
+        None
+    );
+
     assert_eq!(
         crate::decode::block_projection(&ir, Some(dimensions), &[]),
         None
