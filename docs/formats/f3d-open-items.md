@@ -13,7 +13,7 @@ This document records F3D semantics that the format specification does not yet d
 - Variable-arity algebraic `readLaw` operators `MIN`, `MAX`, and `STEP` have no defined serialized child-count or terminating delimiter. Their recursive boundaries cannot yet be decoded or written losslessly inside law, net, skin, and sweep payloads.
 - The semantic role of the integer between the secondary and tertiary pcurves in a variable-blend support side is unresolved; it is zero in every observed side.
 - The four optional parameter values between the shared revision-gated surface tail and the trailing enum of revision-gated `exact_spl_sur` and `t_spl_sur` are `(1, 0, 1, 0)` in every observed instance regardless of the cache knot domains; their semantics are unresolved.
-- The kind and scale-slot mapping of the revision-gated `cl_loft_spl_sur` construction fields onto the pre-revision compound-loft grammar is unresolved; such records are retained verbatim.
+- Revision-gated `cl_loft_spl_sur` tail kinds other than zero are unobserved and undefined. The condition selecting the optional trailing values and BS3 curve of the kind-zero payload beyond their structural presence is unresolved.
 - Whether a pre-revision `var_blend_spl_sur` / `srf_srf_v_bl_spl_sur` layout exists in which the leading integer is a subtype definition-table index rather than the serializer revision is unresolved.
 - Which of the three `fixed_width` blend-value scalars are the endpoint parameters and which is the width is unresolved.
 - The token tags of a revision-gated `VBL_SURF` `deg` boundary are unobserved.
