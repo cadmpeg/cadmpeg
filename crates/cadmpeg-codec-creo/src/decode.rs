@@ -9570,12 +9570,6 @@ fn transfer_resolved_sketches(
             ) {
                 continue;
             }
-            if constraints
-                .iter()
-                .any(|existing| existing.definition == constraint.definition)
-            {
-                continue;
-            }
             annotate(
                 annotations,
                 &constraint.id.0,
@@ -15182,6 +15176,35 @@ mod resolved_sketch_tests {
                 ..
             } if native_kind == "creo:skamp:1"
         ));
+        let mut equivalent_skamp = definition.clone();
+        let mut redundant = equivalent_skamp
+            .relations
+            .as_ref()
+            .expect("relations")
+            .skamps[0]
+            .clone();
+        redundant.id = 100;
+        redundant.offset = 500;
+        equivalent_skamp
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .push(redundant);
+        let equivalent_constraints =
+            section_skamp_constraints(&equivalent_skamp, &SketchId("sketch".into()));
+        assert_eq!(
+            equivalent_constraints[0].0.definition,
+            equivalent_constraints
+                .last()
+                .expect("redundant")
+                .0
+                .definition
+        );
+        assert_ne!(
+            equivalent_constraints[0].0.id,
+            equivalent_constraints.last().expect("redundant").0.id
+        );
         let mut duplicate_skamp_id = definition.clone();
         let mut duplicate = duplicate_skamp_id
             .relations

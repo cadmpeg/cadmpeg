@@ -732,6 +732,9 @@ records.
 `skamp_ptr.id` is the incidence identity. A typed incidence requires exactly
 one row with that identifier. Rows sharing an identifier remain separate native
 constraints identified by their byte offsets.
+Distinct `verhor`, `relat_ptr`, and `skamp_ptr` source records remain distinct
+neutral constraints when they express equivalent equations; semantic
+equivalence does not merge their source identities.
 For an ordered saved line, senses `2` and `3` select its first and second stored
 endpoints. For an ordered saved arc they select the neutral end and start loci,
 respectively, because saved-arc evaluation reverses the stored endpoint order.
