@@ -4369,43 +4369,22 @@ fn saved_circular_entities(
                 search = body_end;
                 continue;
             };
-            let Some(center) =
-                saved_named_scalars::<3>(payload, b"center", body_start, body_end, cache)
-            else {
-                search = body_end;
-                continue;
-            };
-            let Some([radius]) =
-                saved_named_scalars::<1>(payload, b"radius", body_start, body_end, cache)
-            else {
-                search = body_end;
-                continue;
-            };
+            let center = saved_named_scalars::<3>(payload, b"center", body_start, body_end, cache)
+                .unwrap_or([None; 3]);
+            let radius = saved_named_scalars::<1>(payload, b"radius", body_start, body_end, cache)
+                .unwrap_or([None])[0];
             if kind == "arc" {
-                let Some(first) =
-                    saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
-                else {
-                    search = body_end;
-                    continue;
-                };
-                let Some(second) =
+                let first = saved_named_scalars::<3>(payload, b"end1", body_start, body_end, cache)
+                    .unwrap_or([None; 3]);
+                let second =
                     saved_named_scalars::<3>(payload, b"end2", body_start, body_end, cache)
-                else {
-                    search = body_end;
-                    continue;
-                };
-                let Some([start_parameter]) =
+                        .unwrap_or([None; 3]);
+                let start_parameter =
                     saved_named_scalars::<1>(payload, b"t0", body_start, body_end, cache)
-                else {
-                    search = body_end;
-                    continue;
-                };
-                let Some([end_parameter]) =
+                        .unwrap_or([None])[0];
+                let end_parameter =
                     saved_named_scalars::<1>(payload, b"t1", body_start, body_end, cache)
-                else {
-                    search = body_end;
-                    continue;
-                };
+                        .unwrap_or([None])[0];
                 entities.push(FeatureSavedEntity::Arc(FeatureSavedArc {
                     entity_id,
                     center,
@@ -7608,6 +7587,37 @@ mod tests {
             saved_arc_scalar(&bytes, 1, bytes.len(), &cache),
             (Some(f64::from_be_bytes([0x3f, 0xd3, 1, 2, 3, 4, 5, 6])), 8)
         );
+    }
+
+    #[test]
+    fn saved_circular_entities_retain_ids_and_independent_fields() {
+        let payload = b"\xe0\x00entity(arc)\0\
+            \xe0\x01id\0\x07\xe0\x02center\0\x0f\x0f\x0f\
+            \xe0\x00entity(circle)\0\
+            \xe0\x01id\0\x08\xe0\x02radius\0\x0f";
+
+        let entities = saved_circular_entities(
+            payload,
+            0,
+            payload.len(),
+            &scalar::ScalarCache::default(),
+            None,
+            None,
+        );
+
+        let [FeatureSavedEntity::Arc(arc), FeatureSavedEntity::Circle(circle)] =
+            entities.as_slice()
+        else {
+            panic!("saved circular entities");
+        };
+        assert_eq!(arc.entity_id, 7);
+        assert_eq!(arc.center, [Some(0.0); 3]);
+        assert_eq!(arc.radius, None);
+        assert_eq!(arc.endpoints, [[None; 3]; 2]);
+        assert_eq!(arc.parameters, [None; 2]);
+        assert_eq!(circle.entity_id, 8);
+        assert_eq!(circle.center, [None; 3]);
+        assert_eq!(circle.radius, Some(0.0));
     }
 
     #[test]

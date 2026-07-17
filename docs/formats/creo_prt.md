@@ -1528,6 +1528,8 @@ authoritative solved trim topology. Its named table remains present when no
 entity row is complete. Saved line rows may contain `f0 f7 <ref>`,
 `f1 f7 <ref>`, or bare `f7 <ref>` references between their identity, attribute,
 and coordinate fields.
+Named saved arcs and circles retain their identity and each decoded scalar
+field when later center, radius, endpoint, or parameter fields are absent.
 The line prototype can close with `f1 e3`; positional line rows follow that
 close. Within saved-section three-scalar coordinate fields, `18 e5` expands to
 the coordinate triple `[0, 1, 0]`. In a saved-line coordinate row, `41` occupies
