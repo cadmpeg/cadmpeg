@@ -776,6 +776,9 @@ the two points along the measured horizontal or vertical segment. Sign `1`
 adds the dimension and sign `f6` subtracts it. Sign zero selects the segment
 direction: first-direction `1` adds the dimension, while the null
 first-direction selector subtracts it.
+Equivalent rows define one coordinate equation. Rows that assign different
+signed differences to the same unordered point pair and coordinate define no
+solved coordinate for that equation.
 
 A type-zero relation with vectors `a=[first_point,second_point,null,1]`,
 `b=[0,0,0,0]` or `b=[1,1,0,1]`, and `c=[15,16,15,1]` is a
@@ -808,6 +811,7 @@ zero is an identifier; the `f6` control sentinel represents an absent value.
 stores that value. Rows sharing an `ext_id` remain independent construction
 entities identified by their row offsets and do not participate in profile,
 trim, generated-carrier, or solver-incidence joins through that value.
+Only uniquely identified segments propagate solved section coordinates.
 Segment type `5` is an isolated point entity. It stores one defined `pointid`;
 the second point slot is a control sentinel.
 

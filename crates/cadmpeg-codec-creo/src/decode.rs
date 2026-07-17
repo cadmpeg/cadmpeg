@@ -3630,11 +3630,16 @@ pub(crate) fn resolved_section_points(
         .filter(|point| !ambiguous_point_ids.contains(&point.point_id))
         .map(|point| (point.point_id, [point.u, point.v]))
         .collect::<BTreeMap<_, _>>();
+    let mut segment_counts = BTreeMap::new();
+    for segment in definition.segments.iter().flat_map(|table| &table.rows) {
+        *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
+    }
     let segments = definition
         .segments
         .iter()
         .flat_map(|table| &table.rows)
         .filter(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line)
+        .filter(|segment| segment_counts[&segment.external_id] == 1)
         .filter(|segment| {
             segment
                 .point_ids
@@ -3695,7 +3700,7 @@ pub(crate) fn resolved_section_points(
                 .all(|point_id| !ambiguous_point_ids.contains(point_id))
         })
         .collect::<Vec<_>>();
-    let signed_dimensions = definition
+    let signed_dimension_candidates = definition
         .relations
         .iter()
         .flat_map(|table| &table.rows)
@@ -3710,9 +3715,11 @@ pub(crate) fn resolved_section_points(
             let [Some(first), Some(second), _, _] = vectors[0] else {
                 return None;
             };
-            let segment = segments.iter().find(|segment| {
+            let mut matching_segments = segments.iter().filter(|segment| {
                 segment.point_ids == [first, second] || segment.point_ids == [second, first]
-            })?;
+            });
+            let segment = matching_segments.next()?;
+            matching_segments.next().is_none().then_some(())?;
             let coordinate =
                 1usize.checked_sub(section_line_fixed_coordinate(definition, segment)?)?;
             let magnitude = definition
@@ -3733,6 +3740,28 @@ pub(crate) fn resolved_section_points(
                 _ => return None,
             };
             Some((first, second, coordinate, delta))
+        })
+        .collect::<Vec<_>>();
+    let mut signed_dimensions = BTreeMap::<(u32, u32, usize), Option<f64>>::new();
+    for (first, second, coordinate, delta) in signed_dimension_candidates {
+        let (key, canonical_delta) = if first <= second {
+            ((first, second, coordinate), delta)
+        } else {
+            ((second, first, coordinate), -delta)
+        };
+        signed_dimensions
+            .entry(key)
+            .and_modify(|stored| {
+                if stored.is_some_and(|stored| stored != canonical_delta) {
+                    *stored = None;
+                }
+            })
+            .or_insert(Some(canonical_delta));
+    }
+    let signed_dimensions = signed_dimensions
+        .into_iter()
+        .filter_map(|((first, second, coordinate), delta)| {
+            Some((first, second, coordinate, delta?))
         })
         .collect::<Vec<_>>();
     loop {
@@ -15575,6 +15604,69 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let mut solver_definition = distance_definition.clone();
+        solver_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .clear();
+        assert_eq!(
+            resolved_section_points(&solver_definition).get(&2),
+            Some(&[0.0, 5.0])
+        );
+        let mut equivalent_relation = solver_definition.clone();
+        let duplicate = equivalent_relation
+            .relations
+            .as_ref()
+            .expect("relations")
+            .rows[0]
+            .clone();
+        equivalent_relation
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows
+            .push(duplicate);
+        assert_eq!(
+            resolved_section_points(&equivalent_relation).get(&2),
+            Some(&[0.0, 5.0])
+        );
+        let conflicting_relation = equivalent_relation
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows
+            .last_mut()
+            .expect("duplicate relation");
+        conflicting_relation.sign = 0xf6;
+        assert!(!resolved_section_points(&equivalent_relation).contains_key(&2));
+        let mut duplicate_identity = solver_definition.clone();
+        let mut duplicate = duplicate_identity.segments.as_ref().expect("segments").rows[0].clone();
+        duplicate.offset = 500;
+        duplicate_identity
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(duplicate);
+        assert!(!resolved_section_points(&duplicate_identity).contains_key(&2));
+        let mut duplicate_endpoint_segment = solver_definition;
+        let mut duplicate = duplicate_endpoint_segment
+            .segments
+            .as_ref()
+            .expect("segments")
+            .rows[0]
+            .clone();
+        duplicate.external_id = 99;
+        duplicate.offset = 501;
+        duplicate_endpoint_segment
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(duplicate);
+        assert!(!resolved_section_points(&duplicate_endpoint_segment).contains_key(&2));
         let mut shared_vertex_definition = distance_definition.clone();
         let mut incident = shared_vertex_definition
             .segments
