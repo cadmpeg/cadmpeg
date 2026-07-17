@@ -3625,6 +3625,80 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
 }
 
 #[test]
+fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
+    use cadmpeg_ir::geometry::ProceduralSurface;
+    use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
+
+    let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let output = BodyId("nx:s4:body#symmetric".into());
+    let input = BodyId("nx:s4:body#input".into());
+    let support = SurfaceId("nx:s4:nurbs-surf#0".into());
+    attach_test_body_surface(&mut ir, &input, support.clone());
+    let make_offset = |ordinal: u32, support: SurfaceId, distance: f64| ProceduralSurface {
+        id: ProceduralSurfaceId(format!("nx:s4:offset-construction#{ordinal}")),
+        surface: SurfaceId(format!("nx:s4:offset-surf#{ordinal}")),
+        definition: ProceduralSurfaceDefinition::Offset {
+            support,
+            distance,
+            u_sense: 1,
+            v_sense: 1,
+            extension_flags: Vec::new(),
+        },
+        cache_fit_tolerance: None,
+    };
+    for (ordinal, distance) in [(0, -6.25), (1, 6.25)] {
+        let procedural = make_offset(ordinal, support.clone(), distance);
+        attach_test_body_surface(&mut ir, &output, procedural.surface.clone());
+        ir.model.procedural_surfaces.push(procedural);
+    }
+
+    let (definition, supports) =
+        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output))
+            .expect("matched symmetric offsets");
+    assert_eq!(supports, [support.clone()]);
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Thicken {
+            faces: FaceSelection::Resolved { faces, .. },
+            thickness: Some(Length(12.5)),
+            side: Some(ThickenSide::Both),
+        } if faces.len() == 1
+    ));
+
+    let mut mismatched_support = ir.clone();
+    let ProceduralSurfaceDefinition::Offset { support, .. } = &mut mismatched_support
+        .model
+        .procedural_surfaces
+        .last_mut()
+        .expect("positive offset")
+        .definition
+    else {
+        unreachable!()
+    };
+    *support = SurfaceId("nx:s4:nurbs-surf#other".into());
+    assert!(crate::decode::thicken_feature_definition(
+        &mismatched_support,
+        std::slice::from_ref(&output)
+    )
+    .is_none());
+
+    let ProceduralSurfaceDefinition::Offset { distance, .. } = &mut ir
+        .model
+        .procedural_surfaces
+        .last_mut()
+        .expect("positive offset")
+        .definition
+    else {
+        unreachable!()
+    };
+    *distance = 7.0;
+    assert!(
+        crate::decode::thicken_feature_definition(&ir, std::slice::from_ref(&output)).is_none()
+    );
+}
+
+#[test]
 fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     use cadmpeg_ir::features::{FeatureDefinition, RadiusForm, RadiusSpec};
     use cadmpeg_ir::geometry::{

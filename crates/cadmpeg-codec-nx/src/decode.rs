@@ -10445,12 +10445,32 @@ fn owned_offset_surface_data<'a>(
     ir: &CadIr,
     outputs: &'a [BodyId],
 ) -> Option<(&'a BodyId, f64, Vec<SurfaceId>)> {
+    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
+    let distance = carriers[0].1;
+    if carriers
+        .iter()
+        .any(|(_, candidate)| candidate.to_bits() != distance.to_bits())
+    {
+        return None;
+    }
+    let supports = carriers
+        .into_iter()
+        .map(|(support, _)| support)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    Some((body, distance, supports))
+}
+
+fn owned_offset_carriers<'a>(
+    ir: &CadIr,
+    outputs: &'a [BodyId],
+) -> Option<(&'a BodyId, Vec<(SurfaceId, f64)>)> {
     let [body] = outputs else {
         return None;
     };
     let body_surfaces = body_surface_ids(ir, body)?;
-    let mut distance = None::<f64>;
-    let mut supports = Vec::new();
+    let mut carriers = Vec::new();
     for procedural in &ir.model.procedural_surfaces {
         if !body_surfaces.contains(&procedural.surface) {
             continue;
@@ -10463,43 +10483,100 @@ fn owned_offset_surface_data<'a>(
         else {
             continue;
         };
-        if distance.is_some_and(|distance| distance.to_bits() != candidate.to_bits()) {
-            return None;
-        }
-        distance = Some(*candidate);
-        if !supports.contains(support) {
-            supports.push(support.clone());
-        }
+        carriers.push((support.clone(), *candidate));
     }
-    let distance = distance?;
-    supports.sort();
-    Some((body, distance, supports))
+    (!carriers.is_empty()).then_some((body, carriers))
 }
 
 pub(crate) fn thicken_feature_definition(
     ir: &CadIr,
     outputs: &[BodyId],
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
-    let (body, distance, supports) = owned_offset_surface_data(ir, outputs)?;
-    if !distance.is_finite() || distance == 0.0 {
-        return None;
-    }
+    let (body, thickness, supports, direction) = owned_thicken_surface_data(ir, outputs)?;
     let native = format!("{}:thicken-support-surfaces", body.0);
     let (faces, senses) = support_face_projection(ir, &supports, native);
-    let side = senses.and_then(|senses| {
-        let (first, rest) = senses.split_first()?;
-        let first = thicken_side(distance, *first);
-        rest.iter()
-            .all(|sense| thicken_side(distance, *sense) == first)
-            .then_some(first)
-    });
+    let side = match direction {
+        ThickenDirection::Both => Some(ThickenSide::Both),
+        ThickenDirection::Signed(distance) => senses.and_then(|senses| {
+            let (first, rest) = senses.split_first()?;
+            let first = thicken_side(distance, *first);
+            rest.iter()
+                .all(|sense| thicken_side(distance, *sense) == first)
+                .then_some(first)
+        }),
+    };
     Some((
         FeatureDefinition::Thicken {
             faces,
-            thickness: Some(Length(distance.abs())),
+            thickness: Some(Length(thickness)),
             side,
         },
         supports,
+    ))
+}
+
+enum ThickenDirection {
+    Signed(f64),
+    Both,
+}
+
+fn owned_thicken_surface_data<'a>(
+    ir: &CadIr,
+    outputs: &'a [BodyId],
+) -> Option<(&'a BodyId, f64, Vec<SurfaceId>, ThickenDirection)> {
+    let (body, carriers) = owned_offset_carriers(ir, outputs)?;
+    let distance = carriers[0].1;
+    if carriers
+        .iter()
+        .all(|(_, candidate)| candidate.to_bits() == distance.to_bits())
+    {
+        if distance.is_finite() && distance != 0.0 {
+            let supports = carriers
+                .into_iter()
+                .map(|(support, _)| support)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+            return Some((
+                body,
+                distance.abs(),
+                supports,
+                ThickenDirection::Signed(distance),
+            ));
+        }
+        return None;
+    }
+
+    let mut magnitude = None::<f64>;
+    let mut positive = BTreeSet::new();
+    let mut negative = BTreeSet::new();
+    for (support, distance) in carriers {
+        if !distance.is_finite() || distance == 0.0 {
+            return None;
+        }
+        let candidate = distance.abs();
+        if magnitude.is_some_and(|magnitude| magnitude.to_bits() != candidate.to_bits()) {
+            return None;
+        }
+        magnitude = Some(candidate);
+        if distance.is_sign_positive() {
+            positive.insert(support);
+        } else {
+            negative.insert(support);
+        }
+    }
+    if positive.is_empty() || positive != negative {
+        return None;
+    }
+    let thickness = magnitude? * 2.0;
+    if !thickness.is_finite() {
+        return None;
+    }
+    Some((
+        body,
+        thickness,
+        positive.into_iter().collect(),
+        ThickenDirection::Both,
     ))
 }
 
