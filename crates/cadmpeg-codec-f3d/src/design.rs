@@ -7854,81 +7854,99 @@ fn parse_dimension_locus_group(
     })
 }
 
-/// Decode each sketch or construction-operation record referenced by a
-/// parameter owner frame.
+/// Decode every canonical sketch or construction-operation scope, including
+/// scopes that own no parameters and therefore have no owner-frame backlink.
 pub fn decode_parameter_scopes(
     scan: &ContainerScan,
-    owners: &[DesignParameterOwner],
-    headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignParameterScope>, CodecError> {
-    let wanted = owners
-        .iter()
-        .filter_map(|owner| {
-            Some((
-                native_stream(&owner.id)?.to_owned(),
-                owner.scope_record_index,
-            ))
-        })
-        .collect::<HashSet<_>>();
     let mut out = Vec::new();
-    for header in headers.iter().filter(|header| {
-        native_stream(&header.id)
-            .is_some_and(|scope| wanted.contains(&(scope.to_owned(), header.record_index)))
-    }) {
-        let entry = scan.entries.iter().find(|entry| {
-            entry.role == role::BULKSTREAM
-                && entry.name.contains("Design")
-                && header.id.starts_with(&format!("f3d:{}:", entry.name))
-        });
-        let Some(entry) = entry else {
-            continue;
-        };
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(mut scope) = parse_parameter_scope(bytes, header) else {
-            continue;
-        };
-        if scope.kind == "Sketch" {
-            let start = usize::try_from(scope.byte_offset).ok();
-            let end = usize::try_from(scope.paired_byte_offset).ok();
-            let frame = start
-                .zip(end)
-                .and_then(|(start, end)| bytes.get(start..end));
-            let matches = frame
-                .into_iter()
-                .flat_map(|frame| {
-                    entities.iter().filter_map(move |entity| {
-                        if native_stream(&entity.id) != native_stream(&header.id)
-                            || entity.object_kind != Some(DesignObjectKind::Sketch)
-                            || entity.entity_suffix > u64::from(u32::MAX)
-                        {
-                            return None;
-                        }
-                        let mut pattern = [0; 11];
-                        pattern[0] = 1;
-                        pattern[1..5].copy_from_slice(&(entity.entity_suffix as u32).to_le_bytes());
-                        frame
-                            .windows(pattern.len())
-                            .position(|window| window == pattern)
-                            .map(|offset| (entity, offset + 1))
+        let stream = format!("f3d:{}", entry.name);
+        for header in parameter_scope_candidate_headers(bytes) {
+            let Some(mut scope) = parse_parameter_scope(bytes, &header) else {
+                continue;
+            };
+            if scope.kind == "Sketch" {
+                let start = usize::try_from(scope.byte_offset).ok();
+                let end = usize::try_from(scope.paired_byte_offset).ok();
+                let frame = start
+                    .zip(end)
+                    .and_then(|(start, end)| bytes.get(start..end));
+                let matches = frame
+                    .into_iter()
+                    .flat_map(|frame| {
+                        entities.iter().filter_map(|entity| {
+                            if native_stream(&entity.id) != Some(stream.as_str())
+                                || entity.object_kind != Some(DesignObjectKind::Sketch)
+                                || entity.entity_suffix > u64::from(u32::MAX)
+                            {
+                                return None;
+                            }
+                            let mut pattern = [0; 11];
+                            pattern[0] = 1;
+                            pattern[1..5]
+                                .copy_from_slice(&(entity.entity_suffix as u32).to_le_bytes());
+                            frame
+                                .windows(pattern.len())
+                                .position(|window| window == pattern)
+                                .map(|offset| (entity, offset + 1))
+                        })
                     })
-                })
-                .collect::<Vec<_>>();
-            if let [(entity, relative_offset)] = matches.as_slice() {
-                scope.entity_id = Some(entity.entity_id.clone());
-                scope.entity_suffix = Some(entity.entity_suffix);
-                scope.entity_reference_offset =
-                    Some(scope.byte_offset.saturating_add(*relative_offset as u64));
+                    .collect::<Vec<_>>();
+                if let [(entity, relative_offset)] = matches.as_slice() {
+                    scope.entity_id = Some(entity.entity_id.clone());
+                    scope.entity_suffix = Some(entity.entity_suffix);
+                    scope.entity_reference_offset =
+                        Some(scope.byte_offset.saturating_add(*relative_offset as u64));
+                }
             }
+            scope.id = format!(
+                "f3d:{}:design-parameter-scope#{}",
+                entry.name, scope.byte_offset
+            );
+            out.push(scope);
         }
-        scope.id = format!(
-            "f3d:{}:design-parameter-scope#{}",
-            entry.name, header.byte_offset
-        );
-        out.push(scope);
     }
     out.sort_by_key(|scope| scope.id.clone());
+    out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecordHeader> {
+    let mut indexed = HashMap::<u32, Vec<(usize, String)>>::new();
+    let mut position = 0;
+    while let Some(at) = next_indexed_record_offset(bytes, position) {
+        if let Some((class_tag, after_tag)) = lp_ascii(bytes, at) {
+            if let Some(record_index) = u32_at(bytes, after_tag) {
+                indexed
+                    .entry(record_index)
+                    .or_default()
+                    .push((at, class_tag));
+            }
+        }
+        position = at.saturating_add(1);
+    }
+    indexed
+        .into_iter()
+        .flat_map(|(record_index, occurrences)| {
+            let candidate_count = occurrences.len().saturating_sub(1);
+            occurrences
+                .into_iter()
+                .take(candidate_count)
+                .map(move |(at, class_tag)| DesignRecordHeader {
+                    id: String::new(),
+                    record_index,
+                    class_tag,
+                    byte_offset: at as u64,
+                })
+        })
+        .collect()
 }
 
 /// Decode the edge-recipe operand frames named by Fillet and Chamfer scopes.
@@ -13543,6 +13561,12 @@ mod relation_tests {
         assert_eq!(scope.frame_length, paired_at as u64);
         assert_eq!(scope.paired_class_tag, "261");
         assert_eq!(scope.paired_byte_offset, paired_at as u64);
+        let discovered = super::parameter_scope_candidate_headers(&bytes)
+            .into_iter()
+            .filter_map(|header| parse_parameter_scope(&bytes, &header))
+            .collect::<Vec<_>>();
+        assert_eq!(discovered.len(), 1);
+        assert_eq!(discovered[0].record_index, 12);
 
         let mut excess_reference = vec![1];
         excess_reference.extend_from_slice(&56u32.to_le_bytes());
