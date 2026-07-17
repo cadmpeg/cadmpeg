@@ -3390,11 +3390,23 @@ fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
         }
     )));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_ellipses"][0];
+    assert_eq!(record.fields["source_entity_id"], 43);
     assert_eq!(record.fields["major_radius"], 1.0);
     assert_eq!(record.fields["minor_radius"], 1.0);
     assert_eq!(
         result.ir.source.as_ref().unwrap().attributes["transferred_reference_ellipse_count"],
         "1"
+    );
+    let ellipse = result
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "creo:mdl_ref_info:conic#43")
+        .expect("canonically identified conic");
+    assert_eq!(
+        ellipse.source_object.as_ref().unwrap().object_id,
+        "MdlRefInfo:conic:43"
     );
     assert!(result.report.losses.iter().any(|loss| {
         loss.message

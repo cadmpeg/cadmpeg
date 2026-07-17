@@ -651,6 +651,7 @@ struct CreoReferenceConicRecord {
 struct CreoReferenceEllipseRecord {
     id: String,
     source_conic_id: String,
+    source_entity_id: u32,
     center: [f64; 3],
     axis: [f64; 3],
     major_direction: [f64; 3],
@@ -22234,6 +22235,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             .map(|ellipse| CreoReferenceEllipseRecord {
                 id: format!("creo:mdl_ref_info:ellipse_carrier#{}", ellipse.offset),
                 source_conic_id: format!("creo:mdl_ref_info:conic_record#{}", ellipse.offset),
+                source_entity_id: ellipse.source_entity_id,
                 center: ellipse.center,
                 axis: ellipse.axis,
                 major_direction: ellipse.major_direction,
@@ -22353,8 +22355,20 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             }),
         });
     }
+    let ellipse_id_counts = scan.reference_ellipses.iter().fold(
+        BTreeMap::<u32, usize>::new(),
+        |mut counts, ellipse| {
+            *counts.entry(ellipse.source_entity_id).or_default() += 1;
+            counts
+        },
+    );
     for ellipse in &scan.reference_ellipses {
-        let id = CurveId(format!("creo:mdl_ref_info:conic#{}", ellipse.offset));
+        let native_identity = if ellipse_id_counts.get(&ellipse.source_entity_id) == Some(&1) {
+            ellipse.source_entity_id.to_string()
+        } else {
+            format!("{}@{}", ellipse.source_entity_id, ellipse.offset)
+        };
+        let id = CurveId(format!("creo:mdl_ref_info:conic#{native_identity}"));
         annotate(
             &mut annotations,
             &id,
@@ -22378,7 +22392,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             },
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
-                object_id: format!("MdlRefInfo:conic:{}", ellipse.offset),
+                object_id: format!("MdlRefInfo:conic:{native_identity}"),
                 name: None,
                 color: None,
                 visible: None,

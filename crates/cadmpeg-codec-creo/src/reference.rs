@@ -83,6 +83,8 @@ pub struct ReferenceConic {
 /// Complete model-space ellipse derived from a conic record.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceEllipse {
+    /// Canonical identifier of the source conic entity.
+    pub source_entity_id: u32,
     /// Ellipse center.
     pub center: [f64; 3],
     /// Unit normal of the ellipse plane.
@@ -185,6 +187,7 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
             continue;
         };
         result.push(ReferenceEllipse {
+            source_entity_id: conic.entity_id,
             center,
             axis,
             major_direction,
@@ -953,6 +956,7 @@ mod tests {
         assert_eq!(
             ellipse_carriers(std::slice::from_ref(&conic)),
             [ReferenceEllipse {
+                source_entity_id: 7,
                 center: [2.0, 2.0, 4.0],
                 axis: [0.0, 0.0, 1.0],
                 major_direction: [-1.0, 0.0, 0.0],
