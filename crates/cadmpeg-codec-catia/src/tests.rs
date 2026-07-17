@@ -42,14 +42,14 @@ fn with_root<R>(
     f(&ctx, root)
 }
 
-fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
+fn assert_every_entity_has_v1_annotation(ir: &CadIr, annotations: &cadmpeg_ir::Annotations) {
     let mut entity_count = 0;
     macro_rules! check {
         ($entities:expr) => {
             for entity in $entities {
                 entity_count += 1;
-                let provenance = &ir.annotations.provenance[&entity.id.0];
-                assert!(ir.annotations.streams[provenance.stream as usize].starts_with("catia:"));
+                let provenance = &annotations.provenance[&entity.id.0];
+                assert!(annotations.streams[provenance.stream as usize].starts_with("catia:"));
             }
         };
     }
@@ -67,7 +67,7 @@ fn assert_every_entity_has_v1_annotation(ir: &CadIr) {
     check!(&ir.model.curves);
     let unknowns = ir.native_unknowns("catia").unwrap();
     check!(&unknowns);
-    assert_eq!(ir.annotations.provenance.len(), entity_count);
+    assert_eq!(annotations.provenance.len(), entity_count);
 }
 
 fn standard_quad_topology_stream() -> Vec<u8> {
@@ -3715,7 +3715,9 @@ fn container_only_stops_before_geometry() {
     // The reconstructed BREP stream is preserved as an unknown passthrough.
     let unknowns = result.ir.native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
-    assert_eq!(unknowns[0].sha256.len(), 64);
+    let retained = &result.source_fidelity.retained_records[0];
+    assert_eq!(retained.sha256.len(), 64);
+    assert!(retained.data.is_some());
 }
 
 #[test]
@@ -3733,7 +3735,7 @@ fn every_decode_path_populates_v1_annotations() {
         let decoded = CatiaCodec
             .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
             .unwrap();
-        assert_every_entity_has_v1_annotation(&decoded.ir);
+        assert_every_entity_has_v1_annotation(&decoded.ir, &decoded.source_fidelity.annotations);
     }
 
     let container_only = CatiaCodec
@@ -3745,7 +3747,10 @@ fn every_decode_path_populates_v1_annotations() {
             },
         )
         .unwrap();
-    assert_every_entity_has_v1_annotation(&container_only.ir);
+    assert_every_entity_has_v1_annotation(
+        &container_only.ir,
+        &container_only.source_fidelity.annotations,
+    );
 }
 
 /// Record-ticket issuance and transfer accounting (doc §6.2, §10 Phase 3D).

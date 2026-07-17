@@ -31,6 +31,8 @@ cadmpeg-codec-f3d = 0
 cadmpeg-codec-sldprt = 0
 cadmpeg-codec-catia = 0
 cadmpeg-codec-creo = 0
+cadmpeg-codec-freecad = 3
+cadmpeg-codec-iges = 0
 # `cadmpeg_ir::cursor::Cursor::with_bounds` in `container.rs` — the one domain
 # reader still to migrate; the noise-counting form buried this behind 72
 # `std::io::Cursor` test-driver references.

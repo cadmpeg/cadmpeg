@@ -8,7 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::annotations::{ExactnessNote, Provenance};
-use crate::CadIr;
+use crate::{Annotations, CadIr, SourceFidelity};
 
 /// A modified entity and its differing top-level fields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
@@ -44,6 +44,35 @@ pub struct AnnotationDiff {
     pub exactness: ArenaDiff,
 }
 
+/// Changes to complete source-byte ownership.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct ByteLedgerDiff {
+    /// `(left, right)` source lengths, present only when they differ.
+    pub source_length_change: Option<(u64, u64)>,
+    /// Span changes keyed by decimal start offset.
+    pub spans: ArenaDiff,
+}
+
+/// Structural changes between two source-fidelity sidecars.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+pub struct SourceFidelityDiff {
+    /// Changes to source streams, provenance, and exactness.
+    pub annotations: AnnotationDiff,
+    /// Changes to complete source-byte ownership.
+    pub byte_ledger: ByteLedgerDiff,
+}
+
+impl SourceFidelityDiff {
+    /// Returns `true` when neither annotations nor byte ownership differ.
+    pub fn is_empty(&self) -> bool {
+        self.annotations.is_empty()
+            && self.byte_ledger.source_length_change.is_none()
+            && self.byte_ledger.spans.added.is_empty()
+            && self.byte_ledger.spans.removed.is_empty()
+            && self.byte_ledger.spans.modified.is_empty()
+    }
+}
+
 impl AnnotationDiff {
     fn is_empty(&self) -> bool {
         self.stream_change.is_none()
@@ -63,8 +92,6 @@ pub struct IrDiff {
     pub unit_change: Option<(crate::units::Units, crate::units::Units)>,
     /// `(left, right)` tolerances, present only when the two documents' tolerances differ.
     pub tolerance_change: Option<(crate::units::Tolerances, crate::units::Tolerances)>,
-    /// Changes to annotation streams, provenance, and exactness.
-    pub annotations: AnnotationDiff,
     /// Per-arena diffs, one entry per arena compared.
     pub per_arena: Vec<ArenaDiff>,
 }
@@ -74,7 +101,6 @@ impl IrDiff {
     pub fn is_empty(&self) -> bool {
         self.unit_change.is_none()
             && self.tolerance_change.is_none()
-            && self.annotations.is_empty()
             && self.per_arena.iter().all(|arena| {
                 arena.added.is_empty() && arena.removed.is_empty() && arena.modified.is_empty()
             })
@@ -151,24 +177,20 @@ fn exactness_fields(left: &ExactnessNote, right: &ExactnessNote) -> Vec<String> 
     fields
 }
 
-fn annotation_diff(left: &CadIr, right: &CadIr) -> AnnotationDiff {
+fn annotation_diff(left: &Annotations, right: &Annotations) -> AnnotationDiff {
     AnnotationDiff {
-        stream_change: (left.annotations.streams != right.annotations.streams).then(|| {
-            (
-                left.annotations.streams.clone(),
-                right.annotations.streams.clone(),
-            )
-        }),
+        stream_change: (left.streams != right.streams)
+            .then(|| (left.streams.clone(), right.streams.clone())),
         provenance: map_arena(
             "annotations.provenance",
-            &left.annotations.provenance,
-            &right.annotations.provenance,
+            &left.provenance,
+            &right.provenance,
             differing_fields::<Provenance>,
         ),
         exactness: map_arena(
             "annotations.exactness",
-            &left.annotations.exactness,
-            &right.annotations.exactness,
+            &left.exactness,
+            &right.exactness,
             exactness_fields,
         ),
     }
@@ -269,19 +291,65 @@ pub fn diff(left: &CadIr, right: &CadIr) -> IrDiff {
     IrDiff {
         unit_change,
         tolerance_change,
-        annotations: annotation_diff(left, right),
         per_arena,
+    }
+}
+
+/// Compare complete source-byte ownership independently from the product IR.
+pub fn diff_byte_ledger(left: &SourceFidelity, right: &SourceFidelity) -> ByteLedgerDiff {
+    ByteLedgerDiff {
+        source_length_change: (left.byte_ledger.source_length != right.byte_ledger.source_length)
+            .then_some((
+                left.byte_ledger.source_length,
+                right.byte_ledger.source_length,
+            )),
+        spans: arena(
+            "byte_ledger.spans",
+            &left.byte_ledger.spans,
+            &right.byte_ledger.spans,
+            |span| span.start.to_string(),
+        ),
+    }
+}
+
+/// Compare source-byte provenance and ownership independently from product IR.
+pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> SourceFidelityDiff {
+    SourceFidelityDiff {
+        annotations: annotation_diff(&left.annotations, &right.annotations),
+        byte_ledger: diff_byte_ledger(left, right),
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
-    use super::diff;
+    use super::{diff, diff_byte_ledger, diff_source_fidelity};
     use crate::annotations::{ExactnessNote, Provenance};
     use crate::examples::unit_cube;
     use crate::provenance::Exactness;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn reports_byte_ledger_changes_by_start_offset() {
+        let left = crate::SourceFidelity::default();
+        let mut right = left.clone();
+        right.byte_ledger = crate::ByteLedger {
+            source_length: 2,
+            spans: vec![crate::ByteSpan {
+                start: 0,
+                end: 2,
+                class: crate::ByteSpanClass::Structural,
+                owner: "stream".into(),
+                meaning: "framing".into(),
+                retained_record: None,
+            }],
+        };
+
+        let result = diff_byte_ledger(&left, &right);
+        assert_eq!(result.source_length_change, Some((0, 2)));
+        assert_eq!(result.spans.added, ["0"]);
+        assert!(!result.spans.added.is_empty());
+    }
 
     #[test]
     fn detects_changes_in_all_document_dimensions() {
@@ -333,9 +401,10 @@ mod tests {
 
     #[test]
     fn reports_provenance_offset_tag_and_stream_changes() {
-        let mut left = unit_cube();
-        let mut right = left.clone();
-        let id = left.model.points[0].id.0.clone();
+        let ir = unit_cube();
+        let id = ir.model.points[0].id.0.clone();
+        let mut left = crate::SourceFidelity::default();
+        let mut right = crate::SourceFidelity::default();
         left.annotations.streams = vec!["left-stream".to_string()];
         right.annotations.streams = vec!["unused-stream".to_string(), "right-stream".to_string()];
         left.annotations.provenance.insert(
@@ -355,7 +424,7 @@ mod tests {
             },
         );
 
-        let result = diff(&left, &right);
+        let result = diff_source_fidelity(&left, &right);
         assert_eq!(
             result.annotations.stream_change,
             Some((
@@ -372,9 +441,10 @@ mod tests {
 
     #[test]
     fn reports_field_exactness_changes_by_entity_id() {
-        let mut left = unit_cube();
-        let mut right = left.clone();
-        let id = left.model.points[0].id.0.clone();
+        let ir = unit_cube();
+        let id = ir.model.points[0].id.0.clone();
+        let mut left = crate::SourceFidelity::default();
+        let mut right = crate::SourceFidelity::default();
         left.annotations.exactness.insert(
             id.clone(),
             ExactnessNote {
@@ -390,7 +460,7 @@ mod tests {
             },
         );
 
-        let result = diff(&left, &right);
+        let result = diff_source_fidelity(&left, &right);
         assert_eq!(result.annotations.exactness.modified[0].id, id);
         assert_eq!(
             result.annotations.exactness.modified[0].fields,

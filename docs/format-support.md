@@ -16,7 +16,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 4. **Require a usable slice.** A capability rung requires working support across mainstream files in the declared envelope. A single fixture, entity census, or opaque record capture cannot satisfy it.
 5. **Pass inapplicable gates.** A format definition may establish that its document kind cannot contain a category. Missing fixtures cannot establish inapplicability.
 6. **Score each envelope.** A codec declares version and layout-variant bands and receives one score per band. A single version can earn L9. State discontinuous support per band.
-7. **Qualify the evidence.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when it passes the [roadmap's](roadmap.md#progress-gates) public-fixture, byte-accounting, round-trip, and fuzzing gates.
+7. **Qualify the evidence.** Every score is **claimed** when code exists, **tested** when fixtures exercise it, or **proven** when it passes the [roadmap's](roadmap.md#progress-gates) representative-corpus, byte-accounting, round-trip, and fuzzing gates.
 
 ### Levels
 
@@ -35,6 +35,7 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 
 | Codec                                      | Score          | Extras above score                                                                                    |
 | ------------------------------------------ | -------------- | ----------------------------------------------------------------------------------------------------- |
+| FreeCAD `.FCStd` (schema 4, file 1)        | **L9 tested**  | deterministic retained writes, checked edits, source-less typed application graphs                    |
 | Autodesk Fusion `.f3d`                     | **L4 tested**  | native replay + patch + broad source-less generation, procedural carriers, ACT/Design/history records |
 | SolidWorks `.sldprt`                       | **L4 tested**  | typed features, sketches, parameters, configurations, native replay + bounded generation              |
 | Rhino `.3dm` (archive 50/60/70/80)         | **L9 tested**  |                                                                                                         |
@@ -44,30 +45,113 @@ The L0–L9 ladder measures how much source semantics a codec recovers for use. 
 | Creo Parametric `.prt`                     | **L1 claimed** | derived datum planes, prototype geometry census                                                       |
 | Rhino `.3dm` (V3/V4)                       | **L1 tested**  | metadata and bounded object-record retention                                                          |
 | Rhino `.3dm` (V1/V2 and archive 5)         | **L0 tested**  | header-only inspection; decode is rejected                                                            |
-| STEP AP214                                 | translation    | partial B-rep export with explicit loss reporting                                                     |
+| STEP Part 21 AP242 editions 1–3            | **L9 tested**  |                                                                                                         |
+| STEP Part 21 AP203 editions 1–2 and AP214  | **L9 tested**  |                                                                                                         |
+| IGES 5.3 Fixed ASCII mechanical/document   | **L8 tested**  | read only                                                                                               |
 
 Each current score applies to the envelope described in its profile.
+
+## FreeCAD `.FCStd`
+
+**Model:** ZIP-packaged application object/property graph with exact-shape and presentation side
+entries
+
+**Primary envelope:** `SchemaVersion=4`, `FileVersion=1`, including core App, Part, PartDesign,
+Sketcher, Spreadsheet, Assembly, TechDraw, GUI records, text and binary B-rep entries, and
+identity-preserving extension objects. GUI state, thumbnails, persistent element maps, and
+string-hasher tables are independently optional.
+
+**Ladder: L9 tested.** The generated public-corpus profile passes every cumulative read gate for
+container, persistence, geometry, connected model, design records, appearance, design completeness,
+product structure, presentation, drawings, annotations, and deliberately retained application data,
+plus semantic writing, edits, source-less generation, target selection, and unsupported-record
+survival.
+Schema versions 2 and 3
+and earlier layout bands are separate legacy profiles and are identified and explicitly refused.
+
+- **Read profile:** Complete for the primary envelope. Text and binary exact shapes, connected topology, sketches,
+  constraints, core design operations, product links, TechDraw, semantic annotations, Mesh,
+  Points, embedded assets, inert extension data, and exact physical/logical byte accounting are
+  implemented. See the generated coverage profile for the current cumulative gate result.
+- **Native write:** Complete for the declared write envelope. Schema 4/file 1 retained documents
+  regenerate deterministically while preserving every unedited XML record and named side entry.
+  Checked leaf property edits and side-entry replacements are supported. Recursive typed
+  application graphs can be generated without a source archive. Unsupported schema/file targets,
+  cross-band transcoding, and edits lacking a typed nested-value serializer are explicitly refused.
+- **Round trip:** Every manifested public fixture writes deterministically, decodes to the same
+  semantic fingerprint, accepts a typed property edit, and retains every named entry by identity
+  and digest. FreeCAD 1.1.1 accepts all written fixtures; a representative full design document
+  also recomputes, saves, and reopens with object identities and types unchanged.
+
+See [`formats/freecad_fcstd.md`](formats/freecad_fcstd.md),
+[`formats/freecad_fcstd-open-items.md`](formats/freecad_fcstd-open-items.md), and
+[`formats/freecad_fcstd-coverage.md`](formats/freecad_fcstd-coverage.md).
 
 ## Status terms
 
 - **None:** the repository lacks an implementation for the domain.
 - **Inspect:** cadmpeg identifies and reports the structure without transferring it into typed IR.
 - **Partial:** cadmpeg transfers a typed subset and reports or preserves the remainder.
-- **Complete:** the domain satisfies the public-fixture, byte-accounting, validation, round-trip, and fuzzing gates in the [roadmap](roadmap.md#progress-gates).
+- **Complete:** the domain satisfies the corpus-coverage, byte-accounting, validation, round-trip, and fuzzing gates in the [roadmap](roadmap.md#progress-gates).
 
-Every current profile contains incomplete domains. Current claims rely on code, generated fixtures, and explicit loss paths while the public corpus remains empty.
+Every current profile contains incomplete domains. Current claims rely on code, generated fixtures, and explicit loss paths; broader corpus evidence remains to be recorded.
 
 Entity provenance and domain status measure different properties. `byte_exact`, `derived`, `inferred`, and `unknown` describe how cadmpeg obtained one IR value.
 
 ## At a glance
 
+- **FreeCAD `.FCStd` schema 4/file 1 (L9 tested):** complete primary-envelope document recovery,
+  including exact geometry, design history, product structure, presentation, drawings, annotations,
+  retained application data, exact byte accounting, deterministic semantic writes, checked edits,
+  and source-less typed application graphs.
 - **Autodesk Fusion `.f3d` (L4 tested):** design records, partial B-rep and appearance reads, byte-exact replay, native patching, and source-less generation.
 - **SolidWorks `.sldprt` (L4 tested):** connected model reads, typed design records, native writes, and round trips.
 - **Rhino `.3dm` (L9 tested for archive 50/60/70/80):** complete built-in model, product, presentation, annotation, metadata, application-data retention, and byte accounting, plus bounded semantic native writing with source-less generation, supported edits, explicit target selection, and atomic refusal. V3/V4 score L1; V1/V2 and archive 5 score L0.
 - **CATIA V5 `.CATPart` (L2 claimed for the standard-nested band):** exact carriers and conditionally connected topology. Other layout bands score L1. Read only.
 - **Siemens NX `.prt` (L2 claimed):** exact carriers and conditionally connected topology. Read only.
 - **Creo Parametric `.prt` (L1 claimed):** container navigation, derived datum planes, and prototype geometry inspection. Read only.
-- **STEP AP214 (translation):** partial B-rep export with explicit loss reporting.
+- **STEP Part 21 (L9 tested):** AP242 editions 1–3 transfer exact geometry, connected topology, products, tessellation, presentation, PMI, and named opaque application records with complete byte accounting. AP203/AP214 transfer their geometry, topology, product, and presentation domains. Semantic writing supports all six target schemas, source-less documents, typed edits, strict atomic refusal, and independently checked round trips.
+- **IGES 5.3 Fixed ASCII mechanical/document profile (L8 tested):** complete read-only fixed-card framing, geometry, topology, product records, presentation records, and byte accounting for the declared envelope.
+
+## IGES
+
+**Model:** IGES 5.3 entity graph
+
+**Ladder: L8 tested for the IGES 5.3 Fixed ASCII mechanical/document envelope.** Compressed ASCII, Binary, pre-5.3 Fixed ASCII, and extensions are separate envelopes and do not inherit this score.
+
+### Envelopes
+
+- **IGES 5.3 Fixed ASCII mechanical/document.** The 80-column representation containing Start, Global, Directory Entry, Parameter Data, and Terminate sections; the geometry, topology, product, presentation, annotation, drawing, associativity, and property entity branches listed by `corpus/iges-envelope-a.toml`; and no extension entity outside that matrix. The codec is read only.
+- **Pre-5.3 Fixed ASCII.** Version-specific legacy envelope. Detection and exact version reporting do not imply semantic compatibility.
+- **Compressed ASCII.** Distinct representation envelope. Fixed ASCII support does not apply.
+- **Binary.** Distinct representation envelope. Fixed ASCII support does not apply.
+- **Extensions.** Named extension envelopes only. An unregistered entity type or form remains inspectable and prevents a Fixed ASCII mechanical/document score above the last cumulative gate that does not require its semantics.
+- **Finite-element analysis.** Types 134, 136, 138, 146, 148, and 418 form an adjacent analysis envelope and are excluded from the mechanical/document profile.
+- **Electrical, artwork, and schematic.** Type 125 and Type 402 Forms 8, 10, and 11 form an adjacent electrical-presentation envelope and are excluded. Types 132, 320, and 420 remain in the mechanical/document profile only for typed network definition, connection identity, and occurrence structure.
+- **Macro and extension definitions.** Type 306 belongs to extension-envelope declaration and is excluded from the closed mechanical/document profile.
+
+### Ladder applicability
+
+- **L0 preview/tessellation is inapplicable.** The envelope has no thumbnail or display-mesh record. Detection, fixed-card framing, document kind, and Global metadata satisfy the applicable L0 semantics. Derived tessellation is an optional recovery product and is not required for L0.
+- **L3 connected-model semantics split by source topology.** Explicit manifold B-rep records must produce a connected body-to-vertex graph with source sharing and orientation. Trimmed and bounded surfaces carry face-local boundary identity but no cross-face shared-edge identity; they must produce valid sheet regions without invented adjacency. This is connected recovery of the topology represented by each source object.
+- **L4 is inapplicable.** The envelope contains geometry, topology, presentation, associativity, and application records but no ordered feature-operation history or replayable sketch history.
+- **L6 is inapplicable.** The envelope contains dimensions and associativity as document semantics, not a complete parametric design system with constraints, expressions, configurations, and re-derivable feature history.
+- **L7 mates are inapplicable.** Product definitions, occurrences, groups, placements, external references, and persistent source identities are required. The envelope has no assembly-mate constraint model.
+
+### Read profile
+
+- **Container and versions: Complete.** Bounded detection, inspection, and decode cover IGES 5.3 Fixed ASCII cards, section order and counts, Global delimiters and metadata, Directory pairs, Parameter records, reference findings, entity/form census, physical line endings, and post-Terminate bytes. Compressed ASCII and Binary are detected and refused by name. Pre-5.3 Fixed ASCII reports its version and is refused for semantic decode.
+- **Geometry: Complete.** Admitted point, vector, analytic curve and surface, conic, composite, copious-data, parametric-spline, rational B-spline, ruled, revolved, tabulated, offset, bounded, trimmed, face-local boundary, CSG primitive, sweep, and Boolean carriers decode into exact neutral geometry or typed native construction records. Units and nested definition, occurrence, entity, and reflected transformations are applied once.
+- **Topology: Complete.** Type 141/142/143/144 face-local boundaries produce validated sheet regions without inferred adjacency. Type 186/502/504/508/510/514 records produce validated shared vertex, edge, coedge, loop, face, shell, region, and body graphs, including seams, voids, open shells, and explicit non-manifold radial rings. Invalid candidates commit no partial topology.
+- **Design intent: Inapplicable.** L4 and L6 semantics are absent from the declared format model.
+- **Product structure: Complete.** Typed native records preserve subfigure and network definitions, occurrences, array occurrences, solid assemblies and instances, groups, connect points, external references without implicit opening, attributes, units, associativities, persistent Directory identity, and separate placements.
+- **Presentation and metadata: Complete.** Global metadata, standard and definition colors, line fonts, text fonts and templates, views, visibility, drawings, notes, leaders, dimensions, symbols, witness geometry, sectioned areas, drawing properties, and admitted Type 406 property forms retain typed identity and links. Neutral appearance transfers where the common IR defines it; drawing and PMI semantics remain native.
+- **Recovery and retention: Complete.** `native.iges` retains physical cards, generic entity records, typed domain arenas, raw token values and spans, links, and source identities. `SourceFidelity` retains exact opaque byte records with source range, length, bytes, and SHA-256. Its byte ledger classifies Global values and delimiters, Directory fields and reserved bytes, Parameter tokens, delimiters, comments, back-pointers, card framing, line endings, Terminate counts, and post-Terminate bytes with exact nonoverlapping source coverage.
+
+### Write and round trip
+
+- **Native write: None.** Writing is outside the envelope.
+- **Round trip: None.** Writing is outside the envelope.
 
 ## Rhino `.3dm`
 
@@ -221,23 +305,36 @@ The principal geometry gate is the unresolved general 8-byte PSB float-token for
 
 See [`formats/creo_prt.md`](formats/creo_prt.md) and [`formats/creo_prt-open-items.md`](formats/creo_prt-open-items.md).
 
-## STEP AP214 export
+## STEP Part 21
 
-The pure-Rust `cadmpeg-step` crate writes ISO 10303-21 AP214.
+**Model:** ISO 10303-21 clear-text exchange with AP203, AP214, or AP242 application data
 
-- **Geometry: Partial.** Planes, cylinders, cones, spheres, tori, lines, circles, ellipses, and rational or non-rational B-spline carriers map to STEP entities.
-- **Topology: Partial.** Supported bodies emit a solid, shell, face, loop, edge, and vertex hierarchy. Export reports losses for omitted faces with unknown surfaces and curveless edges. Shell closure and manifold validity remain unchecked. Export reports non-identity body transforms and leaves coordinates in body-local space.
-- **Procedural geometry: Solved carriers only.** Source-native procedural definitions reduce to their analytic or NURBS carriers and produce an informational loss.
-- **Tessellation: None.**
-- **Product structure: None.**
-- **Design intent: None.** STEP output excludes feature histories, sketches, construction recipes, Design records, and ACT records.
-- **Presentation and metadata: None.** STEP output excludes colors, appearance assets, bindings, source attributes, and opaque records.
-- **Loss reporting: Partial.** Export reports omitted, reduced, or normalized IR content. The roadmap also requires preserved, mapped, solved, and lost outcomes.
+**Ladder: L9 tested for AP242 editions 1–3 and AP203 editions 1–2/AP214.** Part 28 XML, Part 26 binary/HDF5, AP242 BO-Model sidecars, and ZIP packaging are outside the declared bands. AP203/AP214 gates for constructs their schemas cannot carry are inapplicable. Part 21 exchange documents do not carry originating feature replay histories, sketch-constraint systems, or assembly mates, so L4, L6, and the L7 mate gate are inapplicable.
+
+### Read profile
+
+- **Container and versions: Band-wide.** The codec detects clear-text exchanges, parses headers and all DATA sections, parses edition-3 ANCHOR, REFERENCE, and SIGNATURE sections, reports schemas and external dependencies, and names every undecoded entity family.
+- **Geometry: Band-wide.** Millimeter-normalized points, placements, analytic curves and surfaces, polylines, rational and non-rational NURBS, parameter- and Cartesian-trimmed curves, composite and surface curves, offsets, sweeps, revolutions, curve-bounded surfaces, and geometric sets transfer with their unit and orientation semantics.
+- **Topology: Band-wide.** Solid, void, sheet, geometrically bounded surface, oriented-shell, edge-loop, and singular vertex-loop cases transfer through connected body, region, shell, face, loop, coedge, edge, vertex, and pcurve ownership.
+- **Tessellation: Band-wide where carried.** AP242 shared coordinate lists, local point-index tables, normals, faces, strips, fans, shells, solids, and exact-body links transfer without duplicating exact solids.
+- **Design intent: Inapplicable.** These application protocols exchange solved product shape and structure, not ordered feature/sketch replay history.
+- **Product structure: Band-wide.** Product identity, occurrences, mapped items, relative placements, context-dependent transformations, and named external document/resource dependencies transfer.
+- **Presentation and metadata: Band-wide.** Layers, direct and overriding styles, colors on topology, exact geometry, tessellation, geometric sets, null styles, semantic dimensions/tolerances/datums, presentation annotations, validation properties, and limits-and-fits classes transfer. Unmodeled application records remain named opaque records with identity and references.
+- **Byte accounting: Band-wide.** Every input byte is structural, typed, or part of a named opaque record; unclassified bytes fail the accounting invariant.
+
+The evidence tier is tested. Proven status additionally requires demonstrated coverage across a representative corpus of fixtures for the declared envelope, sustained fuzz runs, and the roadmap's complete round-trip gates.
+
+### Write and round trip
+
+- **Native write: Semantic.** The writer selects AP203 edition 1 or 2, AP214, or AP242 edition 1, 2, or 3 and declares the exact target schema. It emits source-less documents and typed edits for analytic and NURBS geometry, connected solid/sheet/wire topology, pcurves, singular loops, rigid body placements, product occurrences, tessellation, visibility, layers, named colors, and semantic or presentation PMI where the selected application protocol carries them.
+- **Procedural geometry: Native where modeled.** Trimmed and spatial-offset curves, linear sweeps, axis revolutions, parallel offsets, and degenerate tori emit as their native STEP entities. Other definitions emit their solved carrier with a machine-readable loss. Curve-bounded surfaces lack the boundary-curve surface association required for valid native regeneration and therefore reduce in report mode or fail strict mode.
+- **Fidelity policy: Explicit and atomic.** Report mode writes the representable subset and returns every unsupported semantic fact. Strict mode rejects before writing any byte. Retained opaque records and opaque presentation targets take the refusal path; they are never silently discarded. AP-specific tessellation and PMI compatibility is checked against the selected target.
+- **Round trip: Tested.** Source-less, edited, schema-targeted, topology, geometry, product, tessellation, presentation, and PMI outputs re-decode to typed IR. The optional [`verify-step-occt.py`](../scripts/verify-step-occt.py) and [`verify-step-gmsh.py`](../scripts/verify-step-gmsh.py) checks accept and transfer generated shape files across all six targets. The evidence remains tested rather than proven until the representative-corpus and sustained-fuzz gates pass. Corpus availability is not a capability criterion.
 
 ## Maintaining these profiles
 
 Per-format specifications in [`formats/`](formats/) define byte semantics. Adjacent `*-open-items.md` files contain unresolved fields and structures.
 
-Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the roadmap's public evidence and reliability gates.
+Support profiles describe repository behavior only. A profile changes when code and tests land, and every **Partial** domain must identify its remaining gates here or in the linked open-items document. Claims move to **Complete** only after satisfying the roadmap's corpus evidence and reliability gates.
 
-Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. Evidence words move independently of levels: **tested** requires fixtures exercising the scored gates, **proven** requires the roadmap's progress gates.
+Ladder scores change only when a per-gate review confirms every gate at the new level and below. A score's headline names the failing gate of the next level. **Tested** requires fixtures exercising the scored gates.

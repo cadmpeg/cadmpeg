@@ -30,6 +30,12 @@ use std::collections::BTreeMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+use crate::annotations::Annotations;
+use crate::byte_ledger::ByteLedger;
+use crate::document::CadIr;
+use crate::native::NativeConvertError;
+use crate::unknown::UnknownRecord;
+
 /// Serialized schema version written into every v2 sidecar.
 pub const SOURCE_FIDELITY_VERSION: &str = "2";
 
@@ -356,6 +362,29 @@ pub enum FidelityError {
     },
 }
 
+/// Source bytes retained to support exact recovery of opaque ledger spans.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct RetainedSourceRecord {
+    /// Stable identifier named by opaque byte-ledger spans.
+    pub id: String,
+    /// Source stream containing the retained range.
+    pub stream: String,
+    /// First byte offset in the source stream.
+    pub offset: u64,
+    /// Number of retained bytes.
+    pub byte_len: u64,
+    /// Lowercase hexadecimal SHA-256 of `data`.
+    pub sha256: String,
+    /// Retained bytes, when available.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "crate::bytes::option"
+    )]
+    #[schemars(with = "Option<String>")]
+    pub data: Option<Vec<u8>>,
+}
+
 /// A complete serialized source-fidelity sidecar (schema v2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SourceFidelity {
@@ -367,6 +396,30 @@ pub struct SourceFidelity {
     pub capability: LedgerCapability,
     /// The address spaces, in canonical (id-ascending) order.
     pub spaces: Vec<AddressSpaceLedger>,
+    /// Flat source-stream accounting used by codecs that do not expose derived
+    /// address spaces.
+    #[serde(default)]
+    pub byte_ledger: ByteLedger,
+    /// Sparse source locations and conversion exactness.
+    #[serde(default)]
+    pub annotations: Annotations,
+    /// Opaque source ranges retained for exact recovery.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub retained_records: Vec<RetainedSourceRecord>,
+}
+
+impl Default for SourceFidelity {
+    fn default() -> Self {
+        Self {
+            version: SOURCE_FIDELITY_VERSION.into(),
+            level: LedgerLevel::L0,
+            capability: LedgerCapability::Accounted,
+            spaces: Vec::new(),
+            byte_ledger: ByteLedger::default(),
+            annotations: Annotations::default(),
+            retained_records: Vec::new(),
+        }
+    }
 }
 
 impl SourceFidelity {
@@ -386,6 +439,7 @@ impl SourceFidelity {
             level,
             capability,
             spaces,
+            ..SourceFidelity::default()
         };
         sidecar.canonicalize();
         sidecar
@@ -402,6 +456,88 @@ impl SourceFidelity {
             });
         }
         self.spaces.sort_by(|a, b| a.id.cmp(&b.id));
+        self.byte_ledger.finalize();
+        self.retained_records.sort_by(|left, right| {
+            (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
+        });
+    }
+
+    /// Canonicalize every sidecar collection independently from the product model.
+    pub fn finalize(&mut self) {
+        self.canonicalize();
+    }
+
+    /// Find one retained source record by stable identifier.
+    pub fn retained_record(&self, id: &str) -> Option<&RetainedSourceRecord> {
+        self.retained_records.iter().find(|record| record.id == id)
+    }
+
+    /// Retain source records without adding them to the product model.
+    pub fn retain_unknown_records(&mut self, stream: &str, records: &[UnknownRecord]) {
+        self.retained_records
+            .extend(records.iter().map(|record| RetainedSourceRecord {
+                id: record.id.to_string(),
+                stream: stream.into(),
+                offset: record.offset,
+                byte_len: record.byte_len,
+                sha256: record.sha256.clone(),
+                data: record.data.clone(),
+            }));
+    }
+
+    /// Store source records in this sidecar and source-independent refs in the product model.
+    pub fn attach_native_unknown_records(
+        &mut self,
+        ir: &mut CadIr,
+        format: &str,
+        records: &[UnknownRecord],
+    ) -> Result<(), NativeConvertError> {
+        self.retained_records.extend(records.iter().map(|record| {
+            let stream = self
+                .annotations
+                .provenance
+                .get(&record.id.0)
+                .and_then(|provenance| self.annotations.streams.get(provenance.stream as usize))
+                .cloned()
+                .unwrap_or_else(|| "source".into());
+            RetainedSourceRecord {
+                id: record.id.to_string(),
+                stream,
+                offset: record.offset,
+                byte_len: record.byte_len,
+                sha256: record.sha256.clone(),
+                data: record.data.clone(),
+            }
+        }));
+        let product_records = records
+            .iter()
+            .map(crate::NativeUnknownRecord::from)
+            .collect::<Vec<_>>();
+        ir.set_native_unknowns(format, &product_records)
+    }
+
+    /// Join product links with retained records into a codec-local source view.
+    pub fn native_unknown_records(
+        &self,
+        ir: &CadIr,
+        format: &str,
+    ) -> Result<Vec<UnknownRecord>, NativeConvertError> {
+        ir.native_unknowns(format)?
+            .into_iter()
+            .map(|reference| {
+                let retained = self.retained_record(&reference.id.0).ok_or_else(|| {
+                    NativeConvertError::MissingRetainedSourceRecord(reference.id.0.clone())
+                })?;
+                Ok(UnknownRecord {
+                    id: reference.id,
+                    offset: retained.offset,
+                    byte_len: retained.byte_len,
+                    sha256: retained.sha256.clone(),
+                    data: retained.data.clone(),
+                    links: reference.links,
+                })
+            })
+            .collect()
     }
 
     /// Returns the classification of the span covering `offset` in the space
@@ -891,6 +1027,7 @@ mod tests {
                 },
                 spans: vec![span(0, 2, SpanClass::Opaque)],
             }],
+            ..SourceFidelity::default()
         };
         assert!(matches!(
             sidecar.validate(),
@@ -951,6 +1088,7 @@ mod tests {
                     spans: vec![span(0, 4, SpanClass::Opaque)],
                 },
             ],
+            ..SourceFidelity::default()
         };
         assert!(matches!(
             sidecar.validate(),
@@ -970,6 +1108,7 @@ mod tests {
                 origin: SerializedOrigin::Root,
                 spans: vec![span(0, 4, SpanClass::Opaque)],
             }],
+            ..SourceFidelity::default()
         };
         assert!(matches!(
             sidecar.validate(),

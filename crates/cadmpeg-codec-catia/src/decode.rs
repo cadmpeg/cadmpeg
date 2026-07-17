@@ -61,11 +61,11 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let scan = container::scan_view(ctx, root)?;
 
     if ctx.container_only() {
-        let ir = build_metadata_ir(&scan)?;
+        let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let mut report = build_container_report(&scan, true);
         report.source_fidelity = Some(crate::ledger::container_ledger(&scan));
         crate::tickets::account_records(ctx, root, &ir, &mut report);
-        return Ok(DecodeResult::new(ir, report));
+        return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
     }
 
     // The entity-decode phase runs several full linear passes the container
@@ -81,20 +81,20 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     ctx.charge_work(entity_work, "catia_entity_decode", Some(root.location()))?;
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
-        if let Some((ir, report)) = try_decode_standard(&scan) {
-            return finish_decode(ctx, root, &scan, ir, report);
+        if let Some((ir, report, annotations, unknowns)) = try_decode_standard(&scan) {
+            return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
         }
     }
 
     if scan.variant == Variant::ZeroEntity {
-        if let Some((ir, report)) = try_decode_zero_entity(&scan) {
-            return finish_decode(ctx, root, &scan, ir, report);
+        if let Some((ir, report, annotations, unknowns)) = try_decode_zero_entity(&scan) {
+            return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
         }
     }
 
     if scan.variant == Variant::E5Stream {
-        if let Some((ir, report)) = try_decode_e5(&scan) {
-            return finish_decode(ctx, root, &scan, ir, report);
+        if let Some((ir, report, annotations, unknowns)) = try_decode_e5(&scan) {
+            return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
         }
     }
 
@@ -102,14 +102,14 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         scan.variant,
         Variant::FloatPackedInnerNoFbb | Variant::FbbOnly | Variant::InnerNoDirectory
     ) {
-        if let Some((ir, report)) = try_decode_freeform_surfaces(&scan) {
-            return finish_decode(ctx, root, &scan, ir, report);
+        if let Some((ir, report, annotations, unknowns)) = try_decode_freeform_surfaces(&scan) {
+            return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
         }
     }
 
-    let ir = build_metadata_ir(&scan)?;
+    let (ir, annotations, unknowns) = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    finish_decode(ctx, root, &scan, ir, report)
+    finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns)
 }
 
 fn finish_decode<'a>(
@@ -118,6 +118,8 @@ fn finish_decode<'a>(
     scan: &ContainerScan<'a>,
     mut ir: CadIr,
     mut report: DecodeReport,
+    annotations: cadmpeg_ir::Annotations,
+    unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
     // L1 container accounting (§10 Phase 3C): the validated coarse ledger rides
@@ -126,8 +128,17 @@ fn finish_decode<'a>(
     // a builder bug that panics rather than a decode-time `Malformed` failure.
     report.source_fidelity = Some(crate::ledger::container_ledger(scan));
     crate::tickets::account_records(ctx, root, &ir, &mut report);
-    reject_unrepresentable_in_strict(ctx, &report)?;
-    Ok(DecodeResult::new(ir, report))
+    if !report.container_only {
+        reject_unrepresentable_in_strict(ctx, &report)?;
+    }
+    let mut source_fidelity = report.source_fidelity.clone().unwrap_or_default();
+    source_fidelity.annotations = annotations;
+    source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        source_fidelity,
+    ))
 }
 
 /// Enforce the §10 Phase-4 strict-mode contract: a decode that could only
@@ -174,7 +185,14 @@ fn annotate(
     annotations.exactness(id, exactness);
 }
 
-fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
+type Decoded = (
+    CadIr,
+    DecodeReport,
+    cadmpeg_ir::Annotations,
+    Vec<UnknownRecord>,
+);
+
+fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<Decoded> {
     let decoded = geometry::zero_entity_surfaces(scan.data);
     let points = geometry::vertices(scan.data);
     if decoded.is_empty() && points.is_empty() {
@@ -182,14 +200,14 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeRepo
     }
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     preserve_raw_payload(
-        &mut ir,
+        &mut unknowns,
         &mut annotations,
         scan,
         "catia:payload:unknown#zero-entity",
-    )
-    .ok()?;
+    );
     for (index, point) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:zero-entity:pt#{index}"));
         annotate(
@@ -203,6 +221,7 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeRepo
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *point,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:zero-entity:v#{index}"));
         annotate(
@@ -236,8 +255,8 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeRepo
             source_object: None,
         });
     }
-    link_payload_carriers(&mut ir, &mut annotations).ok()?;
-    ir.annotations = annotations.build();
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    let annotations = annotations.build();
     let summary = container::summarize(scan);
     let report = DecodeReport {
         retention_degraded: false,
@@ -256,13 +275,13 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeRepo
         }],
         notes: summary.notes,
     };
-    Some((ir, report))
+    Some((ir, report, annotations, unknowns))
 }
 
 /// Decode direct E5 circle carriers.  Their edge and face references are a
 /// separate record layer, so curves remain unattached until that layer is
 /// decoded rather than being assigned speculatively.
-fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
+fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<Decoded> {
     let stream_range = container::e5_record_stream(scan.data)?;
     let stream = &scan.data[stream_range];
     let circles = geometry::e5_circles(stream);
@@ -274,8 +293,14 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
     }
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
-    preserve_raw_payload(&mut ir, &mut annotations, scan, "catia:payload:unknown#e5").ok()?;
+    preserve_raw_payload(
+        &mut unknowns,
+        &mut annotations,
+        scan,
+        "catia:payload:unknown#e5",
+    );
     for (index, point) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:e5:pt#{index}"));
         annotate(
@@ -289,6 +314,7 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *point,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:e5:v#{index}"));
         annotate(
@@ -344,8 +370,8 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
     if !topology_transferred && !ir.model.vertices.is_empty() {
         attach_e5_free_vertices(&mut ir, &mut annotations);
     }
-    link_payload_carriers(&mut ir, &mut annotations).ok()?;
-    ir.annotations = annotations.build();
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    let annotations = annotations.build();
     let losses = if topology_transferred {
         Vec::new()
     } else {
@@ -370,6 +396,8 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
             losses,
             notes: container::summarize(scan).notes,
         },
+        annotations,
+        unknowns,
     ))
 }
 
@@ -704,7 +732,9 @@ fn transfer_e5_topology(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: face_id.clone(),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids.clone(),
+                vertex_uses: Vec::new(),
             });
             for (index, ((&edge_ref, &pcurve_ref), &reversed)) in loop_
                 .edge_uses
@@ -722,7 +752,7 @@ fn transfer_e5_topology(
                     "serialized_loop_member",
                     Exactness::ByteExact,
                 );
-                for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurve"] {
+                for field in ["owner_loop", "edge", "next", "previous", "sense", "pcurves"] {
                     annotations.derived(&id, field);
                 }
                 let arena_index = ir.model.coedges.len();
@@ -742,7 +772,10 @@ fn transfer_e5_topology(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: Some(PcurveId(format!("catia:e5:pcurve#{pcurve_ref}"))),
+                    pcurves: vec![cadmpeg_ir::topology::PcurveUse {
+                        pcurve: PcurveId(format!("catia:e5:pcurve#{pcurve_ref}")),
+                        isoparametric: None,
+                    }],
                 });
             }
         }
@@ -830,7 +863,7 @@ fn point_distance(a: Point3, b: Point3) -> f64 {
     ((a.x - b.x).powi(2) + (a.y - b.y).powi(2) + (a.z - b.z).powi(2)).sqrt()
 }
 
-fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
+fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<Decoded> {
     let b5_graph = crate::b5::parse(scan.data);
     let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> = geometry::a8_surfaces(scan.data)
         .into_iter()
@@ -869,9 +902,10 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
     }
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     let payload_id = UnknownId("catia:payload:unknown#freeform".to_string());
-    preserve_raw_payload(&mut ir, &mut annotations, scan, &payload_id.0).ok()?;
+    preserve_raw_payload(&mut unknowns, &mut annotations, scan, &payload_id.0);
     let mut transfer_losses: Vec<LossNote> = Vec::new();
     let topology_transferred = b5_graph.as_ref().is_some_and(|graph| {
         crate::b5_transfer::transfer(
@@ -900,8 +934,8 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
             });
         }
     }
-    link_payload_carriers(&mut ir, &mut annotations).ok()?;
-    ir.annotations = annotations.build();
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    let annotations = annotations.build();
     Some((
         ir,
         DecodeReport {
@@ -934,6 +968,8 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
             },
             notes: container::summarize(scan).notes,
         },
+        annotations,
+        unknowns,
     ))
 }
 
@@ -962,7 +998,7 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
 /// Decode the standard-nested vertex cloud and analytic surface carriers. Returns
 /// `None` when the reconstructed stream yields neither vertices nor surfaces, so
 /// the caller falls back to the container-metadata path.
-fn try_decode_standard(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
+fn try_decode_standard(scan: &ContainerScan<'_>) -> Option<Decoded> {
     let brep = scan.brep_bytes()?;
     let points = geometry::vertices(brep);
     let prefixes = geometry::surface_prefixes(brep);
@@ -1013,14 +1049,14 @@ fn try_decode_standard(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)
 
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
     preserve_raw_payload(
-        &mut ir,
+        &mut unknowns,
         &mut annotations,
         scan,
         "catia:payload:unknown#brep-stream",
-    )
-    .ok()?;
+    );
 
     for (i, p) in points.iter().enumerate() {
         let point_id = PointId(format!("catia:standard:pt#{i}"));
@@ -1035,6 +1071,7 @@ fn try_decode_standard(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *p,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:standard:v#{i}"));
         annotate(
@@ -1080,8 +1117,8 @@ fn try_decode_standard(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)
         }
     }
     append_freeform_surface_pools(&mut ir, &mut annotations, scan.data);
-    link_payload_carriers(&mut ir, &mut annotations).ok()?;
-    ir.annotations = annotations.build();
+    link_payload_carriers(&ir, &mut unknowns, &mut annotations);
+    let annotations = annotations.build();
 
     let report = build_geometry_report(
         scan,
@@ -1091,7 +1128,7 @@ fn try_decode_standard(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)
         prefixes.len(),
         topology_attached,
     );
-    Some((ir, report))
+    Some((ir, report, annotations, unknowns))
 }
 
 /// Attach standard analytic carriers to faces only when every FBB face has a
@@ -1366,7 +1403,7 @@ fn attach_standard_topology(
                     } else {
                         Sense::Forward
                     },
-                    pcurve: None,
+                    pcurves: Vec::new(),
                 });
             }
             annotate(
@@ -1383,7 +1420,9 @@ fn attach_standard_topology(
             ir.model.loops.push(Loop {
                 id: loop_id.clone(),
                 face: FaceId(format!("catia:standard:face#{face_index}")),
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids,
+                vertex_uses: Vec::new(),
             });
             ir.model.faces[face_index].loops.push(loop_id);
         }
@@ -1452,7 +1491,10 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
                 .sqrt();
             (((radial - major_radius).powi(2) + axial * axial).sqrt() - *minor_radius).abs()
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => return false,
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => return false,
     };
     residual <= TOLERANCE
 }
@@ -1843,9 +1885,12 @@ fn build_geometry_report(
     }
 }
 
-fn build_metadata_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
+fn build_metadata_ir(
+    scan: &ContainerScan<'_>,
+) -> (CadIr, cadmpeg_ir::Annotations, Vec<UnknownRecord>) {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     ir.source = Some(source_meta(scan));
 
     // Preserve the reconstructed BREP stream (or, absent one, the whole file) as
@@ -1860,30 +1905,26 @@ fn build_metadata_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
             scan.variant.token(),
             Exactness::Unknown,
         );
-        ir.push_native_unknown(
-            "catia",
-            UnknownRecord {
-                id,
-                offset: 0,
-                byte_len: brep.len() as u64,
-                sha256: sha256_hex(brep),
-                data: Some(brep.to_vec()),
-                links: Vec::new(),
-            },
-        )?;
+        unknowns.push(UnknownRecord {
+            id,
+            offset: 0,
+            byte_len: brep.len() as u64,
+            sha256: sha256_hex(brep),
+            data: Some(brep.to_vec()),
+            links: Vec::new(),
+        });
     }
-    ir.annotations = annotations.build();
-    Ok(ir)
+    (ir, annotations.build(), unknowns)
 }
 
 /// Preserve the native payload for every partial decode.  Typed entities are
 /// additive views; unrecovered record families must remain byte-addressable.
 fn preserve_raw_payload(
-    ir: &mut CadIr,
+    unknowns: &mut Vec<UnknownRecord>,
     annotations: &mut AnnotationBuilder,
     scan: &ContainerScan<'_>,
     id: &str,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
+) {
     let (bytes, stream) = match scan.brep_bytes() {
         Some(brep) => (brep, "MainDataStream+SurfacicReps"),
         None => (scan.data, "CATPart"),
@@ -1897,27 +1938,24 @@ fn preserve_raw_payload(
         scan.variant.token(),
         Exactness::Unknown,
     );
-    ir.push_native_unknown(
-        "catia",
-        UnknownRecord {
-            id,
-            offset: 0,
-            byte_len: bytes.len() as u64,
-            sha256: sha256_hex(bytes),
-            data: Some(bytes.to_vec()),
-            links: Vec::new(),
-        },
-    )?;
-    Ok(())
+    unknowns.push(UnknownRecord {
+        id,
+        offset: 0,
+        byte_len: bytes.len() as u64,
+        sha256: sha256_hex(bytes),
+        data: Some(bytes.to_vec()),
+        links: Vec::new(),
+    });
 }
 
 /// Attribute typed carrier views to the preserved payload when CATIA's binding
 /// layer was not recovered. The raw payload is their byte-backed owner; this
 /// avoids inventing topology or procedural relationships.
 fn link_payload_carriers(
-    ir: &mut CadIr,
+    ir: &CadIr,
+    unknowns: &mut [UnknownRecord],
     annotations: &mut AnnotationBuilder,
-) -> Result<(), cadmpeg_ir::NativeConvertError> {
+) {
     let links = ir
         .model
         .surfaces
@@ -1926,16 +1964,13 @@ fn link_payload_carriers(
         .chain(ir.model.curves.iter().map(|curve| curve.id.0.clone()))
         .collect::<Vec<_>>();
     if links.is_empty() {
-        return Ok(());
+        return;
     }
-    let mut unknowns = ir.native_unknowns("catia")?;
     let payload = unknowns
         .last_mut()
         .expect("partial CATIA decode preserves its source payload");
     payload.links = links;
     annotations.derived(&payload.id, "links");
-    ir.set_native_unknowns("catia", &unknowns)?;
-    Ok(())
 }
 
 fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport {

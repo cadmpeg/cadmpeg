@@ -351,6 +351,7 @@ fn transfer_plane_brep(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(position[0], position[1], position[2]),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: vertex,
@@ -515,7 +516,9 @@ fn transfer_plane_brep(
             ir.model.loops.push(IrLoop {
                 id: loop_id.clone(),
                 face,
+                boundary_role: cadmpeg_ir::topology::LoopBoundaryRole::Unspecified,
                 coedges: coedge_ids.clone(),
+                vertex_uses: Vec::new(),
             });
             for (index, half_edge) in native_loop.half_edges.iter().enumerate() {
                 let id = coedge_ids[index].clone();
@@ -551,7 +554,7 @@ fn transfer_plane_brep(
                     } else {
                         Sense::Reversed
                     },
-                    pcurve: None,
+                    pcurves: Vec::new(),
                 });
             }
         }
@@ -582,11 +585,18 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     // table. The dropped-record notes rejoin the report so each `Dropped`
     // disposition has its matching loss.
     let space = root.location().space;
-    let (ir, dropped_losses) = build_ir(ctx, space, &scan)?;
+    let (mut ir, dropped_losses, annotations, unknowns) = build_ir(ctx, space, &scan)?;
     let mut report = build_report(&scan, ctx.container_only());
     report.losses.extend(dropped_losses);
     report.source_fidelity = Some(fidelity::coarse_ledger(&scan)?);
-    Ok(DecodeResult::new(ir, report))
+    let mut source_fidelity = report.source_fidelity.clone().unwrap_or_default();
+    source_fidelity.annotations = annotations;
+    source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
+    Ok(DecodeResult::with_source_fidelity(
+        ir,
+        report,
+        source_fidelity,
+    ))
 }
 
 /// Commit a record-shaped unit at `offset` in the source `space`, returning its
@@ -620,9 +630,18 @@ fn build_ir(
     ctx: &DecodeContext<'_>,
     space: SpaceId,
     scan: &ContainerScan<'_>,
-) -> Result<(CadIr, Vec<LossNote>), CodecError> {
+) -> Result<
+    (
+        CadIr,
+        Vec<LossNote>,
+        cadmpeg_ir::Annotations,
+        Vec<UnknownRecord>,
+    ),
+    CodecError,
+> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut unknowns = Vec::new();
     let mut dropped_losses: Vec<LossNote> = Vec::new();
     ir.source = Some(source_meta(scan));
 
@@ -650,17 +669,14 @@ fn build_ir(
             "psb_geometry_section",
             Exactness::Unknown,
         );
-        ir.push_native_unknown(
-            "creo",
-            UnknownRecord {
-                id,
-                offset: section.offset as u64,
-                byte_len: bytes.len() as u64,
-                sha256: sha256_hex(bytes),
-                data: Some(bytes.to_vec()),
-                links: Vec::new(),
-            },
-        )?;
+        unknowns.push(UnknownRecord {
+            id,
+            offset: section.offset as u64,
+            byte_len: bytes.len() as u64,
+            sha256: sha256_hex(bytes),
+            data: Some(bytes.to_vec()),
+            links: Vec::new(),
+        });
         ctx.resolve(
             section_ticket,
             RecordDisposition::Preserved {
@@ -927,8 +943,7 @@ fn build_ir(
         namespace.version = 1;
         namespace.set_arena("sketches", &sketches)?;
     }
-    ir.annotations = annotations.build();
-    Ok((ir, dropped_losses))
+    Ok((ir, dropped_losses, annotations.build(), unknowns))
 }
 
 fn annotate(

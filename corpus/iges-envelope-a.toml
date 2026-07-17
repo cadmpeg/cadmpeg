@@ -1,0 +1,823 @@
+schema_version = 1
+envelope = "iges-5.3-fixed-ascii-mechanical-document"
+representation = "fixed-ascii"
+specification_version = "5.3"
+
+# `forms = "implementor-defined"` admits forms 5001 through 9999. An explicit
+# list is closed and admits only those forms. Obsolete, finite-element,
+# electrical/artwork/schematic, and macro/extension branches are adjacent
+# envelopes and are not part of this mechanical/document envelope. Types 132,
+# 320, and 420 remain admitted as product-network identity and occurrence
+# records; electrical signal, node, and artwork semantics remain excluded.
+
+[[entity]]
+type = 0
+name = "null"
+forms = [0]
+domain = "retention"
+decoder = "entities::structure::project"
+destination = "native.iges.entities"
+fixture_classes = ["null-entity"]
+assertions = ["native-identity", "byte-coverage"]
+
+[[entity]]
+type = 100
+name = "circular-arc"
+forms = [0]
+domain = "geometry"
+decoder = "entities::geometry::project_geometry"
+destination = "model.curves"
+fixture_classes = ["analytic-curves"]
+assertions = ["curve-evaluation", "placement", "byte-coverage"]
+
+[[entity]]
+type = 102
+name = "composite-curve"
+forms = [0]
+domain = "geometry"
+decoder = "entities::composite::project"
+destination = "model.procedural_curves"
+fixture_classes = ["composite-curves"]
+assertions = ["ordered-children", "parameter-domain", "byte-coverage"]
+
+[[entity]]
+type = 104
+name = "conic-arc"
+forms = [0, 1, 2, 3]
+domain = "geometry"
+decoder = "entities::conics::project"
+destination = "model.curves"
+fixture_classes = ["conic-forms"]
+assertions = ["curve-evaluation", "endpoints", "byte-coverage"]
+
+[[entity]]
+type = 106
+name = "copious-data"
+forms = [1, 2, 3, 11, 12, 13, 20, 21, 31, 32, 33, 34, 35, 36, 37, 38, 40, 63]
+domain = "geometry-presentation"
+decoder = "entities::copious::project"
+destination = "model.curves,native.iges.presentation"
+fixture_classes = ["copious-tuples", "centerlines", "sections", "witness-lines"]
+assertions = ["tuple-arity", "form-semantics", "byte-coverage"]
+
+[[entity]]
+type = 108
+name = "plane"
+forms = [-1, 0, 1]
+domain = "geometry"
+decoder = "entities::surfaces::project"
+destination = "model.surfaces"
+fixture_classes = ["analytic-surfaces"]
+assertions = ["surface-evaluation", "bounded-plane", "byte-coverage"]
+
+[[entity]]
+type = 110
+name = "line"
+forms = [0, 1, 2]
+domain = "geometry"
+decoder = "entities::geometry::project_geometry"
+destination = "model.curves"
+fixture_classes = ["line-forms"]
+assertions = ["curve-evaluation", "bounds", "byte-coverage"]
+
+[[entity]]
+type = 112
+name = "parametric-spline-curve"
+forms = [0]
+domain = "geometry"
+decoder = "entities::splines::project"
+destination = "model.curves,native.iges.entities"
+fixture_classes = ["parametric-spline-curves"]
+assertions = ["curve-evaluation", "continuity", "byte-coverage"]
+
+[[entity]]
+type = 114
+name = "parametric-spline-surface"
+forms = [0]
+domain = "geometry"
+decoder = "entities::splines::project"
+destination = "model.surfaces,native.iges.entities"
+fixture_classes = ["parametric-spline-surfaces"]
+assertions = ["surface-evaluation", "control-order", "byte-coverage"]
+
+[[entity]]
+type = 116
+name = "point"
+forms = [0]
+domain = "geometry"
+decoder = "entities::geometry::project_geometry"
+destination = "model.points"
+fixture_classes = ["placed-points"]
+assertions = ["units", "placement", "byte-coverage"]
+
+[[entity]]
+type = 118
+name = "ruled-surface"
+forms = [0, 1]
+domain = "geometry"
+decoder = "entities::surfaces::project"
+destination = "model.procedural_surfaces"
+fixture_classes = ["ruled-surfaces"]
+assertions = ["surface-evaluation", "direction-flags", "byte-coverage"]
+
+[[entity]]
+type = 120
+name = "surface-of-revolution"
+forms = [0]
+domain = "geometry"
+decoder = "entities::surfaces::project"
+destination = "model.procedural_surfaces"
+fixture_classes = ["revolved-surfaces"]
+assertions = ["surface-evaluation", "angle-domain", "byte-coverage"]
+
+[[entity]]
+type = 122
+name = "tabulated-cylinder"
+forms = [0]
+domain = "geometry"
+decoder = "entities::surfaces::project"
+destination = "model.procedural_surfaces"
+fixture_classes = ["tabulated-surfaces"]
+assertions = ["surface-evaluation", "directrix", "byte-coverage"]
+
+[[entity]]
+type = 123
+name = "direction"
+forms = [0]
+domain = "geometry"
+decoder = "entities::geometry::project_geometry"
+destination = "native.iges.entities"
+fixture_classes = ["vectors"]
+assertions = ["dimensionless", "placement", "byte-coverage"]
+
+[[entity]]
+type = 124
+name = "transformation-matrix"
+forms = [0, 1, 10, 11, 12]
+domain = "placement"
+decoder = "entities::geometry::project_geometry"
+destination = "native.iges.transforms"
+fixture_classes = ["transforms"]
+assertions = ["composition", "reflection", "scale", "byte-coverage"]
+
+[[entity]]
+type = 126
+name = "rational-b-spline-curve"
+forms = [0, 1, 2, 3, 4, 5]
+domain = "geometry"
+decoder = "entities::geometry::project_geometry"
+destination = "model.curves"
+fixture_classes = ["nurbs-curves"]
+assertions = ["knots", "multiplicity", "weights", "periodicity", "evaluation", "byte-coverage"]
+
+[[entity]]
+type = 128
+name = "rational-b-spline-surface"
+forms = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+domain = "geometry"
+decoder = "entities::surfaces::project"
+destination = "model.surfaces"
+fixture_classes = ["nurbs-surfaces"]
+assertions = ["knots", "multiplicity", "weights", "periodicity", "control-order", "evaluation", "byte-coverage"]
+
+[[entity]]
+type = 130
+name = "offset-curve"
+forms = [0]
+domain = "geometry"
+decoder = "entities::offsets::project"
+destination = "model.procedural_curves"
+fixture_classes = ["offset-curves"]
+assertions = ["source-definition", "parameter-domain", "byte-coverage"]
+
+[[entity]]
+type = 132
+name = "connect-point"
+forms = [0]
+domain = "product-structure"
+decoder = "entities::structure::project"
+destination = "native.iges.connect_points"
+fixture_classes = ["network-connect-points"]
+assertions = ["owner-links", "classification", "placement", "byte-coverage"]
+
+[[entity]]
+type = 140
+name = "offset-surface"
+forms = [0]
+domain = "geometry"
+decoder = "entities::offsets::project"
+destination = "model.procedural_surfaces"
+fixture_classes = ["offset-surfaces"]
+assertions = ["source-definition", "signed-distance", "byte-coverage"]
+
+[[entity]]
+type = 141
+name = "boundary"
+forms = [0]
+domain = "topology"
+decoder = "entities::trimming::project"
+destination = "model.loops,model.coedges,model.edges,model.pcurves"
+fixture_classes = ["surface-boundaries"]
+assertions = ["orientation", "ordered-pcurve-collections", "pcurve-links", "model-curve-links", "byte-coverage"]
+
+[[entity]]
+type = 142
+name = "curve-on-parametric-surface"
+forms = [0]
+domain = "topology"
+decoder = "entities::trimming::project"
+destination = "model.pcurves,native.iges.entities"
+fixture_classes = ["curves-on-surfaces"]
+assertions = ["preferred-representation", "carrier-agreement", "byte-coverage"]
+
+[[entity]]
+type = 143
+name = "bounded-surface"
+forms = [0]
+domain = "topology"
+decoder = "entities::trimming::project"
+destination = "model.regions,model.faces,model.loops"
+fixture_classes = ["bounded-surfaces"]
+assertions = ["face-local-topology", "inner-loops", "validation", "byte-coverage"]
+
+[[entity]]
+type = 144
+name = "trimmed-parametric-surface"
+forms = [0]
+domain = "topology"
+decoder = "entities::trimming::project"
+destination = "model.regions,model.faces,model.loops"
+fixture_classes = ["trimmed-surfaces"]
+assertions = ["face-local-topology", "outer-boundary", "inner-loops", "validation", "byte-coverage"]
+
+[[entity]]
+type = 150
+name = "block"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-primitives"]
+assertions = ["primitive-semantics", "placement", "byte-coverage"]
+
+[[entity]]
+type = 152
+name = "right-angular-wedge"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-primitives"]
+assertions = ["primitive-semantics", "placement", "byte-coverage"]
+
+[[entity]]
+type = 154
+name = "right-circular-cylinder"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-primitives"]
+assertions = ["primitive-semantics", "placement", "byte-coverage"]
+
+[[entity]]
+type = 156
+name = "right-circular-cone-frustum"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-primitives"]
+assertions = ["primitive-semantics", "placement", "byte-coverage"]
+
+[[entity]]
+type = 158
+name = "sphere"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-primitives"]
+assertions = ["primitive-semantics", "placement", "byte-coverage"]
+
+[[entity]]
+type = 160
+name = "torus"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-primitives"]
+assertions = ["primitive-semantics", "placement", "byte-coverage"]
+
+[[entity]]
+type = 162
+name = "solid-of-revolution"
+forms = [0, 1]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-procedural-solids"]
+assertions = ["source-definition", "placement", "byte-coverage"]
+
+[[entity]]
+type = 164
+name = "solid-of-linear-extrusion"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-procedural-solids"]
+assertions = ["source-definition", "placement", "byte-coverage"]
+
+[[entity]]
+type = 168
+name = "ellipsoid"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-primitives"]
+assertions = ["primitive-semantics", "placement", "byte-coverage"]
+
+[[entity]]
+type = 180
+name = "boolean-tree"
+forms = [0, 1]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-boolean-trees"]
+assertions = ["postfix-arity", "ordered-operands", "cycles", "byte-coverage"]
+
+[[entity]]
+type = 182
+name = "selected-component"
+forms = [0]
+domain = "geometry"
+decoder = "entities::csg::project"
+destination = "native.iges.solids"
+fixture_classes = ["csg-selected-components"]
+assertions = ["boolean-tree-link", "selection-point", "placement", "byte-coverage"]
+
+[[entity]]
+type = 184
+name = "solid-assembly"
+forms = [0, 1]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["solid-assemblies"]
+assertions = ["ordered-members", "placements", "identity", "byte-coverage"]
+
+[[entity]]
+type = 186
+name = "manifold-solid-brep-object"
+forms = [0]
+domain = "topology"
+decoder = "entities::brep::project"
+destination = "model.bodies,model.regions"
+fixture_classes = ["manifold-solids"]
+assertions = ["connected-topology", "void-shells", "orientation", "validation", "byte-coverage"]
+
+[[entity]]
+type = 190
+name = "plane-surface"
+forms = [0, 1]
+domain = "geometry"
+decoder = "entities::analytic_surfaces::project"
+destination = "model.surfaces"
+fixture_classes = ["analytic-surfaces"]
+assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
+
+[[entity]]
+type = 192
+name = "right-circular-cylindrical-surface"
+forms = [0, 1]
+domain = "geometry"
+decoder = "entities::analytic_surfaces::project"
+destination = "model.surfaces"
+fixture_classes = ["analytic-surfaces"]
+assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
+
+[[entity]]
+type = 194
+name = "right-circular-conical-surface"
+forms = [0, 1]
+domain = "geometry"
+decoder = "entities::analytic_surfaces::project"
+destination = "model.surfaces"
+fixture_classes = ["analytic-surfaces"]
+assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
+
+[[entity]]
+type = 196
+name = "spherical-surface"
+forms = [0, 1]
+domain = "geometry"
+decoder = "entities::analytic_surfaces::project"
+destination = "model.surfaces"
+fixture_classes = ["analytic-surfaces"]
+assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
+
+[[entity]]
+type = 198
+name = "toroidal-surface"
+forms = [0, 1]
+domain = "geometry"
+decoder = "entities::analytic_surfaces::project"
+destination = "model.surfaces"
+fixture_classes = ["analytic-surfaces"]
+assertions = ["surface-evaluation", "reference-direction", "byte-coverage"]
+
+# Annotation entity types share identity-preserving native projection and typed
+# relationship assertions. Their form-specific parameter layouts remain closed.
+[[entity]]
+type = 202
+name = "angular-dimension"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["dimensions"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 204
+name = "curve-dimension"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["dimensions"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 206
+name = "diameter-dimension"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["dimensions"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 208
+name = "flag-note"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["notes-labels"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 210
+name = "general-label"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["notes-labels"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 212
+name = "general-note"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["notes-labels"]
+assertions = ["text-runs", "presentation", "byte-coverage"]
+
+[[entity]]
+type = 213
+name = "new-general-note"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["notes-labels"]
+assertions = ["text-runs", "presentation", "byte-coverage"]
+
+[[entity]]
+type = 214
+name = "leader-arrow"
+forms = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["leaders"]
+assertions = ["leader-form", "witness-geometry", "byte-coverage"]
+
+[[entity]]
+type = 216
+name = "linear-dimension"
+forms = [0, 1, 2]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["dimensions"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 218
+name = "ordinate-dimension"
+forms = [0, 1]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["dimensions"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 220
+name = "point-dimension"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["dimensions"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 222
+name = "radius-dimension"
+forms = [0, 1]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["dimensions"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 228
+name = "general-symbol"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["symbols"]
+assertions = ["typed-links", "identity", "byte-coverage"]
+
+[[entity]]
+type = 230
+name = "sectioned-area"
+forms = [0]
+domain = "annotation"
+decoder = "entities::annotation::project"
+destination = "native.iges.annotations"
+fixture_classes = ["sectioned-areas"]
+assertions = ["boundary-links", "fill-pattern", "byte-coverage"]
+
+[[entity]]
+type = 302
+name = "associativity-definition"
+forms = "implementor-defined"
+domain = "structure"
+decoder = "entities::structure::project"
+destination = "native.iges.associativities"
+fixture_classes = ["associativity-definitions"]
+assertions = ["class-layout", "identity", "byte-coverage"]
+
+[[entity]]
+type = 304
+name = "line-font-definition"
+forms = [1, 2]
+domain = "presentation"
+decoder = "entities::presentation::project"
+destination = "native.iges.presentation"
+fixture_classes = ["line-fonts"]
+assertions = ["pattern-semantics", "identity", "byte-coverage"]
+
+[[entity]]
+type = 308
+name = "subfigure-definition"
+forms = [0]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["subfigures"]
+assertions = ["ordered-members", "identity", "byte-coverage"]
+
+[[entity]]
+type = 310
+name = "text-font-definition"
+forms = [0]
+domain = "presentation"
+decoder = "entities::presentation::project"
+destination = "native.iges.presentation"
+fixture_classes = ["text-fonts"]
+assertions = ["glyph-strokes", "identity", "byte-coverage"]
+
+[[entity]]
+type = 312
+name = "text-display-template"
+forms = [0, 1]
+domain = "presentation"
+decoder = "entities::presentation::project"
+destination = "native.iges.presentation"
+fixture_classes = ["text-templates"]
+assertions = ["placement", "identity", "byte-coverage"]
+
+[[entity]]
+type = 314
+name = "color-definition"
+forms = [0]
+domain = "presentation"
+decoder = "entities::presentation::project"
+destination = "model.appearances,native.iges.presentation"
+fixture_classes = ["colors"]
+assertions = ["rgb-conversion", "precedence", "byte-coverage"]
+
+[[entity]]
+type = 316
+name = "units-data"
+forms = [0]
+domain = "metadata"
+decoder = "entities::structure::project"
+destination = "native.iges.properties"
+fixture_classes = ["units-data"]
+assertions = ["unit-semantics", "identity", "byte-coverage"]
+
+[[entity]]
+type = 320
+name = "network-subfigure-definition"
+forms = [0]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["network-subfigures"]
+assertions = ["ordered-members", "identity", "byte-coverage"]
+
+[[entity]]
+type = 322
+name = "attribute-table-definition"
+forms = [0, 1, 2]
+domain = "structure"
+decoder = "entities::structure::project"
+destination = "native.iges.properties"
+fixture_classes = ["attribute-tables"]
+assertions = ["field-layout", "identity", "byte-coverage"]
+
+[[entity]]
+type = 402
+name = "associativity-instance"
+forms = [1, 3, 4, 5, 6, 7, 9, 12, 13, 14, 15, 16, 18, 19, 20, 21]
+domain = "structure"
+decoder = "entities::structure::project"
+destination = "native.iges.associativities"
+fixture_classes = ["associativities"]
+assertions = ["form-layout", "typed-links", "byte-coverage"]
+
+[[entity]]
+type = 404
+name = "drawing"
+forms = [0, 1]
+domain = "drawing"
+decoder = "entities::drawing::project"
+destination = "native.iges.drawings"
+fixture_classes = ["drawings"]
+assertions = ["view-links", "annotation-links", "byte-coverage"]
+
+[[entity]]
+type = 406
+name = "property"
+forms = [1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36]
+domain = "structure"
+decoder = "entities::structure::project"
+destination = "native.iges.properties"
+fixture_classes = ["properties"]
+assertions = ["form-layout", "owner-links", "byte-coverage"]
+
+[[entity]]
+type = 408
+name = "singular-subfigure-instance"
+forms = [0]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["subfigures"]
+assertions = ["definition-link", "placement", "identity", "byte-coverage"]
+
+[[entity]]
+type = 410
+name = "view"
+forms = [0, 1]
+domain = "drawing"
+decoder = "entities::drawing::project"
+destination = "native.iges.views"
+fixture_classes = ["views"]
+assertions = ["projection", "clipping", "visibility", "byte-coverage"]
+
+[[entity]]
+type = 412
+name = "rectangular-array-subfigure-instance"
+forms = [0]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["subfigure-arrays"]
+assertions = ["occurrence-count", "placement", "identity", "byte-coverage"]
+
+[[entity]]
+type = 414
+name = "circular-array-subfigure-instance"
+forms = [0]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["subfigure-arrays"]
+assertions = ["occurrence-count", "placement", "identity", "byte-coverage"]
+
+[[entity]]
+type = 416
+name = "external-reference"
+forms = [0, 1, 2, 3, 4]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["external-references"]
+assertions = ["path-definition-occurrence-states", "no-implicit-open", "byte-coverage"]
+
+[[entity]]
+type = 420
+name = "network-subfigure-instance"
+forms = [0]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["network-subfigures"]
+assertions = ["definition-link", "placement", "identity", "byte-coverage"]
+
+[[entity]]
+type = 422
+name = "attribute-table-instance"
+forms = [0, 1]
+domain = "structure"
+decoder = "entities::structure::project"
+destination = "native.iges.properties"
+fixture_classes = ["attribute-tables"]
+assertions = ["definition-link", "field-values", "byte-coverage"]
+
+[[entity]]
+type = 430
+name = "solid-instance"
+forms = [0, 1]
+domain = "product"
+decoder = "entities::structure::project"
+destination = "native.iges.product"
+fixture_classes = ["solid-instances"]
+assertions = ["definition-link", "form-target-domain", "placement", "identity", "byte-coverage"]
+
+[[entity]]
+type = 502
+name = "vertex-list"
+forms = [1]
+domain = "topology"
+decoder = "entities::brep::project"
+destination = "model.vertices,model.points"
+fixture_classes = ["explicit-brep"]
+assertions = ["list-index", "shared-identity", "byte-coverage"]
+
+[[entity]]
+type = 504
+name = "edge-list"
+forms = [1]
+domain = "topology"
+decoder = "entities::brep::project"
+destination = "model.edges"
+fixture_classes = ["explicit-brep"]
+assertions = ["list-index", "endpoint-links", "curve-links", "byte-coverage"]
+
+[[entity]]
+type = 508
+name = "loop"
+forms = [1]
+domain = "topology"
+decoder = "entities::brep::project"
+destination = "model.loops,model.coedges,model.pcurves"
+fixture_classes = ["explicit-brep"]
+assertions = ["ordered-uses", "orientation", "seams", "byte-coverage"]
+
+[[entity]]
+type = 510
+name = "face"
+forms = [1]
+domain = "topology"
+decoder = "entities::brep::project"
+destination = "model.faces"
+fixture_classes = ["explicit-brep"]
+assertions = ["surface-link", "same-sense", "outer-loop", "byte-coverage"]
+
+[[entity]]
+type = 514
+name = "shell"
+forms = [1, 2]
+domain = "topology"
+decoder = "entities::brep::project"
+destination = "model.shells"
+fixture_classes = ["explicit-brep"]
+assertions = ["face-membership", "orientation", "validation", "byte-coverage"]

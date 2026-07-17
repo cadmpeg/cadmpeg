@@ -805,14 +805,14 @@ fn result_with_unknown(id: &str) -> DecodeResult {
         .ir
         .push_native_unknown(
             "test",
-            UnknownRecord {
+            crate::NativeUnknownRecord::from(&UnknownRecord {
                 id: UnknownId(id.to_owned()),
                 offset: 0,
                 byte_len: 4,
                 sha256: String::new(),
                 data: None,
                 links: Vec::new(),
-            },
+            }),
         )
         .unwrap();
     result
