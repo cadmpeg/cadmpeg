@@ -1895,12 +1895,26 @@ fn encode_sketch_relation(
         .and_then(|count| count.checked_add(1))
         .and_then(|count| count.checked_add(relation.return_members.len()))
         .ok_or_else(|| CodecError::Malformed("sketch relation reference count overflow".into()))?;
-    let required_len =
-        33usize
-            .checked_add(reference_count.checked_mul(5).ok_or_else(|| {
-                CodecError::Malformed("sketch relation byte length overflow".into())
-            })?)
-            .ok_or_else(|| CodecError::Malformed("sketch relation byte length overflow".into()))?;
+    // A u64 mask needs the `EntityGenesis` block that signals the u64 dialect.
+    let entity_genesis = if u32::try_from(relation.state).is_err() {
+        Some(relation.entity_genesis.unwrap_or(0))
+    } else {
+        relation.entity_genesis
+    };
+    // Marker + u32 1, the two length-prefixed key strings, and the u64 value.
+    let genesis_len = entity_genesis.map_or(0usize, |_| 5 + 17 + 27 + 8);
+    // 24-byte prefix, the 5-byte marked-u32 or 14-byte padded-u64 mask, and
+    // the 4-byte return count, plus five bytes per reference.
+    let state_len = if u32::try_from(relation.state).is_ok() {
+        5usize
+    } else {
+        14
+    };
+    let required_len = 28usize
+        .checked_add(state_len)
+        .and_then(|len| len.checked_add(genesis_len))
+        .and_then(|len| len.checked_add(reference_count.checked_mul(5)?))
+        .ok_or_else(|| CodecError::Malformed("sketch relation byte length overflow".into()))?;
     let mut record = vec![0u8; required_len.max(101)];
     encode_sketch_record_header(&mut record, &relation.class_tag, relation.record_index)?;
     record[19] = 1;
@@ -1908,15 +1922,50 @@ fn encode_sketch_relation(
         .map_err(|_| CodecError::Malformed("sketch relation has too many members".into()))?;
     record[20..24].copy_from_slice(&member_count.to_le_bytes());
     let mut cursor = 24usize;
+    for reference in &relation.members {
+        write_marked_u32(&mut record, &mut cursor, *reference)?;
+    }
+    if let Some(genesis) = entity_genesis {
+        let end = cursor.checked_add(genesis_len).ok_or_else(|| {
+            CodecError::Malformed("sketch relation record offset overflow".into())
+        })?;
+        let block = record.get_mut(cursor..end).ok_or_else(|| {
+            CodecError::Malformed("sketch relation exceeds its planned record length".into())
+        })?;
+        block[0] = 1;
+        block[1..5].copy_from_slice(&1u32.to_le_bytes());
+        block[5..9].copy_from_slice(&13u32.to_le_bytes());
+        block[9..22].copy_from_slice(b"EntityGenesis");
+        block[22..26].copy_from_slice(&23u32.to_le_bytes());
+        block[26..49].copy_from_slice(b"IntrinsicMetaTypeuint64");
+        block[49..57].copy_from_slice(&genesis.to_le_bytes());
+        cursor = end;
+    }
     for reference in relation
-        .members
+        .auxiliary_references
         .iter()
-        .chain(&relation.auxiliary_references)
         .chain(std::iter::once(&relation.owner_reference))
     {
         write_marked_u32(&mut record, &mut cursor, *reference)?;
     }
-    write_marked_u32(&mut record, &mut cursor, relation.state)?;
+    if let Ok(state) = u32::try_from(relation.state) {
+        write_marked_u32(&mut record, &mut cursor, state)?;
+    } else {
+        // Six zero bytes (already present) then the unmarked u64 mask.
+        cursor = cursor.checked_add(6).ok_or_else(|| {
+            CodecError::Malformed("sketch relation record offset overflow".into())
+        })?;
+        let end = cursor.checked_add(8).ok_or_else(|| {
+            CodecError::Malformed("sketch relation record offset overflow".into())
+        })?;
+        record
+            .get_mut(cursor..end)
+            .ok_or_else(|| {
+                CodecError::Malformed("sketch relation exceeds its planned record length".into())
+            })?
+            .copy_from_slice(&relation.state.to_le_bytes());
+        cursor = end;
+    }
     let return_count = u32::try_from(relation.return_members.len())
         .map_err(|_| CodecError::Malformed("sketch relation has too many return members".into()))?;
     write_u32(&mut record, &mut cursor, return_count)?;
@@ -14394,7 +14443,7 @@ fn patch_sketch_nurbs(
     Ok(())
 }
 
-type SketchRelationEdit = Vec<(u64, u32)>;
+type SketchRelationEdit = Vec<(u64, Vec<u8>)>;
 
 fn validate_sketch_relation_edits(
     baseline: &CadIr,
@@ -14485,7 +14534,7 @@ fn validate_sketch_relation_edits(
         if relation.owner_reference != before.owner_reference {
             values.push((
                 relation.byte_offset + u64::from(relation.owner_reference_offset),
-                relation.owner_reference,
+                relation.owner_reference.to_le_bytes().to_vec(),
             ));
         }
         collect_sketch_reference_edits(
@@ -14496,9 +14545,29 @@ fn validate_sketch_relation_edits(
             &mut values,
         )?;
         if relation.state != before.state {
+            // The stored mask width follows the source form: a `0x01`-marked
+            // u32 or an unmarked u64.
+            let marked = usize::try_from(relation.state_offset)
+                .ok()
+                .and_then(|offset| offset.checked_sub(1))
+                .and_then(|offset| relation.raw_bytes.get(offset))
+                == Some(&1);
+            let encoded = if marked {
+                u32::try_from(relation.state)
+                    .map_err(|_| {
+                        CodecError::NotImplemented(format!(
+                            "F3D sketch relation {} stores a u32 mask that cannot carry the requested 64-bit state",
+                            relation.id
+                        ))
+                    })?
+                    .to_le_bytes()
+                    .to_vec()
+            } else {
+                relation.state.to_le_bytes().to_vec()
+            };
             values.push((
                 relation.byte_offset + u64::from(relation.state_offset),
-                relation.state,
+                encoded,
             ));
         }
         edits.entry(stream).or_default().push(values);
@@ -14512,12 +14581,7 @@ fn patch_sketch_relations(
 ) -> Result<(), CodecError> {
     for edit in edits {
         for (offset, value) in edit {
-            patch_bytes_at(
-                bytes,
-                *offset,
-                &value.to_le_bytes(),
-                "sketch-relation value",
-            )?;
+            patch_bytes_at(bytes, *offset, value, "sketch-relation value")?;
         }
     }
     Ok(())
@@ -14528,7 +14592,7 @@ fn collect_sketch_reference_edits(
     before: &[u32],
     after: &[u32],
     offsets: &[u32],
-    edits: &mut Vec<(u64, u32)>,
+    edits: &mut Vec<(u64, Vec<u8>)>,
 ) -> Result<(), CodecError> {
     if before.len() != after.len() || after.len() != offsets.len() {
         return Err(CodecError::NotImplemented(format!(
@@ -14542,7 +14606,12 @@ fn collect_sketch_reference_edits(
             .zip(after)
             .zip(offsets)
             .filter(|((before, after), _)| before != after)
-            .map(|((_, after), offset)| (relation.byte_offset + u64::from(*offset), *after)),
+            .map(|((_, after), offset)| {
+                (
+                    relation.byte_offset + u64::from(*offset),
+                    after.to_le_bytes().to_vec(),
+                )
+            }),
     );
     Ok(())
 }

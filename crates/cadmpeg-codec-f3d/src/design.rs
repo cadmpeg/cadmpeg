@@ -4183,7 +4183,7 @@ pub fn project_sketch_constraints(
         .or_else(|| exact_offset_constraint(relation, scope, &projected))
         .unwrap_or_else(|| Definition::Native {
             native_kind: relation_kind_name(relation),
-            native_state: Some(u64::from(relation.state)),
+            native_state: Some(relation.state),
             entities: native_entities(),
             parameter: None,
             operands: relation
@@ -4334,11 +4334,11 @@ pub fn project_dimension_constraints(
     };
     let native_definition = |scope: &str,
                              source_kind: &str,
-                             state: Option<u32>,
+                             state: Option<u64>,
                              operands: &[(&str, Option<u32>, u32)],
                              parameter| Definition::Native {
         native_kind: source_kind.to_owned(),
-        native_state: state.map(u64::from),
+        native_state: state,
         entities: operands
             .iter()
             .filter_map(|(_, _, record_index)| {
@@ -4635,7 +4635,7 @@ pub fn project_dimension_constraints(
                     native_definition(
                         scope,
                         &parameter.source_kind,
-                        Some(group.state),
+                        Some(u64::from(group.state)),
                         &operands,
                         parameter_id,
                     )
@@ -6258,6 +6258,8 @@ fn relation_kind_name(relation: &SketchRelation) -> String {
             SketchConstraintKind::Polygon => "polygon",
             SketchConstraintKind::CircularPattern => "circular_pattern",
             SketchConstraintKind::RectangularPattern => "rectangular_pattern",
+            SketchConstraintKind::TextFrame => "text_frame",
+            SketchConstraintKind::TextPath => "text_path",
         })
         .collect::<Vec<_>>();
     if relation.unknown_constraint_bits != 0 {
@@ -7960,7 +7962,7 @@ fn parse_dimension_locus_group(
     {
         return None;
     }
-    let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(state);
+    let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(u64::from(state));
     Some(DesignDimensionLocusGroup {
         id: String::new(),
         companion_record_index,
@@ -7976,7 +7978,7 @@ fn parse_dimension_locus_group(
         state,
         state_offset,
         constraint_kinds,
-        unknown_constraint_bits,
+        unknown_constraint_bits: unknown_constraint_bits as u32,
         return_members,
         return_member_offsets,
         next_class_tag,
@@ -10267,10 +10269,73 @@ pub fn decode_objects(
     Ok(out)
 }
 
+/// Parse the fixed entity-header layout at `start`: a u64 entity suffix, five
+/// zero bytes, an optional slot, and the UTF-16LE entity id whose numeric
+/// suffix equals the header's entity suffix.
+fn parse_settled_entity_header(bytes: &[u8], start: usize) -> Option<(u64, String, bool, usize)> {
+    let entity_suffix = u64::from_le_bytes(bytes.get(start + 7..start + 15)?.try_into().ok()?);
+    if entity_suffix == 0
+        || entity_suffix >= 1 << 32
+        || bytes.get(start + 15..start + 20) != Some(&[0u8; 5])
+    {
+        return None;
+    }
+    let (optional_slot_present, string_offset) = match bytes.get(start + 20)? {
+        0 => (false, start + 21),
+        1 if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
+        _ => return None,
+    };
+    let (entity_id, end) = lp_utf16(bytes, string_offset)?;
+    let (_, suffix) = entity_id.rsplit_once('_')?;
+    (suffix.parse::<u64>().ok() == Some(entity_suffix)).then_some((
+        entity_suffix,
+        entity_id,
+        optional_slot_present,
+        end,
+    ))
+}
+
+/// Parse the `EntityGenesis` entity-header layout at `start`: the u32 record
+/// index doubles as the entity suffix and is followed by a zero run, a
+/// `0x01`-marked u32 1, the `EntityGenesis` and `IntrinsicMetaTypeuint64`
+/// key strings, the u64 origin bitfield, and the UTF-16LE entity id whose
+/// numeric suffix equals the record index.
+fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<(u64, String, bool, usize)> {
+    let entity_suffix = u64::from(u32_at(bytes, start + 7)?);
+    if entity_suffix == 0 {
+        return None;
+    }
+    let mut cursor = start + 11;
+    while bytes.get(cursor) == Some(&0) && cursor < start + 35 {
+        cursor += 1;
+    }
+    if cursor == start + 11 || bytes.get(cursor) != Some(&1) || u32_at(bytes, cursor + 1) != Some(1)
+    {
+        return None;
+    }
+    let (key, after_key) = lp_ascii(bytes, cursor + 5)?;
+    if key != "EntityGenesis" {
+        return None;
+    }
+    let (meta_type, after_type) = lp_ascii(bytes, after_key)?;
+    if meta_type != "IntrinsicMetaTypeuint64" {
+        return None;
+    }
+    let (entity_id, end) = lp_utf16(bytes, after_type + 8)?;
+    let (_, suffix) = entity_id.rsplit_once('_')?;
+    (suffix.parse::<u64>().ok() == Some(entity_suffix)).then_some((
+        entity_suffix,
+        entity_id,
+        false,
+        end,
+    ))
+}
+
 /// Decode every self-validating per-entity design `BulkStream` header (spec
 /// [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
 /// whose numeric suffix must match the header's entity suffix, and, for
-/// sketch-typed entities, the trailing reference-list header.
+/// sketch-typed entities, the trailing reference-list header. Headers occur in
+/// the fixed layout or in the `EntityGenesis` layout.
 pub fn decode_entity_headers(
     reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
@@ -10306,32 +10371,12 @@ pub fn decode_entity_headers(
             if !class_tag.iter().all(u8::is_ascii_digit) {
                 continue;
             }
-            let Some(entity_raw) = bytes.get(start + 7..start + 15) else {
-                break;
-            };
-            let entity_suffix = u64::from_le_bytes(entity_raw.try_into().expect(
-                "invariant: entity_raw is an 8-byte slice from bytes.get(range) of length 8",
-            ));
-            if entity_suffix == 0
-                || entity_suffix >= 1 << 32
-                || bytes.get(start + 15..start + 20) != Some(&[0u8; 5])
-            {
-                continue;
-            }
-            let (optional_slot_present, string_offset) = match bytes[start + 20] {
-                0 => (false, start + 21),
-                1 if bytes.get(start + 21..start + 25) == Some(&[0u8; 4]) => (true, start + 25),
-                _ => continue,
-            };
-            let Some((entity_id, end)) = lp_utf16(bytes, string_offset) else {
+            let Some((entity_suffix, entity_id, optional_slot_present, end)) =
+                parse_settled_entity_header(bytes, start)
+                    .or_else(|| parse_genesis_entity_header(bytes, start))
+            else {
                 continue;
             };
-            let Some((_, suffix)) = entity_id.rsplit_once('_') else {
-                continue;
-            };
-            if suffix.parse::<u64>().ok() != Some(entity_suffix) {
-                continue;
-            }
             let object_kind = object_kinds.get(&entity_suffix).cloned();
             let (
                 record_reference,
@@ -10510,55 +10555,49 @@ pub fn decode_sketch_relations(
             let Some(payload) = bytes.get(at..record_end) else {
                 continue;
             };
-            let Some((
-                members,
-                member_offsets,
-                auxiliary_references,
-                auxiliary_reference_offsets,
-                owner_reference,
-                owner_reference_offset,
-                state,
-                state_offset,
-                return_members,
-                return_member_offsets,
-                parsed_end,
-            )) = parse_sketch_relation(payload, &owners)
-            else {
+            let Some(parsed) = parse_sketch_relation(payload, &owners) else {
                 continue;
             };
             if payload
-                .get(parsed_end..)
+                .get(parsed.parsed_end..)
                 .is_none_or(|padding| padding.iter().any(|byte| *byte != 0))
             {
                 continue;
             }
-            let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(state);
+            let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(parsed.state);
+            let pattern = decode_pattern_definition(payload, &parsed);
             out.push(SketchRelation {
                 id: format!("f3d:{}:sketch-relation#{}", entry.name, record.record_index),
                 record_index: record.record_index,
                 class_tag: record.class_tag.clone(),
                 byte_offset: record.byte_offset,
-                state_offset: state_offset as u32,
-                owner_reference,
+                state_offset: parsed.state_offset as u32,
+                owner_reference: parsed.owner_reference,
                 owner_entity_id: String::new(),
-                owner_reference_offset: owner_reference_offset as u32,
-                auxiliary_references,
-                auxiliary_reference_offsets: auxiliary_reference_offsets
+                owner_reference_offset: parsed.owner_reference_offset as u32,
+                auxiliary_references: parsed.auxiliary_references,
+                auxiliary_reference_offsets: parsed
+                    .auxiliary_reference_offsets
                     .into_iter()
                     .map(|offset| offset as u32)
                     .collect(),
-                members,
+                members: parsed.members,
                 resolved_members: Vec::new(),
-                member_offsets: member_offsets
+                member_offsets: parsed
+                    .member_offsets
                     .into_iter()
                     .map(|offset| offset as u32)
                     .collect(),
-                state,
+                state: parsed.state,
                 constraint_kinds,
                 unknown_constraint_bits,
-                return_members,
+                member_roles: parsed.member_roles,
+                entity_genesis: parsed.entity_genesis,
+                pattern,
+                return_members: parsed.return_members,
                 resolved_return_members: Vec::new(),
-                return_member_offsets: return_member_offsets
+                return_member_offsets: parsed
+                    .return_member_offsets
                     .into_iter()
                     .map(|offset| offset as u32)
                     .collect(),
@@ -10569,9 +10608,87 @@ pub fn decode_sketch_relations(
     Ok(out)
 }
 
-pub(crate) const SKETCH_CONSTRAINT_MASK: u32 = 0x3000_3fff;
+/// Decode the class-specific auxiliary payload of a pattern or text-frame
+/// relation from its fixed positions inside `payload`. Circular patterns store
+/// the angle- and count-parameter references, the evaluated f64 total angle six
+/// zero bytes after the count-parameter reference, and the evaluated u32
+/// instance count directly after it. Rectangular patterns store, per direction,
+/// the evaluated u32 count, the count-parameter reference, a three-component
+/// f64 unit direction six zero bytes after that reference, the evaluated f64
+/// extent distance, and the distance-parameter reference. Text-frame relations
+/// repeat the sketch-text member as the single auxiliary reference.
+fn decode_pattern_definition(
+    payload: &[u8],
+    parsed: &ParsedSketchRelation,
+) -> Option<crate::records::SketchPatternDefinition> {
+    use crate::records::{SketchPatternDefinition, SketchPatternDirection};
+    let f64_at = |at: usize| {
+        payload
+            .get(at..at + 8)
+            .map(|raw| f64::from_le_bytes(raw.try_into().expect("8-byte slice")))
+            .filter(|value| value.is_finite())
+    };
+    let reference_end = |ordinal: usize| Some(parsed.auxiliary_reference_offsets.get(ordinal)? + 4);
+    if parsed.state == 0x1000_0000 && parsed.auxiliary_references.len() == 2 {
+        let angle_at = reference_end(1)? + 6;
+        let evaluated_angle = f64_at(angle_at)?;
+        let evaluated_count = u32_at(payload, angle_at + 8)?;
+        if !(1..=100_000).contains(&evaluated_count) {
+            return None;
+        }
+        return Some(SketchPatternDefinition::Circular {
+            angle_parameter: parsed.auxiliary_references[0],
+            count_parameter: parsed.auxiliary_references[1],
+            evaluated_angle,
+            evaluated_count,
+        });
+    }
+    if parsed.state == 0x2000_0000 && parsed.auxiliary_references.len() == 5 {
+        let mut directions = Vec::with_capacity(2);
+        for (count_at, count_ordinal, distance_ordinal) in [
+            (reference_end(0)? + 10, 1, 2),
+            (reference_end(2)? + 6, 3, 4),
+        ] {
+            let evaluated_count = u32_at(payload, count_at)?;
+            if !(1..=100_000).contains(&evaluated_count) {
+                return None;
+            }
+            let direction_at = reference_end(count_ordinal)? + 6;
+            let direction = [
+                f64_at(direction_at)?,
+                f64_at(direction_at + 8)?,
+                f64_at(direction_at + 16)?,
+            ];
+            let length = direction.iter().map(|axis| axis * axis).sum::<f64>();
+            if (length - 1.0).abs() > 1.0e-6 {
+                return None;
+            }
+            directions.push(SketchPatternDirection {
+                evaluated_count,
+                count_parameter: parsed.auxiliary_references[count_ordinal],
+                direction,
+                evaluated_distance: f64_at(direction_at + 24)?,
+                distance_parameter: parsed.auxiliary_references[distance_ordinal],
+            });
+        }
+        return Some(SketchPatternDefinition::Rectangular {
+            directions: directions.try_into().ok()?,
+        });
+    }
+    if parsed.state == 0x100_0000_0000
+        && parsed.auxiliary_references.len() == 1
+        && parsed.members.contains(&parsed.auxiliary_references[0])
+    {
+        return Some(SketchPatternDefinition::TextFrame {
+            text_reference: parsed.auxiliary_references[0],
+        });
+    }
+    None
+}
 
-pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>, u32) {
+pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = 0x0300_3000_3fff;
+
+pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>, u64) {
     let definitions = [
         (0x0000_0001, SketchConstraintKind::Coincident),
         (0x0000_0002, SketchConstraintKind::Colinear),
@@ -10589,13 +10706,15 @@ pub(crate) fn decode_constraint_kinds(state: u32) -> (Vec<SketchConstraintKind>,
         (0x0000_2000, SketchConstraintKind::Polygon),
         (0x1000_0000, SketchConstraintKind::CircularPattern),
         (0x2000_0000, SketchConstraintKind::RectangularPattern),
+        (0x100_0000_0000, SketchConstraintKind::TextFrame),
+        (0x200_0000_0000, SketchConstraintKind::TextPath),
     ];
     let mut kinds = if state == 0 {
         vec![SketchConstraintKind::Coincident]
     } else {
         Vec::new()
     };
-    let mut recognized = 0u32;
+    let mut recognized = 0u64;
     for (bit, kind) in definitions {
         if state & bit != 0 {
             kinds.push(kind);
@@ -11083,19 +11202,24 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     })
 }
 
-type ParsedSketchRelation = (
-    Vec<u32>,
-    Vec<usize>,
-    Vec<u32>,
-    Vec<usize>,
-    u32,
-    usize,
-    u32,
-    usize,
-    Vec<u32>,
-    Vec<usize>,
-    usize,
-);
+struct ParsedSketchRelation {
+    members: Vec<u32>,
+    member_offsets: Vec<usize>,
+    member_roles: Vec<u32>,
+    auxiliary_references: Vec<u32>,
+    auxiliary_reference_offsets: Vec<usize>,
+    owner_reference: u32,
+    owner_reference_offset: usize,
+    state: u64,
+    state_offset: usize,
+    entity_genesis: Option<u64>,
+    return_members: Vec<u32>,
+    return_member_offsets: Vec<usize>,
+    parsed_end: usize,
+}
+
+/// Largest plausible member-role code; larger values indicate a misparse.
+const MAX_MEMBER_ROLE: u32 = 10_000;
 
 fn parse_sketch_relation(
     payload: &[u8],
@@ -11111,11 +11235,37 @@ fn parse_sketch_relation(
     let mut cursor = 24;
     let mut members = Vec::with_capacity(member_count);
     let mut member_offsets = Vec::with_capacity(member_count);
+    let mut member_roles = Vec::with_capacity(member_count);
     for _ in 0..member_count {
         let (value, end) = marked_u32(payload, cursor)?;
         members.push(value);
         member_offsets.push(cursor + 1);
+        // A member entry is the reference, six zero bytes, and a u32 role. A
+        // reference marker directly at the entry end is a role-less entry.
         cursor = next_reference_marker(payload, end)?;
+        let role = if cursor >= end + 10 && payload.get(end..end + 6) == Some(&[0u8; 6]) {
+            u32_at(payload, end + 6).filter(|role| *role <= MAX_MEMBER_ROLE)
+        } else {
+            None
+        };
+        member_roles.push(role.unwrap_or(0));
+    }
+    // An optional `EntityGenesis` metadata block follows the member run: a
+    // `0x01`-marked u32 1, the two length-prefixed key strings, and the u64
+    // origin bitfield.
+    let mut entity_genesis = None;
+    if payload.get(cursor) == Some(&1)
+        && u32_at(payload, cursor + 1) == Some(1)
+        && lp_ascii(payload, cursor + 5).is_some_and(|(key, _)| key == "EntityGenesis")
+    {
+        let (_, after_key) = lp_ascii(payload, cursor + 5)?;
+        let (meta_type, after_type) = lp_ascii(payload, after_key)?;
+        if meta_type == "IntrinsicMetaTypeuint64" {
+            entity_genesis = Some(u64::from_le_bytes(
+                payload.get(after_type..after_type + 8)?.try_into().ok()?,
+            ));
+            cursor = next_reference_marker(payload, after_type + 8)?;
+        }
     }
     let mut auxiliary_references = Vec::new();
     let mut auxiliary_reference_offsets = Vec::new();
@@ -11128,12 +11278,26 @@ fn parse_sketch_relation(
         auxiliary_reference_offsets.push(cursor + 1);
         cursor = next_reference_marker(payload, end)?;
     };
-    cursor = next_nonzero(payload, end)?;
-    let state_offset = cursor + usize::from(payload.get(cursor) == Some(&1));
-    let (state, end) = if payload.get(cursor) == Some(&1) {
-        marked_u32(payload, cursor)?
+    // In records carrying an `EntityGenesis` block the constraint mask is a
+    // u64 six zero bytes after the owner reference. Records without that
+    // block store a `0x01`-marked or direct u32 mask after the owner padding.
+    let (state, state_offset, end) = if payload.get(end) == Some(&1) {
+        let (state, after) = marked_u32(payload, end)?;
+        (u64::from(state), end + 1, after)
+    } else if entity_genesis.is_some() {
+        if payload.get(end..end + 6) != Some(&[0u8; 6]) {
+            return None;
+        }
+        let state = u64::from_le_bytes(payload.get(end + 6..end + 14)?.try_into().ok()?);
+        (state, end + 6, end + 14)
     } else {
-        (u32_at(payload, cursor)?, cursor + 4)
+        let at = next_nonzero(payload, end)?;
+        if payload.get(at) == Some(&1) {
+            let (state, after) = marked_u32(payload, at)?;
+            (u64::from(state), at + 1, after)
+        } else {
+            (u64::from(u32_at(payload, at)?), at, at + 4)
+        }
     };
     cursor = next_nonzero(payload, end)?;
     let return_count = usize::try_from(u32_at(payload, cursor)?).ok()?;
@@ -11154,19 +11318,21 @@ fn parse_sketch_relation(
         }
     }
     let parsed_end = cursor;
-    Some((
+    Some(ParsedSketchRelation {
         members,
         member_offsets,
+        member_roles,
         auxiliary_references,
         auxiliary_reference_offsets,
         owner_reference,
         owner_reference_offset,
         state,
         state_offset,
+        entity_genesis,
         return_members,
         return_member_offsets,
         parsed_end,
-    ))
+    })
 }
 
 fn next_indexed_record_offset(bytes: &[u8], mut position: usize) -> Option<usize> {
@@ -11892,20 +12058,22 @@ mod relation_tests {
         bind_extrude_selection_geometry, bind_extrude_selection_identities,
         bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
         bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
-        contiguous_i32_program, decode_fillet_radius_groups, design_feature_family,
-        design_parameter_prefix, directional_point_dimension, exact_atomic_constraint,
-        exact_counted_dimension_relation, exact_counted_offset, exact_offset_constraint,
-        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
-        find_dimension_locus_pair, find_dimension_null_locus_pair, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
+        contiguous_i32_program, decode_constraint_kinds, decode_fillet_radius_groups,
+        decode_pattern_definition, design_feature_family, design_parameter_prefix,
+        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
+        exact_counted_offset, exact_offset_constraint, expression_identifiers,
+        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
+        find_dimension_null_locus_pair, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
+        offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
         parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
         parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_sketch_placement_candidates, parse_sketch_relation,
+        parse_face_operand, parse_genesis_entity_header, parse_parameter_companion,
+        parse_parameter_owner, parse_parameter_scope, parse_settled_entity_header,
+        parse_sketch_placement_candidates, parse_sketch_relation,
         partial_historical_edge_selection, point_lies_on_sketch_geometry, point_on_sketch_entity,
         project_configurations, project_dimension_constraints, project_extrude,
         project_parameter_design, project_sketch_constraints, project_sketch_design,
@@ -13701,6 +13869,9 @@ mod relation_tests {
             state: 0,
             constraint_kinds: vec![SketchConstraintKind::Coincident],
             unknown_constraint_bits: 0,
+            member_roles: Vec::new(),
+            entity_genesis: None,
+            pattern: None,
             return_members: vec![217, 175],
             resolved_return_members: Vec::new(),
             return_member_offsets: vec![79, 90],
@@ -15474,6 +15645,9 @@ mod relation_tests {
             state: 0x40,
             constraint_kinds: vec![SketchConstraintKind::Horizontal],
             unknown_constraint_bits: 0,
+            member_roles: Vec::new(),
+            entity_genesis: None,
+            pattern: None,
             return_members: vec![member],
             resolved_return_members: Vec::new(),
             return_member_offsets: vec![80],
@@ -15841,6 +16015,9 @@ mod relation_tests {
             state: 0x20,
             constraint_kinds: vec![SketchConstraintKind::Perpendicular],
             unknown_constraint_bits: 0,
+            member_roles: Vec::new(),
+            entity_genesis: None,
+            pattern: None,
             return_members: vec![1, 3, 2, 4],
             resolved_return_members: vec![curve(1, 0), curve(3, 30), curve(2, 0), curve(4, 40)],
             return_member_offsets: vec![120, 131, 142, 153],
@@ -16940,6 +17117,9 @@ mod relation_tests {
             state: 0,
             constraint_kinds: vec![SketchConstraintKind::Coincident],
             unknown_constraint_bits: 0,
+            member_roles: Vec::new(),
+            entity_genesis: None,
+            pattern: None,
             return_members: vec![20],
             resolved_return_members: Vec::new(),
             return_member_offsets: vec![0],
@@ -19001,13 +19181,15 @@ mod relation_tests {
         record[7..11].copy_from_slice(&1239u32.to_le_bytes());
         record[19] = 1;
         record[20..24].copy_from_slice(&3u32.to_le_bytes());
-        for (marker, reference) in [(24, 1224u32), (39, 1228), (54, 1236), (65, 0), (70, 1041)] {
+        for (marker, reference) in [(24, 1224u32), (39, 1228), (54, 1236), (69, 0), (74, 1041)] {
             record[marker] = 1;
             record[marker + 1..marker + 5].copy_from_slice(&reference.to_le_bytes());
         }
-        record[82..86].copy_from_slice(&4u32.to_le_bytes());
-        record[89..93].copy_from_slice(&3u32.to_le_bytes());
-        for (marker, reference) in [(93, 1224u32), (104, 1228), (115, 1236)] {
+        record[35..39].copy_from_slice(&3u32.to_le_bytes());
+        record[50..54].copy_from_slice(&1u32.to_le_bytes());
+        record[85..93].copy_from_slice(&4u64.to_le_bytes());
+        record[93..97].copy_from_slice(&3u32.to_le_bytes());
+        for (marker, reference) in [(97, 1224u32), (108, 1228), (119, 1236)] {
             record[marker] = 1;
             record[marker + 1..marker + 5].copy_from_slice(&reference.to_le_bytes());
         }
@@ -19018,12 +19200,201 @@ mod relation_tests {
 
         assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
         let parsed = parse_sketch_relation(&record, &HashSet::from([1041])).unwrap();
-        assert_eq!(parsed.0, [1224, 1228, 1236]);
-        assert_eq!(parsed.2, [0]);
-        assert_eq!(parsed.4, 1041);
-        assert_eq!(parsed.6, 4);
-        assert_eq!(parsed.8, [1224, 1228, 1236]);
-        assert_eq!(parsed.10, 120);
+        assert_eq!(parsed.members, [1224, 1228, 1236]);
+        assert_eq!(parsed.member_roles, [3, 1, 0]);
+        assert_eq!(parsed.auxiliary_references, [0]);
+        assert_eq!(parsed.owner_reference, 1041);
+        assert_eq!(parsed.state, 4);
+        assert_eq!(parsed.state_offset, 85);
+        assert_eq!(parsed.entity_genesis, None);
+        assert_eq!(parsed.return_members, [1224, 1228, 1236]);
+        assert_eq!(parsed.parsed_end, 124);
+    }
+
+    fn push_reference(out: &mut Vec<u8>, reference: u32) {
+        out.push(1);
+        out.extend_from_slice(&reference.to_le_bytes());
+    }
+
+    fn push_genesis_block(out: &mut Vec<u8>, genesis: u64) {
+        out.push(1);
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&13u32.to_le_bytes());
+        out.extend_from_slice(b"EntityGenesis");
+        out.extend_from_slice(&23u32.to_le_bytes());
+        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        out.extend_from_slice(&genesis.to_le_bytes());
+    }
+
+    fn genesis_relation_record(
+        members: &[(u32, u32)],
+        genesis: u64,
+        auxiliary: &[u8],
+        owner: u32,
+        mask: u64,
+        returns: &[u32],
+    ) -> Vec<u8> {
+        let mut out = Vec::new();
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(b"298");
+        out.extend_from_slice(&7u32.to_le_bytes());
+        out.extend_from_slice(&[0u8; 8]);
+        out.push(1);
+        out.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+        for (reference, role) in members {
+            push_reference(&mut out, *reference);
+            out.extend_from_slice(&[0u8; 6]);
+            out.extend_from_slice(&role.to_le_bytes());
+        }
+        push_genesis_block(&mut out, genesis);
+        out.extend_from_slice(auxiliary);
+        push_reference(&mut out, owner);
+        out.extend_from_slice(&[0u8; 6]);
+        out.extend_from_slice(&mask.to_le_bytes());
+        out.extend_from_slice(&u32::try_from(returns.len()).unwrap().to_le_bytes());
+        for reference in returns {
+            push_reference(&mut out, *reference);
+            out.extend_from_slice(&[0u8; 6]);
+        }
+        out.extend_from_slice(&[0u8; 4]);
+        out
+    }
+
+    #[test]
+    fn genesis_relation_parses_u64_text_frame_mask_and_member_roles() {
+        let mut auxiliary = Vec::new();
+        push_reference(&mut auxiliary, 2394);
+        auxiliary.extend_from_slice(&[0u8; 6]);
+        let record = genesis_relation_record(
+            &[(2394, 0), (2403, 0), (2404, 0)],
+            2,
+            &auxiliary,
+            1425,
+            0x100_0000_0000,
+            &[2403, 2404],
+        );
+        let parsed = parse_sketch_relation(&record, &HashSet::from([1425])).unwrap();
+        assert_eq!(parsed.members, [2394, 2403, 2404]);
+        assert_eq!(parsed.member_roles, [0, 0, 0]);
+        assert_eq!(parsed.entity_genesis, Some(2));
+        assert_eq!(parsed.auxiliary_references, [2394]);
+        assert_eq!(parsed.owner_reference, 1425);
+        assert_eq!(parsed.state, 0x100_0000_0000);
+        assert_eq!(parsed.return_members, [2403, 2404]);
+        assert_eq!(
+            decode_constraint_kinds(parsed.state),
+            (vec![SketchConstraintKind::TextFrame], 0)
+        );
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(crate::records::SketchPatternDefinition::TextFrame {
+                text_reference: 2394
+            })
+        );
+    }
+
+    #[test]
+    fn genesis_relation_parses_circular_pattern_auxiliary_run() {
+        let mut auxiliary = Vec::new();
+        push_reference(&mut auxiliary, 336);
+        auxiliary.extend_from_slice(&[0u8; 6]);
+        push_reference(&mut auxiliary, 333);
+        auxiliary.extend_from_slice(&[0u8; 6]);
+        auxiliary.extend_from_slice(&std::f64::consts::TAU.to_le_bytes());
+        auxiliary.extend_from_slice(&3u32.to_le_bytes());
+        auxiliary.extend_from_slice(&[0u8; 9]);
+        let record = genesis_relation_record(
+            &[(280, 1), (291, 1), (327, 0), (330, 0)],
+            2,
+            &auxiliary,
+            201,
+            0x1000_0000,
+            &[291, 327, 330, 280],
+        );
+        let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
+        assert_eq!(parsed.member_roles, [1, 1, 0, 0]);
+        assert_eq!(parsed.auxiliary_references, [336, 333]);
+        assert_eq!(parsed.state, 0x1000_0000);
+        assert_eq!(
+            decode_pattern_definition(&record, &parsed),
+            Some(crate::records::SketchPatternDefinition::Circular {
+                angle_parameter: 336,
+                count_parameter: 333,
+                evaluated_angle: std::f64::consts::TAU,
+                evaluated_count: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn genesis_relation_parses_rectangular_pattern_auxiliary_run() {
+        let mut auxiliary = Vec::new();
+        push_reference(&mut auxiliary, 0);
+        auxiliary.extend_from_slice(&[0u8; 10]);
+        auxiliary.extend_from_slice(&3u32.to_le_bytes());
+        push_reference(&mut auxiliary, 464);
+        auxiliary.extend_from_slice(&[0u8; 6]);
+        for value in [1.0f64, 0.0, 0.0, 3.0] {
+            auxiliary.extend_from_slice(&value.to_le_bytes());
+        }
+        push_reference(&mut auxiliary, 470);
+        auxiliary.extend_from_slice(&[0u8; 6]);
+        auxiliary.extend_from_slice(&1u32.to_le_bytes());
+        push_reference(&mut auxiliary, 467);
+        auxiliary.extend_from_slice(&[0u8; 6]);
+        for value in [0.0f64, 1.0, 0.0, 0.5] {
+            auxiliary.extend_from_slice(&value.to_le_bytes());
+        }
+        push_reference(&mut auxiliary, 473);
+        auxiliary.extend_from_slice(&[0u8; 6]);
+        let record = genesis_relation_record(
+            &[(352, 3), (353, 1), (442, 0), (445, 0)],
+            2,
+            &auxiliary,
+            201,
+            0x2000_0000,
+            &[353, 352, 442, 445],
+        );
+        let parsed = parse_sketch_relation(&record, &HashSet::from([201])).unwrap();
+        assert_eq!(parsed.member_roles, [3, 1, 0, 0]);
+        assert_eq!(parsed.auxiliary_references, [0, 464, 470, 467, 473]);
+        assert_eq!(parsed.state, 0x2000_0000);
+        let Some(crate::records::SketchPatternDefinition::Rectangular { directions }) =
+            decode_pattern_definition(&record, &parsed)
+        else {
+            panic!("expected rectangular pattern definition");
+        };
+        assert_eq!(directions[0].evaluated_count, 3);
+        assert_eq!(directions[0].count_parameter, 464);
+        assert_eq!(directions[0].direction, [1.0, 0.0, 0.0]);
+        assert_eq!(directions[0].evaluated_distance, 3.0);
+        assert_eq!(directions[0].distance_parameter, 470);
+        assert_eq!(directions[1].evaluated_count, 1);
+        assert_eq!(directions[1].count_parameter, 467);
+        assert_eq!(directions[1].direction, [0.0, 1.0, 0.0]);
+        assert_eq!(directions[1].evaluated_distance, 0.5);
+        assert_eq!(directions[1].distance_parameter, 473);
+    }
+
+    #[test]
+    fn genesis_entity_header_variant_resolves_suffix_and_id() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"281");
+        bytes.extend_from_slice(&201u32.to_le_bytes());
+        bytes.extend_from_slice(&[0u8; 10]);
+        push_genesis_block(&mut bytes, 4);
+        bytes.extend_from_slice(&5u32.to_le_bytes());
+        for unit in "0_201".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        let (entity_suffix, entity_id, optional_slot_present, end) =
+            parse_genesis_entity_header(&bytes, 0).unwrap();
+        assert_eq!(entity_suffix, 201);
+        assert_eq!(entity_id, "0_201");
+        assert!(!optional_slot_present);
+        assert_eq!(end, bytes.len());
+        assert!(parse_settled_entity_header(&bytes, 0).is_none());
     }
 
     #[test]

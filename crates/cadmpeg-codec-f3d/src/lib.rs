@@ -1852,7 +1852,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let mut return_members = group.return_members.clone();
         locus_members.sort_unstable();
         return_members.sort_unstable();
-        let (expected_kinds, expected_unknown) = design::decode_constraint_kinds(group.state);
+        let (expected_kinds, expected_unknown) =
+            design::decode_constraint_kinds(u64::from(group.state));
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(group.owner_reference)))
             .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
@@ -1881,7 +1882,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && returns_valid
             && locus_members == return_members
             && group.constraint_kinds == expected_kinds
-            && group.unknown_constraint_bits == expected_unknown
+            && u64::from(group.unknown_constraint_bits) == expected_unknown
             && group.next_byte_offset
                 == returns_start
                     .saturating_add((count as u64).saturating_mul(11))

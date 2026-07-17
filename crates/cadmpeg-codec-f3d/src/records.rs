@@ -1759,12 +1759,22 @@ pub struct SketchRelation {
     #[serde(default)]
     pub owner_reference_offset: u32,
     /// Source sketch-constraint bitmask.
-    pub state: u32,
+    pub state: u64,
     /// Constraint kinds selected by `state`.
     #[serde(default)]
     pub constraint_kinds: Vec<SketchConstraintKind>,
     /// Bits in `state` outside the defined constraint mask.
-    pub unknown_constraint_bits: u32,
+    pub unknown_constraint_bits: u64,
+    /// Member role codes parallel to `members`. Generated members carry zero;
+    /// input members carry a nonzero role.
+    #[serde(default)]
+    pub member_roles: Vec<u32>,
+    /// `EntityGenesis` origin bitfield stored by the relation record, when present.
+    #[serde(default)]
+    pub entity_genesis: Option<u64>,
+    /// Class-specific pattern or text payload decoded from the auxiliary run.
+    #[serde(default)]
+    pub pattern: Option<SketchPatternDefinition>,
     /// Record indices of entities returned or affected by this relation, distinct
     /// from `members`.
     pub return_members: Vec<u32>,
@@ -1843,6 +1853,52 @@ pub enum SketchConstraintKind {
     CircularPattern,
     /// Entities participate in a rectangular pattern.
     RectangularPattern,
+    /// Frame curves bound to a sketch-text entity.
+    TextFrame,
+    /// A sketch-text entity bound to a path curve.
+    TextPath,
+}
+
+/// Class-specific auxiliary payload of a pattern or text sketch relation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SketchPatternDefinition {
+    /// A circular-pattern relation's auxiliary operands.
+    Circular {
+        /// Record index of the total-angle parameter value record.
+        angle_parameter: u32,
+        /// Record index of the instance-count parameter value record.
+        count_parameter: u32,
+        /// Evaluated total pattern angle in radians.
+        evaluated_angle: f64,
+        /// Evaluated instance count.
+        evaluated_count: u32,
+    },
+    /// A rectangular-pattern relation's auxiliary operands, one per direction.
+    Rectangular {
+        /// The two pattern direction clauses in record order.
+        directions: [SketchPatternDirection; 2],
+    },
+    /// A text-frame relation's auxiliary operand.
+    TextFrame {
+        /// Record index of the sketch-text entity the frame curves bind to.
+        text_reference: u32,
+    },
+}
+
+/// One direction clause of a rectangular-pattern sketch relation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchPatternDirection {
+    /// Evaluated instance count along this direction.
+    pub evaluated_count: u32,
+    /// Record index of the count parameter value record.
+    pub count_parameter: u32,
+    /// Unit direction vector in sketch coordinates.
+    pub direction: [f64; 3],
+    /// Evaluated extent distance along this direction, in source units.
+    pub evaluated_distance: f64,
+    /// Record index of the distance parameter value record.
+    pub distance_parameter: u32,
 }
 
 /// One persistent 2D point in a Fusion sketch coordinate system.
