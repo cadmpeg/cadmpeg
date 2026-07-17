@@ -1708,6 +1708,13 @@ pub struct DesignEntityHeader {
     /// Byte offsets parallel to `reference_indices`.
     #[serde(default)]
     pub reference_offsets: Vec<u64>,
+    /// Counted member-record run from the paired same-index container record
+    /// of an `EntityGenesis`-form sketch entity header.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub member_indices: Vec<u32>,
+    /// Byte offsets parallel to `member_indices`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub member_offsets: Vec<u64>,
 }
 
 /// One indexed record header in the recursive Design `BulkStream` tree.

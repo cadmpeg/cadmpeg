@@ -8159,6 +8159,8 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
         declared_reference_count: Some(2),
         reference_indices: vec![33, 44],
         reference_offsets: Vec::new(),
+        member_indices: Vec::new(),
+        member_offsets: Vec::new(),
     }];
     native.design_record_headers = vec![
         DesignRecordHeader {
@@ -8251,6 +8253,8 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         declared_reference_count: Some(1),
         reference_indices: vec![33],
         reference_offsets: Vec::new(),
+        member_indices: Vec::new(),
+        member_offsets: Vec::new(),
     }];
     native.sketch_points = vec![SketchPoint {
         id: "generated:sketch-point#0".into(),

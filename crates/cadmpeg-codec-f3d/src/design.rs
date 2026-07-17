@@ -2754,6 +2754,19 @@ pub(crate) fn neutral_dimension_constraint_id(
     ))
 }
 
+/// Length scale from a placement's stored origin to the neutral length unit.
+/// The 201/329-byte frames store the origin in the neutral unit directly; the
+/// `EntityGenesis`-flavor 213/341-byte frames store it in centimetres while
+/// their sketch point and curve records carry values ten times the centimetre
+/// value, so the origin scales by ten to stay commensurate with the entities.
+fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
+    if matches!(placement.frame_length, 213 | 341) {
+        10.0
+    } else {
+        1.0
+    }
+}
+
 /// Project placed Design sketches and their exact planar point/curve records.
 pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
@@ -2786,9 +2799,9 @@ pub fn project_sketch_design(
             name: Some(placement.entity_id.clone()),
             configuration: None,
             origin: Point3::new(
-                placement.transform[0][3],
-                placement.transform[1][3],
-                placement.transform[2][3],
+                placement.transform[0][3] * placement_origin_scale(placement),
+                placement.transform[1][3] * placement_origin_scale(placement),
+                placement.transform[2][3] * placement_origin_scale(placement),
             ),
             normal: Vector3::new(
                 placement.transform[0][2],
@@ -9740,9 +9753,10 @@ fn parse_parameter_scope(
         return None;
     };
     let family = design_feature_family(kind);
-    if kind == "Sketch" && reference_members.len() != 1 {
-        return None;
-    }
+    // A `Sketch` scope carries either the single entity-suffix reference form
+    // or, when the stream's sketch entity headers use the `EntityGenesis`
+    // form, the generic ordered reference table. Both parse here; the entity
+    // binding in `decode_parameter_scopes` requires a unique suffix match.
     let (
         extrude_operation,
         extrude_operation_offset,
@@ -9927,7 +9941,8 @@ fn parse_sketch_placement_candidates(
         let start = pair[0];
         let paired_at = pair[1];
         let frame_length = paired_at.saturating_sub(start);
-        if frame_length != 201 && frame_length != 329 {
+        if frame_length != 201 && frame_length != 329 && frame_length != 213 && frame_length != 341
+        {
             continue;
         }
         let Some((class_tag, after_tag)) = lp_ascii(bytes, start) else {
@@ -9946,20 +9961,52 @@ fn parse_sketch_placement_candidates(
         {
             continue;
         }
-        let (transform, transform_offset) = if frame_length == 201 {
-            (identity_matrix(), None)
-        } else {
-            let Some(values) = f64s_at(bytes, start + 55, 16) else {
-                continue;
-            };
-            let mut transform = [[0.0; 4]; 4];
-            for (ordinal, value) in values.iter().copied().enumerate() {
-                transform[ordinal / 4][ordinal % 4] = value;
+        let (transform, transform_offset) = match frame_length {
+            201 => (identity_matrix(), None),
+            329 => {
+                let Some(values) = f64s_at(bytes, start + 55, 16) else {
+                    continue;
+                };
+                let mut transform = [[0.0; 4]; 4];
+                for (ordinal, value) in values.iter().copied().enumerate() {
+                    transform[ordinal / 4][ordinal % 4] = value;
+                }
+                if !valid_sketch_transform(&transform) {
+                    continue;
+                }
+                (transform, Some((start + 55) as u64))
             }
-            if !valid_sketch_transform(&transform) {
-                continue;
+            // The `EntityGenesis`-flavor frame: `0x01` at offset 55, nine
+            // zero bytes, and a form byte at offset 65. Form `0x01` is the
+            // identity transform; form `0x00` is followed by the row-major
+            // 4×4 f64 matrix at offset 66. The WorkPlane sibling of this
+            // record class carries a marked record reference at offset 57
+            // and fails the zero-run check.
+            213 | 341 => {
+                if bytes.get(start + 55) != Some(&1)
+                    || bytes.get(start + 56..start + 65) != Some(&[0u8; 9][..])
+                {
+                    continue;
+                }
+                match (frame_length, bytes.get(start + 65)) {
+                    (213, Some(&1)) => (identity_matrix(), None),
+                    (341, Some(&0)) => {
+                        let Some(values) = f64s_at(bytes, start + 66, 16) else {
+                            continue;
+                        };
+                        let mut transform = [[0.0; 4]; 4];
+                        for (ordinal, value) in values.iter().copied().enumerate() {
+                            transform[ordinal / 4][ordinal % 4] = value;
+                        }
+                        if !valid_sketch_transform(&transform) {
+                            continue;
+                        }
+                        (transform, Some((start + 66) as u64))
+                    }
+                    _ => continue,
+                }
             }
-            (transform, Some((start + 55) as u64))
+            _ => continue,
         };
         out.push(DesignSketchPlacement {
             id: String::new(),
@@ -10331,6 +10378,53 @@ fn parse_genesis_entity_header(bytes: &[u8], start: usize) -> Option<(u64, Strin
     ))
 }
 
+/// Parse the counted member-record run of the paired same-index container
+/// record that follows an `EntityGenesis`-form sketch entity header: the u32
+/// member count at paired-record offset 52, the marked reference to the
+/// sketch's base-point record, and `count` entries of `0x01 + u32
+/// record_index + six zero bytes` naming the sketch's owned records. The
+/// base-point reference is returned as the first member.
+fn parse_sketch_member_run(bytes: &[u8], from: usize, entity_suffix: u64) -> (Vec<u32>, Vec<u64>) {
+    let empty = (Vec::new(), Vec::new());
+    let Some(paired) = next_indexed_record_offset(bytes, from) else {
+        return empty;
+    };
+    if u32_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
+        return empty;
+    }
+    let Some(count) = u32_at(bytes, paired + 52).and_then(|count| usize::try_from(count).ok())
+    else {
+        return empty;
+    };
+    if count == 0
+        || bytes.get(paired + 56) != Some(&1)
+        || bytes.get(paired + 61..paired + 67) != Some(&[0u8; 6][..])
+    {
+        return empty;
+    }
+    let Some(base_point_index) = u32_at(bytes, paired + 57) else {
+        return empty;
+    };
+    let mut member_indices = Vec::with_capacity(count + 1);
+    let mut member_offsets = Vec::with_capacity(count + 1);
+    member_indices.push(base_point_index);
+    member_offsets.push((paired + 57) as u64);
+    for ordinal in 0..count {
+        let marker = paired + 67 + ordinal * 11;
+        if bytes.get(marker) != Some(&1)
+            || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
+        {
+            return empty;
+        }
+        let Some(record_index) = u32_at(bytes, marker + 1) else {
+            return empty;
+        };
+        member_indices.push(record_index);
+        member_offsets.push((marker + 1) as u64);
+    }
+    (member_indices, member_offsets)
+}
+
 /// Decode every self-validating per-entity design `BulkStream` header (spec
 /// [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
 /// whose numeric suffix must match the header's entity suffix, and, for
@@ -10371,9 +10465,10 @@ pub fn decode_entity_headers(
             if !class_tag.iter().all(u8::is_ascii_digit) {
                 continue;
             }
+            let settled = parse_settled_entity_header(bytes, start);
+            let genesis_form = settled.is_none();
             let Some((entity_suffix, entity_id, optional_slot_present, end)) =
-                parse_settled_entity_header(bytes, start)
-                    .or_else(|| parse_genesis_entity_header(bytes, start))
+                settled.or_else(|| parse_genesis_entity_header(bytes, start))
             else {
                 continue;
             };
@@ -10405,6 +10500,12 @@ pub fn decode_entity_headers(
             } else {
                 (None, None, None, Vec::new(), Vec::new(), end)
             };
+            let (member_indices, member_offsets) =
+                if genesis_form && object_kind == Some(DesignObjectKind::Sketch) {
+                    parse_sketch_member_run(bytes, record_end, entity_suffix)
+                } else {
+                    (Vec::new(), Vec::new())
+                };
             out.push(DesignEntityHeader {
                 id: format!("f3d:{}:design-entity-header#{start}", entry.name),
                 byte_offset: start as u64,
@@ -10418,6 +10519,8 @@ pub fn decode_entity_headers(
                 declared_reference_count,
                 reference_indices,
                 reference_offsets,
+                member_indices,
+                member_offsets,
             });
             offset = record_end;
         }
@@ -10948,6 +11051,34 @@ pub(crate) fn bind_sketch_graph(
             if owners
                 .insert((scope, *record_index), relation.owner_reference)
                 .is_some_and(|owner| owner != relation.owner_reference)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
+                )));
+            }
+        }
+    }
+    // Relation-free geometry carries no owner backlink of its own. The
+    // `EntityGenesis`-form sketch container's paired record names every owned
+    // record in its counted member run; backfill those owners after the
+    // relation-derived pass, holding both sources to one owner per record.
+    for entity in entities
+        .iter()
+        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
+    {
+        let (Some(scope), Ok(suffix)) = (
+            native_stream(&entity.id),
+            u32::try_from(entity.entity_suffix),
+        ) else {
+            continue;
+        };
+        for record_index in &entity.member_indices {
+            if !typed_records.contains(&(scope, *record_index)) {
+                continue;
+            }
+            if owners
+                .insert((scope, *record_index), suffix)
+                .is_some_and(|owner| owner != suffix)
             {
                 return Err(CodecError::Malformed(format!(
                     "Fusion sketch record {record_index} in {scope} belongs to multiple sketches"
@@ -13956,14 +14087,20 @@ mod relation_tests {
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].record_index, 12);
 
-        let mut excess_reference = vec![1];
-        excess_reference.extend_from_slice(&56u32.to_le_bytes());
-        excess_reference.extend_from_slice(&[0; 6]);
-        let mut excess_references = bytes.clone();
-        excess_references[reference_count_at..reference_count_at + 4]
+        // A Sketch scope may also carry the generic ordered reference table
+        // used by `EntityGenesis`-form streams; the table then has more than
+        // one member and the entity join happens by unique suffix match.
+        let mut generic_reference = vec![1];
+        generic_reference.extend_from_slice(&56u32.to_le_bytes());
+        generic_reference.extend_from_slice(&[0; 6]);
+        let mut generic_references = bytes.clone();
+        generic_references[reference_count_at..reference_count_at + 4]
             .copy_from_slice(&2u32.to_le_bytes());
-        excess_references.splice(reference_at + 11..reference_at + 11, excess_reference);
-        assert!(parse_parameter_scope(&excess_references, &header).is_none());
+        generic_references.splice(reference_at + 10..reference_at + 10, generic_reference);
+        let generic_scope = parse_parameter_scope(&generic_references, &header)
+            .expect("generic-table Sketch scope");
+        assert_eq!(generic_scope.kind, "Sketch");
+        assert_eq!(generic_scope.reference_members, [55, 56]);
 
         let mut companion = DesignParameterCompanion {
             id: "f3d:native:parameter-companion#11".into(),
@@ -14222,6 +14359,8 @@ mod relation_tests {
             declared_reference_count: Some(0),
             reference_indices: Vec::new(),
             reference_offsets: Vec::new(),
+            member_indices: Vec::new(),
+            member_offsets: Vec::new(),
         };
 
         let profile =
@@ -15405,6 +15544,234 @@ mod relation_tests {
         assert_eq!(explicit[0].frame_length, 329);
         assert_eq!(explicit[0].transform, transform);
         assert_eq!(explicit[0].transform_offset, Some(55));
+    }
+
+    #[test]
+    fn entity_genesis_placement_decodes_compact_and_explicit_frames() {
+        fn genesis_frame(
+            record_index: u32,
+            length: usize,
+            form_byte: u8,
+            transform: Option<[[f64; 4]; 4]>,
+        ) -> Vec<u8> {
+            let mut bytes = vec![0; length];
+            bytes[0..4].copy_from_slice(&3u32.to_le_bytes());
+            bytes[4..7].copy_from_slice(b"293");
+            bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
+            bytes[55] = 1;
+            bytes[65] = form_byte;
+            if let Some(transform) = transform {
+                for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+                    let at = 66 + ordinal * 8;
+                    bytes[at..at + 8].copy_from_slice(&value.to_le_bytes());
+                }
+            }
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(b"261");
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+            bytes
+        }
+
+        let compact = parse_sketch_placement_candidates(
+            &genesis_frame(214, 213, 1, None),
+            206,
+            "0_201",
+            201,
+            214,
+        );
+        assert_eq!(compact.len(), 1);
+        assert_eq!(compact[0].frame_length, 213);
+        assert_eq!(compact[0].transform, identity_matrix());
+        assert_eq!(compact[0].transform_offset, None);
+
+        let transform = [
+            [0.0, 0.0, 1.0, 26.0],
+            [1.0, 0.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let explicit = parse_sketch_placement_candidates(
+            &genesis_frame(3060, 341, 0, Some(transform)),
+            3052,
+            "0_3048",
+            3048,
+            3060,
+        );
+        assert_eq!(explicit.len(), 1);
+        assert_eq!(explicit[0].frame_length, 341);
+        assert_eq!(explicit[0].transform, transform);
+        assert_eq!(explicit[0].transform_offset, Some(66));
+
+        // A mismatched form byte fails both lengths.
+        assert!(parse_sketch_placement_candidates(
+            &genesis_frame(214, 213, 0, None),
+            206,
+            "0_201",
+            201,
+            214
+        )
+        .is_empty());
+        assert!(parse_sketch_placement_candidates(
+            &genesis_frame(3060, 341, 1, Some(transform)),
+            3052,
+            "0_3048",
+            3048,
+            3060,
+        )
+        .is_empty());
+
+        // The WorkPlane sibling of this record class carries a marked record
+        // reference inside the zero run and must not decode as a placement.
+        let mut workplane_like = genesis_frame(214, 213, 1, None);
+        workplane_like[57] = 1;
+        workplane_like[58..62].copy_from_slice(&788u32.to_le_bytes());
+        assert!(
+            parse_sketch_placement_candidates(&workplane_like, 206, "0_201", 201, 214).is_empty()
+        );
+    }
+
+    #[test]
+    fn entity_genesis_placement_origin_scales_to_neutral_units() {
+        let placement = |frame_length: u64| DesignSketchPlacement {
+            id: "f3d:native:design-sketch-placement#0".into(),
+            scope_record_index: 10,
+            entity_id: "0_100".into(),
+            entity_suffix: 100,
+            byte_offset: 0,
+            class_tag: "293".into(),
+            record_index: 11,
+            frame_length,
+            transform: [
+                [0.0, 0.0, 1.0, 26.0],
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: Some(66),
+            paired_class_tag: "261".into(),
+            paired_byte_offset: 341,
+        };
+        let point = SketchPoint {
+            id: "f3d:native:sketch-point#0".into(),
+            record_index: 20,
+            owner_reference: Some(100),
+            class_tag: "256".into(),
+            byte_offset: 0,
+            coordinate_offset: 141,
+            entity_genesis: Some(2),
+            persistent_id: 20,
+            paired_reference: 0,
+            coordinates: Point2::new(120.0, 30.0),
+            raw_bytes: Vec::new(),
+        };
+
+        // The `EntityGenesis`-flavor frame stores its origin in centimetres
+        // while the sketch records carry ten-times-centimetre values; the
+        // projected sketch origin scales by ten to stay commensurate.
+        let (sketches, entities) =
+            project_sketch_design(&[placement(341)], &[point.clone()], &[], 1.0e-6);
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(sketches[0].origin, Point3::new(260.0, 0.0, 0.0));
+        assert_eq!(sketches[0].normal, Vector3::new(1.0, 0.0, 0.0));
+        assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
+        assert!(matches!(
+            entities[0].geometry,
+            cadmpeg_ir::sketches::SketchGeometry::Point { position }
+                if position == Point2::new(120.0, 30.0)
+        ));
+
+        // The settled explicit frame keeps its stored origin unscaled.
+        let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], 1.0e-6);
+        assert_eq!(sketches[0].origin, Point3::new(26.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn sketch_member_run_backfills_relation_free_owners() {
+        let mut bytes = vec![0u8; 40];
+        let paired_at = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"282");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 41]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        let mut member_offsets = Vec::new();
+        member_offsets.push((bytes.len() + 1) as u64);
+        bytes.push(1);
+        bytes.extend_from_slice(&99u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        for member in [20u32, 21] {
+            member_offsets.push((bytes.len() + 1) as u64);
+            bytes.push(1);
+            bytes.extend_from_slice(&member.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        bytes.extend_from_slice(&[0; 8]);
+        assert_eq!(
+            super::parse_sketch_member_run(&bytes, 0, 100),
+            (vec![99, 20, 21], member_offsets)
+        );
+        assert_eq!(
+            super::parse_sketch_member_run(&bytes, 0, 101),
+            (vec![], vec![])
+        );
+        assert_eq!(
+            super::parse_sketch_member_run(&bytes, paired_at + 1, 100),
+            (vec![], vec![])
+        );
+
+        let header = |suffix: u64, members: Vec<u32>| DesignEntityHeader {
+            id: format!("f3d:native:design-entity-header#{suffix}"),
+            byte_offset: suffix,
+            entity_suffix: suffix,
+            entity_id: format!("0_{suffix}"),
+            class_tag: "281".into(),
+            optional_slot_present: false,
+            object_kind: Some(DesignObjectKind::Sketch),
+            record_reference: None,
+            record_reference_offset: None,
+            declared_reference_count: None,
+            reference_indices: Vec::new(),
+            reference_offsets: Vec::new(),
+            member_offsets: members.iter().map(|_| 0).collect(),
+            member_indices: members,
+        };
+        let point = |record_index: u32| SketchPoint {
+            id: format!("f3d:native:sketch-point#{record_index}"),
+            record_index,
+            owner_reference: None,
+            class_tag: "256".into(),
+            byte_offset: u64::from(record_index),
+            coordinate_offset: 141,
+            entity_genesis: Some(2),
+            persistent_id: u64::from(record_index),
+            paired_reference: 0,
+            coordinates: Point2::new(0.0, 0.0),
+            raw_bytes: Vec::new(),
+        };
+
+        // Relation-free geometry named by the container's member run binds to
+        // that sketch; records the run does not name stay unowned.
+        let mut points = [point(20), point(21), point(22)];
+        bind_sketch_graph(
+            &[header(100, vec![20, 21, 99])],
+            &mut points,
+            &mut [],
+            &mut [],
+        )
+        .expect("member-run owners bind");
+        assert_eq!(points[0].owner_reference, Some(100));
+        assert_eq!(points[1].owner_reference, Some(100));
+        assert_eq!(points[2].owner_reference, None);
+
+        // Two sketches claiming one record is a structural conflict.
+        let mut points = [point(20)];
+        assert!(bind_sketch_graph(
+            &[header(100, vec![20]), header(101, vec![20])],
+            &mut points,
+            &mut [],
+            &mut [],
+        )
+        .is_err());
     }
 
     #[test]
@@ -17086,6 +17453,8 @@ mod relation_tests {
             declared_reference_count: Some(1),
             reference_indices: vec![30],
             reference_offsets: vec![0],
+            member_indices: Vec::new(),
+            member_offsets: Vec::new(),
         };
         let point = |stream: &str| SketchPoint {
             id: format!("f3d:{stream}:sketch-point#0"),
