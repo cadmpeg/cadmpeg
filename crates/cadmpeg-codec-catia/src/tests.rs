@@ -4741,6 +4741,17 @@ fn value_block_parser_reads_length_to_terminator_boundary() {
 }
 
 #[test]
+fn native_value_blocks_require_a_complete_adjacent_catalog() {
+    let mut bytes = value_block_stream(&[0x81]);
+    bytes.extend_from_slice(&[0x7c, 0x02]);
+
+    assert_eq!(crate::value_block::parse(&bytes).len(), 1);
+    assert!(crate::native::CatiaNative::decode(&bytes)
+        .value_blocks
+        .is_empty());
+}
+
+#[test]
 fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 

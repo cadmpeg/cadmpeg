@@ -457,18 +457,18 @@ impl CatiaNative {
         }
         let value_blocks = value_block::parse(bytes)
             .into_iter()
-            .map(|block| {
+            .filter_map(|block| {
                 let catalog_pos = block.pos + block.total_len;
                 let catalog = catalogs
                     .iter()
-                    .find(|catalog| catalog.byte_offset == catalog_pos as u64);
+                    .find(|catalog| catalog.byte_offset == catalog_pos as u64)?;
                 let object_graph = object_graphs.iter().find(|graph| {
                     graph
                         .byte_offset
                         .checked_add(graph.byte_len)
                         .is_some_and(|end| end == block.pos as u64)
                 });
-                CatiaValueBlock::from_parts(block, catalog_pos, catalog, object_graph)
+                Some(CatiaValueBlock::from_parts(block, catalog, object_graph))
             })
             .collect();
         let preview_images = container::preview_images(bytes)
@@ -691,18 +691,10 @@ impl CatiaNative {
     }
 }
 
-impl From<value_block::ValueBlock> for CatiaValueBlock {
-    fn from(block: value_block::ValueBlock) -> Self {
-        let catalog_pos = block.pos + block.total_len;
-        Self::from_parts(block, catalog_pos, None, None)
-    }
-}
-
 impl CatiaValueBlock {
     fn from_parts(
         block: value_block::ValueBlock,
-        catalog_pos: usize,
-        catalog: Option<&CatiaCatalog>,
+        catalog: &CatiaCatalog,
         object_graph: Option<&CatiaObjectGraph>,
     ) -> Self {
         let selector_indices = block
@@ -719,7 +711,8 @@ impl CatiaValueBlock {
             .filter_map(|(selector_rank, index)| match &block.fields[*index] {
                 value_block::ValueField::SchemaSelector { ordinal, offset } => {
                     let entry = catalog
-                        .and_then(|catalog| catalog.entries.get(*ordinal as usize))
+                        .entries
+                        .get(*ordinal as usize)
                         .map(|entry| entry.id.clone());
                     let value_end = selector_indices
                         .get(selector_rank + 1)
@@ -749,7 +742,7 @@ impl CatiaValueBlock {
             byte_len: block.total_len as u64,
             declared_len: block.declared_len as u64,
             object_graph: object_graph.map(|graph| graph.id.clone()),
-            catalog: format!("catia:outer:catalog#{catalog_pos:010}"),
+            catalog: catalog.id.clone(),
             payload: block.payload,
             fields: block.fields,
             schema_selections,
