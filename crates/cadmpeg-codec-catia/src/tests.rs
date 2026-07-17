@@ -2434,6 +2434,34 @@ fn summary_preview_requires_a_coherent_frame_header() {
 }
 
 #[test]
+fn summary_preview_requires_one_complete_jpeg_candidate() {
+    let valid = summary_preview_segment();
+    let image_start = valid
+        .windows(3)
+        .position(|bytes| bytes == [0xff, 0xd8, 0xff])
+        .expect("fixture JPEG SOI");
+
+    let mut malformed_prefix = valid.clone();
+    malformed_prefix.splice(image_start..image_start, [0xff, 0xd8, 0xff, 0xd9]);
+    let previews = crate::container::preview_images(&malformed_prefix);
+    let [preview] = previews.as_slice() else {
+        panic!("one complete preview after malformed SOI")
+    };
+    assert_eq!(&malformed_prefix[preview.range.clone()][..2], [0xff, 0xd8]);
+
+    let image_end = valid
+        .windows(2)
+        .enumerate()
+        .skip(image_start)
+        .find_map(|(at, bytes)| (bytes == [0xff, 0xd9]).then_some(at + 2))
+        .expect("fixture JPEG EOI");
+    let image = valid[image_start..image_end].to_vec();
+    let mut duplicate = valid;
+    duplicate.extend(image);
+    assert!(crate::container::preview_images(&duplicate).is_empty());
+}
+
+#[test]
 fn scan_parses_directory_and_identifies_standard() {
     let f = standard_catpart();
     let scan = crate::container::scan_bytes(f);

@@ -147,10 +147,19 @@ fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<Pr
         .filter(|segment| segment.type_word == 0x0101_0003)
         .filter_map(|segment| {
             let bytes = &data[segment.range.clone()];
-            let relative_start = bytes
+            let mut candidates = bytes
                 .windows(3)
-                .position(|value| value == [0xff, 0xd8, 0xff])?;
-            let (relative_end, width, height, components) = jpeg_extent(bytes, relative_start)?;
+                .enumerate()
+                .filter(|(_, value)| *value == [0xff, 0xd8, 0xff])
+                .filter_map(|(start, _)| {
+                    jpeg_extent(bytes, start).map(|(end, width, height, components)| {
+                        (start, end, width, height, components)
+                    })
+                });
+            let (relative_start, relative_end, width, height, components) = candidates.next()?;
+            if candidates.next().is_some() {
+                return None;
+            }
             Some(PreviewImage {
                 range: segment.range.start + relative_start..segment.range.start + relative_end,
                 width,
