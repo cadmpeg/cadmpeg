@@ -25,10 +25,14 @@ CADIR input bypasses codec detection and parses directly into `CadIr`. The parse
 
 The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`, so root-input limiting and the fused-context invariant hold once for every codec rather than per codec. `DecodeContext` owns the decode's monotonic state — budget counters, the depth gauge, the address-space registry, and record tickets — behind interior mutability; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_ir::decode`.
 
-The budget's acceptance envelope is versioned. `envelope-v2` freezes the
-envelope's `alloc_bytes` and `work` terms after Phase 2 calibration; their
-values are unchanged from `envelope-v1` because the migrated charge sites measure
-far inside them, so the bump records the provisional-to-frozen transition alone.
+The budget's acceptance envelope is versioned. `envelope-v3` freezes the
+envelope's `retained_bytes` term after Phase 3 calibration, completing the §5.2
+per-dimension freeze schedule; its value is unchanged because the measured
+retention charges sit far inside it, so the bump records the
+provisional-to-frozen transition alone. `envelope-v2` before it froze the
+envelope's `alloc_bytes` and `work` terms after Phase 2 calibration; those
+values were likewise unchanged from `envelope-v1` because the migrated charge
+sites measure far inside them.
 Phase 2 also froze the `max_alloc_bytes`/`max_work`/`max_depth` ceilings, but
 those live in the `desktop-v1`/`service-v1` profiles, not the envelope; their
 values are likewise unchanged, so the profile tags stay at `-v1` and the freeze

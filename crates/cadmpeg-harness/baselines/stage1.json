@@ -1,5 +1,5 @@
 {
-  "envelope_version": "envelope-v2",
+  "envelope_version": "envelope-v3",
   "peak_envelope_bytes": 1073741824,
   "wall_clock_ms": 10000,
   "entries": {

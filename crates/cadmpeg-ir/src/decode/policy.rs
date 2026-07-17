@@ -93,15 +93,15 @@ impl ResourceLimits {
         }
     }
 
-    /// Version tag for the desktop profile's ceilings (§5.2). Under the §5.2
-    /// per-dimension freeze schedule `max_input_bytes` (Phase 0B),
-    /// `max_decompressed_bytes_*` (Phase 1), and `max_alloc_bytes`/`max_work`/
-    /// `max_depth` (Phase 2) are frozen; only `max_retained_bytes` remains
-    /// provisional (Phase 3). The Phase 2 freeze left every ceiling value
-    /// unchanged — the migrated charge sites calibrated well inside them — so
-    /// the tag stays `desktop-v1`; it advances only when a ceiling *value*
-    /// changes. The `desktop_version_pins_its_ceilings` test pins the tag to
-    /// its values so a ceiling cannot change without one.
+    /// Version tag for the desktop profile's ceilings (§5.2). The §5.2
+    /// per-dimension freeze schedule is complete: `max_input_bytes` (Phase 0B),
+    /// `max_decompressed_bytes_*` (Phase 1), `max_alloc_bytes`/`max_work`/
+    /// `max_depth` (Phase 2), and `max_retained_bytes` (Phase 3) are all frozen.
+    /// The Phase 3 retained freeze, like the Phase 2 freeze before it, left every
+    /// ceiling value unchanged — the migrated charge sites calibrated well inside
+    /// them — so the tag stays `desktop-v1`; it advances only when a ceiling
+    /// *value* changes. The `desktop_version_pins_its_ceilings` test pins the tag
+    /// to its values so a ceiling cannot change without one.
     pub const DESKTOP_VERSION: &'static str = "desktop-v1";
 
     /// Version tag for the service profile's ceilings (§5.2), advanced whenever
@@ -201,8 +201,12 @@ impl Envelope {
     /// bytes-to-low-KiB cumulative `alloc_bytes` and tens-to-low-thousands
     /// `work` units per fixture — orders of magnitude inside these constants —
     /// so the freeze left every value unchanged. `decompressed_*` froze at
-    /// Phase 1; `retained_bytes` stays provisional until Phase 3. A false
-    /// reject on a legitimate file remains a calibration bug, not a contract.
+    /// Phase 1; `retained_bytes` froze at Phase 3, where the retained-byte charge
+    /// sites became real — the multi-space fidelity ledger charges blob retention
+    /// against this dimension, and the measured per-fixture retention sits far
+    /// inside `base`, so the freeze again left every value unchanged. The whole
+    /// §5.2 schedule is now frozen. A false reject on a legitimate file remains a
+    /// calibration bug, not a contract.
     pub(crate) const PLATFORM_DEFAULT: Envelope = Envelope {
         base: DimensionAmounts {
             alloc_bytes: 64 * MIB,
@@ -227,11 +231,13 @@ impl Envelope {
 
     /// Version tag for the platform default envelope's calibration constants
     /// (§5.2). No caller API overrides the envelope yet, so every decode runs
-    /// this version. `envelope-v2` records the Phase 2 freeze of the envelope's
-    /// `alloc_bytes` and `work` terms: they moved from provisional starting
-    /// points to frozen, calibration-defended values (their magnitudes were
-    /// unchanged — the migrated charge sites sit far inside them — but their
-    /// status did). The `max_depth` ceiling is not an envelope term; its Phase 2
+    /// this version. `envelope-v3` records the Phase 3 freeze of the envelope's
+    /// `retained_bytes` term: it moved from a provisional starting point to a
+    /// frozen, calibration-defended value (its magnitude was unchanged — the
+    /// measured retention charges sit far inside it — but its status did),
+    /// completing the §5.2 schedule. `envelope-v2` before it recorded the Phase 2
+    /// freeze of `alloc_bytes` and `work` on the same terms. The `max_depth`
+    /// ceiling is not an envelope term; its Phase 2
     /// freeze is recorded by `DESKTOP_VERSION`/`SERVICE_VERSION` and their
     /// pinning tests, not here.
     /// The tag advances when a `PLATFORM_DEFAULT` constant changes or when a
@@ -243,7 +249,7 @@ impl Envelope {
     /// profile tag is left free to signal value drift. The
     /// `envelope_version_pins_its_constants` test pins the tag to its values so
     /// a constant cannot change without advancing the tag.
-    pub(crate) const VERSION: &'static str = "envelope-v2";
+    pub(crate) const VERSION: &'static str = "envelope-v3";
 }
 
 #[cfg(test)]
@@ -288,7 +294,7 @@ mod tests {
 
     #[test]
     fn envelope_version_pins_its_constants() {
-        assert_eq!(Envelope::VERSION, "envelope-v2");
+        assert_eq!(Envelope::VERSION, "envelope-v3");
         let e = Envelope::PLATFORM_DEFAULT;
         assert_eq!(e.base.alloc_bytes, 64 * MIB);
         assert_eq!(e.base.decompressed_total, 16 * MIB);

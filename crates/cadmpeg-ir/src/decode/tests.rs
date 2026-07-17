@@ -1015,7 +1015,7 @@ fn finish_records_profile_and_envelope_versions_under_both_profiles() {
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &desktop()).unwrap();
     let report = ctx.finish(Ok(dummy_result())).unwrap().report;
     assert_eq!(report.profile_versions.profile, "desktop-v1");
-    assert_eq!(report.profile_versions.envelope, "envelope-v2");
+    assert_eq!(report.profile_versions.envelope, "envelope-v3");
     assert!(report.profile_versions.overrides.is_empty());
 
     // Service profile: its own version tag, still no overrides.
@@ -1023,7 +1023,7 @@ fn finish_records_profile_and_envelope_versions_under_both_profiles() {
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &service()).unwrap();
     let report = ctx.finish(Ok(dummy_result())).unwrap().report;
     assert_eq!(report.profile_versions.profile, "service-v1");
-    assert_eq!(report.profile_versions.envelope, "envelope-v2");
+    assert_eq!(report.profile_versions.envelope, "envelope-v3");
     assert!(report.profile_versions.overrides.is_empty());
 }
 
@@ -1038,7 +1038,7 @@ fn finish_records_custom_ceiling_overrides_against_the_default() {
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let report = ctx.finish(Ok(dummy_result())).unwrap().report;
     assert_eq!(report.profile_versions.profile, "custom");
-    assert_eq!(report.profile_versions.envelope, "envelope-v2");
+    assert_eq!(report.profile_versions.envelope, "envelope-v3");
     assert_eq!(
         report.profile_versions.overrides,
         vec!["max_work=10".to_string()]

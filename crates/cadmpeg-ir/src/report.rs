@@ -101,7 +101,7 @@ pub struct ProfileVersions {
     /// caller's ceilings match no named profile, or
     /// [`UNSTAMPED`](ProfileVersions::UNSTAMPED) before `finish` stamps it.
     pub profile: String,
-    /// The active acceptance-envelope version, e.g. `envelope-v2`, or
+    /// The active acceptance-envelope version, e.g. `envelope-v3`, or
     /// [`UNSTAMPED`](ProfileVersions::UNSTAMPED) before `finish` stamps it.
     pub envelope: String,
     /// Caller ceilings that differ from the default desktop profile, each as
@@ -116,7 +116,7 @@ impl ProfileVersions {
     /// The version-slot value stamped into a report that never reached
     /// [`DecodeContext::finish`](crate::decode::DecodeContext::finish). It is a
     /// self-identifying sentinel: a reader diffing two reports can tell an
-    /// un-stamped placeholder from a genuine `desktop-v1`/`envelope-v2`
+    /// un-stamped placeholder from a genuine `desktop-v1`/`envelope-v3`
     /// calibration, where an empty string would read as a real match.
     pub const UNSTAMPED: &'static str = "unstamped";
 }
@@ -343,13 +343,13 @@ mod tests {
         // reader can diff two reports across a library update.
         let report = report_with(ProfileVersions {
             profile: "custom".to_string(),
-            envelope: "envelope-v2".to_string(),
+            envelope: "envelope-v3".to_string(),
             overrides: vec!["max_work=10".to_string()],
         });
         let value: serde_json::Value = serde_json::to_value(&report).unwrap();
         let versions = &value["profile_versions"];
         assert_eq!(versions["profile"], "custom");
-        assert_eq!(versions["envelope"], "envelope-v2");
+        assert_eq!(versions["envelope"], "envelope-v3");
         assert_eq!(versions["overrides"], serde_json::json!(["max_work=10"]));
     }
 
