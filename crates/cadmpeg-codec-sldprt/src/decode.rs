@@ -304,6 +304,57 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
+    let feature_ids = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| &feature.id)
+        .collect::<std::collections::HashSet<_>>();
+    let parameter_ids = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| &parameter.id)
+        .collect::<std::collections::HashSet<_>>();
+    let incomplete_configuration_feature_snapshots = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            !feature_ids.is_empty()
+                && (configuration.feature_states.len() != feature_ids.len()
+                    || configuration
+                        .feature_states
+                        .keys()
+                        .any(|feature| !feature_ids.contains(feature)))
+        })
+        .count();
+    let incomplete_configuration_parameter_snapshots = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| {
+            !parameter_ids.is_empty()
+                && (configuration.parameter_values.len() != parameter_ids.len()
+                    || configuration
+                        .parameter_values
+                        .keys()
+                        .any(|parameter| !parameter_ids.contains(parameter)))
+        })
+        .count();
+    if incomplete_configuration_feature_snapshots > 0
+        || incomplete_configuration_parameter_snapshots > 0
+    {
+        report.losses.push(LossNote {
+            category: LossCategory::Other,
+            severity: Severity::Warning,
+            message: format!(
+                "{incomplete_configuration_feature_snapshots} configuration(s) lack a complete evaluated feature snapshot; {incomplete_configuration_parameter_snapshots} configuration(s) lack a complete evaluated parameter snapshot."
+            ),
+            provenance: None,
+        });
+    }
+
     let feature_names = ir
         .model
         .features
@@ -2689,6 +2740,69 @@ mod design_loss_tests {
         ] {
             assert!(report.losses.iter().any(|loss| loss.message == expected));
         }
+    }
+
+    #[test]
+    fn incomplete_configuration_snapshots_are_reported_as_design_losses() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature_id = FeatureId("feature".into());
+        ir.model.features.push(Feature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::History,
+            },
+            native_ref: None,
+        });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("parameter".into()),
+            owner: feature_id,
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "1".into(),
+            display: None,
+            value: Some(ParameterValue::Integer(1)),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Configuration".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: Vec::new(),
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        });
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "1 configuration(s) lack a complete evaluated feature snapshot; 1 configuration(s) lack a complete evaluated parameter snapshot."
+        }));
     }
 
     #[test]
