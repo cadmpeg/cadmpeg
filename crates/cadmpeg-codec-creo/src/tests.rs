@@ -2988,6 +2988,67 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
 }
 
 #[test]
+fn decode_retains_dimensions_from_repeated_feature_definition_ids() {
+    let definition = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
+        dimtab_ptr\0\xf8\x01\xf7\x58\xfb\xe2\
+        \xe0\x01type\0\x02\xe0\x01value\0\xe4\
+        \xe0\x01direct\0\x00\xe0\x01aux_value\0\x0f\
+        \xe0\x01ext_id\0\x2a\xe0\x00relat_ptr\0";
+    let mut payload = definition.to_vec();
+    payload.extend_from_slice(definition);
+    let data = build_prt(
+        "c",
+        &[
+            ("FeatDefs", payload),
+            ("MdlStatus", b"Extrude id 40\0".to_vec()),
+        ],
+    );
+    let scan = container::scan_bytes(data.clone());
+    assert_eq!(scan.feature_definitions.len(), 2);
+    assert!(scan
+        .feature_definitions
+        .iter()
+        .all(|definition| definition.id == 917));
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let namespace = result.ir.native.namespace("creo").expect("creo namespace");
+    let definition_ids = namespace.arenas["feature_definitions"]
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let sketch_ids = namespace.arenas["sketches"]
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(definition_ids.len(), 2);
+    assert_eq!(sketch_ids.len(), 2);
+    assert!(definition_ids
+        .iter()
+        .all(|id| id.starts_with("creo:featdefs:feature_definition#offset:")));
+    assert!(sketch_ids
+        .iter()
+        .all(|id| id.starts_with("creo:featdefs:sketch#offset:")));
+
+    assert_eq!(result.ir.model.parameters.len(), 2);
+    assert_ne!(
+        result.ir.model.parameters[0].id,
+        result.ir.model.parameters[1].id
+    );
+    assert_ne!(
+        result.ir.model.parameters[0].native_ref,
+        result.ir.model.parameters[1].native_ref
+    );
+    assert!(result.ir.model.parameters.iter().all(|parameter| {
+        parameter.value
+            == Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::features::Length(1.0),
+            ))
+    }));
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn scan_decodes_counted_featdefs_constraint_relations() {
     let mut payload = b"feat_defs_40\0relat_ptr\0\xf4\x04\xf8\x04\xf7\x6a\xfb\xe2\
         \xe0\x01id\0\xe0\x01used\0\xe0\x01type\0\xf1\xf7\x6a\xe2\

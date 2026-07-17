@@ -833,7 +833,10 @@ typed value unresolved without removing its identity. Repeated local identifiers
 occurrence-qualified parameter identities and names in source order, but no
 constraint binds through that ambiguous identifier. Neutral parameter identity includes the
 feature-definition identifier, owning model-feature identifier, and `ext_id`;
-different definitions may reuse the same local `ext_id`. In positional dimension rows, a bare
+different definitions may reuse the same local `ext_id`. Repeated stored
+feature-definition identifiers use source-offset-qualified native definition
+and sketch identities; their parameter rows use occurrence-qualified identities
+in source order. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
 Type `0x03` has radius display semantics.
