@@ -406,7 +406,8 @@ ledger_level = 0
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/decode.rs"
 status = "legacy"
-reason = "Orchestrates the decode using `View` for the header but assembles the IR from leaf `&[u8]` outputs; 15 `Vec::with_capacity` sites size IR arenas from record counts that are trusted (post-scan) but not routed through `ctx.exact_vec`; object recursion carries a manual depth; no module deny lint."
+semantic_builder = true
+reason = "Orchestrates the decode using `View` for the header but assembles the IR from leaf `&[u8]` outputs; 15 `Vec::with_capacity` sites size IR arenas from record counts that are trusted (post-scan) but not routed through `ctx.exact_vec`; object recursion carries a manual depth; no module deny lint. The `semantic_builder` flag is the Phase-4B capability signal: the module threads one `Builder` over its typed loss channel so every unsupported-family omission and brep-topology fallback resolves its `Transfer` there. It is orthogonal to the resource-safety `status`, which stays `legacy`."
 input_spaces = ["root", "rhino_object_record"]
 fuzz_targets = ["rhino_object_record", "rhino_container"]
 charges = ["alloc_bytes", "work", "retained_bytes"]

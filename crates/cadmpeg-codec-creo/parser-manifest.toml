@@ -261,14 +261,15 @@ ledger_level = 1
 # `Transfer::fallback` and every incomplete-frame / unplaced-sketch omission
 # resolves a `Transfer::omitted`, so no fallback or drop reaches the model
 # without surrendering its `LossNote`. No hostile read, no `.window()` egress,
-# and no budget charge of its own. Its migrated presence is the doc section 7
-# capability-matrix signal that creo has adopted the typed lossy builder, gating
-# the `no_silent_fallback` stage-2 oracle.
+# and no budget charge of its own. Its `semantic_builder` flag is the doc
+# section 7 capability-matrix signal that creo has adopted the typed lossy
+# builder, gating the `no_silent_fallback` stage-2 oracle.
 [[module]]
 path = "crates/cadmpeg-codec-creo/src/builder.rs"
 status = "migrated"
+semantic_builder = true
 input_spaces = []
-fuzz_targets = []
+fuzz_targets = ["creo_strict_salvage"]
 charges = []
 cost_model = "no budget charge; typed lossy construction over the decode loss channel, output proportional to the resolved-boundary count"
 window_egress = []

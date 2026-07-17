@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stage-2 gating: the §7 capability matrix, resolved per codec from its
-//! `parser-manifest.toml`.
+//! Stage-2 gating adoption: the §7 capability matrix, resolved per codec from
+//! its `parser-manifest.toml`.
 //!
 //! Stage-2 oracles gate **progressively, per codec**, as the capability each
 //! one tests lands — not as a Phase-4 big bang (doc §7, §10 Phase 4C). This
@@ -25,50 +25,44 @@
 //!
 //! The first four rows are in force for every codec from 0B/Phase 1/Phase 2
 //! onward (all landed, doc §10), so [`CodecStage2Status`] reports them adopted
-//! unconditionally. Phase 4C completes gating by turning on the last three rows
-//! **per codec, keyed on the manifest**:
+//! unconditionally. Byte-accounting turns on when the codec's ledger lands
+//! (Phase 3C/3E, keyed on `ledger_level >= 1`). Phase 4C completes gating by
+//! turning on the **last two rows** per codec, keyed on the manifest:
 //!
-//! - **byte-accounting validation** once the codec carries an L1/L2 ledger
-//!   module (`ledger_level >= 1`);
 //! - **disposition validation** once the codec issues and resolves record
 //!   tickets (a migrated [`TICKET_MODULE`] entry, Phase 3D);
 //! - **no silent fallback/drop** once the codec constructs lossy IR through the
-//!   typed builder (a migrated [`BUILDER_MODULE`] entry, Phase 4B).
+//!   platform typed builder (a module flagged `semantic_builder`, Phase 4B).
 //!
-//! A row stays off where the capability is genuinely not adopted; the manifest
-//! is the single source of that truth, so a codec advancing (or a module
-//! regressing to `legacy`) moves the gate with it, never a hand-maintained
-//! list here.
+//! The no-silent-fallback row keys on the `semantic_builder` capability flag,
+//! not on a module basename: a codec adopts the typed builder wherever its
+//! Phase-4B boundaries live (`builder.rs` for f3d/creo/sldprt, `b5_transfer.rs`
+//! for catia, `decode.rs` for rhino), and the flag is orthogonal to a module's
+//! resource-migration `status`. A row stays off where the capability is
+//! genuinely not adopted; the manifest is the single source of that truth, so a
+//! codec advancing (or a capability being withdrawn) moves the gate with it,
+//! never a hand-maintained list here.
 //!
-//! # Residual
+//! # Scope
 //!
-//! The runtime predicates ([`byte_accounting`], [`disposition_validation`])
-//! judge one already-produced [`DecodeReport`]; wiring them across the
-//! subprocess boundary so the stage-2 gate runs the full corpus under isolation
-//! needs the child runner to serialize the decode report back, which the
-//! stage-1 wire protocol does not yet carry. Until then the adoption matrix is
-//! gated deterministically from the manifests and the predicates run in-process
-//! against the curated fixtures.
+//! The rows this module resolves are adoption bookkeeping: which oracle a codec
+//! is accountable to, derived from its manifest. The runtime oracle that would
+//! judge one produced [`DecodeReport`](cadmpeg_ir::DecodeReport) against the
+//! corpus under subprocess isolation is not wired here, because the stage-1 wire
+//! protocol does not carry the decode report back from the child runner. Until
+//! that protocol carries it, the adoption matrix is the gate: the ratchet in
+//! `tests/stage2_gates.rs` pins each codec's gating rows to its manifest.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use cadmpeg_ir::{DecodeReport, LedgerLevel, LossCode};
-
 use crate::execute::CODEC_IDS;
-use crate::oracle::OracleStatus;
 
 /// The `src`-relative basename of the module a codec adds when it issues and
 /// resolves record tickets at the commit boundary (doc §6.2 / §10 Phase 3D).
 /// A migrated entry with this basename is the manifest signal that disposition
 /// validation has landed.
 pub const TICKET_MODULE: &str = "tickets.rs";
-
-/// The `src`-relative basename of the module a codec adds when lossy IR is
-/// constructed only through the typed builder (doc §10 Phase 4B). A migrated
-/// entry with this basename is the manifest signal that the no-silent-fallback
-/// oracle can gate.
-pub const BUILDER_MODULE: &str = "builder.rs";
 
 /// The seven stage-2 oracle rows of the §7 capability matrix, in matrix order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -105,19 +99,6 @@ impl Stage2Oracle {
         Stage2Oracle::DispositionValidation,
         Stage2Oracle::NoSilentFallback,
     ];
-
-    /// The stable label used in gate output and baselines.
-    pub fn label(self) -> &'static str {
-        match self {
-            Stage2Oracle::NoBypass => "no_bypass",
-            Stage2Oracle::ResourceClassification => "resource_classification",
-            Stage2Oracle::StrictTruncation => "strict_truncation",
-            Stage2Oracle::BudgetEnforcement => "budget_enforcement",
-            Stage2Oracle::ByteAccounting => "byte_accounting",
-            Stage2Oracle::DispositionValidation => "disposition_validation",
-            Stage2Oracle::NoSilentFallback => "no_silent_fallback",
-        }
-    }
 
     /// The capability whose landing turns this oracle on.
     pub fn capability(self) -> Capability {
@@ -168,7 +149,8 @@ pub struct CodecStage2Status {
     /// A migrated [`TICKET_MODULE`] entry is present. Adopts
     /// [`Capability::TicketIssuance`].
     pub ticket_issuance: bool,
-    /// A migrated [`BUILDER_MODULE`] entry is present. Adopts
+    /// Any module is flagged `semantic_builder` — the codec constructs its
+    /// lossy IR through the platform typed builder. Adopts
     /// [`Capability::TypedLossyBuilder`].
     pub typed_lossy_builder: bool,
 }
@@ -208,33 +190,51 @@ struct ManifestModule {
     migrated: bool,
     /// The declared `ledger_level`, defaulting to 0 when absent.
     ledger_level: u8,
+    /// The module declares `semantic_builder = true`: it constructs lossy IR
+    /// through the platform typed builder (doc §10 Phase 4B). Orthogonal to
+    /// `migrated`, which tracks resource-safety graduation.
+    semantic_builder: bool,
 }
 
 /// Parse the `[[module]]` rows a stage-2 derivation needs from manifest text.
 ///
 /// Textual, matching the platform's manifest-completeness parser: a manifest is
 /// simple enough that a line scanner is more legible than a full TOML dependency
-/// here, and the fields read (`path`, `status`, `ledger_level`) are flat scalars.
+/// here, and the fields read (`path`, `status`, `ledger_level`,
+/// `semantic_builder`) are flat scalars. Lines inside a TOML multi-line (`"""`)
+/// string are skipped so a `key = value` spelling in prose cannot masquerade as
+/// a structural directive.
 fn parse_modules(text: &str) -> Vec<ManifestModule> {
     let mut modules = Vec::new();
-    let mut current: Option<(String, bool, u8)> = None;
-    let flush = |slot: &mut Option<(String, bool, u8)>, out: &mut Vec<ManifestModule>| {
-        if let Some((basename, migrated, ledger_level)) = slot.take() {
+    let mut current: Option<(String, bool, u8, bool)> = None;
+    let flush = |slot: &mut Option<(String, bool, u8, bool)>, out: &mut Vec<ManifestModule>| {
+        if let Some((basename, migrated, ledger_level, semantic_builder)) = slot.take() {
             out.push(ManifestModule {
                 basename,
                 migrated,
                 ledger_level,
+                semantic_builder,
             });
         }
     };
+    let mut in_multiline = false;
     for line in text.lines() {
+        // A line with an odd number of `"""` delimiters opens or closes a
+        // multi-line basic string; its body is prose, never structure.
+        if line.matches("\"\"\"").count() % 2 == 1 {
+            in_multiline = !in_multiline;
+            continue;
+        }
+        if in_multiline {
+            continue;
+        }
         let line = line.trim();
         if line.starts_with('#') {
             continue;
         }
         if line == "[[module]]" {
             flush(&mut current, &mut modules);
-            current = Some((String::new(), false, 0));
+            current = Some((String::new(), false, 0, false));
             continue;
         }
         let Some((key, value)) = line.split_once('=') else {
@@ -253,6 +253,7 @@ fn parse_modules(text: &str) -> Vec<ManifestModule> {
             }
             "status" => entry.1 = value == "migrated",
             "ledger_level" => entry.2 = value.parse().unwrap_or(0),
+            "semantic_builder" => entry.3 = value == "true",
             _ => {}
         }
     }
@@ -275,7 +276,7 @@ pub fn status_from_manifest_text(codec_id: &str, text: &str) -> CodecStage2Statu
         codec_id: codec_id.to_string(),
         ledger_level,
         ticket_issuance: has_migrated(TICKET_MODULE),
-        typed_lossy_builder: has_migrated(BUILDER_MODULE),
+        typed_lossy_builder: modules.iter().any(|m| m.semantic_builder),
     }
 }
 
@@ -310,87 +311,9 @@ pub fn statuses(root: &Path) -> std::io::Result<Vec<CodecStage2Status>> {
         .collect()
 }
 
-/// Byte-accounting oracle over one successful decode report (§6.1).
-///
-/// A codec that adopted ledger accounting must emit a validated source-fidelity
-/// ledger at or above `adopted_level`. A missing ledger, a level below the
-/// adopted one, or a conservation-invariant violation is a
-/// [`OracleStatus::Fail`].
-pub fn byte_accounting(report: &DecodeReport, adopted_level: u8) -> OracleStatus {
-    let Some(fidelity) = report.source_fidelity.as_ref() else {
-        return OracleStatus::Fail;
-    };
-    if level_rank(fidelity.level) < adopted_level {
-        return OracleStatus::Fail;
-    }
-    match fidelity.validate() {
-        Ok(()) => OracleStatus::Pass,
-        Err(_) => OracleStatus::Fail,
-    }
-}
-
-/// Disposition oracle over one successful decode report (§6.2).
-///
-/// A [`LossCode::TransferAccounting`] note is the codec reporting that a
-/// committed record's disposition failed accounting validation against the
-/// ledger, native unknowns, or the losses. Its presence is a
-/// [`OracleStatus::Fail`]; a report free of it passes.
-pub fn disposition_validation(report: &DecodeReport) -> OracleStatus {
-    let accounted = report
-        .losses
-        .iter()
-        .all(|loss| loss.code != LossCode::TransferAccounting);
-    if accounted {
-        OracleStatus::Pass
-    } else {
-        OracleStatus::Fail
-    }
-}
-
-/// Rank a ledger level as the `u8` the status derivation compares against.
-fn level_rank(level: LedgerLevel) -> u8 {
-    match level {
-        LedgerLevel::L0 => 0,
-        LedgerLevel::L1 => 1,
-        LedgerLevel::L2 => 2,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cadmpeg_ir::{LossCategory, LossNote, ProfileVersions, Severity, SourceFidelity};
-
-    fn report_with(losses: Vec<LossNote>, fidelity: Option<SourceFidelity>) -> DecodeReport {
-        DecodeReport {
-            format: "test".to_string(),
-            container_only: false,
-            geometry_transferred: false,
-            losses,
-            notes: Vec::new(),
-            retention_degraded: false,
-            profile_versions: ProfileVersions::default(),
-            source_fidelity: fidelity,
-        }
-    }
-
-    fn loss(code: LossCode) -> LossNote {
-        LossNote {
-            code,
-            category: LossCategory::Other,
-            severity: Severity::Warning,
-            message: String::new(),
-            provenance: None,
-        }
-    }
-
-    #[test]
-    fn oracle_labels_are_stable_and_unique() {
-        let mut labels: Vec<&str> = Stage2Oracle::ALL.iter().map(|o| o.label()).collect();
-        labels.sort_unstable();
-        labels.dedup();
-        assert_eq!(labels.len(), Stage2Oracle::ALL.len());
-    }
 
     #[test]
     fn base_capabilities_always_adopted() {
@@ -483,16 +406,41 @@ ledger_level = 0
     }
 
     #[test]
-    fn disposition_fails_on_transfer_accounting_loss() {
-        let clean = report_with(vec![loss(LossCode::CarrierSummary)], None);
-        assert_eq!(disposition_validation(&clean), OracleStatus::Pass);
-        let broken = report_with(vec![loss(LossCode::TransferAccounting)], None);
-        assert_eq!(disposition_validation(&broken), OracleStatus::Fail);
+    fn semantic_builder_flag_adopts_regardless_of_module_name_or_status() {
+        // The typed builder lives in a `legacy`-status, non-`builder.rs` module
+        // (as in catia's `b5_transfer.rs` and rhino's `decode.rs`); the
+        // capability flag still turns the row on.
+        let text = r#"
+[[module]]
+path = "crates/cadmpeg-codec-x/src/b5_transfer.rs"
+status = "legacy"
+ledger_level = 0
+semantic_builder = true
+"#;
+        let status = status_from_manifest_text("x", text);
+        assert!(status.typed_lossy_builder);
+        assert!(status
+            .gating_oracles()
+            .contains(&Stage2Oracle::NoSilentFallback));
     }
 
     #[test]
-    fn byte_accounting_fails_without_a_ledger() {
-        let report = report_with(Vec::new(), None);
-        assert_eq!(byte_accounting(&report, 1), OracleStatus::Fail);
+    fn parse_skips_multiline_string_bodies() {
+        // A `status = "migrated"` spelling inside a multi-line prose string must
+        // not be read as a structural directive.
+        let text = r#"
+[[module]]
+path = "crates/cadmpeg-codec-x/src/leaf.rs"
+status = "legacy"
+legacy_reason = """
+This module is legacy. A stray directive in prose:
+status = "migrated"
+semantic_builder = true
+"""
+ledger_level = 0
+"#;
+        let status = status_from_manifest_text("x", text);
+        assert!(!status.typed_lossy_builder);
+        assert_eq!(status.ledger_level, 0);
     }
 }

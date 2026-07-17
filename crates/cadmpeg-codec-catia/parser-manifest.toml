@@ -174,7 +174,8 @@ migrated_means = "The session path (`scan_view`) charges the whole-image directo
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/b5_transfer.rs"
 status = "legacy"
-legacy_reason = "Transfers reference-closed `b5 03` topology into `CadIr`, walking the `B5Graph` node/edge sets through `HashMap`/`HashSet` indexes and expanding NURBS knot vectors with `iter::repeat_n`. It consumes already-parsed typed records (not raw bytes) but performs an unbudgeted graph traversal and knot expansion with no `DepthGuard` on the face/loop/coedge descent and no work charge on the traversal; migrates once `b5.rs` yields charged records and the traversal charges nodes+edges."
+semantic_builder = true
+legacy_reason = "Transfers reference-closed `b5 03` topology into `CadIr`, walking the `B5Graph` node/edge sets through `HashMap`/`HashSet` indexes and expanding NURBS knot vectors with `iter::repeat_n`. It consumes already-parsed typed records (not raw bytes) but performs an unbudgeted graph traversal and knot expansion with no `DepthGuard` on the face/loop/coedge descent and no work charge on the traversal; migrates once `b5.rs` yields charged records and the traversal charges nodes+edges. The `semantic_builder` flag is the Phase-4B capability signal: every referenced surface carrier resolves a `Transfer` through the module's `Builder` sink, so a fallback to an opaque carrier cannot enter the model without surrendering its loss note. It is orthogonal to the resource-safety `status`, which stays `legacy`."
 input_spaces = ["active_brep"]
 fuzz_targets = ["catia_container"]
 charges = ["work", "depth"]

@@ -51,11 +51,12 @@ ledger_level = 0
 # an accountable reduction or census through the platform `Builder`. `decode.rs`
 # routes every geometry- and container-report loss through this module, so the
 # bare `losses.push` spelling that would let a drop go unrecorded is not written
-# on the transfer path. The migrated basename `builder.rs` is the section 7
-# capability signal that gates the `no_silent_fallback` stage-2 oracle for f3d.
+# on the transfer path. Its `semantic_builder` flag is the section 7 capability
+# signal that gates the `no_silent_fallback` stage-2 oracle for f3d.
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/builder.rs"
 status = "migrated"
+semantic_builder = true
 input_spaces = []
 fuzz_targets = ["f3d_container", "f3d_decode_modes"]
 charges = []

@@ -294,12 +294,13 @@ ledger_level = 1
 # stands in for an absent source field, and `census` threads an accountable
 # aggregate note; so no fallback or drop reaches the model without surrendering
 # its `LossNote`. No hostile read, no `.window()` egress, and no budget charge
-# of its own. Its migrated presence is the doc section 7 capability-matrix signal
-# that sldprt has adopted the typed lossy builder, gating the
+# of its own. Its `semantic_builder` flag is the doc section 7 capability-matrix
+# signal that sldprt has adopted the typed lossy builder, gating the
 # `no_silent_fallback` stage-2 oracle.
 [[module]]
 path = "crates/cadmpeg-codec-sldprt/src/builder.rs"
 status = "migrated"
+semantic_builder = true
 input_spaces = []
 fuzz_targets = ["sldprt_decode_modes"]
 charges = []
