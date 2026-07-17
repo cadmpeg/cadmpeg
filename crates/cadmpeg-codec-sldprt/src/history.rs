@@ -1279,6 +1279,19 @@ pub(crate) fn parameters_with_unresolved_references(
         .count()
 }
 
+pub(crate) fn parameters_with_incoherent_dependencies(
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+) -> usize {
+    let mut projected = parameters.to_vec();
+    populate_parameter_dependencies(&mut projected, feature_names);
+    parameters
+        .iter()
+        .zip(projected)
+        .filter(|(actual, projected)| actual.dependencies != projected.dependencies)
+        .count()
+}
+
 fn definite_parameter_reference(identifier: &ExpressionIdentifier) -> bool {
     identifier.quoted
         || identifier.value.contains('@')
@@ -4881,15 +4894,7 @@ fn sync_neutral_parameters(
             &feature_names,
         );
     }
-    let mut projected_dependencies = parameters.clone();
-    populate_parameter_dependencies(&mut projected_dependencies, &feature_names);
-    if ir
-        .model
-        .parameters
-        .iter()
-        .zip(&projected_dependencies)
-        .any(|(actual, projected)| actual.dependencies != projected.dependencies)
-    {
+    if parameters_with_incoherent_dependencies(&parameters, &feature_names) > 0 {
         return Err(CodecError::Malformed(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));

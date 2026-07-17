@@ -392,7 +392,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         .iter()
         .map(|parameter| (&parameter.id, (&parameter.owner, parameter.ordinal)))
         .collect::<BTreeMap<_, _>>();
-    let incoherent_parameter_dependencies = ir
+    let invalid_parameter_dependency_order = ir
         .model
         .parameters
         .iter()
@@ -413,15 +413,20 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             })
         })
         .count();
+    let incoherent_parameter_dependencies = crate::history::parameters_with_incoherent_dependencies(
+        &ir.model.parameters,
+        &feature_names,
+    );
     if incomplete_parameters > 0
         || unresolved_parameter_references > 0
+        || invalid_parameter_dependency_order > 0
         || incoherent_parameter_dependencies > 0
     {
         report.losses.push(LossNote {
             category: LossCategory::Other,
             severity: Severity::Warning,
             message: format!(
-                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {incoherent_parameter_dependencies} parameter record(s) contain missing or non-preceding dependency edges."
+                "{incomplete_parameters} parameter(s) lack an evaluated scalar; {unresolved_parameter_references} parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; {invalid_parameter_dependency_order} parameter record(s) contain missing or non-preceding dependency edges; {incoherent_parameter_dependencies} parameter record(s) have dependency edges inconsistent with their expressions."
             ),
             provenance: None,
         });
@@ -3094,11 +3099,24 @@ mod design_loss_tests {
             pmi: None,
             native_ref: None,
         });
+        ir.model.parameters.push(DesignParameter {
+            id: ParameterId("omitted-dependency".into()),
+            owner: owner.clone(),
+            ordinal: 6,
+            name: "D6".into(),
+            expression: "D0 + 1mm".into(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Length(Length(2.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
         for (id, ordinal, name) in [
-            ("empty", 6, ""),
-            ("shared-a", 7, "Shared"),
-            ("shared-b", 8, "Shared"),
-            ("ordinal", 8, "Unique"),
+            ("empty", 7, ""),
+            ("shared-a", 8, "Shared"),
+            ("shared-b", 9, "Shared"),
+            ("ordinal", 9, "Unique"),
         ] {
             ir.model.parameters.push(DesignParameter {
                 id: ParameterId(format!("identity:{id}")),
@@ -3126,7 +3144,7 @@ mod design_loss_tests {
 
         assert!(report.losses.iter().any(|loss| {
             loss.message
-                == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; 1 parameter record(s) contain missing or non-preceding dependency edges."
+                == "1 parameter(s) lack an evaluated scalar; 3 parameter expression(s) contain unresolved, ambiguous, or malformed parameter references; 1 parameter record(s) contain missing or non-preceding dependency edges; 2 parameter record(s) have dependency edges inconsistent with their expressions."
         }));
         assert!(report.losses.iter().any(|loss| {
             loss.message
