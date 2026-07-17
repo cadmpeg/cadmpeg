@@ -4514,8 +4514,15 @@ fn outer_object_graph_uses_the_unique_length_closing_child_frame() {
     let graph = crate::object_graph::parse(&object_graph_from_records(&records))
         .expect("length-closing object payload");
     assert_eq!(graph.records.len(), 2);
-    assert_eq!(graph.records[0].owner_ref, Some(2));
-    assert_eq!(graph.records[0].class_ref, Some(3));
+    assert_eq!(graph.records[0].owner_ref, None);
+    assert_eq!(graph.records[0].class_ref, None);
+    assert_eq!(
+        &graph.records[0].head[graph.records[0].head.len() - 2..],
+        [
+            crate::object_graph::HeadToken::Reference(2),
+            crate::object_graph::HeadToken::Reference(3),
+        ]
+    );
 }
 
 #[test]
@@ -4582,6 +4589,24 @@ fn outer_object_graph_keeps_adjacent_compact_head_references_separate() {
             crate::object_graph::HeadToken::Reference(4),
         ]
     );
+}
+
+#[test]
+fn outer_object_graph_does_not_slide_head_roles_across_null_handles() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0x82, 0xff, 0xff, 0xff, 0xff, 0x83],
+        &[0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("null-interrupted object head");
+    let record = &graph.records[0];
+
+    assert_eq!(record.owner_ref, Some(2));
+    assert_eq!(record.class_ref, None);
+    assert_eq!(record.storage_ref, None);
+    assert!(matches!(
+        record.head.last(),
+        Some(crate::object_graph::HeadToken::Reference(3))
+    ));
 }
 
 #[test]

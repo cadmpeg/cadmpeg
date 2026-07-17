@@ -388,17 +388,23 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             return None;
         }
         let head = decode_head(&data[head_start..child]);
-        let references: Vec<u32> = if matches!(head.get(1), Some(HeadToken::Separator)) {
-            head[2..]
-                .iter()
-                .filter_map(|token| match token {
-                    HeadToken::Reference(value) => Some(*value),
-                    _ => None,
-                })
-                .collect()
+        let roles = if matches!(head.get(1), Some(HeadToken::Separator)) {
+            &head[2..]
         } else {
-            Vec::new()
+            &[]
         };
+        let owner_ref = match roles.first() {
+            Some(HeadToken::Reference(value)) => Some(*value),
+            _ => None,
+        };
+        let class_ref = owner_ref.and_then(|_| match roles.get(1) {
+            Some(HeadToken::Reference(value)) => Some(*value),
+            _ => None,
+        });
+        let storage_ref = class_ref.and_then(|_| match roles.get(2) {
+            Some(HeadToken::Reference(value)) => Some(*value),
+            _ => None,
+        });
         let payload = decode_payload(&data[child + 6..record_end])?;
         let subtype = classify(&payload.fields);
         records.push(ObjectRecord {
@@ -407,10 +413,10 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             total_len: record_len,
             lead: data.get(head_start).copied().unwrap_or(0),
             head,
-            owner_ref: references.first().copied(),
-            class_ref: references.get(1).copied(),
+            owner_ref,
+            class_ref,
             class_name: None,
-            storage_ref: references.get(2).copied(),
+            storage_ref,
             payload,
             subtype,
         });
