@@ -4512,12 +4512,12 @@ fn resolved_trim_vertex_coordinates(
         return BTreeMap::new();
     };
     let radii = resolved_section_radii(definition);
-    let mut coordinates = definition
+    let mut coordinate_candidates = definition
         .trim_vertices
         .iter()
         .flat_map(|table| &table.rows)
         .filter_map(|vertex| Some((vertex.vertex_id, vertex.section_coordinates?)))
-        .collect::<BTreeMap<_, _>>();
+        .collect::<Vec<_>>();
     for trim in definition
         .trim_entities
         .iter()
@@ -4546,17 +4546,7 @@ fn resolved_trim_vertex_coordinates(
             if (candidate_radius - radius).abs() > 1e-9 * radial_scale {
                 continue;
             }
-            let compatible = coordinates.get(&vertex).is_none_or(|stored| {
-                let scale = stored
-                    .iter()
-                    .chain(&candidate)
-                    .map(|value| value.abs())
-                    .fold(1.0, f64::max);
-                (stored[0] - candidate[0]).hypot(stored[1] - candidate[1]) <= 1e-9 * scale
-            });
-            if compatible {
-                coordinates.entry(vertex).or_insert(candidate);
-            }
+            coordinate_candidates.push((vertex, candidate));
         }
     }
     let mut incident = BTreeMap::<u32, Vec<u32>>::new();
@@ -4573,9 +4563,6 @@ fn resolved_trim_vertex_coordinates(
         }
     }
     for (vertex, entities) in incident {
-        if coordinates.contains_key(&vertex) {
-            continue;
-        }
         let [first_id, second_id] = entities.as_slice() else {
             continue;
         };
@@ -4599,9 +4586,11 @@ fn resolved_trim_vertex_coordinates(
             })
             .or_else(|| intersect_tangent_section_arcs(&first.geometry, &second.geometry))
         {
-            coordinates.insert(vertex, coordinate);
+            coordinate_candidates.push((vertex, coordinate));
         }
     }
+    let (mut coordinates, mut ambiguous_vertices) =
+        reconciled_section_coordinates(coordinate_candidates);
     loop {
         let mut additions = Vec::new();
         for trim in definition
@@ -4645,8 +4634,13 @@ fn resolved_trim_vertex_coordinates(
             };
             additions.push((trim.vertices[missing_index], stored[1 - matched]));
         }
+        let (additions, conflicts) = reconciled_section_coordinates(additions);
+        ambiguous_vertices.extend(conflicts);
         let mut changed = false;
         for (vertex, coordinate) in additions {
+            if ambiguous_vertices.contains(&vertex) {
+                continue;
+            }
             if let std::collections::btree_map::Entry::Vacant(entry) = coordinates.entry(vertex) {
                 entry.insert(coordinate);
                 changed = true;
@@ -4657,6 +4651,33 @@ fn resolved_trim_vertex_coordinates(
         }
     }
     coordinates
+}
+
+fn reconciled_section_coordinates(
+    candidates: impl IntoIterator<Item = (u32, [f64; 2])>,
+) -> (BTreeMap<u32, [f64; 2]>, BTreeSet<u32>) {
+    let mut grouped = BTreeMap::<u32, Vec<[f64; 2]>>::new();
+    for (vertex, coordinate) in candidates {
+        grouped.entry(vertex).or_default().push(coordinate);
+    }
+    let mut coordinates = BTreeMap::new();
+    let mut ambiguous = BTreeSet::new();
+    for (vertex, values) in grouped {
+        let first = values[0];
+        let scale = values
+            .iter()
+            .flatten()
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        if values.iter().all(|candidate| {
+            (candidate[0] - first[0]).hypot(candidate[1] - first[1]) <= 1e-9 * scale
+        }) {
+            coordinates.insert(vertex, first);
+        } else {
+            ambiguous.insert(vertex);
+        }
+    }
+    (coordinates, ambiguous)
 }
 
 fn trimmed_section_segment_geometry(
@@ -14453,6 +14474,28 @@ mod resolved_sketch_tests {
         assert_eq!(
             resolved_trim_vertex_coordinates(&trimmed, &BTreeMap::new()),
             BTreeMap::from([(1, [0.0, -2.0]), (2, [-2.0, 0.0])])
+        );
+        let mut conflicting_vertex = trimmed.clone();
+        conflicting_vertex.trim_vertices = Some(crate::feature::FeatureTrimVertexTable {
+            rows: vec![
+                crate::feature::FeatureTrimVertex {
+                    vertex_id: 1,
+                    entities: [42, 43],
+                    section_coordinates: Some([0.0, -2.0]),
+                    offset: 31,
+                },
+                crate::feature::FeatureTrimVertex {
+                    vertex_id: 1,
+                    entities: [42, 44],
+                    section_coordinates: Some([9.0, 9.0]),
+                    offset: 32,
+                },
+            ],
+            offset: 30,
+        });
+        assert_eq!(
+            resolved_trim_vertex_coordinates(&conflicting_vertex, &BTreeMap::new()),
+            BTreeMap::from([(2, [-2.0, 0.0])])
         );
         if let crate::feature::FeatureSavedEntity::Arc(arc) = &mut trimmed
             .saved_section

@@ -1465,6 +1465,8 @@ count is the number of hash buckets, including empty buckets, rather than the
 number of entity entries.
 
 `vert_tab` chains bind a solved trim-vertex identifier to two incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A solved trim vertex is the intersection of its two defining `segtab` carriers evaluated from `var_arr` or the joined saved-section geometry; its identifier differs from a `segtab` point identifier. A neutral sketch line uses its `ent_tab` start and end intersections, not the untrimmed carrier endpoints.
+All stored, saved-section, and propagated coordinates for one trim-vertex
+identifier must agree. Conflicting candidates leave that vertex unresolved.
 When the two incident `segtab` rows have exactly one common endpoint
 `pointid`, that point's complete `var_arr` coordinate is the trim-vertex
 coordinate. This join applies to line-line, line-arc, and arc-arc incidences.
