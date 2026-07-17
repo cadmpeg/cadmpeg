@@ -2143,7 +2143,7 @@ fn trim_entity_table(
         }
         cursor += 1;
     }
-    (!rows.is_empty()).then(|| FeatureTrimEntityTable {
+    Some(FeatureTrimEntityTable {
         declared_count: header.map(|header| header.0),
         entity_ref: header.map(|header| header.1),
         entry_ref: header.map(|header| header.2),
@@ -2240,7 +2240,6 @@ fn positional_trim_entity_table(
 ) -> Option<FeatureTrimEntityTable> {
     let (table, declared_count, rows_start, region_end) =
         positional_table_region(payload, start, end, table_class, next_table_class)?;
-    (declared_count > 0).then_some(())?;
     let valid_ids = segments.map(|table| {
         table
             .rows
@@ -2250,18 +2249,20 @@ fn positional_trim_entity_table(
     });
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
-    (rows_start..region_end)
-        .any(|offset| {
-            if payload.get(offset) != Some(&psb::token::ENTITY_REF) {
-                return false;
-            }
-            psb::reference_id(payload, offset + 1).is_ok_and(|(class, after_reference)| {
-                class == entry_class
-                    && payload.get(after_reference..after_reference + 2) == Some(&[0, 0xe3])
-            })
+    let has_entry_class = (rows_start..region_end).any(|offset| {
+        if payload.get(offset) != Some(&psb::token::ENTITY_REF) {
+            return false;
+        }
+        psb::reference_id(payload, offset + 1).is_ok_and(|(class, after_reference)| {
+            class == entry_class
+                && payload.get(after_reference..after_reference + 2) == Some(&[0, 0xe3])
         })
-        .then_some(())?;
-    let mut cursor = rows_start;
+    });
+    let mut cursor = if declared_count == 0 || has_entry_class {
+        rows_start
+    } else {
+        region_end
+    };
     while cursor < region_end {
         if cursor == rows_start || payload.get(cursor.saturating_sub(1)) != Some(&0xe3) {
             cursor += 1;
@@ -2300,7 +2301,7 @@ fn positional_trim_entity_table(
         }
         cursor += 1;
     }
-    (!rows.is_empty()).then(|| FeatureTrimEntityTable {
+    Some(FeatureTrimEntityTable {
         declared_count: Some(declared_count),
         entity_ref: Some(table_class),
         entry_ref: Some(entry_class),
@@ -2411,7 +2412,7 @@ fn trim_vertex_table(
         }
         cursor = next + 1;
     }
-    (!rows.is_empty()).then_some(FeatureTrimVertexTable {
+    Some(FeatureTrimVertexTable {
         declared_count: header.map(|header| header.0),
         entity_ref: header.map(|header| header.1),
         entry_ref: header.map(|header| header.2),
@@ -2432,7 +2433,6 @@ fn positional_trim_vertex_table(
     let (table_class, entry_class) = classes;
     let (table, declared_count, rows_start, region_end) =
         positional_table_region(payload, start, end, table_class, None)?;
-    (declared_count > 0).then_some(())?;
     let valid_entities = entities.map(|table| {
         table
             .rows
@@ -2491,7 +2491,7 @@ fn positional_trim_vertex_table(
         }
         cursor = next.saturating_add(1).max(cursor + 1);
     }
-    (!rows.is_empty()).then_some(FeatureTrimVertexTable {
+    Some(FeatureTrimVertexTable {
         declared_count: Some(declared_count),
         entity_ref: Some(table_class),
         entry_ref: Some(entry_class),
@@ -6746,6 +6746,35 @@ mod tests {
     }
 
     #[test]
+    fn positional_trim_entity_table_retains_an_empty_extent() {
+        let payload = b"prefix\xf8\x00\xf7\x42\xfb\xe2\
+            \xf8\x01\xf7\x44\xfb\xe2";
+
+        let entities =
+            positional_trim_entity_table(payload, 0, payload.len(), 66, 67, Some(68), None)
+                .expect("empty positional ent_tab");
+
+        assert_eq!(entities.declared_count, Some(0));
+        assert_eq!(entities.entity_ref, Some(66));
+        assert_eq!(entities.entry_ref, Some(67));
+        assert!(entities.rows.is_empty());
+        assert!(entities.solved_external_ids.is_empty());
+    }
+
+    #[test]
+    fn positional_trim_entity_table_withholds_rows_without_the_entry_class() {
+        let payload = b"prefix\xf8\x01\xf7\x42\xfb\xe2\
+            \x00\xe3\x09\x00\x03\x04\xf6\x00";
+
+        let entities = positional_trim_entity_table(payload, 0, payload.len(), 66, 67, None, None)
+            .expect("positional ent_tab header");
+
+        assert_eq!(entities.declared_count, Some(1));
+        assert!(entities.rows.is_empty());
+        assert!(entities.solved_external_ids.is_empty());
+    }
+
+    #[test]
     fn positional_order_table_replays_prototype_and_following_rows() {
         let payload = b"prefix\xf8\x03\xf7\x42\xfb\xe2\xf7\x43\
             \x09\x01\x00\xf1\xf7\x42\xe2\
@@ -6829,6 +6858,20 @@ mod tests {
         assert_eq!(vertices.rows.len(), 1);
         assert_eq!(vertices.rows[0].vertex_id, 3);
         assert_eq!(vertices.rows[0].entities, [9, 10]);
+    }
+
+    #[test]
+    fn positional_trim_vertex_table_retains_an_empty_extent() {
+        let payload = b"prefix\xf8\x00\xf7\x44\xfb\xe2";
+
+        let vertices =
+            positional_trim_vertex_table(payload, 0, payload.len(), (68, 69), None, None, None)
+                .expect("empty positional vert_tab");
+
+        assert_eq!(vertices.declared_count, Some(0));
+        assert_eq!(vertices.entity_ref, Some(68));
+        assert_eq!(vertices.entry_ref, Some(69));
+        assert!(vertices.rows.is_empty());
     }
 
     #[test]
