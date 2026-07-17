@@ -147,7 +147,7 @@ Header invariants:
 
 - Every header word in either width is little-endian.
 - The entity-count and flags words carry stream metadata, not model-space quantities. In both widths, the entity-count word is the RecordTable index of the first owned record: `asmheader` and the stream's saved top-level entities (bodies, free faces, and free wire edges) occupy indices `0..entity_count`, no record in that range is referenced by an earlier record, and the record at index `entity_count` is the first record referenced from that range.
-- The flags word's bit 0 marks a history partition on `.smbh` streams in both widths. Bit 1 is set in both stream forms; bits 1 and above carry no assigned semantic meaning.
+- The flags word's bit 0 marks a history partition on `.smbh` streams in both widths. Bit 1 is set in both stream forms and bits 2 and above are zero; bits 1 and above carry no assigned semantic meaning.
 - `scale`, `resabs`, and `resnor` are kernel metadata. `scale` is not a coordinate transform. Fusion `BinaryFile8` streams use `scale = 60.0`, `resabs = 1e-6`, and `resnor = 1e-10`; ASM-227 `BinaryFile4` streams use `scale = 50.0` with the same tolerances; an ASM-229 `BinaryFile4` stream uses `scale = 90.0`.
 
 ---
@@ -758,7 +758,7 @@ Color attribute records include `rgb_color-st-attrib` (float r,g,b in 0..1), `tr
 
 `.protein` assets are **nested ZIP archives** carrying per-asset `AssetData/*.bin` value streams plus XML schemas (`CommonSchema`, `GenericSchema`, `PhysMatSchema`, `PrismOpaqueSchema`, …). `InstanceProperties.bin` and `DefinitionIteratorProperties.bin` have a 16-byte prefix followed by 136-byte pages. Each page is a record-start page, continuation page, or `0xffffffff` terminal page with a u16 used length. A logical record is the concatenation of its start-page and continuation-page payloads.
 
-A `GenericSchema` `InstanceProperties` value block stores its property carriers at fixed offsets in schema-id lexicographic order, preceded by one leading default-diffuse RGBA f64 quadruple that corresponds to no schema property. When the connected-asset flag is set, the connected-asset block shifts every carrier by its length. The f64 slot at offset +61 is `generic_bump_amount`, alongside the reflectivity and refraction carriers.
+A `GenericSchema` `InstanceProperties` value block stores its property carriers at fixed offsets in schema-id lexicographic order, preceded by one leading default-diffuse RGBA f64 quadruple at +9 that corresponds to no schema property. Assigned carriers, at value-block offsets: f64 `generic_ao_distance` at +47, f64 `generic_bump_amount` at +61, connected-asset flag at +102, `generic_diffuse` RGBA as four f64 at +112, presence tag `0x0c` at +171 with f64 `generic_reflectivity_at_0deg` at +175, presence tag at +197 with f64 `generic_refraction_index` at +201, and f64 `generic_glossiness` at +209. When the connected-asset flag is set, counted length-prefixed connection strings follow it and shift every later carrier by their total length.
 
 A design BulkStream material assignment targets the nearest preceding component-prefixed entity ID. Its physical-material token joins to the `.protein` `PhysMatSchema` asset. Its visual appearance GUID is the GUID immediately before the fixed visual-appearance marker GUID. A physical-material default-appearance clause stores associated GenericSchema and Prism appearance asset references.
 
