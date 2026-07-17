@@ -6408,7 +6408,7 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
     let source_kind_at = expression_end + 9;
     let (source_kind, source_kind_end) = lp_utf16(payload, source_kind_at)?;
     if u32_at(payload, source_kind_end) != Some(0)
-        || prefix_value != design_parameter_prefix(&source_kind)
+        || !valid_design_parameter_prefix(prefix_value, &source_kind)
     {
         return None;
     }
@@ -6432,7 +6432,11 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
         }
     };
     let evaluated_value = f64_at(payload, name_end)?;
-    if payload.get(name_end + 8..) != Some(&[0, 1, 19, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    let tail = payload.get(name_end + 8..)?;
+    if tail.len() != 12
+        || tail[0..2] != [0, 1]
+        || tail[3..] != [0; 9]
+        || !valid_design_parameter_family(prefix_value, &source_kind, tail[2])
         || expression.is_empty()
         || source_kind.is_empty()
         || name.is_empty()
@@ -6478,6 +6482,18 @@ pub(crate) fn design_parameter_prefix(source_kind: &str) -> u64 {
     }
 }
 
+pub(crate) fn valid_design_parameter_prefix(prefix: u64, source_kind: &str) -> bool {
+    prefix == 6 || (prefix == 0 && source_kind != "TangencyWeight")
+}
+
+fn valid_design_parameter_family(prefix: u64, source_kind: &str, tail: u8) -> bool {
+    match tail {
+        16 => prefix == 6,
+        19 => prefix == design_parameter_prefix(source_kind),
+        _ => false,
+    }
+}
+
 /// Decode the fixed-width owner frame for every owned Design parameter.
 pub fn decode_parameter_owners(
     scan: &ContainerScan,
@@ -6509,8 +6525,14 @@ pub fn decode_parameter_owners(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let at = usize::try_from(header.byte_offset).ok();
-        let frame = at.and_then(|at| at.checked_add(104).and_then(|end| bytes.get(at..end)));
-        let Some(mut owner) = frame.and_then(parse_parameter_owner) else {
+        let owner = at.and_then(|at| {
+            [104, 101].into_iter().find_map(|length| {
+                at.checked_add(length)
+                    .and_then(|end| bytes.get(at..end))
+                    .and_then(parse_parameter_owner)
+            })
+        });
+        let Some(mut owner) = owner else {
             continue;
         };
         owner.id = format!(
@@ -6527,8 +6549,7 @@ pub fn decode_parameter_owners(
 
 fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
     let (class_tag, after_tag) = lp_ascii(frame, 0)?;
-    if frame.len() != 104
-        || after_tag != 7
+    if after_tag != 7
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
         || frame.get(11..19) != Some(&[0; 8])
@@ -6536,36 +6557,95 @@ fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
         || frame.get(24) != Some(&1)
         || frame.get(29..35) != Some(&[0; 6])
         || frame.get(39) != Some(&0)
-        || frame.get(48) != Some(&1)
-        || frame.get(53..59) != Some(&[0; 6])
-        || frame.get(63..67) != Some(&[0; 4])
-        || frame.get(67) != Some(&1)
-        || frame.get(72..78) != Some(&[0; 6])
-        || frame.get(78) != Some(&1)
-        || frame.get(80) != Some(&0)
-        || frame.get(81) != Some(&1)
-        || frame.get(86..93) != Some(&[0; 7])
-        || frame.get(93) != Some(&1)
-        || frame.get(98..104) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let (
+        evaluated_value,
+        parameter_marker,
+        parameter_index,
+        parameter_tail,
+        owned_ordinal,
+        repeated_scope_marker,
+        repeated_scope_index,
+        repeated_scope_tail,
+        variant_marker,
+        variant,
+        variant_tail,
+        companion_marker,
+        companion_index,
+        companion_tail,
+        final_scope_marker,
+        final_scope_index,
+        final_scope_tail,
+    ) = match frame.len() {
+        104 => (
+            f64_at(frame, 40)?,
+            48,
+            49,
+            53..59,
+            59,
+            67,
+            68,
+            72..78,
+            78,
+            79,
+            80,
+            81,
+            82,
+            86..93,
+            93,
+            94,
+            98..104,
+        ),
+        101 if frame.get(40) == Some(&1) => (
+            f64::from(u32_at(frame, 41)?),
+            45,
+            46,
+            50..56,
+            56,
+            64,
+            65,
+            69..75,
+            75,
+            76,
+            77,
+            78,
+            79,
+            83..90,
+            90,
+            91,
+            95..101,
+        ),
+        _ => return None,
+    };
+    if frame.get(parameter_marker) != Some(&1)
+        || frame.get(parameter_tail) != Some(&[0; 6])
+        || frame.get(owned_ordinal + 4..repeated_scope_marker) != Some(&[0; 4])
+        || frame.get(repeated_scope_marker) != Some(&1)
+        || frame.get(repeated_scope_tail) != Some(&[0; 6])
+        || frame.get(variant_marker) != Some(&1)
+        || frame.get(variant_tail) != Some(&0)
+        || frame.get(companion_marker) != Some(&1)
+        || frame.get(companion_tail) != Some(&[0; 7])
+        || frame.get(final_scope_marker) != Some(&1)
+        || frame.get(final_scope_tail) != Some(&[0; 6])
     {
         return None;
     }
     let record_index = u32_at(frame, 7)?;
-    let parameter_record_index = u32_at(frame, 49)?;
-    let companion_record_index = u32_at(frame, 82)?;
+    let parameter_record_index = u32_at(frame, parameter_index)?;
+    let companion_record_index = u32_at(frame, companion_index)?;
     let owner_first = parameter_record_index == record_index.checked_add(1)?
         && companion_record_index == record_index.checked_add(2)?;
     let parameter_first = record_index == parameter_record_index.checked_add(1)?
         && companion_record_index == record_index.checked_add(1)?;
     let scope_record_index = u32_at(frame, 25)?;
-    if u32_at(frame, 68)? != scope_record_index
-        || u32_at(frame, 94)? != scope_record_index
+    if u32_at(frame, repeated_scope_index)? != scope_record_index
+        || u32_at(frame, final_scope_index)? != scope_record_index
         || !(owner_first || parameter_first)
+        || !evaluated_value.is_finite()
     {
-        return None;
-    }
-    let evaluated_value = f64_at(frame, 40)?;
-    if !evaluated_value.is_finite() {
         return None;
     }
     Some(DesignParameterOwner {
@@ -6576,10 +6656,10 @@ fn parse_parameter_owner(frame: &[u8]) -> Option<DesignParameterOwner> {
         scope_record_index,
         local_ordinal: u32_at(frame, 35)?,
         evaluated_value,
-        evaluated_value_offset: 40,
+        evaluated_value_offset: if frame.len() == 104 { 40 } else { 41 },
         parameter_record_index,
-        owned_ordinal: u32_at(frame, 59)?,
-        variant: *frame.get(79)?,
+        owned_ordinal: u32_at(frame, owned_ordinal)?,
+        variant: *frame.get(variant)?,
         companion_record_index,
     })
 }
@@ -12876,7 +12956,7 @@ mod relation_tests {
         invalid_tangency[22..30].copy_from_slice(&0u64.to_le_bytes());
         assert!(parse_design_parameter(&invalid_tangency).is_none());
 
-        let mut invalid_distance = parameter_record(
+        let mut revised_distance = parameter_record(
             Some(44),
             "Width / 2",
             "AlongDistance",
@@ -12884,8 +12964,22 @@ mod relation_tests {
             "d12",
             3.0,
         );
-        invalid_distance[22..30].copy_from_slice(&6u64.to_le_bytes());
+        revised_distance[22..30].copy_from_slice(&6u64.to_le_bytes());
+        let tail = revised_distance.len() - 12;
+        revised_distance[tail + 2] = 16;
+        assert_eq!(
+            parse_design_parameter(&revised_distance)
+                .expect("revision-six feature parameter")
+                .prefix_value,
+            6
+        );
+
+        let mut invalid_distance = revised_distance.clone();
+        invalid_distance[22..30].copy_from_slice(&7u64.to_le_bytes());
         assert!(parse_design_parameter(&invalid_distance).is_none());
+
+        revised_distance[tail + 2] = 19;
+        assert!(parse_design_parameter(&revised_distance).is_none());
     }
 
     #[test]
@@ -12927,6 +13021,32 @@ mod relation_tests {
         frame
     }
 
+    fn counted_parameter_owner_frame() -> Vec<u8> {
+        let mut frame = vec![0; 101];
+        frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+        frame[4..7].copy_from_slice(b"316");
+        frame[7..11].copy_from_slice(&44u32.to_le_bytes());
+        frame[19] = 1;
+        frame[20..24].copy_from_slice(&1u32.to_le_bytes());
+        frame[24] = 1;
+        frame[25..29].copy_from_slice(&12u32.to_le_bytes());
+        frame[35..39].copy_from_slice(&2u32.to_le_bytes());
+        frame[40] = 1;
+        frame[41..45].copy_from_slice(&6u32.to_le_bytes());
+        frame[45] = 1;
+        frame[46..50].copy_from_slice(&45u32.to_le_bytes());
+        frame[56..60].copy_from_slice(&9u32.to_le_bytes());
+        frame[64] = 1;
+        frame[65..69].copy_from_slice(&12u32.to_le_bytes());
+        frame[75] = 1;
+        frame[76] = 1;
+        frame[78] = 1;
+        frame[79..83].copy_from_slice(&46u32.to_le_bytes());
+        frame[90] = 1;
+        frame[91..95].copy_from_slice(&12u32.to_le_bytes());
+        frame
+    }
+
     #[test]
     fn parameter_owner_frame_has_repeated_scope_and_both_record_orders() {
         let parsed = parse_parameter_owner(&parameter_owner_frame()).unwrap();
@@ -12950,6 +13070,16 @@ mod relation_tests {
         let mut malformed = parameter_owner_frame();
         malformed[94..98].copy_from_slice(&13u32.to_le_bytes());
         assert!(parse_parameter_owner(&malformed).is_none());
+    }
+
+    #[test]
+    fn counted_parameter_owner_uses_typed_u32_scalar() {
+        let parsed = parse_parameter_owner(&counted_parameter_owner_frame())
+            .expect("counted parameter owner");
+        assert_eq!(parsed.evaluated_value, 6.0);
+        assert_eq!(parsed.evaluated_value_offset, 41);
+        assert_eq!(parsed.parameter_record_index, 45);
+        assert_eq!(parsed.companion_record_index, 46);
     }
 
     #[test]

@@ -1559,7 +1559,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && owner.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && owner.variant <= 1
             && owner.evaluated_value.is_finite()
-            && owner.evaluated_value_offset == owner.byte_offset + 40
+            && matches!(
+                owner.evaluated_value_offset.checked_sub(owner.byte_offset),
+                Some(40 | 41)
+            )
             && (owner_first || parameter_first)
             && scopes_by_index.contains_key(&(native_stream, owner.scope_record_index))
             && record_indices.contains(&(native_stream, owner.parameter_record_index))
@@ -1998,7 +2001,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && parameter.unit.as_ref().is_none_or(|unit| !unit.is_empty())
             && parameter.unit.is_some() == parameter.unit_offset.is_some()
             && parameter.evaluated_value.is_finite()
-            && parameter.prefix_value == design::design_parameter_prefix(&parameter.source_kind)
+            && design::valid_design_parameter_prefix(
+                parameter.prefix_value,
+                &parameter.source_kind,
+            )
             && parameter.kind == expected_kind
             && owner_shape_valid
             && offsets_ordered

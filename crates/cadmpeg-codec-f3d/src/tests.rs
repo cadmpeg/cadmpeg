@@ -8559,7 +8559,7 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
     f3d_native_mut(&mut ir).design_parameters.push(parameter);
     assert!(crate::validate_native(&ir).is_empty());
 
-    f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 6;
+    f3d_native_mut(&mut ir).design_parameters[0].prefix_value = 7;
     assert!(crate::validate_native(&ir).iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some("generated:design-parameter#0")
