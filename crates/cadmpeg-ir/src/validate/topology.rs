@@ -678,6 +678,32 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     }
                 }
             }
+            ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
+                for member in construction
+                    .base_profile
+                    .iter()
+                    .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
+                {
+                    if !ids.curves.contains(&member.curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &member.curve.0);
+                    }
+                    if let Some(surface) = &member.data.surface {
+                        if !ids.surfaces.contains(&surface.0) {
+                            ref_error(findings, &procedural.id.0, "surface", &surface.0);
+                        }
+                    }
+                }
+                for curve in std::iter::once(&construction.base_path)
+                    .chain(construction.entries.iter().map(|entry| &entry.path))
+                    .flat_map(|path| path.curve.iter().chain(path.auxiliaries.iter()))
+                    .chain(construction.direction_curve.iter())
+                    .chain(construction.trailing_curve.iter())
+                {
+                    if !ids.curves.contains(&curve.0) {
+                        ref_error(findings, &procedural.id.0, "curve", &curve.0);
+                    }
+                }
+            }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {

@@ -6213,6 +6213,15 @@ fn native_procedural_surface_definition(
         ProceduralSurfaceDefinition::G2Blend { construction } => {
             encode_native_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
+        ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
+            encode_native_revision_compound_loft(
+                bytes,
+                target,
+                procedural,
+                construction,
+                solved_cache,
+            )?;
+        }
         ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
             encode_native_revision_g2_blend(bytes, target, procedural, construction, solved_cache)?;
         }
@@ -8664,6 +8673,179 @@ fn encode_native_vertex_blend(
     Ok(())
 }
 
+/// Emit one revision-gated compound-loft scale block: counted profile
+/// members, nullable path curve with optional endpoints, counted auxiliary
+/// curves, and the tail integer.
+fn native_revision_cl_scale(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    profile: &[cadmpeg_ir::geometry::LoftProfileMember],
+    path: &cadmpeg_ir::geometry::LoftPath,
+) -> Result<(), CodecError> {
+    native_i64(
+        bytes,
+        i64::try_from(profile.len()).map_err(|_| {
+            CodecError::NotImplemented("compound-loft member count exceeds i64".into())
+        })?,
+    );
+    for member in profile {
+        native_i64(bytes, member.type_code);
+        let curve = native_loft_curve_in_range(target, &member.curve, None)?;
+        native_nurbs_curve(bytes, &curve)?;
+        let endpoints = member.endpoints.ok_or_else(|| {
+            CodecError::Malformed(
+                "revision compound-loft members require optional endpoints".into(),
+            )
+        })?;
+        for value in endpoints {
+            native_optional_f64(bytes, value);
+        }
+        if let Some(surface_id) = &member.data.surface {
+            let surface = target
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == *surface_id)
+                .ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "compound loft references missing surface {surface_id}"
+                    ))
+                })?;
+            native_embedded_surface_with_bounds(
+                bytes,
+                &surface.geometry,
+                &member.data.support_bounds,
+            )?;
+        } else {
+            native_ident(bytes, "null_surface")?;
+        }
+        if let Some(pcurve) = &member.data.pcurve {
+            native_nurbs_pcurve_block(bytes, pcurve)?;
+        } else {
+            native_ident(bytes, "nullbs")?;
+        }
+        bytes.push(native_bool(member.data.first_flag));
+        native_i64(bytes, member.data.asm_extension);
+        native_loft_subdata(bytes, &member.data.subdata)?;
+        bytes.push(native_bool(member.data.direction.is_some()));
+        if let Some(direction) = member.data.direction {
+            native_vector(bytes, [direction.x, direction.y, direction.z]);
+        }
+    }
+    if let Some(path_curve) = &path.curve {
+        let curve = native_loft_curve_in_range(target, path_curve, None)?;
+        native_nurbs_curve(bytes, &curve)?;
+        if let Some(endpoints) = path.endpoints {
+            for value in endpoints {
+                native_optional_f64(bytes, value);
+            }
+        }
+    } else {
+        native_ident(bytes, "null_curve")?;
+    }
+    native_i64(
+        bytes,
+        i64::try_from(path.auxiliaries.len()).map_err(|_| {
+            CodecError::NotImplemented("compound-loft auxiliary count exceeds i64".into())
+        })?,
+    );
+    for auxiliary in &path.auxiliaries {
+        let auxiliary = native_loft_curve_in_range(target, auxiliary, None)?;
+        native_nurbs_curve(bytes, &auxiliary)?;
+    }
+    native_i64(bytes, path.flag);
+    Ok(())
+}
+
+fn encode_native_revision_compound_loft(
+    bytes: &mut Vec<u8>,
+    target: &CadIr,
+    procedural: &cadmpeg_ir::geometry::ProceduralSurface,
+    construction: &cadmpeg_ir::geometry::RevisionCompoundLoftConstruction,
+    solved_cache: &NurbsSurface,
+) -> Result<(), CodecError> {
+    if construction.revision <= 0 {
+        return Err(CodecError::Malformed(
+            "revision-gated cl_loft_spl_sur requires a positive revision".into(),
+        ));
+    }
+    if construction.kind != 0 {
+        return Err(CodecError::NotImplemented(
+            "revision-gated cl_loft_spl_sur defines only the kind-zero payload".into(),
+        ));
+    }
+    native_surface_base(bytes, "spline")?;
+    bytes.push(0x0f);
+    native_ident(bytes, "cl_loft_spl_sur")?;
+    native_i64(bytes, construction.revision);
+    native_enum(bytes, construction.tail_enum);
+    native_nurbs_surface(bytes, solved_cache)?;
+    native_f64(bytes, procedural.cache_fit_tolerance.unwrap_or(0.0) / 10.0);
+    for discontinuities in &construction.discontinuities {
+        native_i64(
+            bytes,
+            i64::try_from(discontinuities.len()).map_err(|_| {
+                CodecError::NotImplemented("discontinuity count exceeds i64".into())
+            })?,
+        );
+        for value in discontinuities {
+            native_f64(bytes, *value);
+        }
+    }
+    bytes.push(native_bool(construction.tail_flag));
+    native_revision_cl_scale(
+        bytes,
+        target,
+        &construction.base_profile,
+        &construction.base_path,
+    )?;
+    native_i64(
+        bytes,
+        i64::try_from(construction.entries.len()).map_err(|_| {
+            CodecError::NotImplemented("compound-loft entry count exceeds i64".into())
+        })?,
+    );
+    for entry in &construction.entries {
+        native_revision_cl_scale(bytes, target, &entry.profile, &entry.path)?;
+        native_f64(bytes, entry.parameter);
+    }
+    for flag in construction.flags {
+        bytes.push(native_bool(flag));
+    }
+    native_i64(bytes, construction.kind);
+    for flag in construction.kind_flags {
+        bytes.push(native_bool(flag));
+    }
+    native_i64(bytes, construction.selector);
+    match (
+        construction.selector,
+        &construction.direction,
+        &construction.direction_curve,
+    ) {
+        (0, Some(direction), None) => {
+            native_vector(bytes, [direction.x, direction.y, direction.z]);
+        }
+        (selector, None, Some(curve)) if selector != 0 => {
+            let curve = native_loft_curve_in_range(target, curve, None)?;
+            native_nurbs_curve(bytes, &curve)?;
+        }
+        _ => {
+            return Err(CodecError::Malformed(
+                "compound-loft direction conflicts with its selector".into(),
+            ));
+        }
+    }
+    for value in construction.interval {
+        native_optional_f64(bytes, value);
+    }
+    if let Some(curve) = &construction.trailing_curve {
+        let curve = native_loft_curve_in_range(target, curve, None)?;
+        native_nurbs_curve(bytes, &curve)?;
+    }
+    bytes.push(0x10);
+    Ok(())
+}
+
 fn encode_native_revision_g2_blend(
     bytes: &mut Vec<u8>,
     target: &CadIr,
@@ -8812,17 +8994,35 @@ fn encode_native_variable_blend(
                 "single-radius variable blend carries two-radii payloads".into(),
             ));
         }
-        if let Some(tail) = &construction.single_radius_tail {
-            match &tail.selector {
-                LoftBridgeToken::Integer(value) => native_enum(bytes, *value),
-                _ => {
-                    return Err(CodecError::NotImplemented(
-                        "variable single-radius selector must be an integer".into(),
+        match (
+            construction.single_radius_selector,
+            &construction.single_radius_tail,
+        ) {
+            (Some(0), None) => native_enum(bytes, 0),
+            (selector, Some(tail)) => {
+                let value = match &tail.selector {
+                    LoftBridgeToken::Integer(value) => *value,
+                    _ => {
+                        return Err(CodecError::NotImplemented(
+                            "variable single-radius selector must be an integer".into(),
+                        ));
+                    }
+                };
+                if selector.is_some_and(|stored| stored != value) {
+                    return Err(CodecError::Malformed(
+                        "variable-blend single-radius selector conflicts with its tail".into(),
                     ));
                 }
+                native_enum(bytes, value);
+                for parameter in tail.parameters {
+                    native_f64(bytes, parameter);
+                }
             }
-            for parameter in tail.parameters {
-                native_f64(bytes, parameter);
+            (None, None) => {}
+            _ => {
+                return Err(CodecError::Malformed(
+                    "variable-blend single-radius selector conflicts with its tail".into(),
+                ));
             }
         }
     }

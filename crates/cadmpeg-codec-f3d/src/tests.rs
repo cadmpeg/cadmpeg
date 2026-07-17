@@ -4383,6 +4383,12 @@ fn synthetic_variable_blend_smbh_with_selector(
     surface.push(0x15);
     surface.extend_from_slice(&i64::from(two_radii).to_le_bytes());
     append_generated_variable_blend_value(&mut surface, [0.25, 0.75], [1.5, 2.5]);
+    if !two_radii {
+        if let Some(selector) = chamfer_selector {
+            surface.push(0x15);
+            surface.extend_from_slice(&selector.to_le_bytes());
+        }
+    }
     if two_radii {
         append_generated_variable_blend_value(&mut surface, [0.1, 0.9], [3.5, 4.5]);
         if let Some(selector) = chamfer_selector {
@@ -16202,6 +16208,127 @@ fn generated_revision_offset_with_inline_untyped_support_decodes() {
         push_revision_surface_tail(surface);
     });
     assert_revision_surface_round_trip(smbh, "offset");
+}
+
+#[test]
+fn generated_single_radius_variable_blend_consumes_zero_selector() {
+    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(&synthetic_variable_blend_smbh_with_selector(
+                "srf_srf_v_bl_spl_sur",
+                false,
+                Some(0),
+            ))),
+            &DecodeOptions::default(),
+        )
+        .expect("single-radius selector-zero decode");
+    let ProceduralSurfaceDefinition::VariableBlend { construction } =
+        &decoded.ir.model.procedural_surfaces[0].definition
+    else {
+        panic!("expected variable blend")
+    };
+    assert_eq!(construction.single_radius_selector, Some(0));
+    assert!(construction.single_radius_tail.is_none());
+    let expected = construction.clone();
+    let mut source_less = decoded.ir;
+    source_less.source = None;
+    source_less.set_native_unknowns("f3d", &[]).unwrap();
+    let mut encoded = Vec::new();
+    F3dCodec
+        .encode(&source_less, &mut encoded)
+        .expect("selector-zero source-less encode");
+    let round_trip = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .expect("selector-zero round trip");
+    assert!(matches!(
+        &round_trip.ir.model.procedural_surfaces[0].definition,
+        ProceduralSurfaceDefinition::VariableBlend { construction }
+            if construction == &expected
+    ));
+}
+
+fn push_revision_cl_scale(surface: &mut Vec<u8>, with_path: bool) {
+    // One member: type, curve, endpoints, support, pcurve, flags, subdata.
+    t_long(surface, 1);
+    t_long(surface, 1);
+    surface.extend_from_slice(&generated_curve_block());
+    surface.push(0x0a);
+    t_dbl(surface, 0.0);
+    surface.push(0x0a);
+    t_dbl(surface, 1.0);
+    t_ident(surface, "null_surface");
+    t_ident(surface, "nullbs");
+    surface.push(0x0b);
+    t_long(surface, -1);
+    // Subdata type 213 with one row and one column: leading pair plus
+    // `column_count + 1` trailing pairs in the revision encoding.
+    t_long(surface, 213);
+    t_long(surface, 1);
+    t_long(surface, 1);
+    for value in [0.0, 1.0, -0.5, 0.25, 0.75, 0.75] {
+        t_dbl(surface, value);
+    }
+    surface.push(0x0b);
+    if with_path {
+        surface.extend_from_slice(&generated_curve_block());
+        surface.push(0x0a);
+        t_dbl(surface, 0.0);
+        surface.push(0x0a);
+        t_dbl(surface, 1.0);
+    } else {
+        t_ident(surface, "null_curve");
+    }
+    t_long(surface, 0);
+    t_long(surface, -1);
+}
+
+#[test]
+fn generated_revision_compound_loft_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("cl_loft_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        push_revision_cl_scale(surface, true);
+        t_long(surface, 2);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 0.0);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 1.0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        surface.push(0x0b);
+        surface.push(0x0b);
+    });
+    assert_revision_surface_round_trip(smbh, "revision_compound_loft");
+}
+
+#[test]
+fn generated_revision_compound_loft_trailing_curve_round_trips() {
+    let smbh = synthetic_revision_surface_smbh("cl_loft_spl_sur", |surface| {
+        push_revision_surface_tail(surface);
+        push_revision_cl_scale(surface, false);
+        t_long(surface, 1);
+        push_revision_cl_scale(surface, false);
+        t_dbl(surface, 1.0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        surface.push(0x0b);
+        surface.push(0x0b);
+        t_long(surface, 0);
+        t_vec(surface, [0.0, 0.0, 1.0]);
+        surface.push(0x0a);
+        t_dbl(surface, 1.0);
+        surface.push(0x0a);
+        t_dbl(surface, 0.0);
+        surface.extend_from_slice(&generated_curve_block());
+    });
+    assert_revision_surface_round_trip(smbh, "revision_compound_loft");
 }
 
 #[test]

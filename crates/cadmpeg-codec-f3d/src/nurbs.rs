@@ -729,6 +729,8 @@ pub enum DecodedProceduralSurfaceDefinition {
     Loft(EmbeddedLoft),
     /// Native compound-loft graph with embedded carriers.
     CompoundLoft(Box<EmbeddedCompoundLoft>),
+    /// Revision-gated compound-loft graph with embedded carriers.
+    RevisionCompoundLoft(Box<EmbeddedRevisionCompoundLoft>),
     /// Native scaled compound-loft graph with embedded carriers.
     ScaledCompoundLoft(Box<EmbeddedScaledCompoundLoft>),
     /// Native skinned surface graph with embedded carriers.
@@ -885,6 +887,7 @@ pub struct EmbeddedVariableBlend {
     pub(crate) second_value: Option<cadmpeg_ir::geometry::VariableBlendValue>,
     pub(crate) chamfer_selector: Option<i64>,
     pub(crate) chamfer: Option<Box<cadmpeg_ir::geometry::VariableBlendChamfer>>,
+    pub(crate) single_radius_selector: Option<i64>,
     pub(crate) single_radius_tail: Option<cadmpeg_ir::geometry::VariableBlendSingleRadiusTail>,
     pub(crate) u_range: [Option<f64>; 2],
     pub(crate) v_range: [Option<f64>; 2],
@@ -1268,6 +1271,25 @@ pub(crate) struct EmbeddedLoftPath {
     pub(crate) endpoints: Option<[Option<f64>; 2]>,
     pub(crate) auxiliaries: Vec<NurbsCurve>,
     pub(crate) flag: i64,
+}
+
+/// Embedded revision-gated compound loft before stable IR ids are assigned.
+pub struct EmbeddedRevisionCompoundLoft {
+    pub(crate) revision: i64,
+    pub(crate) tail_enum: i64,
+    pub(crate) discontinuities: [Vec<f64>; 6],
+    pub(crate) tail_flag: bool,
+    pub(crate) base_profile: Vec<EmbeddedLoftProfileMember>,
+    pub(crate) base_path: EmbeddedLoftPath,
+    pub(crate) entries: Vec<EmbeddedLoftSectionEntry>,
+    pub(crate) flags: [bool; 2],
+    pub(crate) kind: i64,
+    pub(crate) kind_flags: [bool; 2],
+    pub(crate) selector: i64,
+    pub(crate) direction: Option<Vector3>,
+    pub(crate) direction_curve: Option<NurbsCurve>,
+    pub(crate) interval: [Option<f64>; 2],
+    pub(crate) trailing_curve: Option<NurbsCurve>,
 }
 
 pub(crate) struct EmbeddedLoftSectionEntry {
@@ -2139,9 +2161,181 @@ fn decode_loft_spl_sur(
     })
 }
 
+/// One revision-gated compound-loft scale block: counted profile members,
+/// nullable path curve with optional endpoints, counted auxiliary BS3
+/// curves, and one tail integer.
+fn decode_revision_cl_scale(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+    active_bytes: &[u8],
+    tables: &SubtypeTables,
+) -> Option<(Vec<EmbeddedLoftProfileMember>, EmbeddedLoftPath)> {
+    let member_count = usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    let member_count = bounded_len(
+        member_count as u64,
+        1 + int_width,
+        bytes.len().saturating_sub(*position),
+    )?;
+    let mut profile = Vec::with_capacity(member_count);
+    for _ in 0..member_count {
+        let type_code = take_tagged_int(bytes, position, 0x04, int_width)?;
+        let curve = decode_embedded_base_curve_resolving_refs(
+            bytes,
+            position,
+            int_width,
+            active_bytes,
+            tables,
+        )?;
+        let endpoints = [
+            take_optional_range_value(bytes, position)?,
+            take_optional_range_value(bytes, position)?,
+        ];
+        let data =
+            decode_revision_loft_profile_data(bytes, position, int_width, active_bytes, tables)?;
+        profile.push(EmbeddedLoftProfileMember {
+            type_code,
+            curve,
+            endpoints: Some(endpoints),
+            data,
+        });
+    }
+    let saved = *position;
+    let (path_curve, path_endpoints) =
+        if take_native_ident(bytes, position).as_deref() == Some("null_curve") {
+            (None, None)
+        } else {
+            *position = saved;
+            let curve = decode_embedded_base_curve_resolving_refs(
+                bytes,
+                position,
+                int_width,
+                active_bytes,
+                tables,
+            )?;
+            let endpoints = [
+                take_optional_range_value(bytes, position)?,
+                take_optional_range_value(bytes, position)?,
+            ];
+            (Some(curve), Some(endpoints))
+        };
+    let auxiliary_count =
+        usize::try_from(take_tagged_int(bytes, position, 0x04, int_width)?).ok()?;
+    let auxiliary_count = bounded_len(
+        auxiliary_count as u64,
+        6,
+        bytes.len().saturating_sub(*position),
+    )?;
+    let mut auxiliaries = Vec::with_capacity(auxiliary_count);
+    for _ in 0..auxiliary_count {
+        let auxiliary = decode_curve_block(bytes, *position, int_width)?;
+        *position = auxiliary.end;
+        auxiliaries.push(auxiliary.curve);
+    }
+    let flag = take_tagged_int(bytes, position, 0x04, int_width)?;
+    Some((
+        profile,
+        EmbeddedLoftPath {
+            curve: path_curve,
+            endpoints: path_endpoints,
+            auxiliaries,
+            flag,
+        },
+    ))
+}
+
+fn decode_revision_compound_loft(
+    span: &[u8],
+    int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
+) -> Option<DecodedProceduralSurface> {
+    let (active_bytes, tables) = resolver?;
+    let name = b"cl_loft_spl_sur";
+    let mut position = name.len() + 3;
+    let revision = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    (revision > 0).then_some(())?;
+    let (tail_enum, fit_tolerance, discontinuities, tail_flag) =
+        decode_revision_surface_tail(span, &mut position, int_width)?;
+    let (base_profile, base_path) =
+        decode_revision_cl_scale(span, &mut position, int_width, active_bytes, tables)?;
+    let entry_count =
+        usize::try_from(take_tagged_int(span, &mut position, 0x04, int_width)?).ok()?;
+    let entry_count = bounded_len(
+        entry_count as u64,
+        1 + int_width,
+        span.len().saturating_sub(position),
+    )?;
+    let mut entries = Vec::with_capacity(entry_count);
+    for _ in 0..entry_count {
+        let (profile, path) =
+            decode_revision_cl_scale(span, &mut position, int_width, active_bytes, tables)?;
+        let parameter = take_f64(span, &mut position)?;
+        entries.push(EmbeddedLoftSectionEntry {
+            parameter,
+            profile,
+            path,
+        });
+    }
+    let flags = [
+        take_bool(span, &mut position)?,
+        take_bool(span, &mut position)?,
+    ];
+    let kind = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    // Only the kind-zero payload is defined for the revision layout.
+    (kind == 0).then_some(())?;
+    let kind_flags = [
+        take_bool(span, &mut position)?,
+        take_bool(span, &mut position)?,
+    ];
+    let selector = take_tagged_int(span, &mut position, 0x04, int_width)?;
+    let (direction, direction_curve) = if selector == 0 {
+        let value = take_native_vec3(span, &mut position, 0x14)?;
+        (Some(Vector3::new(value[0], value[1], value[2])), None)
+    } else {
+        let curve = decode_curve_block(span, position, int_width)?;
+        position = curve.end;
+        (None, Some(curve.curve))
+    };
+    let interval = [
+        take_optional_range_value(span, &mut position)?,
+        take_optional_range_value(span, &mut position)?,
+    ];
+    let trailing_curve = if span.get(position) == Some(&0x10) {
+        None
+    } else {
+        let curve = decode_curve_block(span, position, int_width)?;
+        position = curve.end;
+        Some(curve.curve)
+    };
+    (span.get(position) == Some(&0x10)).then_some(())?;
+    Some(DecodedProceduralSurface {
+        definition: DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(Box::new(
+            EmbeddedRevisionCompoundLoft {
+                revision,
+                tail_enum,
+                discontinuities,
+                tail_flag,
+                base_profile,
+                base_path,
+                entries,
+                flags,
+                kind,
+                kind_flags,
+                selector,
+                direction,
+                direction_curve,
+                interval,
+                trailing_curve,
+            },
+        )),
+        cache_fit_tolerance: Some(fit_tolerance),
+    })
+}
+
 fn decode_compound_loft_spl_sur(
     record_bytes: &[u8],
     int_width: usize,
+    resolver: Option<(&[u8], &SubtypeTables)>,
 ) -> Option<DecodedProceduralSurface> {
     let name = b"cl_loft_spl_sur";
     let start = record_bytes.windows(name.len() + 3).position(|window| {
@@ -2152,6 +2346,11 @@ fn decode_compound_loft_spl_sur(
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name.len() + 3;
+    if span.get(position) == Some(&0x04) {
+        (first_construction_subtype(record_bytes).as_deref() == Some("cl_loft_spl_sur"))
+            .then_some(())?;
+        return decode_revision_compound_loft(span, int_width, resolver);
+    }
     let cache = decode_surface_block(span, position, int_width)?;
     position = cache.end;
     let cache_fit_tolerance = Some(take_f64(span, &mut position)? * LEN_TO_MM);
@@ -5189,24 +5388,28 @@ fn decode_var_blend_spl_sur(
     } else {
         None
     };
+    // A single-radius blend always stores one selector enum after its radius
+    // value: 0 selects no further fields; 1 and 7 select two scalars. Other
+    // selector values are rejected rather than guessed at.
+    let mut single_radius_selector = None;
     let single_radius_tail = if matches!(
         radius_kind,
         cadmpeg_ir::geometry::VariableBlendRadiusKind::SingleRadius
     ) && span.get(position) == Some(&0x15)
-        && matches!(read_int(span, position + 1, int_width), Some(1 | 7))
     {
-        Some(VariableBlendSingleRadiusTail {
-            selector: LoftBridgeToken::Integer(take_tagged_int(
-                span,
-                &mut position,
-                0x15,
-                int_width,
-            )?),
-            parameters: [
-                take_f64(span, &mut position)?,
-                take_f64(span, &mut position)?,
-            ],
-        })
+        let selector = take_tagged_int(span, &mut position, 0x15, int_width)?;
+        single_radius_selector = Some(selector);
+        match selector {
+            0 => None,
+            1 | 7 => Some(VariableBlendSingleRadiusTail {
+                selector: LoftBridgeToken::Integer(selector),
+                parameters: [
+                    take_f64(span, &mut position)?,
+                    take_f64(span, &mut position)?,
+                ],
+            }),
+            _ => return None,
+        }
     } else {
         None
     };
@@ -5287,6 +5490,7 @@ fn decode_var_blend_spl_sur(
                 second_value,
                 chamfer_selector,
                 chamfer,
+                single_radius_selector,
                 single_radius_tail,
                 u_range,
                 v_range,
@@ -5849,7 +6053,7 @@ fn decode_procedural_resolving_refs(
         .or_else(|| decode_comp_spl_sur(bytes, int_width))
         .or_else(|| decode_taper_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_loft_spl_sur(bytes, int_width, Some((active_bytes, tables))))
-        .or_else(|| decode_compound_loft_spl_sur(bytes, int_width))
+        .or_else(|| decode_compound_loft_spl_sur(bytes, int_width, Some((active_bytes, tables))))
         .or_else(|| decode_scaled_compound_loft_spl_sur(bytes, int_width))
         .or_else(|| decode_sub_spl_sur(bytes, int_width))
         .or_else(|| decode_law_spl_sur(bytes, int_width))

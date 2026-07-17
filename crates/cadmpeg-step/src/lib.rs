@@ -1036,6 +1036,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Taper { .. }
                 | ProceduralSurfaceDefinition::Loft { .. }
                 | ProceduralSurfaceDefinition::CompoundLoft { .. }
+                | ProceduralSurfaceDefinition::RevisionCompoundLoft { .. }
                 | ProceduralSurfaceDefinition::ScaledCompoundLoft { .. }
                 | ProceduralSurfaceDefinition::Law { .. }
                 | ProceduralSurfaceDefinition::Skin { .. }

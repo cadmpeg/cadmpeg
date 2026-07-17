@@ -368,6 +368,11 @@ pub enum ProceduralSurfaceDefinition {
         /// Complete native compound-loft graph.
         construction: Box<CompoundLoftConstruction>,
     },
+    /// Revision-gated compound-loft construction.
+    RevisionCompoundLoft {
+        /// Complete native revision-gated compound-loft graph.
+        construction: Box<RevisionCompoundLoftConstruction>,
+    },
     /// Native scaled compound-loft construction.
     ScaledCompoundLoft {
         /// Complete native scaled compound-loft graph.
@@ -1459,6 +1464,11 @@ pub struct VariableBlendConstruction {
     /// Optional rounded-chamfer payload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chamfer: Option<Box<VariableBlendChamfer>>,
+    /// Selector enum stored after the radius value of a single-radius blend.
+    /// `0` selects no further fields; `1` and `7` select the two scalars in
+    /// `single_radius_tail`. `None` when the source stored no selector token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub single_radius_selector: Option<i64>,
     /// Optional single-radius selector tail.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub single_radius_tail: Option<VariableBlendSingleRadiusTail>,
@@ -1544,6 +1554,49 @@ pub struct RevisionG2BlendConstruction {
     pub tail_flag: bool,
     /// Three ASM integers following the shared tail.
     pub tail_extensions: [i64; 3],
+}
+
+/// Complete native revision-gated `cl_loft_spl_sur` construction. The
+/// revision layout is cache-first: the revision integer and shared
+/// revision-gated surface tail precede the construction fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct RevisionCompoundLoftConstruction {
+    /// Positive serializer-revision integer following the subtype name.
+    pub revision: i64,
+    /// Enum opening the shared revision-gated surface tail.
+    pub tail_enum: i64,
+    /// Six ordered discontinuity arrays following the fit tolerance.
+    #[serde(default)]
+    pub discontinuities: [Vec<f64>; 6],
+    /// Boolean terminating the shared tail.
+    pub tail_flag: bool,
+    /// Leading unparameterized scale block: ordered profile members and path.
+    pub base_profile: Vec<LoftProfileMember>,
+    /// Path data of the leading scale block.
+    pub base_path: LoftPath,
+    /// Counted parameterized entries; the native parameter trails each
+    /// entry's fields.
+    pub entries: Vec<LoftSectionEntry>,
+    /// Two flags following the entries.
+    pub flags: [bool; 2],
+    /// Tail-kind integer following the two flags.
+    pub kind: i64,
+    /// Two flags opening the kind-zero payload.
+    pub kind_flags: [bool; 2],
+    /// Kind-zero direction selector.
+    pub selector: i64,
+    /// Selector-zero direction vector.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<Vector3>,
+    /// Selector-nonzero BS3 direction curve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction_curve: Option<CurveId>,
+    /// Two optional trailing parameter values.
+    #[serde(default)]
+    pub interval: [Option<f64>; 2],
+    /// Optional trailing BS3 curve closing the payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trailing_curve: Option<CurveId>,
 }
 
 /// One boundary record in a native vertex-blend patch.

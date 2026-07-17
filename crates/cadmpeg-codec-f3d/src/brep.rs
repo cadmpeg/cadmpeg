@@ -3377,6 +3377,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                     second_value: construction.second_value,
                                     chamfer_selector: construction.chamfer_selector,
                                     chamfer: construction.chamfer,
+                                    single_radius_selector: construction.single_radius_selector,
                                     single_radius_tail: construction.single_radius_tail,
                                     u_range: construction.u_range,
                                     v_range: construction.v_range,
@@ -3398,6 +3399,163 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         .post_pcurve
                                         .map(embedded_pcurve_geometry),
                                 }),
+                            }
+                        }
+                        nurbs::DecodedProceduralSurfaceDefinition::RevisionCompoundLoft(
+                            construction,
+                        ) => {
+                            let convert_profile = |scope: String,
+                                                   profile: Vec<
+                                nurbs::EmbeddedLoftProfileMember,
+                            >,
+                                                   out: &mut Brep|
+                             -> Vec<
+                                cadmpeg_ir::geometry::LoftProfileMember,
+                            > {
+                                profile
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(member_index, member)| {
+                                        let curve =
+                                            CurveId(format!("{scope}:profile:{member_index}"));
+                                        out.curves.push(Curve {
+                                            id: curve.clone(),
+                                            geometry: CurveGeometry::Nurbs(member.curve),
+                                            source_object: None,
+                                        });
+                                        let surface = member.data.surface.map(|geometry| {
+                                            let surface = SurfaceId(format!(
+                                                "{scope}:support:{member_index}"
+                                            ));
+                                            out.surfaces.push(Surface {
+                                                id: surface.clone(),
+                                                geometry,
+                                                source_object: None,
+                                            });
+                                            surface
+                                        });
+                                        cadmpeg_ir::geometry::LoftProfileMember {
+                                            type_code: member.type_code,
+                                            curve,
+                                            endpoints: member.endpoints,
+                                            data: cadmpeg_ir::geometry::LoftProfileData {
+                                                surface,
+                                                support_bounds: member.data.support_bounds,
+                                                pcurve: member
+                                                    .data
+                                                    .pcurve
+                                                    .map(embedded_pcurve_geometry),
+                                                first_flag: member.data.first_flag,
+                                                asm_extension: member.data.asm_extension,
+                                                subdata: member.data.subdata,
+                                                direction: member.data.direction,
+                                            },
+                                        }
+                                    })
+                                    .collect()
+                            };
+                            let convert_path =
+                                |scope: String,
+                                 path: nurbs::EmbeddedLoftPath,
+                                 out: &mut Brep|
+                                 -> cadmpeg_ir::geometry::LoftPath {
+                                    let curve = path.curve.map(|geometry| {
+                                        let id = CurveId(format!("{scope}:path"));
+                                        out.curves.push(Curve {
+                                            id: id.clone(),
+                                            geometry: CurveGeometry::Nurbs(geometry),
+                                            source_object: None,
+                                        });
+                                        id
+                                    });
+                                    let auxiliaries = path
+                                        .auxiliaries
+                                        .into_iter()
+                                        .enumerate()
+                                        .map(|(auxiliary_index, geometry)| {
+                                            let id = CurveId(format!(
+                                                "{scope}:auxiliary:{auxiliary_index}"
+                                            ));
+                                            out.curves.push(Curve {
+                                                id: id.clone(),
+                                                geometry: CurveGeometry::Nurbs(geometry),
+                                                source_object: None,
+                                            });
+                                            id
+                                        })
+                                        .collect();
+                                    cadmpeg_ir::geometry::LoftPath {
+                                        curve,
+                                        endpoints: path.endpoints,
+                                        auxiliaries,
+                                        flag: path.flag,
+                                    }
+                                };
+                            let base = format!("f3d:brep:procedural_surface#{i}:cloft:base");
+                            let base_profile =
+                                convert_profile(base.clone(), construction.base_profile, &mut out);
+                            let base_path = convert_path(base, construction.base_path, &mut out);
+                            let entries: Vec<_> = construction
+                                .entries
+                                .into_iter()
+                                .enumerate()
+                                .map(|(entry_index, entry)| {
+                                    let scope = format!(
+                                        "f3d:brep:procedural_surface#{i}:cloft:{entry_index}"
+                                    );
+                                    cadmpeg_ir::geometry::LoftSectionEntry {
+                                        parameter: entry.parameter,
+                                        profile: convert_profile(
+                                            scope.clone(),
+                                            entry.profile,
+                                            &mut out,
+                                        ),
+                                        path: convert_path(scope, entry.path, &mut out),
+                                    }
+                                })
+                                .collect();
+                            let direction_curve = construction.direction_curve.map(|geometry| {
+                                let id = CurveId(format!(
+                                    "f3d:brep:procedural_surface#{i}:cloft:direction"
+                                ));
+                                out.curves.push(Curve {
+                                    id: id.clone(),
+                                    geometry: CurveGeometry::Nurbs(geometry),
+                                    source_object: None,
+                                });
+                                id
+                            });
+                            let trailing_curve = construction.trailing_curve.map(|geometry| {
+                                let id = CurveId(format!(
+                                    "f3d:brep:procedural_surface#{i}:cloft:trailing"
+                                ));
+                                out.curves.push(Curve {
+                                    id: id.clone(),
+                                    geometry: CurveGeometry::Nurbs(geometry),
+                                    source_object: None,
+                                });
+                                id
+                            });
+                            ProceduralSurfaceDefinition::RevisionCompoundLoft {
+                                construction: Box::new(
+                                    cadmpeg_ir::geometry::RevisionCompoundLoftConstruction {
+                                        revision: construction.revision,
+                                        tail_enum: construction.tail_enum,
+                                        discontinuities: construction.discontinuities,
+                                        tail_flag: construction.tail_flag,
+                                        base_profile,
+                                        base_path,
+                                        entries,
+                                        flags: construction.flags,
+                                        kind: construction.kind,
+                                        kind_flags: construction.kind_flags,
+                                        selector: construction.selector,
+                                        direction: construction.direction,
+                                        direction_curve,
+                                        interval: construction.interval,
+                                        trailing_curve,
+                                    },
+                                ),
                             }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::RevisionG2Blend(

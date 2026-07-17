@@ -291,6 +291,35 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
                     .map(|curve| curve.0.as_str()),
                 );
             }
+            ProceduralSurfaceDefinition::RevisionCompoundLoft { construction } => {
+                for member in construction
+                    .base_profile
+                    .iter()
+                    .chain(construction.entries.iter().flat_map(|entry| &entry.profile))
+                {
+                    curves.insert(&member.curve.0);
+                    if let Some(surface) = &member.data.surface {
+                        surfaces.insert(&surface.0);
+                    }
+                }
+                for path in std::iter::once(&construction.base_path)
+                    .chain(construction.entries.iter().map(|entry| &entry.path))
+                {
+                    if let Some(curve) = &path.curve {
+                        curves.insert(&curve.0);
+                    }
+                    curves.extend(path.auxiliaries.iter().map(|curve| curve.0.as_str()));
+                }
+                curves.extend(
+                    [
+                        construction.direction_curve.as_ref(),
+                        construction.trailing_curve.as_ref(),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .map(|curve| curve.0.as_str()),
+                );
+            }
             ProceduralSurfaceDefinition::RevisionG2Blend { construction } => {
                 for side in construction.sides.iter() {
                     if let Some(surface) = &side.surface {
