@@ -25,7 +25,7 @@
 //! version-detecting [`SourceFidelity::from_json_any`] loader, so a sidecar
 //! written before the generalization still reads.
 
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -334,6 +334,26 @@ pub enum FidelityError {
         /// The opaque span's start offset.
         offset: u64,
     },
+    /// A recoverable opaque span's retained subrange does not cover the span.
+    #[error(
+        "space {id} opaque span at {offset} spans {span_len} bytes but retains {retained_len}"
+    )]
+    RetainedLengthMismatch {
+        /// The offending space id.
+        id: String,
+        /// The opaque span's start offset.
+        offset: u64,
+        /// The span's byte length.
+        span_len: u64,
+        /// The retained subrange's byte length.
+        retained_len: u64,
+    },
+    /// A non-root space's origin references no parent, fabricating a second root.
+    #[error("space {id} is not the root yet its origin references no parent space")]
+    OriginWithoutReference {
+        /// The offending space id.
+        id: String,
+    },
 }
 
 /// A complete serialized source-fidelity sidecar (schema v2).
@@ -387,10 +407,11 @@ impl SourceFidelity {
     /// Validates the conservation invariant.
     ///
     /// Checks the schema version, unique ids, origin/id consistency, that every
-    /// origin references only present spaces and in-bounds ranges, that the
-    /// origin graph is acyclic, that each space's spans tile `[0, length)`
-    /// exactly, and — for a recoverable ledger — that every opaque span
-    /// resolves to retained bytes.
+    /// origin references only present spaces and in-bounds ranges, that every
+    /// non-root space references at least one parent, that the origin graph is
+    /// acyclic, that each space's spans tile `[0, length)` exactly, and — for a
+    /// recoverable ledger — that every opaque span resolves to retained bytes
+    /// whose subrange covers the span exactly.
     pub fn validate(&self) -> Result<(), FidelityError> {
         if self.version != SOURCE_FIDELITY_VERSION {
             return Err(FidelityError::Version {
@@ -398,9 +419,11 @@ impl SourceFidelity {
             });
         }
 
-        let mut ids = BTreeSet::new();
+        // Index space id -> length once; the key set doubles as the presence
+        // check for referenced spaces, so origin validation stays linear.
+        let mut lengths: BTreeMap<CanonicalSpaceId, u64> = BTreeMap::new();
         for space in &self.spaces {
-            if !ids.insert(space.id.clone()) {
+            if lengths.insert(space.id.clone(), space.length).is_some() {
                 return Err(FidelityError::DuplicateSpace {
                     id: space.id.as_str().to_string(),
                 });
@@ -408,7 +431,7 @@ impl SourceFidelity {
         }
 
         for space in &self.spaces {
-            self.validate_origin(space, &ids)?;
+            Self::validate_origin(space, &lengths)?;
             Self::validate_tiling(space)?;
             self.validate_retention(space)?;
         }
@@ -418,9 +441,8 @@ impl SourceFidelity {
     }
 
     fn validate_origin(
-        &self,
         space: &AddressSpaceLedger,
-        ids: &BTreeSet<CanonicalSpaceId>,
+        lengths: &BTreeMap<CanonicalSpaceId, u64>,
     ) -> Result<(), FidelityError> {
         let is_root = matches!(space.origin, SerializedOrigin::Root);
         if is_root != space.id.is_source() {
@@ -431,33 +453,38 @@ impl SourceFidelity {
 
         // Slice carries its own referenced range that `referenced()` omits;
         // handle it explicitly alongside the extent-bearing variants.
+        let is_slice = matches!(space.origin, SerializedOrigin::Slice { .. });
         if let SerializedOrigin::Slice { parent, range } = &space.origin {
-            self.check_extent(space, ids, parent, *range)?;
+            Self::check_extent(space, lengths, parent, *range)?;
         }
         for extent in space.origin.referenced() {
-            self.check_extent(space, ids, &extent.space, extent.range)?;
+            Self::check_extent(space, lengths, &extent.space, extent.range)?;
+        }
+
+        // A non-root space must reference at least one parent. Combined with
+        // acyclicity this forces every space to reach `source` by following
+        // origins; an empty `Concat`/`Transform` would otherwise validate as a
+        // second, un-derived root.
+        if !is_root && !is_slice && space.origin.referenced().is_empty() {
+            return Err(FidelityError::OriginWithoutReference {
+                id: space.id.as_str().to_string(),
+            });
         }
         Ok(())
     }
 
     fn check_extent(
-        &self,
         space: &AddressSpaceLedger,
-        ids: &BTreeSet<CanonicalSpaceId>,
+        lengths: &BTreeMap<CanonicalSpaceId, u64>,
         referenced: &CanonicalSpaceId,
         range: SerializedRange,
     ) -> Result<(), FidelityError> {
-        if !ids.contains(referenced) {
+        let Some(&length) = lengths.get(referenced) else {
             return Err(FidelityError::DanglingReference {
                 id: space.id.as_str().to_string(),
                 referenced: referenced.as_str().to_string(),
             });
-        }
-        let length = self
-            .spaces
-            .iter()
-            .find(|candidate| &candidate.id == referenced)
-            .map_or(0, |candidate| candidate.length);
+        };
         if !range.within(length) {
             return Err(FidelityError::RangeOutOfBounds {
                 id: space.id.as_str().to_string(),
@@ -497,10 +524,23 @@ impl SourceFidelity {
             return Ok(());
         }
         for span in &space.spans {
-            if span.class == SpanClass::Opaque && span.retained.is_none() {
+            if span.class != SpanClass::Opaque {
+                continue;
+            }
+            let Some(retained) = &span.retained else {
                 return Err(FidelityError::MissingRetained {
                     id: space.id.as_str().to_string(),
                     offset: span.range.start,
+                });
+            };
+            // Presence is not enough: the retained subrange must resolve to as
+            // many bytes as the span it recovers, or bytes are silently lost.
+            if retained.range.len() != span.range.len() {
+                return Err(FidelityError::RetainedLengthMismatch {
+                    id: space.id.as_str().to_string(),
+                    offset: span.range.start,
+                    span_len: span.range.len(),
+                    retained_len: retained.range.len(),
                 });
             }
         }
@@ -516,7 +556,33 @@ impl SourceFidelity {
             Done,
         }
         let mut marks: Vec<Mark> = vec![Mark::Unvisited; self.spaces.len()];
-        let index_of = |id: &CanonicalSpaceId| self.spaces.iter().position(|space| &space.id == id);
+
+        // Resolve every origin edge to a node index once, up front, so the DFS
+        // is linear in the graph rather than rescanning spaces per child visit.
+        let index: BTreeMap<&CanonicalSpaceId, usize> = self
+            .spaces
+            .iter()
+            .enumerate()
+            .map(|(i, space)| (&space.id, i))
+            .collect();
+        let targets: Vec<Vec<usize>> = self
+            .spaces
+            .iter()
+            .map(|space| {
+                let mut edges = Vec::new();
+                if let SerializedOrigin::Slice { parent, .. } = &space.origin {
+                    if let Some(&i) = index.get(parent) {
+                        edges.push(i);
+                    }
+                }
+                for extent in space.origin.referenced() {
+                    if let Some(&i) = index.get(&extent.space) {
+                        edges.push(i);
+                    }
+                }
+                edges
+            })
+            .collect();
 
         for root in 0..self.spaces.len() {
             if marks[root] != Mark::Unvisited {
@@ -526,12 +592,10 @@ impl SourceFidelity {
             let mut stack: Vec<(usize, usize)> = vec![(root, 0)];
             marks[root] = Mark::OnStack;
             while let Some(&(node, cursor)) = stack.last() {
-                let targets = self.origin_targets(node);
-                if cursor < targets.len() {
+                let node_targets = &targets[node];
+                if cursor < node_targets.len() {
                     stack.last_mut().expect("stack is non-empty").1 += 1;
-                    let Some(child) = index_of(&targets[cursor]) else {
-                        continue;
-                    };
+                    let child = node_targets[cursor];
                     match marks[child] {
                         Mark::OnStack => {
                             return Err(FidelityError::OriginCycle {
@@ -551,18 +615,6 @@ impl SourceFidelity {
             }
         }
         Ok(())
-    }
-
-    fn origin_targets(&self, node: usize) -> Vec<CanonicalSpaceId> {
-        let space = &self.spaces[node];
-        let mut targets = Vec::new();
-        if let SerializedOrigin::Slice { parent, .. } = &space.origin {
-            targets.push(parent.clone());
-        }
-        for extent in space.origin.referenced() {
-            targets.push(extent.space.clone());
-        }
-        targets
     }
 
     /// Serializes to versioned canonical JSON.
@@ -912,6 +964,59 @@ mod tests {
         assert!(matches!(
             sidecar.validate(),
             Err(FidelityError::MissingRetained { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_recoverable_with_short_retained_range() {
+        let sidecar = SourceFidelity::new(
+            LedgerLevel::L2,
+            LedgerCapability::Recoverable,
+            vec![root_space(
+                4,
+                vec![LedgerSpan {
+                    range: SerializedRange { start: 0, end: 4 },
+                    class: SpanClass::Opaque,
+                    owner: "owner".to_string(),
+                    meaning: "meaning".to_string(),
+                    digest: "00".to_string(),
+                    retained: Some(RetainedRef {
+                        blob: "b".to_string(),
+                        range: SerializedRange { start: 0, end: 0 },
+                    }),
+                }],
+            )],
+        );
+        assert!(matches!(
+            sidecar.validate(),
+            Err(FidelityError::RetainedLengthMismatch {
+                span_len: 4,
+                retained_len: 0,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_non_root_without_reference() {
+        // An empty `Concat` references nothing, so following origins never
+        // reaches `source`; it must not validate as a second root.
+        let sidecar = SourceFidelity::new(
+            LedgerLevel::L1,
+            LedgerCapability::Accounted,
+            vec![
+                root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
+                AddressSpaceLedger {
+                    id: CanonicalSpaceId::entry("x"),
+                    length: 4,
+                    origin: SerializedOrigin::Concat { segments: vec![] },
+                    spans: vec![span(0, 4, SpanClass::Opaque)],
+                },
+            ],
+        );
+        assert!(matches!(
+            sidecar.validate(),
+            Err(FidelityError::OriginWithoutReference { .. })
         ));
     }
 
