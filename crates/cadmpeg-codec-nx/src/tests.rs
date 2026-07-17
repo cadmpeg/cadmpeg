@@ -7213,9 +7213,9 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         lane("operation#1-4"),
     ];
     let references = [
-        reference("operation#1-2", "block-4"),
-        reference("operation#1-3", "block-4"),
         reference("operation#1-4", "block-5"),
+        reference("operation#1-3", "block-4"),
+        reference("operation#1-2", "block-4"),
     ];
     let groups = feature_simple_hole_construction_groups(&lanes, &references);
     assert_eq!(groups.len(), 1);
@@ -7230,6 +7230,27 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
     assert_eq!(
         groups[0].block_references,
         ["reference-operation#1-2", "reference-operation#1-3"]
+    );
+
+    let duplicate_references = [
+        reference("operation#1-2", "block-4"),
+        reference("operation#1-2", "block-4"),
+    ];
+    assert!(feature_simple_hole_construction_groups(&lanes, &duplicate_references).is_empty());
+
+    let duplicate_lanes = [
+        lane("operation#1-2"),
+        lane("operation#1-2"),
+        lane("operation#1-3"),
+        lane("operation#1-4"),
+    ];
+    let shared_references = [
+        reference("operation#1-2", "block-4"),
+        reference("operation#1-3", "block-4"),
+        reference("operation#1-4", "block-4"),
+    ];
+    assert!(
+        feature_simple_hole_construction_groups(&duplicate_lanes, &shared_references).is_empty()
     );
 }
 

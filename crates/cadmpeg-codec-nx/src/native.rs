@@ -5916,33 +5916,55 @@ pub fn feature_simple_hole_construction_groups(
     lanes: &[FeatureSimpleHoleRepeatedScalarLane],
     references: &[FeatureSimpleHoleRepeatedScalarLaneBlockReferences],
 ) -> Vec<FeatureSimpleHoleConstructionGroup> {
-    let lanes = lanes
-        .iter()
-        .map(|lane| (lane.operation_label.as_str(), lane))
-        .collect::<BTreeMap<_, _>>();
-    let mut grouped = BTreeMap::<([String; 2], [String; 2]), Vec<_>>::new();
-    for reference in references {
-        let Some(lane) = lanes.get(reference.operation_label.as_str()) else {
-            continue;
-        };
-        grouped
-            .entry((
-                reference.first_data_blocks.clone(),
-                reference.second_data_blocks.clone(),
-            ))
+    let mut lanes_by_operation = BTreeMap::<&str, Vec<_>>::new();
+    for lane in lanes {
+        lanes_by_operation
+            .entry(lane.operation_label.as_str())
             .or_default()
-            .push((reference, *lane));
+            .push(lane);
+    }
+    let mut grouped = BTreeMap::<([String; 2], [String; 2]), Vec<_>>::new();
+    let mut ambiguous_groups = BTreeSet::new();
+    for reference in references {
+        let key = (
+            reference.first_data_blocks.clone(),
+            reference.second_data_blocks.clone(),
+        );
+        let lane = match lanes_by_operation
+            .get(reference.operation_label.as_str())
+            .map(Vec::as_slice)
+        {
+            Some([lane]) => *lane,
+            Some(_) => {
+                ambiguous_groups.insert(key);
+                continue;
+            }
+            None => continue,
+        };
+        grouped.entry(key).or_default().push((reference, lane));
     }
     grouped
-        .into_values()
-        .filter(|members| members.len() > 1)
-        .map(|members| {
+        .into_iter()
+        .filter_map(|(key, mut members)| {
+            if ambiguous_groups.contains(&key) {
+                return None;
+            }
+            members.sort_by(|(first, _), (second, _)| {
+                first.operation_label.cmp(&second.operation_label)
+            });
+            if members.len() < 2
+                || members
+                    .windows(2)
+                    .any(|pair| pair[0].0.operation_label == pair[1].0.operation_label)
+            {
+                return None;
+            }
             let first = members[0].0;
             let key = first
                 .operation_label
                 .rsplit_once('#')
                 .map_or("unknown", |(_, key)| key);
-            FeatureSimpleHoleConstructionGroup {
+            Some(FeatureSimpleHoleConstructionGroup {
                 id: format!("nx:feature-history:simple-hole-construction-group#{key}"),
                 first_data_blocks: first.first_data_blocks.clone(),
                 second_data_blocks: first.second_data_blocks.clone(),
@@ -5955,7 +5977,7 @@ pub fn feature_simple_hole_construction_groups(
                     .iter()
                     .map(|(reference, _)| reference.id.clone())
                     .collect(),
-            }
+            })
         })
         .collect()
 }
