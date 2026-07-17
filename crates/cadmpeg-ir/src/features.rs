@@ -322,8 +322,9 @@ pub enum FeatureDefinition {
     DatumCoordinateSystemUnresolved,
     /// Rectangular solid primitive constructed from three local dimensions.
     Block {
-        /// Ordered local x, y, and z dimensions.
-        dimensions: [Length; 3],
+        /// Ordered local x, y, and z dimensions, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        dimensions: Option<[Length; 3]>,
         /// Local-to-model placement; absent until the native frame is resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         placement: Option<crate::transform::Transform>,

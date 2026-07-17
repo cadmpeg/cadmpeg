@@ -2764,14 +2764,21 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
             None,
         ),
         cadmpeg_ir::features::FeatureDefinition::Block {
-            dimensions: [
+            dimensions: Some([
                 cadmpeg_ir::features::Length(10.0),
                 cadmpeg_ir::features::Length(20.0),
                 cadmpeg_ir::features::Length(30.0),
-            ],
+            ]),
             placement: None,
         }
     ));
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("BLOCK", &[], None, None, None),
+        cadmpeg_ir::features::FeatureDefinition::Block {
+            dimensions: None,
+            placement: None,
+        }
+    );
 }
 
 #[test]

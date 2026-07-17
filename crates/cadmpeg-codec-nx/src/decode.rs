@@ -10737,13 +10737,17 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
 ) -> FeatureDefinition {
     if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
         return FeatureDefinition::Block {
-            dimensions: dimensions.map(Length),
+            dimensions: Some(dimensions.map(Length)),
             placement: block_placement,
         };
     }
     match kind {
         "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
+        "BLOCK" => FeatureDefinition::Block {
+            dimensions: None,
+            placement: None,
+        },
         "SKETCH" => FeatureDefinition::Sketch {
             space: SketchSpace::Unresolved,
             sketch: None,

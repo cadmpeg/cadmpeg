@@ -683,6 +683,21 @@ fn unresolved_surface_offset_round_trips_through_json() {
 }
 
 #[test]
+fn unresolved_block_dimensions_round_trip_through_json() {
+    use crate::features::FeatureDefinition;
+
+    let definition = FeatureDefinition::Block {
+        dimensions: None,
+        placement: None,
+    };
+    let json = serde_json::to_string(&definition).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FeatureDefinition>(&json).unwrap(),
+        definition
+    );
+}
+
+#[test]
 fn feature_history_rejects_dangling_and_forward_dependencies() {
     use crate::features::{
         BooleanOp, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
@@ -2648,7 +2663,7 @@ fn feature_operation_geometry_is_validated() {
             z_axis: Vector3::new(0.0, 0.0, 1.0),
         },
         FeatureDefinition::Block {
-            dimensions: [Length(10.0), Length(0.0), Length(30.0)],
+            dimensions: Some([Length(10.0), Length(0.0), Length(30.0)]),
             placement: None,
         },
         FeatureDefinition::EquationCurve {
