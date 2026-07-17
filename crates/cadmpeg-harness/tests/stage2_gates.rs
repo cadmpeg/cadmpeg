@@ -19,23 +19,31 @@ const BASE: [Stage2Oracle; 4] = [
 ];
 
 /// The codecs whose manifest flags a `semantic_builder` module (Phase 4B), so
-/// no-silent-fallback gates for them. `f3d`, `creo`, and `sldprt` build lossy IR
-/// through a `builder.rs`; `catia` through `b5_transfer.rs`; `rhino` through
-/// `decode.rs`. `nx` constructs no lossy IR through the platform typed builder —
+/// no-silent-fallback gates for them. `f3d` builds lossy IR through the shared
+/// `cadmpeg_ir::transfer::{omit, reduce}` helpers called from `decode.rs`;
+/// `creo` and `sldprt` through a `builder.rs`; `catia` through `b5_transfer.rs`;
+/// `rhino` through `decode.rs`. `nx` constructs no lossy IR through the platform
+/// typed builder —
 /// its report path is plain note emission and its one value boundary (the
 /// intersection secondary support) is an honest `Option` — so it does not gate.
 const BUILDER_ADOPTED: [&str; 5] = ["catia", "creo", "f3d", "rhino", "sldprt"];
 
+/// The codecs whose manifest flags a `record_tickets` module (Phase 3D), so
+/// disposition validation gates for them. Every decoder codec except `step`
+/// commits and resolves record tickets from its decode path (`catia` through
+/// `tickets.rs`, the rest through `decode.rs`); `step` has no ticket boundary.
+const TICKET_ADOPTED: [&str; 6] = ["catia", "creo", "f3d", "nx", "rhino", "sldprt"];
+
 /// The gating rows expected for `codec_id`, given the current manifests.
 ///
 /// Every codec carries an L1/L2 ledger, so byte-accounting gates for all six.
-/// Only `catia` issues and resolves record tickets (a migrated `tickets.rs`),
-/// so disposition validation gates for it alone. The [`BUILDER_ADOPTED`] codecs
-/// flag a `semantic_builder` module, so no-silent-fallback gates for them.
+/// The [`TICKET_ADOPTED`] codecs flag a `record_tickets` module, so disposition
+/// validation gates for them. The [`BUILDER_ADOPTED`] codecs flag a
+/// `semantic_builder` module, so no-silent-fallback gates for them.
 fn expected(codec_id: &str) -> Vec<Stage2Oracle> {
     let mut rows = BASE.to_vec();
     rows.push(Stage2Oracle::ByteAccounting);
-    if codec_id == "catia" {
+    if TICKET_ADOPTED.contains(&codec_id) {
         rows.push(Stage2Oracle::DispositionValidation);
     }
     if BUILDER_ADOPTED.contains(&codec_id) {

@@ -202,6 +202,7 @@ ledger_level = 0
 [[module]]
 path = "crates/cadmpeg-codec-sldprt/src/decode.rs"
 status = "legacy"
+record_tickets = true
 input_spaces = ["root", "active_brep"]
 fuzz_targets = ["decode_pipeline_mutated", "sldprt_container"]
 charges = []

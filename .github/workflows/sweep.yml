@@ -1,0 +1,37 @@
+name: Sweep
+
+on:
+  schedule:
+    # Nightly at 04:23 UTC (off the hour, and clear of the fuzz cron).
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+  CARGO_PROFILE_DEV_DEBUG: 0
+
+jobs:
+  # Exhaustive truncation sweep over every discovered fixture. The fast gate
+  # (`cargo test-fast` in ci.yml) already runs the bounded `sweep_smoke`; this
+  # scheduled job runs the `#[ignore]`d `full_sweep` so the whole truncation
+  # matrix gates on a schedule rather than only by hand.
+  full-sweep:
+    name: truncation sweep (exhaustive, nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry and target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Exhaustive truncation sweep
+        run: cargo test -p cadmpeg-harness --test sweep -- --ignored

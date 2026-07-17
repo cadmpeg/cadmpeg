@@ -263,6 +263,7 @@ ledger_level = 1
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/tickets.rs"
 status = "migrated"
+record_tickets = true
 input_spaces = ["source"]
 fuzz_targets = []
 charges = []

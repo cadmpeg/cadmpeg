@@ -224,6 +224,7 @@ ledger_level = 0
 [[module]]
 path = "crates/cadmpeg-codec-creo/src/decode.rs"
 status = "legacy"
+record_tickets = true
 input_spaces = ["root", "psb_section", "datum_derived"]
 fuzz_targets = ["decode_pipeline_mutated"]
 charges = []
