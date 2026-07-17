@@ -5316,7 +5316,7 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
     let uses = feature_sketch_point_uses(
         &groups,
         std::slice::from_ref(&named_point),
-        &[block_use.clone(), second_block_use.clone()],
+        &[second_block_use.clone(), block_use.clone()],
     );
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].sketch_point_group, groups[0].id);

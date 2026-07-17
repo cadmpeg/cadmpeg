@@ -7743,13 +7743,20 @@ pub fn feature_sketch_point_uses(
         let Some(named_point) = named_points.get(block_use.named_point.as_str()) else {
             continue;
         };
-        let point_block_uses = block_uses
+        let mut point_block_uses = block_uses
             .iter()
             .filter(|candidate| {
                 candidate.operation_label == block_use.operation_label
                     && candidate.named_point == block_use.named_point
             })
             .collect::<Vec<_>>();
+        point_block_uses.sort_by_key(|block_use| {
+            (
+                block_use.reference_ordinal,
+                block_use.source_offset,
+                block_use.id.as_str(),
+            )
+        });
         let candidates = point_groups
             .iter()
             .filter(|group| {
@@ -7768,9 +7775,11 @@ pub fn feature_sketch_point_uses(
             continue;
         }
         uses.push(FeatureSketchPointUse {
-            id: block_use
-                .id
-                .replacen("sketch-named-point-block-use", "sketch-point-use", 1),
+            id: point_block_uses[0].id.replacen(
+                "sketch-named-point-block-use",
+                "sketch-point-use",
+                1,
+            ),
             operation_label: block_use.operation_label.clone(),
             sketch_references: point_block_uses
                 .iter()
