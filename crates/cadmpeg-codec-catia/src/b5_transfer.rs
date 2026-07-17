@@ -12,20 +12,32 @@ use cadmpeg_ir::ids::{
     SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
+use cadmpeg_ir::transfer::{Builder, Transfer};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::b5::{B5Graph, B5Loop, B5Surface};
 
 /// Transfer a complete B5 graph. Returns `false` without mutation when any
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
+///
+/// Each referenced surface crosses the Phase-4B resolver-to-carrier boundary
+/// (§6.2, §10) through a [`Transfer`]: an analytic carrier the decoder can read
+/// verbatim resolves [`Exact`](Transfer::Exact), while a plane whose stored
+/// axes are not orthonormal or a revolution carrier the transfer cannot express
+/// resolves [`Fallback`](Transfer::Fallback) to an opaque `Unknown` surface and
+/// records a stable loss code. Threading the substitution through a [`Builder`]
+/// makes the fallback unwritable without its note, so `losses` gains one entry
+/// per substituted carrier. `losses` is left untouched on every `false` return.
 pub(crate) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     graph: &B5Graph,
     payload: &UnknownId,
+    losses: &mut Vec<LossNote>,
 ) -> bool {
     let face_record_count = graph
         .records
@@ -52,11 +64,19 @@ pub(crate) fn transfer(
 
     let referenced_surfaces: HashSet<u32> = graph.faces.iter().map(|face| face.surface).collect();
     let mut surface_plan = BTreeMap::new();
+    // Resolve every carrier substitution into a local sink so a later `return
+    // false` leaves the caller's `losses` untouched; the sink drains into
+    // `losses` only once the graph commits.
+    let mut surface_losses: Vec<LossNote> = Vec::new();
+    let mut surface_builder = Builder::new(&mut surface_losses);
     for surface_id in referenced_surfaces {
         let Some(surface) = graph.surfaces.get(&surface_id) else {
             return false;
         };
-        surface_plan.insert(surface_id, neutral_surface(surface, payload));
+        let geometry = surface_builder
+            .take(neutral_surface(surface, payload, surface_id))
+            .expect("a b5 surface transfer never drops its carrier");
+        surface_plan.insert(surface_id, geometry);
     }
 
     let mut pcurve_plan = BTreeMap::new();
@@ -389,35 +409,73 @@ pub(crate) fn transfer(
             ir.model.coedges[arena_index].radial_next = ir.model.coedges[radial].id.clone();
         }
     }
+    losses.append(&mut surface_losses);
     true
 }
 
-fn neutral_surface(surface: &B5Surface, payload: &UnknownId) -> SurfaceGeometry {
+/// Resolve one B5 carrier across the Phase-4B resolver boundary. A readable
+/// analytic carrier is [`Exact`](Transfer::Exact); a plane whose stored axes are
+/// not orthonormal, or a revolution the transfer cannot express, substitutes an
+/// opaque `Unknown` carrier and carries the loss that explains it.
+fn neutral_surface(
+    surface: &B5Surface,
+    payload: &UnknownId,
+    surface_id: u32,
+) -> Transfer<SurfaceGeometry> {
     match surface {
         B5Surface::Plane {
             origin,
             direction_u,
             direction_v,
-        } => orthonormal_plane(*origin, *direction_u, *direction_v).unwrap_or_else(|| {
-            SurfaceGeometry::Unknown {
-                record: Some(payload.clone()),
-            }
-        }),
+        } => match orthonormal_plane(*origin, *direction_u, *direction_v) {
+            Some(plane) => Transfer::exact(plane),
+            None => Transfer::fallback(
+                SurfaceGeometry::Unknown {
+                    record: Some(payload.clone()),
+                },
+                carrier_loss(
+                    LossCode::CarrierAxisInferred,
+                    format!(
+                        "B5 plane carrier #{surface_id} stores non-orthonormal axes; \
+                         its analytic definition was replaced by an opaque carrier."
+                    ),
+                ),
+            ),
+        },
         B5Surface::Cylinder {
             origin,
             reference_x,
             axis,
             radius,
-        } => SurfaceGeometry::Cylinder {
+        } => Transfer::exact(SurfaceGeometry::Cylinder {
             origin: point(*origin),
             axis: vector(*axis),
             ref_direction: vector(*reference_x),
             radius: *radius,
-        },
-        B5Surface::Nurbs(surface) => SurfaceGeometry::Nurbs(surface.clone()),
-        B5Surface::Revolution { .. } => SurfaceGeometry::Unknown {
-            record: Some(payload.clone()),
-        },
+        }),
+        B5Surface::Nurbs(surface) => Transfer::exact(SurfaceGeometry::Nurbs(surface.clone())),
+        B5Surface::Revolution { .. } => Transfer::fallback(
+            SurfaceGeometry::Unknown {
+                record: Some(payload.clone()),
+            },
+            carrier_loss(
+                LossCode::ProceduralReduced,
+                format!(
+                    "B5 revolution carrier #{surface_id} was reduced to an opaque carrier; \
+                     its procedural surface definition was not transferred."
+                ),
+            ),
+        ),
+    }
+}
+
+fn carrier_loss(code: LossCode, message: String) -> LossNote {
+    LossNote {
+        code,
+        category: LossCategory::Geometry,
+        severity: Severity::Warning,
+        message,
+        provenance: None,
     }
 }
 
@@ -543,4 +601,69 @@ fn length(value: [f64; 3]) -> f64 {
 fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
     let length = length(value);
     (length > f64::EPSILON).then(|| [value[0] / length, value[1] / length, value[2] / length])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn payload() -> UnknownId {
+        UnknownId("catia:payload:unknown#test".to_string())
+    }
+
+    #[test]
+    fn orthonormal_plane_resolves_exact_without_loss() {
+        let mut sink: Vec<LossNote> = Vec::new();
+        let surface = B5Surface::Plane {
+            origin: [0.0, 0.0, 0.0],
+            direction_u: [1.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        let value = neutral_surface(&surface, &payload(), 7).resolve(&mut sink);
+        assert!(matches!(value, Some(SurfaceGeometry::Plane { .. })));
+        assert!(sink.is_empty());
+    }
+
+    #[test]
+    fn non_orthonormal_plane_falls_back_and_records_axis_loss() {
+        let mut sink: Vec<LossNote> = Vec::new();
+        let surface = B5Surface::Plane {
+            origin: [0.0, 0.0, 0.0],
+            direction_u: [2.0, 0.0, 0.0],
+            direction_v: [0.0, 1.0, 0.0],
+        };
+        let value = neutral_surface(&surface, &payload(), 7).resolve(&mut sink);
+        assert!(matches!(value, Some(SurfaceGeometry::Unknown { .. })));
+        assert_eq!(sink.len(), 1);
+        assert_eq!(sink[0].code, LossCode::CarrierAxisInferred);
+    }
+
+    #[test]
+    fn revolution_falls_back_and_records_procedural_loss() {
+        let mut sink: Vec<LossNote> = Vec::new();
+        let surface = B5Surface::Revolution {
+            profile_curve: 3,
+            axis_origin: [0.0, 0.0, 0.0],
+            axis_direction: [0.0, 0.0, 1.0],
+            gauge_radius: 1.0,
+        };
+        let value = neutral_surface(&surface, &payload(), 9).resolve(&mut sink);
+        assert!(matches!(value, Some(SurfaceGeometry::Unknown { .. })));
+        assert_eq!(sink.len(), 1);
+        assert_eq!(sink[0].code, LossCode::ProceduralReduced);
+    }
+
+    #[test]
+    fn cylinder_resolves_exact_without_loss() {
+        let mut sink: Vec<LossNote> = Vec::new();
+        let surface = B5Surface::Cylinder {
+            origin: [0.0, 0.0, 0.0],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 2.0,
+        };
+        let value = neutral_surface(&surface, &payload(), 1).resolve(&mut sink);
+        assert!(matches!(value, Some(SurfaceGeometry::Cylinder { radius, .. }) if radius == 2.0));
+        assert!(sink.is_empty());
+    }
 }

@@ -581,6 +581,38 @@ fn zero_entity_cylinder_catpart() -> Vec<u8> {
     f
 }
 
+/// `zero_entity_cylinder_catpart` with its carrier origin (payload offsets
+/// 8/16/24) and standalone vertex point rigidly translated by `t`. Axis,
+/// reference direction, and radius are frame-relative and stay fixed, so
+/// decoding the translated file must shift only the origin and vertex.
+fn zero_entity_cylinder_catpart_translated(t: [f64; 3]) -> Vec<u8> {
+    let mut f = Vec::new();
+    f.extend_from_slice(OUTER_MAGIC);
+    f.extend_from_slice(&be32(0));
+    f.extend_from_slice(&be32(0));
+    f.extend_from_slice(&[0xa9, 0x03, 0x28, 0x8a]);
+    let mut payload = vec![0u8; 146];
+    let write = |payload: &mut [u8], at: usize, value: f64| {
+        payload[at..at + 8].copy_from_slice(&le_f64(value));
+    };
+    for (at, value) in [
+        (8, 1.0 + t[0]),
+        (16, 2.0 + t[1]),
+        (24, 3.0 + t[2]),
+        (33, 1.0),
+        (65, 1.0),
+        (81, 4.0),
+    ] {
+        write(&mut payload, at, value);
+    }
+    f.extend_from_slice(&payload);
+    f.extend_from_slice(&[0x05, 0x08, 0x01]);
+    for (value, shift) in [1.0f32, 2.0, 3.0].into_iter().zip(t) {
+        f.extend_from_slice(&le_f32(value + shift as f32));
+    }
+    f
+}
+
 fn zero_entity_nurbs_catpart() -> Vec<u8> {
     let mut f = vec![0u8; 16];
     f[..8].copy_from_slice(OUTER_MAGIC);
@@ -3108,6 +3140,49 @@ fn a5_surface_parser_reads_consolidated_nurbs() {
 }
 
 #[test]
+fn decode_a5_consolidated_stream_transfers_nurbs_carrier() {
+    // End-to-end value-level golden for the consolidated `a5 03 34` NURBS
+    // surface family: a full `CatiaCodec::decode` over a container whose main
+    // stream carries one bi-linear pole grid must surface exact degrees, pole
+    // counts, expanded knot vectors, all pole coordinates, and non-rational
+    // weights rather than a bare `Nurbs` variant match.
+    let file = object_main_catpart(&a5_surface_stream());
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find_map(|surface| match &surface.geometry {
+            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            _ => None,
+        })
+        .expect("the a5 pole grid transfers as an analytic NURBS carrier");
+    assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
+    assert_eq!((surface.u_count, surface.v_count), (2, 2));
+    assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.weights, None);
+    let poles: Vec<[f64; 3]> = surface
+        .control_points
+        .iter()
+        .map(|pole| [pole.x, pole.y, pole.z])
+        .collect();
+    assert_eq!(
+        poles,
+        vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 1.0, 0.0],
+            [3.0, 1.0, 1.0],
+        ]
+    );
+}
+
+#[test]
 fn consolidated_surface_parser_reads_width2_frame() {
     let surfaces = crate::geometry::a5_surfaces(&a6_surface_stream());
     assert_eq!(surfaces.len(), 1);
@@ -3174,10 +3249,26 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
-        SurfaceGeometry::Nurbs(_)
-    ));
+    // Value-level golden for the a8 common-form NURBS surface family (§10
+    // Phase-4D): the end-to-end decode must reproduce the exact degrees, control
+    // counts, expanded knot vectors, and pole coordinates the parser reads, not
+    // merely land on the `Nurbs` variant.
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    match &result.ir.model.surfaces[0].geometry {
+        SurfaceGeometry::Nurbs(surface) => {
+            assert_eq!((surface.u_degree, surface.v_degree), (2, 2));
+            assert_eq!((surface.u_count, surface.v_count), (3, 3));
+            assert_eq!(surface.u_knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+            assert_eq!(surface.v_knots, vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+            assert_eq!(surface.control_points.len(), 9);
+            assert_eq!(surface.control_points[0].x, 0.0);
+            assert_eq!(surface.control_points[8].x, 8.0);
+            assert_eq!(surface.control_points[8].y, 2.0);
+            assert_eq!(surface.control_points[8].z, 2.0);
+            assert!(surface.weights.is_none());
+        }
+        other => panic!("expected NURBS surface, got {other:?}"),
+    }
 }
 
 #[test]
@@ -3210,6 +3301,208 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
+/// The `b5_closed_triangle_stream` fixture rigidly translated by `t`: the plane
+/// carrier origin (f64) and every standalone vertex point (f32) shift by the
+/// same offset, so the pcurve lift and the vertex cloud move together and the
+/// reference graph still closes. A pure translation is a rigid motion, so the
+/// decoded topology must be invariant and every point must move by exactly `t`.
+fn b5_closed_triangle_stream_translated(t: [f64; 3]) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    let mut plane = vec![0; 73];
+    for (offset, value) in [
+        (1usize, t[0]),
+        (9, t[1]),
+        (17, t[2]),
+        (25, 1.0),
+        (33, 0.0),
+        (41, 0.0),
+        (49, 0.0),
+        (57, 1.0),
+        (65, 0.0),
+    ] {
+        plane[offset..offset + 8].copy_from_slice(&le_f64(value));
+    }
+    append_b5_record(&mut bytes, 0x27, 100, &plane);
+    for (id, start, end) in [
+        (200u32, [0.0, 0.0], [1.0, 0.0]),
+        (201, [1.0, 0.0], [0.0, 1.0]),
+        (202, [0.0, 1.0], [0.0, 0.0]),
+    ] {
+        append_b5_record(
+            &mut bytes,
+            0x21,
+            id,
+            &b5_linear_pcurve_payload(100, start, end),
+        );
+    }
+    for id in [300u32, 301, 302] {
+        append_b5_record(&mut bytes, 0x5e, id, &[]);
+    }
+    append_b5_record(
+        &mut bytes,
+        0x62,
+        400,
+        &[
+            0x87, 0x18, 200, 0, 0x18, 44, 1, 0x18, 201, 0, 0x18, 45, 1, 0x18, 202, 0, 0x18, 46, 1,
+            0x18, 100, 0,
+        ],
+    );
+    append_b5_record(&mut bytes, 0x5f, 500, &[0x18, 100, 0, 0x18, 144, 1]);
+    for point in [[0.0f64, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for (axis, value) in point.iter().enumerate() {
+            bytes.extend_from_slice(&le_f32((value + t[axis]) as f32));
+        }
+    }
+    bytes
+}
+
+fn decode_b5_points(t: [f64; 3]) -> Vec<[f64; 3]> {
+    let file = object_main_catpart(&b5_closed_triangle_stream_translated(t));
+    let result = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .unwrap();
+    result
+        .ir
+        .model
+        .points
+        .iter()
+        .map(|p| [p.position.x, p.position.y, p.position.z])
+        .collect()
+}
+
+/// Metamorphic property (§9, §10 Phase-4D): decode is invariant under a rigid
+/// motion of the source coordinates. Translating the B5 triangle by `t` must
+/// translate every decoded point by exactly `t` while leaving the topology
+/// (body/face/loop/coedge/edge/vertex census) unchanged.
+#[test]
+fn b5_topology_is_invariant_under_rigid_translation() {
+    let base = object_main_catpart(&b5_closed_triangle_stream_translated([0.0, 0.0, 0.0]));
+    let moved = object_main_catpart(&b5_closed_triangle_stream_translated([10.0, -4.0, 7.0]));
+    let base = CatiaCodec
+        .decode(&mut Cursor::new(base), &DecodeOptions::default())
+        .unwrap();
+    let moved = CatiaCodec
+        .decode(&mut Cursor::new(moved), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(base.ir.model.bodies.len(), moved.ir.model.bodies.len());
+    assert_eq!(base.ir.model.faces.len(), moved.ir.model.faces.len());
+    assert_eq!(base.ir.model.loops.len(), moved.ir.model.loops.len());
+    assert_eq!(base.ir.model.coedges.len(), moved.ir.model.coedges.len());
+    assert_eq!(base.ir.model.edges.len(), moved.ir.model.edges.len());
+    assert_eq!(base.ir.model.vertices.len(), moved.ir.model.vertices.len());
+
+    let before = decode_b5_points([0.0, 0.0, 0.0]);
+    let after = decode_b5_points([10.0, -4.0, 7.0]);
+    assert_eq!(before.len(), after.len());
+    for (b, a) in before.iter().zip(&after) {
+        assert!((a[0] - (b[0] + 10.0)).abs() < 1e-4, "x: {b:?} -> {a:?}");
+        assert!((a[1] - (b[1] - 4.0)).abs() < 1e-4, "y: {b:?} -> {a:?}");
+        assert!((a[2] - (b[2] + 7.0)).abs() < 1e-4, "z: {b:?} -> {a:?}");
+    }
+}
+
+/// Metamorphic property (§9, §10 Phase-4D) on a second decode path: the
+/// zero-entity framed cylinder carrier. A rigid translation of the source
+/// coordinates shifts the decoded cylinder origin and the standalone vertex by
+/// exactly `t`, while the frame-relative axis, reference direction, and radius
+/// are invariant. This exercises the analytic-carrier path the B5 property does
+/// not reach.
+#[test]
+fn zero_entity_cylinder_is_invariant_under_rigid_translation() {
+    let t = [10.0, -4.0, 7.0];
+    let base = CatiaCodec
+        .decode(
+            &mut Cursor::new(zero_entity_cylinder_catpart_translated([0.0, 0.0, 0.0])),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let moved = CatiaCodec
+        .decode(
+            &mut Cursor::new(zero_entity_cylinder_catpart_translated(t)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+
+    assert_eq!(base.ir.model.surfaces.len(), moved.ir.model.surfaces.len());
+    assert_eq!(base.ir.model.vertices.len(), moved.ir.model.vertices.len());
+
+    let (base_cyl, moved_cyl) = match (
+        &base.ir.model.surfaces[0].geometry,
+        &moved.ir.model.surfaces[0].geometry,
+    ) {
+        (SurfaceGeometry::Cylinder { .. }, SurfaceGeometry::Cylinder { .. }) => (
+            &base.ir.model.surfaces[0].geometry,
+            &moved.ir.model.surfaces[0].geometry,
+        ),
+        other => panic!("expected two cylinders, got {other:?}"),
+    };
+    if let (
+        SurfaceGeometry::Cylinder {
+            origin: bo,
+            axis: ba,
+            ref_direction: br,
+            radius: brad,
+        },
+        SurfaceGeometry::Cylinder {
+            origin: mo,
+            axis: ma,
+            ref_direction: mr,
+            radius: mrad,
+        },
+    ) = (base_cyl, moved_cyl)
+    {
+        assert!((mo.x - (bo.x + t[0])).abs() < 1e-9);
+        assert!((mo.y - (bo.y + t[1])).abs() < 1e-9);
+        assert!((mo.z - (bo.z + t[2])).abs() < 1e-9);
+        assert_eq!(ba, ma);
+        assert_eq!(br, mr);
+        assert_eq!(brad, mrad);
+    }
+
+    let bp = &base.ir.model.points[0].position;
+    let mp = &moved.ir.model.points[0].position;
+    assert!((mp.x - (bp.x + t[0] as f32 as f64)).abs() < 1e-4);
+    assert!((mp.y - (bp.y + t[1] as f32 as f64)).abs() < 1e-4);
+    assert!((mp.z - (bp.z + t[2] as f32 as f64)).abs() < 1e-4);
+}
+
+/// Strict-reject / salvage-loss-code pair (§10 Phase-4D): a `standard_catpart`
+/// whose face runs are detected but whose complete trim graph does not resolve
+/// accounts topology as a `Reject`-consequence loss. Salvage keeps the partial
+/// model and surfaces the stable code; strict refuses the decode outright rather
+/// than return a model that silently omits the mandatory topology.
+#[test]
+fn topology_not_transferred_rejects_strict_and_reports_code_under_salvage() {
+    let salvage = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart()),
+            &DecodeOptions::default(),
+        )
+        .expect("salvage keeps the partial decode");
+    let reject_code = salvage.report.losses.iter().find(|note| {
+        note.code.strict_consequence() == cadmpeg_ir::report::StrictConsequence::Reject
+    });
+    let reject_code = reject_code.expect("salvage report carries a reject-consequence loss code");
+    assert_eq!(reject_code.code, LossCode::TopologyNotTransferred);
+
+    let strict = CatiaCodec.decode(
+        &mut Cursor::new(standard_catpart()),
+        &DecodeOptions {
+            container_only: false,
+            policy: cadmpeg_ir::decode::DecodePolicy {
+                mode: cadmpeg_ir::decode::DecodeMode::Strict,
+                ..Default::default()
+            },
+        },
+    );
+    let error = strict.expect_err("strict mode rejects unrepresentable mandatory topology");
+    assert!(error
+        .to_string()
+        .contains("strict mode rejects unrepresentable mandatory semantics"));
+}
+
 #[test]
 fn decode_inner_no_directory_transfers_a8_nurbs() {
     assert_eq!(
@@ -3236,10 +3529,118 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    assert!(matches!(
-        result.ir.model.surfaces[0].geometry,
-        SurfaceGeometry::Cylinder { radius: 2.0, .. }
-    ));
+    // Value-level golden: the `b2 03 28` arc-length carrier (layout `0x5a`,
+    // frame token `0x19`) resolves to an exact analytic cylinder whose origin,
+    // axis, reference direction, and radius match the stored frame verbatim.
+    match &result.ir.model.surfaces[0].geometry {
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } => {
+            assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0]);
+            assert_eq!([axis.x, axis.y, axis.z], [1.0, 0.0, 0.0]);
+            assert_eq!(
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+                [0.0, 1.0, 0.0]
+            );
+            assert_eq!(*radius, 2.0);
+        }
+        other => panic!("expected an analytic cylinder carrier, got {other:?}"),
+    }
+}
+
+#[test]
+fn decode_main_stream_transfers_b2_cone_carrier() {
+    // End-to-end value-level golden for the `b2 03 29` orthonormal slant-chart
+    // cone family (§10 Phase-4D): a full `CatiaCodec::decode` over a container
+    // whose main stream carries one cone record must reproduce the exact apex-
+    // derived origin, axis, reference direction, radius, and half-angle the
+    // parser reads, not merely land on the `Cone` variant. The cone is
+    // parametrised by apex `[1,2,3]`, axis `[0,0,1]`, transverse `t1 = [1,0,0]`,
+    // half-angle `0.25`, and slant floor `2.0`.
+    let file = object_main_catpart(&b2_cone_stream());
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let cone = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| matches!(surface.geometry, SurfaceGeometry::Cone { .. }))
+        .expect("the b2 cone record transfers as an analytic cone carrier");
+    match &cone.geometry {
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } => {
+            let slant = 2.0f64;
+            let axial = slant * 0.25f64.cos();
+            assert_eq!([origin.x, origin.y, origin.z], [1.0, 2.0, 3.0 + axial]);
+            assert_eq!([axis.x, axis.y, axis.z], [0.0, 0.0, 1.0]);
+            assert_eq!(
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+                [1.0, 0.0, 0.0]
+            );
+            assert_eq!(*radius, slant * 0.25f64.sin());
+            assert_eq!(*ratio, 1.0);
+            assert_eq!(*half_angle, 0.25);
+        }
+        other => panic!("expected an analytic cone carrier, got {other:?}"),
+    }
+}
+
+#[test]
+fn decode_a5_consolidated_stream_transfers_rational_nurbs_weights() {
+    // End-to-end value-level golden for the rational branch of the consolidated
+    // `a5 03 34` NURBS surface family (§10 Phase-4D): a full `CatiaCodec::decode`
+    // over a container whose main stream carries a rational pole grid must
+    // surface the per-pole weight program `[2, 2, 2, 2]` verbatim, alongside the
+    // same degrees, pole counts, knot vectors, and pole coordinates as the
+    // non-rational golden. The non-rational golden asserts `weights == None`, so
+    // this pair pins the rational discriminator end to end, not only at the
+    // parser.
+    let file = object_main_catpart(&a5_rational_surface_stream());
+    let mut cur = Cursor::new(file);
+    let result = CatiaCodec
+        .decode(&mut cur, &DecodeOptions::default())
+        .unwrap();
+    let surface = result
+        .ir
+        .model
+        .surfaces
+        .iter()
+        .find_map(|surface| match &surface.geometry {
+            SurfaceGeometry::Nurbs(nurbs) => Some(nurbs),
+            _ => None,
+        })
+        .expect("the rational a5 pole grid transfers as an analytic NURBS carrier");
+    assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
+    assert_eq!((surface.u_count, surface.v_count), (2, 2));
+    assert_eq!(surface.u_knots, vec![0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.v_knots, vec![0.0, 0.0, 1.0, 1.0]);
+    assert_eq!(surface.weights, Some(vec![2.0; 4]));
+    let poles: Vec<[f64; 3]> = surface
+        .control_points
+        .iter()
+        .map(|pole| [pole.x, pole.y, pole.z])
+        .collect();
+    assert_eq!(
+        poles,
+        vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+            [2.0, 1.0, 0.0],
+            [3.0, 1.0, 1.0],
+        ]
+    );
 }
 
 #[test]
@@ -3386,17 +3787,33 @@ mod tickets {
 
     /// `Check::TransferAccounting` runs inside `finish`; a disposition that did
     /// not validate against the ledger fails a strict decode and appends an
-    /// accountable loss under salvage. Every fixture decoding `Ok` in strict
-    /// mode is the proof the issued dispositions are consistent.
+    /// accountable loss under salvage. Salvage always accounts; a strict decode
+    /// either accounts (`Ok`) or is refused by the §10 Phase-4 semantic gate
+    /// because a mandatory-semantics loss (a `Reject`-consequence `LossCode`)
+    /// could only be accounted as a loss — never any other error kind.
     #[test]
     fn every_fixture_transfer_accounts_in_both_modes() {
         for fixture in fixtures() {
-            for mode in [DecodeMode::Strict, DecodeMode::Salvage] {
-                CatiaCodec
-                    .decode(&mut Cursor::new(fixture.clone()), &options(mode))
-                    .unwrap_or_else(|error| {
-                        panic!("transfer accounting failed in {mode:?} mode: {error:?}")
-                    });
+            CatiaCodec
+                .decode(
+                    &mut Cursor::new(fixture.clone()),
+                    &options(DecodeMode::Salvage),
+                )
+                .unwrap_or_else(|error| {
+                    panic!("transfer accounting failed in Salvage mode: {error:?}")
+                });
+            match CatiaCodec.decode(
+                &mut Cursor::new(fixture.clone()),
+                &options(DecodeMode::Strict),
+            ) {
+                Ok(_) => {}
+                Err(error) => {
+                    let message = error.to_string();
+                    assert!(
+                        message.contains("strict mode rejects unrepresentable mandatory semantics"),
+                        "strict decode failed for a reason other than the semantic gate: {message}"
+                    );
+                }
             }
         }
 

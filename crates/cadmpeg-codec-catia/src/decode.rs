@@ -12,7 +12,7 @@
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::{DecodeContext, DecodeMode, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
@@ -24,7 +24,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
+    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity, StrictConsequence,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -126,7 +126,38 @@ fn finish_decode<'a>(
     // a builder bug that panics rather than a decode-time `Malformed` failure.
     report.source_fidelity = Some(crate::ledger::container_ledger(scan));
     crate::tickets::account_records(ctx, root, &ir, &mut report);
+    reject_unrepresentable_in_strict(ctx, &report)?;
     Ok(DecodeResult::new(ir, report))
+}
+
+/// Enforce the §10 Phase-4 strict-mode contract: a decode that could only
+/// account mandatory geometry or topology as a loss (a [`LossCode`] whose
+/// [`strict_consequence`](LossCode::strict_consequence) is
+/// [`Reject`](StrictConsequence::Reject)) is not a faithful result, so strict
+/// mode refuses it with a classified error rather than returning a model that
+/// silently omits mandatory semantics. Salvage mode keeps the partial result and
+/// its loss note. The refusal is `Malformed`: the taxonomy carries no dedicated
+/// semantic-rejection variant, and `Malformed` is the platform's general
+/// cannot-produce-a-faithful-result classification (it is what a native-record
+/// conversion failure already maps to), never a `ResourceLimit` reason.
+fn reject_unrepresentable_in_strict(
+    ctx: &DecodeContext<'_>,
+    report: &DecodeReport,
+) -> Result<(), CodecError> {
+    if ctx.mode() != DecodeMode::Strict {
+        return Ok(());
+    }
+    if let Some(note) = report
+        .losses
+        .iter()
+        .find(|note| note.code.strict_consequence() == StrictConsequence::Reject)
+    {
+        return Err(CodecError::Malformed(format!(
+            "strict mode rejects unrepresentable mandatory semantics ({}): {}",
+            note.code, note.message
+        )));
+    }
+    Ok(())
 }
 
 fn annotate(
@@ -841,8 +872,15 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
     ir.source = Some(source_meta(scan));
     let payload_id = UnknownId("catia:payload:unknown#freeform".to_string());
     preserve_raw_payload(&mut ir, &mut annotations, scan, &payload_id.0).ok()?;
+    let mut transfer_losses: Vec<LossNote> = Vec::new();
     let topology_transferred = b5_graph.as_ref().is_some_and(|graph| {
-        crate::b5_transfer::transfer(&mut ir, &mut annotations, graph, &payload_id)
+        crate::b5_transfer::transfer(
+            &mut ir,
+            &mut annotations,
+            graph,
+            &payload_id,
+            &mut transfer_losses,
+        )
     });
     if !topology_transferred {
         for (index, (pos, object_id, geometry, kind)) in surfaces.iter().enumerate() {
@@ -874,14 +912,16 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
             container_only: false,
             geometry_transferred: true,
             losses: if topology_transferred {
-                vec![LossNote {
+                let mut losses = vec![LossNote {
                     code: LossCode::TopologyGaugeSubstituted,
                     category: LossCategory::Topology,
                     severity: Severity::Warning,
                     message: "The B5 reference graph is closed; face sense and body kind use a deterministic topology gauge because their source fields remain unresolved."
                         .to_string(),
                     provenance: None,
-                }]
+                }];
+                losses.append(&mut transfer_losses);
+                losses
             } else {
                 vec![LossNote {
                     code: LossCode::ReferenceGraphNotClosed,
