@@ -4,12 +4,15 @@
 use crate::scalar::{self, ScalarCache};
 
 /// Stored reference-line family.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ReferenceLineKind {
     /// Planar `entity(line)` record.
     Line,
     /// Spatial `line3d` record with a stored original length.
-    Line3d,
+    Line3d {
+        /// Positive stored `orig_len`, equal to the endpoint distance.
+        original_length: f64,
+    },
 }
 
 /// One finite model-space line entity.
@@ -584,7 +587,7 @@ pub fn lines(payload: &[u8]) -> Vec<ReferenceLine> {
     result
 }
 
-fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3])> {
+fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3], f64)> {
     let candidates = (0..body.len()).filter_map(|start| {
         let mut cursor = start;
         let mut values = Vec::with_capacity(7);
@@ -603,10 +606,10 @@ fn line3d_fields(body: &[u8], cache: &ScalarCache) -> Option<([f64; 3], [f64; 3]
             && distance > 1e-12
             && stored_length > 0.0
             && (distance - stored_length).abs() <= 1e-9 * scale)
-            .then_some((start, first, second))
+            .then_some((start, first, second, stored_length))
     });
-    let (_, first, second) = candidates.min_by_key(|(start, _, _)| *start)?;
-    Some((first, second))
+    let (_, first, second, stored_length) = candidates.min_by_key(|(start, _, _, _)| *start)?;
+    Some((first, second, stored_length))
 }
 
 fn matching_row_id(payload: &[u8], close: usize, id: u32) -> bool {
@@ -667,11 +670,13 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
                 .get(index + 1)
                 .map_or(block_end, |(next_close, _)| *next_close)
                 .min(body_start.saturating_add(384));
-            let Some((start, end)) = line3d_fields(&payload[body_start..body_end], &cache) else {
+            let Some((start, end, original_length)) =
+                line3d_fields(&payload[body_start..body_end], &cache)
+            else {
                 continue;
             };
             result.push(ReferenceLine {
-                kind: ReferenceLineKind::Line3d,
+                kind: ReferenceLineKind::Line3d { original_length },
                 start,
                 end,
                 offset: close + 1,
@@ -980,7 +985,12 @@ mod tests {
         let [line] = decoded.as_slice() else {
             panic!("one line3d");
         };
-        assert_eq!(line.kind, ReferenceLineKind::Line3d);
+        assert_eq!(
+            line.kind,
+            ReferenceLineKind::Line3d {
+                original_length: 1.0
+            }
+        );
         assert_eq!(line.start, [0.0; 3]);
         assert_eq!(line.end, [1.0, 0.0, 0.0]);
     }

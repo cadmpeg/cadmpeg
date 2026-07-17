@@ -3294,6 +3294,29 @@ fn decode_transfers_equation_verified_model_reference_circles() {
 }
 
 #[test]
+fn decode_retains_line3d_original_length() {
+    let payload = b"ent_list(line3d)\0\x23\xe3\x23\x0d\xe2\x02\x48\x10\x00\
+        \x0f\x0f\x0f\xe4\x0f\x0f\xe4"
+        .to_vec();
+    let data = build_prt("c", &[("MdlRefInfo", payload)]);
+    let scan = container::scan_bytes(data.clone());
+    let [line] = scan.reference_lines.as_slice() else {
+        panic!("one line3d");
+    };
+    assert_eq!(
+        line.kind,
+        crate::reference::ReferenceLineKind::Line3d {
+            original_length: 1.0
+        }
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_lines"][0];
+    assert_eq!(record.fields["family"], "line3d");
+    assert_eq!(record.fields["original_length"], 1.0);
+}
+
+#[test]
 fn decode_reports_and_retains_invariant_complete_reference_ellipses() {
     let payload = b"ent_list(conic)\0\xf2\xf7\x0e\xe2\x2b\xe3\
         \x2b\x1e\xe2\x02\x48\x10\x00\xeb\x10\x00\x00\x00\x00\x01\

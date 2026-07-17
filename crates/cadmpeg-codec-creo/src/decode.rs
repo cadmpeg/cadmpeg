@@ -616,6 +616,7 @@ struct CreoReferenceLineRecord {
     family: &'static str,
     start: [f64; 3],
     end: [f64; 3],
+    original_length: Option<f64>,
     offset: usize,
 }
 
@@ -22115,9 +22116,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     ir.source = Some(source_meta(scan));
     preserve_passthrough_sections(scan, &mut ir, &mut annotations)?;
     if !scan.reference_lines.is_empty() {
-        let family = |kind| match kind {
+        let family = |kind: &crate::reference::ReferenceLineKind| match kind {
             crate::reference::ReferenceLineKind::Line => "line",
-            crate::reference::ReferenceLineKind::Line3d => "line3d",
+            crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
         };
         let records = scan
             .reference_lines
@@ -22125,12 +22126,18 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             .map(|line| CreoReferenceLineRecord {
                 id: format!(
                     "creo:mdl_ref_info:{}_record#{}",
-                    family(line.kind),
+                    family(&line.kind),
                     line.offset
                 ),
-                family: family(line.kind),
+                family: family(&line.kind),
                 start: line.start,
                 end: line.end,
+                original_length: match &line.kind {
+                    crate::reference::ReferenceLineKind::Line => None,
+                    crate::reference::ReferenceLineKind::Line3d { original_length } => {
+                        Some(*original_length)
+                    }
+                },
                 offset: line.offset,
             })
             .collect::<Vec<_>>();
@@ -22245,9 +22252,9 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         let Some(direction) = normalized(direction) else {
             continue;
         };
-        let family = match line.kind {
+        let family = match &line.kind {
             crate::reference::ReferenceLineKind::Line => "line",
-            crate::reference::ReferenceLineKind::Line3d => "line3d",
+            crate::reference::ReferenceLineKind::Line3d { .. } => "line3d",
         };
         let prefix = format!("creo:mdl_ref_info:{family}#{}", line.offset);
         let id = CurveId(prefix);
