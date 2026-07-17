@@ -1143,6 +1143,20 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
     ))
 }
 
+/// Reads a mesh element count bounded by the codec-local `cap`.
+///
+/// Unlike the identically named `count` helpers in `brep`, `curves`,
+/// `history`, and `morph`, this intentionally omits the
+/// `checked_count_bytes` remaining-bytes floor. Mesh element counts do not
+/// gate an immediate contiguous run of input: `vertex_count` addresses vertex
+/// data that may arrive zlib-compressed downstream (so `count * element_size`
+/// legitimately exceeds `reader.remaining()`), and `face_count` is floored at
+/// consumption by `reader.take(bytes)` in `read_faces`. Every count-driven
+/// reservation in this module therefore routes through the budget-charged
+/// `alloc_unfloored`/`read_buffer` path rather than an uncharged
+/// `Vec::with_capacity`; a new sub-chunk parser MUST preserve that invariant
+/// because the `cap` bound alone does not floor the allocation against input
+/// size.
 fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.i32()?;
     if value < 0 || value as usize > cap {
@@ -1151,6 +1165,10 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
     Ok(value as usize)
 }
 
+/// Reads an unsigned mesh count bounded by `cap`, sharing the deliberately
+/// unfloored contract documented on [`count`]: the `cap` bound does not floor
+/// the value against remaining input, so callers must consume it through
+/// budget-charged allocators, never a raw `Vec::with_capacity`.
 fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.u32()? as usize;
     if value > cap {
