@@ -6901,9 +6901,10 @@ fn build_geometry_report(
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Materials, appearances, unresolved entity-owned attribute fields, complete feature parameters, \
-                  sketch geometry, constraints, and assembly occurrence placements were not transferred: \
-                  their remaining NX object-model and Parasolid field serialization is not decoded."
+        message: "Material and appearance assignment, class-specific entity attribute fields, \
+                  unresolved feature-parameter roles, sketch geometry and constraints, and \
+                  assembly occurrence placements were not transferred: their remaining NX \
+                  object-model and Parasolid field serialization is not decoded."
             .to_string(),
         provenance: None,
     });
