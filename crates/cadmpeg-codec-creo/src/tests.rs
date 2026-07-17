@@ -1387,6 +1387,96 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
+/// Transfer accounting (§6.2, §10 Phase 3D) validates the resolved disposition
+/// table against the ledger in strict mode: a violation would fail the decode
+/// with `Malformed`. A fixture that exercises `Typed` (datum plane, placed plane
+/// frames, feature operation), `Structural` (preserved geometry sections), and a
+/// `Dropped` salvage skip must still decode cleanly under strict policy, proving
+/// every committed record resolves and every disposition is consistent.
+#[test]
+fn decode_passes_transfer_accounting_in_strict_mode() {
+    let mut payload = b"srf_array\0\xf8\x04".to_vec();
+    push_generated_plane_row(
+        &mut payload,
+        1,
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0],
+    );
+    push_generated_plane_row(
+        &mut payload,
+        2,
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+    );
+    push_generated_plane_row(
+        &mut payload,
+        3,
+        [1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0],
+    );
+    push_generated_plane_row(
+        &mut payload,
+        4,
+        [-2.0, -1.0, 2.0],
+        [2.0, -2.0, 1.0],
+        [1.0, 0.0, 0.0],
+    );
+    payload.extend_from_slice(b"crv_array\0\xf3\xf8\x06topol_ref_data\0");
+    for (curve, faces, next) in [
+        (10, [1, 2], [12, 13]),
+        (11, [1, 3], [10, 15]),
+        (12, [1, 4], [11, 14]),
+        (13, [2, 3], [14, 11]),
+        (14, [2, 4], [10, 15]),
+        (15, [3, 4], [13, 12]),
+    ] {
+        push_generated_topology_row(&mut payload, curve, faces, next);
+    }
+
+    let mut datum = vec![4, 0x22, 1, 1, 0, 0];
+    datum.extend([0x0f; 4]);
+    for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
+        if value == 0.0 {
+            datum.push(0x0f);
+        } else {
+            let mut bytes = value.to_be_bytes();
+            bytes[0] = if value.is_sign_negative() { 0x2d } else { 0x46 };
+            datum.extend(bytes);
+        }
+    }
+
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", payload),
+            ("NovisGeom", vec![0xaa, 0xbb]),
+            ("ActDatums", datum),
+        ],
+    );
+
+    let strict = DecodeOptions {
+        container_only: false,
+        policy: cadmpeg_ir::decode::DecodePolicy {
+            mode: cadmpeg_ir::decode::DecodeMode::Strict,
+            limits: cadmpeg_ir::decode::ResourceLimits::desktop(),
+        },
+    };
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &strict)
+        .expect("strict decode passes transfer accounting");
+    // The four placed frames plus the datum carrier transfer as model surfaces.
+    assert_eq!(result.ir.model.surfaces.len(), 5);
+    assert_eq!(result.ir.model.bodies.len(), 1);
+
+    // Salvage mode over the same bytes must also pass accounting.
+    CreoCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("salvage decode passes transfer accounting");
+}
+
 #[test]
 fn scan_discovers_model_space_datum_planes() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];

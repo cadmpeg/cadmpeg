@@ -13,7 +13,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::{
+    DecodeContext, RecordDisposition, RecordKind, RecordTicket, SourceLocation, SpaceId, View,
+};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
@@ -568,21 +570,60 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     // reported cannot tile the file, so an accounting-enabled result never
     // ships an inconsistent ledger. The validated sidecar rides the decode
     // report through its `source_fidelity` slot.
-    let ir = build_ir(&scan)?;
+    // Record disposition accounting (§10 Phase 3D, §6.2): every record-shaped
+    // unit the codec walks is committed at its §3.3 boundary and resolved to a
+    // disposition before the decode finishes. Records skipped on a salvage path
+    // (an incomplete VisibGeom support frame, a sketch definition with no placed
+    // feature) resolve `Dropped` with an accountable loss note rather than
+    // vanishing; `ctx.finish` runs `Check::TransferAccounting` over the resolved
+    // table. The dropped-record notes rejoin the report so each `Dropped`
+    // disposition has its matching loss.
+    let space = root.location().space;
+    let (ir, dropped_losses) = build_ir(ctx, space, &scan)?;
     let mut report = build_report(&scan, ctx.container_only());
+    report.losses.extend(dropped_losses);
     report.source_fidelity = Some(fidelity::coarse_ledger(&scan)?);
     Ok(DecodeResult::new(ir, report))
 }
 
+/// Commit a record-shaped unit at `offset` in the source `space`, returning its
+/// unresolved ticket (§6.2).
+fn commit(
+    ctx: &DecodeContext<'_>,
+    space: SpaceId,
+    offset: u64,
+    kind: &'static str,
+) -> RecordTicket {
+    ctx.commit_record(SourceLocation { space, offset }, RecordKind(kind))
+}
+
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
-fn build_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
+///
+/// Every record-shaped unit is committed and resolved against the disposition
+/// ledger (§6.2). The returned loss notes account each `Dropped` disposition —
+/// a record skipped on a salvage path — and the caller merges them into the
+/// report so `Check::TransferAccounting` finds a matching loss for each drop.
+fn build_ir(
+    ctx: &DecodeContext<'_>,
+    space: SpaceId,
+    scan: &ContainerScan<'_>,
+) -> Result<(CadIr, Vec<LossNote>), CodecError> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
+    let mut dropped_losses: Vec<LossNote> = Vec::new();
     ir.source = Some(source_meta(scan));
 
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
         let end = (section.offset + section.length).min(scan.data.len());
         let bytes = &scan.data[section.offset..end];
+        // A PSB geometry section is preserved verbatim as an `UnknownRecord` and
+        // conserved physically by the §6.1 coarse ledger's `Opaque` span; it
+        // yields no typed model entity, so its disposition is `Structural`. The
+        // engine's checkable dispositions name model entities (`Typed`) or
+        // retained-store blobs (`Retained`); a native `UnknownRecord` is neither,
+        // and the root-byte lifetime bars `ctx.retain` from `decode_impl` — see
+        // the crate deviation note.
+        let section_ticket = commit(ctx, space, section.offset as u64, "psb_geometry_section");
         let id = UnknownId(format!("creo:{}:section#{}", section.name, section.offset));
         annotate(
             &mut annotations,
@@ -603,9 +644,12 @@ fn build_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
                 links: Vec::new(),
             },
         )?;
+        ctx.resolve(section_ticket, RecordDisposition::Structural);
     }
     for plane in &scan.datum_planes {
+        let plane_ticket = commit(ctx, space, plane.offset_in_payload as u64, "datum_plane");
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
+        let output = id.0.clone();
         annotate(
             &mut annotations,
             &id,
@@ -639,13 +683,37 @@ fn build_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
                 instance_path: Vec::new(),
             }),
         });
+        ctx.resolve(
+            plane_ticket,
+            RecordDisposition::Typed {
+                outputs: vec![output],
+            },
+        );
     }
     for frame in &scan.plane_local_systems {
+        let frame_ticket = commit(ctx, space, frame.offset as u64, "plane_local_system");
         let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
         else {
+            // Salvage skip: an incomplete support frame is not transferred as a
+            // placed carrier. Resolve `Dropped` with an accountable loss rather
+            // than leaving the record silent (§6.2).
+            let loss = LossNote {
+                category: LossCategory::Geometry,
+                severity: Severity::Info,
+                message: format!(
+                    "VisibGeom plane local system surface#{} at offset {} is an incomplete \
+                     support frame (missing origin, normal, or u-axis); not transferred as a \
+                     model-space plane carrier.",
+                    frame.surface_id, frame.offset
+                ),
+                provenance: None,
+            };
+            dropped_losses.push(loss.clone());
+            ctx.resolve(frame_ticket, RecordDisposition::Dropped { loss });
             continue;
         };
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", frame.surface_id));
+        let output = id.0.clone();
         annotate(
             &mut annotations,
             &id,
@@ -671,10 +739,18 @@ fn build_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
                 instance_path: Vec::new(),
             }),
         });
+        ctx.resolve(
+            frame_ticket,
+            RecordDisposition::Typed {
+                outputs: vec![output],
+            },
+        );
     }
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     for (ordinal, operation) in scan.feature_operations.iter().enumerate() {
+        let feature_ticket = commit(ctx, space, operation.offset as u64, "feature_operation");
         let id = IrFeatureId(format!("creo:mdlstatus:feature#{}", operation.feature_id));
+        let output = id.0.clone();
         let mut parameters = BTreeMap::new();
         for affected in scan
             .feature_affected_ids
@@ -775,6 +851,12 @@ fn build_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
             },
             native_ref: None,
         });
+        ctx.resolve(
+            feature_ticket,
+            RecordDisposition::Typed {
+                outputs: vec![output],
+            },
+        );
     }
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {
@@ -784,6 +866,7 @@ fn build_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
                 .iter()
                 .find(|definition| definition.id == sketch.feature_id)
                 .map_or(0, |definition| definition.offset);
+            let sketch_ticket = commit(ctx, space, offset as u64, "feature_sketch");
             annotate(
                 &mut annotations,
                 &sketch.id,
@@ -792,13 +875,42 @@ fn build_ir(scan: &ContainerScan<'_>) -> Result<CadIr, CodecError> {
                 "feature_sketch",
                 Exactness::Derived,
             );
+            // A sketch's parsed data surfaces both as native design records and,
+            // when its feature was placed, folded into that feature's typed
+            // parameters. If the model carries the feature, the sketch resolves
+            // `Typed` naming it; if the definition has no placed feature
+            // operation, the native record has no model output and resolves
+            // `Dropped` with an accountable loss (§6.2).
+            let feature_id = format!("creo:mdlstatus:feature#{}", sketch.feature_id);
+            if ir.model.features.iter().any(|f| f.id.0 == feature_id) {
+                ctx.resolve(
+                    sketch_ticket,
+                    RecordDisposition::Typed {
+                        outputs: vec![feature_id],
+                    },
+                );
+            } else {
+                let loss = LossNote {
+                    category: LossCategory::Attribute,
+                    severity: Severity::Info,
+                    message: format!(
+                        "FeatDefs sketch definition #{} at offset {} was preserved as a native \
+                         design record but has no placed feature operation to carry it into the \
+                         typed model.",
+                        sketch.feature_id, offset
+                    ),
+                    provenance: None,
+                };
+                dropped_losses.push(loss.clone());
+                ctx.resolve(sketch_ticket, RecordDisposition::Dropped { loss });
+            }
         }
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("sketches", &sketches)?;
     }
     ir.annotations = annotations.build();
-    Ok(ir)
+    Ok((ir, dropped_losses))
 }
 
 fn annotate(
