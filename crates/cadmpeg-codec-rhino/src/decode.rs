@@ -1780,8 +1780,7 @@ impl<'a> DecodeContext<'a> {
             .set_native_unknowns("rhino", &self.unknowns)
             .expect("Rhino unknown records serialize");
         self.ir.finalize();
-        self.issue_object_tickets();
-        let mut losses = Vec::new();
+        let mut losses = self.issue_object_tickets();
         let decoded = self
             .outcomes
             .values()
@@ -1914,14 +1913,18 @@ impl<'a> DecodeContext<'a> {
     /// [`finalize`](CadIr::finalize), so the disposition never names a pruned
     /// id). Every other record is conserved opaque under stable source identity
     /// and resolves [`Retained`](RecordDisposition::Retained) against a platform
-    /// retained blob, so no walked record is silently lost. In strict mode an
-    /// exhausted retained budget fuses the context; [`finish`] returns the
-    /// `ResourceLimit` before validating dispositions, so the ticket is resolved
-    /// only to satisfy the `#[must_use]` contract.
+    /// retained blob, so no walked record is silently lost. A record whose bytes
+    /// cannot be retained (the platform retained budget is exhausted, which in
+    /// strict mode also fuses the context) resolves [`Dropped`](RecordDisposition::Dropped)
+    /// with an accountable loss the report carries — a record that could not be
+    /// preserved is a loss, never framing.
     ///
-    /// [`finish`]: cadmpeg_ir::decode::DecodeContext::finish
-    fn issue_object_tickets(&self) {
+    /// Returns the loss notes for the dropped records so the caller reflects them
+    /// in the report, satisfying `Check::TransferAccounting`'s requirement that
+    /// each `Dropped` disposition match a report loss.
+    fn issue_object_tickets(&self) -> Vec<LossNote> {
         let ctx = self.expand.ctx();
+        let mut dropped = Vec::new();
         for (source_order, object) in self.scan.objects.iter().enumerate() {
             let location = SourceLocation {
                 space: SpaceId::ROOT,
@@ -1952,12 +1955,27 @@ impl<'a> DecodeContext<'a> {
                         };
                         ctx.resolve(ticket, RecordDisposition::Retained { records: vec![id] });
                     }
-                    Err(_) => ctx.resolve(ticket, RecordDisposition::Structural),
+                    Err(_) => {
+                        let loss = LossNote {
+                            category: LossCategory::Geometry,
+                            severity: Severity::Warning,
+                            message: format!(
+                                "Rhino object record at offset {} could not be retained (platform \
+                                 retained budget exhausted); its bytes are not preserved in the \
+                                 platform store.",
+                                object.range.start
+                            ),
+                            provenance: None,
+                        };
+                        dropped.push(loss.clone());
+                        ctx.resolve(ticket, RecordDisposition::Dropped { loss });
+                    }
                 }
             } else {
                 ctx.resolve(ticket, RecordDisposition::Typed { outputs });
             }
         }
+        dropped
     }
 
     fn retain_object_records(&mut self) {
