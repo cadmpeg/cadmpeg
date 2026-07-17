@@ -14785,6 +14785,22 @@ fn graph_owned_analytic_geometry_has_no_scanner_magnitude_limit() {
 }
 
 #[test]
+fn ellipse_requires_ordered_serialized_radii() {
+    let mut ellipse = record(0x20, 107);
+    put_vec3(&mut ellipse, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut ellipse, 43, [0.0, 0.0, 1.0]);
+    put_vec3(&mut ellipse, 67, [1.0, 0.0, 0.0]);
+    put_f64(&mut ellipse, 91, 0.01);
+    put_f64(&mut ellipse, 99, 0.01 + 5.0e-10);
+
+    assert!(crate::geometry::curves(&ellipse).is_empty());
+    assert!(crate::geometry::decode_curve_record(&ellipse, 0x20, 0).is_none());
+
+    put_f64(&mut ellipse, 99, 0.01);
+    assert_eq!(crate::geometry::curves(&ellipse).len(), 1);
+}
+
+#[test]
 fn graph_owned_point_has_no_scanner_magnitude_limit() {
     let mut stream = topology_partition_stream();
     let point = stream

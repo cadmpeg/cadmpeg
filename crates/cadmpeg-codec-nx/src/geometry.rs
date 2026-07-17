@@ -384,7 +384,7 @@ fn ellipse(s: &[u8], b: usize, context: DecodeContext) -> Option<CurveGeometry> 
     if !is_orthonormal_frame(normal, x_axis) || !valid_position(center, context) {
         return None;
     }
-    if !valid_radius(major, context) || !valid_radius(minor, context) || minor > major + 1.0e-9 {
+    if !valid_radius(major, context) || !valid_radius(minor, context) || minor > major {
         return None;
     }
     Some(CurveGeometry::Ellipse {

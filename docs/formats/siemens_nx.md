@@ -525,7 +525,7 @@ Every analytic normal or axis and its x-axis are finite unit vectors with an abs
 
 An extended leading reference shifts the analytic payload and record end by the same decoded byte count. Bytes before that shifted end remain owned by the record and cannot open another analytic carrier.
 
-Validity gates: CIRCLE, ELLIPSE, CYLINDER, SPHERE, and TORUS radii are positive. CONE reference radius is nonnegative and has finite nonzero `sin_half` and `cos_half` satisfying `sin_half² + cos_half² ≈ 1`; SPHERE has a unit axis; a horn torus has `major == minor`.
+Validity gates: CIRCLE, ELLIPSE, CYLINDER, SPHERE, and TORUS radii are positive. ELLIPSE has `major >= minor`. CONE reference radius is nonnegative and has finite nonzero `sin_half` and `cos_half` satisfying `sin_half² + cos_half² ≈ 1`; SPHERE has a unit axis; a horn torus has `major == minor`.
 
 **OFFSET_SURF (60):** discriminator byte `+19` (`V`/`I`/`U`), `true_offset:u8 +20` (`0`/`1`), base surface ref `+21`, finite `offset_distance:f64 +23` (meters). Surface `P = base(u,v) + offset_distance · unit_normal(u,v)`. The format imposes no magnitude bound on the finite distance. There is no scale field at `+31` (that position lands in the next record). For a B_SURFACE base, the unit normal comes from the rational quotient rule:
 
