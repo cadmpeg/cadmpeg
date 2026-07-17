@@ -6774,13 +6774,10 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::SpatialSketch { .. } => {
-                let record = existing.as_deref().ok_or_else(|| {
-                    CodecError::NotImplemented(format!(
-                        "SLDPRT feature {} requires a retained spatial-sketch record",
-                        feature.id
-                    ))
-                })?;
-                if !feature_family(record, "Sketch") {
+                if existing
+                    .as_deref()
+                    .is_some_and(|record| !feature_family(record, "Sketch"))
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes operation family",
                         feature.id
@@ -6788,7 +6785,10 @@ pub fn sync_neutral_features(
                 }
                 (
                     "3DSketch".into(),
-                    record.parameters.clone(),
+                    existing
+                        .as_deref()
+                        .map(|record| record.parameters.clone())
+                        .unwrap_or_default(),
                     feature.source_properties.clone(),
                 )
             }

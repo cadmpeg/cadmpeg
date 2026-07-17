@@ -16507,11 +16507,6 @@ pub fn prepare_sketches_for_write(
         {
             return Ok(());
         }
-        if !ir.model.spatial_sketches.is_empty() || !ir.model.spatial_sketch_entities.is_empty() {
-            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
-                "source-less SLDPRT spatial sketch writing is not implemented".into(),
-            ));
-        }
         validate_source_less_constraints(ir)?;
         let native = native.get_or_insert_with(crate::native::SldprtNative::default);
         let generated = source_less_lanes(ir, native)?;
@@ -17374,30 +17369,7 @@ fn source_less_lanes(
     let mut lanes = Vec::<FeatureInputLane>::new();
     for sketch in &ir.model.sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
-        let section = format!("Contents/Config-{configuration}-ResolvedFeatures");
-        let lane = if let Some(lane) = lanes
-            .iter_mut()
-            .find(|lane| lane.configuration.as_deref() == Some(configuration.as_str()))
-        {
-            lane
-        } else {
-            lanes.push(FeatureInputLane {
-                id: section,
-                configuration: Some(configuration.clone()),
-                native_payload: Vec::new(),
-                classes: Vec::new(),
-                names: Vec::new(),
-                scalars: Vec::new(),
-                relation_bindings: Vec::new(),
-                relation_instances: Vec::new(),
-                body_selections: Vec::new(),
-                edge_selections: Vec::new(),
-                surface_selections: Vec::new(),
-                references: Vec::new(),
-                sketch_entities: Vec::new(),
-            });
-            lanes.last_mut().expect("lane was inserted")
-        };
+        let lane = source_less_lane(&mut lanes, &configuration);
         let owner = ir.model.features.iter().find(|feature| {
             matches!(
                 &feature.definition,
@@ -17453,6 +17425,89 @@ fn source_less_lanes(
                 sketch.name.as_deref().unwrap_or(&sketch.id.0),
             ));
     }
+    for sketch in &ir.model.spatial_sketches {
+        let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
+        let lane = source_less_lane(&mut lanes, &configuration);
+        let owner = ir.model.features.iter().find(|feature| {
+            matches!(
+                &feature.definition,
+                FeatureDefinition::SpatialSketch {
+                    sketch: Some(candidate),
+                } if candidate == &sketch.id
+            )
+        });
+        let Some(owner) = owner else {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "source-less SLDPRT spatial sketch {} has no owning feature",
+                sketch.id.0
+            )));
+        };
+        let owner_record_id = owner
+            .native_ref
+            .clone()
+            .unwrap_or_else(|| format!("sldprt:generated:feature#{}", owner.id.0));
+        let owner_record = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find(|feature| feature.id == owner_record_id)
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT spatial sketch {} has no native feature record",
+                    sketch.id.0
+                ))
+            })?;
+        let object_id = owner_record
+            .source_id
+            .as_deref()
+            .and_then(|source_id| source_id.parse::<u32>().ok())
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT spatial sketch {} has no numeric feature source id",
+                    sketch.id.0
+                ))
+            })?;
+        append_generated_object_name(
+            &mut lane.native_payload,
+            if owner_record.name.is_empty() {
+                sketch.name.as_deref().unwrap_or(&sketch.id.0)
+            } else {
+                owner_record.name.as_str()
+            },
+            object_id,
+        )?;
+        let [entity_id] = sketch.entities.as_slice() else {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "source-less SLDPRT spatial sketch {} requires exactly one line",
+                sketch.id.0
+            )));
+        };
+        let entity = ir
+            .model
+            .spatial_sketch_entities
+            .iter()
+            .find(|entity| entity.id == *entity_id && entity.sketch == sketch.id)
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT spatial sketch {} references missing entity {}",
+                    sketch.id.0, entity_id.0
+                ))
+            })?;
+        let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "source-less SLDPRT spatial sketch {} supports line geometry only",
+                sketch.id.0
+            )));
+        };
+        if start == end {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "source-less SLDPRT spatial sketch {} has a zero-length line",
+                sketch.id.0
+            )));
+        }
+        append_spatial_vertex(&mut lane.native_payload, start);
+        append_spatial_vertex(&mut lane.native_payload, end);
+    }
     for lane in &mut lanes {
         lane.classes = class_declarations(&lane.native_payload, &lane.id);
         lane.names = object_names(&lane.native_payload, &lane.id);
@@ -17463,6 +17518,44 @@ fn source_less_lanes(
     }
     bind_scalar_operands(&native.feature_histories, &mut lanes);
     Ok(lanes)
+}
+
+fn source_less_lane<'a>(
+    lanes: &'a mut Vec<FeatureInputLane>,
+    configuration: &str,
+) -> &'a mut FeatureInputLane {
+    if let Some(position) = lanes
+        .iter()
+        .position(|lane| lane.configuration.as_deref() == Some(configuration))
+    {
+        return &mut lanes[position];
+    }
+    lanes.push(FeatureInputLane {
+        id: format!("Contents/Config-{configuration}-ResolvedFeatures"),
+        configuration: Some(configuration.into()),
+        native_payload: Vec::new(),
+        classes: Vec::new(),
+        names: Vec::new(),
+        scalars: Vec::new(),
+        relation_bindings: Vec::new(),
+        relation_instances: Vec::new(),
+        body_selections: Vec::new(),
+        edge_selections: Vec::new(),
+        surface_selections: Vec::new(),
+        references: Vec::new(),
+        sketch_entities: Vec::new(),
+    });
+    lanes.last_mut().expect("lane was inserted")
+}
+
+fn append_spatial_vertex(payload: &mut Vec<u8>, point: Point3) {
+    let start = payload.len();
+    payload.resize(start + 69, 0);
+    payload[start..start + SPATIAL_VERTEX_PREFIX.len()].copy_from_slice(SPATIAL_VERTEX_PREFIX);
+    payload[start + 43..start + 45].copy_from_slice(&[0x0e, 0x00]);
+    payload[start + 45..start + 53].copy_from_slice(&point.x.to_le_bytes());
+    payload[start + 53..start + 61].copy_from_slice(&point.y.to_le_bytes());
+    payload[start + 61..start + 69].copy_from_slice(&point.z.to_le_bytes());
 }
 
 enum GeneratedMarkerRelation<'a> {

@@ -2452,6 +2452,78 @@ fn encoder_writes_source_less_line_sketches() {
 }
 
 #[test]
+fn encoder_writes_source_less_spatial_line_sketches() {
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::sketches::{
+        SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+        SpatialSketchId,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    ir.model.bodies[0].name = None;
+    ir.model.faces.iter_mut().for_each(|face| face.name = None);
+    ir.model
+        .edges
+        .iter_mut()
+        .for_each(|edge| edge.param_range = None);
+    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#path".into());
+    let entity_id = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    let start = Point3::new(1.25, -2.5, 3.75);
+    let end = Point3::new(4.5, 5.25, -6.0);
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch_id.clone(),
+        name: Some("Spatial path".into()),
+        configuration: Some("0".into()),
+        entities: vec![entity_id.clone()],
+        native_ref: None,
+    });
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: entity_id,
+        sketch: sketch_id.clone(),
+        construction: false,
+        native_ref: None,
+        geometry: SpatialSketchGeometry::Line { start, end },
+    });
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#spatial-path".into()),
+        ordinal: 0,
+        name: Some("Spatial path".into()),
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::SpatialSketch {
+            sketch: Some(sketch_id),
+        },
+        native_ref: None,
+    });
+
+    let mut encoded = Vec::new();
+    SldprtCodec.encode(&ir, &mut encoded).unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(regenerated.ir.model.spatial_sketches.len(), 1);
+    assert!(matches!(
+        regenerated.ir.model.spatial_sketch_entities[0].geometry,
+        SpatialSketchGeometry::Line {
+            start: regenerated_start,
+            end: regenerated_end,
+        } if regenerated_start == start && regenerated_end == end
+    ));
+    assert!(matches!(
+        regenerated.ir.model.features[0].definition,
+        FeatureDefinition::SpatialSketch { sketch: Some(_) }
+    ));
+}
+
+#[test]
 fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
