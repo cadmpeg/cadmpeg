@@ -503,7 +503,7 @@ value_block := 7C 0B <declared_len:u32le> <payload[declared_len-6]> FE 7C 02 ...
 
 `declared_len` measures from the `7C0B` marker through the byte before the terminator. The complete block occupies `declared_len + 1` bytes. The trailing `FE` is followed immediately by the associated `7C02` source-schema catalog.
 
-The value block begins at the exact end offset of its owning `7C08` object graph and owns the immediately following catalog as its source schema. The two frame boundaries identify both relations without scanning or name matching.
+The value block begins at the exact end offset of its owning `7C08` object graph and owns the immediately following catalog as its source schema. The two frame boundaries identify both relations without scanning or name matching. A `7C0B` or `7C02` candidate contained by a complete value-block extent is value payload, not an independent block or catalog.
 
 The payload is a serialized token stream. `32 <ordinal:u32le>` selects the zero-based entry ordinal in the source schema; an ordinal equal to the schema's entry population is the absent-schema sentinel. `87 E6 <bits:u64le>` stores one IEEE-754 binary64 value. `87 E7` and `87 E8` are zero-payload markers. `8E <code:E8..EF> 84 <bytes[code-E7]>` stores one through eight inline bytes. `80..D0` stores the unsigned atom `byte - 80`; `D1..E4 <low:u8>` stores `(byte - D1) * 256 + low + 1`. The longer assigned forms take precedence over atom recognition. Multi-byte token payloads are opaque to token recognition: marker-like bytes inside them do not start another token. Bytes outside these forms are single-byte literals, so tokenization preserves the complete payload without residual bytes.
 

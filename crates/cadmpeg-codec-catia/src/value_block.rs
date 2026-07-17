@@ -76,12 +76,24 @@ pub enum ValueField {
 /// Parse every exact `7C0B` value block immediately followed by `7C02`.
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Vec<ValueBlock> {
-    bytes
+    let candidates = bytes
         .windows(2)
         .enumerate()
         .filter(|(_, marker)| *marker == [0x7c, 0x0b])
         .filter_map(|(pos, _)| parse_candidate(bytes, pos))
-        .collect()
+        .collect::<Vec<_>>();
+    let mut blocks = Vec::<ValueBlock>::new();
+    for block in candidates {
+        let block_end = block.pos + block.total_len;
+        if blocks
+            .iter()
+            .any(|outer| outer.pos < block.pos && outer.pos + outer.total_len >= block_end)
+        {
+            continue;
+        }
+        blocks.push(block);
+    }
+    blocks
 }
 
 fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {

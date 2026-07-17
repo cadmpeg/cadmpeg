@@ -439,10 +439,14 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
+        let parsed_value_blocks = value_block::parse(bytes);
         catalogs.retain(|catalog| {
             !object_graphs.iter().any(|graph| {
                 catalog.byte_offset >= graph.byte_offset
                     && catalog.byte_offset < graph.byte_offset + graph.byte_len
+            }) && !parsed_value_blocks.iter().any(|block| {
+                catalog.byte_offset >= block.pos as u64
+                    && catalog.byte_offset < (block.pos + block.total_len) as u64
             })
         });
         let design_objects = design_objects(&object_graphs);
@@ -466,7 +470,7 @@ impl CatiaNative {
                 row.object_record = Some(record.id.clone());
             }
         }
-        let value_blocks = value_block::parse(bytes)
+        let value_blocks = parsed_value_blocks
             .into_iter()
             .filter_map(|block| {
                 let catalog_pos = block.pos + block.total_len;
