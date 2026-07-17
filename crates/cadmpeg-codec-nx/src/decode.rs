@@ -6499,10 +6499,12 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
     }
 }
 
-fn decoded_tolerance(value: f64) -> Option<f64> {
+pub(crate) fn decoded_tolerance(value: f64) -> Option<f64> {
     match value {
         MISSING_TOLERANCE => None,
-        value if value.is_finite() && value > 0.0 && value < 1.0e3 => Some(value * 1000.0),
+        value if value.is_finite() && value > 0.0 && (value * 1000.0).is_finite() => {
+            Some(value * 1000.0)
+        }
         _ => None,
     }
 }

@@ -14827,6 +14827,14 @@ fn graph_owned_point_has_no_scanner_magnitude_limit() {
 }
 
 #[test]
+fn decoded_tolerance_has_no_model_magnitude_limit() {
+    assert_eq!(crate::decode::decoded_tolerance(1_001.0), Some(1_001_000.0));
+    assert_eq!(crate::decode::decoded_tolerance(0.0), None);
+    assert_eq!(crate::decode::decoded_tolerance(f64::INFINITY), None);
+    assert_eq!(crate::decode::decoded_tolerance(f64::MAX), None);
+}
+
+#[test]
 fn analytic_frame_gate_rejects_nonorthogonal_reference_direction() {
     let mut plane = record(0x32, 91);
     put_vec3(&mut plane, 19, [0.0, 0.0, 0.0]);
