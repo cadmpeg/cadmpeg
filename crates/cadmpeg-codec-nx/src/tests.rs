@@ -3711,6 +3711,20 @@ fn nx_thicken_feature_uses_the_magnitude_of_one_owned_offset_distance() {
         }
     ));
 
+    let mut sheet_output = ir.clone();
+    sheet_output
+        .model
+        .bodies
+        .iter_mut()
+        .find(|body| body.id == output)
+        .expect("output body")
+        .kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    assert!(crate::decode::thicken_feature_definition(
+        &sheet_output,
+        std::slice::from_ref(&output)
+    )
+    .is_none());
+
     let input = BodyId("nx:s4:body#input".into());
     for ordinal in 0..2 {
         attach_test_body_surface(

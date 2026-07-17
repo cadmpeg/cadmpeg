@@ -10534,6 +10534,16 @@ fn owned_thicken_surface_data<'a>(
     outputs: &'a [BodyId],
 ) -> Option<(&'a BodyId, f64, Vec<SurfaceId>, ThickenDirection)> {
     let (body, carriers) = owned_offset_carriers(ir, outputs)?;
+    if ir
+        .model
+        .bodies
+        .iter()
+        .find(|candidate| candidate.id == *body)?
+        .kind
+        != BodyKind::Solid
+    {
+        return None;
+    }
     let distance = carriers[0].1;
     if carriers
         .iter()
