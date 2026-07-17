@@ -410,7 +410,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
             total_len: record_len,
             lead: data.get(head_start).copied().unwrap_or(0),
             head,
-            owner_ref: references.first().copied().filter(|ordinal| *ordinal != 0),
+            owner_ref: references.first().copied(),
             class_ref: references.get(1).copied(),
             class_name: None,
             storage_ref: references.get(2).copied(),

@@ -4681,7 +4681,7 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
 }
 
 #[test]
-fn native_design_objects_require_existing_one_based_owners() {
+fn native_design_objects_preserve_unresolved_owner_identities() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x04, 0x01, 0x80, 0x81], &[0xfe]),
         object_graph_record(&[0x04, 0x01, 0x84, 0x81], &[0xfe]),
@@ -4689,13 +4689,19 @@ fn native_design_objects_require_existing_one_based_owners() {
     let native = crate::native::CatiaNative::decode(&bytes);
     let graph = &native.object_graphs[0];
 
-    assert_eq!(graph.records[0].owner_ref, None);
+    assert_eq!(graph.records[0].owner_ref, Some(0));
     assert_eq!(graph.records[1].owner_ref, Some(4));
     assert!(graph
         .records
         .iter()
-        .all(|record| record.design_object.is_none()));
-    assert!(native.design_objects.is_empty());
+        .all(|record| record.design_object.is_some()));
+    assert_eq!(native.design_objects.len(), 2);
+    assert_eq!(native.design_objects[0].owner_ordinal, 0);
+    assert_eq!(native.design_objects[1].owner_ordinal, 4);
+    assert!(native
+        .design_objects
+        .iter()
+        .all(|object| object.owner_record.is_none()));
 }
 
 #[test]
@@ -4964,7 +4970,10 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
     let object = &native.design_objects[0];
     assert_eq!(object.parent, graph.id);
     assert_eq!(object.owner_ordinal, 2);
-    assert_eq!(object.owner_record, graph.records[1].id);
+    assert_eq!(
+        object.owner_record.as_deref(),
+        Some(graph.records[1].id.as_str())
+    );
     assert_eq!(
         object.fields,
         graph
