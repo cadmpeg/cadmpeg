@@ -768,30 +768,42 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
         });
     }
 
-    let native_edge_selection = |selection: &EdgeSelection| {
-        matches!(
-            selection,
-            EdgeSelection::Unresolved | EdgeSelection::Native(_)
-        )
+    let incomplete_edge_selection = |selection: &EdgeSelection| match selection {
+        EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => edges.is_empty(),
+        EdgeSelection::Generated { edges, .. } => edges.is_empty(),
+        EdgeSelection::Unresolved | EdgeSelection::Native(_) => true,
     };
-    let native_face_selection = |selection: &FaceSelection| {
-        matches!(
-            selection,
-            FaceSelection::Unresolved | FaceSelection::Native(_)
-        )
+    let incomplete_face_selection = |selection: &FaceSelection| match selection {
+        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => faces.is_empty(),
+        FaceSelection::Generated { faces, .. } => faces.is_empty(),
+        FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
-    let native_body_selection = |selection: &BodySelection| {
-        matches!(
-            selection,
-            BodySelection::Unresolved | BodySelection::Native(_)
-        )
+    let incomplete_optional_face_selection = |selection: &FaceSelection| match selection {
+        FaceSelection::Faces(_) | FaceSelection::Resolved { .. } => false,
+        FaceSelection::Generated { faces, .. } => faces.is_empty(),
+        FaceSelection::Unresolved | FaceSelection::Native(_) => true,
     };
-    let native_profile =
-        |profile: &ProfileRef| matches!(profile, ProfileRef::Unresolved(_) | ProfileRef::Native(_));
-    let native_path = |path: &PathRef| matches!(path, PathRef::Native(_));
+    let incomplete_body_selection = |selection: &BodySelection| match selection {
+        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => bodies.is_empty(),
+        BodySelection::Generated { bodies, .. } => bodies.is_empty(),
+        BodySelection::Local { bodies, .. } => bodies.is_empty(),
+        BodySelection::Unresolved | BodySelection::Native(_) => true,
+    };
+    let incomplete_profile = |profile: &ProfileRef| match profile {
+        ProfileRef::Faces(faces) => faces.is_empty(),
+        ProfileRef::Generated { curves, .. } => curves.is_empty(),
+        ProfileRef::Unresolved(_) | ProfileRef::Native(_) => true,
+        ProfileRef::Sketch(_) | ProfileRef::Feature(_) => false,
+    };
+    let incomplete_path = |path: &PathRef| match path {
+        PathRef::Edges(edges) => edges.is_empty(),
+        PathRef::Curves(curves) => curves.is_empty(),
+        PathRef::Native(_) => true,
+        PathRef::Sketch(_) => false,
+    };
     let incomplete_extent = |extent: &Extent| {
         matches!(extent, Extent::Unresolved)
-            || matches!(extent, Extent::ToFace { face } if native_face_selection(face))
+            || matches!(extent, Extent::ToFace { face } if incomplete_face_selection(face))
     };
     let incomplete_typed_features = evaluated_feature_states
         .iter()
@@ -809,9 +821,9 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 source,
                 target_faces,
                 ..
-            } => native_path(source) || native_face_selection(target_faces),
+            } => incomplete_path(source) || incomplete_face_selection(target_faces),
             FeatureDefinition::CompositeCurve { segments, .. } => {
-                segments.is_empty() || segments.iter().any(native_path)
+                segments.is_empty() || segments.iter().any(incomplete_path)
             }
             FeatureDefinition::HelixNativeAxis { .. } => true,
             FeatureDefinition::Wrap {
@@ -820,8 +832,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 mode,
                 depth,
             } => {
-                native_profile(profile)
-                    || native_face_selection(face)
+                incomplete_profile(profile)
+                    || incomplete_face_selection(face)
                     || (*mode != cadmpeg_ir::features::WrapMode::Scribe && depth.is_none())
             }
             FeatureDefinition::Sketch { sketch, .. } => sketch.is_none(),
@@ -832,12 +844,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 op,
                 ..
             } => {
-                native_profile(profile)
+                incomplete_profile(profile)
                     || incomplete_extent(extent)
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Revolve { construction, op } => {
-                construction.profile.as_ref().is_none_or(native_profile)
+                construction.profile.as_ref().is_none_or(incomplete_profile)
                     || construction.axis.is_none()
                     || construction.extent.as_ref().is_none_or(incomplete_extent)
                     || *op == BooleanOp::Unresolved
@@ -848,8 +860,8 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 mode,
                 ..
             } => {
-                profile.as_ref().is_none_or(native_profile)
-                    || path.as_ref().is_none_or(native_path)
+                profile.as_ref().is_none_or(incomplete_profile)
+                    || path.as_ref().is_none_or(incomplete_path)
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Unresolved)
                     || matches!(mode, cadmpeg_ir::features::SweepMode::Solid { op } if *op == BooleanOp::Unresolved)
             }
@@ -860,12 +872,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 ..
             } => {
                 profiles.len() < 2
-                    || profiles.iter().any(native_profile)
-                    || guides.iter().any(native_path)
+                    || profiles.iter().any(incomplete_profile)
+                    || guides.iter().any(incomplete_path)
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Rib { construction, op } => {
-                construction.profile.as_ref().is_none_or(native_profile)
+                construction.profile.as_ref().is_none_or(incomplete_profile)
                     || construction.direction.is_none()
                     || construction.thickness.is_none()
                     || construction.side.is_none()
@@ -873,69 +885,88 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::Fillet { edges, radius } => {
-                native_edge_selection(edges) || matches!(radius, RadiusSpec::Unresolved { .. })
+                incomplete_edge_selection(edges) || matches!(radius, RadiusSpec::Unresolved { .. })
             }
             FeatureDefinition::Chamfer { edges, spec } => {
-                native_edge_selection(edges) || matches!(spec, ChamferSpec::Unresolved { .. })
+                incomplete_edge_selection(edges) || matches!(spec, ChamferSpec::Unresolved { .. })
             }
             FeatureDefinition::Shell {
                 removed_faces,
                 thickness,
                 outward,
             } => {
-                native_face_selection(removed_faces) || thickness.is_none() || outward.is_none()
+                incomplete_optional_face_selection(removed_faces)
+                    || thickness.is_none()
+                    || outward.is_none()
             }
             FeatureDefinition::Thicken {
                 faces,
                 thickness,
                 side,
-            } => native_face_selection(faces) || thickness.is_none() || side.is_none(),
+            } => incomplete_face_selection(faces) || thickness.is_none() || side.is_none(),
             FeatureDefinition::OffsetSurface { faces, .. }
             | FeatureDefinition::KnitSurface { faces, .. }
-            | FeatureDefinition::ExtendSurface { faces, .. } => native_face_selection(faces),
+            | FeatureDefinition::ExtendSurface { faces, .. } => incomplete_face_selection(faces),
             FeatureDefinition::FilledSurface {
                 boundary,
                 support_faces,
+                continuity,
                 ..
-            } => native_edge_selection(boundary) || native_face_selection(support_faces),
+            } => {
+                incomplete_edge_selection(boundary)
+                    || if *continuity
+                        == cadmpeg_ir::features::SurfaceContinuity::Contact
+                    {
+                        incomplete_optional_face_selection(support_faces)
+                    } else {
+                        incomplete_face_selection(support_faces)
+                    }
+            }
             FeatureDefinition::TrimSurface { faces, tool, .. } => {
-                native_face_selection(faces) || native_path(tool)
+                incomplete_face_selection(faces) || incomplete_path(tool)
             }
             FeatureDefinition::RuledSurface {
                 edges,
                 support_faces,
-                ..
-            } => native_edge_selection(edges) || native_face_selection(support_faces),
+                mode,
+            } => {
+                incomplete_edge_selection(edges)
+                    || if matches!(mode, cadmpeg_ir::features::RuledSurfaceMode::Direction { .. }) {
+                        incomplete_optional_face_selection(support_faces)
+                    } else {
+                        incomplete_face_selection(support_faces)
+                    }
+            }
             FeatureDefinition::Draft {
                 faces,
                 neutral_plane,
                 ..
-            } => native_face_selection(faces) || native_face_selection(neutral_plane),
+            } => incomplete_face_selection(faces) || incomplete_face_selection(neutral_plane),
             FeatureDefinition::Combine { target, tools, op } => {
-                native_body_selection(target)
-                    || native_body_selection(tools)
+                incomplete_body_selection(target)
+                    || incomplete_body_selection(tools)
                     || *op == BooleanOp::Unresolved
             }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
-                native_body_selection(targets) || native_face_selection(tools)
+                incomplete_body_selection(targets) || incomplete_face_selection(tools)
             }
             FeatureDefinition::DeleteBody { bodies, mode } => {
-                native_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
+                incomplete_body_selection(bodies) || *mode == BodyRetentionMode::Unresolved
             }
-            FeatureDefinition::DeleteFace { faces, .. } => native_face_selection(faces),
+            FeatureDefinition::DeleteFace { faces, .. } => incomplete_face_selection(faces),
             FeatureDefinition::ReplaceFace {
                 targets,
                 replacements,
-            } => native_face_selection(targets) || native_face_selection(replacements),
-            FeatureDefinition::MoveFace { faces, .. } => native_face_selection(faces),
-            FeatureDefinition::MoveBody { bodies, .. } => native_body_selection(bodies),
+            } => incomplete_face_selection(targets) || incomplete_face_selection(replacements),
+            FeatureDefinition::MoveFace { faces, .. } => incomplete_face_selection(faces),
+            FeatureDefinition::MoveBody { bodies, .. } => incomplete_body_selection(bodies),
             FeatureDefinition::Dome {
                 faces,
                 height,
                 elliptical,
                 reverse,
             } => {
-                native_face_selection(faces)
+                incomplete_face_selection(faces)
                     || height.is_none()
                     || elliptical.is_none()
                     || reverse.is_none()
@@ -949,7 +980,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 center,
                 factors,
             } => {
-                native_body_selection(bodies)
+                incomplete_body_selection(bodies)
                     || center.as_ref().is_none_or(|center| {
                         matches!(center, cadmpeg_ir::features::ScaleCenter::Native(_))
                     })
@@ -963,7 +994,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 diameter,
                 extent,
             } => {
-                face.as_ref().is_some_and(native_face_selection)
+                face.as_ref().is_some_and(incomplete_face_selection)
                     || position.is_none()
                     || direction.is_none()
                     || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. })
@@ -2599,11 +2630,12 @@ mod design_loss_tests {
     };
     use cadmpeg_ir::features::{
         Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
-        ConfigurationId, DesignConfiguration, DesignParameter, FaceSelection, Feature,
-        FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, Length,
-        ParameterId, ParameterPmi, ParameterValue, PmiDimensionSubtype,
+        ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, FaceSelection,
+        Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, Length,
+        ParameterId, ParameterPmi, ParameterValue, PathRef, PmiDimensionSubtype, RadiusSpec,
+        RuledSurfaceMode, SurfaceContinuity,
     };
-    use cadmpeg_ir::ids::BodyId;
+    use cadmpeg_ir::ids::{BodyId, EdgeId};
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::report::DecodeReport;
     use cadmpeg_ir::sketches::{
@@ -2865,6 +2897,100 @@ mod design_loss_tests {
         assert!(report.losses.iter().any(|loss| {
             loss.message
                 == "1 typed feature(s) retain native or unresolved required operation operands."
+        }));
+    }
+
+    #[test]
+    fn empty_required_operands_are_incomplete_design_semantics() {
+        let mut ir = CadIr::empty(Units::default());
+        let feature = |ordinal, definition| Feature {
+            id: FeatureId(format!("feature-{ordinal}")),
+            ordinal,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        };
+        ir.model.features.extend([
+            feature(
+                0,
+                FeatureDefinition::Fillet {
+                    edges: EdgeSelection::Edges(Vec::new()),
+                    radius: RadiusSpec::Constant {
+                        radius: Length(1.0),
+                    },
+                },
+            ),
+            feature(
+                1,
+                FeatureDefinition::DeleteFace {
+                    faces: FaceSelection::Faces(Vec::new()),
+                    heal: false,
+                },
+            ),
+            feature(
+                2,
+                FeatureDefinition::DeleteBody {
+                    bodies: BodySelection::Bodies(Vec::new()),
+                    mode: BodyRetentionMode::DeleteSelected,
+                },
+            ),
+            feature(
+                3,
+                FeatureDefinition::CompositeCurve {
+                    segments: vec![PathRef::Edges(Vec::new())],
+                    closed: false,
+                },
+            ),
+            feature(
+                4,
+                FeatureDefinition::Shell {
+                    removed_faces: FaceSelection::Faces(Vec::new()),
+                    thickness: Some(Length(1.0)),
+                    outward: Some(false),
+                },
+            ),
+            feature(
+                5,
+                FeatureDefinition::FilledSurface {
+                    boundary: EdgeSelection::Edges(vec![EdgeId("boundary".into())]),
+                    support_faces: FaceSelection::Faces(Vec::new()),
+                    continuity: SurfaceContinuity::Contact,
+                    merge_result: false,
+                },
+            ),
+            feature(
+                6,
+                FeatureDefinition::RuledSurface {
+                    edges: EdgeSelection::Edges(vec![EdgeId("boundary".into())]),
+                    support_faces: FaceSelection::Faces(Vec::new()),
+                    mode: RuledSurfaceMode::Direction {
+                        direction: Vector3::new(0.0, 0.0, 1.0),
+                        distance: Length(1.0),
+                    },
+                },
+            ),
+        ]);
+        let mut report = DecodeReport {
+            format: "sldprt".into(),
+            container_only: false,
+            geometry_transferred: true,
+            losses: Vec::new(),
+            notes: Vec::new(),
+        };
+
+        append_design_losses(&ir, &mut report);
+
+        assert!(report.losses.iter().any(|loss| {
+            loss.message
+                == "4 typed feature(s) retain native or unresolved required operation operands."
         }));
     }
 
