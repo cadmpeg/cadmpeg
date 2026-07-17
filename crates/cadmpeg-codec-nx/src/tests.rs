@@ -6926,6 +6926,22 @@ fn om_numeric_expression_evaluates_constant_arithmetic_formula() {
 }
 
 #[test]
+fn om_numeric_expression_applies_power_before_unary_sign() {
+    for (formula, expected) in [
+        ("-2^2", -4.0),
+        ("(-2)^2", 4.0),
+        ("2^-2", 0.25),
+        ("2^3^2", 512.0),
+    ] {
+        assert_eq!(
+            crate::om::evaluate_constant_expression(formula),
+            Some(expected),
+            "{formula}"
+        );
+    }
+}
+
+#[test]
 fn om_string_value_requires_marker_length_printability_and_terminator() {
     let bytes = b"\x66\x32\x03\x0cSKETCH_001\0\x66\x32\x03\x03A\0\x66\x32\x03\x03A\x01";
     let values = crate::om::string_values(bytes, 100);

@@ -3312,12 +3312,12 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
         }
 
         fn product(&mut self) -> Option<f64> {
-            let mut value = self.power()?;
+            let mut value = self.unary()?;
             loop {
                 if self.take(b'*') {
-                    value *= self.power()?;
+                    value *= self.unary()?;
                 } else if self.take(b'/') {
-                    value /= self.power()?;
+                    value /= self.unary()?;
                 } else {
                     return value.is_finite().then_some(value);
                 }
@@ -3325,9 +3325,9 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
         }
 
         fn power(&mut self) -> Option<f64> {
-            let value = self.unary()?;
+            let value = self.primary()?;
             if self.take(b'^') {
-                let result = value.powf(self.power()?);
+                let result = value.powf(self.unary()?);
                 result.is_finite().then_some(result)
             } else {
                 Some(value)
@@ -3340,7 +3340,7 @@ pub(crate) fn evaluate_constant_expression(text: &str) -> Option<f64> {
             } else if self.take(b'-') {
                 Some(-self.unary()?)
             } else {
-                self.primary()
+                self.power()
             }
         }
 
