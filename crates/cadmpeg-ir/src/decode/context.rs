@@ -241,9 +241,11 @@ impl<'a> DecodeContext<'a> {
                     Ok(Retention::Retained(RetainedRange::whole(digest, len)))
                 } else {
                     // Salvage degrades R->A: keep the digest, drop the bytes,
-                    // and record the degradation for finish. The context is not
-                    // fused — retention alone never fails a decode (§11.10).
-                    self.retained.mark_degraded(len);
+                    // and record the degradation for finish. Keyed by digest so a
+                    // later successful retention of the same blob reconciles it.
+                    // The context is not fused — retention alone never fails a
+                    // decode (§11.10).
+                    self.retained.mark_degraded(&digest, len);
                     Ok(Retention::Accounted { digest })
                 }
             }
@@ -753,7 +755,7 @@ impl<'a> DecodeContext<'a> {
                 category: LossCategory::Other,
                 severity: Severity::Warning,
                 message: format!(
-                    "retained-byte budget exhausted: {} opaque span(s) totaling {} bytes \
+                    "retained-byte budget exhausted: {} opaque blob(s) totaling {} bytes \
                      degraded from recoverable to accounted",
                     self.retained.degraded_count(),
                     self.retained.degraded_bytes()

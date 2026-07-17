@@ -24,7 +24,7 @@
 //! drops the bytes, records a loss note and a report flag, and never fails the
 //! decode for retention alone.
 
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use crate::source_fidelity::{RetainedRef, SerializedRange};
@@ -188,9 +188,13 @@ pub(crate) struct RetainedAddr {
 #[derive(Debug, Default)]
 pub(crate) struct RetainedStore {
     blobs: RefCell<BTreeMap<String, RetainedAddr>>,
-    degraded: Cell<bool>,
-    degraded_bytes: Cell<u64>,
-    degraded_count: Cell<u64>,
+    /// Digests that degraded to accounting, keyed by digest with the blob's byte
+    /// length. Keying by digest reconciles degradation against what is actually
+    /// retained: a digest is recorded here at most once regardless of how many
+    /// opaque spans reference it, and a later successful [`insert`](Self::insert)
+    /// of the same digest removes it, so a blob retained after an early
+    /// over-budget attempt is not falsely reported as lost (§11.10).
+    degraded: RefCell<BTreeMap<String, u64>>,
 }
 
 impl RetainedStore {
@@ -200,33 +204,38 @@ impl RetainedStore {
     }
 
     /// Inserts a retained blob, keyed by its digest. Idempotent: re-inserting a
-    /// present digest keeps the existing address.
+    /// present digest keeps the existing address. Reconciles degradation: if the
+    /// digest was earlier marked degraded (an over-budget attempt before the
+    /// retained allowance grew), retaining it now clears that record so it is not
+    /// reported as lost.
     pub(crate) fn insert(&self, digest: String, addr: RetainedAddr) {
+        self.degraded.borrow_mut().remove(&digest);
         self.blobs.borrow_mut().entry(digest).or_insert(addr);
     }
 
-    /// Records that a retention degraded to accounting under budget exhaustion.
-    pub(crate) fn mark_degraded(&self, bytes: u64) {
-        self.degraded.set(true);
-        self.degraded_bytes
-            .set(self.degraded_bytes.get().saturating_add(bytes));
-        self.degraded_count
-            .set(self.degraded_count.get().saturating_add(1));
+    /// Records that a retention degraded to accounting under budget exhaustion,
+    /// keyed by digest so repeated attempts on the same blob count once.
+    pub(crate) fn mark_degraded(&self, digest: &str, bytes: u64) {
+        self.degraded
+            .borrow_mut()
+            .entry(digest.to_owned())
+            .or_insert(bytes);
     }
 
-    /// Returns whether any retention degraded to accounting.
+    /// Returns whether any retention degraded to accounting and was not later
+    /// reconciled by a successful retention of the same blob.
     pub(crate) fn is_degraded(&self) -> bool {
-        self.degraded.get()
+        !self.degraded.borrow().is_empty()
     }
 
-    /// Returns how many spans degraded to accounting.
+    /// Returns how many unique blobs degraded to accounting.
     pub(crate) fn degraded_count(&self) -> u64 {
-        self.degraded_count.get()
+        self.degraded.borrow().len() as u64
     }
 
-    /// Returns the total bytes that degraded to accounting.
+    /// Returns the total bytes of unique blobs that degraded to accounting.
     pub(crate) fn degraded_bytes(&self) -> u64 {
-        self.degraded_bytes.get()
+        self.degraded.borrow().values().sum()
     }
 
     /// Returns the retained blob addresses in canonical (id-ascending) order.
@@ -236,5 +245,54 @@ impl RetainedStore {
             .iter()
             .map(|(digest, &addr)| (digest.clone(), addr))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addr_of(bytes: &[u8]) -> RetainedAddr {
+        RetainedAddr {
+            ptr: bytes.as_ptr(),
+            len: bytes.len(),
+        }
+    }
+
+    #[test]
+    fn later_retention_reconciles_earlier_degradation() {
+        let store = RetainedStore::default();
+        let bytes = [7u8; 16];
+        // An early over-budget attempt degrades the blob.
+        store.mark_degraded("digest-a", 16);
+        assert!(store.is_degraded());
+        assert_eq!(store.degraded_count(), 1);
+        assert_eq!(store.degraded_bytes(), 16);
+        // The allowance later grows and the same blob is retained: the
+        // degradation record is reconciled away, so no false loss is reported.
+        store.insert("digest-a".to_owned(), addr_of(&bytes));
+        assert!(!store.is_degraded());
+        assert_eq!(store.degraded_count(), 0);
+        assert_eq!(store.degraded_bytes(), 0);
+    }
+
+    #[test]
+    fn repeated_degradation_of_one_blob_counts_once() {
+        let store = RetainedStore::default();
+        // The same over-budget blob is referenced by three opaque spans.
+        store.mark_degraded("digest-b", 32);
+        store.mark_degraded("digest-b", 32);
+        store.mark_degraded("digest-b", 32);
+        assert_eq!(store.degraded_count(), 1);
+        assert_eq!(store.degraded_bytes(), 32);
+    }
+
+    #[test]
+    fn distinct_degraded_blobs_sum_independently() {
+        let store = RetainedStore::default();
+        store.mark_degraded("digest-c", 10);
+        store.mark_degraded("digest-d", 20);
+        assert_eq!(store.degraded_count(), 2);
+        assert_eq!(store.degraded_bytes(), 30);
     }
 }
