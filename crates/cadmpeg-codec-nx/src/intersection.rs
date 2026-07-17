@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode chart-backed Parasolid surface-intersection constructions.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::be;
 use cadmpeg_ir::math::Point3;
@@ -388,6 +388,7 @@ fn blend_bound_records(stream: &[u8]) -> BTreeMap<u32, u32> {
 /// Decode complete type-59 second-support bridge records.
 pub fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
     let mut out = BTreeMap::new();
+    let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 59]) {
         for escape in [0usize, 1] {
             if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
@@ -424,15 +425,20 @@ pub fn blend_bounds(stream: &[u8]) -> Vec<BlendBound> {
                 continue;
             };
             if boundary <= 1 && surface > 1 {
-                out.entry(xmt).or_insert(BlendBound {
+                insert_unique(
+                    &mut out,
+                    &mut duplicates,
                     xmt,
-                    header_references: header,
-                    sense,
-                    boundary_index: boundary,
-                    blend_surface: surface,
-                    escaped: escape == 1,
-                    pos: tag,
-                });
+                    BlendBound {
+                        xmt,
+                        header_references: header,
+                        sense,
+                        boundary_index: boundary,
+                        blend_surface: surface,
+                        escaped: escape == 1,
+                        pos: tag,
+                    },
+                );
                 break;
             }
         }
@@ -448,7 +454,12 @@ fn is_surface(graph: &topology::Graph, xmt: u32) -> bool {
 
 fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
     let mut out = BTreeMap::new();
+    let mut complemented = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
     for source in chart_source_records(stream) {
+        if duplicates.contains(&source.xmt) {
+            continue;
+        }
         let fit_tolerance = source.chordal_error * 1000.0;
         if !fit_tolerance.is_finite() {
             continue;
@@ -476,7 +487,8 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
                 entry.insert(candidate);
             }
             std::collections::btree_map::Entry::Occupied(mut entry)
-                if source.native_parameters.is_some()
+                if !complemented.contains(&source.xmt)
+                    && source.native_parameters.is_some()
                     && entry.get().points.len() == candidate.points.len()
                     && entry.get().points.iter().zip(&candidate.points).all(
                         |(first, second)| {
@@ -487,8 +499,12 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
             {
                 entry.get_mut().parameters = candidate.parameters;
                 entry.get_mut().ext_support_uv = candidate.ext_support_uv;
+                complemented.insert(source.xmt);
             }
-            std::collections::btree_map::Entry::Occupied(_) => {}
+            std::collections::btree_map::Entry::Occupied(entry) => {
+                entry.remove();
+                duplicates.insert(source.xmt);
+            }
         }
     }
     out
@@ -652,6 +668,7 @@ fn term_records(stream: &[u8]) -> BTreeMap<u32, Point3> {
 /// Decode complete direct, escaped, and descriptor-inline `term_use` records.
 pub fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
     let mut out = BTreeMap::new();
+    let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 41]) {
         for escape in [0usize, 1] {
             if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
@@ -664,7 +681,7 @@ pub fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
                 TermUseFraming::Escaped
             };
             if let Some(term) = term_at(stream, base, framing, tag) {
-                out.entry(term.xmt).or_insert(term);
+                insert_unique(&mut out, &mut duplicates, term.xmt, term);
                 break;
             }
         }
@@ -674,7 +691,7 @@ pub fn term_use_records(stream: &[u8]) -> Vec<TermUse> {
         if stream.get(tail..tail + INLINE_TERM_TAIL.len()) == Some(INLINE_TERM_TAIL) {
             let pos = tail + INLINE_TERM_TAIL.len();
             if let Some(term) = term_at(stream, pos, TermUseFraming::DescriptorInline, pos) {
-                out.entry(term.xmt).or_insert(term);
+                insert_unique(&mut out, &mut duplicates, term.xmt, term);
             }
         }
     }
@@ -708,6 +725,7 @@ fn uv_records(stream: &[u8]) -> BTreeMap<u32, SupportUv> {
 /// Decode complete direct, escaped, and descriptor-inline support-UV arrays.
 pub fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
     let mut out = BTreeMap::new();
+    let mut duplicates = BTreeSet::new();
     for tag in find_tags(stream, [0, 204]) {
         for escape in [0usize, 1] {
             if escape == 1 && stream.get(tag + 2) != Some(&0xff) {
@@ -720,7 +738,7 @@ pub fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
                 SupportUvFraming::Escaped
             };
             if let Some(record) = uv_at(stream, base, framing, tag) {
-                out.entry(record.xmt).or_insert(record);
+                insert_unique(&mut out, &mut duplicates, record.xmt, record);
                 break;
             }
         }
@@ -730,11 +748,26 @@ pub fn support_uv_records(stream: &[u8]) -> Vec<SupportUvRecord> {
         if stream.get(tail..tail + INLINE_UV_TAIL.len()) == Some(INLINE_UV_TAIL) {
             let pos = tail + INLINE_UV_TAIL.len();
             if let Some(record) = uv_at(stream, pos, SupportUvFraming::DescriptorInline, pos) {
-                out.entry(record.xmt).or_insert(record);
+                insert_unique(&mut out, &mut duplicates, record.xmt, record);
             }
         }
     }
     out.into_values().collect()
+}
+
+fn insert_unique<T>(
+    records: &mut BTreeMap<u32, T>,
+    duplicates: &mut BTreeSet<u32>,
+    xmt: u32,
+    record: T,
+) {
+    if duplicates.contains(&xmt) {
+        return;
+    }
+    if records.insert(xmt, record).is_some() {
+        records.remove(&xmt);
+        duplicates.insert(xmt);
+    }
 }
 
 fn uv_at(

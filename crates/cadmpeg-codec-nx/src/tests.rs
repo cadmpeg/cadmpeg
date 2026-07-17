@@ -12178,6 +12178,64 @@ fn intersection_construction_rejects_missing_term_without_topology_endpoint_matc
 }
 
 #[test]
+fn intersection_auxiliaries_reject_duplicate_identities() {
+    fn append_record(stream: &mut Vec<u8>, marker: &[u8], len: usize) {
+        let start = stream
+            .windows(marker.len())
+            .position(|window| window == marker)
+            .expect("auxiliary record");
+        let duplicate = stream[start..start + len].to_vec();
+        stream.extend(duplicate);
+    }
+
+    let mut chart = charted_intersection_curve_topology_partition_stream();
+    append_record(&mut chart, &[0, 40, 0, 0, 0, 2, 0, 20], 108);
+    let scan = crate::intersection::scan(&chart);
+    assert!(scan.curves.is_empty());
+    assert_eq!(scan.rejected.missing_chart, 1);
+
+    let mut term = charted_intersection_curve_topology_partition_stream();
+    append_record(&mut term, &[0, 41, 0, 0, 0, 1, 0, 21], 34);
+    assert_eq!(crate::intersection::term_use_records(&term).len(), 1);
+    let scan = crate::intersection::scan(&term);
+    assert!(scan.curves.is_empty());
+    assert_eq!(scan.rejected.missing_start_term, 1);
+
+    let mut uv = charted_intersection_curve_topology_partition_stream();
+    append_record(&mut uv, &[0, 204, 0, 0, 0, 4, 0, 23], 41);
+    assert!(crate::intersection::support_uv_records(&uv).is_empty());
+    let [curve] = crate::intersection::scan(&uv).curves.try_into().unwrap();
+    assert_eq!(curve.support_uv, [None, None]);
+
+    let mut blend_bound = blend_bound_charted_intersection_curve_stream();
+    append_record(&mut blend_bound, &[0, 59, 0, 14], 24);
+    assert!(crate::intersection::blend_bounds(&blend_bound).is_empty());
+}
+
+#[test]
+fn intersection_chart_accepts_one_matching_parameter_complement() {
+    let ext11 = ext11_charted_intersection_curve_stream();
+    let ext11_start = ext11
+        .windows(8)
+        .position(|window| window == [0, 40, 0, 0, 0, 2, 0, 20])
+        .expect("ext11 chart");
+    let complement = ext11[ext11_start..ext11_start + 236].to_vec();
+
+    let mut stream = charted_intersection_curve_topology_partition_stream();
+    stream.extend_from_slice(&complement);
+    let [curve] = crate::intersection::scan(&stream)
+        .curves
+        .try_into()
+        .expect("complemented curve");
+    assert_eq!(curve.parameters, [2.0, 5.0]);
+
+    stream.extend_from_slice(&complement);
+    let scan = crate::intersection::scan(&stream);
+    assert!(scan.curves.is_empty());
+    assert_eq!(scan.rejected.missing_chart, 1);
+}
+
+#[test]
 fn decode_resolves_surface_curve_to_its_basis_curve() {
     let stream = surface_curve_topology_partition_stream();
     let mut cur = Cursor::new(prt_with_partition(&stream));
