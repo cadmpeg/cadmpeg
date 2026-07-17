@@ -3796,8 +3796,13 @@ pub(crate) fn resolved_section_points(
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_axis_symmetry(definition, skamp))
         .filter(|(axis, first, second, _)| {
-            !ambiguous_point_ids.contains(first)
-                && !ambiguous_point_ids.contains(second)
+            [first, second]
+                .into_iter()
+                .any(|point| matches!(point, SectionPointSource::Point(_)))
+                && [first, second].into_iter().all(|point| match point {
+                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionPointSource::Value(_) => true,
+                })
                 && match axis {
                     SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(point_id),
                     SectionSymmetryAxis::Value(_) => true,
@@ -3953,20 +3958,26 @@ pub(crate) fn resolved_section_points(
                 changed = true;
             }
         }
-        for &(axis, first_id, second_id, fixed_coordinate) in &symmetric_point_constraints {
-            let [first, second] =
-                [first_id, second_id].map(|id| points.get(&id).copied().unwrap_or([None, None]));
+        for &(axis, first_source, second_source, fixed_coordinate) in &symmetric_point_constraints {
+            let [first, second] = [first_source, second_source].map(|source| match source {
+                SectionPointSource::Point(id) => points.get(&id).copied().unwrap_or([None, None]),
+                SectionPointSource::Value(value) => [Some(value[0]), Some(value[1])],
+            });
             let parallel_coordinate = 1usize.saturating_sub(fixed_coordinate);
             match [first[parallel_coordinate], second[parallel_coordinate]] {
                 [Some(value), None] => {
-                    points.entry(second_id).or_insert([None, None])[parallel_coordinate] =
-                        Some(value);
-                    changed = true;
+                    if let SectionPointSource::Point(second_id) = second_source {
+                        points.entry(second_id).or_insert([None, None])[parallel_coordinate] =
+                            Some(value);
+                        changed = true;
+                    }
                 }
                 [None, Some(value)] => {
-                    points.entry(first_id).or_insert([None, None])[parallel_coordinate] =
-                        Some(value);
-                    changed = true;
+                    if let SectionPointSource::Point(first_id) = first_source {
+                        points.entry(first_id).or_insert([None, None])[parallel_coordinate] =
+                            Some(value);
+                        changed = true;
+                    }
                 }
                 _ => {}
             }
@@ -3981,14 +3992,18 @@ pub(crate) fn resolved_section_points(
             };
             match [first[fixed_coordinate], second[fixed_coordinate]] {
                 [Some(value), None] => {
-                    points.entry(second_id).or_insert([None, None])[fixed_coordinate] =
-                        Some(2.0 * axis_value - value);
-                    changed = true;
+                    if let SectionPointSource::Point(second_id) = second_source {
+                        points.entry(second_id).or_insert([None, None])[fixed_coordinate] =
+                            Some(2.0 * axis_value - value);
+                        changed = true;
+                    }
                 }
                 [None, Some(value)] => {
-                    points.entry(first_id).or_insert([None, None])[fixed_coordinate] =
-                        Some(2.0 * axis_value - value);
-                    changed = true;
+                    if let SectionPointSource::Point(first_id) = first_source {
+                        points.entry(first_id).or_insert([None, None])[fixed_coordinate] =
+                            Some(2.0 * axis_value - value);
+                        changed = true;
+                    }
                 }
                 _ => {}
             }
@@ -4215,7 +4230,12 @@ enum SectionSymmetryAxis {
 fn section_skamp_axis_symmetry(
     definition: &crate::feature::FeatureDefinition,
     skamp: &crate::feature::FeatureSkamp,
-) -> Option<(SectionSymmetryAxis, u32, u32, usize)> {
+) -> Option<(
+    SectionSymmetryAxis,
+    SectionPointSource,
+    SectionPointSource,
+    usize,
+)> {
     let (14, [axis_item, first_item, second_item]) = (skamp.kind, skamp.items.as_slice()) else {
         return None;
     };
@@ -4234,8 +4254,8 @@ fn section_skamp_axis_symmetry(
     };
     Some((
         axis,
-        section_skamp_selected_point_id(definition, first_item)?,
-        section_skamp_selected_point_id(definition, second_item)?,
+        section_skamp_selected_point(definition, first_item)?,
+        section_skamp_selected_point(definition, second_item)?,
         coordinate,
     ))
 }
@@ -16903,6 +16923,46 @@ mod resolved_sketch_tests {
         assert_eq!(
             resolved_section_points(&saved_coincident),
             BTreeMap::from([(1, [0.0, 2.0]), (4, [1.0, 1.0]), (5, [0.0, 1.0])])
+        );
+        let mut saved_symmetric = saved_definition.clone();
+        let point = saved_symmetric
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+            .iter_mut()
+            .find(|point| point.point_id == 5)
+            .expect("point 5");
+        point.u = None;
+        point.v = None;
+        saved_symmetric
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![crate::feature::FeatureSkamp {
+            id: 35,
+            kind: 14,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 2,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 15,
+                    sense: 2,
+                },
+            ],
+            offset: 90,
+        }];
+        assert_eq!(
+            resolved_section_points(&saved_symmetric).get(&5),
+            Some(&[0.0, 1.0])
         );
         saved_definition
             .variables

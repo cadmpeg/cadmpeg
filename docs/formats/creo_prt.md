@@ -736,7 +736,9 @@ A three-item type-fourteen incidence stores a sense-zero line followed by two
 endpoint-selected loci. The loci are symmetric about the line, in stored order.
 When the axis is uniquely horizontal or vertical and its held coordinate is
 solved, one solved locus determines the other by copying the coordinate along
-the axis and reflecting the perpendicular coordinate through the axis.
+the axis and reflecting the perpendicular coordinate through the axis. A
+complete saved endpoint or center supplies a solved locus without introducing a
+section-point identity.
 A two-item type-seventeen incidence stores two endpoint or center loci that
 share one sketch coordinate. When exactly one of `u` and `v` is equal in the
 solved coordinates, that coordinate selects the neutral same-coordinate axis.
