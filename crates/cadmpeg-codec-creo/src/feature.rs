@@ -2973,7 +2973,7 @@ fn dimension_table(
             replay = next_separator;
         }
     }
-    (!rows.is_empty()).then_some(FeatureDimensionTable {
+    Some(FeatureDimensionTable {
         declared_count,
         entity_ref,
         rows,
@@ -3016,16 +3016,19 @@ fn positional_dimension_table(
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
     while cursor < end && rows.len() < row_limit {
         let row_end = find_bytes(payload, &separator, cursor, end).unwrap_or(end);
-        let row = positional_dimension(payload, cursor, row_end, cache)?;
+        let Some(row) = positional_dimension(payload, cursor, row_end, cache) else {
+            break;
+        };
         rows.push(row);
         if rows.len() == row_limit {
             break;
         }
-        (payload.get(row_end..row_end + separator.len()) == Some(separator.as_slice()))
-            .then_some(())?;
+        if payload.get(row_end..row_end + separator.len()) != Some(separator.as_slice()) {
+            break;
+        }
         cursor = row_end + separator.len();
     }
-    (rows.len() == row_limit && !rows.is_empty()).then_some(FeatureDimensionTable {
+    Some(FeatureDimensionTable {
         declared_count,
         entity_ref: Some(table_class),
         rows,
@@ -6472,6 +6475,25 @@ mod tests {
         assert_eq!(dimensions.rows[0].external_id, 43);
         assert_eq!(dimensions.rows[1].dimension_type, 10);
         assert_eq!(dimensions.rows[1].external_id, 44);
+    }
+
+    #[test]
+    fn dimension_tables_retain_extents_without_decoded_rows() {
+        let named = b"dimtab_ptr\0\xf8\x02\xf7\x58\xfb\xe2";
+        let cache = scalar::ScalarCache::from_section(named);
+        let dimensions =
+            dimension_table(named, 0, named.len(), &cache).expect("named dimtab header");
+        assert_eq!(dimensions.declared_count, 2);
+        assert_eq!(dimensions.entity_ref, Some(88));
+        assert!(dimensions.rows.is_empty());
+
+        let positional = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59";
+        let cache = scalar::ScalarCache::from_section(positional);
+        let dimensions = positional_dimension_table(positional, 0, positional.len(), 88, &cache)
+            .expect("positional dimtab header");
+        assert_eq!(dimensions.declared_count, 2);
+        assert_eq!(dimensions.entity_ref, Some(88));
+        assert!(dimensions.rows.is_empty());
     }
 
     #[test]

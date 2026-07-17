@@ -660,6 +660,8 @@ whose bodies decode.
 The `ent_tab` and `vert_tab` headers likewise retain their declared counts,
 table-class references, and row-class references independently of validated
 trim rows.
+The `dimtab_ptr` header retains its declared count and table-class reference
+when no dimension row body validates.
 
 The first `var_arr` row is the named field prototype between the table header
 and schema close. It is a data row and contributes to the declared count;
