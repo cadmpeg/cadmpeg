@@ -10308,7 +10308,12 @@ pub(crate) fn extrude_boolean_op(
     has_previous_writer: bool,
     output_kinds: &[cadmpeg_ir::topology::BodyKind],
 ) -> BooleanOp {
-    if !has_previous_writer && output_kinds == [cadmpeg_ir::topology::BodyKind::Solid] {
+    if !has_previous_writer
+        && matches!(
+            output_kinds,
+            [cadmpeg_ir::topology::BodyKind::Solid | cadmpeg_ir::topology::BodyKind::Sheet]
+        )
+    {
         BooleanOp::NewBody
     } else {
         BooleanOp::Unresolved

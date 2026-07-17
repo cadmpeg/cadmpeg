@@ -2204,7 +2204,7 @@ fn complete_extrude_profile_projects_without_guessing_scalar_roles() {
 }
 
 #[test]
-fn extrusion_is_new_body_only_for_one_first_written_solid_output() {
+fn extrusion_is_new_body_only_for_one_first_written_surface_or_solid_output() {
     use cadmpeg_ir::features::BooleanOp;
     use cadmpeg_ir::topology::BodyKind;
 
@@ -2218,6 +2218,14 @@ fn extrusion_is_new_body_only_for_one_first_written_solid_output() {
     );
     assert_eq!(
         crate::decode::extrude_boolean_op(false, &[BodyKind::Sheet]),
+        BooleanOp::NewBody
+    );
+    assert_eq!(
+        crate::decode::extrude_boolean_op(false, &[BodyKind::Wire]),
+        BooleanOp::Unresolved
+    );
+    assert_eq!(
+        crate::decode::extrude_boolean_op(false, &[BodyKind::General]),
         BooleanOp::Unresolved
     );
     assert_eq!(
