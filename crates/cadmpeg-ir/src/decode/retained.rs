@@ -203,6 +203,15 @@ impl RetainedStore {
         self.blobs.borrow().contains_key(digest)
     }
 
+    /// Returns whether `id` names a retained record known to this store, whether
+    /// its bytes are held or its digest was kept after a salvage-mode degradation
+    /// (§11.10). A [`RecordDisposition::Retained`](super::RecordDisposition::Retained)
+    /// naming a record absent from both is an accounting violation:
+    /// [`Check::TransferAccounting`](super::DecodeContext::finish) reports it.
+    pub(crate) fn contains_record(&self, id: &str) -> bool {
+        self.blobs.borrow().contains_key(id) || self.degraded.borrow().contains_key(id)
+    }
+
     /// Inserts a retained blob, keyed by its digest. Idempotent: re-inserting a
     /// present digest keeps the existing address. Reconciles degradation: if the
     /// digest was earlier marked degraded (an over-budget attempt before the

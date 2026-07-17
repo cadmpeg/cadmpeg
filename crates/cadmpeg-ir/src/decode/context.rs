@@ -724,6 +724,17 @@ impl<'a> DecodeContext<'a> {
     /// each unresolved ticket is resolved as [`RecordDisposition::Dropped`]
     /// and its [`LossNote`] is appended to the result's report, so the
     /// omission stays an accountable outcome.
+    ///
+    /// `Check::TransferAccounting` (§6.2) then validates the resolved
+    /// disposition table against the ledger: a [`RecordDisposition::Typed`]
+    /// must name at least one output entity, a [`RecordDisposition::Retained`]
+    /// must name at least one retained record and every named record must
+    /// resolve in the retained store, and a [`RecordDisposition::Dropped`]'s
+    /// loss note must be reflected in the report's losses. A codec that issues
+    /// no tickets has an empty table and passes trivially. A violation is a
+    /// codec contract error in strict mode (`Malformed`); in salvage mode each
+    /// violation is appended as an accountable [`LossNote`] and never fails the
+    /// decode, matching the mode's degrade-not-fail discipline.
     pub fn finish(
         self,
         result: Result<DecodeResult, CodecError>,
@@ -743,6 +754,33 @@ impl<'a> DecodeContext<'a> {
                 DecodeMode::Salvage => {
                     let losses = self.tickets.auto_drop_unresolved();
                     result.report.losses.extend(losses);
+                }
+            }
+        }
+        // Check::TransferAccounting (§6.2): validate the resolved disposition
+        // table against the retained ledger and the report's losses. Runs after
+        // salvage auto-drop so auto-generated Dropped dispositions are checked
+        // against the loss notes just appended for them.
+        let violations = self
+            .tickets
+            .transfer_accounting(&self.retained, &result.report.losses);
+        if !violations.is_empty() {
+            match self.policy.mode {
+                DecodeMode::Strict => {
+                    return Err(CodecError::Malformed(format!(
+                        "transfer accounting: {}",
+                        violations.join("; ")
+                    )))
+                }
+                DecodeMode::Salvage => {
+                    for message in violations {
+                        result.report.losses.push(LossNote {
+                            category: LossCategory::Other,
+                            severity: Severity::Warning,
+                            message: format!("transfer accounting: {message}"),
+                            provenance: None,
+                        });
+                    }
                 }
             }
         }
@@ -1350,6 +1388,64 @@ impl TicketTable {
             .iter()
             .filter(|state| state.disposition.is_none())
             .count()
+    }
+
+    /// Validates the resolved disposition table against the retained ledger and
+    /// the report's losses (`Check::TransferAccounting`, §6.2), returning one
+    /// message per violation in ticket order.
+    ///
+    /// The checks: a [`RecordDisposition::Typed`] names at least one output
+    /// entity; a [`RecordDisposition::Retained`] names at least one record and
+    /// every named record resolves in the retained store; a
+    /// [`RecordDisposition::Dropped`]'s loss is reflected in `losses`. An
+    /// unresolved ticket is not re-reported here — [`finish`](DecodeContext::finish)
+    /// handles resolution before this runs. [`RecordDisposition::Structural`]
+    /// carries no semantic content and is unconstrained.
+    fn transfer_accounting(&self, retained: &RetainedStore, losses: &[LossNote]) -> Vec<String> {
+        let mut violations = Vec::new();
+        for state in self.entries.borrow().iter() {
+            let (kind, location) = (state.kind.0, state.location);
+            let at = format!(
+                "record `{}` at space {} offset {}",
+                kind,
+                location.space.index(),
+                location.offset
+            );
+            match &state.disposition {
+                Some(RecordDisposition::Typed { outputs }) => {
+                    if outputs.is_empty() {
+                        violations
+                            .push(format!("{at} resolved Typed but names no output entities"));
+                    }
+                }
+                Some(RecordDisposition::Retained { records }) => {
+                    if records.is_empty() {
+                        violations.push(format!(
+                            "{at} resolved Retained but names no retained records"
+                        ));
+                    }
+                    for record in records {
+                        if !retained.contains_record(record) {
+                            violations.push(format!(
+                                "{at} names retained record `{record}` absent from the retained ledger"
+                            ));
+                        }
+                    }
+                }
+                Some(RecordDisposition::Dropped { loss }) => {
+                    let reflected = losses
+                        .iter()
+                        .any(|note| note.category == loss.category && note.message == loss.message);
+                    if !reflected {
+                        violations.push(format!(
+                            "{at} resolved Dropped but its loss note is absent from the report"
+                        ));
+                    }
+                }
+                Some(RecordDisposition::Structural) | None => {}
+            }
+        }
+        violations
     }
 
     /// Resolves every unresolved ticket as `Dropped` with an accountable

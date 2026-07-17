@@ -7,7 +7,7 @@ use std::io::Cursor;
 use super::*;
 use crate::codec::{CodecError, DecodeResult};
 use crate::document::CadIr;
-use crate::report::{DecodeReport, LossCategory, ProfileVersions, Severity};
+use crate::report::{DecodeReport, LossCategory, LossNote, ProfileVersions, Severity};
 use crate::units::Units;
 
 fn desktop() -> DecodePolicy {
@@ -604,6 +604,168 @@ fn unresolved_tickets_fail_strict_and_auto_drop_in_salvage() {
     assert!(loss.message.contains("`entity`"), "{}", loss.message);
     assert!(
         loss.message.contains("auto-dropped in salvage mode"),
+        "{}",
+        loss.message
+    );
+}
+
+#[test]
+fn transfer_accounting_passes_trivially_without_tickets() {
+    // A codec that issues no tickets has an empty disposition table; the check
+    // must not manufacture a violation, so L0 codecs stay unaffected.
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    assert!(ctx.finish(Ok(dummy_result())).is_ok());
+}
+
+#[test]
+fn transfer_accounting_accepts_consistent_dispositions() {
+    let bytes: &[u8] = &[7u8; 16];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    // Typed with an output entity is consistent.
+    let typed = ctx.commit_record(root.location(), RecordKind("body"));
+    ctx.resolve(
+        typed,
+        RecordDisposition::Typed {
+            outputs: vec!["body/0".to_owned()],
+        },
+    );
+
+    // Retained naming a record actually held in the retained store is consistent.
+    let retention = ctx.retain(&bytes[..8]).unwrap();
+    let record = retention.range().unwrap().blob().as_str().to_owned();
+    let retained = ctx.commit_record(root.location(), RecordKind("blob"));
+    ctx.resolve(
+        retained,
+        RecordDisposition::Retained {
+            records: vec![record],
+        },
+    );
+
+    // Structural framing is unconstrained.
+    let structural = ctx.commit_record(root.location(), RecordKind("header"));
+    ctx.resolve(structural, RecordDisposition::Structural);
+
+    assert!(ctx.finish(Ok(dummy_result())).is_ok());
+}
+
+#[test]
+fn transfer_accounting_rejects_typed_without_outputs_in_strict() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(root.location(), RecordKind("body"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Typed {
+            outputs: Vec::new(),
+        },
+    );
+    match ctx.finish(Ok(dummy_result())) {
+        Err(CodecError::Malformed(message)) => {
+            assert!(message.contains("transfer accounting"), "{message}");
+            assert!(message.contains("names no output entities"), "{message}");
+        }
+        other => panic!("expected strict transfer-accounting error, got {other:?}"),
+    }
+}
+
+#[test]
+fn transfer_accounting_rejects_unknown_retained_record_in_strict() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(root.location(), RecordKind("blob"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Retained {
+            records: vec!["not-a-real-digest".to_owned()],
+        },
+    );
+    match ctx.finish(Ok(dummy_result())) {
+        Err(CodecError::Malformed(message)) => {
+            assert!(
+                message.contains("absent from the retained ledger"),
+                "{message}"
+            );
+        }
+        other => panic!("expected strict retained-ledger error, got {other:?}"),
+    }
+}
+
+#[test]
+fn transfer_accounting_rejects_dropped_without_loss_note_in_strict() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(root.location(), RecordKind("body"));
+    // The disposition claims a drop, but the loss never reaches the report.
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Dropped {
+            loss: LossNote {
+                category: LossCategory::Other,
+                severity: Severity::Warning,
+                message: "unhandled body variant".to_owned(),
+                provenance: None,
+            },
+        },
+    );
+    match ctx.finish(Ok(dummy_result())) {
+        Err(CodecError::Malformed(message)) => {
+            assert!(message.contains("loss note is absent"), "{message}");
+        }
+        other => panic!("expected strict dropped-loss error, got {other:?}"),
+    }
+}
+
+#[test]
+fn transfer_accounting_accepts_dropped_when_loss_is_reflected() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let loss = LossNote {
+        category: LossCategory::Other,
+        severity: Severity::Warning,
+        message: "unhandled body variant".to_owned(),
+        provenance: None,
+    };
+    let ticket = ctx.commit_record(root.location(), RecordKind("body"));
+    ctx.resolve(ticket, RecordDisposition::Dropped { loss: loss.clone() });
+    let mut result = dummy_result();
+    result.report.losses.push(loss);
+    assert!(ctx.finish(Ok(result)).is_ok());
+}
+
+#[test]
+fn transfer_accounting_violations_degrade_to_losses_in_salvage() {
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = desktop();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(root.location(), RecordKind("blob"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Retained {
+            records: vec!["not-a-real-digest".to_owned()],
+        },
+    );
+    let result = ctx.finish(Ok(dummy_result())).unwrap();
+    assert_eq!(result.report.losses.len(), 1);
+    let loss = &result.report.losses[0];
+    assert_eq!(loss.severity, Severity::Warning);
+    assert!(
+        loss.message.contains("transfer accounting")
+            && loss.message.contains("absent from the retained ledger"),
         "{}",
         loss.message
     );
