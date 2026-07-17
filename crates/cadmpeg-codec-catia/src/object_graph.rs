@@ -257,7 +257,7 @@ pub fn surface_aliases(data: &[u8]) -> Vec<SurfaceAlias> {
         .filter_map(|(pos, _)| {
             let tag_raw = u32_le(data, pos + 4)?;
             let tag = tag_raw & 0x00ff_ffff;
-            if tag == 0 || pos + 20 > data.len() {
+            if pos + 20 > data.len() {
                 return None;
             }
             let lead_raw = pos

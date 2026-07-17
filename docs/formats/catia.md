@@ -480,7 +480,7 @@ connected graph.
 
 ```text
 catalog := 7C 02 <total_len:u32le> <count:atom> entry{count-1}
-entry   := <inclusive_len:u8> <ascii[inclusive_len-1]>
+entry   := <inclusive_len:u8> <utf8[inclusive_len-1]>
 ```
 
 `total_len` includes the marker and length field. The entries consume the frame exactly. The first four entries are `CATCatalogManager`, `catalogManager`, `catalogLinks`, and the empty string. The catalog names source classes and fields available to the serialized object schema; a name does not declare an object instance.

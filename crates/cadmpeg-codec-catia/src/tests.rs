@@ -5124,6 +5124,19 @@ fn outer_surface_alias_parser_reads_fixed_core() {
 }
 
 #[test]
+fn outer_surface_alias_parser_retains_zero_low_tag_bits() {
+    let mut bytes = surface_alias_stream();
+    bytes[8..12].copy_from_slice(&0xab00_0000u32.to_le_bytes());
+
+    let rows = crate::object_graph::surface_aliases(&bytes);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].tag, 0);
+    assert_eq!(rows[0].tag_raw, 0xab00_0000);
+    assert_eq!(rows[0].entity_record_ordinal, 7);
+    assert_eq!((rows[0].f2, rows[0].f3), (0x1122_3344, 0x5566_7788));
+}
+
+#[test]
 fn native_namespace_retains_surface_alias_core() {
     let native = crate::native::CatiaNative::decode(&surface_alias_stream());
     let [row] = native.alias_rows.as_slice() else {
