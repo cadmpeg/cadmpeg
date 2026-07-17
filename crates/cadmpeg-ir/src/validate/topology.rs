@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::features::{
-    ChamferSpec, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length, ParameterValue,
-    PatternKind, RadiusSpec,
+    ChamferSpec, DimensionDisplay, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length,
+    ParameterValue, PatternKind, RadiusSpec,
 };
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
@@ -1262,8 +1262,130 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }
         }
     }
+    check_parameter_value_kinds(ir, findings);
     check_feature_sketch_references(ir, &sketches, findings);
     check_feature_references(ir, ids, findings);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ParameterValueKind {
+    Length,
+    Angle,
+    Real,
+    Integer,
+    Boolean,
+}
+
+fn check_parameter_value_kinds(ir: &CadIr, findings: &mut Vec<Finding>) {
+    let parameter_ids = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| parameter.id.0.as_str())
+        .collect::<HashSet<_>>();
+    let mut expected = HashMap::<String, ParameterValueKind>::new();
+    for parameter in &ir.model.parameters {
+        if let Some(value) = &parameter.value {
+            require_parameter_value_kind(
+                &mut expected,
+                &parameter.id.0,
+                parameter_value_kind(value),
+                &parameter.id.0,
+                "global parameter value",
+                findings,
+            );
+        }
+        if matches!(
+            parameter.display,
+            Some(DimensionDisplay::Radius | DimensionDisplay::Diameter)
+        ) {
+            require_parameter_value_kind(
+                &mut expected,
+                &parameter.id.0,
+                ParameterValueKind::Length,
+                &parameter.id.0,
+                "radial display semantics",
+                findings,
+            );
+        }
+    }
+    for constraint in &ir.model.sketch_constraints {
+        let expected_kind = match &constraint.definition {
+            Definition::Distance { parameter, .. }
+            | Definition::DistanceLoci { parameter, .. }
+            | Definition::HorizontalDistance { parameter, .. }
+            | Definition::VerticalDistance { parameter, .. }
+            | Definition::Radius { parameter, .. }
+            | Definition::Diameter { parameter, .. } => {
+                Some((parameter, ParameterValueKind::Length))
+            }
+            Definition::Angle { parameter, .. } => Some((parameter, ParameterValueKind::Angle)),
+            _ => None,
+        };
+        let Some((parameter, kind)) = expected_kind else {
+            continue;
+        };
+        if parameter_ids.contains(parameter.0.as_str()) {
+            require_parameter_value_kind(
+                &mut expected,
+                &parameter.0,
+                kind,
+                &constraint.id.0,
+                "sketch dimension",
+                findings,
+            );
+        }
+    }
+    for configuration in &ir.model.configurations {
+        for (parameter, value) in &configuration.parameter_values {
+            if parameter_ids.contains(parameter.0.as_str()) {
+                require_parameter_value_kind(
+                    &mut expected,
+                    &parameter.0,
+                    parameter_value_kind(value),
+                    &configuration.id.0,
+                    "configuration parameter value",
+                    findings,
+                );
+            }
+        }
+    }
+}
+
+fn require_parameter_value_kind(
+    expected: &mut HashMap<String, ParameterValueKind>,
+    parameter: &str,
+    kind: ParameterValueKind,
+    entity: &str,
+    context: &str,
+    findings: &mut Vec<Finding>,
+) {
+    match expected.entry(parameter.to_owned()) {
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(kind);
+        }
+        std::collections::hash_map::Entry::Occupied(entry) if *entry.get() != kind => {
+            findings.push(Finding {
+                check: Check::GeometricConsistency,
+                severity: Severity::Error,
+                message: format!(
+                    "{context} gives parameter `{parameter}` incompatible dimensional kinds"
+                ),
+                entity: Some(entity.to_owned()),
+            });
+        }
+        std::collections::hash_map::Entry::Occupied(_) => {}
+    }
+}
+
+fn parameter_value_kind(value: &ParameterValue) -> ParameterValueKind {
+    match value {
+        ParameterValue::Length(_) => ParameterValueKind::Length,
+        ParameterValue::Angle(_) => ParameterValueKind::Angle,
+        ParameterValue::Real(_) => ParameterValueKind::Real,
+        ParameterValue::Integer(_) => ParameterValueKind::Integer,
+        ParameterValue::Boolean(_) => ParameterValueKind::Boolean,
+    }
 }
 
 fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding>) {

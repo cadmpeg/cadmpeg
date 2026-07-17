@@ -1134,6 +1134,107 @@ fn configuration_feature_definitions_use_global_feature_validation() {
 }
 
 #[test]
+fn parameter_dimensional_kinds_are_consistent_across_design_graphs() {
+    use crate::features::{
+        Angle, ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, Feature,
+        FeatureDefinition, FeatureId, FeatureTreeNodeRole, Length, ParameterId, ParameterValue,
+    };
+    use crate::sketches::{
+        SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntityId, SketchId,
+    };
+    use std::collections::BTreeMap;
+
+    let mut ir = unit_cube();
+    let owner = FeatureId("synthetic:test:feature#parameters".into());
+    ir.model.features.push(Feature {
+        id: owner.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::History,
+        },
+        native_ref: None,
+    });
+    let distance = ParameterId("synthetic:test:parameter#distance".into());
+    let radial = ParameterId("synthetic:test:parameter#radial".into());
+    ir.model.parameters.extend([
+        DesignParameter {
+            id: distance.clone(),
+            owner: owner.clone(),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: "1mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(1.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        },
+        DesignParameter {
+            id: radial,
+            owner,
+            ordinal: 1,
+            name: "D2".into(),
+            expression: "90deg".into(),
+            display: Some(DimensionDisplay::Radius),
+            value: Some(ParameterValue::Angle(Angle(std::f64::consts::FRAC_PI_2))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        },
+    ]);
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: SketchConstraintId("synthetic:test:constraint#angle-kind".into()),
+        sketch: SketchId("synthetic:test:sketch#missing".into()),
+        definition: SketchConstraintDefinition::Angle {
+            first: SketchEntityId("synthetic:test:entity#first".into()),
+            second: SketchEntityId("synthetic:test:entity#second".into()),
+            parameter: distance.clone(),
+        },
+        native_ref: None,
+    });
+    ir.model.configurations.push(DesignConfiguration {
+        id: ConfigurationId("synthetic:test:configuration#kinds".into()),
+        ordinal: 0,
+        active: true,
+        source_index: None,
+        name: "Kinds".into(),
+        material: None,
+        properties: BTreeMap::new(),
+        bodies: Vec::new(),
+        parameter_values: BTreeMap::from([(
+            distance,
+            ParameterValue::Angle(Angle(std::f64::consts::PI)),
+        )]),
+        feature_states: BTreeMap::new(),
+        native_ref: None,
+    });
+    ir.finalize();
+
+    let findings = validate(&ir, Vec::new()).findings;
+    for context in [
+        "radial display semantics",
+        "sketch dimension",
+        "configuration parameter value",
+    ] {
+        assert!(findings.iter().any(|finding| {
+            finding.message.contains(context)
+                && finding.message.contains("incompatible dimensional kinds")
+        }));
+    }
+}
+
+#[test]
 fn native_records_use_own_ids_for_counts_diff_and_validation() {
     let left = unit_cube();
     let mut right = left.clone();
