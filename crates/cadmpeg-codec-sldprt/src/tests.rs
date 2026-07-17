@@ -3892,6 +3892,48 @@ fn decode_builds_valid_topology_and_plane() {
     assert!(result.ir.model.edges.iter().all(|e| e.curve.is_none()));
 }
 
+/// Strict-mode options: transfer accounting is a hard `Malformed` failure, so a
+/// successful decode proves every committed record ticket resolved to a
+/// disposition the ledger check accepts (§6.2).
+fn strict_options() -> DecodeOptions {
+    use cadmpeg_ir::decode::{DecodeMode, DecodePolicy};
+    DecodeOptions {
+        container_only: false,
+        policy: DecodePolicy {
+            mode: DecodeMode::Strict,
+            ..DecodePolicy::desktop()
+        },
+    }
+}
+
+#[test]
+fn transfer_accounting_passes_in_both_modes_for_geometry() {
+    // Geometry path: the selected Parasolid block resolves `Typed`; every other
+    // retained block resolves `Retained`. Strict mode fails the decode on any
+    // disposition the ledger rejects, so `Ok` is the accounting proof.
+    let fixture = sldprt_with_body_and_history(&triangle_body());
+    for options in [DecodeOptions::default(), strict_options()] {
+        let result = SldprtCodec
+            .decode(&mut Cursor::new(fixture.clone()), &options)
+            .expect("strict and salvage decode both pass transfer accounting");
+        assert!(result.report.geometry_transferred);
+    }
+}
+
+#[test]
+fn transfer_accounting_passes_in_both_modes_for_metadata_fallback() {
+    // Metadata fallback and container-only paths still resolve every committed
+    // ticket; a strict decode surfaces any unresolved or invalid disposition.
+    let fixture = synthetic_sldprt();
+    for container_only in [false, true] {
+        let mut options = strict_options();
+        options.container_only = container_only;
+        SldprtCodec
+            .decode(&mut Cursor::new(fixture.clone()), &options)
+            .expect("strict metadata decode passes transfer accounting");
+    }
+}
+
 #[test]
 fn decode_does_not_report_derived_pcurves_as_stored_geometry_loss() {
     let result = SldprtCodec

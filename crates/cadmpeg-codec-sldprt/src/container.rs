@@ -13,7 +13,9 @@ use std::io::Read;
 #[cfg(test)]
 use cadmpeg_ir::codec::ReadSeek;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, ExpandSpec, TransformKind, View};
+use cadmpeg_ir::decode::{
+    ByteRange, DecodeContext, DerivedKind, ExpandSpec, Retention, TransformKind, View,
+};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 
@@ -157,6 +159,13 @@ pub struct Block {
     pub ps_streams: Vec<Vec<u8>>,
     /// Outer-payload offset of each entry in `ps_streams`.
     pub ps_stream_offsets: Vec<usize>,
+    /// Content-addressed identity of the block payload retained in the platform
+    /// store (§6.2), when the block was admitted on the session decode path.
+    ///
+    /// `Some` names the retained-blob digest a `RecordDisposition::Retained`
+    /// resolution references; `None` on the writer/test [`scan_bytes`] path,
+    /// which runs without a [`DecodeContext`] and issues no tickets.
+    pub retained_digest: Option<String>,
 }
 
 /// One tail-directory entry naming a section.
@@ -246,6 +255,29 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
 /// preserved per-block records are IR-level requirements, so the validated
 /// decompressed bytes are copied out of the arena once, at admission.
 pub fn scan_view(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerScan, CodecError> {
+    scan_view_impl(ctx, root, false)
+}
+
+/// Scan the container and additionally retain each admitted block's decompressed
+/// payload as a content-addressed platform blob (§6.2).
+///
+/// The decode path calls this so every block carries a [`Block::retained_digest`]
+/// a [`RecordDisposition::Retained`](cadmpeg_ir::decode::RecordDisposition)
+/// resolution can name; `inspect` uses the plain [`scan_view`], which does not
+/// charge the retained-byte budget for a container-level enumeration that issues
+/// no tickets.
+pub fn scan_view_retaining(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+) -> Result<ContainerScan, CodecError> {
+    scan_view_impl(ctx, root, true)
+}
+
+fn scan_view_impl(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    retain: bool,
+) -> Result<ContainerScan, CodecError> {
     let bytes = root.window();
     ctx.charge_work(
         bytes.len() as u64,
@@ -264,7 +296,7 @@ pub fn scan_view(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerSca
             i += 1;
             continue;
         }
-        if let Some(raw) = admit_block(ctx, root, bytes, i)? {
+        if let Some(raw) = admit_block(ctx, root, bytes, i, retain)? {
             // `admit_block` charges each block's space-graph records (the
             // decompressed `Transform` space, each Parasolid stream) and its
             // retained payload copy before registering them, so the per-block
@@ -316,6 +348,7 @@ fn admit_block(
     root: View<'_>,
     bytes: &[u8],
     off: usize,
+    retain: bool,
 ) -> Result<Option<RawBlock>, CodecError> {
     let (Some(type_id), Some(crc), Some(comp_sz), Some(uncomp_sz), Some(pre_sz)) = (
         u32_le(bytes, off + 6),
@@ -380,6 +413,23 @@ fn admit_block(
     };
     let inflated = view.window();
 
+    // §6.2 record accounting: retain the validated decompressed payload as a
+    // content-addressed platform blob so the block's decode-time
+    // `RecordDisposition::Retained` can name a record present in the retained
+    // store. Retention is a §3.3 commit-boundary act — it runs only after the
+    // CRC and declared-length gates admit the block. A strict-mode retained-byte
+    // exhaustion fuses the context and propagates as an unswallowable
+    // `ResourceLimit`; salvage degrades recovery to accounting and keeps the
+    // digest (§11.10), which still satisfies the disposition check.
+    let retained_digest = if retain {
+        match ctx.retain(inflated)? {
+            Retention::Retained(range) => Some(range.blob().as_str().to_owned()),
+            Retention::Accounted { digest } => Some(digest),
+        }
+    } else {
+        None
+    };
+
     let preamble = bytes
         .get(off + BLOCK_HEADER_LEN..payload_start)
         .unwrap_or(&[]);
@@ -428,6 +478,7 @@ fn admit_block(
         ps_stream,
         ps_streams,
         ps_stream_offsets,
+        retained_digest,
     }))
 }
 
@@ -623,6 +674,7 @@ struct RawBlock {
     ps_stream: Option<Vec<u8>>,
     ps_streams: Vec<Vec<u8>>,
     ps_stream_offsets: Vec<usize>,
+    retained_digest: Option<String>,
 }
 
 impl RawBlock {
@@ -638,6 +690,7 @@ impl RawBlock {
             ps_stream: self.ps_stream,
             ps_streams: self.ps_streams,
             ps_stream_offsets: self.ps_stream_offsets,
+            retained_digest: self.retained_digest,
         }
     }
 }
@@ -698,6 +751,7 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
         ps_stream,
         ps_streams,
         ps_stream_offsets,
+        retained_digest: None,
     })
 }
 

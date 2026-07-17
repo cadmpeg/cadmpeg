@@ -19,7 +19,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::be::u32_at as be_u32;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::{DecodeContext, RecordDisposition, RecordKind, RecordTicket, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
@@ -57,17 +57,24 @@ struct DecodedBrep {
 /// [`CodecError`]; unsupported model records are reported through
 /// [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_view(ctx, root)?;
+    let scan = container::scan_view_retaining(ctx, root)?;
+    // §6.2 record accounting: commit one ticket per record-shaped unit the codec
+    // walks — every CRC-validated block, plus each tail-directory and cache-cell
+    // framing record — at the §3.3 commit boundary. Each ticket is resolved below
+    // at the point its outcome is decided, so no walked record is silently lost.
+    let tickets = commit_record_tickets(ctx, root, &scan);
 
     if ctx.container_only() {
         let ir = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
+        resolve_record_tickets(ctx, tickets, None, &[]);
         return Ok(DecodeResult::new(ir, report));
     }
 
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         if let Some((decoded, report)) = try_decode_brep(&scan, &streams) {
+            let typed_offset = streams[decoded.selected].block.offset;
             let ir = build_geometry_ir(
                 &scan,
                 streams[decoded.selected].block,
@@ -75,13 +82,131 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
+            let outputs = typed_outputs(&ir);
+            resolve_record_tickets(ctx, tickets, Some(typed_offset), &outputs);
             return Ok(DecodeResult::new(ir, report));
         }
     }
 
     let ir = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
+    resolve_record_tickets(ctx, tickets, None, &[]);
     Ok(DecodeResult::new(ir, report))
+}
+
+/// One committed record ticket awaiting resolution, carried from the §3.3 commit
+/// boundary to the point its disposition is decided.
+struct PendingTicket {
+    ticket: RecordTicket,
+    /// Source offset of the block frame this ticket accounts for; `None` for a
+    /// framing record (directory entry, cache cell).
+    block_offset: Option<usize>,
+    /// Retained-blob digest of the block payload, when the block was retained.
+    retained_digest: Option<String>,
+}
+
+/// Issue one ticket per record-shaped unit the container scan walked.
+///
+/// Blocks are content records; tail-directory entries and cache cells are
+/// container framing. Every ticket is resolved in [`resolve_record_tickets`].
+fn commit_record_tickets(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+    scan: &ContainerScan,
+) -> Vec<PendingTicket> {
+    let location_at = |offset: usize| {
+        root.child(offset, offset)
+            .map_or_else(|| root.location(), View::location)
+    };
+    let mut tickets = Vec::new();
+    for block in &scan.blocks {
+        tickets.push(PendingTicket {
+            ticket: ctx.commit_record(location_at(block.offset), RecordKind("sldprt_block")),
+            block_offset: Some(block.offset),
+            retained_digest: block.retained_digest.clone(),
+        });
+    }
+    for entry in &scan.directory {
+        tickets.push(PendingTicket {
+            ticket: ctx.commit_record(
+                location_at(entry.offset),
+                RecordKind("sldprt_directory_entry"),
+            ),
+            block_offset: None,
+            retained_digest: None,
+        });
+    }
+    for cell in &scan.cache_cells {
+        tickets.push(PendingTicket {
+            ticket: ctx.commit_record(location_at(cell.offset), RecordKind("sldprt_cache_cell")),
+            block_offset: None,
+            retained_digest: None,
+        });
+    }
+    tickets
+}
+
+/// Resolve every committed record ticket at its decided outcome (§6.2).
+///
+/// The block whose Parasolid stream was lifted into the B-rep graph
+/// (`typed_offset`) resolves `Typed`, naming the IR entities transferred; every
+/// other retained block resolves `Retained`, naming its preserved payload blob;
+/// framing records resolve `Structural`. A block that was neither typed nor
+/// retained (an outcome the decode path does not produce) resolves `Structural`
+/// rather than being dropped silently.
+fn resolve_record_tickets(
+    ctx: &DecodeContext<'_>,
+    tickets: Vec<PendingTicket>,
+    typed_offset: Option<usize>,
+    typed_outputs: &[String],
+) {
+    for pending in tickets {
+        let disposition = match (pending.block_offset, pending.retained_digest) {
+            (Some(offset), _) if Some(offset) == typed_offset && !typed_outputs.is_empty() => {
+                RecordDisposition::Typed {
+                    outputs: typed_outputs.to_vec(),
+                }
+            }
+            (Some(_), Some(digest)) => RecordDisposition::Retained {
+                records: vec![digest],
+            },
+            _ => RecordDisposition::Structural,
+        };
+        ctx.resolve(pending.ticket, disposition);
+    }
+}
+
+/// Collect a stable, non-empty set of IR entity ids the selected geometry block
+/// transferred, preferring bodies, then faces, then surfaces.
+///
+/// Transfer accounting requires a `Typed` disposition to name at least one
+/// entity present in the model; the codec merges every active Parasolid site into
+/// one topology graph without per-block body attribution, so the selected site
+/// carries the whole transferred graph's identities.
+fn typed_outputs(ir: &CadIr) -> Vec<String> {
+    let bodies: Vec<String> = ir
+        .model
+        .bodies
+        .iter()
+        .map(|body| body.id.0.clone())
+        .collect();
+    if !bodies.is_empty() {
+        return bodies;
+    }
+    let faces: Vec<String> = ir
+        .model
+        .faces
+        .iter()
+        .map(|face| face.id.0.clone())
+        .collect();
+    if !faces.is_empty() {
+        return faces;
+    }
+    ir.model
+        .surfaces
+        .iter()
+        .map(|surface| surface.id.0.clone())
+        .collect()
 }
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
