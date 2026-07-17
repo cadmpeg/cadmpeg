@@ -194,7 +194,7 @@ pub fn render_dictionary() -> String {
     out.push_str("# Do not edit by hand; run `cargo test -p cadmpeg-codec-catia`.\n");
     out.push_str("# CATIA b5 03 record-class codes, for structure-aware fuzzing.\n");
     for class in CLASSES {
-        let _ = writeln!(out, "\"\\x{:02x}\" # {}", class.code, class.name);
+        let _ = writeln!(out, "\"\\x{:02x}\"", class.code);
     }
     out
 }

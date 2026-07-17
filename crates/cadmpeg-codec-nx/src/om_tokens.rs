@@ -167,15 +167,10 @@ pub fn render_dictionary() -> String {
     out.push_str("# Do not edit by hand; run `cargo test -p cadmpeg-codec-nx`.\n");
     out.push_str("# NX object-model serialization tokens, for structure-aware fuzzing.\n");
     for anchor in ANCHORS {
-        let _ = writeln!(
-            out,
-            "\"{}\" # {}",
-            escape_literal(anchor.literal),
-            anchor.name
-        );
+        let _ = writeln!(out, "\"{}\"", escape_literal(anchor.literal));
     }
     for entry in UNITS {
-        let _ = writeln!(out, "\"{}\" # unit_{}", entry.literal, entry.literal);
+        let _ = writeln!(out, "\"{}\"", entry.literal);
     }
     out
 }
