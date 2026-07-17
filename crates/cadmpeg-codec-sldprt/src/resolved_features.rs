@@ -6571,18 +6571,20 @@ pub(crate) fn enrich_history_extrusion_terminations(
                 continue;
             };
             let mut end_index = index + 1;
-            if let Some((_, next_id)) = objects.get(end_index) {
-                let next_is_profile = histories
+            while let Some((_, next_id)) = objects.get(end_index) {
+                let skip = histories
                     .iter()
                     .flat_map(|history| &history.features)
                     .find(|feature| feature.id == *next_id)
                     .is_some_and(|feature| {
-                        native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-                            == NativeClassKind::ProfileFeature
+                        let class = feature.input_class.as_deref().unwrap_or_default();
+                        native_object_class(class).kind == NativeClassKind::ProfileFeature
+                            || class == "moCosmeticThread_c"
                     });
-                if next_is_profile {
-                    end_index += 1;
+                if !skip {
+                    break;
                 }
+                end_index += 1;
             }
             let end = objects
                 .get(end_index)
@@ -7243,8 +7245,12 @@ fn compact_extrusion_traversal_tail_at(payload: &[u8], offset: usize) -> bool {
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
         && payload.get(offset + 90..offset + 94) == Some(&[0, 0, 1, 0])
         && payload
-            .get(offset + 94..offset + 104)
+            .get(offset + 94..offset + 100)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        && payload
+            .get(offset + 100..offset + 102)
+            .is_some_and(|bytes| bytes == [0, 0] || bytes[1] & 0x80 != 0)
+        && payload.get(offset + 102..offset + 104) == Some(&[0, 0])
 }
 
 pub(crate) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
@@ -7269,7 +7275,7 @@ pub(crate) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> b
         bytes
             .iter()
             .enumerate()
-            .all(|(index, byte)| *byte == 0 || (index == 9 && *byte == 0x20))
+            .all(|(index, byte)| *byte == 0 || (index == 9 && byte.trailing_zeros() >= 3))
     }) && payload.get(block + 16..block + 20) == Some(&[0xff, 0xff, 0, 0])
         && payload
             .get(block + 20)
