@@ -1452,6 +1452,8 @@ A positional `gsec3d_ptr` record begins with `07 S2D<N> 00`, followed by
 reference, `fb e2`, and row-class reference. Each row replays `plane_id`,
 `ref_type`, `ext_ref_id`, `seg_id`, `sub_index`, and `flip_flag`; rows after the
 first follow `f2 f7 <table-class> e2` and their nested row payload.
+The `S2D<N>` header, complete placement fields, and complete reference rows
+remain present when a later field or row is incomplete.
 The in-plane orientation is the unique referenced plane not parallel to the
 resolved sketch plane. Its normal projected into the sketch plane defines the
 section `u` axis, and the intersection of the two plane equations defines the

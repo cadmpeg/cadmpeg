@@ -2792,7 +2792,7 @@ fn section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection
 }
 
 fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<FeatureSection3d> {
-    payload[start..end]
+    let (section, name_end) = payload[start..end]
         .windows(4)
         .enumerate()
         .filter(|(_, window)| *window == b"\x07S2D")
@@ -2803,71 +2803,119 @@ fn positional_section_3d(payload: &[u8], start: usize, end: usize) -> Option<Fea
                 .position(|&byte| byte == 0)?
                 + section
                 + 1;
-            let mut cursor = name_end + 1;
-            let section_flip = payload.get(cursor).copied().and_then(BinaryFlag::decode);
-            cursor += 1;
-            for _ in 0..3 {
-                let (_, next) = segment_int(payload, cursor);
-                (next > cursor).then_some(())?;
-                cursor = next;
-            }
-            let (sketch_plane_entity_id, next) = segment_int(payload, cursor);
-            cursor = next;
-            let sketch_plane_flip = payload.get(cursor).copied().and_then(BinaryFlag::decode);
-            cursor += 1;
-            (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
-            let (reference_count, next) = psb::compact_int(payload, cursor + 1);
-            cursor = next;
-            (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let table_reference_start = cursor + 1;
-            let (_, next) = psb::reference_id(payload, table_reference_start).ok()?;
-            let table_reference = payload[table_reference_start..next].to_vec();
-            cursor = next;
-            (payload.get(cursor..cursor + 2) == Some(&[0xfb, 0xe2])).then_some(())?;
-            cursor += 2;
-            (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-            let (_, next) = psb::reference_id(payload, cursor + 1).ok()?;
-            cursor = next;
+            Some((section, name_end))
+        })?;
+    let mut result = FeatureSection3d {
+        sketch_plane_entity_id: None,
+        sketch_plane_flip: None,
+        reference_plane_entity_ids: Vec::new(),
+        reference_plane_datum_geometry_id: None,
+        orientation: FeatureSectionOrientation::default(),
+        dimension_ids: Vec::new(),
+        offset: section,
+    };
+    let mut cursor = name_end + 1;
+    let Some(section_flip) = payload.get(cursor).copied() else {
+        return Some(result);
+    };
+    result.orientation.section_flip = BinaryFlag::decode(section_flip);
+    cursor += 1;
+    for _ in 0..3 {
+        let (_, next) = segment_int(payload, cursor);
+        if next <= cursor {
+            return Some(result);
+        }
+        cursor = next;
+    }
+    let (sketch_plane_entity_id, next) = segment_int(payload, cursor);
+    if next <= cursor {
+        return Some(result);
+    }
+    result.sketch_plane_entity_id = sketch_plane_entity_id;
+    cursor = next;
+    let Some(sketch_plane_flip) = payload.get(cursor).copied() else {
+        return Some(result);
+    };
+    result.sketch_plane_flip = BinaryFlag::decode(sketch_plane_flip);
+    cursor += 1;
+    if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
+        return Some(result);
+    }
+    let (reference_count, next) = psb::compact_int(payload, cursor + 1);
+    if next <= cursor + 1 {
+        return Some(result);
+    }
+    cursor = next;
+    if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Some(result);
+    }
+    let table_reference_start = cursor + 1;
+    let Ok((_, next)) = psb::reference_id(payload, table_reference_start) else {
+        return Some(result);
+    };
+    let table_reference = payload[table_reference_start..next].to_vec();
+    cursor = next;
+    if payload.get(cursor..cursor + 2) != Some(&[0xfb, 0xe2]) {
+        return Some(result);
+    }
+    cursor += 2;
+    if payload.get(cursor) != Some(&psb::token::ENTITY_REF) {
+        return Some(result);
+    }
+    let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
+        return Some(result);
+    };
+    cursor = next;
 
-            let mut reference_plane_entity_ids = Vec::new();
-            let mut orientation = FeatureSectionOrientation {
-                section_flip,
-                ..FeatureSectionOrientation::default()
+    let row_count = usize::try_from(reference_count).unwrap_or(usize::MAX);
+    let mut separator = vec![0xf2, psb::token::ENTITY_REF];
+    separator.extend_from_slice(&table_reference);
+    separator.push(0xe2);
+    for row in 0..row_count {
+        let (Some(plane_id), next) = segment_int(payload, cursor) else {
+            break;
+        };
+        cursor = next;
+        let (reference_type, next) = segment_int(payload, cursor);
+        if next <= cursor {
+            break;
+        }
+        cursor = next;
+        let (_, next) = segment_int(payload, cursor);
+        if next <= cursor {
+            break;
+        }
+        cursor = next;
+        let (segment_id, next) = segment_int(payload, cursor);
+        if next <= cursor {
+            break;
+        }
+        cursor = next;
+        let (_, next) = segment_int(payload, cursor);
+        if next <= cursor {
+            break;
+        }
+        cursor = next;
+        let reference_flip = payload.get(cursor).copied().and_then(BinaryFlag::decode);
+        let (_, next) = segment_int(payload, cursor);
+        if next <= cursor {
+            break;
+        }
+        cursor = next;
+        result.reference_plane_entity_ids.push(plane_id);
+        if row == 0 {
+            result.orientation.reference_type = reference_type;
+            result.orientation.segment_id = segment_id;
+            result.orientation.reference_flip = reference_flip;
+        }
+        if row + 1 < row_count {
+            let Some(separator_at) = find_bytes(payload, &separator, cursor, end) else {
+                break;
             };
-            let row_count = usize::try_from(reference_count).ok()?;
-            let mut separator = vec![0xf2, psb::token::ENTITY_REF];
-            separator.extend_from_slice(&table_reference);
-            separator.push(0xe2);
-            for row in 0..row_count {
-                let plane_id = next_segment_int(payload, &mut cursor)?;
-                let reference_type = next_segment_int(payload, &mut cursor);
-                let _external_reference_id = next_segment_int(payload, &mut cursor);
-                let segment_id = next_segment_int(payload, &mut cursor);
-                let _sub_index = next_segment_int(payload, &mut cursor);
-                let reference_flip = payload.get(cursor).copied().and_then(BinaryFlag::decode);
-                let (_, next) = segment_int(payload, cursor);
-                cursor = next;
-                reference_plane_entity_ids.push(plane_id);
-                if row == 0 {
-                    orientation.reference_type = reference_type;
-                    orientation.segment_id = segment_id;
-                    orientation.reference_flip = reference_flip;
-                }
-                if row + 1 < row_count {
-                    let separator_at = find_bytes(payload, &separator, cursor, end)?;
-                    cursor = separator_at + separator.len();
-                }
-            }
-            Some(FeatureSection3d {
-                sketch_plane_entity_id,
-                sketch_plane_flip,
-                reference_plane_entity_ids,
-                reference_plane_datum_geometry_id: None,
-                orientation,
-                dimension_ids: Vec::new(),
-                offset: section,
-            })
-        })
+            cursor = separator_at + separator.len();
+        }
+    }
+    Some(result)
 }
 
 fn dimension_unit(dimension_type: u32) -> DimensionUnit {
@@ -6757,6 +6805,34 @@ mod tests {
         assert_eq!(section.sketch_plane_flip, None);
         assert_eq!(section.reference_plane_entity_ids, vec![6, 7]);
         assert_eq!(section.reference_plane_datum_geometry_id, None);
+        assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
+        assert_eq!(section.orientation.reference_type, Some(5));
+        assert_eq!(section.orientation.segment_id, Some(3));
+        assert_eq!(section.orientation.reference_flip, Some(BinaryFlag::Clear));
+    }
+
+    #[test]
+    fn positional_gsec3d_retains_its_header_without_a_body() {
+        let payload = b"prefix\x07S2D0004\0";
+
+        let section = positional_section_3d(payload, 0, payload.len()).expect("positional gsec3d");
+
+        assert_eq!(section.offset, 6);
+        assert_eq!(section.sketch_plane_entity_id, None);
+        assert!(section.reference_plane_entity_ids.is_empty());
+        assert_eq!(section.orientation, FeatureSectionOrientation::default());
+    }
+
+    #[test]
+    fn positional_gsec3d_retains_placement_and_complete_reference_prefix() {
+        let payload = b"prefix\x07S2D0004\0\x01\xf6\xe1\xf6\x82\x01\xf6\
+            \xf8\x02\xf7\x39\xfb\xe2\xf7\x3a\
+            \x06\x05\xf6\x03\xf6\x00\xe3tail\xf2\xf7\x39\xe2\x07";
+
+        let section = positional_section_3d(payload, 0, payload.len()).expect("positional gsec3d");
+
+        assert_eq!(section.sketch_plane_entity_id, Some(513));
+        assert_eq!(section.reference_plane_entity_ids, [6]);
         assert_eq!(section.orientation.section_flip, Some(BinaryFlag::Set));
         assert_eq!(section.orientation.reference_type, Some(5));
         assert_eq!(section.orientation.segment_id, Some(3));
