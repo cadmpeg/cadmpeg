@@ -8,6 +8,7 @@ This document records unresolved NX `.prt` byte semantics.
 - Finite parameter domains and branch selection for rank-deficient or terminal type-38/`0x5a` procedural intersections and BLEND_SURF carriers are unspecified. This includes tangential support pairs, offset-surface intersections with multiple branches, blend-section rail domains, and terminal cases where distinct endpoints map to one procedural-curve parameter.
 - Rank-deficient correction when independently inverted predictors do not already satisfy surface equality, terminal folds, and multiple corrected branches remain unspecified for procedural curves with degenerate support-0 arrays, sentinel-truncated marker-4 plane-support arrays, and NURBS-offset blend spines.
 - Full-record layouts for deltas-stream node types outside the topology and procedural families defined in the specification are unspecified.
+- Status-byte placement and complete-record boundaries for deltas-stream NURBS support records types 125–128 and 135–136 are unspecified.
 - Delta tag `0x5a` uses the `intersection_data` layout shared with type 38; its canonical later-schema node-type name is unspecified.
 
 ## Object model and body composition
