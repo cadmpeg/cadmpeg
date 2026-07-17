@@ -890,14 +890,20 @@ fn build_ir(
                     },
                 );
             } else {
+                // The message carries the sketch's unique record id so each
+                // `Dropped` note is structurally distinct from every other. The
+                // `finish`-time loss match (category+message) consumes one note
+                // per `Dropped` disposition, so distinct notes keep the count of
+                // pushed notes tied to the count of resolutions even if two
+                // definitions ever shared a `feature_id` and offset (§6.2).
                 let loss = LossNote {
                     category: LossCategory::Attribute,
                     severity: Severity::Info,
                     message: format!(
-                        "FeatDefs sketch definition #{} at offset {} was preserved as a native \
-                         design record but has no placed feature operation to carry it into the \
-                         typed model.",
-                        sketch.feature_id, offset
+                        "FeatDefs sketch record {} (definition #{}) at offset {} was preserved as \
+                         a native design record but has no placed feature operation to carry it \
+                         into the typed model.",
+                        sketch.id, sketch.feature_id, offset
                     ),
                     provenance: None,
                 };

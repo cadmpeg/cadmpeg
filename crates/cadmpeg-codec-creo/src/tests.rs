@@ -1424,6 +1424,17 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
         [2.0, -2.0, 1.0],
         [1.0, 0.0, 0.0],
     );
+    // Row 5 has mismatched axis magnitudes, so `plane_frame` recovers neither a
+    // u-axis nor a normal: an incomplete support frame that resolves
+    // `RecordDisposition::Dropped` with a salvage-skip loss instead of a placed
+    // carrier. It transfers no surface, so the surface count stays 5.
+    push_generated_plane_row(
+        &mut payload,
+        5,
+        [1.0, 0.0, 0.0],
+        [2.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+    );
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\x06topol_ref_data\0");
     for (curve, faces, next) in [
         (10, [1, 2], [12, 13]),
@@ -1454,6 +1465,10 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
             ("VisibGeom", payload),
             ("NovisGeom", vec![0xaa, 0xbb]),
             ("ActDatums", datum),
+            // A single feature operation resolves `RecordDisposition::Typed`
+            // naming its `MdlStatus` feature entity, so the fixture drives the
+            // feature-operation `Typed` path alongside the geometry ones.
+            ("MdlStatus", b"Extrude id 40\0".to_vec()),
         ],
     );
 
@@ -1467,9 +1482,22 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &strict)
         .expect("strict decode passes transfer accounting");
-    // The four placed frames plus the datum carrier transfer as model surfaces.
+    // The four placed frames plus the datum carrier transfer as model surfaces;
+    // the fifth incomplete frame transfers none and resolves `Dropped`.
     assert_eq!(result.ir.model.surfaces.len(), 5);
     assert_eq!(result.ir.model.bodies.len(), 1);
+    // The `MdlStatus` feature operation resolves `Typed`.
+    assert_eq!(result.ir.model.features.len(), 1);
+    assert_eq!(
+        result.ir.model.features[0].id.as_str(),
+        "creo:mdlstatus:feature#40"
+    );
+    // The incomplete support frame's `Dropped` disposition reflects a matching
+    // salvage-skip loss in the report.
+    assert!(result.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::Geometry
+            && loss.message.contains("incomplete support frame")
+    }));
 
     // Salvage mode over the same bytes must also pass accounting.
     CreoCodec
