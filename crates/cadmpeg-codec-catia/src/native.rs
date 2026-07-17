@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 22;
+pub const CATIA_NATIVE_VERSION: u32 = 23;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -293,24 +293,23 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
         .flat_map(|graph| {
             let mut fields = BTreeMap::<u32, Vec<&CatiaObjectRecord>>::new();
             for record in &graph.records {
-                if let Some(owner) = record.owner_ref {
+                if let Some(owner) = record
+                    .owner_ref
+                    .filter(|owner| object_record_index(*owner, graph.records.len()).is_some())
+                {
                     fields.entry(owner).or_default().push(record);
                 }
             }
             let owners = fields.keys().copied().collect::<Vec<_>>();
             fields.into_iter().map(move |(owner_ordinal, records)| {
-                let owner_record = usize::try_from(owner_ordinal)
-                    .ok()
-                    .and_then(|ordinal| ordinal.checked_sub(1))
+                let owner_record = object_record_index(owner_ordinal, graph.records.len())
                     .and_then(|index| graph.records.get(index));
                 let mut dependency_owners = Vec::new();
                 for reference in records
                     .iter()
                     .flat_map(|record| payload_references(&record.payload))
                 {
-                    let target_owner = usize::try_from(reference)
-                        .ok()
-                        .and_then(|ordinal| ordinal.checked_sub(1))
+                    let target_owner = object_record_index(reference, graph.records.len())
                         .and_then(|index| graph.records.get(index))
                         .and_then(|record| record.owner_ref);
                     if let Some(target_owner) = target_owner.filter(|target| {
@@ -346,6 +345,11 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
             })
         })
         .collect()
+}
+
+fn object_record_index(ordinal: u32, record_count: usize) -> Option<usize> {
+    let index = usize::try_from(ordinal).ok()?.checked_sub(1)?;
+    (index < record_count).then_some(index)
 }
 
 fn design_object_id(graph_offset: u64, owner_ordinal: u32) -> String {
@@ -846,21 +850,15 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
             .iter()
             .map(|record| record.id.clone())
             .collect::<Vec<_>>();
-        let owners = records
-            .iter()
-            .filter_map(|record| record.owner_ref)
-            .collect::<Vec<_>>();
         for record in &mut records {
             record.design_object = record
                 .owner_ref
-                .filter(|owner| owners.contains(owner))
+                .filter(|owner| object_record_index(*owner, record_ids.len()).is_some())
                 .map(|owner| design_object_id(graph.pos as u64, owner));
             record.references = payload_references(&record.payload)
                 .map(|ordinal| CatiaObjectRecordReference {
                     ordinal,
-                    target: usize::try_from(ordinal)
-                        .ok()
-                        .and_then(|ordinal| ordinal.checked_sub(1))
+                    target: object_record_index(ordinal, record_ids.len())
                         .and_then(|index| record_ids.get(index))
                         .cloned(),
                 })
