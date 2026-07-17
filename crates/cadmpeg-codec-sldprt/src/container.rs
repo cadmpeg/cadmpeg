@@ -10,7 +10,9 @@
 use std::collections::BTreeMap;
 use std::io::Read;
 
-use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
+#[cfg(test)]
+use cadmpeg_ir::codec::ReadSeek;
+use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, ExpandSpec, TransformKind, View};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
@@ -215,6 +217,12 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
 /// Block candidates must inflate to their declared size and match their stored
 /// CRC-32. Cache cells and directory entries must satisfy their framing
 /// invariants. Unclassified marker occurrences are ignored.
+///
+/// Test-only: production `inspect`/`decode` enter through [`scan_view`], which
+/// runs the platform-charged expander. This reader wrapper survives solely to
+/// exercise the byte-slice scanner from fixtures, so it is gated out of the
+/// shipped surface.
+#[cfg(test)]
 pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     reader
         .seek(std::io::SeekFrom::Start(0))
@@ -695,10 +703,17 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
 
 /// Raw-DEFLATE (`wbits = -15`) inflate to at most `hint` bytes; `None` on any
 /// decompression error (the CRC/round-trip gate rejects the marker hit).
+///
+/// Decompression is capped at `hint + 1` bytes via `Read::take` so a
+/// high-ratio DEFLATE bomb cannot inflate past the declared `uncomp_sz` before
+/// the caller's exact-length check rejects it. Without the cap `read_to_end`
+/// would materialize the entire stream (potentially gigabytes) before any
+/// length gate ran, leaving `scan_bytes` with no real decompression bound.
 fn raw_inflate(data: &[u8], hint: usize) -> Option<Vec<u8>> {
     use flate2::read::DeflateDecoder;
+    let cap = hint.saturating_add(1);
     let mut out = Vec::with_capacity(hint.min(1 << 20));
-    let mut dec = DeflateDecoder::new(data);
+    let mut dec = DeflateDecoder::new(data).take(cap as u64);
     match dec.read_to_end(&mut out) {
         Ok(_) => Some(out),
         Err(_) => None,
