@@ -148,6 +148,15 @@ fn standard_carrier_source(tag: u32) -> SourceObjectAssociation {
     }
 }
 
+fn admit_neutral_model(ir: &mut CadIr, annotations: &mut AnnotationBuilder) -> bool {
+    if link_payload_carriers(ir, annotations).is_err() {
+        return false;
+    }
+    let mut candidate = ir.clone();
+    candidate.finalize();
+    cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok()
+}
+
 fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
     let decoded = geometry::zero_entity_surfaces(&scan.data);
     let points = geometry::vertices(&scan.data);
@@ -165,11 +174,15 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)>
         "catia:payload:unknown#zero-entity",
     )
     .ok()?;
-    let topology_transferred = topology
-        .as_ref()
-        .is_some_and(|topology| transfer_zero_entity_topology(&mut ir, &mut annotations, topology));
+    let mut topology_ir = ir.clone();
+    let mut topology_annotations = annotations.clone();
+    let topology_transferred = topology.as_ref().is_some_and(|topology| {
+        transfer_zero_entity_topology(&mut topology_ir, &mut topology_annotations, topology)
+            && admit_neutral_model(&mut topology_ir, &mut topology_annotations)
+    });
     if topology_transferred {
-        link_payload_carriers(&mut ir, &mut annotations).ok()?;
+        ir = topology_ir;
+        annotations = topology_annotations;
         ir.annotations = annotations.build();
         let unresolved_pcurves = topology
             .as_ref()
@@ -930,13 +943,25 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
             source_object: None,
         });
     }
+    let mut topology_ir = ir.clone();
+    let mut topology_annotations = annotations.clone();
     let topology_transferred = topology.as_ref().is_some_and(|topology| {
-        transfer_e5_topology(&mut ir, &mut annotations, topology, &surfaces)
+        transfer_e5_topology(
+            &mut topology_ir,
+            &mut topology_annotations,
+            topology,
+            &surfaces,
+        ) && admit_neutral_model(&mut topology_ir, &mut topology_annotations)
     });
-    if !topology_transferred && !ir.model.vertices.is_empty() {
-        attach_e5_free_vertices(&mut ir, &mut annotations);
+    if topology_transferred {
+        ir = topology_ir;
+        annotations = topology_annotations;
+    } else {
+        if !ir.model.vertices.is_empty() {
+            attach_e5_free_vertices(&mut ir, &mut annotations);
+        }
+        link_payload_carriers(&mut ir, &mut annotations).ok()?;
     }
-    link_payload_carriers(&mut ir, &mut annotations).ok()?;
     ir.annotations = annotations.build();
     let mut losses = if topology_transferred {
         Vec::new()
@@ -1281,7 +1306,7 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        attach_standard_free_vertices, build_standard_edge_curve,
+        admit_neutral_model, attach_standard_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch,
         circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
@@ -1304,14 +1329,37 @@ mod chart_tests {
         ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
     use cadmpeg_ir::ids::{
-        CurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId, VertexId,
+        CurveId, PointId, ProceduralCurveId, ProceduralSurfaceId, RegionId, ShellId, SurfaceId,
+        UnknownId, VertexId,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::{BodyKind, Point, Vertex};
+    use cadmpeg_ir::topology::{BodyKind, Point, Shell, Vertex};
     use cadmpeg_ir::units::Units;
     use cadmpeg_ir::AnnotationBuilder;
     use std::collections::BTreeMap;
     use std::collections::HashMap;
+
+    #[test]
+    fn neutral_model_admission_rejects_invalid_topology() {
+        let mut valid = CadIr::empty(Units::default());
+        assert!(admit_neutral_model(
+            &mut valid,
+            &mut AnnotationBuilder::new()
+        ));
+
+        let mut invalid = CadIr::empty(Units::default());
+        invalid.model.shells.push(Shell {
+            id: ShellId("catia:test:shell#invalid".into()),
+            region: RegionId("catia:test:region#missing".into()),
+            faces: Vec::new(),
+            wire_edges: Vec::new(),
+            free_vertices: Vec::new(),
+        });
+        assert!(!admit_neutral_model(
+            &mut invalid,
+            &mut AnnotationBuilder::new()
+        ));
+    }
 
     #[test]
     fn unresolved_carrier_accounting_requires_an_exact_construction() {
@@ -4204,9 +4252,20 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<(CadIr, DecodeRe
     let payload_id = UnknownId("catia:payload:unknown#freeform".to_string());
     preserve_raw_payload(&mut ir, &mut annotations, scan, &payload_id.0).ok()?;
     let b5_complete = b5_graph.as_ref().is_some_and(|graph| graph.complete);
+    let mut topology_ir = ir.clone();
+    let mut topology_annotations = annotations.clone();
     let topology_transferred = b5_graph.take().is_some_and(|graph| {
-        crate::b5_transfer::transfer(&mut ir, &mut annotations, graph, &payload_id)
+        crate::b5_transfer::transfer(
+            &mut topology_ir,
+            &mut topology_annotations,
+            graph,
+            &payload_id,
+        ) && admit_neutral_model(&mut topology_ir, &mut topology_annotations)
     });
+    if topology_transferred {
+        ir = topology_ir;
+        annotations = topology_annotations;
+    }
     if !topology_transferred {
         let surfaces = fallback_surfaces
             .take()
@@ -4770,7 +4829,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
         &face_bindings,
         brep,
         &scan.data,
-    );
+    ) && admit_neutral_model(&mut topology_ir, &mut topology_annotations);
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations;
