@@ -19604,6 +19604,79 @@ fn orient_line_edge_carrier(
     Some([0.0, length])
 }
 
+fn oriented_native_pcurve_endpoints(
+    surface: &SurfaceGeometry,
+    endpoints: [[f64; 2]; 2],
+    traversal: [[f64; 3]; 2],
+) -> Option<[[f64; 2]; 2]> {
+    let mapped = endpoints.map(|uv| {
+        cadmpeg_ir::eval::surface_point(surface, uv[0], uv[1])
+            .map(|point| [point.x, point.y, point.z])
+    });
+    let [Some(first), Some(second)] = mapped else {
+        return None;
+    };
+    let mismatch = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter()
+            .zip(right)
+            .map(|(left, right)| (left - right).powi(2))
+            .sum::<f64>()
+            .sqrt()
+    };
+    let forward = mismatch(first, traversal[0]).max(mismatch(second, traversal[1]));
+    let reverse = mismatch(first, traversal[1]).max(mismatch(second, traversal[0]));
+    let scale = first
+        .into_iter()
+        .chain(second)
+        .chain(traversal.into_iter().flatten())
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    let tolerance = 1e-9 * scale;
+    match (forward <= tolerance, reverse <= tolerance) {
+        (true, false) => Some(endpoints),
+        (false, true) => Some([endpoints[1], endpoints[0]]),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod native_pcurve_tests {
+    use super::*;
+
+    fn plane() -> SurfaceGeometry {
+        SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }
+    }
+
+    #[test]
+    fn orients_uv_endpoints_by_the_coedge_traversal() {
+        let endpoints = [[2.0, 4.0], [5.0, 7.0]];
+        assert_eq!(
+            oriented_native_pcurve_endpoints(
+                &plane(),
+                endpoints,
+                [[5.0, 7.0, 3.0], [2.0, 4.0, 3.0]],
+            ),
+            Some([endpoints[1], endpoints[0]])
+        );
+    }
+
+    #[test]
+    fn withholds_uv_endpoints_that_do_not_map_to_the_edge() {
+        assert_eq!(
+            oriented_native_pcurve_endpoints(
+                &plane(),
+                [[2.0, 4.0], [5.0, 7.0]],
+                [[2.0, 4.0, 3.0], [9.0, 7.0, 3.0]],
+            ),
+            None
+        );
+    }
+}
+
 fn transfer_plane_brep(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -19624,6 +19697,11 @@ fn transfer_plane_brep(
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
     let solved_vertices = solved_topological_vertices(scan, &carriers);
+    let native_pcurves = scan
+        .pcurves
+        .iter()
+        .map(|pcurve| (pcurve.curve_id, pcurve))
+        .collect::<BTreeMap<_, _>>();
     let edge_vertices = scan
         .curve_topology_rows
         .iter()
@@ -19990,6 +20068,62 @@ fn transfer_plane_brep(
                         "native_half_edge",
                         Exactness::Derived,
                     );
+                    let pcurves = native_pcurves
+                        .get(&half_edge.curve_id)
+                        .and_then(|pcurve| {
+                            let face_index = pcurve.faces.iter().position(|id| id == face_id)?;
+                            let endpoints = if face_index == 0 {
+                                pcurve.face_0_endpoints
+                            } else {
+                                pcurve.face_1_endpoints
+                            };
+                            let incidence = incidence.get(half_edge)?;
+                            let end = incidence.end_vertex_id?;
+                            let traversal = [
+                                solved_vertices[&incidence.start_vertex_id],
+                                solved_vertices[&end],
+                            ];
+                            let surface = ir.model.surfaces.iter().find(|candidate| {
+                                candidate.id
+                                    == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
+                            })?;
+                            oriented_native_pcurve_endpoints(
+                                &surface.geometry,
+                                endpoints,
+                                traversal,
+                            )
+                            .map(|endpoints| (endpoints, pcurve.offset))
+                        })
+                        .map(|(endpoints, offset)| {
+                            let pcurve = PcurveId(format!(
+                                "creo:visibgeom:pcurve#{}:{face_id}",
+                                half_edge.curve_id
+                            ));
+                            if !ir.model.pcurves.iter().any(|item| item.id == pcurve) {
+                                annotate(
+                                    annotations,
+                                    &pcurve,
+                                    "VisibGeom",
+                                    offset as u64,
+                                    "native_endpoint_pcurve",
+                                    Exactness::Derived,
+                                );
+                                ir.model.pcurves.push(Pcurve {
+                                    id: pcurve.clone(),
+                                    geometry: line_pcurve(endpoints[0], endpoints[1]),
+                                    wrapper_reversed: None,
+                                    native_tail_flags: None,
+                                    parameter_range: Some([0.0, 1.0]),
+                                    fit_tolerance: None,
+                                });
+                            }
+                            PcurveUse {
+                                pcurve,
+                                isoparametric: None,
+                            }
+                        })
+                        .into_iter()
+                        .collect();
                     ir.model.coedges.push(Coedge {
                         id,
                         owner_loop: loop_id.clone(),
@@ -20003,7 +20137,7 @@ fn transfer_plane_brep(
                         } else {
                             Sense::Reversed
                         },
-                        pcurves: Vec::new(),
+                        pcurves,
                     });
                 }
             }

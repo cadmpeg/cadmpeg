@@ -1228,6 +1228,13 @@ a negative ring shifts azimuth by π instead of reflecting the trim. Face sense
 is the analytic carrier normal aligned to the outward side of the oriented
 section profile.
 
+A complete positional pcurve row stores endpoint A and endpoint B in each of
+the two adjacent face parameter frames. The endpoint pair belonging to one
+face forms a straight pcurve when mapping the pair through that face surface
+yields the coedge endpoints in exactly one order. That order is the pcurve
+direction and its parameter interval is `[0, 1]`. A pair that matches neither
+order or both orders does not define a pcurve.
+
 Evaluating one closed linear-sweep profile produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The exact signed area is the sum of line chord terms and circular-arc sector terms. Its sign selects the cap and side face senses. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses. Cap-face pcurves are the section entities in the cap plane's `(u,v)` frame: lines remain lines and arcs become exact rational quadratic arcs. A planar side face uses profile distance and sweep offset as its parameters. A cylindrical side face uses profile angle and sweep offset. Its cap-edge pcurves hold the sweep offset constant and its longitudinal-edge pcurves hold the profile parameter constant. A multi-profile solid sweep has one outer profile that strictly contains every hole profile. Hole profiles are pairwise disjoint, unnested, and oriented opposite the outer profile.
 
 Evaluating a one-circle linear-sweep profile produces two planar caps and one
