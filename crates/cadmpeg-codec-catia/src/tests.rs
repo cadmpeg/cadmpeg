@@ -4702,6 +4702,34 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
 }
 
 #[test]
+fn incomplete_object_payload_tags_do_not_consume_the_terminator() {
+    for tag in [0x81, 0x3a, 0x39, 0x7a] {
+        let bytes = object_graph_from_records(&[object_graph_record(
+            &[0x04, 0x01, 0x81, 0x81],
+            &[tag, 0xfe],
+        )]);
+        let graph = crate::object_graph::parse(&bytes).expect("terminated tagged payload");
+        let record = &graph.records[0];
+
+        assert_eq!(
+            record.payload.fields,
+            [
+                crate::object_graph::PayloadField::Atom {
+                    value: u32::from(tag),
+                    offset: 0,
+                },
+                crate::object_graph::PayloadField::Terminator,
+            ]
+        );
+        assert!(
+            crate::native::CatiaNative::decode(&bytes).object_graphs[0].records[0]
+                .references
+                .is_empty()
+        );
+    }
+}
+
+#[test]
 fn native_design_objects_follow_payload_references_to_target_owners() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x04, 0x01, 0x81, 0x83], &[0x81, 0x83, 0xfe]),

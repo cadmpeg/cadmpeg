@@ -582,6 +582,14 @@ fn decode_payload(bytes: &[u8]) -> Option<ObjectPayload> {
             }
             0x81 | 0x3a | 0x39 | 0x7a => {
                 let tag = bytes[at];
+                if bytes.get(at + 1) == Some(&0xfe) {
+                    fields.push(PayloadField::Atom {
+                        value: u32::from(tag),
+                        offset,
+                    });
+                    at += 1;
+                    continue;
+                }
                 let Some((value, consumed)) = atom(bytes, at + 1) else {
                     fields.push(PayloadField::Atom {
                         value: u32::from(tag),
