@@ -186,12 +186,9 @@ pub(crate) fn spatial_sketches(
 }
 
 pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
-    payload
-        .windows(SPATIAL_VERTEX_PREFIX.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == SPATIAL_VERTEX_PREFIX).then_some(offset))
+    spatial_vertex_offsets(payload)
+        .into_iter()
         .filter_map(|offset| {
-            (payload.get(offset + 43..offset + 45)? == [0x0e, 0x00]).then_some(())?;
             let point = Point3::new(
                 f64::from_le_bytes(payload.get(offset + 45..offset + 53)?.try_into().ok()?),
                 f64::from_le_bytes(payload.get(offset + 53..offset + 61)?.try_into().ok()?),
@@ -201,6 +198,18 @@ pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
                 .into_iter()
                 .all(f64::is_finite)
                 .then_some(point)
+        })
+        .collect()
+}
+
+fn spatial_vertex_offsets(payload: &[u8]) -> Vec<usize> {
+    payload
+        .windows(SPATIAL_VERTEX_PREFIX.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
+            (bytes == SPATIAL_VERTEX_PREFIX
+                && payload.get(offset + 43..offset + 45) == Some(&[0x0e, 0x00]))
+            .then_some(offset)
         })
         .collect()
 }
@@ -361,34 +370,54 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 #[cfg(test)]
 mod marker_tests {
     use super::{
-        arc_angle_relation_kind, compact_body_component_path_at, compact_body_path_at,
-        compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
-        compact_body_state_ids, compact_combine_operation_at, compact_edge_component_path_at,
-        compact_edge_selection_at, compact_extrusion_blind_through_all_second_at,
-        compact_extrusion_mid_plane_at, compact_extrusion_offset_from_face_at,
-        compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
-        compact_extrusion_through_next_at, compact_extrusion_to_face_at,
-        compact_extrusion_to_vertex_at, compact_general_curve_ref_at, compact_line_chain_addresses,
-        compact_line_region_addresses, compact_profile_reference_plane_source,
-        compact_reference_plane_source, compact_single_face_reference_path_at,
-        compact_surface_selection_at, complete_ordered_compact_line_profile,
-        component_path_features, component_path_terminal_feature, component_profile_source_at,
+        append_spatial_vertex, arc_angle_relation_kind, compact_body_component_path_at,
+        compact_body_path_at, compact_body_retention_mode, compact_body_selection_at,
+        compact_body_selection_vector, compact_body_state_ids, compact_combine_operation_at,
+        compact_edge_component_path_at, compact_edge_selection_at,
+        compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
+        compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
+        compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
+        compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
+        compact_line_chain_addresses, compact_line_region_addresses,
+        compact_profile_reference_plane_source, compact_reference_plane_source,
+        compact_single_face_reference_path_at, compact_surface_selection_at,
+        complete_ordered_compact_line_profile, component_path_features,
+        component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, coordinate_marker_local_links, marker_coordinates,
         marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
         named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        ordered_compact_line_profile, ordered_rectangle_corners, principal_sketch_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        solved_tangent, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
+        principal_sketch_frame, resolve_operand_marker, resolve_operand_marker_excluding,
+        resolve_scalar_operand_markers, solved_tangent, spatial_vertex_coordinates,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
+        SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
         SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
     };
-    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::math::{Point2, Point3};
     use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchLocus};
     use std::collections::HashSet;
+
+    #[test]
+    fn spatial_vertex_patch_preserves_record_shape_and_order() {
+        let first = Point3::new(1.0, 2.0, 3.0);
+        let second = Point3::new(4.0, 5.0, 6.0);
+        let mut payload = Vec::new();
+        append_spatial_vertex(&mut payload, first);
+        append_spatial_vertex(&mut payload, second);
+
+        let replacement = Point3::new(-7.5, 8.25, 9.0);
+        patch_spatial_vertex(&mut payload, 0, replacement).unwrap();
+
+        assert_eq!(
+            spatial_vertex_coordinates(&payload),
+            vec![replacement, second]
+        );
+        assert_eq!(payload.len(), 138);
+    }
 
     #[test]
     fn marker_local_id_is_the_trailing_u32() {
@@ -17343,32 +17372,159 @@ pub fn prepare_sketches_for_write(
             "conflicting neutral and native SLDPRT sketch edits".into(),
         ));
     }
-    let retained = native.as_ref().ok_or_else(|| {
+    let retained = native.as_mut().ok_or_else(|| {
         cadmpeg_ir::codec::CodecError::NotImplemented(
-            "SLDPRT spatial sketch write-back requires retained feature-input lanes".into(),
+            "SLDPRT sketch write-back requires retained feature-input lanes".into(),
         )
     })?;
-    let mut features = crate::history::project_features(&retained.feature_histories);
-    let (expected_spatial, expected_entities) = spatial_sketches(
+    patch_spatial_line_sketches(ir, retained)?;
+    patch_line_profiles(ir, retained)
+}
+
+fn patch_spatial_line_sketches(
+    ir: &cadmpeg_ir::CadIr,
+    native: &mut crate::native::SldprtNative,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    for sketch in &ir.model.spatial_sketches {
+        let owners = ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| {
+                matches!(
+                    &feature.definition,
+                    FeatureDefinition::SpatialSketch {
+                        sketch: Some(candidate),
+                    } if candidate == &sketch.id
+                )
+            })
+            .collect::<Vec<_>>();
+        let [owner] = owners.as_slice() else {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "SLDPRT spatial sketch {} requires one owning feature",
+                sketch.id.0
+            )));
+        };
+        let native_ref = owner.native_ref.as_deref().ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "SLDPRT spatial sketch {} requires a retained feature object",
+                sketch.id.0
+            ))
+        })?;
+        let record = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find(|record| record.id == native_ref)
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "SLDPRT spatial sketch {} references missing feature object {native_ref}",
+                    sketch.id.0
+                ))
+            })?;
+        let [entity_id] = sketch.entities.as_slice() else {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "SLDPRT spatial sketch {} requires exactly one retained line",
+                sketch.id.0
+            )));
+        };
+        let entity = ir
+            .model
+            .spatial_sketch_entities
+            .iter()
+            .find(|entity| entity.id == *entity_id && entity.sketch == sketch.id)
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "SLDPRT spatial sketch {} references missing entity {}",
+                    sketch.id.0, entity_id.0
+                ))
+            })?;
+        let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "SLDPRT spatial sketch {} supports retained line geometry only",
+                sketch.id.0
+            )));
+        };
+        if start == end {
+            return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "SLDPRT spatial sketch {} has a zero-length line",
+                sketch.id.0
+            )));
+        }
+        let candidates = native
+            .feature_input_lanes
+            .iter()
+            .enumerate()
+            .filter(|(_, lane)| sketch.native_ref.as_deref().is_none_or(|id| id == lane.id))
+            .filter_map(|(lane_index, lane)| {
+                let name = feature_object_name(record, lane)?;
+                let object_start = usize::try_from(name.offset).ok()?;
+                let object_end = native
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .filter_map(|candidate| feature_object_name(candidate, lane))
+                    .filter(|candidate| candidate.offset > name.offset)
+                    .map(|candidate| candidate.offset)
+                    .min()
+                    .and_then(|offset| usize::try_from(offset).ok())
+                    .unwrap_or(lane.native_payload.len());
+                let offsets =
+                    spatial_vertex_offsets(lane.native_payload.get(object_start..object_end)?);
+                let [first, second] = offsets.as_slice() else {
+                    return None;
+                };
+                Some((lane_index, object_start + first, object_start + second))
+            })
+            .collect::<Vec<_>>();
+        let [(lane_index, first, second)] = candidates.as_slice() else {
+            return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "SLDPRT spatial sketch {} does not resolve to one two-vertex feature object",
+                sketch.id.0
+            )));
+        };
+        let payload = &mut native.feature_input_lanes[*lane_index].native_payload;
+        patch_spatial_vertex(payload, *first, start)?;
+        patch_spatial_vertex(payload, *second, end)?;
+    }
+
+    let mut features = crate::history::project_features(&native.feature_histories);
+    let (projected_sketches, projected_entities) = spatial_sketches(
         &mut features,
-        &retained.feature_histories,
-        &retained.feature_input_lanes,
+        &native.feature_histories,
+        &native.feature_input_lanes,
     );
-    if ir.model.spatial_sketches != expected_spatial
-        || ir.model.spatial_sketch_entities != expected_entities
+    if ir.model.spatial_sketches != projected_sketches
+        || ir.model.spatial_sketch_entities != projected_entities
     {
         return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
-            "SLDPRT spatial sketch geometry editing is not implemented".into(),
+            "SLDPRT spatial sketch edit has no complete native lane encoding".into(),
         ));
     }
-    patch_line_profiles(
-        ir,
-        native.as_mut().ok_or_else(|| {
-            cadmpeg_ir::codec::CodecError::NotImplemented(
-                "SLDPRT sketch write-back requires retained feature-input lanes".into(),
-            )
-        })?,
-    )
+    Ok(())
+}
+
+fn patch_spatial_vertex(
+    payload: &mut [u8],
+    offset: usize,
+    point: Point3,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    let bytes = payload.get_mut(offset..offset + 69).ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::Malformed(
+            "SLDPRT spatial vertex record lies outside its feature-input lane".into(),
+        )
+    })?;
+    if bytes.get(..SPATIAL_VERTEX_PREFIX.len()) != Some(SPATIAL_VERTEX_PREFIX)
+        || bytes.get(43..45) != Some(&[0x0e, 0x00])
+    {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(
+            "SLDPRT spatial vertex record changed shape".into(),
+        ));
+    }
+    bytes[45..53].copy_from_slice(&point.x.to_le_bytes());
+    bytes[53..61].copy_from_slice(&point.y.to_le_bytes());
+    bytes[61..69].copy_from_slice(&point.z.to_le_bytes());
+    Ok(())
 }
 
 fn validate_source_less_constraints(
