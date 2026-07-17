@@ -8264,6 +8264,27 @@ fn relation_incidence_entities(
         .unwrap_or_default()
 }
 
+fn relation_incidence_known_entities(
+    definition: &crate::feature::FeatureDefinition,
+    relation_id: u32,
+) -> Vec<SketchEntityId> {
+    let Some(incidence) = relation_incidence(definition, relation_id) else {
+        return Vec::new();
+    };
+    let known = section_entity_external_ids(definition);
+    incidence
+        .items
+        .iter()
+        .filter(|item| known.contains(&item.entity_id))
+        .map(|item| {
+            SketchEntityId(format!(
+                "creo:featdefs:sketch_entity#{}:{}",
+                definition.id, item.entity_id
+            ))
+        })
+        .collect()
+}
+
 fn relation_incidence_loci(
     definition: &crate::feature::FeatureDefinition,
     relation_id: u32,
@@ -8417,7 +8438,7 @@ fn section_dimension_constraints(
                 })
             })();
             let incidence_entities = if unique_relation_id {
-                relation_incidence_entities(definition, relation.relation_id)
+                relation_incidence_known_entities(definition, relation.relation_id)
             } else {
                 Vec::new()
             };
@@ -16078,6 +16099,34 @@ mod resolved_sketch_tests {
                     "creo:featdefs:sketch_entity#917:13".to_string(),
                 )),
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+            }
+        );
+        let mut partially_resolved_incidence = incidence_distance.clone();
+        partially_resolved_incidence
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .items[1]
+            .entity_id = 999;
+        assert_eq!(
+            section_dimension_constraints(
+                &partially_resolved_incidence,
+                &SketchId("sketch".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native {
+                native_kind: "creo:relation:0".to_string(),
+                entities: vec![SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )],
+                parameter: Some(ParameterId("creo:featdefs:parameter#917:40:42".to_string())),
+                operands: vec![SketchNativeOperand {
+                    native_kind: "relat_ptr".to_string(),
+                    object_index: 8,
+                    native_ref: Some("creo:featdefs:sketch#917".to_string()),
+                }],
             }
         );
         let mut unresolved_angle = definition.clone();
