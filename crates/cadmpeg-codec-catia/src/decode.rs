@@ -4728,112 +4728,104 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<(CadIr, DecodeReport)> {
 }
 
 /// Attach standard analytic carriers to faces only when every FBB face has a
-/// decoded carrier and its stored sense byte.  FBB runs delimit bodies.
+/// decoded carrier and its stored sense byte.
 fn attach_standard_faces(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     bindings: &[(SurfaceId, bool, usize)],
     brep: &[u8],
 ) {
-    let groups = topology::standard_face_count(brep)
-        .into_iter()
-        .collect::<Vec<_>>();
-    let face_count: usize = groups.iter().sum();
+    let face_count = topology::standard_face_count(brep).unwrap_or_default();
     if face_count == 0 || face_count != bindings.len() {
         return;
     }
-    let mut face_index = 0usize;
-    for (body_index, &count) in groups.iter().enumerate() {
-        let body_id = BodyId(format!("catia:standard:body#{body_index}"));
-        let region_id = RegionId(format!("catia:standard:region#{body_index}"));
-        let shell_id = ShellId(format!("catia:standard:shell#{body_index}"));
-        let mut face_ids = Vec::with_capacity(count);
-        for _ in 0..count {
-            let (surface, forward, offset) = &bindings[face_index];
-            let face_id = FaceId(format!("catia:standard:face#{face_index}"));
-            annotate(
-                annotations,
-                &face_id,
-                "MainDataStream+SurfacicReps",
-                *offset as u64,
-                "surfacic_reps_face_sense",
-                Exactness::ByteExact,
-            );
-            for field in ["shell", "surface", "sense"] {
-                annotations.derived(&face_id, field);
-            }
-            face_ids.push(face_id.clone());
-            ir.model.faces.push(Face {
-                id: face_id,
-                shell: shell_id.clone(),
-                surface: surface.clone(),
-                sense: if *forward {
-                    Sense::Forward
-                } else {
-                    Sense::Reversed
-                },
-                loops: Vec::new(),
-                name: None,
-                color: None,
-                tolerance: None,
-            });
-            face_index += 1;
-        }
+    let body_id = BodyId("catia:standard:body#0".to_string());
+    let region_id = RegionId("catia:standard:region#0".to_string());
+    let shell_id = ShellId("catia:standard:shell#0".to_string());
+    let mut face_ids = Vec::with_capacity(face_count);
+    for (face_index, (surface, forward, offset)) in bindings.iter().enumerate() {
+        let face_id = FaceId(format!("catia:standard:face#{face_index}"));
         annotate(
             annotations,
-            &body_id,
+            &face_id,
             "MainDataStream+SurfacicReps",
-            0,
-            "fbb_body_run",
+            *offset as u64,
+            "surfacic_reps_face_sense",
             Exactness::ByteExact,
         );
-        annotations
-            .derived(&body_id, "kind")
-            .derived(&body_id, "regions");
-        ir.model.bodies.push(Body {
-            id: body_id.clone(),
-            kind: cadmpeg_ir::topology::BodyKind::Sheet,
-            regions: vec![region_id.clone()],
-            transform: None,
+        for field in ["shell", "surface", "sense"] {
+            annotations.derived(&face_id, field);
+        }
+        face_ids.push(face_id.clone());
+        ir.model.faces.push(Face {
+            id: face_id,
+            shell: shell_id.clone(),
+            surface: surface.clone(),
+            sense: if *forward {
+                Sense::Forward
+            } else {
+                Sense::Reversed
+            },
+            loops: Vec::new(),
             name: None,
             color: None,
-            visible: None,
-        });
-        annotate(
-            annotations,
-            &region_id,
-            "MainDataStream+SurfacicReps",
-            0,
-            "fbb_body_run",
-            Exactness::ByteExact,
-        );
-        annotations
-            .derived(&region_id, "body")
-            .derived(&region_id, "shells");
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-        });
-        annotate(
-            annotations,
-            &shell_id,
-            "MainDataStream+SurfacicReps",
-            0,
-            "fbb_face_run",
-            Exactness::ByteExact,
-        );
-        annotations
-            .derived(&shell_id, "region")
-            .derived(&shell_id, "faces");
-        ir.model.shells.push(Shell {
-            id: shell_id,
-            region: region_id,
-            faces: face_ids,
-            wire_edges: Vec::new(),
-            free_vertices: Vec::new(),
+            tolerance: None,
         });
     }
+    annotate(
+        annotations,
+        &body_id,
+        "MainDataStream+SurfacicReps",
+        0,
+        "standard_body",
+        Exactness::Inferred,
+    );
+    annotations
+        .derived(&body_id, "kind")
+        .derived(&body_id, "regions");
+    ir.model.bodies.push(Body {
+        id: body_id.clone(),
+        kind: BodyKind::Sheet,
+        regions: vec![region_id.clone()],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+    annotate(
+        annotations,
+        &region_id,
+        "MainDataStream+SurfacicReps",
+        0,
+        "derived_region",
+        Exactness::Inferred,
+    );
+    annotations
+        .derived(&region_id, "body")
+        .derived(&region_id, "shells");
+    ir.model.regions.push(Region {
+        id: region_id.clone(),
+        body: body_id,
+        shells: vec![shell_id.clone()],
+    });
+    annotate(
+        annotations,
+        &shell_id,
+        "MainDataStream+SurfacicReps",
+        0,
+        "derived_shell",
+        Exactness::Inferred,
+    );
+    annotations
+        .derived(&shell_id, "region")
+        .derived(&shell_id, "faces");
+    ir.model.shells.push(Shell {
+        id: shell_id,
+        region: region_id,
+        faces: face_ids,
+        wire_edges: Vec::new(),
+        free_vertices: Vec::new(),
+    });
 }
 
 fn attach_standard_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
