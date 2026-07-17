@@ -4674,6 +4674,44 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert_eq!(model.edges.len(), 6);
     assert_eq!(model.curves.len(), 6);
     assert!(model.edges.iter().all(|edge| edge.curve.is_some()));
+    assert!(model.edges.iter().all(|edge| edge.param_range.is_some()));
+    for edge in &model.edges {
+        let [start_parameter, end_parameter] = edge.param_range.expect("line edge range");
+        assert_eq!(start_parameter, 0.0);
+        assert!(end_parameter > 0.0);
+        let curve = model
+            .curves
+            .iter()
+            .find(|curve| Some(&curve.id) == edge.curve.as_ref())
+            .expect("edge curve");
+        let cadmpeg_ir::geometry::CurveGeometry::Line { origin, direction } = curve.geometry else {
+            panic!("edge line: {curve:#?}");
+        };
+        let start = model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == edge.start)
+            .and_then(|vertex| model.points.iter().find(|point| point.id == vertex.point))
+            .expect("edge start point")
+            .position;
+        let end = model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == edge.end)
+            .and_then(|vertex| model.points.iter().find(|point| point.id == vertex.point))
+            .expect("edge end point")
+            .position;
+        assert_eq!(origin, start);
+        let evaluated = [
+            origin.x + direction.x * end_parameter,
+            origin.y + direction.y * end_parameter,
+            origin.z + direction.z * end_parameter,
+        ];
+        assert!(evaluated
+            .into_iter()
+            .zip([end.x, end.y, end.z])
+            .all(|(evaluated, expected)| (evaluated - expected).abs() < 1e-10));
+    }
     assert_eq!(model.faces.len(), 4);
     assert_eq!(
         model

@@ -19586,7 +19586,30 @@ fn solved_topological_vertices(
         .collect()
 }
 
-fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+fn orient_line_edge_carrier(
+    geometry: &mut CurveGeometry,
+    points: [[f64; 3]; 2],
+) -> Option<[f64; 2]> {
+    if !curve_contains_points(geometry, points) {
+        return None;
+    }
+    let CurveGeometry::Line { origin, direction } = geometry else {
+        return None;
+    };
+    let delta: [f64; 3] = std::array::from_fn(|index| points[1][index] - points[0][index]);
+    let length = dot(delta, delta).sqrt();
+    let oriented = normalized(delta)?;
+    *origin = Point3::new(points[0][0], points[0][1], points[0][2]);
+    *direction = Vector3::new(oriented[0], oriented[1], oriented[2]);
+    Some([0.0, length])
+}
+
+fn transfer_plane_brep(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    derived_intersection_curves: &BTreeSet<CurveId>,
+) {
     let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
     let face_orientations = native_face_orientations(scan, ir);
@@ -19711,6 +19734,17 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
     }
     for curve_id in &emitted_curves {
         let [start, end] = edge_vertices[curve_id];
+        let curve = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
+        let points = [solved_vertices[&start], solved_vertices[&end]];
+        let param_range = if derived_intersection_curves.contains(&curve) {
+            ir.model
+                .curves
+                .iter_mut()
+                .find(|candidate| candidate.id == curve)
+                .and_then(|curve| orient_line_edge_carrier(&mut curve.geometry, points))
+        } else {
+            None
+        };
         let id = EdgeId(format!("creo:visibgeom:edge#{curve_id}"));
         annotate(
             annotations,
@@ -19722,13 +19756,12 @@ fn transfer_plane_brep(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut A
         );
         ir.model.edges.push(Edge {
             id,
-            curve: Some(CurveId(format!("creo:visibgeom:curve#{curve_id}"))),
+            curve: Some(curve.clone()),
             start: VertexId(format!("creo:visibgeom:vertex#{start}")),
             end: VertexId(format!("creo:visibgeom:vertex#{end}")),
-            param_range: None,
+            param_range,
             tolerance: None,
         });
-        let curve = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
         if !ir.model.curves.iter().any(|item| item.id == curve) {
             let offset = row_offsets.get(curve_id).copied().unwrap_or(0);
             annotate(
@@ -21897,7 +21930,8 @@ fn transfer_carrier_intersection_curves(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
-) {
+) -> BTreeSet<CurveId> {
+    let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir);
     let solved_vertices = solved_topological_vertices(scan, &carriers);
     let incidence = scan
@@ -21952,7 +21986,7 @@ fn transfer_carrier_intersection_curves(
             Exactness::Derived,
         );
         ir.model.curves.push(Curve {
-            id,
+            id: id.clone(),
             geometry,
             source_object: Some(SourceObjectAssociation {
                 format: "creo".to_string(),
@@ -21964,7 +21998,9 @@ fn transfer_carrier_intersection_curves(
                 instance_path: Vec::new(),
             }),
         });
+        transferred.insert(id);
     }
+    transferred
 }
 
 fn rowless_round_cylinder_pairs(
@@ -22941,8 +22977,14 @@ fn build_ir(
         transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
     let rowless_round_cylinder_count =
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
-    transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
-    transfer_plane_brep(scan, &mut ir, &mut annotations);
+    let derived_intersection_curves =
+        transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
+    transfer_plane_brep(
+        scan,
+        &mut ir,
+        &mut annotations,
+        &derived_intersection_curves,
+    );
     let feature_revolution_brep_count =
         transfer_resolved_revolution_breps(scan, &mut ir, &mut annotations);
     let feature_circular_extrusion_brep_count =

@@ -923,6 +923,13 @@ Equal radii produce the single equatorial circle.
 Intersecting every candidate circle with an additional incident plane supplies
 a topological vertex only when all carrier intersections reduce to one point.
 
+For a native edge on a derived intersection-line carrier, the oriented start
+vertex is the carrier origin and the unit vector from start to end is its
+direction. The edge interval is `[0, length]`. Exact source parameterizations
+are not replaced by this construction. Periodic carriers require an
+independent arc-selection rule and do not acquire an interval from endpoint
+positions alone.
+
 A plane normal to a torus axis at axial offset `z` intersects the torus in circles of radii `R ± sqrt(r² - z²)`. At `|z| = r` the two roots coincide in one contact circle. At `|z| < r` the edge's paired solved endpoint orbits select one circle when exactly one positive-radius candidate contains both endpoints. A zero-radius horn-torus root is a point and does not define a curve.
 
 A cylinder coaxial with a torus intersects it in one tangent circle when the cylinder radius equals the torus outer radius `R + r` or its positive inner radius `|R - r|`. The circle lies in the torus central plane, has the common axis, and has the cylinder radius. A cylinder radius strictly between the torus radial extrema produces two circles at axial offsets `±sqrt(r² - (Rc - R)²)` from the torus center. The edge's paired solved endpoint orbits select one circle when exactly one candidate contains both endpoints. Radii outside the torus radial interval do not intersect it.
