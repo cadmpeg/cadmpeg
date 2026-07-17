@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Frozen per-crate ceiling for `Cursor` references (doc section 8.5). `Cursor`
+# is the pre-migration reader that `View` replaces; it is not `#[deprecated]`
+# in Phase 0 because `-D warnings` would turn every reference red at once.
+# Instead CI tracks each crate's `Cursor`-reference count as a frozen,
+# monotonically decreasing ratchet, mirroring the `window()` egress ratchet.
+# The `#[deprecated]` attribute lands per crate once its count reaches zero.
+#
+# The `tests/cursor_reference_ratchet.rs` test counts `Cursor` occurrences in
+# each crate's `src` and `fuzz_targets` trees and fails if a crate exceeds its
+# ceiling. Lowering a count means lowering the number here in the same commit;
+# raising one is a ratchet violation. Every crate directory under `crates/`
+# must appear below: the test fails any crate with no ceiling, so new crates
+# cannot escape by omission. Detection is textual (`Cursor` substring), so a
+# reference spelled to dodge the match still bypasses the ceiling; that
+# residual gap is held by review discipline rather than by this test.
+[crates]
+cadmpeg = 0
+cadmpeg-ir = 18
+cadmpeg-codec-f3d = 374
+cadmpeg-codec-sldprt = 390
+cadmpeg-codec-catia = 20
+cadmpeg-codec-creo = 9
+cadmpeg-codec-nx = 58
+cadmpeg-codec-rhino = 48
+cadmpeg-step = 0
+cadmpeg-harness = 3
+cadmpeg-fuzz = 34

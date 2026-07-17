@@ -230,6 +230,16 @@ window_egress = []
 ledger_level = 0
 
 [[module]]
+path = "crates/cadmpeg-codec-sldprt/src/appearance.rs"
+status = "legacy"
+input_spaces = ["root"]
+fuzz_targets = ["decode_pipeline_mutated", "sldprt_container"]
+charges = []
+cost_model = "unbudgeted: `materials` runs a whole-payload `windows(TOKEN.len())` marker scan over every block's owned `&[u8]` with no `work` charge, then accumulates matched records into a bare `Vec::new`/`push` (`out`) and decodes each UTF-16 name into a second bare `Vec::new` (`units`) — neither routes through `grow_vec`/`exact_vec`/`read_counted` and the name length is an untrusted per-record byte; graduates when the scan charges `work` proportional to bytes examined, the record accumulator moves to a charged `grow_vec` builder, and the name units read through `View`/`read_counted` over the derived-space container `View` instead of the owned `Block::payload`"
+window_egress = []
+ledger_level = 0
+
+[[module]]
 path = "crates/cadmpeg-codec-sldprt/src/metadata.rs"
 status = "legacy"
 input_spaces = ["root"]
