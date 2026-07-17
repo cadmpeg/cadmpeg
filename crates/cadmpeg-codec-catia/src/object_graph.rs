@@ -303,10 +303,25 @@ pub fn parse(data: &[u8]) -> Option<ObjectGraph> {
 pub fn parse_all(data: &[u8]) -> Vec<ObjectGraph> {
     let catalogs = catalog::parse(data);
     let value_blocks = value_block::parse(data);
-    data.windows(2)
+    let candidates = data
+        .windows(2)
         .enumerate()
         .filter(|(_, marker)| *marker == [0x7c, 0x08])
         .filter_map(|(pos, _)| parse_candidate(data, pos))
+        .collect::<Vec<_>>();
+    let mut roots = Vec::<ObjectGraph>::new();
+    for graph in candidates {
+        let graph_end = graph.pos + graph.total_len;
+        if roots
+            .iter()
+            .any(|outer| outer.pos < graph.pos && outer.pos + outer.total_len >= graph_end)
+        {
+            continue;
+        }
+        roots.push(graph);
+    }
+    roots
+        .into_iter()
         .map(|mut graph| {
             bind_catalog(&mut graph, &catalogs, &value_blocks);
             graph

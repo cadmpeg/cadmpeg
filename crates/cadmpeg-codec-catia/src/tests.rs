@@ -4695,6 +4695,26 @@ fn outer_object_graph_parser_preserves_every_root() {
 }
 
 #[test]
+fn outer_object_graph_suppresses_roots_inside_framed_payloads() {
+    let nested =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe])]);
+    let mut payload = vec![0xe5];
+    payload.extend_from_slice(
+        &u32::try_from(nested.len())
+            .expect("fixture nested graph length")
+            .to_le_bytes(),
+    );
+    payload.extend_from_slice(&nested);
+    payload.push(0xfe);
+    let outer =
+        object_graph_from_records(&[object_graph_record(&[0x04, 0x01, 0x81, 0x81], &payload)]);
+
+    let graphs = crate::object_graph::parse_all(&outer);
+    assert_eq!(graphs.len(), 1);
+    assert_eq!(graphs[0].pos, 0);
+}
+
+#[test]
 fn outer_object_graph_resolves_paged_class_ordinals() {
     let records = [
         object_graph_record(&[0x14, 0x01, 0x82, 0xd1, 0x88], &[0xfe]),
