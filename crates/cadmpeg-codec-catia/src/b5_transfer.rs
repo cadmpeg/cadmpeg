@@ -20,7 +20,7 @@ use cadmpeg_ir::topology::{
 };
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
-use crate::b5::{B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
+use crate::b5::{loop_chain_senses, B5Graph, B5Pcurve, B5Profile, B5Surface};
 
 const POINT_TOLERANCE: f64 = 1.5e-3;
 
@@ -79,7 +79,7 @@ pub(crate) fn transfer(
                         || graph.implicit_pcurves.get(pcurve) == Some(&loop_.surface))
                         && graph.edge_vertices.contains_key(edge)
                 })
-                && solve_loop_chain(loop_, &graph.edge_vertices).is_some()
+                && loop_chain_senses(loop_, &graph.edge_vertices).is_some()
         });
         graph.faces.retain(|face| {
             graph.surfaces.contains_key(&face.surface)
@@ -163,7 +163,7 @@ fn transfer_complete(
         {
             return false;
         }
-        let Some(senses) = solve_loop_chain(loop_, &graph.edge_vertices) else {
+        let Some(senses) = loop_chain_senses(loop_, &graph.edge_vertices) else {
             return false;
         };
         loop_senses.insert(loop_.object_id, senses);
@@ -1958,40 +1958,6 @@ fn orthonormal_plane(
     })
 }
 
-fn solve_loop_chain(
-    loop_: &B5Loop,
-    edge_vertices: &BTreeMap<u32, [usize; 2]>,
-) -> Option<Vec<bool>> {
-    let first = edge_vertices.get(loop_.edges.first()?)?;
-    let mut solutions = Vec::new();
-    for first_reversed in [false, true] {
-        let initial = first[usize::from(first_reversed)];
-        let mut current = first[usize::from(!first_reversed)];
-        let mut senses = vec![first_reversed];
-        for edge_id in &loop_.edges[1..] {
-            let endpoints = edge_vertices.get(edge_id)?;
-            match (endpoints[0] == current, endpoints[1] == current) {
-                (true, false) => {
-                    senses.push(false);
-                    current = endpoints[1];
-                }
-                (false, true) => {
-                    senses.push(true);
-                    current = endpoints[0];
-                }
-                _ => {
-                    senses.clear();
-                    break;
-                }
-            }
-        }
-        if !senses.is_empty() && current == initial {
-            solutions.push(senses);
-        }
-    }
-    (solutions.len() == 1).then(|| solutions.remove(0))
-}
-
 fn expand_knots(distinct: &[f64], multiplicities: &[u32]) -> Option<Vec<f64>> {
     if distinct.len() != multiplicities.len() {
         return None;
@@ -2099,7 +2065,8 @@ mod tests {
         transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
     };
     use crate::b5::{
-        B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile, B5Surface,
+        loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
+        B5Surface,
     };
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::eval::surface_point;
@@ -2123,6 +2090,25 @@ mod tests {
         assert!(ordered_subrange([2.0, 2.0], [0.0, 10.0]).is_none());
         assert!(ordered_subrange([-2e-9, 8.0], [0.0, 10.0]).is_none());
         assert!(ordered_subrange([2.0, 12.0], [0.0, 10.0]).is_none());
+    }
+
+    #[test]
+    fn closed_one_edge_loop_uses_native_edge_direction() {
+        let loop_ = B5Loop {
+            object_id: 1,
+            pcurves: vec![2],
+            edges: vec![3],
+            surface: 4,
+        };
+
+        assert_eq!(
+            loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 0])])),
+            Some(vec![false])
+        );
+        assert_eq!(
+            loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 1])])),
+            None
+        );
     }
 
     #[test]

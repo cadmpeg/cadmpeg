@@ -463,8 +463,10 @@ A constant-U or constant-V pcurve on a tensor-product NURBS surface, including a
 
 Coincident `05 08 01` rows share an endpoint locus. For topology subsets whose
 allocation identity is otherwise unresolved, the locus binds to the lowest
-serialized matching row; a loop is emitted only when the resulting ordered edge
-sequence has exactly one closed head-to-tail sense assignment. Faces or loops
+serialized matching row. A one-edge loop is closed when the edge's ordered
+vertex identities are equal and traverses in the native edge direction. A
+multi-edge loop is emitted only when the resulting ordered edge sequence has
+exactly one closed head-to-tail sense assignment. Faces or loops
 with unresolved references, endpoint lifts, or chain sense remain outside the
 connected graph.
 

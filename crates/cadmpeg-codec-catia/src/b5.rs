@@ -596,7 +596,7 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
                             || implicit_pcurves.get(pcurve) == Some(&loop_.surface))
                             && edge_vertices.contains_key(edge)
                     })
-                    && unique_loop_chain(loop_, &edge_vertices)
+                    && loop_chain_senses(loop_, &edge_vertices).is_some()
             })
         });
     Some(B5Graph {
@@ -1094,34 +1094,41 @@ fn vertex_coordinate(points: &[[f64; 3]], logical_points: &[[f64; 3]], index: us
     }
 }
 
-fn unique_loop_chain(loop_: &B5Loop, edge_vertices: &BTreeMap<u32, [usize; 2]>) -> bool {
-    let Some(first) = loop_.edges.first().and_then(|edge| edge_vertices.get(edge)) else {
-        return false;
-    };
-    let mut solution_count = 0;
+pub(crate) fn loop_chain_senses(
+    loop_: &B5Loop,
+    edge_vertices: &BTreeMap<u32, [usize; 2]>,
+) -> Option<Vec<bool>> {
+    let first = edge_vertices.get(loop_.edges.first()?)?;
+    if loop_.edges.len() == 1 {
+        return (first[0] == first[1]).then_some(vec![false]);
+    }
+    let mut solutions = Vec::new();
     for first_reversed in [false, true] {
         let initial = first[usize::from(first_reversed)];
         let mut current = first[usize::from(!first_reversed)];
-        let mut valid = true;
+        let mut senses = vec![first_reversed];
         for edge_id in &loop_.edges[1..] {
-            let Some(endpoints) = edge_vertices.get(edge_id) else {
-                valid = false;
-                break;
-            };
+            let endpoints = edge_vertices.get(edge_id)?;
             match (endpoints[0] == current, endpoints[1] == current) {
-                (true, false) => current = endpoints[1],
-                (false, true) => current = endpoints[0],
+                (true, false) => {
+                    senses.push(false);
+                    current = endpoints[1];
+                }
+                (false, true) => {
+                    senses.push(true);
+                    current = endpoints[0];
+                }
                 _ => {
-                    valid = false;
+                    senses.clear();
                     break;
                 }
             }
         }
-        if valid && current == initial {
-            solution_count += 1;
+        if !senses.is_empty() && current == initial {
+            solutions.push(senses);
         }
     }
-    solution_count == 1
+    (solutions.len() == 1).then(|| solutions.remove(0))
 }
 
 fn parse_profile(record: &B5Record) -> Option<B5Profile> {
@@ -2292,6 +2299,25 @@ fn reference(bytes: &[u8], position: &mut usize, _anchor: u32) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn one_edge_loop_closes_on_one_native_vertex() {
+        let loop_ = B5Loop {
+            object_id: 1,
+            pcurves: vec![2],
+            edges: vec![3],
+            surface: 4,
+        };
+
+        assert_eq!(
+            loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 0])])),
+            Some(vec![false])
+        );
+        assert_eq!(
+            loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 1])])),
+            None
+        );
+    }
 
     #[test]
     fn circle_pcurve_rejects_unbounded_subdivision_counts() {
