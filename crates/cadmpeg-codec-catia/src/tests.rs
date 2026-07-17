@@ -2309,6 +2309,13 @@ fn summary_version_parser_requires_one_consistent_tuple() {
     other[release + 10] = b'8';
     conflicting.extend_from_slice(&other);
     assert!(crate::container::last_save_version(&conflicting).is_none());
+
+    let mut non_summary = summary_preview_segment();
+    non_summary[8..12].copy_from_slice(&0x0101_0002u32.to_be_bytes());
+    assert!(crate::container::last_save_version(&non_summary).is_none());
+    assert!(crate::container::preview_images(&non_summary).is_empty());
+    let native = crate::native::CatiaNative::decode(&non_summary);
+    assert!(native.preview_images.is_empty());
 }
 
 #[test]

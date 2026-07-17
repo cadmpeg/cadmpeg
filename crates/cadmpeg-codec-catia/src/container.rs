@@ -144,7 +144,7 @@ pub fn preview_images(data: &[u8]) -> Vec<PreviewImage> {
 fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<PreviewImage> {
     segments
         .iter()
-        .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
+        .filter(|segment| segment.type_word == 0x0101_0003)
         .filter_map(|segment| {
             let bytes = &data[segment.range.clone()];
             let relative_start = bytes
@@ -161,7 +161,7 @@ fn preview_images_in_segments(data: &[u8], segments: &[FinjplSegment]) -> Vec<Pr
         .collect()
 }
 
-/// Decode the unique `LastSaveVersion` tuple from project-flags segments.
+/// Decode the unique `LastSaveVersion` tuple from summary-information segments.
 /// Repeated identical copies collapse to one value; conflicting copies reject
 /// the version instead of selecting by position.
 #[must_use]
@@ -176,7 +176,7 @@ fn last_save_version_in_segments(
 ) -> Option<LastSaveVersion> {
     let mut versions = segments
         .iter()
-        .filter(|segment| segment.kind == FinjplKind::ProjectFlags)
+        .filter(|segment| segment.type_word == 0x0101_0003)
         .filter_map(|segment| parse_last_save_version(&data[segment.range.clone()]))
         .collect::<Vec<_>>();
     versions.dedup();
