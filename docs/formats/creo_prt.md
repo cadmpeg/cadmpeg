@@ -939,6 +939,16 @@ ordered angular interval. Coincident endpoints select a full-turn interval
 when the mapped midpoint is antipodal to the endpoint. Every endpoint-matching
 pcurve on an evaluable adjacent face must select the same interval.
 
+For a parabola with vertex `O`, focal distance `f`, major direction `X`, and
+transverse direction `Y = axis × X`, the native parameter of point `P` is
+`dot(P - O, Y) / (2f)` and its major coordinate is `f t²`. For a hyperbola
+with center `O`, major radius `a`, minor radius `b`, major direction `X`, and
+transverse direction `Y`, the positive-`X` branch parameter is
+`asinh(dot(P - O, Y) / b)` and its major coordinate is `a cosh(t)`. Negating
+both in-plane directions represents the opposite branch. Paired solved edge
+endpoints must belong to exactly one hyperbola branch. A nonperiodic conic edge
+interval is the ordered pair of its endpoint parameters.
+
 A plane normal to a torus axis at axial offset `z` intersects the torus in circles of radii `R ± sqrt(r² - z²)`. At `|z| = r` the two roots coincide in one contact circle. At `|z| < r` the edge's paired solved endpoint orbits select one circle when exactly one positive-radius candidate contains both endpoints. A zero-radius horn-torus root is a point and does not define a curve.
 
 A cylinder coaxial with a torus intersects it in one tangent circle when the cylinder radius equals the torus outer radius `R + r` or its positive inner radius `|R - r|`. The circle lies in the torus central plane, has the common axis, and has the cylinder radius. A cylinder radius strictly between the torus radial extrema produces two circles at axial offsets `±sqrt(r² - (Rc - R)²)` from the torus center. The edge's paired solved endpoint orbits select one circle when exactly one candidate contains both endpoints. Radii outside the torus radial interval do not intersect it.

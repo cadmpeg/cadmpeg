@@ -19666,6 +19666,12 @@ struct PeriodicConicFrame {
     radii: [f64; 2],
 }
 
+#[derive(Clone, Copy)]
+enum NonperiodicConicFamily {
+    Parabola,
+    Hyperbola,
+}
+
 fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> {
     let (center, axis, x_axis, radii) = match geometry {
         CurveGeometry::Circle {
@@ -19708,6 +19714,79 @@ fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> 
         y_axis,
         radii,
     })
+}
+
+fn nonperiodic_conic_parameter(geometry: &CurveGeometry, point: [f64; 3]) -> Option<f64> {
+    let (origin, normal, x_axis, x_scale, y_scale, family) = match geometry {
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } => (
+            [vertex.x, vertex.y, vertex.z],
+            [axis.x, axis.y, axis.z],
+            [major_direction.x, major_direction.y, major_direction.z],
+            *focal_distance,
+            2.0 * *focal_distance,
+            NonperiodicConicFamily::Parabola,
+        ),
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            [center.x, center.y, center.z],
+            [axis.x, axis.y, axis.z],
+            [major_direction.x, major_direction.y, major_direction.z],
+            *major_radius,
+            *minor_radius,
+            NonperiodicConicFamily::Hyperbola,
+        ),
+        _ => return None,
+    };
+    let normal = normalized(normal)?;
+    let x_axis = normalized(x_axis)?;
+    (dot(normal, x_axis).abs() <= 1e-9).then_some(())?;
+    let y_axis = normalized(cross(normal, x_axis))?;
+    (x_scale > 0.0 && x_scale.is_finite() && y_scale > 0.0 && y_scale.is_finite()).then_some(())?;
+    let relative = std::array::from_fn(|index| point[index] - origin[index]);
+    let scale = dot(relative, relative)
+        .sqrt()
+        .max(x_scale)
+        .max(y_scale)
+        .max(1.0);
+    (dot(relative, normal).abs() <= 1e-7 * scale).then_some(())?;
+    let x = dot(relative, x_axis);
+    let y = dot(relative, y_axis);
+    let parameter = match family {
+        NonperiodicConicFamily::Parabola => y / y_scale,
+        NonperiodicConicFamily::Hyperbola => (y / y_scale).asinh(),
+    };
+    let expected_x = match family {
+        NonperiodicConicFamily::Parabola => x_scale * parameter * parameter,
+        NonperiodicConicFamily::Hyperbola => x_scale * parameter.cosh(),
+    };
+    (parameter.is_finite() && (x - expected_x).abs() <= 1e-7 * scale).then_some(parameter)
+}
+
+fn nonperiodic_conic_edge_parameter_range(
+    geometry: &CurveGeometry,
+    points: [[f64; 3]; 2],
+) -> Option<[f64; 2]> {
+    let [Some(first), Some(second)] =
+        points.map(|point| nonperiodic_conic_parameter(geometry, point))
+    else {
+        return None;
+    };
+    let parameters = if first <= second {
+        [first, second]
+    } else {
+        [second, first]
+    };
+    (parameters[1] - parameters[0] > 1e-12).then_some(parameters)
 }
 
 fn periodic_conic_edge_parameter_range(
@@ -19856,6 +19935,11 @@ mod native_edge_parameter_tests {
         }
     }
 
+    fn evaluated(geometry: &CurveGeometry, parameter: f64) -> [f64; 3] {
+        let point = cadmpeg_ir::eval::curve_point(geometry, parameter).expect("conic point");
+        [point.x, point.y, point.z]
+    }
+
     #[test]
     fn preserves_scaled_line_parameterization_and_orders_the_interval() {
         let line = CurveGeometry::Line {
@@ -19929,6 +20013,66 @@ mod native_edge_parameter_tests {
             periodic_conic_edge_parameter_range(&ellipse, [points[0], points[0]], [-4.0, 0.0, 0.0],),
             Some([0.0, std::f64::consts::TAU])
         );
+    }
+
+    #[test]
+    fn nonperiodic_conics_recover_their_native_parameters() {
+        let parabola = CurveGeometry::Parabola {
+            vertex: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            focal_distance: 2.0,
+        };
+        let parabola_points = [evaluated(&parabola, 3.0), evaluated(&parabola, -2.0)];
+        assert_eq!(
+            nonperiodic_conic_edge_parameter_range(&parabola, parabola_points),
+            Some([-2.0, 3.0])
+        );
+        assert_eq!(
+            nonperiodic_conic_parameter(&parabola, [1.0, 6.0, 3.0]),
+            None
+        );
+
+        let hyperbola = CurveGeometry::Hyperbola {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        let hyperbola_points = [evaluated(&hyperbola, 2.0), evaluated(&hyperbola, -1.0)];
+        let range = nonperiodic_conic_edge_parameter_range(&hyperbola, hyperbola_points)
+            .expect("hyperbola range");
+        assert!((range[0] + 1.0).abs() <= 1e-12);
+        assert!((range[1] - 2.0).abs() <= 1e-12);
+        assert_eq!(
+            nonperiodic_conic_parameter(&hyperbola, [-2.0, 2.0, 3.0]),
+            None
+        );
+    }
+
+    #[test]
+    fn solved_endpoints_select_one_hyperbola_branch() {
+        let hyperbola = CurveGeometry::Hyperbola {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        };
+        let branches = analytic_curve_branches(&hyperbola, "hyperbola");
+        let points = [
+            evaluated(&branches[1].0, -1.0),
+            evaluated(&branches[1].0, 2.0),
+        ];
+        let selected = select_unique_curve_candidate(branches, points).expect("one branch");
+        let CurveGeometry::Hyperbola {
+            major_direction, ..
+        } = selected.0
+        else {
+            panic!("hyperbola branch");
+        };
+        assert_eq!(major_direction, Vector3::new(-1.0, 0.0, 0.0));
     }
 
     #[test]
@@ -20311,13 +20455,17 @@ fn transfer_plane_brep(
                 .find(|candidate| candidate.id == curve)
                 .and_then(|candidate| {
                     exact_line_edge_parameter_range(&candidate.geometry, points).or_else(|| {
-                        pcurve_backed_periodic_conic_parameter_range(
-                            &candidate.geometry,
-                            *curve_id,
-                            *curve_faces.get(curve_id)?,
-                            &native_pcurves,
-                            &ir.model.surfaces,
-                            points,
+                        nonperiodic_conic_edge_parameter_range(&candidate.geometry, points).or_else(
+                            || {
+                                pcurve_backed_periodic_conic_parameter_range(
+                                    &candidate.geometry,
+                                    *curve_id,
+                                    *curve_faces.get(curve_id)?,
+                                    &native_pcurves,
+                                    &ir.model.surfaces,
+                                    points,
+                                )
+                            },
                         )
                     })
                 })
@@ -22534,6 +22682,9 @@ fn curve_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> boo
                     && (x.mul_add(x, y * y) - 1.0).abs() <= 1e-7
             })
         }
+        CurveGeometry::Parabola { .. } | CurveGeometry::Hyperbola { .. } => points
+            .into_iter()
+            .all(|point| nonperiodic_conic_parameter(geometry, point).is_some()),
         _ => false,
     }
 }
@@ -22550,6 +22701,37 @@ fn select_unique_curve_candidate(
         return None;
     };
     Some(candidate.clone())
+}
+
+fn analytic_curve_branches(
+    geometry: &CurveGeometry,
+    tag: &'static str,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let mut branches = vec![(geometry.clone(), tag)];
+    if let CurveGeometry::Hyperbola {
+        center,
+        axis,
+        major_direction,
+        major_radius,
+        minor_radius,
+    } = geometry
+    {
+        branches.push((
+            CurveGeometry::Hyperbola {
+                center: *center,
+                axis: *axis,
+                major_direction: Vector3::new(
+                    -major_direction.x,
+                    -major_direction.y,
+                    -major_direction.z,
+                ),
+                major_radius: *major_radius,
+                minor_radius: *minor_radius,
+            },
+            tag,
+        ));
+    }
+    branches
 }
 
 fn transfer_carrier_intersection_curves(
@@ -22572,7 +22754,7 @@ fn transfer_carrier_intersection_curves(
         ) else {
             continue;
         };
-        let resolved = carrier_intersection_curve(first, second).or_else(|| {
+        let points = (|| {
             let forward = incidence.get(&HalfEdgeId {
                 curve_id: row.id,
                 side: 0,
@@ -22591,11 +22773,26 @@ fn transfer_carrier_intersection_curves(
                 *solved_vertices.get(&forward.start_vertex_id)?,
                 *solved_vertices.get(&end)?,
             ];
-            select_unique_curve_candidate(
-                multi_component_intersection_candidates(first, second),
-                points,
-            )
-        });
+            Some(points)
+        })();
+        let resolved = carrier_intersection_curve(first, second)
+            .and_then(|(geometry, tag)| {
+                let branches = analytic_curve_branches(&geometry, tag);
+                if let Some(points) = points {
+                    select_unique_curve_candidate(branches, points)
+                } else {
+                    let [branch] = branches.as_slice() else {
+                        return None;
+                    };
+                    Some(branch.clone())
+                }
+            })
+            .or_else(|| {
+                select_unique_curve_candidate(
+                    multi_component_intersection_candidates(first, second),
+                    points?,
+                )
+            });
         let Some((geometry, tag)) = resolved else {
             continue;
         };
