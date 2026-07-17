@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 25;
+pub const CATIA_NATIVE_VERSION: u32 = 26;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -735,9 +735,13 @@ impl CatiaValueBlock {
             .enumerate()
             .filter_map(|(selector_rank, index)| match &block.fields[*index] {
                 value_block::ValueField::SchemaSelector { ordinal, offset } => {
+                    let ordinal_index = usize::try_from(*ordinal).ok()?;
+                    if ordinal_index > catalog.entries.len() {
+                        return None;
+                    }
                     let entry = catalog
                         .entries
-                        .get(*ordinal as usize)
+                        .get(ordinal_index)
                         .map(|entry| entry.id.clone());
                     let value_end = selector_indices
                         .get(selector_rank + 1)

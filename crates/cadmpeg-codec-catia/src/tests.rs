@@ -4864,6 +4864,29 @@ fn native_value_blocks_require_a_complete_adjacent_catalog() {
 }
 
 #[test]
+fn native_value_blocks_distinguish_the_terminal_schema_sentinel() {
+    let mut bytes = value_block_stream(&[0x32, 4, 0, 0, 0, 0x83, 0x32, 5, 0, 0, 0, 0x82]);
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+    ]));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let block = &native.value_blocks[0];
+    assert_eq!(block.schema_selections.len(), 1);
+    assert_eq!(block.schema_selections[0].ordinal, 4);
+    assert_eq!(block.schema_selections[0].entry, None);
+    assert_eq!(block.schema_selections[0].value, None);
+    assert!(block.schema_selections[0].encoded_value.is_empty());
+    assert!(block.fields.iter().any(|field| matches!(
+        field,
+        crate::value_block::ValueField::SchemaSelector { ordinal: 5, .. }
+    )));
+}
+
+#[test]
 fn native_design_inventory_excludes_records_inside_object_payloads() {
     let mut nested = value_block_stream(&[0x81]);
     nested.extend(catalog_stream(&[
