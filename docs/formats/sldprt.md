@@ -538,6 +538,25 @@ A quadratic rational NURBS edge on a cylinder has a polar-NURBS pcurve when ever
 
 A NURBS surface that is degree one and clamped in `u`, with equal weights at corresponding poles of its two control rows, is ruled in `u`. A spatial line coincident with a fixed-`v` ruling has an affine pcurve: `v` is the common row parameter and `u(t)` is the line parameter projected onto the evaluated ruling vector.
 
+### 7.3 Surface-intersection curve carriers
+
+An edge's `00 10.refs[3]` can point to a `00 26` **intersection composite**, the carrier for a curve defined by the intersection of two support surfaces. Its body shares the compact header shape:
+
+```
+00 26  attr u16 BE  ordinal u32 BE  refs u16 BE[5]  marker u8 (0x2b|0x2d)
+       payload u16 BE[6] = [support0, support1, chart, term_start, term_end, uv]
+```
+
+`support0` and `support1` reference the two intersected surface records. The remaining payload references resolve to three witness records:
+
+- **`00 28` chart** — the solved point cache: `count u32 BE, attr u16 BE, base_parameter f64 BE, base_scale f64 BE, chart_count u32 BE, chordal_error f64 BE`, one further f64, then two absent-value sentinels `-3.14158e13` at body +36 and +44, then `count` point entries at body +52. An entry is either 88 bytes (point xyz, then a unit tangent at entry +56) or a bare 24-byte point. `chart_count == count`; `base_scale` is nonzero; `chordal_error` is positive. Chart points lie exactly on both support surfaces. The parameter at point `k+1` is the parameter at point `k` plus the chord length times `base_scale`, starting from `base_parameter`.
+- **`00 29` terminator** — an exact curve endpoint: `count u32 BE, attr u16 BE`, then `L?` (count 1) or `TF`/`TS` (count 2) and the endpoint xyz as f64 BE. Each terminator sits within `chordal_error` of the corresponding chart endpoint; the terminator, not the chart endpoint, is the exact curve end.
+- **`00 cc` support-UV values** — `count u32 BE, attr u16 BE, width u8 (2|3|4)`, then `count` f64 BE values, `width` per chart point. `width` 4 carries a UV pair on each support surface. The value count is `width × n` for `n` chart points, or `width × (n + 1)` when the curve crosses a periodic seam of a support surface and the extra row restates the endpoint in the wrapped parameterization.
+
+Terminator and support-UV bodies also occur inline after their field labels: `term_use` followed by `00 00 00 01 01 63 43 5a`, and `values` followed by `00 00 00 02 01 66 01`, each directly preceding the same body layout.
+
+The chart is a solved cache: the exact curve is the surface–surface intersection, and the chart polyline through the terminators reproduces it to within `chordal_error`.
+
 ## 8. Auxiliary lanes
 
 - **DisplayLists tessellation** uses a 6-descriptor table: List A strip lengths, Positions/Normals f32 metres, and Lists B/C/D. `C = sum(ListA)`, `ListC[i] = 2*ListA[i] - 2`, and `TriCount = C - 2*N`.

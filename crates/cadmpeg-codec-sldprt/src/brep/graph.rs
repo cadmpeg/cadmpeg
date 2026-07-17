@@ -508,6 +508,16 @@ fn decode_graph(
                             &mut out,
                             carriers.curve(curve_attr).expect("matched curve carrier"),
                         );
+                        if carriers.curve_is_derived(curve_attr) {
+                            let offset = carriers
+                                .curve(curve_attr)
+                                .expect("matched curve carrier")
+                                .offset;
+                            annotations
+                                .note(id_curve(curve_attr), source_stream, offset as u64)
+                                .tag("00_26");
+                            annotations.exactness(id_curve(curve_attr), Exactness::Derived);
+                        }
                     }
                     curve = Some(CurveId(id_curve(curve_attr)));
                 }

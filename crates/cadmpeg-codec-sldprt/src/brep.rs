@@ -15,13 +15,14 @@
 //! directly. Untyped carriers use opaque IR geometry while resolvable topology
 //! remains available.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::be::{f64_at as f64_be, f64s_at as f64_run, u16_at as u16_be, u32_at as u32_be};
 use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 mod entity;
+mod intersection;
 mod spline;
 mod topology;
 
@@ -145,6 +146,8 @@ pub(crate) enum CarrierGeometry {
 pub(crate) struct CarrierIndex {
     curves: HashMap<u16, Carrier>,
     surfaces: HashMap<u16, Carrier>,
+    /// Curve attrs whose geometry is a derived cache, not an exact carrier.
+    derived_curves: HashSet<u16>,
 }
 
 impl CarrierIndex {
@@ -167,9 +170,20 @@ impl CarrierIndex {
         self.surfaces.get(&attr)
     }
 
+    /// Whether a curve attr holds a derived solved cache rather than an
+    /// exact carrier.
+    pub(crate) fn curve_is_derived(&self, attr: u16) -> bool {
+        self.derived_curves.contains(&attr)
+    }
+
     pub(crate) fn merge_missing(&mut self, other: Self) {
         for (attr, carrier) in other.curves {
-            self.curves.entry(attr).or_insert(carrier);
+            if let std::collections::hash_map::Entry::Vacant(entry) = self.curves.entry(attr) {
+                if other.derived_curves.contains(&attr) {
+                    self.derived_curves.insert(attr);
+                }
+                entry.insert(carrier);
+            }
         }
         for (attr, carrier) in other.surfaces {
             self.surfaces.entry(attr).or_insert(carrier);
@@ -344,6 +358,13 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     for (attr, carrier) in spline::scan_surface_carriers(body) {
         debug_assert_eq!(attr, carrier.attr);
         out.insert(carrier);
+    }
+    for (attr, carrier) in intersection::scan_intersection_carriers(body) {
+        debug_assert_eq!(attr, carrier.attr);
+        if let std::collections::hash_map::Entry::Vacant(entry) = out.curves.entry(attr) {
+            entry.insert(carrier);
+            out.derived_curves.insert(attr);
+        }
     }
     out
 }

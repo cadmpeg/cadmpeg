@@ -9,7 +9,7 @@
 ## Geometry carriers
 
 - The derived UV convention for non-isoparametric trims on B-spline faces is unresolved.
-- Edge support curves outside the compact analytic and `00 86` families sit in `00 26` composite carriers whose child-record grammar is unresolved.
+- A `00 26` intersection composite whose chart, terminator, and support-UV witnesses are absent or mutually inconsistent in the retained streams has no resolved curve; where those witnesses are stored is unresolved. Untyped edge curve attributes owned by surface records rather than curve carriers are unresolved.
 - The carriers for offset, swept, blended, intersection, and spline-on-surface surface geometry are unresolved.
 
 ## Container metadata
