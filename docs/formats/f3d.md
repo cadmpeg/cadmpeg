@@ -21,6 +21,8 @@
 | `<folder>/Previews/*`, `<folder>/Images.BlobParts/*`                             | thumbnails / appearance images; never geometry          |
 | `ParaMeshGeometry.BlobParts/*.paramesh`                                          | secondary mesh; not the exact source                    |
 | `Manifest.dat` (top-level and per-asset)                                         | document, asset, and segment registry (see §1.3)        |
+| `RedirectionsStream.dat` (top-level)                                             | external-reference table (see §1.4)                     |
+| `ComponentReferenceData.json` (top-level)                                        | component-reference slot (see §1.4)                     |
 
 `<folder>` is an asset-folder path component.
 
@@ -30,9 +32,11 @@ The following small entries are STORED:
 
 | Entry                                           | Bytes                   | Meaning                                                            |
 | ----------------------------------------------- | ----------------------- | ------------------------------------------------------------------ |
-| `Properties.dat`                                | `00 00 00 00` (u32 `0`) | empty document-properties slot                                     |
+| `Properties.dat`                                | `00 00 00 00` (u32 `0`) or JSON object | empty document-properties slot, or a `docstruct` document-type declaration |
 | `.../DesignConfigurationTable.<uuid>.dsgcfg`    | JSON object             | configuration table, including parameter and suppression overrides |
 | `.../DesignConfigurationRule.<uuid>.dsgcfgrule` | JSON object             | configuration activation rules                                     |
+
+A non-empty `Properties.dat` is a JSON object whose `docstruct` member declares the document type: `version` (string), `type` (`assembly-design` or `part-design`), `subtype` (`assembly-standard`, `part-standard`, `part-sheetmetal`), and an `attributes` object. An `assembly-design` document carries no B-rep streams; its model is the placement of its external-reference targets (§1.4).
 
 Configuration tables and rules are complete JSON objects. A table's `configurations` member is an object keyed by variant name. Each variant value is an object; its `parameters` member is an object, `suppressed` is an array of strings, and `material` is a string. The table's `active` string equals one key in `configurations`. A rule's paired `when` and `activate` members are strings containing its activation condition and target variant name. Unknown object members remain part of the configuration document. ZIP entry name and extension select table versus rule; duplicate entry names are invalid.
 
@@ -47,6 +51,28 @@ The **top-level manifest** carries a document version tag (`3-2-0-0`), the `Fusi
 After the second document UUID, the top-level manifest continues with `u32 1234`, `u32 20`, `u32 27`, `u32 0x2A344000`, and a `u32` segment-entry count, followed by that many segment-registry entries. Each entry is a `u32`-length-prefixed name and a `u32` value; the seven entries are `Application` 1, `CAM` 4, `ParaMesh` 8, `SimCommon` 30005, `SimFEACSObjects` 2, `SimFluidDynamics` 2, and `SimStructuralAttributes` 10002. After the last entry (`SimStructuralAttributes`, `u32 10002`) the tail is: `u32 0`, `u8 0`, a `u32`-length-prefixed UTF-16LE asset-folder UUID, `u32 1`, a `u32`-length-prefixed UTF-16LE asset-folder base name, `u32 0`, `u8 1`, a `u32`-length-prefixed UTF-16LE `NA_EXPORT`, then end of file. A single-asset document ends at `NA_EXPORT` with no trailing bytes. The top-level manifest's asset-folder UUID equals the per-asset manifest's first GUID.
 
 The **per-asset manifest** carries two asset GUIDs, `FusionAssetType`, the asset type `Neutron3DAssetType`, a `physicalChangeGuid`, and the segment-type registry (`FusionDesignSegmentType`, `FusionACTSegmentType`, `FusionBrowserSegmentType`).
+
+### 1.4 External references
+
+A document that places other documents records each placement as an **XRef** keyed by an occurrence-role GUID (`neutronRole`). The same role GUID joins four carriers: the container reference table, the Design-segment XRef record, the ACT GUID pool, and — in a multi-document archive — the design description (§1.5).
+
+**`RedirectionsStream.dat`** is a top-level JSON object: `{"name":"RedirectionsStream","schema-version":0,"designs":[...],"references":...}`. `designs` is an array; the first entry describes the document itself and each further entry one referenced document. A design entry carries `file-version` (integer), `targetFileName` (the document's `.f3d` file name), `displayName`, `lineageUrn` (`urn:adsk.wipprod:dm.lineage:<key>`), and `versionUrn` (`urn:adsk.wipprod:fs.file:vf.<key>?version=N`, same `<key>` as the lineage URN). In a document with no outgoing references, `references` is the empty object `{}`. Otherwise `references` is an array of objects `{"from","relativePath","type":"XREF","properties":[...]}`: `from` is the document's own file name, `relativePath` is the target design entry's `targetFileName`, and `properties` is an array of single-member objects `neutronRole` and `neutronData`, each `{"value":"<guid>","dataType":"STRING"}`. `neutronRole` is the occurrence-role GUID; `neutronData` carries the same GUID.
+
+**`ComponentReferenceData.json`** is a top-level STORED entry containing the JSON object `{}`.
+
+**Design-segment XRef records.** The Design BulkStream registers the record class name `DcXRefPCIFeatureMetaType`; one record of that class exists per external reference. The record carries, in order: a `u32`-count UTF-16LE record GUID; marker-tagged integer fields; a `0x01`-tagged eight-byte value; a `u32`-count NUL-terminated ASCII GUID naming the owning design object (the same GUID appears in the Design MetaStream object table); a `0x01`-tagged `u32` zero; a `u32`-count UTF-16LE occurrence-role GUID equal to the reference's `neutronRole`; and the record's class tag with trailing record-index references. Each occurrence-role GUID is also present in the ACT-segment GUID pool.
+
+**Placement.** An external reference without a serialized occurrence transform places the target document's model in the referencing document's frame unchanged.
+
+### 1.5 Multi-document archives (`.f3z`)
+
+A `.f3z` is a ZIP archive holding `Manifest.json`, `DesignDescription.json`, and one `.f3d` member per document.
+
+`Manifest.json` is the single-member object `{"root":"<file>.f3d"}` naming the root document's member.
+
+`DesignDescription.json` is `{"name":"Autodesk Design Description","version":"0.1","designDescription":{...}}`. The `designDescription` object carries `id`, `name`, `currentVersion`, and `designGraphs`, an array of graphs. A graph carries `creationDate`, `creatingService`, `rootIds` (the root design-object ids), `designObjectRefs`, and `designObjects`. A design object carries: `id` (integer), `version`, `about` (version URN), `lineage` (lineage URN), `from` (an `urn:adsk.objects:os.object:` URN), `relativePath` and `downloadAs` (both equal to the document's archive member name), `friendlyName`, `displayName`, `zipped`, `rootFile`, `contentType` (`f3d`), `shareInfo`, `references`, `metadata`, and `createdAt`. The `metadata.docstruct` string holds the JSON docstruct mirrored in the member's `Properties.dat` (§1.2), and `metadata.rootFileName` the document's display file name. A referencing design object's `references` is `[{"type":"XREF","ids":[...],"relationships":[...]}]`, where `ids` lists the referenced design-object ids and each relationship is `{"id":<design-object id>,"metadata":{"neutronRole":"<guid>"}}` with the same occurrence-role GUID as the member's `RedirectionsStream.dat` reference (§1.4). A leaf design object's `references` is the empty array.
+
+Reference resolution is member-local: the root member's `RedirectionsStream.dat` maps each occurrence-role GUID to a `relativePath` naming another `.f3d` member, whose lineage and version URNs match that member's design object.
 
 ---
 
