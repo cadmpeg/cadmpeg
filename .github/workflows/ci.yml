@@ -57,7 +57,7 @@ jobs:
       - name: Documentation tests
         run: cargo test --workspace --doc
 
-  # Validates the aliasing soundness of `DecodeArena`'s one unsafe block (§4.1).
+  # Validates the aliasing soundness of `DecodeArena`'s one unsafe block.
   # Stable `cargo test` runs with no borrow model, so the arena's aliasing tests
   # pass there regardless of soundness; only Miri exercises Stacked and Tree
   # Borrows, so a future mutation/removal path that made the `from_raw_parts`

@@ -18,9 +18,8 @@ env:
   FUZZ_TIME: "60"
 
 jobs:
-  # Section 7 fuzz promotion, PR gate. Runs the fuzz targets whose codec
-  # changed, and fans out to every target when `cadmpeg-ir` or any shared
-  # platform crate changes ("ir-change fan-out is not optional", section 11.7).
+  # Runs the fuzz targets whose codec changed and every target when
+  # `cadmpeg-ir` or another shared platform crate changes.
   # Blocking: a crash on committed seeds fails the PR instead of surfacing on
   # the next non-gating nightly cron.
   fuzz-pr:
