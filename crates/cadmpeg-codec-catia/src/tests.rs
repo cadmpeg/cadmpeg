@@ -4848,6 +4848,7 @@ fn native_design_inventory_excludes_records_inside_object_payloads() {
         "catalogLinks",
         "",
     ]));
+    nested.extend(surface_alias_stream());
     let mut payload = vec![0xe5];
     payload.extend_from_slice(
         &u32::try_from(nested.len())
@@ -4861,6 +4862,7 @@ fn native_design_inventory_excludes_records_inside_object_payloads() {
 
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.object_graphs.len(), 1);
+    assert!(native.alias_rows.is_empty());
     assert!(native.catalogs.is_empty());
     assert!(native.value_blocks.is_empty());
 }
@@ -4874,6 +4876,7 @@ fn native_design_inventory_excludes_records_inside_value_payloads() {
         "catalogLinks",
         "",
     ]));
+    nested.extend(surface_alias_stream());
     let mut bytes = value_block_stream(&nested);
     bytes.extend(catalog_stream(&[
         "CATCatalogManager",
@@ -4884,6 +4887,7 @@ fn native_design_inventory_excludes_records_inside_value_payloads() {
 
     assert_eq!(crate::value_block::parse(&bytes).len(), 1);
     let native = crate::native::CatiaNative::decode(&bytes);
+    assert!(native.alias_rows.is_empty());
     assert_eq!(native.value_blocks.len(), 1);
     assert_eq!(native.catalogs.len(), 1);
     assert_eq!(native.value_blocks[0].catalog, native.catalogs[0].id);

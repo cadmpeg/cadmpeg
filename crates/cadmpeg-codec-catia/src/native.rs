@@ -440,6 +440,15 @@ impl CatiaNative {
             .map(CatiaObjectGraph::from)
             .collect();
         let parsed_value_blocks = value_block::parse(bytes);
+        alias_rows.retain(|row| {
+            let row_start = row.byte_offset.saturating_sub(4);
+            let row_end = row.byte_offset + 20;
+            !object_graphs.iter().any(|graph| {
+                row_start < graph.byte_offset + graph.byte_len && row_end > graph.byte_offset
+            }) && !parsed_value_blocks.iter().any(|block| {
+                row_start < (block.pos + block.total_len) as u64 && row_end > block.pos as u64
+            })
+        });
         catalogs.retain(|catalog| {
             !object_graphs.iter().any(|graph| {
                 catalog.byte_offset >= graph.byte_offset

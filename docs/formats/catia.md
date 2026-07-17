@@ -515,7 +515,7 @@ Resolve every in-range selector to the exact entry in the block's source schema.
 alias_row := <lead:u32le> 01 00 04 00 <tag:u32le> <flag:u8> <f1:3B> <f2:u32le> <f3:u32le>
 ```
 
-The low 24 bits of `tag` are the persistent roster tag; the high byte remains part of the stored word. `f1[2]` is a one-based `7C09` ordinal in the unique object graph with the greatest record population. Ordinal zero and values beyond that graph's record population carry no object-record link. The complete lead, flag, F1, F2, and F3 fields remain attached to the alias row.
+The low 24 bits of `tag` are the persistent roster tag; the high byte remains part of the stored word. An alias core overlapping a complete `7C08` or `7C0B` extent is payload data rather than an outer roster row. `f1[2]` is a one-based `7C09` ordinal in the unique object graph with the greatest record population. Ordinal zero and values beyond that graph's record population carry no object-record link. The complete lead, flag, F1, F2, and F3 fields remain attached to the alias row.
 
 ---
 
