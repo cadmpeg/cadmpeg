@@ -355,13 +355,18 @@ fn design_object_id(graph_offset: u64, owner_ordinal: u32) -> String {
 fn payload_references(payload: &ObjectPayload) -> impl Iterator<Item = u32> + '_ {
     payload.fields.iter().flat_map(|field| match field {
         PayloadField::Reference { value, .. } => vec![*value],
-        PayloadField::List { items, .. } => items
+        PayloadField::List {
+            declared_count,
+            items,
+            ..
+        } if usize::try_from(*declared_count).ok() == Some(items.len()) => items
             .iter()
             .filter_map(|item| match item {
                 ListItem::Reference(value) => Some(*value),
                 ListItem::Atom(_) => None,
             })
             .collect(),
+        PayloadField::List { .. } => Vec::new(),
         PayloadField::Atom { .. }
         | PayloadField::Scalar { .. }
         | PayloadField::Blob { .. }

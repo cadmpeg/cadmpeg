@@ -4633,6 +4633,26 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
 }
 
 #[test]
+fn incomplete_object_lists_do_not_assert_reference_links() {
+    let bytes = object_graph_from_records(&[
+        object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0x3b, 0x83, 0x81, 0x82, 0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x82, 0x81], &[0xfe]),
+    ]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert!(native.object_graphs[0].records[0].references.is_empty());
+    assert!(native.design_objects[0].dependencies.is_empty());
+    assert!(matches!(
+        &native.object_graphs[0].records[0].payload.fields[0],
+        crate::object_graph::PayloadField::List {
+            declared_count: 3,
+            items,
+            ..
+        } if items == &[crate::object_graph::ListItem::Reference(2)]
+    ));
+}
+
+#[test]
 fn outer_object_graph_resolves_class_names_from_following_schema() {
     let mut bytes = object_graph_stream();
     let graph_len = bytes.len();

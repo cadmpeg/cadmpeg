@@ -518,7 +518,7 @@ fn decode_payload(bytes: &[u8]) -> ObjectPayload {
                 at += 1 + advance;
                 let mut items = Vec::new();
                 for _ in 0..declared_count {
-                    if at >= bytes.len() {
+                    if at >= bytes.len() || bytes[at] == 0xfe {
                         break;
                     }
                     let tagged_reference = bytes[at] == 0x81;
