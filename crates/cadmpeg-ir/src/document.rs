@@ -70,6 +70,19 @@ macro_rules! declare_model {
                 &[$(stringify!($field)),*]
             }
 
+            /// Whether any arena holds an entity whose identity equals `id`.
+            ///
+            /// Entity IDs are globally unique across arenas, so a single hit is
+            /// authoritative. Used by transfer accounting to confirm that a
+            /// `Typed` disposition names entities actually emitted into the IR.
+            pub fn contains_id(&self, id: &str) -> bool {
+                $({
+                    let key = ($key) as fn(&$ty) -> String;
+                    if self.$field.iter().any(|e| key(e) == id) { return true; }
+                })*
+                false
+            }
+
             /// Sort each arena lexicographically by its entity identity.
             pub fn finalize(&mut self) {
                 $(self.$field.sort_by_key($key);)*

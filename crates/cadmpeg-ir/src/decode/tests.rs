@@ -35,7 +35,25 @@ fn tight(edit: impl FnOnce(&mut ResourceLimits)) -> DecodePolicy {
 }
 
 fn dummy_result() -> DecodeResult {
-    let ir = CadIr::empty(Units::default());
+    result_with_bodies(&[])
+}
+
+fn result_with_bodies(ids: &[&str]) -> DecodeResult {
+    use crate::ids::BodyId;
+    use crate::topology::{Body, BodyKind};
+
+    let mut ir = CadIr::empty(Units::default());
+    for id in ids {
+        ir.model.bodies.push(Body {
+            id: BodyId((*id).to_owned()),
+            kind: BodyKind::default(),
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+    }
     let report = DecodeReport {
         format: "test".to_string(),
         container_only: false,
@@ -627,7 +645,7 @@ fn transfer_accounting_accepts_consistent_dispositions() {
     let policy = strict();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    // Typed with an output entity is consistent.
+    // Typed naming an entity actually emitted into the IR model is consistent.
     let typed = ctx.commit_record(root.location(), RecordKind("body"));
     ctx.resolve(
         typed,
@@ -651,7 +669,31 @@ fn transfer_accounting_accepts_consistent_dispositions() {
     let structural = ctx.commit_record(root.location(), RecordKind("header"));
     ctx.resolve(structural, RecordDisposition::Structural);
 
-    assert!(ctx.finish(Ok(dummy_result())).is_ok());
+    assert!(ctx.finish(Ok(result_with_bodies(&["body/0"]))).is_ok());
+}
+
+#[test]
+fn transfer_accounting_rejects_typed_output_absent_from_ir_in_strict() {
+    // A Typed disposition naming an entity id never emitted into the IR is a
+    // phantom emission; §6.2 requires each named span to resolve in the model.
+    let bytes: &[u8] = &[0u8; 8];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let ticket = ctx.commit_record(root.location(), RecordKind("body"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Typed {
+            outputs: vec!["body/999".to_owned()],
+        },
+    );
+    match ctx.finish(Ok(dummy_result())) {
+        Err(CodecError::Malformed(message)) => {
+            assert!(message.contains("transfer accounting"), "{message}");
+            assert!(message.contains("absent from the IR model"), "{message}");
+        }
+        other => panic!("expected strict IR-model error, got {other:?}"),
+    }
 }
 
 #[test]

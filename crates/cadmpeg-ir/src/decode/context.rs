@@ -11,6 +11,7 @@
 use std::cell::{Cell, RefCell};
 
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
+use crate::document::Model;
 use crate::report::{LossCategory, LossNote, ProfileVersions, Severity};
 
 use super::arena::DecodeArena;
@@ -761,9 +762,11 @@ impl<'a> DecodeContext<'a> {
         // table against the retained ledger and the report's losses. Runs after
         // salvage auto-drop so auto-generated Dropped dispositions are checked
         // against the loss notes just appended for them.
-        let violations = self
-            .tickets
-            .transfer_accounting(&self.retained, &result.report.losses);
+        let violations = self.tickets.transfer_accounting(
+            &result.ir.model,
+            &self.retained,
+            &result.report.losses,
+        );
         if !violations.is_empty() {
             match self.policy.mode {
                 DecodeMode::Strict => {
@@ -1395,7 +1398,8 @@ impl TicketTable {
     /// message per violation in ticket order.
     ///
     /// The checks: a [`RecordDisposition::Typed`] names at least one output
-    /// entity; a [`RecordDisposition::Retained`] names at least one record and
+    /// entity and every named entity resolves in `model`; a
+    /// [`RecordDisposition::Retained`] names at least one record and
     /// every named record resolves in the retained store; a
     /// [`RecordDisposition::Dropped`]'s loss is reflected in `losses`. An
     /// unresolved ticket is not re-reported here — [`finish`](DecodeContext::finish)
@@ -1407,7 +1411,12 @@ impl TicketTable {
     /// N records dropped under a shared key require N notes in `report.losses`.
     /// Existence-only matching would let one note account for many drops,
     /// reintroducing the concealed under-accounting §6.2 forbids.
-    fn transfer_accounting(&self, retained: &RetainedStore, losses: &[LossNote]) -> Vec<String> {
+    fn transfer_accounting(
+        &self,
+        model: &Model,
+        retained: &RetainedStore,
+        losses: &[LossNote],
+    ) -> Vec<String> {
         let mut violations = Vec::new();
         let mut consumed = vec![false; losses.len()];
         for state in self.entries.borrow().iter() {
@@ -1423,6 +1432,13 @@ impl TicketTable {
                     if outputs.is_empty() {
                         violations
                             .push(format!("{at} resolved Typed but names no output entities"));
+                    }
+                    for entity in outputs {
+                        if !model.contains_id(entity) {
+                            violations.push(format!(
+                                "{at} names output entity `{entity}` absent from the IR model"
+                            ));
+                        }
                     }
                 }
                 Some(RecordDisposition::Retained { records }) => {
