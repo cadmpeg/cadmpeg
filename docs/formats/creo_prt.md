@@ -645,7 +645,7 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 
 | Table         | Semantics                                                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `var_arr`     | Solved-coordinate table keyed by `pointid`; `type=1` is `u`, `type=2` is `v`; `value` is solved and `guess` is the pre-solve estimate. |
+| `var_arr`     | Solver-variable table keyed by `key`; `type=1` is point `u`, `type=2` is point `v`, and `type=3` is radius; `value` is solved, `guess` is the pre-solve estimate, and `known`, `homogeneity`, and `uvar_id` retain solver state. |
 | `segtab`      | Two-dimensional segments; `type=2` is LINE and `type=3` is ARC. A line uses `f6` as its null `cntrid`; an arc uses a center `pointid`. |
 | `order_table` | Generated-entity ordering table.                                                                                                       |
 | `ent_tab`     | Trimmed profile entity chain.                                                                                                          |

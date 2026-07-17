@@ -2271,7 +2271,13 @@ fn scan_decodes_featdefs_var_arr_section_points() {
     assert_eq!(variables.entity_ref, Some(1));
     assert_eq!(variables.rows.len(), 2);
     assert_eq!(variables.rows[0].value, Some(1.0));
+    assert_eq!(variables.rows[0].known, Some(1));
+    assert_eq!(variables.rows[0].homogeneity, Some(0));
+    assert_eq!(variables.rows[0].uvar_id, Some(3));
     assert_eq!(variables.rows[1].value, Some(3.0));
+    assert_eq!(variables.rows[1].known, Some(1));
+    assert_eq!(variables.rows[1].homogeneity, Some(0));
+    assert_eq!(variables.rows[1].uvar_id, Some(4));
     assert_eq!(variables.points.len(), 1);
     assert_eq!(variables.points[0].point_id, 7);
     assert_eq!(variables.points[0].u, Some(1.0));
@@ -2282,7 +2288,8 @@ fn scan_decodes_featdefs_var_arr_section_points() {
 fn scan_decodes_featdefs_var_arr_named_prototype_row() {
     let payload = b"feat_defs_40\0var_arr\0\xf8\x01\xf7\x01\xfb\xe2\
         \xe0\x05type\0\x01\xe0\x08key\0\x07\xe0\x02value\0\xe4\
-        \xe0\x02guess\0\x0f\xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
+        \xe0\x02guess\0\x0f\xe0\x06known\0\x01\
+        \xe0\x0chomogeneity\0\x02\xe0\x08uvar_id\0\x03\xf1\xf7\x01\xe2"
         .to_vec();
     let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
 
@@ -2295,6 +2302,8 @@ fn scan_decodes_featdefs_var_arr_named_prototype_row() {
     assert_eq!(variables.rows[0].key, 7);
     assert_eq!(variables.rows[0].value, Some(1.0));
     assert_eq!(variables.rows[0].guess, Some(0.0));
+    assert_eq!(variables.rows[0].known, Some(1));
+    assert_eq!(variables.rows[0].homogeneity, Some(2));
     assert_eq!(variables.rows[0].uvar_id, Some(3));
 }
 
@@ -2348,8 +2357,14 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(variables.len(), 2);
     assert_eq!(variables[0]["key"], 7);
     assert_eq!(variables[0]["value"], 1.0);
+    assert_eq!(variables[0]["known"], 1);
+    assert_eq!(variables[0]["homogeneity"], 0);
+    assert_eq!(variables[0]["uvar_id"], 3);
     assert_eq!(variables[0]["offset"], variable_offset);
     assert_eq!(variables[1]["value"], 3.0);
+    assert_eq!(variables[1]["known"], 1);
+    assert_eq!(variables[1]["homogeneity"], 0);
+    assert_eq!(variables[1]["uvar_id"], 4);
     assert_annotation(
         &result.ir,
         "creo:featdefs:sketch#40",
@@ -2420,6 +2435,8 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                 key: 6,
                 value: None,
                 guess: None,
+                known: None,
+                homogeneity: None,
                 uvar_id: None,
                 dimension_driven: true,
                 offset: 0,
