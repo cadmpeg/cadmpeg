@@ -2015,6 +2015,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut entity_suffixes = HashSet::new();
     for header in &native.design_entity_headers {
         let native_stream = design_stream(&header.id);
         let count_matches = header
@@ -2032,22 +2033,38 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(header.entity_id.clone()),
             });
         }
+        if !entity_suffixes.insert((native_stream, header.entity_suffix)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design entity suffix is duplicated within its stream".into(),
+                entity: Some(header.entity_id.clone()),
+            });
+        }
     }
     let sketch_owners = native
         .design_entity_headers
         .iter()
         .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
-        .map(|header| (design_stream(&header.id), header.entity_suffix as u32))
+        .filter_map(|header| {
+            Some((
+                design_stream(&header.id),
+                u32::try_from(header.entity_suffix).ok()?,
+            ))
+        })
         .collect::<HashSet<_>>();
     let sketch_owner_ids = native
         .design_entity_headers
         .iter()
         .filter(|header| header.object_kind == Some(records::DesignObjectKind::Sketch))
-        .map(|header| {
-            (
-                (design_stream(&header.id), header.entity_suffix as u32),
+        .filter_map(|header| {
+            Some((
+                (
+                    design_stream(&header.id),
+                    u32::try_from(header.entity_suffix).ok()?,
+                ),
                 header.entity_id.as_str(),
-            )
+            ))
         })
         .collect::<std::collections::HashMap<_, _>>();
     for relation in &native.sketch_relations {

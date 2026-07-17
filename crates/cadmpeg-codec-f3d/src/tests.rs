@@ -8474,6 +8474,34 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
 }
 
 #[test]
+fn validation_rejects_duplicate_design_entity_suffixes() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut ir = decoded.ir;
+    let duplicate_id = {
+        let mut native = f3d_native_mut(&mut ir);
+        let mut duplicate = native
+            .design_entity_headers
+            .first()
+            .expect("generated Design entity header")
+            .clone();
+        duplicate.id.push_str("-duplicate");
+        duplicate.entity_id.push_str(":duplicate");
+        let id = duplicate.entity_id.clone();
+        native.design_entity_headers.push(duplicate);
+        id
+    };
+
+    assert!(crate::validate_native(&ir).iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::NativeLinks
+            && finding.entity.as_deref() == Some(duplicate_id.as_str())
+            && finding.message.contains("entity suffix is duplicated")
+    }));
+}
+
+#[test]
 fn validation_rejects_invalid_design_parameter_family_and_owner() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec

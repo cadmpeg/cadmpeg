@@ -10632,7 +10632,10 @@ pub(crate) fn bind_sketch_graph(
         .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
         .filter_map(|entity| {
             Some((
-                (native_stream(&entity.id)?, entity.entity_suffix as u32),
+                (
+                    native_stream(&entity.id)?,
+                    u32::try_from(entity.entity_suffix).ok()?,
+                ),
                 entity.entity_id.as_str(),
             ))
         })
@@ -16677,6 +16680,17 @@ mod relation_tests {
         .expect("stream-local sketch graphs bind independently");
         assert_eq!(relations[0].owner_entity_id, "A_100");
         assert_eq!(relations[1].owner_entity_id, "B_100");
+
+        let mut overflowing_header = header("A");
+        overflowing_header.entity_suffix = u64::from(u32::MAX) + 101;
+        overflowing_header.entity_id = "A_overflow".into();
+        assert!(bind_sketch_graph(
+            &[overflowing_header],
+            &mut [point("A")],
+            &mut [],
+            &mut [relation("A")],
+        )
+        .is_err());
 
         let (mut sketches, mut entities) = project_sketch_design(&placements, &points, &[], 1.0e-6);
         let mut constraints =
