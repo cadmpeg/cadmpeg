@@ -25,9 +25,18 @@ egress). The remaining decoder modules are `legacy` in
 `parser-manifest.toml` with per-module reasons: they read object-record bodies
 through the crate-local `BoundedReader` over `&[u8]` and size collections with
 `Vec::with_capacity`, so their alloc/work charges are not yet driven through
-`ctx.exact_vec`/`read_counted`/`ctx.descend`. The one platform charge already
-live is `decompressed_bytes`, driven by `mesh.rs` through
-`DecodeContext::begin_expand`.
+`ctx.exact_vec`/`read_counted`/`ctx.descend`. The live platform charges are
+`decompressed_bytes`, driven by `mesh.rs` through `DecodeContext::begin_expand`,
+and a partial `alloc_bytes`: `mesh.rs` `read_faces` reserves its triangle-fan
+output through `ctx.alloc_unfloored`. `mesh.rs` carries no
+`Vec::with_capacity`/`reserve`/`resize`/`repeat_n`: its raw channel readers size
+output with `reader.take(bytes)?.to_vec()` (bounded by the reader's remaining
+input, not a decoded count) and its channel/warning lists use `Vec::new` +
+`push`. It stays legacy for the mirror obligation, not the allocation one — its
+field/channel reads run through `BoundedReader`/`MeshExpand::data` rather than
+the `View`/`req_*` mirror, and the `read_counted_raw`/`read_ngons` byte
+reservations are not yet charged against `alloc_bytes` through the threaded
+`ctx`.
 
 Because alloc/work/depth are not yet charged at Rhino leaf sites, the peak-alloc
 and work-charged columns below record what the fixtures *would* drive once the
@@ -43,6 +52,7 @@ element reads on the existing fixtures — plus the one charge that is live toda
 | `alloc_bytes` + `work` | `cage.rs` knot/control loops | `cage::tests::decodes_rational_cage_order_knots_and_u_v_w_control_order` | 2x2x2 rational cage fixture: peak reserved = 3 knot vectors (2 f64 each) + 8 control tuples (`Vec<f64>` headers) + 8 stored tuples (4 f64) + 8 weights = ~0.6 KiB; `work` = Σ knot_count (6) + control_count*stored_dimension (32) = 38 units. Truncation exercised by `truncating_the_control_net_is_rejected_at_the_record_boundary` |
 | `alloc_bytes` + `work` | `polyedge.rs` parameter/segment loops | `polyedge::tests::decodes_persistent_polyedge_segment_construction` | 1-segment / 2-parameter fixture: peak reserved = 2 f64 parameters (16 B) + 1 `Segment` (fixed struct) via `exact_vec`; `work` = parameter_count (2) + 13 fixed field reads per segment = 15 units. Truncation exercised by `truncating_the_segment_child_is_rejected_at_the_record_boundary` |
 | `alloc_bytes` + `work` | `hatch.rs` header + boundary-loop table | `hatch::tests::decodes_version_two_loop_geometry_and_pattern_state` | 1-loop fixture (plane + one polyline loop): peak reserved = 1 `HatchLoop` via `exact_vec` plus any per-loop warnings via `grow_vec` (0 on the clean fixture); `work` = 19 fixed header field reads + loop_count (1) = 20 units. Truncation exercised by `truncating_the_loop_record_is_rejected_at_the_record_boundary` |
+| `alloc_bytes` (partial) | `mesh.rs` `read_faces` triangle accumulator | `mesh::tests::read_faces_charges_triangle_accumulator` | triangle-fan output reserved through `ctx.alloc_unfloored::<[u32; 3]>` behind the `MAX_MESH_FACES` (2^24) cap: the 1-triangle-plus-1-quad fixture reserves 3 tuples = 36 B. This is the highest-amplification allocation in the mesh path (up to 2 triangles per decoded face); the module's remaining channel/ngon collections still use `Vec::with_capacity` so `mesh.rs` stays legacy. Truncation exercised by `read_faces_truncated_at_record_boundary` |
 
 ## Target charges (to be measured at graduation)
 

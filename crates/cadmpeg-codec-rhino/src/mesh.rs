@@ -11,7 +11,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, ExpandSpec, View};
+use cadmpeg_ir::decode::{DecodeContext, ExactVec, ExpandSpec, View};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use flate2::{Decompress, FlushDecompress, Status};
@@ -299,7 +299,7 @@ pub(crate) fn decode(
             )?;
         }
     }
-    let triangles = read_faces(&mut reader, vertex_count, face_count)?;
+    let triangles = read_faces(expand, &mut reader, vertex_count, face_count)?;
     let mut decompressed_bytes = 0;
     if major == 1 {
         read_raw_channels(
@@ -451,6 +451,7 @@ pub(crate) fn decode(
 }
 
 fn read_faces(
+    expand: MeshExpand<'_>,
     reader: &mut BoundedReader<'_>,
     vertices: usize,
     faces: usize,
@@ -485,7 +486,21 @@ fn read_faces(
         .checked_add(quad_count)
         .filter(|count| *count <= MAX_MESH_FACES)
         .ok_or_else(|| error(reader.position(), "mesh triangle output budget exceeded"))?;
-    let mut result = Vec::with_capacity(triangle_count);
+    // Zero-floor production: the triangle count is derived from the decoded
+    // face stream (`faces` plus the quad split), not present as an input floor,
+    // so it reserves through `alloc_unfloored` behind the codec-local
+    // `MAX_MESH_FACES` cap enforced above. The reservation charges `AllocBytes`
+    // against the caller's document budget instead of an uncharged
+    // `Vec::with_capacity`.
+    let mut result = expand
+        .ctx()
+        .alloc_unfloored::<[u32; 3]>(triangle_count)
+        .map_err(|refusal| {
+            error(
+                reader.position(),
+                &format!("mesh triangle allocation refused: {refusal}"),
+            )
+        })?;
     for face in 0..faces {
         let mut indices = [0_u32; 4];
         for (slot, index) in indices.iter_mut().enumerate() {
@@ -495,14 +510,20 @@ fn read_faces(
                 return Err(error(reader.position(), "mesh face index out of range"));
             }
         }
+        let push = |result: &mut _, triangle| {
+            ExactVec::push(result, triangle)
+                .map_err(|refusal| error(reader.position(), &format!("mesh triangle: {refusal}")))
+        };
         if indices[2] == indices[3] {
-            result.push([indices[0], indices[1], indices[2]]);
+            push(&mut result, [indices[0], indices[1], indices[2]])?;
         } else {
-            result.push([indices[0], indices[1], indices[2]]);
-            result.push([indices[0], indices[2], indices[3]]);
+            push(&mut result, [indices[0], indices[1], indices[2]])?;
+            push(&mut result, [indices[0], indices[2], indices[3]])?;
         }
     }
-    Ok(result)
+    result
+        .finish_exact()
+        .map_err(|refusal| error(reader.position(), &format!("mesh triangle: {refusal}")))
 }
 
 fn face_index(raw: &[u8], offset: usize, width: i32) -> u32 {
@@ -1533,11 +1554,13 @@ mod tests {
                     _ => unreachable!(),
                 }
             }
-            let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
-            assert_eq!(
-                read_faces(&mut reader, vertices, 1).expect("face"),
-                vec![[0, 1, 2]]
-            );
+            with_expand(&bytes, |expand| {
+                let mut reader = BoundedReader::new(&bytes, 0, bytes.len()).expect("reader");
+                assert_eq!(
+                    read_faces(expand, &mut reader, vertices, 1).expect("face"),
+                    vec![[0, 1, 2]]
+                );
+            });
         }
     }
 
@@ -1705,6 +1728,35 @@ mod tests {
             );
             assert!(refused.is_err(), "cumulative expansion must be refused");
             assert!(ctx.is_fused(), "the refusal must fuse the context");
+        });
+    }
+
+    /// A well-formed face stream (a triangle plus a quad, `vertices < 256` so
+    /// the index width is one byte) yields the expected triangle fan through
+    /// the platform-charged accumulator. The quad splits into two triangles, so
+    /// three triangles fill the exactly reserved capacity.
+    #[test]
+    fn read_faces_charges_triangle_accumulator() {
+        let mut raw = 1_i32.to_le_bytes().to_vec();
+        raw.extend([0, 1, 2, 2]); // triangle (indices[2] == indices[3])
+        raw.extend([0, 1, 2, 0]); // quad -> two triangles
+        with_expand(&raw, |expand| {
+            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+            let triangles = read_faces(expand, &mut reader, 3, 2).expect("faces");
+            assert_eq!(triangles, vec![[0, 1, 2], [0, 1, 2], [0, 2, 0]]);
+        });
+    }
+
+    /// A face stream truncated at the record boundary — the width header
+    /// declares two single-byte-indexed faces but only one face's bytes are
+    /// present — fails inside `reader.take` before any triangle is reserved.
+    #[test]
+    fn read_faces_truncated_at_record_boundary() {
+        let mut raw = 1_i32.to_le_bytes().to_vec();
+        raw.extend([0, 1, 2, 2]); // only one of the two declared faces
+        with_expand(&raw, |expand| {
+            let mut reader = BoundedReader::new(&raw, 0, raw.len()).expect("reader");
+            assert!(read_faces(expand, &mut reader, 3, 2).is_err());
         });
     }
 }
