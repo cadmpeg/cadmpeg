@@ -2278,6 +2278,103 @@ fn nx_block_source_content_includes_complete_ordered_dimension_run() {
 }
 
 #[test]
+fn nx_block_dimensions_do_not_cross_expression_sections() {
+    use crate::native::{
+        Expression, ExpressionDeclaration, ExpressionUnit, FeatureBlockConstruction,
+        FeatureParameterBinding,
+    };
+
+    let operation = "nx:feature-history:operation-label#0-1";
+    let construction = FeatureBlockConstruction {
+        id: "nx:feature-history:block-construction#0-1".into(),
+        operation_label: operation.into(),
+        control: 0,
+        member_references: Vec::new(),
+        member_data_blocks: Vec::new(),
+        terminal_reference: "terminal-reference".into(),
+        terminal_data_block: "terminal-block".into(),
+    };
+    let binding = FeatureParameterBinding {
+        id: "binding".into(),
+        operation_label: operation.into(),
+        input_slot: 0,
+        input_block: "input".into(),
+        reference_ordinal: 0,
+        expression_declaration: "declaration-20".into(),
+        expression: Some("expression-20".into()),
+        object_id: 20,
+        source_offset: 1,
+    };
+    let declaration = |index: u32, source_entry: &str| ExpressionDeclaration {
+        id: format!("declaration-{index}"),
+        object_id: index,
+        record: format!("{source_entry}:entry#{index}"),
+        name: format!("p{index}"),
+        parameter_index: index,
+        qualifier: None,
+        literal: None,
+        source_entry: source_entry.into(),
+        source_offset: u64::from(index),
+    };
+    let expression = |index: u32, source_entry: &str, source_table: &str| Expression {
+        id: format!("expression-{index}"),
+        object_id: Some(index),
+        record: Some(format!("{source_entry}:entry#{index}")),
+        declaration: Some(format!("declaration-{index}")),
+        name: format!("p{index}"),
+        parameter_index: Some(index),
+        qualifier: None,
+        unit: ExpressionUnit::Millimeter,
+        expression: index.to_string(),
+        value: Some(f64::from(index)),
+        source_entry: source_entry.into(),
+        source_table: source_table.into(),
+        source_offset: u64::from(index),
+    };
+    let mut expressions = [
+        expression(20, "section-a", "table-a"),
+        expression(21, "section-a", "table-a"),
+        expression(22, "section-b", "table-b"),
+    ];
+    let mut declarations = [
+        declaration(20, "section-a"),
+        declaration(21, "section-a"),
+        declaration(22, "section-b"),
+    ];
+
+    assert!(crate::native::feature_block_dimensions(
+        std::slice::from_ref(&construction),
+        std::slice::from_ref(&binding),
+        &declarations,
+        &expressions,
+    )
+    .is_empty());
+
+    declarations[2].source_entry = "section-a".into();
+    declarations[2].record = "section-a:entry#22".into();
+    assert!(crate::native::feature_block_dimensions(
+        std::slice::from_ref(&construction),
+        std::slice::from_ref(&binding),
+        &declarations,
+        &expressions,
+    )
+    .is_empty());
+
+    expressions[2].source_entry = "section-a".into();
+    expressions[2].source_table = "table-a".into();
+    assert_eq!(
+        crate::native::feature_block_dimensions(
+            &[construction],
+            &[binding],
+            &declarations,
+            &expressions,
+        )
+        .len(),
+        1
+    );
+}
+
+#[test]
 fn nx_block_dimension_parameters_name_the_block_as_consumer() {
     let expression = |key: u32| crate::native::Expression {
         id: format!("nx:test:expression#{key}"),

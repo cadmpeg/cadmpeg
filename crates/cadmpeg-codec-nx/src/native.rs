@@ -8956,7 +8956,10 @@ pub fn feature_block_dimensions(
                 .ok()?;
             let first = run[0].parameter_index;
             if run.iter().enumerate().any(|(ordinal, declaration)| {
-                Some(declaration.parameter_index) != first.checked_add(ordinal as u32)
+                declaration.record.split_once(":entry#").map(|pair| pair.0)
+                    != run[0].record.split_once(":entry#").map(|pair| pair.0)
+                    || declaration.source_entry != run[0].source_entry
+                    || Some(declaration.parameter_index) != first.checked_add(ordinal as u32)
                     || declaration.name != format!("p{}", declaration.parameter_index)
                     || declaration.qualifier.is_some()
             }) {
@@ -8980,6 +8983,17 @@ pub fn feature_block_dimensions(
                 .collect::<Option<Vec<_>>>()?
                 .try_into()
                 .ok()?;
+            if resolved[0].0.source_table.is_empty()
+                || resolved
+                    .iter()
+                    .zip(run)
+                    .any(|((expression, _), declaration)| {
+                        expression.source_entry != declaration.source_entry
+                            || expression.source_table != resolved[0].0.source_table
+                    })
+            {
+                return None;
+            }
             Some(FeatureBlockDimensions {
                 id: construction
                     .id
