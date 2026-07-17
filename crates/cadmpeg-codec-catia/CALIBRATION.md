@@ -5,8 +5,8 @@ Per-module calibration observations for the doc section 5.2 alloc/work/depth
 freeze. Values are cumulative charge profiles (section 5.3), not peak live
 memory; the harness peak-RSS oracle uses its own, separately calibrated
 constant. The `value_block`, `catalog`, and `variant` modules are migrated and emit
-their charges today, as do `object_graph`, `native`, and `zero_entity`; for the
-remaining leaf parsers the work and `alloc_bytes`
+their charges today, as do `object_graph`, `native`, `zero_entity`, and
+`container`; for the remaining leaf parsers the work and `alloc_bytes`
 columns are the *intended* charge points, not yet emitted charges — they are
 recorded here so the freeze step measures the migrated sites rather than
 calibrating noise (section 5.2: "freezing a dimension nobody charges yet would
@@ -25,7 +25,7 @@ calibrate noise").
 
 | module | charged today | peak cumulative alloc (fixture) | intended work charge | notes |
 | --- | --- | --- | --- | --- |
-| `container` | `alloc_bytes` (Concat), `decompressed_bytes` | reconstructed B-rep length | directory-scan bytes examined | only module emitting charges; Concat copy ~= sum of MainDataStream + SurfacicReps extents |
+| `container` | `work`, `alloc_bytes`, `decompressed_bytes` (migrated) | `PER_EXTENT_GRAPH_BYTES` (256) per registered extent + Concat copy | whole-image bytes charged once by `scan_view` before the directory walk | migrated: directory scan charged as work up front; extent-graph footprint charged in `register_extent_spaces`; Concat copy ~= sum of MainDataStream + SurfacicReps extents via `begin_derived_space`; directory accumulators now capped `Vec::new`+push, no `with_capacity` |
 | `value_block` | `work`, `retained_bytes` (migrated) | payload copy bounded by `declared_len` | root-image bytes examined once by the `7C0B` probe | migrated: scan bytes charged as work up front; each payload charged through `charge_retained` before `to_vec()` |
 | `catalog` | `work`, `alloc_bytes` (migrated) | entry table reserved exactly via `exact_vec` | root-image bytes examined once by the `7C02` probe | migrated: entry count proven by `View::counted` `BoundedCount(_, 1)`; capacity reserved exactly, no longer `with_capacity` |
 | `object_graph` | `work`, `alloc_bytes`, `retained_bytes` (migrated) | record/head/field/list `grow_vec` accumulators + blob/context copies | root-image bytes per marker scan + each candidate's framed `total_len` | migrated: marker scans charged up front; candidate extents charged before the nested `7C09` walk; accumulators `grow_vec`; `0xe5` blob + `7CD9` context via `charge_retained`; pure `Option` probe so no `BoundedCount`/`req_*` |

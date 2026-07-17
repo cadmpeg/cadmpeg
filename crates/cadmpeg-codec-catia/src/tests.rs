@@ -2923,6 +2923,24 @@ fn outer_object_graph_parser_rejects_frame_truncated_at_record_boundary() {
 }
 
 #[test]
+fn container_directory_parser_rejects_frame_truncated_at_directory_boundary() {
+    // A full CATPart parses a two-descriptor inner directory. Truncating the
+    // image by one byte cuts the directory frame below `dir_offset + b`, so
+    // `parse_stream_directory` refuses the candidate before sizing any extent
+    // or descriptor accumulator, rather than reading past the shortened tail.
+    let full = standard_catpart();
+    assert_eq!(
+        crate::container::parse_stream_directory(&full)
+            .expect("full directory")
+            .descriptors
+            .len(),
+        2
+    );
+    let truncated = &full[..full.len() - 1];
+    assert!(crate::container::parse_stream_directory(truncated).is_none());
+}
+
+#[test]
 fn decode_retains_outer_object_graph_order_and_dependencies() {
     let decoded = CatiaCodec
         .decode(

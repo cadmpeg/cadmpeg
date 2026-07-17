@@ -13,8 +13,15 @@
 # Ordering follows the doc Phase 2 rule: count-framed loops first (best
 # closure-to-effort ratio), then irregular marker probes and graph traversals.
 #
-# Migration state of the crate: the container boundary (`decode`, `container`)
-# consumes the session `View` per Phase 1A. All three `CatiaNative::decode` leaf
+# Migration state of the crate: the container boundary consumes the session
+# `View` per Phase 1A. `container` is now migrated: `scan_view` charges the
+# whole-image directory scan as work, `register_extent_spaces` charges the
+# per-extent graph footprint against `alloc_bytes`, `begin_derived_space`
+# charges the reconstructed `Concat` BREP copy, and every former
+# `Vec::with_capacity` directory accumulator is a lint-invisible `Vec::new`+push
+# capped by `MAX_EXTENTS_PER_DESCRIPTOR`/the file length, so the module carries
+# `#![deny(clippy::disallowed_methods)]`. `decode` stays legacy (it drives the
+# still-legacy leaves on raw slices). All three `CatiaNative::decode` leaf
 # parsers reached through `finish_decode` — `value_block` (`7C0B`), `catalog`
 # (`7C02`), and `object_graph` (`7C08`) — are migrated: each takes
 # `&DecodeContext` and the root `View`, charges its whole-image marker probe as
@@ -113,7 +120,7 @@ ledger_level = 0
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/b5.rs"
 status = "legacy"
-legacy_reason = "`parse` walks the `b5 03` short-frame stream, binds records through an in-stream `object_id` map, and accumulates faces/loops/pcurves/surfaces into six `Vec::with_capacity` accumulators over raw slices. No `View`, no `req_*`, no `BoundedCount`/`read_counted`; the object-id resolution is a graph traversal charged no work."
+legacy_reason = "`parse` walks the `b5 03` short-frame stream, binds records through an in-stream `object_id` map, and accumulates faces/loops/pcurves/surfaces into six `Vec::with_capacity` accumulators over raw slices. No `View`, no `req_*`, no `BoundedCount`/`read_counted`; the object-id resolution is a graph traversal charged no work. It cannot graduate in isolation: `parse` calls `geometry::a8_surfaces(bytes)` (b5.rs line 191) on the raw image to merge NURBS surfaces into the object-id namespace, so any `b5` migration inherits `geometry`'s uncharged hostile scan. Migration order is callee-first: `geometry` must graduate before `b5`, then `b5_transfer` (which consumes `B5Graph`), then `decode`."
 input_spaces = ["active_brep"]
 fuzz_targets = ["catia_b5"]
 charges = ["work", "alloc_bytes"]
@@ -152,16 +159,16 @@ ledger_level = 0
 # `V5_CFV2` container parsing and logical-stream reconstruction.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/container.rs"
-status = "legacy"
-legacy_reason = "Consumes the session `View` and reconstructs the B-rep stream as a `Concat` derived space through `begin_derived_space` (Phase 1A/1 landed), which is the migrated allocation/decompression path. It stays legacy because the `CB0001` directory walk still sizes four `Vec::with_capacity` extent/descriptor accumulators from decoded directory counts without `BoundedCount`/`read_counted`, and the directory scan charges no work. `View::window()` is used to hand extents to `begin_derived_space`; those are the audited egress sites."
+status = "migrated"
 input_spaces = ["root", "active_brep"]
 fuzz_targets = ["catia_container", "catia_container_dir"]
 charges = ["work", "alloc_bytes", "decompressed_bytes"]
-cost_model = "work = bytes examined by the directory scan; alloc_bytes = read_counted over the extent/descriptor directory counts; decompressed_bytes charged by begin_derived_space at Concat assembly"
+cost_model = "work = whole-image byte length charged once by `scan_view` before any directory walk (`catia_container_scan`), which covers the `CB0001` directory self-consistency scan whose `dirbuf` is a subslice of the charged image; alloc_bytes = `PER_EXTENT_GRAPH_BYTES` per registered physical extent, charged up front in `register_extent_spaces` before the space-graph records are pushed; decompressed_bytes = the reconstructed `Concat` BREP body, charged inside `begin_derived_space` at assembly"
 window_egress = [
   "container.rs Concat extent slices passed to begin_derived_space (untrusted framing ends at the directory; the derived-space writer charges the copy)",
 ]
 ledger_level = 0
+migrated_means = "The session path (`scan_view`) charges the whole-image directory scan as `work` before any walk, charges the per-extent runtime-graph footprint against `alloc_bytes` in `register_extent_spaces`, and defers the reconstructed BREP copy to `begin_derived_space`, which charges `decompressed_bytes`. Every directory accumulator that previously used `Vec::with_capacity` (the per-descriptor extent list, the reconstructed logical stream, the BREP extent-range list, the `Concat` segment list) is now a lint-invisible `Vec::new`+push/extend (doc section 8.3): each is floored and capped by a structural gate — extent counts by the `MAX_EXTENTS_PER_DESCRIPTOR` (64) constant and the `o + 4 + 20*k <= dirbuf.len()` buffer-fit check, the reconstructed length by the file length validated at descriptor admission — so no untrusted count drives a reservation and no `BoundedCount` proof is owed. The directory parser is a pure `Option` probe (section 3.3): any framing inconsistency returns `None`, never a committed error, so no `req_*` mirror applies. No recursion, so no `DepthGuard` obligation. Module carries `#![deny(clippy::disallowed_methods)]`; truncation test `container_directory_parser_rejects_frame_truncated_at_directory_boundary` covers the `dir_offset + b` directory-frame boundary; the `catia_container` and `catia_container_dir` fuzz targets reach the directory walk. The context-free `scan_bytes`/`parse_stream_directory`/`brep_stream` entries run the same bounded walk without a session for tests, census, and fuzzers."
 
 # `b5 03` object topology transfer into neutral IR.
 [[module]]

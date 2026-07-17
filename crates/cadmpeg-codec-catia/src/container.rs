@@ -12,6 +12,21 @@
 //! physical extents in the runtime space graph, and records the structural
 //! census used to select a [`crate::variant::Variant`]. [`summarize`] converts
 //! the scan into the container view returned by codec inspection.
+//!
+//! Migrated per doc section 10 Phase 2. On the session path [`scan_view`]
+//! charges the whole-image directory scan as `work` before any directory walk,
+//! charges the per-extent runtime-graph footprint against `alloc_bytes` in
+//! [`register_extent_spaces`], and defers the reconstructed BREP copy to
+//! [`DecodeContext::begin_derived_space`], which charges `decompressed_bytes`
+//! for the assembled `Concat`. The only residual `View::window()` egress is the
+//! extent child views handed to that derived-space writer. Every directory
+//! accumulator is a lint-invisible `Vec::new`+push (doc section 8.3): each is
+//! floored and capped by a structural gate — extent counts by
+//! [`MAX_EXTENTS_PER_DESCRIPTOR`], the reconstructed length by the file length —
+//! so no untrusted count drives a reservation. The context-free [`scan_bytes`],
+//! [`parse_stream_directory`], and [`brep_stream`] entries run the same bounded
+//! walk without a session for tests, census, and fuzzers.
+#![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
 use std::ops::Range;
@@ -389,7 +404,11 @@ fn parse_extents(
     inner: usize,
     file_len: usize,
 ) -> Option<(Vec<Extent>, usize)> {
-    let mut extents = Vec::with_capacity(k);
+    // `k` is gated to `1..=MAX_EXTENTS_PER_DESCRIPTOR` and `o + 4 + 20 * k <=
+    // dirbuf.len()` by the caller, so the run is capped both by the structural
+    // gate and by the buffer; a lint-invisible `Vec::new`+push accumulates it
+    // (doc section 8.3) with no untrusted-count reservation.
+    let mut extents = Vec::new();
     let mut cum: usize = 0;
     for i in 0..k {
         let base = o + 4 + 20 * i;
@@ -446,7 +465,10 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
 pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(descriptor.logical_length as usize);
+    // `logical_length` was validated to equal the cumulative in-range extent
+    // length when the descriptor was admitted, so it is bounded by the file.
+    // `extend_from_slice` grows the buffer without a disallowed reservation.
+    let mut out = Vec::new();
     for e in &descriptor.extents {
         let start = inner + e.phys_off as usize;
         let end = start + e.phys_len as usize;
@@ -480,7 +502,10 @@ fn brep_descriptors(dir: &InnerDir) -> Option<(&Descriptor, &Descriptor)> {
 /// the reconstructed logical stream.
 fn brep_extent_ranges(data: &[u8], dir: &InnerDir) -> Option<Vec<Range<usize>>> {
     let (main, surf) = brep_descriptors(dir)?;
-    let mut ranges = Vec::with_capacity(main.extents.len() + surf.extents.len());
+    // Both descriptors carry at most `MAX_EXTENTS_PER_DESCRIPTOR` already-admitted
+    // extents; the range list is a lint-invisible `Vec::new`+push over that
+    // capped, already-materialised set.
+    let mut ranges = Vec::new();
     for descriptor in [main, surf] {
         for e in &descriptor.extents {
             let start = dir.inner + e.phys_off as usize;
@@ -660,7 +685,10 @@ fn build_brep_space<'a>(
     let Some(ranges) = brep_extent_ranges(root.window(), dir) else {
         return Ok(None);
     };
-    let mut segments = Vec::with_capacity(ranges.len());
+    // `ranges` is already materialised and capped by the per-descriptor extent
+    // gate; the child-view segment list grows through a lint-invisible push.
+    // `begin_derived_space` charges the assembled `Concat` copy.
+    let mut segments = Vec::new();
     for range in ranges {
         let Some(child) = root.child(range.start, range.end) else {
             return Ok(None);
