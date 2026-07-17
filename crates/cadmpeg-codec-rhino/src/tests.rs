@@ -1489,6 +1489,14 @@ fn near_budget_user_table_keeps_count_without_record_descriptors() {
     let user = scan.tables.last().expect("user table");
     assert_eq!(user.record_count, 127);
     assert!(user.records.is_empty());
+
+    // The user table's records are not retained individually, so the partition
+    // emits them as one undissected `TableRecordStream` span. That coarse table
+    // caps the sidecar at `L1`, not the `L2` a fully record-dissected archive
+    // earns, and the level must not overstate the refinement it actually has.
+    let sidecar = crate::fidelity::ledger(&scan);
+    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
+    assert_eq!(sidecar.validate(), Ok(()));
 }
 
 #[test]
