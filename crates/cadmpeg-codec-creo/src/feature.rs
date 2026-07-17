@@ -3153,31 +3153,31 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
     };
     let mut rows = vec![prototype];
     cursor = prototype_end + trailer.len();
-    while rows.len() < usize::try_from(declared_count).unwrap_or(usize::MAX) {
+    'rows: while rows.len() < usize::try_from(declared_count).unwrap_or(usize::MAX) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
-            return Vec::new();
+            break;
         };
         let Some(kind) = next_solver_int(payload, &mut cursor) else {
-            return Vec::new();
+            break;
         };
         let Some(flags) = next_solver_int(payload, &mut cursor) else {
-            return Vec::new();
+            break;
         };
         let Some(status) = next_solver_int(payload, &mut cursor) else {
-            return Vec::new();
+            break;
         };
         if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-            return Vec::new();
+            break;
         }
         let (item_count, next) = psb::compact_int(payload, cursor + 1);
         cursor = next;
         let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
-            return Vec::new();
+            break;
         };
         cursor = next;
         if payload.get(cursor..cursor + 2) != Some(&[psb::token::ARRAY_CLOSE, 0xe2]) {
-            return Vec::new();
+            break;
         }
         cursor += 2;
         let mut items = Vec::new();
@@ -3187,24 +3187,24 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
             }
             if payload.get(cursor) == Some(&psb::token::ENTITY_REF) {
                 let Ok((_, next)) = psb::reference_id(payload, cursor + 1) else {
-                    return Vec::new();
+                    break 'rows;
                 };
                 cursor = next;
             }
             let Some(entity_id) = next_solver_int(payload, &mut cursor) else {
-                return Vec::new();
+                break 'rows;
             };
             let Some(sense) = next_solver_int(payload, &mut cursor) else {
-                return Vec::new();
+                break 'rows;
             };
             items.push(FeatureSkampItem { entity_id, sense });
             if payload.get(cursor) == Some(&0xf1) {
                 let Ok((_, next)) = psb::reference_id(payload, cursor + 2) else {
-                    return Vec::new();
+                    break 'rows;
                 };
                 cursor = next;
                 if payload.get(cursor) != Some(&0xe2) {
-                    return Vec::new();
+                    break 'rows;
                 }
                 cursor += 1;
             }
@@ -3216,7 +3216,7 @@ fn feature_skamps(payload: &[u8], start: usize, end: usize) -> Vec<FeatureSkamp>
         } else if payload.get(cursor) == Some(&0xe0) {
             // The final row is terminated by the following named table.
         } else {
-            return Vec::new();
+            break;
         }
         rows.push(FeatureSkamp {
             id,
@@ -3355,48 +3355,48 @@ fn positional_feature_skamps(
     };
     cursor = after_row_class;
     let mut rows = Vec::new();
-    while rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+    'rows: while rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
         let row_offset = cursor;
         let Some(id) = next_solver_int(payload, &mut cursor) else {
-            return Vec::new();
+            break;
         };
         let Some(kind) = next_solver_int(payload, &mut cursor) else {
-            return Vec::new();
+            break;
         };
         let Some(flags) = next_solver_int(payload, &mut cursor) else {
-            return Vec::new();
+            break;
         };
         let Some(status) = next_solver_int(payload, &mut cursor) else {
-            return Vec::new();
+            break;
         };
         if payload.get(cursor) != Some(&psb::token::ARRAY_OPEN) {
-            return Vec::new();
+            break;
         }
         let (item_count, after_item_count) = psb::compact_int(payload, cursor + 1);
         if payload.get(after_item_count) != Some(&psb::token::ENTITY_REF) {
-            return Vec::new();
+            break;
         }
         let item_class_start = after_item_count + 1;
         let Ok((_, after_item_class)) = psb::reference_id(payload, item_class_start) else {
-            return Vec::new();
+            break;
         };
         let item_class_encoding = &payload[after_item_count..after_item_class];
         if payload.get(after_item_class..after_item_class + 2) != Some(&[0xfb, 0xe2])
             || payload.get(after_item_class + 2) != Some(&psb::token::ENTITY_REF)
         {
-            return Vec::new();
+            break;
         }
         let Ok((_, after_item_row_class)) = psb::reference_id(payload, after_item_class + 3) else {
-            return Vec::new();
+            break;
         };
         cursor = after_item_row_class;
         let mut items = Vec::new();
         while items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
             let Some(entity_id) = next_solver_int(payload, &mut cursor) else {
-                return Vec::new();
+                break 'rows;
             };
             let Some(sense) = next_solver_int(payload, &mut cursor) else {
-                return Vec::new();
+                break 'rows;
             };
             items.push(FeatureSkampItem { entity_id, sense });
             if items.len() < usize::try_from(item_count).unwrap_or(usize::MAX) {
@@ -3407,27 +3407,28 @@ fn positional_feature_skamps(
                     item_class_encoding,
                     &[0xf1],
                 ) else {
-                    return Vec::new();
+                    break 'rows;
                 };
                 cursor = next;
             }
         }
-        rows.push(FeatureSkamp {
+        let row = FeatureSkamp {
             id,
             kind,
             flags,
             status,
             items,
             offset: row_offset,
-        });
-        if rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+        };
+        if rows.len() + 1 < usize::try_from(count).unwrap_or(usize::MAX) {
             let Some(next) =
                 consume_positional_separator(payload, cursor, end, &table_class_encoding, &[0xf3])
             else {
-                return Vec::new();
+                break;
             };
             cursor = next;
         }
+        rows.push(row);
     }
     rows
 }
@@ -3484,7 +3485,7 @@ fn feature_relation_triples(
             == usize::try_from(declared_count).unwrap_or(usize::MAX)
             && payload.get(cursor).is_some_and(|byte| *byte >= 0xe0);
         if payload.get(cursor) != Some(&0xe2) && !terminal_named_boundary {
-            return Vec::new();
+            break;
         }
         if !terminal_named_boundary {
             cursor += 1;
@@ -3520,23 +3521,36 @@ fn positional_relation_triples(
     let mut rows = Vec::new();
     while rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
         let offset = cursor;
+        let before_relation = cursor;
         let relation_id = next_solver_int(payload, &mut cursor);
+        if cursor <= before_relation {
+            break;
+        }
+        let before_equation = cursor;
         let equation_id = next_solver_int(payload, &mut cursor);
+        if cursor <= before_equation {
+            break;
+        }
+        let before_skamp = cursor;
         let skamp_id = next_solver_int(payload, &mut cursor);
-        rows.push(FeatureRelationTriple {
+        if cursor <= before_skamp {
+            break;
+        }
+        let row = FeatureRelationTriple {
             relation_id,
             equation_id,
             skamp_id,
             offset,
-        });
-        if rows.len() < usize::try_from(count).unwrap_or(usize::MAX) {
+        };
+        if rows.len() + 1 < usize::try_from(count).unwrap_or(usize::MAX) {
             let Some(next) =
                 consume_positional_separator(payload, cursor, end, &class_encoding, &[0xf1])
             else {
-                return Vec::new();
+                break;
             };
             cursor = next;
         }
+        rows.push(row);
     }
     rows
 }
@@ -6826,10 +6840,45 @@ mod tests {
     }
 
     #[test]
+    fn positional_solver_tables_retain_complete_prefix_rows() {
+        let skamps = b"\xf8\x02\xf7\x58\xfb\xe2\xf7\x59\
+            \x01\x00\x00\x23\xf8\x02\xf7\x60\xfb\xe2\xf7\x61\
+            \x06\x03\xf1\xf7\x60\xe2\x07\x02\xf3\xf7\x58\xe2";
+        let rows = positional_feature_skamps(skamps, 0, skamps.len(), 88);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 1);
+
+        let triples = b"\xf8\x02\xf7\x64\xfb\xe2\xf7\x65\
+            \x01\xf6\x04\xf1\xf7\x64\xe2";
+        let rows = positional_relation_triples(triples, 0, triples.len(), 100);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].relation_id, Some(1));
+    }
+
+    #[test]
     fn solver_header_does_not_adopt_a_later_array() {
         let payload = b"skamp_ptr\0opaque\xf8\x02\xf7\x58\xfb\xe2";
 
         assert!(named_solver_table_header(payload, b"skamp_ptr\0", 0, payload.len()).is_none());
+    }
+
+    #[test]
+    fn named_solver_tables_retain_complete_prefix_rows() {
+        let skamps = b"skamp_ptr\0\xf3\xf8\x02\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+            \xf3\xf7\x6b\xe2invalid";
+        let rows = feature_skamps(skamps, 0, skamps.len());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 5);
+
+        let triples = b"triples_ptr\0\xf4\x04\xf8\x02\xf7\x6d\xfb\xe2\
+            \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\
+            \xe0\x01skamp_id\0\x05\xf1\xf7\x6d\xe2\x01\x02\x03";
+        let rows = feature_relation_triples(triples, 0, triples.len());
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].relation_id, Some(7));
     }
 
     #[test]

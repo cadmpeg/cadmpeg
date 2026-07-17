@@ -671,6 +671,8 @@ when its prototype or positional identity rows do not validate.
 The `relat_ptr` header and its independent `skamp_ptr` and `triples_ptr` tables
 remain present when a relation row body does not validate; preceding complete
 relation rows remain ordered.
+Within `skamp_ptr` and `triples_ptr`, a malformed later row does not invalidate
+preceding complete rows or the declared table extent.
 
 The first `var_arr` row is the named field prototype between the table header
 and schema close. It is a data row and contributes to the declared count;
