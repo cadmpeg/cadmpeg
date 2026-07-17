@@ -3,15 +3,13 @@
 //!
 //! Files start with an 8-byte `file_id` and big-endian version header. A shared
 //! marker introduces raw-DEFLATE blocks, cache cells, and tail-directory
-//! entries. [`scan`] classifies marker occurrences with structure-specific
+//! entries. [`scan_view`] classifies marker occurrences with structure-specific
 //! invariants, validates block CRC-32 values, inflates payloads, decodes stored
 //! section names, and extracts embedded Parasolid streams.
 
 use std::collections::BTreeMap;
 use std::io::Read;
 
-#[cfg(test)]
-use cadmpeg_ir::codec::ReadSeek;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::decode::{
     ByteRange, DecodeContext, DerivedKind, ExpandSpec, Retention, TransformKind, View,
@@ -221,27 +219,11 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Read and scan a complete `.sldprt` stream.
+/// Consume the session root view directly (§10 Phase 1A) and scan the container.
 ///
 /// Block candidates must inflate to their declared size and match their stored
 /// CRC-32. Cache cells and directory entries must satisfy their framing
 /// invariants. Unclassified marker occurrences are ignored.
-///
-/// Test-only: production `inspect`/`decode` enter through [`scan_view`], which
-/// runs the platform-charged expander. This reader wrapper survives solely to
-/// exercise the byte-slice scanner from fixtures, so it is gated out of the
-/// shipped surface.
-#[cfg(test)]
-pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
-    reader
-        .seek(std::io::SeekFrom::Start(0))
-        .map_err(CodecError::Io)?;
-    let mut bytes = Vec::new();
-    reader.read_to_end(&mut bytes).map_err(CodecError::Io)?;
-    Ok(scan_bytes(&bytes))
-}
-
-/// Consume the session root view directly (§10 Phase 1A) and scan the container.
 ///
 /// The marker walk visits every input byte once; its bytes are charged as work
 /// before scanning begins. Every block's DEFLATE payload is inflated through the

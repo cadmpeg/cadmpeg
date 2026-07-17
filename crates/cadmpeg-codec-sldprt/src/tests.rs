@@ -3857,7 +3857,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     SldprtCodec
         .write_preserved(&solid.ir, &mut solid_bytes)
         .unwrap();
-    let solid_scan = container::scan(&mut Cursor::new(solid_bytes)).unwrap();
+    let solid_scan = container::scan_bytes(&solid_bytes);
     let solid_payload = &solid_scan.blocks[0].payload;
     assert!(count_entity51_family(solid_payload, 2, 0x0013) >= 1);
     assert!(count_entity51_family(solid_payload, 1, 0x0015) >= 1);
@@ -3877,7 +3877,7 @@ fn semantic_writer_uses_schema_specific_face_families() {
     SldprtCodec
         .write_preserved(&sheet.ir, &mut sheet_bytes)
         .unwrap();
-    let sheet_scan = container::scan(&mut Cursor::new(sheet_bytes)).unwrap();
+    let sheet_scan = container::scan_bytes(&sheet_bytes);
     let sheet_payload = &sheet_scan.blocks[0].payload;
     assert!(count_entity51_family(sheet_payload, 2, 0x0015) >= 1);
     assert!(count_entity51_family(sheet_payload, 1, 0x001f) >= 1);
@@ -12421,7 +12421,7 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
     SldprtCodec
         .write_preserved(&decoded.ir, &mut encoded)
         .unwrap();
-    let scan = container::scan(&mut Cursor::new(encoded.clone())).unwrap();
+    let scan = container::scan_bytes(&encoded);
     assert_eq!(
         scan.blocks
             .iter()
