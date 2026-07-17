@@ -767,6 +767,8 @@ supplies that fixed-coordinate orientation to its connected type-five/type-seven
 line component.
 For type-three and type-nine point-on-line incidences, that same complete saved
 line coordinate supplies the missing coordinate of the selected `segtab` point.
+For type-fourteen symmetry incidences, it supplies the reflection coordinate
+without introducing a section-point identity for the saved axis.
 
 The first `triples_ptr` row is named and contributes to its declared count.
 Positional rows contain `rel_id`, `eqn_id`, and `skamp_id` followed by `e2`;

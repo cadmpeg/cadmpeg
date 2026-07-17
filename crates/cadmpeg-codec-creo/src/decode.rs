@@ -3789,9 +3789,12 @@ pub(crate) fn resolved_section_points(
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_axis_symmetry(definition, skamp))
         .filter(|(axis, first, second, _)| {
-            [axis, first, second]
-                .into_iter()
-                .all(|point_id| !ambiguous_point_ids.contains(point_id))
+            !ambiguous_point_ids.contains(first)
+                && !ambiguous_point_ids.contains(second)
+                && match axis {
+                    SectionSymmetryAxis::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionSymmetryAxis::Value(_) => true,
+                }
         })
         .collect::<Vec<_>>();
     let signed_dimension_candidates = definition
@@ -3935,10 +3938,9 @@ pub(crate) fn resolved_section_points(
                 changed = true;
             }
         }
-        for &(axis_point_id, first_id, second_id, fixed_coordinate) in &symmetric_point_constraints
-        {
-            let [axis, first, second] = [axis_point_id, first_id, second_id]
-                .map(|id| points.get(&id).copied().unwrap_or([None, None]));
+        for &(axis, first_id, second_id, fixed_coordinate) in &symmetric_point_constraints {
+            let [first, second] =
+                [first_id, second_id].map(|id| points.get(&id).copied().unwrap_or([None, None]));
             let parallel_coordinate = 1usize.saturating_sub(fixed_coordinate);
             match [first[parallel_coordinate], second[parallel_coordinate]] {
                 [Some(value), None] => {
@@ -3953,7 +3955,13 @@ pub(crate) fn resolved_section_points(
                 }
                 _ => {}
             }
-            let Some(axis_value) = axis[fixed_coordinate] else {
+            let axis_value = match axis {
+                SectionSymmetryAxis::Point(point_id) => points
+                    .get(&point_id)
+                    .and_then(|point| point[fixed_coordinate]),
+                SectionSymmetryAxis::Value(value) => Some(value),
+            };
+            let Some(axis_value) = axis_value else {
                 continue;
             };
             match [first[fixed_coordinate], second[fixed_coordinate]] {
@@ -4176,30 +4184,58 @@ fn section_skamp_saved_point_on_line(
         return None;
     };
     let coordinate = section_line_entity_fixed_coordinate(definition, line_item.entity_id)?;
+    Some((
+        point_id,
+        coordinate,
+        saved_line_fixed_coordinate_value(line, coordinate)?,
+    ))
+}
+
+#[derive(Clone, Copy)]
+enum SectionSymmetryAxis {
+    Point(u32),
+    Value(f64),
+}
+
+fn section_skamp_axis_symmetry(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(SectionSymmetryAxis, u32, u32, usize)> {
+    let (14, [axis_item, first_item, second_item]) = (skamp.kind, skamp.items.as_slice()) else {
+        return None;
+    };
+    (axis_item.sense == 0 && section_skamp_is_line(definition, axis_item)).then_some(())?;
+    let coordinate = section_line_entity_fixed_coordinate(definition, axis_item.entity_id)?;
+    let axis = if let Some(segment) = unique_section_skamp_segment(definition, axis_item.entity_id)
+    {
+        SectionSymmetryAxis::Point(segment.point_ids[0])
+    } else {
+        let crate::feature::FeatureSavedEntity::Line(line) =
+            section_saved_entity(definition, axis_item.entity_id)?
+        else {
+            return None;
+        };
+        SectionSymmetryAxis::Value(saved_line_fixed_coordinate_value(line, coordinate)?)
+    };
+    Some((
+        axis,
+        section_skamp_selected_point_id(definition, first_item)?,
+        section_skamp_selected_point_id(definition, second_item)?,
+        coordinate,
+    ))
+}
+
+fn saved_line_fixed_coordinate_value(
+    line: &crate::feature::FeatureSavedLine,
+    coordinate: usize,
+) -> Option<f64> {
     let [Some(first), Some(second)] =
         [line.endpoints[0][coordinate], line.endpoints[1][coordinate]]
     else {
         return None;
     };
     let scale = first.abs().max(second.abs()).max(1.0);
-    ((first - second).abs() <= 1e-9 * scale).then_some((point_id, coordinate, first))
-}
-
-fn section_skamp_axis_symmetry(
-    definition: &crate::feature::FeatureDefinition,
-    skamp: &crate::feature::FeatureSkamp,
-) -> Option<(u32, u32, u32, usize)> {
-    let (14, [axis_item, first_item, second_item]) = (skamp.kind, skamp.items.as_slice()) else {
-        return None;
-    };
-    let axis = unique_section_skamp_segment(definition, axis_item.entity_id)?;
-    (axis_item.sense == 0 && axis.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
-    Some((
-        axis.point_ids[0],
-        section_skamp_selected_point_id(definition, first_item)?,
-        section_skamp_selected_point_id(definition, second_item)?,
-        section_line_fixed_coordinate(definition, axis)?,
-    ))
+    ((first - second).abs() <= 1e-9 * scale).then_some(first)
 }
 
 fn section_skamp_endpoint_point_id(
@@ -16666,6 +16702,44 @@ mod resolved_sketch_tests {
         assert_eq!(
             resolved_section_points(&saved_definition).get(&4),
             Some(&[3.0, 1.0])
+        );
+        saved_definition
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+            .iter_mut()
+            .find(|point| point.point_id == 5)
+            .expect("point 5")
+            .v = None;
+        saved_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![crate::feature::FeatureSkamp {
+            id: 33,
+            kind: 14,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 2,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 15,
+                    sense: 2,
+                },
+            ],
+            offset: 88,
+        }];
+        assert_eq!(
+            resolved_section_points(&saved_definition).get(&5),
+            Some(&[3.0, 0.0])
         );
         let mut duplicate_saved = saved_definition
             .saved_section
