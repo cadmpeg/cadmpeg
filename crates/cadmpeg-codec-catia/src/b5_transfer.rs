@@ -837,7 +837,7 @@ fn transfer_vertex_tolerances(
                 [(vertices[1], reverse[0]), (vertices[0], reverse[1])]
             };
             for (vertex, residual) in residuals {
-                if residual > POINT_TOLERANCE && residual.is_finite() {
+                if residual > 1e-9 && residual.is_finite() {
                     tolerances
                         .entry(vertex)
                         .and_modify(|tolerance| *tolerance = tolerance.max(residual + 1e-9))
@@ -2342,7 +2342,7 @@ mod tests {
             ]),
             vertex_parameter_incidences: BTreeMap::from([(10, vec![20]), (11, vec![21])]),
             vertex_points: Vec::new(),
-            logical_vertex_points: vec![[0.25, 0.0, 0.1], [0.75, 0.0, 0.0]],
+            logical_vertex_points: vec![[0.25, 0.0, 1e-4], [0.75, 0.0, 0.0]],
             logical_vertex_refs: vec![10, 11],
             edge_vertices: BTreeMap::from([(3, [0, 1])]),
             vertex_tolerances: BTreeMap::new(),
@@ -2375,7 +2375,7 @@ mod tests {
         )]);
 
         let tolerances = transfer_vertex_tolerances(&graph, &pcurves, &surfaces);
-        assert!((tolerances[&0] - (0.1 + 1e-9)).abs() < 1e-12);
+        assert!((tolerances[&0] - (1e-4 + 1e-9)).abs() < 1e-12);
         assert!(!tolerances.contains_key(&1));
     }
 
