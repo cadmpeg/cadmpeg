@@ -8524,6 +8524,112 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
 }
 
 #[test]
+fn validation_requires_one_exact_extrude_profile_group() {
+    use crate::records::{
+        DesignConstructionOperandGroup, DesignExtrudeExtent, DesignExtrudeOperandRole,
+        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart,
+        DesignParameterScope,
+    };
+
+    let mut ir = cadmpeg_ir::examples::unit_cube();
+    let profile = DesignExtrudeProfileOperand {
+        scope_reference_ordinal: 0,
+        record_index: 20,
+        byte_offset: 200,
+        class_tag: "300".into(),
+        asset_id: "asset".into(),
+        asset_id_offset: 230,
+        entity_id: "0_10".into(),
+        entity_suffix: 10,
+        entity_reference_offset: 250,
+        paired_class_tag: "260".into(),
+        paired_byte_offset: 300,
+    };
+    let scope = DesignParameterScope {
+        id: "f3d:test:scope#10".into(),
+        byte_offset: 100,
+        class_tag: "301".into(),
+        record_index: 10,
+        frame_length: 200,
+        kind: "Extrude".into(),
+        kind_offset: 210,
+        extrude_operation: Some(DesignExtrudeOperation::NewBody),
+        extrude_operation_offset: Some(128),
+        extrude_extent: Some(DesignExtrudeExtent::OneSidedDistance),
+        extrude_extent_offsets: Some([132, 136]),
+        extrude_direction_reversed: Some(false),
+        extrude_direction_reversed_offset: Some(140),
+        extrude_start: Some(DesignExtrudeStart::ProfilePlane),
+        extrude_start_offset: Some(141),
+        feature_ordinal: 1,
+        feature_ordinal_offset: 220,
+        history_state_id: None,
+        history_state_id_offset: 224,
+        previous_history_state_id: None,
+        previous_history_state_id_offset: 228,
+        reference_count_offset: 180,
+        reference_members: vec![20, 30],
+        reference_member_offsets: vec![184, 195],
+        extrude_profile: Some(profile),
+        entity_id: None,
+        entity_suffix: None,
+        entity_reference_offset: None,
+        paired_class_tag: "261".into(),
+        paired_byte_offset: 300,
+    };
+    let group = DesignConstructionOperandGroup {
+        id: "f3d:test:operand-group#30".into(),
+        scope_record_index: 10,
+        scope_reference_ordinal: 1,
+        record_index: 30,
+        byte_offset: 400,
+        class_tag: "302".into(),
+        member_count_offset: 420,
+        members: vec![20],
+        lost_edge_references: Vec::new(),
+        member_offsets: vec![424],
+        identity_record_index: 31,
+        identity_record_offset: 440,
+        role: 0x0000_0041_0000_0000,
+        extrude_role: Some(DesignExtrudeOperandRole::Profile),
+        extrude_face_role: None,
+        role_offset: 450,
+        opaque_index: 1,
+        opaque_index_offset: 460,
+        opaque_scalar: 0.5,
+        opaque_scalar_offset: 464,
+        variant: false,
+        paired_class_tag: "262".into(),
+        paired_byte_offset: 500,
+    };
+    {
+        let mut native = f3d_native_mut(&mut ir);
+        native.design_parameter_scopes.push(scope);
+        native
+            .design_construction_operand_groups
+            .push(group.clone());
+    }
+    let profile_message = |finding: &cadmpeg_ir::Finding| {
+        finding.message == "Fusion Design Extrude profile conflicts with its profile operand group"
+    };
+    let findings = crate::validate_native(&ir);
+    assert!(!findings.iter().any(profile_message));
+    assert!(!findings
+        .iter()
+        .any(|finding| finding.message.contains("no counted selection group")));
+
+    f3d_native_mut(&mut ir)
+        .design_construction_operand_groups
+        .push(group);
+    assert!(crate::validate_native(&ir).iter().any(profile_message));
+
+    f3d_native_mut(&mut ir)
+        .design_construction_operand_groups
+        .clear();
+    assert!(crate::validate_native(&ir).iter().any(profile_message));
+}
+
+#[test]
 fn sketch_constraint_mask_decodes_equal_length_bit() {
     let (kinds, unknown) = crate::design::decode_constraint_kinds(0x0000_0008);
     assert_eq!(kinds, [crate::records::SketchConstraintKind::EqualLength]);

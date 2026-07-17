@@ -493,7 +493,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|group| ((design_stream(&group.id), group.record_index), group))
         .collect::<std::collections::HashMap<_, _>>();
-    let mut group_scopes = HashSet::new();
     let mut group_slots = HashSet::new();
     for group in &native.design_extrude_selection_groups {
         let native_stream = design_stream(&group.id);
@@ -543,8 +542,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 native_stream,
                 group.scope_record_index,
                 group.scope_reference_ordinal,
-            ))
-            && group_scopes.insert((native_stream, group.scope_record_index));
+            ));
         if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -552,21 +550,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 message: "Fusion Design Extrude selection group has an invalid counted frame"
                     .into(),
                 entity: Some(group.id.clone()),
-            });
-        }
-    }
-    for scope in native
-        .design_parameter_scopes
-        .iter()
-        .filter(|scope| scope.kind == "Extrude")
-    {
-        let native_stream = design_stream(&scope.id);
-        if !group_scopes.contains(&(native_stream, scope.record_index)) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design Extrude scope has no counted selection group".into(),
-                entity: Some(scope.id.clone()),
             });
         }
     }
@@ -679,6 +662,32 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
         if scope.kind == "Extrude" {
+            let mut profile_groups =
+                native
+                    .design_construction_operand_groups
+                    .iter()
+                    .filter(|group| {
+                        design_stream(&group.id) == native_stream
+                            && group.scope_record_index == scope.record_index
+                            && group.extrude_role
+                                == Some(records::DesignExtrudeOperandRole::Profile)
+                    });
+            let profile_group = profile_groups.next();
+            let profile_matches_operand = profile_groups.next().is_none()
+                && scope.extrude_profile.as_ref().is_some_and(|profile| {
+                    profile_group
+                        .is_some_and(|group| group.members.as_slice() == [profile.record_index])
+                });
+            if !profile_matches_operand {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message:
+                        "Fusion Design Extrude profile conflicts with its profile operand group"
+                            .into(),
+                    entity: Some(scope.id.clone()),
+                });
+            }
             let has_body_operands = native
                 .design_construction_operand_groups
                 .iter()
