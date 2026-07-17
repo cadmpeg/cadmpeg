@@ -3602,12 +3602,24 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
     if payload.get(cursor) == Some(&0xe2) {
         cursor += 1;
     }
-    let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
-    let (_, after_ref) = psb::reference_id(payload, close + 2).ok()?;
-    (payload.get(after_ref) == Some(&0xe2)).then_some(())?;
-    cursor = after_ref + 1;
-
-    let rows = positional_relation_rows(payload, cursor, end, declared_count.saturating_sub(2))?;
+    let rows_end = [b"skamp_ptr\0".as_slice(), b"triples_ptr\0"]
+        .into_iter()
+        .filter_map(|label| find_bytes(payload, label, cursor, end))
+        .min()
+        .unwrap_or(end);
+    let rows_start = (|| {
+        let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, rows_end)?;
+        let (_, after_ref) = psb::reference_id(payload, close + 2).ok()?;
+        (payload.get(after_ref) == Some(&0xe2)).then_some(after_ref + 1)
+    })();
+    let rows = rows_start.map_or_else(Vec::new, |rows_start| {
+        positional_relation_rows(
+            payload,
+            rows_start,
+            rows_end,
+            declared_count.saturating_sub(2),
+        )
+    });
     Some(FeatureRelationTable {
         declared_count,
         entity_ref,
@@ -3625,16 +3637,27 @@ fn positional_relation_rows(
     mut cursor: usize,
     end: usize,
     row_count: u32,
-) -> Option<Vec<FeatureRelation>> {
-    (cursor <= end && end <= payload.len()).then_some(())?;
+) -> Vec<FeatureRelation> {
+    if cursor > end || end > payload.len() {
+        return Vec::new();
+    }
     let mut rows = Vec::new();
     for _ in 0..row_count {
-        (cursor <= end).then_some(())?;
-        let row_end = payload[cursor..end].iter().position(|byte| *byte == 0xe2)? + cursor;
+        let Some(row_end) = payload[cursor..end]
+            .iter()
+            .position(|byte| *byte == 0xe2)
+            .map(|relative| relative + cursor)
+        else {
+            break;
+        };
         let (relation_id, after_id) = psb::compact_int(payload, cursor);
-        (after_id > cursor && after_id < row_end).then_some(())?;
+        if after_id <= cursor || after_id >= row_end {
+            break;
+        }
         let (used, after_used) = psb::compact_int(payload, after_id);
-        (after_used > after_id && after_used < row_end).then_some(())?;
+        if after_used <= after_id || after_used >= row_end {
+            break;
+        }
         let mut suffixes = Vec::new();
         for suffix_start in after_used..row_end {
             let (sign, after_sign) = psb::compact_int(payload, suffix_start);
@@ -3649,7 +3672,7 @@ fn positional_relation_rows(
             }
         }
         let [(suffix_start, sign, dimension_id, relation_type)] = suffixes.as_slice() else {
-            return None;
+            break;
         };
         let operands = payload[after_used..*suffix_start].to_vec();
         rows.push(FeatureRelation {
@@ -3665,7 +3688,7 @@ fn positional_relation_rows(
         });
         cursor = row_end + 1;
     }
-    Some(rows)
+    rows
 }
 
 fn positional_relation_table(
@@ -3674,7 +3697,7 @@ fn positional_relation_table(
     end: usize,
     table_class: u32,
 ) -> Option<FeatureRelationTable> {
-    let (table, declared_count, mut cursor, reference_bytes) = (start..end).find_map(|table| {
+    let (table, declared_count, cursor, reference_bytes) = (start..end).find_map(|table| {
         (payload.get(table) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
         let (declared_count, after_count) = psb::compact_int(payload, table + 1);
         (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
@@ -3691,15 +3714,18 @@ fn positional_relation_table(
             )
         })
     })?;
-    (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
-    let (_, next) = psb::reference_id(payload, cursor + 1).ok()?;
-    cursor = next;
     let mut prototype_separator = vec![0xf1, psb::token::ENTITY_REF];
     prototype_separator.extend_from_slice(&reference_bytes);
     prototype_separator.push(0xe2);
-    let prototype_end = find_bytes(payload, &prototype_separator, cursor, end)?;
-    cursor = prototype_end + prototype_separator.len();
-    let rows = positional_relation_rows(payload, cursor, end, declared_count.saturating_sub(2))?;
+    let rows_start = (|| {
+        (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+        let (_, prototype) = psb::reference_id(payload, cursor + 1).ok()?;
+        let prototype_end = find_bytes(payload, &prototype_separator, prototype, end)?;
+        Some(prototype_end + prototype_separator.len())
+    })();
+    let rows = rows_start.map_or_else(Vec::new, |rows_start| {
+        positional_relation_rows(payload, rows_start, end, declared_count.saturating_sub(2))
+    });
     Some(FeatureRelationTable {
         declared_count,
         entity_ref: Some(table_class),
@@ -6741,6 +6767,43 @@ mod tests {
         assert_eq!(relations.rows[0].dimension_id, 246);
         assert_eq!(relations.rows[0].relation_type, 0);
         assert!(relations.rows[0].operand_vectors.is_some());
+    }
+
+    #[test]
+    fn relation_table_retains_solver_children_after_an_invalid_row() {
+        let payload = b"relat_ptr\0\xf4\x04\xf8\x03\xf7\x6a\xfb\xe2\
+            schema\xf1\xf7\x6a\xe2invalid\
+            skamp_ptr\0\xf3\xf8\x01\xf7\x6b\xfb\xe2\
+            \xe0\x01id\0\x05\xe0\x01type\0\x02\xe0\x01flags\0\x03\
+            \xe0\x01status\0\x04\xe0\x00items\0\xf8\x01\xf7\x6c\xfb\xe2\
+            \xe0\x01ent_id\0\x2a\xe0\x01sense\0\x01\xf1\xf7\x6c\xe2\
+            \xf3\xf7\x6b\xe2";
+
+        let relations = relation_table(payload, 0, payload.len()).expect("relat_ptr header");
+
+        assert_eq!(relations.declared_count, 3);
+        assert_eq!(relations.entity_ref, Some(106));
+        assert!(relations.rows.is_empty());
+        assert_eq!(relations.skamps.len(), 1);
+        assert_eq!(relations.skamps[0].id, 5);
+    }
+
+    #[test]
+    fn relation_tables_retain_extents_without_their_prototypes() {
+        let named = b"relat_ptr\0\xf8\x03\xf7\x64\xfb\xe2";
+        let relations = relation_table(named, 0, named.len()).expect("named relat_ptr header");
+        assert_eq!(relations.declared_count, 3);
+        assert_eq!(relations.entity_ref, Some(100));
+        assert!(relations.rows.is_empty());
+
+        let positional = b"\xf8\x03\xf7\x64\xfb\xe2";
+
+        let relations = positional_relation_table(positional, 0, positional.len(), 100)
+            .expect("positional relat_ptr header");
+
+        assert_eq!(relations.declared_count, 3);
+        assert_eq!(relations.entity_ref, Some(100));
+        assert!(relations.rows.is_empty());
     }
 
     #[test]
