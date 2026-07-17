@@ -3282,6 +3282,7 @@ fn decode_transfers_equation_verified_model_reference_circles() {
         cadmpeg_ir::geometry::CurveGeometry::Circle { radius: 1.0, .. }
     )));
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_circles"][0];
+    assert_eq!(record.fields["entity_id"], 45);
     assert_eq!(record.fields["center_source"], "endpoint_midpoint");
     assert_annotation(
         &result.ir,
@@ -3306,6 +3307,7 @@ fn decode_retains_line3d_original_length() {
     assert_eq!(
         line.kind,
         crate::reference::ReferenceLineKind::Line3d {
+            entity_id: 35,
             original_length: 1.0
         }
     );
@@ -3313,6 +3315,7 @@ fn decode_retains_line3d_original_length() {
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let record = &result.ir.native.namespace("creo").unwrap().arenas["reference_lines"][0];
     assert_eq!(record.fields["family"], "line3d");
+    assert_eq!(record.fields["entity_id"], 35);
     assert_eq!(record.fields["original_length"], 1.0);
 }
 

@@ -614,6 +614,7 @@ struct CreoPrimitiveScalarArrayRecord {
 struct CreoReferenceLineRecord {
     id: String,
     family: &'static str,
+    entity_id: Option<u32>,
     start: [f64; 3],
     end: [f64; 3],
     original_length: Option<f64>,
@@ -623,6 +624,7 @@ struct CreoReferenceLineRecord {
 #[derive(Serialize)]
 struct CreoReferenceCircleRecord {
     id: String,
+    entity_id: u32,
     center: [f64; 3],
     center_source: &'static str,
     radius: f64,
@@ -22130,13 +22132,19 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
                     line.offset
                 ),
                 family: family(&line.kind),
+                entity_id: match &line.kind {
+                    crate::reference::ReferenceLineKind::Line => None,
+                    crate::reference::ReferenceLineKind::Line3d { entity_id, .. } => {
+                        Some(*entity_id)
+                    }
+                },
                 start: line.start,
                 end: line.end,
                 original_length: match &line.kind {
                     crate::reference::ReferenceLineKind::Line => None,
-                    crate::reference::ReferenceLineKind::Line3d { original_length } => {
-                        Some(*original_length)
-                    }
+                    crate::reference::ReferenceLineKind::Line3d {
+                        original_length, ..
+                    } => Some(*original_length),
                 },
                 offset: line.offset,
             })
@@ -22161,6 +22169,7 @@ fn build_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
             .iter()
             .map(|circle| CreoReferenceCircleRecord {
                 id: format!("creo:mdl_ref_info:arc_z_record#{}", circle.offset),
+                entity_id: circle.entity_id,
                 center: circle.center,
                 center_source: if circle.center_stored {
                     "stored"

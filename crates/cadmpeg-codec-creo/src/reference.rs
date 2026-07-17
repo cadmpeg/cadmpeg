@@ -10,6 +10,8 @@ pub enum ReferenceLineKind {
     Line,
     /// Spatial `line3d` record with a stored original length.
     Line3d {
+        /// Canonical entity identifier repeated across the row boundary.
+        entity_id: u32,
         /// Positive stored `orig_len`, equal to the endpoint distance.
         original_length: f64,
     },
@@ -31,6 +33,8 @@ pub struct ReferenceLine {
 /// One circular reference entity reconstructed from a positional row.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReferenceCircle {
+    /// Canonical entity identifier repeated across the row boundary.
+    pub entity_id: u32,
     /// Circle center in model coordinates.
     pub center: [f64; 3],
     /// Whether the center is stored explicitly rather than derived as a midpoint.
@@ -663,12 +667,12 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
                 continue;
             }
             let body_start = body_start + 1;
-            headers.push((close, body_start));
+            headers.push((close, body_start, id));
         }
-        for (index, (close, body_start)) in headers.iter().copied().enumerate() {
+        for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
             let body_end = headers
                 .get(index + 1)
-                .map_or(block_end, |(next_close, _)| *next_close)
+                .map_or(block_end, |(next_close, _, _)| *next_close)
                 .min(body_start.saturating_add(384));
             let Some((start, end, original_length)) =
                 line3d_fields(&payload[body_start..body_end], &cache)
@@ -676,7 +680,10 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
                 continue;
             };
             result.push(ReferenceLine {
-                kind: ReferenceLineKind::Line3d { original_length },
+                kind: ReferenceLineKind::Line3d {
+                    entity_id,
+                    original_length,
+                },
                 start,
                 end,
                 offset: close + 1,
@@ -689,7 +696,7 @@ pub fn line3d_lines(payload: &[u8]) -> Vec<ReferenceLine> {
     result
 }
 
-fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
+fn arc_z_fields(body: &[u8], cache: &ScalarCache, entity_id: u32) -> Option<ReferenceCircle> {
     let scalar_run = |start: usize, count: usize| {
         let mut cursor = start;
         let mut values = Vec::with_capacity(count);
@@ -741,6 +748,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
         let second: [f64; 3] = values[7..10].try_into().ok()?;
         let axis = explicit_axis(center, radius, first, second)?;
         Some(ReferenceCircle {
+            entity_id,
             center,
             center_stored: true,
             radius,
@@ -768,6 +776,7 @@ fn arc_z_fields(body: &[u8], cache: &ScalarCache) -> Option<ReferenceCircle> {
             && delta[2].abs() <= 1e-10 * scale
             && (diameter - 2.0 * radius).abs() <= 1e-9 * scale)
             .then_some(ReferenceCircle {
+                entity_id,
                 center,
                 center_stored: false,
                 radius,
@@ -815,14 +824,15 @@ pub fn arc_z_circles(payload: &[u8]) -> Vec<ReferenceCircle> {
             if body_start == after_id || payload.get(body_start) != Some(&0xe2) {
                 continue;
             }
-            headers.push((close, body_start + 1));
+            headers.push((close, body_start + 1, id));
         }
-        for (index, (close, body_start)) in headers.iter().copied().enumerate() {
+        for (index, (close, body_start, entity_id)) in headers.iter().copied().enumerate() {
             let body_end = headers
                 .get(index + 1)
-                .map_or(block_end, |(next_close, _)| *next_close)
+                .map_or(block_end, |(next_close, _, _)| *next_close)
                 .min(body_start.saturating_add(256));
-            let Some(mut circle) = arc_z_fields(&payload[body_start..body_end], &cache) else {
+            let Some(mut circle) = arc_z_fields(&payload[body_start..body_end], &cache, entity_id)
+            else {
                 continue;
             };
             circle.offset = close + 1;
@@ -988,6 +998,7 @@ mod tests {
         assert_eq!(
             line.kind,
             ReferenceLineKind::Line3d {
+                entity_id: 35,
                 original_length: 1.0
             }
         );
@@ -1028,7 +1039,8 @@ mod tests {
     #[test]
     fn decodes_arc_z_diameter_rows() {
         let body = b"\x01\xe4\xe4\x0f\x0f\x43\xf0\x00\x0f\x0f";
-        let circle = arc_z_fields(body, &ScalarCache::from_section(body)).expect("diameter row");
+        let circle = arc_z_fields(body, &ScalarCache::from_section(body), 7).expect("diameter row");
+        assert_eq!(circle.entity_id, 7);
         assert_eq!(circle.center, [0.0; 3]);
         assert_eq!(circle.radius, 1.0);
         assert_eq!(circle.start, [1.0, 0.0, 0.0]);
@@ -1040,7 +1052,7 @@ mod tests {
         let body = b"\x01\x2f\x0c\x00\x2f\x24\x00\x48\x10\x00\
             \x2f\x00\x00\x2f\x16\x00\x2f\x24\x00\x48\x10\x00\
             \x2f\x0c\x00\x2f\x20\x00\x48\x10\x00";
-        let circle = arc_z_fields(body, &ScalarCache::from_section(body)).expect("quarter arc");
+        let circle = arc_z_fields(body, &ScalarCache::from_section(body), 8).expect("quarter arc");
         assert_eq!(circle.center, [3.5, 10.0, -4.0]);
         assert_eq!(circle.radius, 2.0);
         assert_eq!(circle.start, [5.5, 10.0, -4.0]);
@@ -1055,7 +1067,7 @@ mod tests {
             \x9b\xa7\x3d\x24\xb6\x7b\x09\x48\x3e\x00\
             \x9f\x6b\xf0\x6f\x95\x50\xb9\xa0\xff\x43\xd5\xa5\xa5\x6c";
         let cache = ScalarCache::from_section(body);
-        let circle = arc_z_fields(body, &cache).expect("general arc");
+        let circle = arc_z_fields(body, &cache, 9).expect("general arc");
         assert_eq!(circle.center[0], -30.0);
         assert_eq!(circle.start[0], -30.0);
         assert_eq!(circle.end[0], -30.0);
