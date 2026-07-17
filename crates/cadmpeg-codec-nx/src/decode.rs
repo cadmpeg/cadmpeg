@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::{DecodeContext, RecordDisposition, RecordKind, SourceLocation, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -103,23 +103,153 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecEr
 /// decode successfully with no geometry, including an assembly whose geometry
 /// resides in external child parts.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
+    // The source space id, shared by every record ticket's location. `View` is
+    // `Copy`, so reading the location does not consume the root passed to `scan`.
+    let source = root.location();
     let scan = scan(ctx, root)?;
 
     if ctx.container_only() {
         let ir = build_metadata_ir(&scan)?;
         let mut report = build_container_report(&scan, true);
         report.source_fidelity = Some(crate::accounting::ledger(&scan));
+        issue_stream_tickets(ctx, source, &scan, &ir, &mut report);
         return Ok(DecodeResult::new(ir, report));
     }
 
-    if let Some((ir, report)) = try_decode_geometry(&scan) {
+    if let Some((ir, report)) = try_decode_geometry(ctx, source, &scan) {
         return Ok(DecodeResult::new(ir, report));
     }
 
     let ir = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
     report.source_fidelity = Some(crate::accounting::ledger(&scan));
+    issue_stream_tickets(ctx, source, &scan, &ir, &mut report);
     Ok(DecodeResult::new(ir, report))
+}
+
+/// Issue and resolve one [`RecordTicket`](cadmpeg_ir::decode::RecordTicket) per
+/// inflated stream — the record-shaped unit this codec walks (§6.2, Phase 3D).
+///
+/// Every stream is committed at the §3.3 boundary the decoder already crosses
+/// and resolved at the point its outcome is decided: a stream that contributed
+/// surviving typed IR entities resolves [`RecordDisposition::Typed`] naming them
+/// (entity ids carry the stream-scoped `nx:s{index}:` prefix, so pruning of an
+/// inactive body is reflected as the loss it is); a stream that produced no
+/// surviving typed entity resolves [`RecordDisposition::Dropped`] with an
+/// accountable loss note pushed onto the report, so a skipped or preserved-only
+/// stream is never a silent loss. The tickets are issued in one final pass after
+/// the model is fully built and pruned, so a fallible emission path that abandons
+/// the geometry attempt leaves no unresolved ticket behind.
+fn issue_stream_tickets(
+    ctx: &DecodeContext<'_>,
+    source: SourceLocation,
+    scan: &Scan,
+    ir: &CadIr,
+    report: &mut DecodeReport,
+) {
+    for (si, stream) in scan.streams.iter().enumerate() {
+        let location = SourceLocation {
+            space: source.space,
+            offset: stream.file_offset as u64,
+        };
+        let ticket = ctx.commit_record(location, RecordKind(stream.kind.label()));
+        let outputs = stream_outputs(ir, si);
+        if outputs.is_empty() {
+            let loss = stream_drop_note(si, stream);
+            report.losses.push(loss.clone());
+            ctx.resolve(ticket, RecordDisposition::Dropped { loss });
+        } else {
+            ctx.resolve(ticket, RecordDisposition::Typed { outputs });
+        }
+    }
+}
+
+/// Collect the surviving IR model entity ids a stream contributed, identified by
+/// its `nx:s{index}:` id prefix. Read after pruning, so every id resolves in the
+/// model and a `Typed` disposition never names an absent entity.
+fn stream_outputs(ir: &CadIr, stream_index: usize) -> Vec<String> {
+    let prefix = format!("nx:s{stream_index}:");
+    let model = &ir.model;
+    let mut outputs = Vec::new();
+    let mut take = |id: &str| {
+        if id.starts_with(&prefix) {
+            outputs.push(id.to_string());
+        }
+    };
+    for entity in &model.points {
+        take(&entity.id.0);
+    }
+    for entity in &model.vertices {
+        take(&entity.id.0);
+    }
+    for entity in &model.surfaces {
+        take(&entity.id.0);
+    }
+    for entity in &model.curves {
+        take(&entity.id.0);
+    }
+    for entity in &model.procedural_surfaces {
+        take(&entity.id.0);
+    }
+    for entity in &model.procedural_curves {
+        take(&entity.id.0);
+    }
+    for entity in &model.bodies {
+        take(&entity.id.0);
+    }
+    for entity in &model.regions {
+        take(&entity.id.0);
+    }
+    for entity in &model.shells {
+        take(&entity.id.0);
+    }
+    for entity in &model.faces {
+        take(&entity.id.0);
+    }
+    for entity in &model.loops {
+        take(&entity.id.0);
+    }
+    for entity in &model.coedges {
+        take(&entity.id.0);
+    }
+    for entity in &model.edges {
+        take(&entity.id.0);
+    }
+    outputs
+}
+
+/// The accountable loss note for a stream that produced no surviving typed
+/// entity. A Parasolid stream's inflated bytes remain in the IR as an unknown
+/// passthrough record; a non-Parasolid stream is accounted by digest in the
+/// source-fidelity ledger. Each message is stream-scoped, so a per-record
+/// `Dropped` disposition consumes exactly one matching note.
+fn stream_drop_note(stream_index: usize, stream: &Stream) -> LossNote {
+    let (category, message) = if stream.kind.is_parasolid() {
+        (
+            LossCategory::Geometry,
+            format!(
+                "Parasolid {} stream #{stream_index} yielded no typed IR entity; its inflated \
+                 bytes are preserved verbatim as the unknown passthrough record \
+                 nx:container:parasolid#{stream_index}.",
+                stream.kind.label()
+            ),
+        )
+    } else {
+        (
+            LossCategory::Other,
+            format!(
+                "Non-Parasolid {} stream #{stream_index} was classified but not transferred; it \
+                 is accounted by digest in the source-fidelity ledger.",
+                stream.kind.label()
+            ),
+        )
+    };
+    LossNote {
+        category,
+        severity: Severity::Info,
+        message,
+        provenance: None,
+    }
 }
 
 /// Aggregate carrier counts across the decoded streams, for reporting.
@@ -159,7 +289,11 @@ impl Counts {
 
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
-fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
+fn try_decode_geometry(
+    ctx: &DecodeContext<'_>,
+    source: SourceLocation,
+    scan: &Scan,
+) -> Option<(CadIr, DecodeReport)> {
     let mut ir = CadIr::empty(Units::default());
     let mut annotations = AnnotationBuilder::new();
     ir.source = Some(source_meta(scan));
@@ -554,6 +688,7 @@ fn try_decode_geometry(scan: &Scan) -> Option<(CadIr, DecodeReport)> {
     retain_live_annotations(&mut ir);
     let mut report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
     report.source_fidelity = Some(crate::accounting::ledger(scan));
+    issue_stream_tickets(ctx, source, scan, &ir, &mut report);
     Some((ir, report))
 }
 

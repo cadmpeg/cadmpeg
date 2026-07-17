@@ -2871,6 +2871,76 @@ fn container_only_preserves_streams_without_geometry() {
     assert!(result.ir.model.points.is_empty());
 }
 
+/// Build decode options in the requested mode over the default limits.
+fn options_in(mode: cadmpeg_ir::decode::DecodeMode, container_only: bool) -> DecodeOptions {
+    DecodeOptions {
+        container_only,
+        policy: cadmpeg_ir::decode::DecodePolicy {
+            mode,
+            ..Default::default()
+        },
+    }
+}
+
+#[test]
+fn geometry_decode_passes_transfer_accounting_in_both_modes() {
+    // A strict decode returning `Ok` proves `Check::TransferAccounting` (§6.2)
+    // found every committed stream ticket resolved and every disposition valid
+    // against the model; salvage must equally succeed and add no violation note.
+    for mode in [
+        cadmpeg_ir::decode::DecodeMode::Strict,
+        cadmpeg_ir::decode::DecodeMode::Salvage,
+    ] {
+        let mut cur = Cursor::new(topology_part_prt());
+        let result = NxCodec.decode(&mut cur, &options_in(mode, false)).unwrap();
+        assert!(result.report.geometry_transferred);
+        assert!(!result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.starts_with("transfer accounting:")));
+    }
+}
+
+#[test]
+fn assembly_metadata_decode_passes_transfer_accounting_in_both_modes() {
+    for mode in [
+        cadmpeg_ir::decode::DecodeMode::Strict,
+        cadmpeg_ir::decode::DecodeMode::Salvage,
+    ] {
+        let mut cur = Cursor::new(assembly_prt());
+        let result = NxCodec.decode(&mut cur, &options_in(mode, false)).unwrap();
+        assert!(!result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.starts_with("transfer accounting:")));
+    }
+}
+
+#[test]
+fn container_only_decode_passes_transfer_accounting_in_both_modes() {
+    for mode in [
+        cadmpeg_ir::decode::DecodeMode::Strict,
+        cadmpeg_ir::decode::DecodeMode::Salvage,
+    ] {
+        let mut cur = Cursor::new(single_part_prt());
+        let result = NxCodec.decode(&mut cur, &options_in(mode, true)).unwrap();
+        assert!(result.report.container_only);
+        // The single Parasolid stream is walked but not typed under
+        // container-only, so its ticket resolves Dropped with an accountable,
+        // stream-scoped preservation note — not a silent loss.
+        assert!(result.report.losses.iter().any(|loss| loss
+            .message
+            .contains("preserved verbatim as the unknown passthrough record")));
+        assert!(!result
+            .report
+            .losses
+            .iter()
+            .any(|loss| loss.message.starts_with("transfer accounting:")));
+    }
+}
+
 #[test]
 fn inspect_enumerates_streams_and_names_schema() {
     let mut cur = Cursor::new(single_part_prt());
