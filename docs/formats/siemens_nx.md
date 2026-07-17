@@ -43,7 +43,7 @@ invalidate the stream atomically.
 
 `/Root/part/arrangements` has an `Arrangements` root. Each `Arrangement` child
 has a nonempty `Name` and a `Default` value of `YES` or `NO`. At most one child
-is default. Child order is configuration order. The canonical arrangements and
+is default, and child names are unique. Child order is configuration order. The canonical arrangements and
 part-attribute paths each occur at most once; a repeated path rejects that typed
 XML table atomically.
 

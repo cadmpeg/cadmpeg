@@ -10511,6 +10511,7 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
             }
 
             let mut active_count = 0usize;
+            let mut names = BTreeSet::new();
             let mut configurations = Vec::new();
             for (ordinal, node) in root
                 .children()
@@ -10521,7 +10522,7 @@ pub fn configurations(container: &Container) -> Vec<Configuration> {
                     return None;
                 }
                 let name = node.attribute("Name")?;
-                if name.is_empty() {
+                if name.is_empty() || !names.insert(name) {
                     return None;
                 }
                 let active = match node.attribute("Default")? {

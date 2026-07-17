@@ -11859,22 +11859,24 @@ fn decode_joins_qaf_material_names_to_texture_assets() {
 
 #[test]
 fn decode_rejects_ambiguous_nx_arrangement_table_atomically() {
-    let file = prt_with_named_payloads(&[
-        ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
-        (
-            "/Root/part/arrangements",
-            br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="YES" Name="Exploded"/></Arrangements>"#.to_vec(),
-        ),
-    ]);
-    let mut cur = Cursor::new(file);
-    let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
-        namespace
-            .arena_as::<crate::native::Configuration>("configurations")
-            .unwrap()
-            .is_empty()
-    }));
-    assert!(result.ir.model.configurations.is_empty());
+    for arrangements in [
+        br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="YES" Name="Exploded"/></Arrangements>"#.as_slice(),
+        br#"<Arrangements><Arrangement Default="YES" Name="Model"/><Arrangement Default="NO" Name="Model"/></Arrangements>"#.as_slice(),
+    ] {
+        let file = prt_with_named_payloads(&[
+            ("/Root/UG_PART/UG_PART", zlib_compress(&partition_stream())),
+            ("/Root/part/arrangements", arrangements.to_vec()),
+        ]);
+        let mut cur = Cursor::new(file);
+        let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+        assert!(result.ir.native.namespace("nx").is_none_or(|namespace| {
+            namespace
+                .arena_as::<crate::native::Configuration>("configurations")
+                .unwrap()
+                .is_empty()
+        }));
+        assert!(result.ir.model.configurations.is_empty());
+    }
 }
 
 #[test]
