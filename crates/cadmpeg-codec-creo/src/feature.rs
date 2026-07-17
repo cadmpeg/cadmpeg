@@ -1043,9 +1043,24 @@ pub struct FeatureRelationTable {
     pub rows: Vec<FeatureRelation>,
     /// Section-entity incidence records used by solver equations.
     pub skamps: Vec<FeatureSkamp>,
+    /// Count, class, and source location of `skamp_ptr`.
+    pub skamp_header: Option<FeatureSolverTableHeader>,
     /// Joins between relation, equation, and incidence identifiers.
     pub triples: Vec<FeatureRelationTriple>,
+    /// Count, class, and source location of `triples_ptr`.
+    pub triples_header: Option<FeatureSolverTableHeader>,
     /// Byte offset of the `relat_ptr` label in the original stream.
+    pub offset: usize,
+}
+
+/// Header identity for a counted solver subtable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureSolverTableHeader {
+    /// Count declared by the table's `f8` opener.
+    pub declared_count: u32,
+    /// Table-class reference following the count.
+    pub entity_ref: u32,
+    /// Byte offset of the table label or positional array opener.
     pub offset: usize,
 }
 
@@ -3163,6 +3178,50 @@ fn named_array_class(payload: &[u8], label: &[u8], start: usize, end: usize) -> 
         .map(|(class, _)| class)
 }
 
+fn named_solver_table_header(
+    payload: &[u8],
+    label: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<FeatureSolverTableHeader> {
+    let offset = find_bytes(payload, label, start, end)?;
+    let mut cursor = offset + label.len();
+    if payload
+        .get(cursor)
+        .is_some_and(|byte| matches!(byte, 0xf1 | 0xf3))
+    {
+        cursor += 1;
+    } else if payload
+        .get(cursor..cursor + 2)
+        .is_some_and(|wrapper| matches!(wrapper, [0xf4, 0x04 | 0x05]))
+    {
+        cursor += 2;
+    }
+    (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+    let (declared_count, after_count) = psb::compact_int(payload, cursor + 1);
+    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (entity_ref, _) = psb::reference_id(payload, after_count + 1).ok()?;
+    Some(FeatureSolverTableHeader {
+        declared_count,
+        entity_ref,
+        offset,
+    })
+}
+
+fn positional_solver_table_header(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    table_class: u32,
+) -> Option<FeatureSolverTableHeader> {
+    let (offset, declared_count, _, _) = positional_array_header(payload, start, end, table_class)?;
+    Some(FeatureSolverTableHeader {
+        declared_count,
+        entity_ref: table_class,
+        offset,
+    })
+}
+
 fn positional_array_header(
     payload: &[u8],
     start: usize,
@@ -3491,7 +3550,9 @@ fn relation_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureRel
         entity_ref,
         rows,
         skamps: feature_skamps(payload, start, end),
+        skamp_header: named_solver_table_header(payload, b"skamp_ptr\0", start, end),
         triples: feature_relation_triples(payload, start, end),
+        triples_header: named_solver_table_header(payload, b"triples_ptr\0", start, end),
         offset: table,
     })
 }
@@ -3581,7 +3642,9 @@ fn positional_relation_table(
         entity_ref: Some(table_class),
         rows,
         skamps: Vec::new(),
+        skamp_header: None,
         triples: Vec::new(),
+        triples_header: None,
         offset: table,
     })
 }
@@ -5189,8 +5252,14 @@ fn definitions_in_ranges(
             table.skamps = replay_skamp_class.map_or_else(Vec::new, |table_class| {
                 positional_feature_skamps(payload, start, end, table_class)
             });
+            table.skamp_header = replay_skamp_class.and_then(|table_class| {
+                positional_solver_table_header(payload, start, end, table_class)
+            });
             table.triples = replay_triples_class.map_or_else(Vec::new, |table_class| {
                 positional_relation_triples(payload, start, end, table_class)
+            });
+            table.triples_header = replay_triples_class.and_then(|table_class| {
+                positional_solver_table_header(payload, start, end, table_class)
             });
         }
         let saved_section = saved_section(
@@ -6574,6 +6643,13 @@ mod tests {
         assert_eq!(skamps[0].items[1].sense, 2);
         assert_eq!(skamps[1].kind, 1);
         assert_eq!(skamps[1].items[0].entity_id, 8);
+    }
+
+    #[test]
+    fn solver_header_does_not_adopt_a_later_array() {
+        let payload = b"skamp_ptr\0opaque\xf8\x02\xf7\x58\xfb\xe2";
+
+        assert!(named_solver_table_header(payload, b"skamp_ptr\0", 0, payload.len()).is_none());
     }
 
     #[test]

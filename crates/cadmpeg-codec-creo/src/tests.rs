@@ -2652,7 +2652,9 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                 },
             ],
             skamps: Vec::new(),
+            skamp_header: None,
             triples: Vec::new(),
+            triples_header: None,
             offset: 0,
         }),
         saved_section: None,
@@ -3065,7 +3067,8 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
           \xe0\x01rel_id\0\x07\xe0\x01eqn_id\0\x08\xe0\x01skamp_id\0\x05\
           \xf1\xf7\x6d\xe2\xf6\x09\x05\xe2",
     );
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let relations = scan.feature_definitions[0]
         .relations
@@ -3100,12 +3103,38 @@ fn scan_decodes_counted_featdefs_constraint_relations() {
     assert_eq!(relations.skamps[0].kind, 2);
     assert_eq!(relations.skamps[0].items[0].entity_id, 42);
     assert_eq!(relations.skamps[0].items[0].sense, 1);
+    let skamp_header = relations.skamp_header.as_ref().expect("skamp header");
+    assert_eq!(skamp_header.declared_count, 1);
+    assert_eq!(skamp_header.entity_ref, 107);
     assert_eq!(relations.triples.len(), 2);
     assert_eq!(relations.triples[0].relation_id, Some(7));
     assert_eq!(relations.triples[0].equation_id, Some(8));
     assert_eq!(relations.triples[0].skamp_id, Some(5));
     assert_eq!(relations.triples[1].relation_id, None);
     assert_eq!(relations.triples[1].equation_id, Some(9));
+    let triples_header = relations.triples_header.as_ref().expect("triples header");
+    assert_eq!(triples_header.declared_count, 2);
+    assert_eq!(triples_header.entity_ref, 109);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let headers = result.ir.native.namespace("creo").unwrap().arenas["sketches"][0].fields
+        ["table_headers"]
+        .as_array()
+        .expect("table headers");
+    let solver = headers
+        .iter()
+        .find(|header| header["kind"] == "solver_incidences")
+        .expect("solver-incidence header");
+    assert_eq!(solver["declared_count"], 1);
+    assert_eq!(solver["entity_ref"], 107);
+    assert_eq!(solver["row_count"], 1);
+    let triples = headers
+        .iter()
+        .find(|header| header["kind"] == "relation_triples")
+        .expect("relation-triple header");
+    assert_eq!(triples["declared_count"], 2);
+    assert_eq!(triples["entity_ref"], 109);
+    assert_eq!(triples["row_count"], 2);
 }
 
 #[test]

@@ -3045,6 +3045,24 @@ fn sketch_table_headers(
             table.rows.len(),
             table.offset,
         );
+        if let Some(header) = &table.skamp_header {
+            push(
+                "solver_incidences",
+                Some(header.declared_count),
+                Some(header.entity_ref),
+                table.skamps.len(),
+                header.offset,
+            );
+        }
+        if let Some(header) = &table.triples_header {
+            push(
+                "relation_triples",
+                Some(header.declared_count),
+                Some(header.entity_ref),
+                table.triples.len(),
+                header.offset,
+            );
+        }
     }
     if let Some(table) = &definition.saved_section {
         push(
@@ -14225,12 +14243,14 @@ mod resolved_sketch_tests {
                 }],
                 offset: 30,
             }],
+            skamp_header: None,
             triples: vec![crate::feature::FeatureRelationTriple {
                 relation_id: Some(7),
                 equation_id: None,
                 skamp_id: Some(5),
                 offset: 31,
             }],
+            triples_header: None,
             offset: 28,
         });
         let constraints =
@@ -15295,7 +15315,9 @@ mod resolved_sketch_tests {
                     offset: 82,
                 },
             ],
+            skamp_header: None,
             triples: Vec::new(),
+            triples_header: None,
             offset: 45,
         };
         let definition = crate::feature::FeatureDefinition {
