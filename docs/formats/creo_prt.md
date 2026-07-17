@@ -1512,6 +1512,10 @@ A saved entity identifier is an `order_table.int_id`; joining through that row's
 
 A saved line, arc, or circle with complete section-space geometry and an
 `order_table` join defines a neutral sketch entity under that row's `ext_id`.
+Every saved-section row remains a sketch design entity when its analytic
+coordinates are incomplete. Its decoded family and unique internal or joined
+external identity select native sketch geometry; incomplete coordinates do not
+remove the entity or constraints that reference it.
 Without an `order_table` join, the saved entity retains its internal identifier
 and is a construction sketch entity. A complete model-space section frame maps
 that construction entity to a placed line or circle curve, but does not make it

@@ -8734,7 +8734,7 @@ fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -
             .saved_section
             .iter()
             .flat_map(|saved| &saved.entities)
-            .filter_map(saved_section_neutral_internal_id)
+            .filter_map(|entity| saved_section_entity_identity(entity).0)
             .filter_map(|internal_id| {
                 saved_section_external_id(
                     order,
@@ -8747,19 +8747,118 @@ fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -
     ids
 }
 
-fn saved_section_neutral_internal_id(entity: &crate::feature::FeatureSavedEntity) -> Option<u32> {
-    if let Some((internal_id, _, _)) = saved_section_entity_geometry(entity) {
-        return Some(internal_id);
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SavedSectionEntityKind {
+    Line,
+    Arc,
+    Circle,
+    Spline,
+    Dummy,
+}
+
+impl SavedSectionEntityKind {
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Line => "line",
+            Self::Arc => "arc",
+            Self::Circle => "circle",
+            Self::Spline => "spline",
+            Self::Dummy => "dummy",
+        }
     }
-    let crate::feature::FeatureSavedEntity::Spline(spline) = entity else {
-        return None;
+}
+
+fn saved_section_entity_identity(
+    entity: &crate::feature::FeatureSavedEntity,
+) -> (Option<u32>, usize, SavedSectionEntityKind) {
+    match entity {
+        crate::feature::FeatureSavedEntity::Line(line) => (
+            Some(line.entity_id),
+            line.offset,
+            SavedSectionEntityKind::Line,
+        ),
+        crate::feature::FeatureSavedEntity::Arc(arc) => {
+            (Some(arc.entity_id), arc.offset, SavedSectionEntityKind::Arc)
+        }
+        crate::feature::FeatureSavedEntity::Circle(circle) => (
+            Some(circle.entity_id),
+            circle.offset,
+            SavedSectionEntityKind::Circle,
+        ),
+        crate::feature::FeatureSavedEntity::Spline(spline) => (
+            spline.entity_id,
+            spline.offset,
+            SavedSectionEntityKind::Spline,
+        ),
+        crate::feature::FeatureSavedEntity::Dummy(dummy) => {
+            (dummy.entity_id, dummy.offset, SavedSectionEntityKind::Dummy)
+        }
+    }
+}
+
+fn unresolved_saved_section_entity(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    saved: &crate::feature::FeatureSavedEntity,
+    unique_saved_ids: &BTreeSet<u32>,
+    ambiguous_segment_ids: &BTreeSet<u32>,
+) -> (SketchEntity, usize) {
+    let (internal_id, offset, kind) = saved_section_entity_identity(saved);
+    let unique_internal_id = internal_id.is_some_and(|id| unique_saved_ids.contains(&id));
+    let external_id = if unique_internal_id {
+        definition.order_table.as_ref().and_then(|order| {
+            saved_section_external_id(order, unique_saved_ids, ambiguous_segment_ids, internal_id?)
+        })
+    } else {
+        None
     };
-    let nurbs = saved_spline_nurbs(spline)?;
-    nurbs
-        .control_points
-        .iter()
-        .all(|point| point.z.abs() <= 1e-12)
-        .then_some(spline.entity_id?)
+    let suffix = if unique_internal_id {
+        external_id.map_or_else(
+            || {
+                let internal_id = internal_id.expect("unique saved entity has an id");
+                match kind {
+                    SavedSectionEntityKind::Spline | SavedSectionEntityKind::Dummy => {
+                        internal_id.to_string()
+                    }
+                    _ => format!("saved{internal_id}"),
+                }
+            },
+            |external_id| external_id.to_string(),
+        )
+    } else {
+        format!("saved:offset:{offset}")
+    };
+    let id = SketchEntityId(external_id.map_or_else(
+        || match kind {
+            SavedSectionEntityKind::Spline => {
+                format!("creo:featdefs:saved_spline#{}:{suffix}", definition.id)
+            }
+            SavedSectionEntityKind::Dummy => {
+                format!("creo:featdefs:saved_dummy#{}:{suffix}", definition.id)
+            }
+            _ => format!("creo:featdefs:sketch_entity#{}:{suffix}", definition.id),
+        },
+        |external_id| {
+            format!(
+                "creo:featdefs:sketch_entity#{}:{external_id}",
+                definition.id
+            )
+        },
+    ));
+    (
+        SketchEntity {
+            id,
+            sketch: sketch.clone(),
+            construction: true,
+            native_ref: Some(feature_sketch_record_id(definition)),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Native {
+                native_kind: format!("saved_{}", kind.name()),
+            },
+        },
+        offset,
+    )
 }
 
 fn unique_section_segment_external_ids<'a>(
@@ -8797,13 +8896,7 @@ fn unique_saved_section_internal_ids(
         .saved_section
         .iter()
         .flat_map(|saved| &saved.entities)
-        .filter_map(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Line(line) => Some(line.entity_id),
-            crate::feature::FeatureSavedEntity::Arc(arc) => Some(arc.entity_id),
-            crate::feature::FeatureSavedEntity::Circle(circle) => Some(circle.entity_id),
-            crate::feature::FeatureSavedEntity::Spline(spline) => spline.entity_id,
-            crate::feature::FeatureSavedEntity::Dummy(dummy) => dummy.entity_id,
-        })
+        .filter_map(|entity| saved_section_entity_identity(entity).0)
         .fold(BTreeMap::new(), |mut counts, internal_id| {
             *counts.entry(internal_id).or_insert(0usize) += 1;
             counts
@@ -9424,6 +9517,31 @@ fn transfer_resolved_sketches(
             if let Some(external_id) = external_id.filter(|_| generated) {
                 generated_saved_geometries.push((external_id, geometry));
             }
+        }
+        for saved in definition
+            .saved_section
+            .iter()
+            .flat_map(|saved| &saved.entities)
+        {
+            let (entity, offset) = unresolved_saved_section_entity(
+                definition,
+                &sketch_id,
+                saved,
+                &unique_saved_ids,
+                &ambiguous_segment_ids,
+            );
+            if entities.iter().any(|existing| existing.id == entity.id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &entity.id.0,
+                "FeatDefs",
+                offset as u64,
+                "unresolved_saved_section_entity",
+                Exactness::ByteExact,
+            );
+            entities.push(entity);
         }
         profiles.extend(saved_profile_chains(
             definition.id,
@@ -13909,6 +14027,45 @@ mod resolved_sketch_tests {
             section_entity_external_ids(&definition),
             BTreeSet::from([42])
         );
+        let mut incomplete = definition.clone();
+        let crate::feature::FeatureSavedEntity::Line(incomplete_line) = &mut incomplete
+            .saved_section
+            .as_mut()
+            .expect("saved section")
+            .entities[0]
+        else {
+            panic!("saved line");
+        };
+        incomplete_line.endpoints[1][1] = None;
+        assert!(saved_section_entity_geometry(
+            &incomplete
+                .saved_section
+                .as_ref()
+                .expect("saved section")
+                .entities[0]
+        )
+        .is_none());
+        assert_eq!(
+            section_entity_external_ids(&incomplete),
+            BTreeSet::from([42])
+        );
+        let (native_entity, offset) = unresolved_saved_section_entity(
+            &incomplete,
+            &SketchId("sketch".into()),
+            &incomplete
+                .saved_section
+                .as_ref()
+                .expect("saved section")
+                .entities[0],
+            &unique_saved_section_internal_ids(&incomplete),
+            &BTreeSet::new(),
+        );
+        assert_eq!(offset, 20);
+        assert_eq!(native_entity.id.0, "creo:featdefs:sketch_entity#5:42");
+        assert!(matches!(
+            native_entity.geometry,
+            SketchGeometry::Native { ref native_kind } if native_kind == "saved_line"
+        ));
         let mut duplicate_order_row = definition.clone();
         duplicate_order_row
             .order_table
