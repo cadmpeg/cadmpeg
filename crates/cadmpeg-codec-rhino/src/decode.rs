@@ -2032,6 +2032,7 @@ impl<'a> DecodeContext<'a> {
                 self.ir.model.points.push(Point {
                     id: point_id.clone(),
                     position,
+                    source_object: Some(association.clone()),
                 });
                 self.ir.model.vertices.push(Vertex {
                     id: vertex_id.clone(),
@@ -2087,6 +2088,7 @@ impl<'a> DecodeContext<'a> {
                     self.ir.model.points.push(Point {
                         id: point_id.clone(),
                         position,
+                        source_object: Some(association.clone()),
                     });
                     self.ir.model.vertices.push(Vertex {
                         id: vertex_id.clone(),
@@ -2271,7 +2273,7 @@ impl<'a> DecodeContext<'a> {
                 axis_origin,
                 axis_direction,
                 angular_interval,
-                parameter_interval,
+                parameter_interval: Some(parameter_interval),
                 transposed,
             },
             crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {
@@ -2502,6 +2504,8 @@ impl<'a> DecodeContext<'a> {
         self.ir.model.tessellations.push(Tessellation {
             id: id.clone(),
             body: None,
+            faces: mesh.tessellation.faces,
+            chordal_deflection: mesh.tessellation.chordal_deflection,
             source_object: Some(self.source_association(identity)),
             vertices: mesh.tessellation.vertices,
             triangles: mesh.tessellation.triangles,
@@ -2879,6 +2883,7 @@ fn stage_extrusion_caps(
             ir.model.points.push(Point {
                 id: point_id.clone(),
                 position: endpoint,
+                source_object: Some(association.clone()),
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_id.clone(),
@@ -3323,6 +3328,7 @@ fn stage_brep(input: BrepTransferInput<'_>) -> Result<StagedBrep, crate::curves:
                     crate::curves::error(0, "scaled Brep vertex coordinate is invalid")
                 })?,
             ),
+            source_object: Some(association.clone()),
         });
         staged.vertices.push(Vertex {
             id: vertex_id.clone(),
@@ -3731,7 +3737,7 @@ fn stage_brep_procedural_surface(
             axis_origin,
             axis_direction,
             angular_interval,
-            parameter_interval,
+            parameter_interval: Some(parameter_interval),
             transposed,
         },
         crate::surfaces::DecodedProceduralSurface::Sum { basepoint } => {

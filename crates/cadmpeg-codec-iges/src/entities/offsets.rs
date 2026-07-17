@@ -552,10 +552,12 @@ pub(super) fn project(
         let edge_id = EdgeId(format!("iges:model:edge#D{}", entry.sequence));
         ir.model.points.extend([
             Point {
+                source_object: None,
                 id: start_point.clone(),
                 position: start_position,
             },
             Point {
+                source_object: None,
                 id: end_point.clone(),
                 position: end_position,
             },
@@ -592,6 +594,7 @@ pub(super) fn project(
                 source: source_id,
                 distance,
                 support: None,
+                direction: None,
                 normal: Some(normal),
                 parameter_range: Some([start, end]),
                 distance_law,

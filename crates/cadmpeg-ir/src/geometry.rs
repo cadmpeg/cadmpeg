@@ -9,6 +9,7 @@
 use crate::ids::{CurveId, PcurveId, ProceduralCurveId, ProceduralSurfaceId, SurfaceId, UnknownId};
 use crate::math::{Point2, Point3, Vector3};
 use crate::provenance::SourceObjectAssociation;
+use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -125,6 +126,22 @@ pub enum SurfaceGeometry {
     },
     /// Free-form NURBS surface.
     Nurbs(NurbsSurface),
+    /// Source-native polygonal surface with an explicit chordal error bound.
+    Polygonal {
+        /// Ordered model-space vertices.
+        vertices: Vec<Point3>,
+        /// Zero-based triangle indices into `vertices`.
+        triangles: Vec<[u32; 3]>,
+        /// Maximum chordal deviation recorded by the source.
+        chordal_deflection: f64,
+    },
+    /// Exact affine placement of an inline basis surface.
+    Transformed {
+        /// Unplaced basis geometry with unchanged parameterization.
+        basis: Box<SurfaceGeometry>,
+        /// Affine map from basis coordinates to model coordinates.
+        transform: Transform,
+    },
     /// Surface geometry that has no typed neutral representation.
     ///
     /// `record` links to retained source bytes when available.
@@ -225,6 +242,23 @@ pub enum CurveGeometry {
     },
     /// Free-form NURBS curve.
     Nurbs(NurbsCurve),
+    /// Source-native polyline with an explicit chordal error bound.
+    Polyline {
+        /// Ordered model-space samples.
+        points: Vec<Point3>,
+        /// Optional source parameters parallel to `points`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameters: Option<Vec<f64>>,
+        /// Maximum chordal deviation recorded by the source.
+        chordal_deflection: f64,
+    },
+    /// Exact affine placement of an inline basis curve.
+    Transformed {
+        /// Unplaced basis geometry with unchanged parameterization.
+        basis: Box<CurveGeometry>,
+        /// Affine map from basis coordinates to model coordinates.
+        transform: Transform,
+    },
     /// Native curve carrier whose shape is not decoded.
     Unknown {
         /// Retained native record containing the curve carrier.
@@ -427,8 +461,10 @@ pub enum ProceduralSurfaceDefinition {
         axis_direction: Vector3,
         /// Angular start and end parameters, in radians.
         angular_interval: [f64; 2],
-        /// Directrix surface-parameter start and end values.
-        parameter_interval: [f64; 2],
+        /// Directrix surface-parameter start and end values, when carried by
+        /// the source representation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter_interval: Option<[f64; 2]>,
         /// Whether the source parameter directions are transposed.
         transposed: bool,
     },
@@ -481,12 +517,21 @@ pub enum ProceduralSurfaceDefinition {
         support: SurfaceId,
         /// Signed offset distance, in document length units.
         distance: f64,
-        /// Native U parameter-direction sense enum.
-        u_sense: i64,
-        /// Native V parameter-direction sense enum.
-        v_sense: i64,
+        /// Native U parameter-direction sense enum, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        u_sense: Option<i64>,
+        /// Native V parameter-direction sense enum, when carried.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        v_sense: Option<i64>,
         /// Ordered conditional ASM extension flags.
         extension_flags: Vec<bool>,
+    },
+    /// Rectangular parameter sub-range of a support surface.
+    Subset {
+        /// Surface being restricted.
+        support: SurfaceId,
+        /// Ordered U and V parameter intervals.
+        parameter_ranges: [[f64; 2]; 2],
     },
     /// Parallel offset from a support surface.
     ParallelOffset {
@@ -2200,6 +2245,10 @@ pub enum ProceduralCurveDefinition {
         source: CurveId,
         /// Signed offset distance, in document length units.
         distance: f64,
+        /// Fixed plane-normal direction defining the offset side, when carried
+        /// by the source representation.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        direction: Option<Vector3>,
         /// Surface the offset is measured within, when the offset is constrained
         /// to a support surface; `None` for a free-space offset.
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2317,6 +2366,54 @@ pub enum PcurveGeometry {
         /// Parameter-space direction.
         direction: Point2,
     },
+    /// Full circle in parameter space.
+    Circle {
+        /// Circle center.
+        center: Point2,
+        /// Zero-angle unit direction.
+        x_axis: Point2,
+        /// Positive-angle unit direction.
+        y_axis: Point2,
+        /// Circle radius.
+        radius: f64,
+    },
+    /// Full ellipse in parameter space.
+    Ellipse {
+        /// Ellipse center.
+        center: Point2,
+        /// Major-axis unit direction.
+        x_axis: Point2,
+        /// Minor-axis unit direction.
+        y_axis: Point2,
+        /// Semi-major radius.
+        major_radius: f64,
+        /// Semi-minor radius.
+        minor_radius: f64,
+    },
+    /// Parabola in parameter space.
+    Parabola {
+        /// Parabola vertex.
+        vertex: Point2,
+        /// Axis unit direction.
+        x_axis: Point2,
+        /// Positive transverse unit direction.
+        y_axis: Point2,
+        /// Focus distance.
+        focal_distance: f64,
+    },
+    /// Hyperbola in parameter space.
+    Hyperbola {
+        /// Hyperbola center.
+        center: Point2,
+        /// Transverse-axis unit direction.
+        x_axis: Point2,
+        /// Conjugate-axis unit direction.
+        y_axis: Point2,
+        /// Semi-transverse radius.
+        major_radius: f64,
+        /// Semi-conjugate radius.
+        minor_radius: f64,
+    },
     /// A free-form NURBS curve in parameter space (control points are (u, v)).
     Nurbs {
         /// Curve degree.
@@ -2331,6 +2428,20 @@ pub enum PcurveGeometry {
         /// Whether the parameter-space curve is periodic.
         #[serde(default)]
         periodic: bool,
+    },
+    /// Parameter restriction of an exact basis pcurve.
+    Trimmed {
+        /// Native parameter interval retained from the basis.
+        parameter_range: [f64; 2],
+        /// Exact basis geometry.
+        basis: Box<PcurveGeometry>,
+    },
+    /// Signed planar offset of an exact basis pcurve.
+    Offset {
+        /// Signed parameter-space distance.
+        distance: f64,
+        /// Exact basis geometry.
+        basis: Box<PcurveGeometry>,
     },
 }
 

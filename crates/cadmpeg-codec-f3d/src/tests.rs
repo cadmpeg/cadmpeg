@@ -4200,6 +4200,8 @@ fn generated_source_less_refuses_auxiliary_geometry_and_source_identity_loss() {
         id: "generated:tessellation#0".into(),
         source_object: None,
         body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
         vertices: vec![
             Point3::new(0.0, 0.0, 0.0),
             Point3::new(1.0, 0.0, 0.0),
@@ -4255,6 +4257,7 @@ fn generated_source_less_planar_polygon_plans_dynamic_record_indices() {
     source_less.model.points.push(cadmpeg_ir::topology::Point {
         id: point_id.clone(),
         position: cadmpeg_ir::math::Point3::new(10.0, 10.0, 0.0),
+        source_object: None,
     });
     let vertex_id = VertexId("generated:vertex#3".into());
     source_less
@@ -5102,6 +5105,7 @@ fn generated_source_less_face_preserves_multiple_loop_chain() {
         source_less.model.points.push(cadmpeg_ir::topology::Point {
             id: point_id.clone(),
             position: cadmpeg_ir::math::Point3::new(x, y, z),
+            source_object: None,
         });
         let vertex_id = VertexId(format!("generated:inner_vertex#{index}"));
         source_less
@@ -10149,7 +10153,7 @@ fn generated_revolution_spline_surfaces_decode_and_write_source_less() {
             cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
         );
         assert_eq!(*angular_interval, [0.0, 1.0]);
-        assert_eq!(*parameter_interval, [0.0, 1.0]);
+        assert_eq!(*parameter_interval, Some([0.0, 1.0]));
         assert!(!transposed);
         assert!(result
             .ir
@@ -10233,7 +10237,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
             panic!("expected offset surface construction")
         };
         assert_eq!(*distance, -12.5);
-        assert_eq!((*u_sense, *v_sense), (3, -4));
+        assert_eq!((*u_sense, *v_sense), (Some(3), Some(-4)));
         assert_eq!(*extension_flags, expected_flags);
         assert!(result
             .ir
@@ -10262,7 +10266,7 @@ fn generated_offset_spline_surfaces_decode_and_write_source_less() {
         else {
             panic!("expected round-trip offset surface")
         };
-        assert_eq!((*distance, *u_sense, *v_sense), (-12.5, 3, -4));
+        assert_eq!((*distance, *u_sense, *v_sense), (-12.5, Some(3), Some(-4)));
         assert_eq!(*extension_flags, expected_flags);
     }
 }

@@ -1133,6 +1133,8 @@ fn ap242_writer_round_trips_indexed_tessellation_and_exact_body_link() {
     ir.model
         .tessellations
         .push(cadmpeg_ir::tessellation::Tessellation {
+            faces: Vec::new(),
+            chordal_deflection: None,
             id: "mesh-0".into(),
             body: Some(ir.model.bodies[0].id.clone()),
             source_object: None,
@@ -1235,7 +1237,7 @@ fn writer_round_trips_product_body_ownership() {
         bodies: vec![ir.model.bodies[0].id.clone()],
     });
     ir.model
-        .occurrences
+        .product_occurrences
         .push(cadmpeg_ir::product::ProductOccurrence {
             id: cadmpeg_ir::ids::OccurrenceId("root-0".into()),
             product,
@@ -1256,7 +1258,7 @@ fn writer_round_trips_product_body_ownership() {
     assert_eq!(decoded.ir.model.products.len(), 1);
     assert_eq!(decoded.ir.model.products[0].product_id, "PART-001");
     assert_eq!(decoded.ir.model.products[0].bodies.len(), 1);
-    assert_eq!(decoded.ir.model.occurrences.len(), 1);
+    assert_eq!(decoded.ir.model.product_occurrences.len(), 1);
 }
 
 #[test]
@@ -1342,11 +1344,11 @@ fn decode_builds_product_occurrences_with_relative_placement() {
         .expect("decode AP242 assembly");
 
     assert_eq!(result.ir.model.products.len(), 2);
-    assert_eq!(result.ir.model.occurrences.len(), 2);
+    assert_eq!(result.ir.model.product_occurrences.len(), 2);
     let child = result
         .ir
         .model
-        .occurrences
+        .product_occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .unwrap();
@@ -1367,11 +1369,11 @@ fn decode_builds_product_occurrences_with_relative_placement() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("decode written product graph");
     assert_eq!(roundtrip.ir.model.products.len(), 2);
-    assert_eq!(roundtrip.ir.model.occurrences.len(), 2);
+    assert_eq!(roundtrip.ir.model.product_occurrences.len(), 2);
     let child = roundtrip
         .ir
         .model
-        .occurrences
+        .product_occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Placed child"))
         .expect("round-tripped child occurrence");
@@ -1389,7 +1391,7 @@ fn decode_builds_occurrence_placement_from_mapped_item() {
     let child = result
         .ir
         .model
-        .occurrences
+        .product_occurrences
         .iter()
         .find(|occurrence| occurrence.name.as_deref() == Some("Mapped child"))
         .unwrap();
@@ -1824,11 +1826,11 @@ fn repeated_subassembly_instances_each_receive_the_subtree() {
 #21=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u2','sub two','',#6,#9,$);
 #22=NEXT_ASSEMBLY_USAGE_OCCURRENCE('u3','leaf','',#9,#12,$);",
     );
-    assert_eq!(result.ir.model.occurrences.len(), 5);
+    assert_eq!(result.ir.model.product_occurrences.len(), 5);
     let subassemblies = result
         .ir
         .model
-        .occurrences
+        .product_occurrences
         .iter()
         .filter(|occurrence| occurrence.product.as_str() == "step:product:product#7")
         .collect::<Vec<_>>();
@@ -1838,7 +1840,7 @@ fn repeated_subassembly_instances_each_receive_the_subtree() {
             result
                 .ir
                 .model
-                .occurrences
+                .product_occurrences
                 .iter()
                 .filter(|occurrence| matches!(
                     &occurrence.parent,
@@ -1867,11 +1869,11 @@ fn ap203_specified_source_formations_build_occurrence_tree() {
     );
 
     assert_eq!(result.ir.model.products.len(), 2);
-    assert_eq!(result.ir.model.occurrences.len(), 2);
+    assert_eq!(result.ir.model.product_occurrences.len(), 2);
     assert!(result
         .ir
         .model
-        .occurrences
+        .product_occurrences
         .iter()
         .any(|occurrence| occurrence.product.as_str() == "step:product:product#7"));
     assert!(!result
@@ -2467,10 +2469,12 @@ fn edgeless_doc() -> CadIr {
     ir.model.points.push(Point {
         id: PointId("p0".into()),
         position: Point3::new(0.0, 0.0, 0.0),
+        source_object: None,
     });
     ir.model.points.push(Point {
         id: PointId("p1".into()),
         position: Point3::new(1.0, 0.0, 0.0),
+        source_object: None,
     });
     ir.model.vertices.push(Vertex {
         id: VertexId("v0".into()),
@@ -2900,6 +2904,8 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
         .push(cadmpeg_ir::tessellation::Tessellation {
             id: "test:step:tessellation#0".into(),
             body: None,
+            faces: Vec::new(),
+            chordal_deflection: None,
             source_object: Some(source_object),
             vertices: Vec::new(),
             triangles: Vec::new(),
@@ -2964,6 +2970,52 @@ fn face_on_unknown_surface_is_skipped_and_reported() {
         report.losses
     );
     assert!(unknown_notes[0].message.contains("1 face(s)"));
+}
+
+#[test]
+fn unsupported_nested_and_polygonal_carriers_are_skipped_without_panicking() {
+    let mut polygonal = unit_cube();
+    let surface_id = polygonal.model.faces[0].surface.clone();
+    polygonal
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .unwrap()
+        .geometry = SurfaceGeometry::Polygonal {
+        vertices: Vec::new(),
+        triangles: Vec::new(),
+        chordal_deflection: 0.1,
+    };
+    let report = write_step(&polygonal, &mut Vec::new(), &StepWriteOptions::default())
+        .expect("polygonal face is reported as an export loss");
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.message.contains("unknown or STEP-unsupported surface")
+    }));
+
+    let mut nested_unknown = unit_cube();
+    let curve_id = nested_unknown.model.edges[0].curve.clone().unwrap();
+    nested_unknown
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = CurveGeometry::Transformed {
+        basis: Box::new(CurveGeometry::Unknown { record: None }),
+        transform: cadmpeg_ir::transform::Transform::identity(),
+    };
+    let report = write_step(
+        &nested_unknown,
+        &mut Vec::new(),
+        &StepWriteOptions::default(),
+    )
+    .expect("transformed unknown curve is reported as an export loss");
+    assert!(report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::LossCategory::Geometry
+            && loss.message.contains("STEP-unsupported transform")
+    }));
 }
 
 #[test]

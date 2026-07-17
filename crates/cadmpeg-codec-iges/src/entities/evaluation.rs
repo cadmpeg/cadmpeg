@@ -63,6 +63,56 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
             origin.u + parameter * direction.u,
             origin.v + parameter * direction.v,
         )),
+        PcurveGeometry::Circle {
+            center,
+            x_axis,
+            y_axis,
+            radius,
+        } => Some(Point2::new(
+            center.u + radius * (x_axis.u * parameter.cos() + y_axis.u * parameter.sin()),
+            center.v + radius * (x_axis.v * parameter.cos() + y_axis.v * parameter.sin()),
+        )),
+        PcurveGeometry::Ellipse {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => Some(Point2::new(
+            center.u
+                + major_radius * x_axis.u * parameter.cos()
+                + minor_radius * y_axis.u * parameter.sin(),
+            center.v
+                + major_radius * x_axis.v * parameter.cos()
+                + minor_radius * y_axis.v * parameter.sin(),
+        )),
+        PcurveGeometry::Parabola {
+            vertex,
+            x_axis,
+            y_axis,
+            focal_distance,
+        } => Some(Point2::new(
+            vertex.u
+                + focal_distance * x_axis.u * parameter * parameter
+                + 2.0 * focal_distance * y_axis.u * parameter,
+            vertex.v
+                + focal_distance * x_axis.v * parameter * parameter
+                + 2.0 * focal_distance * y_axis.v * parameter,
+        )),
+        PcurveGeometry::Hyperbola {
+            center,
+            x_axis,
+            y_axis,
+            major_radius,
+            minor_radius,
+        } => Some(Point2::new(
+            center.u
+                + major_radius * x_axis.u * parameter.cosh()
+                + minor_radius * y_axis.u * parameter.sinh(),
+            center.v
+                + major_radius * x_axis.v * parameter.cosh()
+                + minor_radius * y_axis.v * parameter.sinh(),
+        )),
         PcurveGeometry::Nurbs {
             degree,
             knots,
@@ -87,6 +137,31 @@ pub(super) fn pcurve(geometry: &PcurveGeometry, parameter: f64) -> Option<Point2
                 denominator += coefficient;
             }
             (denominator != 0.0).then(|| Point2::new(u / denominator, v / denominator))
+        }
+        PcurveGeometry::Trimmed {
+            parameter_range,
+            basis,
+        } => {
+            let parameter = parameter.clamp(
+                parameter_range[0].min(parameter_range[1]),
+                parameter_range[0].max(parameter_range[1]),
+            );
+            pcurve(basis, parameter)
+        }
+        PcurveGeometry::Offset { distance, basis } => {
+            let delta = f64::EPSILON.sqrt() * parameter.abs().max(1.0);
+            let point = pcurve(basis, parameter)?;
+            let before = pcurve(basis, parameter - delta)?;
+            let after = pcurve(basis, parameter + delta)?;
+            let du = after.u - before.u;
+            let dv = after.v - before.v;
+            let magnitude = du.hypot(dv);
+            (magnitude > 0.0).then(|| {
+                Point2::new(
+                    point.u - distance * dv / magnitude,
+                    point.v + distance * du / magnitude,
+                )
+            })
         }
     }
 }
@@ -169,6 +244,9 @@ pub(super) fn curve(geometry: &CurveGeometry, parameter: f64) -> Option<Point3> 
                     point.z / denominator,
                 )
             })
+        }
+        CurveGeometry::Polyline { .. } | CurveGeometry::Transformed { .. } => {
+            cadmpeg_ir::eval::curve_point(geometry, parameter)
         }
         CurveGeometry::Composite { .. } | CurveGeometry::Unknown { .. } => None,
     }
@@ -274,6 +352,10 @@ pub(super) fn surface(geometry: &SurfaceGeometry, uv: Point2) -> Option<Point3> 
             Some(add(point, *axis, minor_radius * uv.v.sin()))
         }
         SurfaceGeometry::Nurbs(surface) => nurbs_surface(surface, uv),
+        SurfaceGeometry::Polygonal { .. } => None,
+        SurfaceGeometry::Transformed { .. } => {
+            cadmpeg_ir::eval::surface_point(geometry, uv.u, uv.v)
+        }
         SurfaceGeometry::Unknown { .. } => None,
     }
 }

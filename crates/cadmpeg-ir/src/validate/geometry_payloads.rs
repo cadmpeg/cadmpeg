@@ -20,6 +20,29 @@ pub(super) fn check_tessellations(ir: &CadIr, findings: &mut Vec<Finding>) {
             });
         }
         if mesh
+            .faces
+            .iter()
+            .any(|face| !ir.model.faces.iter().any(|candidate| candidate.id == *face))
+        {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "references a missing tessellation face".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if mesh
+            .chordal_deflection
+            .is_some_and(|value| !value.is_finite() || value < 0.0)
+        {
+            findings.push(Finding {
+                check: Check::Tessellation,
+                severity: Severity::Error,
+                message: "has an invalid tessellation deflection".into(),
+                entity: Some(mesh.id.clone()),
+            });
+        }
+        if mesh
             .vertices
             .iter()
             .any(|point| !point.x.is_finite() || !point.y.is_finite() || !point.z.is_finite())
@@ -319,6 +342,23 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 }
                 check_knots(findings, &s.id.0, &n.u_knots, "u");
                 check_knots(findings, &s.id.0, &n.v_knots, "v");
+            }
+            SurfaceGeometry::Polygonal {
+                vertices,
+                triangles,
+                chordal_deflection,
+            } => {
+                if !valid_polygonal_surface(vertices, triangles, *chordal_deflection) {
+                    bounds_err(findings, &s.id.0, "polygonal surface payload is invalid");
+                }
+            }
+            SurfaceGeometry::Transformed { basis, transform } => {
+                if !valid_affine_transform(*transform) {
+                    bounds_err(findings, &s.id.0, "surface transform is not finite affine");
+                }
+                if !valid_surface_basis(basis) {
+                    bounds_err(findings, &s.id.0, "transformed surface basis is invalid");
+                }
             }
             // An unknown surface carries no numeric geometry to bounds-check; its
             // record link is checked in `check_references`. A face resting on it
@@ -1368,6 +1408,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
+        if let ProceduralSurfaceDefinition::Subset {
+            parameter_ranges, ..
+        } = &procedural.definition
+        {
+            if !parameter_ranges
+                .iter()
+                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1])
+            {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "surface subset ranges are not finite and ordered",
+                );
+            }
+        }
     }
     for c in &ir.model.curves {
         match &c.geometry {
@@ -1439,6 +1494,23 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
                 check_knots(findings, &c.id.0, &n.knots, "");
+            }
+            CurveGeometry::Polyline {
+                points,
+                parameters,
+                chordal_deflection,
+            } => {
+                if !valid_polyline(points, parameters.as_deref(), *chordal_deflection) {
+                    bounds_err(findings, &c.id.0, "polyline payload is invalid");
+                }
+            }
+            CurveGeometry::Transformed { basis, transform } => {
+                if !valid_affine_transform(*transform) {
+                    bounds_err(findings, &c.id.0, "curve transform is not finite affine");
+                }
+                if !valid_curve_basis(basis) {
+                    bounds_err(findings, &c.id.0, "transformed curve basis is invalid");
+                }
             }
             CurveGeometry::Unknown { .. } => {}
         }
@@ -1677,6 +1749,27 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             continue;
         }
+        if let ProceduralCurveDefinition::Offset {
+            distance,
+            direction,
+            ..
+        } = &procedural.definition
+        {
+            let direction_valid = direction.is_none_or(|direction| {
+                direction.x.is_finite()
+                    && direction.y.is_finite()
+                    && direction.z.is_finite()
+                    && direction.norm() > 0.0
+            });
+            if !distance.is_finite() || !direction_valid {
+                bounds_err(
+                    findings,
+                    &procedural.id.0,
+                    "offset curve distance or direction is invalid",
+                );
+            }
+            continue;
+        }
         if let ProceduralCurveDefinition::TwoSidedOffset {
             context, offsets, ..
         } = &procedural.definition
@@ -1792,6 +1885,151 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
     }
+}
+
+fn valid_affine_transform(transform: crate::transform::Transform) -> bool {
+    transform.rows.into_iter().flatten().all(f64::is_finite)
+        && transform.rows[3] == [0.0, 0.0, 0.0, 1.0]
+}
+
+fn valid_surface_basis(geometry: &SurfaceGeometry) -> bool {
+    match geometry {
+        SurfaceGeometry::Plane { normal, u_axis, .. } => !degenerate(normal) && !degenerate(u_axis),
+        SurfaceGeometry::Cylinder {
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => !degenerate(axis) && !degenerate(ref_direction) && !nonpositive(*radius),
+        SurfaceGeometry::Cone {
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            ..
+        } => {
+            !degenerate(axis)
+                && !degenerate(ref_direction)
+                && *radius >= 0.0
+                && ratio.is_finite()
+                && *ratio > 0.0
+        }
+        SurfaceGeometry::Sphere {
+            axis,
+            ref_direction,
+            radius,
+            ..
+        } => !degenerate(axis) && !degenerate(ref_direction) && radius.abs() > f64::EPSILON,
+        SurfaceGeometry::Torus {
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            !degenerate(axis)
+                && !degenerate(ref_direction)
+                && !nonpositive(*major_radius)
+                && minor_radius.abs() > f64::EPSILON
+        }
+        SurfaceGeometry::Nurbs(n) => {
+            n.control_points.len() == n.u_count as usize * n.v_count as usize
+                && n.u_knots.windows(2).all(|w| w[0] <= w[1])
+                && n.v_knots.windows(2).all(|w| w[0] <= w[1])
+        }
+        SurfaceGeometry::Polygonal {
+            vertices,
+            triangles,
+            chordal_deflection,
+        } => valid_polygonal_surface(vertices, triangles, *chordal_deflection),
+        SurfaceGeometry::Transformed { basis, transform } => {
+            valid_affine_transform(*transform) && valid_surface_basis(basis)
+        }
+        SurfaceGeometry::Unknown { .. } => true,
+    }
+}
+
+fn valid_curve_basis(geometry: &CurveGeometry) -> bool {
+    match geometry {
+        CurveGeometry::Line { direction, .. } => !degenerate(direction),
+        CurveGeometry::Circle { axis, radius, .. } => !degenerate(axis) && !nonpositive(*radius),
+        CurveGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } => !nonpositive(*major_radius) && !nonpositive(*minor_radius),
+        CurveGeometry::Parabola {
+            axis,
+            major_direction,
+            focal_distance,
+            ..
+        } => !degenerate(axis) && !degenerate(major_direction) && !nonpositive(*focal_distance),
+        CurveGeometry::Hyperbola {
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            !degenerate(axis)
+                && !degenerate(major_direction)
+                && !nonpositive(*major_radius)
+                && !nonpositive(*minor_radius)
+        }
+        CurveGeometry::Degenerate { point } => {
+            [point.x, point.y, point.z].into_iter().all(f64::is_finite)
+        }
+        CurveGeometry::Nurbs(n) => {
+            n.control_points.len() > n.degree as usize && n.knots.windows(2).all(|w| w[0] <= w[1])
+        }
+        CurveGeometry::Polyline {
+            points,
+            parameters,
+            chordal_deflection,
+        } => valid_polyline(points, parameters.as_deref(), *chordal_deflection),
+        CurveGeometry::Transformed { basis, transform } => {
+            valid_affine_transform(*transform) && valid_curve_basis(basis)
+        }
+        CurveGeometry::Composite { .. } => true,
+        CurveGeometry::Unknown { .. } => true,
+    }
+}
+
+fn valid_polyline(
+    points: &[crate::math::Point3],
+    parameters: Option<&[f64]>,
+    deflection: f64,
+) -> bool {
+    points.len() >= 2
+        && deflection.is_finite()
+        && deflection >= 0.0
+        && points
+            .iter()
+            .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
+        && parameters.is_none_or(|parameters| {
+            parameters.len() == points.len()
+                && parameters.iter().all(|value| value.is_finite())
+                && (parameters.windows(2).all(|window| window[0] < window[1])
+                    || parameters.windows(2).all(|window| window[0] > window[1]))
+        })
+}
+
+fn valid_polygonal_surface(
+    vertices: &[crate::math::Point3],
+    triangles: &[[u32; 3]],
+    deflection: f64,
+) -> bool {
+    vertices.len() >= 3
+        && !triangles.is_empty()
+        && deflection.is_finite()
+        && deflection >= 0.0
+        && vertices
+            .iter()
+            .all(|point| [point.x, point.y, point.z].into_iter().all(f64::is_finite))
+        && triangles
+            .iter()
+            .flatten()
+            .all(|index| usize::try_from(*index).is_ok_and(|index| index < vertices.len()))
 }
 
 fn support_context_is_finite(context: &crate::geometry::IntcurveSupportContext) -> bool {

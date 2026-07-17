@@ -327,10 +327,12 @@ pub(super) fn project(
         let edge = EdgeId(format!("iges:model:edge#{stem}"));
         ir.model.points.extend([
             Point {
+                source_object: None,
                 id: start_point.clone(),
                 position: start,
             },
             Point {
+                source_object: None,
                 id: end_point.clone(),
                 position: end,
             },

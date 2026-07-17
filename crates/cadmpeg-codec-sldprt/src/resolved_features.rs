@@ -902,6 +902,15 @@ pub(crate) fn project_relation_bindings(
                         })
                         .collect(),
                 },
+                name: None,
+                driving: None,
+                active: None,
+                virtual_space: None,
+                visible: None,
+                orientation: None,
+                label_distance: None,
+                label_position: None,
+                metadata: None,
                 native_ref: Some(relation.id.clone()),
             });
         }
@@ -1309,6 +1318,15 @@ fn project_endpoint_constraints(
             id,
             sketch: sketch.clone(),
             definition: SketchConstraintDefinition::CoincidentLoci { loci },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: None,
         });
     }
@@ -1798,6 +1816,7 @@ fn sketch_brep(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: vertex_id.clone(),
@@ -2019,7 +2038,11 @@ fn generated_sketch_curve(
                     .map(|(start, end)| [*start, *end]),
             })
         }
-        SketchGeometry::Point { .. } | SketchGeometry::Native { .. } => Err(
+        SketchGeometry::Point { .. }
+        | SketchGeometry::ReferenceLine { .. }
+        | SketchGeometry::Hyperbola { .. }
+        | SketchGeometry::Parabola { .. }
+        | SketchGeometry::Native { .. } => Err(
             cadmpeg_ir::codec::CodecError::NotImplemented(
                 "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),
             ),
@@ -2050,6 +2073,7 @@ fn sketch_vertex(
     ir.model.points.push(Point {
         id: point_id.clone(),
         position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+        source_object: None,
     });
     ir.model.vertices.push(Vertex {
         id: vertex_id.clone(),

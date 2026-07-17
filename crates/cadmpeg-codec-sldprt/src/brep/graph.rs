@@ -424,6 +424,7 @@ fn decode_graph(
         out.points.push(Point {
             id: PointId(id_point(a)),
             position: cadmpeg_ir::math::Point3::new(x * LEN_TO_MM, y * LEN_TO_MM, z * LEN_TO_MM),
+            source_object: None,
         });
     }
 
@@ -484,6 +485,7 @@ fn decode_graph(
             out.points.push(Point {
                 id: PointId(point_id.clone()),
                 position,
+                source_object: None,
             });
             out.vertices.push(Vertex {
                 id: VertexId(vertex_id.clone()),
@@ -681,7 +683,7 @@ fn decode_graph(
                 let mut geometry = geo.clone();
                 if let Some((_, u_reference, v_reference)) = c.frame {
                     fold_surface_frame(&mut geometry, u_reference, v_reference);
-                    annotate_surface_frame(&mut annotations, id_surf(f.bridge_attr), &geometry);
+                    annotate_surface_frame(&mut annotations, &id_surf(f.bridge_attr), &geometry);
                 }
                 out.surfaces.push(Surface {
                     id: SurfaceId(id_surf(f.bridge_attr)),
@@ -947,47 +949,67 @@ fn prune_rejected_topology(out: &mut Brep) {
 }
 
 fn fold_surface_frame(
-    geometry: &mut SurfaceGeometry,
+    mut geometry: &mut SurfaceGeometry,
     u_reference: cadmpeg_ir::math::Vector3,
     v_reference: cadmpeg_ir::math::Vector3,
 ) {
-    match geometry {
-        SurfaceGeometry::Plane { u_axis, .. } => *u_axis = u_reference,
-        SurfaceGeometry::Cylinder { ref_direction, .. }
-        | SurfaceGeometry::Cone { ref_direction, .. }
-        | SurfaceGeometry::Torus { ref_direction, .. } => *ref_direction = u_reference,
-        SurfaceGeometry::Sphere {
-            axis,
-            ref_direction,
-            ..
-        } => {
-            *axis = v_reference;
-            *ref_direction = u_reference;
+    loop {
+        match geometry {
+            SurfaceGeometry::Plane { u_axis, .. } => {
+                *u_axis = u_reference;
+                break;
+            }
+            SurfaceGeometry::Cylinder { ref_direction, .. }
+            | SurfaceGeometry::Cone { ref_direction, .. }
+            | SurfaceGeometry::Torus { ref_direction, .. } => {
+                *ref_direction = u_reference;
+                break;
+            }
+            SurfaceGeometry::Sphere {
+                axis,
+                ref_direction,
+                ..
+            } => {
+                *axis = v_reference;
+                *ref_direction = u_reference;
+                break;
+            }
+            SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
+            SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Unknown { .. } => break,
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 
 fn annotate_surface_frame(
     annotations: &mut AnnotationBuilder,
-    id: String,
-    geometry: &SurfaceGeometry,
+    id: &str,
+    mut geometry: &SurfaceGeometry,
 ) {
-    match geometry {
-        SurfaceGeometry::Plane { .. } => {
-            annotations.derived(id, "geometry.u_axis");
+    loop {
+        match geometry {
+            SurfaceGeometry::Plane { .. } => {
+                annotations.derived(id.to_owned(), "geometry.u_axis");
+                break;
+            }
+            SurfaceGeometry::Cylinder { .. }
+            | SurfaceGeometry::Cone { .. }
+            | SurfaceGeometry::Torus { .. } => {
+                annotations.derived(id.to_owned(), "geometry.ref_direction");
+                break;
+            }
+            SurfaceGeometry::Sphere { .. } => {
+                annotations
+                    .derived(id, "geometry.axis")
+                    .derived(id.to_owned(), "geometry.ref_direction");
+                break;
+            }
+            SurfaceGeometry::Transformed { basis, .. } => geometry = basis,
+            SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Unknown { .. } => break,
         }
-        SurfaceGeometry::Cylinder { .. }
-        | SurfaceGeometry::Cone { .. }
-        | SurfaceGeometry::Torus { .. } => {
-            annotations.derived(id, "geometry.ref_direction");
-        }
-        SurfaceGeometry::Sphere { .. } => {
-            annotations
-                .derived(&id, "geometry.axis")
-                .derived(id, "geometry.ref_direction");
-        }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
     }
 }
 
@@ -1876,6 +1898,7 @@ fn synthesize_sphere_seams(
                 center.y + radius * axis.y,
                 center.z + radius * axis.z,
             ),
+            source_object: None,
         });
         out.vertices.push(Vertex {
             id: vertex_id.clone(),

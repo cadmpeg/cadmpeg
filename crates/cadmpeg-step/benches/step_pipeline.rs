@@ -35,6 +35,7 @@ fn exchange(entity: &str) -> Vec<u8> {
 fn ir() -> CadIr {
     let mut ir = CadIr::empty(Units::default());
     ir.model.points.extend((0..ENTITY_COUNT).map(|index| Point {
+        source_object: None,
         id: PointId(format!("point-{index}")),
         position: Point3::new(index as f64, 2.0, 3.0),
     }));

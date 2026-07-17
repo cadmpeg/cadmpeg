@@ -631,6 +631,7 @@ impl<'a> Builder<'a> {
                 | AppearanceTarget::Curve(_)
                 | AppearanceTarget::Point(_)
                 | AppearanceTarget::Edge(_)
+                | AppearanceTarget::Vertex(_)
                 | AppearanceTarget::Tessellation(_)
                 | AppearanceTarget::Source { .. } => {}
             }
@@ -738,7 +739,9 @@ impl<'a> Builder<'a> {
                 AppearanceTarget::Tessellation(id) => {
                     (self.tessellation_step_refs.get(id).copied(), "surface")
                 }
-                AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                AppearanceTarget::Body(_)
+                | AppearanceTarget::Vertex(_)
+                | AppearanceTarget::Source { .. } => continue,
             };
             let Some(target) = target else {
                 let target_id = match &binding.target {
@@ -748,7 +751,9 @@ impl<'a> Builder<'a> {
                     AppearanceTarget::Edge(id) => id.0.clone(),
                     AppearanceTarget::Point(id) => id.0.clone(),
                     AppearanceTarget::Tessellation(id) => id.clone(),
-                    AppearanceTarget::Body(_) | AppearanceTarget::Source { .. } => continue,
+                    AppearanceTarget::Body(_)
+                    | AppearanceTarget::Vertex(_)
+                    | AppearanceTarget::Source { .. } => continue,
                 };
                 direct_unstyled.insert(target_id);
                 continue;
@@ -1037,7 +1042,7 @@ impl<'a> Builder<'a> {
 
         let ir = self.ir;
         let products = &ir.model.products;
-        let occurrences = &ir.model.occurrences;
+        let occurrences = &ir.model.product_occurrences;
         let occurrence_products = occurrences
             .iter()
             .map(|occurrence| (occurrence.id.clone(), occurrence.product.clone()))
@@ -1717,6 +1722,15 @@ impl<'a> Builder<'a> {
     fn emit_face(&mut self, face_id: &str) -> Option<Ref> {
         let face = self.faces.get(face_id).copied()?;
         let surface_id = face.surface.0.clone();
+        // A face resting on an unknown (opaque) surface cannot become an
+        // ADVANCED_FACE: STEP requires a real surface. Skip it and aggregate the
+        // loss rather than fabricate placeholder geometry.
+        if let Some(surf) = self.surfaces.get(surface_id.as_str()) {
+            if !geometry::surface_is_supported(&surf.geometry) {
+                self.unknown_surface_faces.insert(face_id.to_string());
+                return None;
+            }
+        }
         let loop_ids: Vec<String> = face.loops.iter().map(|l| l.0.clone()).collect();
         let same_sense = matches!(face.sense, Sense::Forward);
 
@@ -1806,7 +1820,7 @@ impl<'a> Builder<'a> {
         if self
             .curves
             .get(curve_id.as_str())
-            .is_some_and(|curve| matches!(curve.geometry, CurveGeometry::Unknown { .. }))
+            .is_some_and(|curve| !geometry::curve_is_supported(&curve.geometry))
         {
             self.curveless_edges.insert(edge_id.to_string());
             return None;
@@ -1896,7 +1910,7 @@ impl<'a> Builder<'a> {
             let r = if let Some((id, reference)) = emitted {
                 self.written_procedural_surfaces.insert(id);
                 reference
-            } else if matches!(surf.geometry, SurfaceGeometry::Unknown { .. }) {
+            } else if !geometry::surface_is_supported(&surf.geometry) {
                 return None;
             } else {
                 geometry::surface(&mut self.emitter, &surf.geometry)
@@ -2056,7 +2070,7 @@ impl<'a> Builder<'a> {
                         }
                     ),
                 )
-            } else if matches!(geometry, CurveGeometry::Unknown { .. }) {
+            } else if !geometry::curve_is_supported(&geometry) {
                 return None;
             } else {
                 geometry::curve(&mut self.emitter, &geometry)
@@ -2562,7 +2576,7 @@ impl<'a> Builder<'a> {
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} edge(s) have no typed 3D curve and were omitted from \
+                    "{} edge(s) have no typed 3D curve or carry a STEP-unsupported transform and were omitted from \
                      their edge loops (STEP EDGE_CURVE requires a 3D curve)",
                     self.curveless_edges.len()
                 ),
@@ -2573,7 +2587,7 @@ impl<'a> Builder<'a> {
                 LossCategory::Geometry,
                 Severity::Warning,
                 format!(
-                    "{} face(s) rest on an unknown (undecoded) surface and were omitted \
+                    "{} face(s) rest on an unknown or STEP-unsupported surface and were omitted \
                      from the STEP shell (an ADVANCED_FACE requires a surface); their \
                      topology remains in the IR",
                     self.unknown_surface_faces.len()
@@ -2805,6 +2819,7 @@ impl<'a> Builder<'a> {
                 | ProceduralSurfaceDefinition::Deformable { .. }
                 | ProceduralSurfaceDefinition::TSpline { .. }
                 | ProceduralSurfaceDefinition::Offset { .. }
+                | ProceduralSurfaceDefinition::Subset { .. }
                 | ProceduralSurfaceDefinition::ParallelOffset { .. }
                 | ProceduralSurfaceDefinition::DegenerateTorus { .. }
                 | ProceduralSurfaceDefinition::CurveBounded { .. }

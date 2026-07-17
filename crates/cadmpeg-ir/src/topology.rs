@@ -259,4 +259,7 @@ pub struct Point {
     pub id: PointId,
     /// Coordinates in the document's length unit.
     pub position: Point3,
+    /// Source object carrying this free point, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_object: Option<crate::provenance::SourceObjectAssociation>,
 }

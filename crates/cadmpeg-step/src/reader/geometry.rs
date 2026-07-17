@@ -118,6 +118,7 @@ pub(super) fn decode(exchange: &Exchange, ir: &mut CadIr) -> GeometryResult {
         .points
         .extend(point_carriers.into_iter().filter_map(|id| {
             points.get(&id).copied().map(|position| Point {
+                source_object: None,
                 id: PointId(format!("step:data:point#{id}")),
                 position,
             })

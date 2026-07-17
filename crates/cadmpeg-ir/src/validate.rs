@@ -28,26 +28,34 @@ use crate::units::LengthUnit;
 mod annotations_native;
 mod byte_ledger;
 mod carriers_parameterization;
+mod drawings;
 mod geometry_consistency;
 mod geometry_payloads;
 mod identity_order;
 mod pmi;
 mod presentation;
 mod product;
+mod products;
+mod semantic_annotations;
 mod sketches;
+mod spreadsheets;
 mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
 use byte_ledger::check_byte_ledger;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
+use drawings::check_drawings;
 use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
 use geometry_payloads::{check_bounds, check_tessellations};
 use identity_order::{check_identity_and_order, check_version, collect_native_ids, entity_counts};
 use pmi::check_pmi;
 use presentation::check_presentation;
-use product::check_products;
+use product::check_products as check_step_products;
+use products::check_products as check_component_products;
+use semantic_annotations::check_semantic_annotations;
 use sketches::check_sketches;
+use spreadsheets::check_spreadsheets;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
     check_coedge_pairing, check_loops, check_references, check_units, check_wire_topology, IdSets,
@@ -71,9 +79,8 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     let all_ids = check_identity_and_order(ir, &mut findings);
     check_units(ir, &mut findings);
     check_references(ir, &ids, &mut findings);
-    check_products(ir, &mut findings);
+    check_step_products(ir, &mut findings);
     check_pmi(ir, &mut findings);
-    check_presentation(ir, &mut findings);
     check_loops(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
@@ -88,6 +95,11 @@ fn validate_with_ids(ir: &CadIr, losses: Vec<LossNote>) -> (ValidationReport, Ha
     check_procedural_surfaces(ir, &mut findings);
     check_source_associations(ir, &mut findings);
     check_sketches(ir, &mut findings);
+    check_spreadsheets(ir, &mut findings);
+    check_component_products(ir, &mut findings);
+    check_presentation(ir, &all_ids, &mut findings);
+    check_drawings(ir, &all_ids, &mut findings);
+    check_semantic_annotations(ir, &all_ids, &mut findings);
 
     (
         ValidationReport {

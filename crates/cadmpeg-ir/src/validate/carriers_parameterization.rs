@@ -50,6 +50,13 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
         .iter()
         .map(|vertex| vertex.point.0.as_str())
         .collect::<HashSet<_>>();
+    points.extend(
+        ir.model
+            .points
+            .iter()
+            .filter(|point| point.source_object.is_some())
+            .map(|point| point.id.0.as_str()),
+    );
     for binding in &ir.model.appearance_bindings {
         match &binding.target {
             crate::appearance::AppearanceTarget::Surface(id) => {
@@ -365,7 +372,8 @@ pub(super) fn check_carrier_reachability(ir: &CadIr, findings: &mut Vec<Finding>
             ProceduralSurfaceDefinition::Offset { support, .. } => {
                 surfaces.insert(&support.0);
             }
-            ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
+            ProceduralSurfaceDefinition::Subset { support, .. }
+            | ProceduralSurfaceDefinition::ParallelOffset { support, .. } => {
                 surfaces.insert(&support.0);
             }
             ProceduralSurfaceDefinition::Ruled { first, second } => {

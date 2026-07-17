@@ -2667,7 +2667,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                 axis_origin,
                                 axis_direction,
                                 angular_interval,
-                                parameter_interval,
+                                parameter_interval: Some(parameter_interval),
                                 transposed: false,
                             }
                         }
@@ -2688,8 +2688,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             ProceduralSurfaceDefinition::Offset {
                                 support: support_id,
                                 distance,
-                                u_sense,
-                                v_sense,
+                                u_sense: Some(u_sense),
+                                v_sense: Some(v_sense),
                                 extension_flags,
                             }
                         }
@@ -3728,6 +3728,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 out.points.push(Point {
                     id: PointId(id(i)),
                     position: scale_point(*p),
+                    source_object: None,
                 });
             }
         }

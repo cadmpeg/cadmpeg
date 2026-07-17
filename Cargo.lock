@@ -141,6 +141,7 @@ dependencies = [
  "cadmpeg-codec-catia",
  "cadmpeg-codec-creo",
  "cadmpeg-codec-f3d",
+ "cadmpeg-codec-freecad",
  "cadmpeg-codec-iges",
  "cadmpeg-codec-nx",
  "cadmpeg-codec-rhino",
@@ -152,6 +153,7 @@ dependencies = [
  "predicates",
  "serde_json",
  "tempfile",
+ "zip",
 ]
 
 [[package]]
@@ -183,6 +185,19 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror",
+ "zip",
+]
+
+[[package]]
+name = "cadmpeg-codec-freecad"
+version = "0.2.0"
+dependencies = [
+ "cadmpeg-ir",
+ "flate2",
+ "roxmltree",
+ "serde",
+ "serde_json",
+ "tempfile",
  "zip",
 ]
 

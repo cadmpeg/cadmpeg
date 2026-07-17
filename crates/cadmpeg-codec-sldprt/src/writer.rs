@@ -1459,6 +1459,8 @@ pub(super) fn sequential_tessellation(
     Ok(cadmpeg_ir::tessellation::Tessellation {
         id: mesh.id.clone(),
         body: mesh.body.clone(),
+        faces: mesh.faces.clone(),
+        chordal_deflection: mesh.chordal_deflection,
         source_object: mesh.source_object.clone(),
         vertices,
         triangles: triangles_from_strips(&vec![3; triangle_count as usize])?,
@@ -2145,7 +2147,10 @@ pub(super) fn surface_values(
                 reference.z,
             ],
         ),
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer does not support this surface carrier".into(),
             ))
@@ -2395,6 +2400,16 @@ pub(super) fn curve_values(
                 "semantic SLDPRT writer does not support NURBS curves".into(),
             ))
         }
+        CurveGeometry::Polyline { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support polyline curve carriers".into(),
+            ))
+        }
+        CurveGeometry::Transformed { .. } => {
+            return Err(CodecError::NotImplemented(
+                "semantic SLDPRT writer does not support transformed curve carriers".into(),
+            ))
+        }
         CurveGeometry::Unknown { .. } => {
             return Err(CodecError::NotImplemented(
                 "semantic SLDPRT writer cannot regenerate an opaque curve".into(),
@@ -2427,7 +2442,10 @@ pub(super) fn surface_reference(geometry: &SurfaceGeometry) -> cadmpeg_ir::math:
             ref_direction,
             ..
         } => *ref_direction,
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
+        SurfaceGeometry::Transformed { basis, .. } => surface_reference(basis),
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Unknown { .. } => cadmpeg_ir::math::Vector3 {
             x: 1.0,
             y: 0.0,
             z: 0.0,

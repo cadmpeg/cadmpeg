@@ -4,6 +4,7 @@
 use cadmpeg_codec_catia::CatiaCodec;
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_codec_f3d::F3dCodec;
+use cadmpeg_codec_freecad::FcstdCodec;
 use cadmpeg_codec_iges::IgesCodec;
 use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
@@ -25,17 +26,18 @@ impl Registry {
     pub fn with_builtins() -> Self {
         Registry {
             codecs: vec![
+                Box::new(FcstdCodec),
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
                 Box::new(CatiaCodec),
                 Box::new(CreoCodec),
                 Box::new(NxCodec),
                 Box::new(RhinoCodec),
-                Box::new(IgesCodec),
                 Box::new(StepCodec::default()),
                 Box::new(IgesCodec),
             ],
             encoders: vec![
+                Box::new(FcstdCodec),
                 Box::new(F3dCodec),
                 Box::new(SldprtCodec),
                 Box::new(RhinoCodec),
@@ -47,13 +49,13 @@ impl Registry {
 
     /// Return the strongest codec match above [`Confidence::No`].
     pub fn detect<'a>(&'a self, prefix: &[u8]) -> Option<(&'a dyn Codec, Confidence)> {
-        // `max_by_key` selects the last registered codec on a tie. Built-in
-        // magic values do not overlap; keep tie resolution deterministic.
+        // Later codecs have explicit precedence when generic container
+        // signatures tie. This preserves F3D routing for marker-less ZIP prefixes.
         self.codecs
             .iter()
             .map(|c| (c.as_ref(), c.detect(prefix)))
             .filter(|(_, conf)| *conf > Confidence::No)
-            .max_by_key(|(_, conf)| *conf)
+            .max_by_key(|(_, confidence)| *confidence)
     }
 
     /// Return the codec with the given stable format identifier.
@@ -124,6 +126,7 @@ mod tests {
         for format in [
             Format::Cadir,
             Format::Step,
+            Format::Fcstd,
             Format::F3d,
             Format::Sldprt,
             Format::Rhino,
@@ -134,6 +137,14 @@ mod tests {
                 format.name()
             );
         }
+    }
+
+    #[test]
+    fn ambiguous_zip_uses_last_registered_codec_precedence() {
+        let registry = Registry::with_builtins();
+        let (codec, confidence) = registry.detect(b"PK\x03\x04 markerless").unwrap();
+        assert_eq!(codec.id(), "f3d");
+        assert_eq!(confidence, cadmpeg_ir::codec::Confidence::Low);
     }
 
     #[test]

@@ -166,6 +166,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<ProjectedDecode> {
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *point,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:zero-entity:v#{index}"));
         annotate(
@@ -254,6 +255,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<ProjectedDecode> {
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *point,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:e5:v#{index}"));
         annotate(
@@ -992,6 +994,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *p,
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:standard:v#{i}"));
         annotate(
@@ -1411,7 +1414,10 @@ fn point_on_surface(point: Point3, surface: &SurfaceGeometry) -> bool {
                 .sqrt();
             (((radial - major_radius).powi(2) + axial * axial).sqrt() - *minor_radius).abs()
         }
-        SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => return false,
+        SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => return false,
     };
     residual <= TOLERANCE
 }

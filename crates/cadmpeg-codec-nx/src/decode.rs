@@ -198,6 +198,7 @@ fn try_decode_geometry(
             ir.model.points.push(Point {
                 id: pid.clone(),
                 position: pt.position,
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vid.clone(),
@@ -226,7 +227,10 @@ fn try_decode_geometry(
                 SurfaceGeometry::Cone { .. } => counts.cones += 1,
                 SurfaceGeometry::Sphere { .. } => counts.spheres += 1,
                 SurfaceGeometry::Torus { .. } => counts.tori += 1,
-                SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => {}
+                SurfaceGeometry::Nurbs(_)
+                | SurfaceGeometry::Polygonal { .. }
+                | SurfaceGeometry::Transformed { .. }
+                | SurfaceGeometry::Unknown { .. } => {}
             }
             let id = SurfaceId(format!("nx:s{si}:surf#{fi}"));
             annotations
@@ -290,8 +294,8 @@ fn try_decode_geometry(
                 definition: ProceduralSurfaceDefinition::Offset {
                     support,
                     distance: offset.distance,
-                    u_sense: 0,
-                    v_sense: 0,
+                    u_sense: Some(0),
+                    v_sense: Some(0),
                     extension_flags: Vec::new(),
                 },
                 cache_fit_tolerance: None,
@@ -367,6 +371,8 @@ fn try_decode_geometry(
                 | CurveGeometry::Degenerate { .. }
                 | CurveGeometry::Composite { .. }
                 | CurveGeometry::Nurbs(_)
+                | CurveGeometry::Polyline { .. }
+                | CurveGeometry::Transformed { .. }
                 | CurveGeometry::Unknown { .. } => {}
             }
             let id = CurveId(format!("nx:s{si}:crv#{ci}"));
@@ -913,7 +919,9 @@ fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {
         SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
         | SurfaceGeometry::Unknown { .. } => Point2::new(uv[0], uv[1]),
+        SurfaceGeometry::Transformed { basis, .. } => surface_parameters(basis, uv),
     }
 }
 
@@ -1174,6 +1182,8 @@ fn surface_tag(geometry: &SurfaceGeometry) -> &'static str {
         SurfaceGeometry::Sphere { .. } => "SPHERE",
         SurfaceGeometry::Torus { .. } => "TORUS",
         SurfaceGeometry::Nurbs(_) => "B_SPLINE_SURFACE",
+        SurfaceGeometry::Polygonal { .. } => "POLYGONAL_SURFACE",
+        SurfaceGeometry::Transformed { basis, .. } => surface_tag(basis),
         SurfaceGeometry::Unknown { .. } => "UNKNOWN_SURFACE",
     }
 }
@@ -1188,6 +1198,8 @@ fn curve_tag(geometry: &CurveGeometry) -> &'static str {
         CurveGeometry::Degenerate { .. } => "DEGENERATE_CURVE",
         CurveGeometry::Composite { .. } => "COMPOSITE_CURVE",
         CurveGeometry::Nurbs(_) => "B_SPLINE_CURVE",
+        CurveGeometry::Polyline { .. } => "POLYLINE",
+        CurveGeometry::Transformed { basis, .. } => curve_tag(basis),
         CurveGeometry::Unknown { .. } => "UNKNOWN_CURVE",
     }
 }

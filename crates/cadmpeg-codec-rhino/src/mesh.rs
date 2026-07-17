@@ -333,6 +333,8 @@ fn decode_inner(
         tessellation: Tessellation {
             id,
             body: None,
+            faces: Vec::new(),
+            chordal_deflection: None,
             source_object: association,
             vertices,
             triangles,

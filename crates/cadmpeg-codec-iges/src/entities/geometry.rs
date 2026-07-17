@@ -391,10 +391,12 @@ pub(crate) fn project_geometry(
         let edge = EdgeId(format!("iges:model:edge#{stem}"));
         ir.model.points.extend([
             Point {
+                source_object: None,
                 id: start_point.clone(),
                 position: start,
             },
             Point {
+                source_object: None,
                 id: end_point.clone(),
                 position: end,
             },
@@ -471,6 +473,7 @@ pub(crate) fn project_geometry(
         let point = PointId(format!("iges:model:point#D{}", entry.sequence));
         let vertex = VertexId(format!("iges:model:vertex#D{}", entry.sequence));
         ir.model.points.push(Point {
+            source_object: None,
             id: point.clone(),
             position,
         });
@@ -555,10 +558,12 @@ pub(crate) fn project_geometry(
         let edge = EdgeId(format!("iges:model:edge#{stem}"));
         ir.model.points.extend([
             Point {
+                source_object: None,
                 id: start_point.clone(),
                 position: start,
             },
             Point {
+                source_object: None,
                 id: end_point.clone(),
                 position: end,
             },
@@ -775,10 +780,12 @@ pub(crate) fn project_geometry(
         let edge = EdgeId(format!("iges:model:edge#{stem}"));
         ir.model.points.extend([
             Point {
+                source_object: None,
                 id: start_point.clone(),
                 position: start,
             },
             Point {
+                source_object: None,
                 id: end_point.clone(),
                 position: end,
             },

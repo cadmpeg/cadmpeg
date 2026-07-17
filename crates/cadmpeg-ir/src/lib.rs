@@ -24,6 +24,7 @@
 //! distinguish derived, inferred, and unknown values. Native namespaces and
 //! unknown records retain source-specific data outside the neutral model.
 //!
+//! Product components, occurrence instancing, and assembly joints have neutral arenas.
 //! Product prototypes and occurrence trees retain assembly identity and
 //! placement. Joint and mate constraints are reserved.
 
@@ -39,6 +40,7 @@ pub mod cursor;
 
 pub mod diff;
 pub mod document;
+pub mod drawings;
 pub mod eval;
 pub mod examples;
 pub mod features;
@@ -52,11 +54,14 @@ pub mod native;
 pub mod pmi;
 pub mod presentation;
 pub mod product;
+pub mod products;
 mod provenance;
 pub mod read;
 pub mod report;
+pub mod semantic_annotations;
 pub mod sketches;
 pub mod source_fidelity;
+pub mod spreadsheets;
 pub mod subd;
 pub mod tessellation;
 pub mod topology;
@@ -70,11 +75,11 @@ pub use codec::{
     CadirEncoder, Codec, CodecError, Confidence, ContainerEntry, ContainerSummary, DecodeOptions,
     DecodeResult, Encoder, ReadSeek,
 };
+pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use diff::{
-    diff, diff_byte_ledger, diff_source_fidelity, AnnotationDiff, ArenaDiff, ByteLedgerDiff,
-    IrDiff, ModifiedEntity, SourceFidelityDiff,
+    diff_byte_ledger, diff_source_fidelity, AnnotationDiff, ByteLedgerDiff, SourceFidelityDiff,
 };
-pub use document::{CadIr, SourceMeta, IR_VERSION};
+pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
@@ -85,8 +90,16 @@ pub use pmi::{
     DatumReference, DimensionKind, GeometricToleranceKind, PmiAnnotation, PmiDefinition,
     PmiQuantity, PmiTarget, PmiValue,
 };
+pub use presentation::{
+    CameraState, PresentationDocument, PresentationId, PresentationState, ViewPresentation,
+};
 pub use presentation::{PresentationItem, PresentationLayer};
 pub use product::{OccurrenceParent, Product, ProductOccurrence};
+pub use products::{
+    AssemblyJoint, Component, ComponentId, ComponentKind, ComponentReference, CopyOnChangePolicy,
+    ExternalDocumentReference, ExternalResolution, JointId, JointKind, JointLimits, JointOperand,
+    Occurrence, OccurrenceId,
+};
 /// Source location attached to a [`LossNote`].
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
@@ -98,6 +111,7 @@ pub use sketches::{
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
 pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
+pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,

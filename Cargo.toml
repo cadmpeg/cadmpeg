@@ -5,6 +5,7 @@ members = [
   "crates/cadmpeg",
   "crates/cadmpeg-ir",
   "crates/cadmpeg-codec-f3d",
+  "crates/cadmpeg-codec-freecad",
   "crates/cadmpeg-codec-sldprt",
   "crates/cadmpeg-codec-catia",
   "crates/cadmpeg-codec-creo",
@@ -30,6 +31,7 @@ rust-version = "1.88"
 [workspace.dependencies]
 cadmpeg-ir = { path = "crates/cadmpeg-ir", version = "0.2.0" }
 cadmpeg-codec-f3d = { path = "crates/cadmpeg-codec-f3d", version = "0.2.0" }
+cadmpeg-codec-freecad = { path = "crates/cadmpeg-codec-freecad", version = "0.2.0" }
 cadmpeg-codec-sldprt = { path = "crates/cadmpeg-codec-sldprt", version = "0.2.0" }
 cadmpeg-codec-catia = { path = "crates/cadmpeg-codec-catia", version = "0.2.0" }
 cadmpeg-codec-creo = { path = "crates/cadmpeg-codec-creo", version = "0.2.0" }

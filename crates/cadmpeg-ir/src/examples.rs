@@ -111,6 +111,7 @@ pub fn unit_cube() -> CadIr {
         ir.model.points.push(Point {
             id: PointId(format!("synthetic:cube:point#{i}")),
             position: Point3::new(*x, *y, *z),
+            source_object: None,
         });
         ir.model.vertices.push(Vertex {
             id: VertexId(format!("synthetic:cube:vertex#{i}")),

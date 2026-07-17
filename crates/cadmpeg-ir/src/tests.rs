@@ -51,14 +51,14 @@ fn product_occurrence_tree_validates_references_and_cycles() {
         name: Some("Assembly".into()),
         bodies: Vec::new(),
     });
-    ir.model.occurrences.push(ProductOccurrence {
+    ir.model.product_occurrences.push(ProductOccurrence {
         id: OccurrenceId("test:product:occurrence#root".into()),
         product: ProductId("test:product:product#assembly".into()),
         parent: OccurrenceParent::Root,
         transform: Transform::identity(),
         name: None,
     });
-    ir.model.occurrences.push(ProductOccurrence {
+    ir.model.product_occurrences.push(ProductOccurrence {
         id: OccurrenceId("test:product:occurrence#child".into()),
         product: ProductId("test:product:product#assembly".into()),
         parent: OccurrenceParent::Occurrence {
@@ -70,7 +70,7 @@ fn product_occurrence_tree_validates_references_and_cycles() {
     ir.finalize();
     assert!(crate::validate(&ir, Vec::new()).is_ok());
 
-    ir.model.occurrences[1].transform.rows[0][0] = f64::INFINITY;
+    ir.model.product_occurrences[1].transform.rows[0][0] = f64::INFINITY;
     assert!(crate::validate(&ir, Vec::new())
         .findings
         .iter()
@@ -78,9 +78,9 @@ fn product_occurrence_tree_validates_references_and_cycles() {
             finding.check == crate::report::Check::ProductStructure
                 && finding.message.contains("non-finite")
         }));
-    ir.model.occurrences[1].transform = Transform::identity();
+    ir.model.product_occurrences[1].transform = Transform::identity();
 
-    ir.model.occurrences[1].parent = OccurrenceParent::Occurrence {
+    ir.model.product_occurrences[1].parent = OccurrenceParent::Occurrence {
         occurrence: OccurrenceId("test:product:occurrence#child".into()),
     };
     let report = crate::validate(&ir, Vec::new());
@@ -352,6 +352,15 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         definition: SketchConstraintDefinition::Coincident {
             entities: vec![circle_id],
         },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
         native_ref: None,
     });
     ir.finalize();
@@ -387,11 +396,16 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
     let entity = SketchEntityId("synthetic:test:entity#0".into());
     let parameter = ParameterId("synthetic:test:parameter#0".into());
     let definitions = vec![
+        SketchConstraintDefinition::Disabled,
         SketchConstraintDefinition::CoincidentLoci {
             loci: vec![
                 SketchLocus::Start(entity.clone()),
                 SketchLocus::Center(entity.clone()),
             ],
+        },
+        SketchConstraintDefinition::PointOnObject {
+            point: SketchLocus::Start(entity.clone()),
+            entity: entity.clone(),
         },
         SketchConstraintDefinition::Midpoint {
             point: SketchLocus::End(entity.clone()),
@@ -432,6 +446,31 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             parameter,
+        },
+        SketchConstraintDefinition::SnellsLaw {
+            incident: SketchLocus::Start(entity.clone()),
+            refracted: SketchLocus::End(entity.clone()),
+            interface: entity.clone(),
+            parameter: ParameterId("synthetic:test:parameter#0".into()),
+        },
+        SketchConstraintDefinition::Weight {
+            entity: entity.clone(),
+            parameter: ParameterId("synthetic:test:parameter#0".into()),
+        },
+        SketchConstraintDefinition::InternalAlignment {
+            helper: entity.clone(),
+            parent: entity.clone(),
+            alignment: crate::sketches::SketchInternalAlignment::BsplineControlPoint,
+            index: Some(2),
+        },
+        SketchConstraintDefinition::Group {
+            elements: vec![SketchLocus::Entity(entity.clone())],
+        },
+        SketchConstraintDefinition::Text {
+            elements: vec![SketchLocus::Entity(entity.clone())],
+            text: "R42".into(),
+            font: Some("Mono".into()),
+            is_text_height: false,
         },
     ];
     let json = serde_json::to_string(&definitions).unwrap();
@@ -474,6 +513,15 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
                 SketchLocus::Start(entity),
             ],
         },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
         native_ref: None,
     });
     ir.finalize();
@@ -561,6 +609,15 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
             first,
             second: foreign,
         },
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
         native_ref: None,
     });
     ir.finalize();
@@ -592,15 +649,31 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
             },
             op: BooleanOp::NewBody,
             draft: None,
+            reverse_draft: None,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
         FeatureDefinition::Sweep {
             profile: Some(ProfileRef::Sketch(sketch.clone())),
+            sections: Vec::new(),
             path: Some(PathRef::Sketch(sketch.clone())),
             mode: crate::features::SweepMode::Solid {
                 op: BooleanOp::NewBody,
             },
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
             twist: None,
             scale: None,
+            allow_multi_profile_faces: None,
         },
     ];
     let json = serde_json::to_string(&definitions).unwrap();
@@ -673,6 +746,15 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
             },
             op: BooleanOp::NewBody,
             draft: None,
+            reverse_draft: None,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
         native_ref: None,
     });
@@ -833,6 +915,7 @@ fn parameter_dependencies_must_exist_and_precede_consumers() {
 
 #[test]
 fn tessellation_counts_must_be_consistent() {
+    use crate::ids::FaceId;
     use crate::math::{Point3, Vector3};
     use crate::tessellation::Tessellation;
 
@@ -840,6 +923,8 @@ fn tessellation_counts_must_be_consistent() {
     ir.model.tessellations.push(Tessellation {
         id: "synthetic:test:tessellation#invalid-counts".into(),
         body: None,
+        faces: vec![FaceId("synthetic:test:face#missing".into())],
+        chordal_deflection: Some(-1.0),
         source_object: None,
         vertices: vec![
             Point3::new(0.0, 0.0, 0.0),
@@ -854,6 +939,8 @@ fn tessellation_counts_must_be_consistent() {
     ir.model.tessellations.push(Tessellation {
         id: "synthetic:test:tessellation#invalid-strips".into(),
         body: None,
+        faces: Vec::new(),
+        chordal_deflection: None,
         source_object: None,
         vertices: vec![
             Point3::new(0.0, 0.0, 0.0),
@@ -879,6 +966,14 @@ fn tessellation_counts_must_be_consistent() {
         .findings
         .iter()
         .any(|finding| finding.message.contains("triangles do not match strips")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("missing tessellation face")));
+    assert!(report
+        .findings
+        .iter()
+        .any(|finding| finding.message.contains("invalid tessellation deflection")));
 }
 
 #[test]
@@ -1069,6 +1164,22 @@ fn appearance_asset_and_binding_round_trip() {
         appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
         source_entity_id: Some("0_1".into()),
         object_type: Some("Body".into()),
+        channels: std::collections::BTreeMap::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "synthetic:test:appearance-binding#edge".into(),
+        target: AppearanceTarget::Edge(ir.model.edges[0].id.clone()),
+        appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
+        source_entity_id: Some("0_1".into()),
+        object_type: Some("Edge".into()),
+        channels: std::collections::BTreeMap::new(),
+    });
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: "synthetic:test:appearance-binding#vertex".into(),
+        target: AppearanceTarget::Vertex(ir.model.vertices[0].id.clone()),
+        appearance: AppearanceId("synthetic:test:appearance#prism-001".into()),
+        source_entity_id: Some("0_1".into()),
+        object_type: Some("Vertex".into()),
         channels: std::collections::BTreeMap::new(),
     });
 
@@ -1280,6 +1391,46 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
 }
 
 #[test]
+fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
+    let current = unit_cube();
+    let mut legacy = serde_json::to_value(&current).unwrap();
+    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
+    let legacy = serde_json::to_string(&legacy).unwrap();
+
+    assert!(CadIr::from_json(&legacy).is_err());
+    let migrated = CadIr::migrate_json(&legacy).expect("previous-version migration");
+    assert_eq!(migrated, current);
+}
+
+#[test]
+fn previous_external_occurrence_document_token_migrates_deterministically() {
+    let mut legacy = serde_json::to_value(unit_cube()).unwrap();
+    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
+    legacy["model"]["occurrences"] = serde_json::json!([{
+        "id": "synthetic:test:occurrence#external",
+        "prototype": {
+            "scope": "external",
+            "document": "legacy-document",
+            "object": "Body"
+        },
+        "local_transform": crate::transform::Transform::identity().rows,
+        "resolved_transform": crate::transform::Transform::identity().rows,
+        "scale": [1.0, 1.0, 1.0]
+    }]);
+    let migrated = CadIr::migrate_json(&serde_json::to_string(&legacy).unwrap())
+        .expect("external occurrence migration");
+    let crate::ComponentReference::External { document, object } =
+        &migrated.model.occurrences[0].prototype
+    else {
+        panic!("migrated external prototype");
+    };
+    assert_eq!(document.path, None);
+    assert_eq!(document.document_id.as_deref(), Some("legacy-document"));
+    assert_eq!(document.resolution, crate::ExternalResolution::Unresolved);
+    assert_eq!(object.as_deref(), Some("Body"));
+}
+
+#[test]
 fn schema_constrains_version_and_requires_subd_arena() {
     let schema = serde_json::to_value(crate::cadir_json_schema()).unwrap();
     assert_eq!(
@@ -1434,7 +1585,7 @@ fn revolution_rejects_equal_intervals() {
             axis_origin: Point3::new(0.0, 0.0, 0.0),
             axis_direction: Vector3::new(0.0, 0.0, 1.0),
             angular_interval: [1.0, 1.0],
-            parameter_interval: [0.0, 1.0],
+            parameter_interval: Some([0.0, 1.0]),
             transposed: false,
         },
         cache_fit_tolerance: None,
@@ -1778,6 +1929,15 @@ fn sketch_constraint_native_ref_must_resolve() {
                     native_ref: Some("native:missing-operand#0".into()),
                 }],
             },
+            name: None,
+            driving: None,
+            active: None,
+            virtual_space: None,
+            visible: None,
+            orientation: None,
+            label_distance: None,
+            label_position: None,
+            metadata: None,
             native_ref: Some("native:missing-relation#0".into()),
         });
 
@@ -2174,6 +2334,15 @@ fn feature_extent_magnitudes_are_validated() {
                 extent,
                 op: BooleanOp::NewBody,
                 draft: None,
+                reverse_draft: None,
+                direction_source: None,
+                solid: None,
+                face_maker: None,
+                inner_wire_taper: None,
+                first_offset: None,
+                second_offset: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
             },
             native_ref: None,
         });
@@ -2223,6 +2392,15 @@ fn sketch_feature_ownership_and_order_are_validated() {
             },
             op: BooleanOp::NewBody,
             draft: None,
+            reverse_draft: None,
+            direction_source: None,
+            solid: None,
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
         },
         native_ref: None,
     });
@@ -2332,12 +2510,18 @@ fn feature_operation_geometry_is_validated() {
             op: BooleanOp::Join,
         },
         FeatureDefinition::Hole {
+            profile: None,
+            profile_filter: None,
             face: Some(FaceSelection::Unresolved),
             position: None,
             direction: None,
             kind: HoleKind::Simple,
             diameter: Some(Length(0.0)),
             extent: Some(Extent::ThroughAll),
+            bottom: None,
+            taper_angle: None,
+            specification: None,
+            allow_multi_profile_faces: None,
         },
         FeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
@@ -2408,6 +2592,10 @@ fn feature_operation_geometry_is_validated() {
             pitch: Length(f64::NAN),
             revolutions: 0.0,
             clockwise: false,
+            radial_growth: None,
+            cone_angle: None,
+            segment_turns: None,
+            construction_style: None,
         },
         FeatureDefinition::HelixNativeAxis {
             axis_native_ref: String::new(),
@@ -2416,6 +2604,50 @@ fn feature_operation_geometry_is_validated() {
             revolutions: 0.0,
             start_angle: crate::features::Angle(f64::NAN),
             clockwise: false,
+        },
+        FeatureDefinition::HelicalSweep {
+            construction: crate::features::HelicalSweepConstruction {
+                profile: ProfileRef::Native("profile".into()),
+                axis_origin: Point3::new(0.0, 0.0, 0.0),
+                axis_direction: Vector3::new(0.0, 0.0, 0.0),
+                law: crate::features::HelicalSweepLaw::HeightTurnsGrowth,
+                pitch: Length(0.0),
+                height: Length(0.0),
+                turns: 0.0,
+                radial_growth: Length(0.0),
+                cone_angle: crate::features::Angle(0.0),
+                left_handed: false,
+                reversed: false,
+                tolerance: 0.0,
+                allow_multi_profile_faces: None,
+            },
+            op: crate::features::BooleanOp::Join,
+        },
+        FeatureDefinition::Binder {
+            sources: vec![crate::features::BinderSource {
+                target: crate::features::BinderTarget::Native {
+                    reference: String::new(),
+                },
+                subelements: vec![String::new()],
+            }],
+            construction: crate::features::BinderConstruction::SubShape {
+                lifecycle: crate::features::BinderLifecycle::Synchronized,
+                placement: crate::features::BinderPlacement::Relative,
+                copy_on_change: crate::features::BinderCopyOnChange::Disabled,
+                claim_children: false,
+                fuse: false,
+                make_face: true,
+                partial_load: false,
+                refine: true,
+                offset: Some(crate::features::BinderOffset {
+                    distance: Length(0.0),
+                    join: crate::features::BinderOffsetJoin::Arcs,
+                    fill: false,
+                    open_result: false,
+                    intersection: false,
+                }),
+                context: None,
+            },
         },
         FeatureDefinition::Wrap {
             profile: ProfileRef::Native("profile".into()),
@@ -2449,12 +2681,42 @@ fn feature_operation_geometry_is_validated() {
                 count: 0,
             },
         },
+        FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Composite {
+                stages: vec![
+                    crate::features::PatternStage {
+                        pattern: Box::new(PatternKind::Linear {
+                            direction: Some(Vector3::new(1.0, 0.0, 0.0)),
+                            spacing: Length(1.0),
+                            count: 3,
+                        }),
+                        combination: crate::features::PatternStageCombination::Initialize,
+                    },
+                    crate::features::PatternStage {
+                        pattern: Box::new(PatternKind::Scale {
+                            center: crate::features::PatternScaleCenter::FirstSeedCentroid,
+                            final_factor: 2.0,
+                            count: 2,
+                        }),
+                        combination: crate::features::PatternStageCombination::AlignedSlices,
+                    },
+                ],
+            },
+        },
         FeatureDefinition::Sweep {
             profile: None,
+            sections: Vec::new(),
             path: None,
             mode: crate::features::SweepMode::Unresolved,
+            orientation: None,
+            transition: None,
+            transformation: None,
+            path_tangent: false,
+            linearize: false,
             twist: None,
             scale: Some(-1.0),
+            allow_multi_profile_faces: None,
         },
         FeatureDefinition::DatumOffsetPlane {
             reference: None,
@@ -2476,8 +2738,11 @@ fn feature_operation_geometry_is_validated() {
         "projection direction is invalid",
         "composite curve is empty",
         "helix geometry is invalid",
+        "helical sweep is invalid",
+        "binder construction is invalid",
         "wrap depth is invalid",
         "body motion is invalid",
+        "pattern geometry is invalid",
         "pattern geometry is invalid",
         "pattern geometry is invalid",
         "sweep magnitude is invalid",
@@ -2614,10 +2879,69 @@ fn body_selections_round_trip_through_json() {
 }
 
 #[test]
+fn transformed_carriers_preserve_basis_parameters() {
+    let transform = crate::transform::Transform {
+        rows: [
+            [-2.0, 0.0, 0.0, 4.0],
+            [0.0, 2.0, 0.0, 5.0],
+            [0.0, 0.0, 2.0, 6.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ],
+    };
+    let curve = CurveGeometry::Transformed {
+        basis: Box::new(CurveGeometry::Line {
+            origin: Point3::new(1.0, 0.0, 0.0),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        }),
+        transform,
+    };
+    assert_eq!(
+        crate::eval::curve_point(&curve, 3.0),
+        Some(Point3::new(-4.0, 5.0, 6.0))
+    );
+
+    let surface = SurfaceGeometry::Transformed {
+        basis: Box::new(SurfaceGeometry::Plane {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }),
+        transform,
+    };
+    assert_eq!(
+        crate::eval::surface_point(&surface, 2.0, 3.0),
+        Some(Point3::new(0.0, 11.0, 6.0))
+    );
+}
+
+#[test]
+fn polyline_carriers_evaluate_in_both_parameter_directions() {
+    let increasing = CurveGeometry::Polyline {
+        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        parameters: Some(vec![1.0, 3.0]),
+        chordal_deflection: 0.01,
+    };
+    assert_eq!(
+        crate::eval::curve_point(&increasing, 2.0),
+        Some(Point3::new(1.0, 0.0, 0.0))
+    );
+
+    let decreasing = CurveGeometry::Polyline {
+        points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(2.0, 0.0, 0.0)],
+        parameters: Some(vec![3.0, 1.0]),
+        chordal_deflection: 0.01,
+    };
+    assert_eq!(
+        crate::eval::curve_point(&decreasing, 2.5),
+        Some(Point3::new(0.5, 0.0, 0.0))
+    );
+}
+
+#[test]
 fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], "6");
+    assert_eq!(json["ir_version"], "53");
     assert!(json.get("byte_ledger").is_none());
 }

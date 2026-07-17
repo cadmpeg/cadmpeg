@@ -102,6 +102,7 @@ fn topology_vertex(
             let point_id = PointId(format!("iges:model:point#{stem}:D{list}:{}", index + 1));
             let vertex_id = VertexId(format!("iges:model:vertex#{stem}:D{list}:{}", index + 1));
             candidate.model.points.push(Point {
+                source_object: None,
                 id: point_id.clone(),
                 position: vertex_lists[&list][index],
             });

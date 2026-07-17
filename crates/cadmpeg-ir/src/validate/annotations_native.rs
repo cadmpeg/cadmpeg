@@ -3,8 +3,13 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
+use crate::drawings::Drawing;
 use crate::features::{DesignConfiguration, DesignParameter};
+use crate::presentation::{PresentationDocument, ViewPresentation};
+use crate::products::{AssemblyJoint, Component, Occurrence};
+use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {

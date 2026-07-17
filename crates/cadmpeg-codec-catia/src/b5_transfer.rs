@@ -126,6 +126,7 @@ pub(crate) fn transfer(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
+            source_object: None,
         });
         let vertex_id = VertexId(format!("catia:b5:vertex#{index}"));
         annotate(

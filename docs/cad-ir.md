@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"6"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"53"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -139,17 +139,18 @@ Procedural entities retain construction semantics beside a solved carrier. `cach
 Procedural surface definitions are:
 
 - `extrusion`: directrix and sweep direction;
-- `revolution`: directrix, axis, `angular_interval`, `parameter_interval`, and `transposed`;
+- `revolution`: directrix, axis, `angular_interval`, optional source-carried `parameter_interval`, and `transposed`;
 - `sum`: ordered curves `first` and `second` with `basepoint`; the surface is `basepoint + first(u) + second(v)`;
 - `sweep`: profile and spine;
-- `offset`: support surface and signed distance;
+- `offset`: support surface, signed distance, and optional source-carried U/V sense enums;
+- `subset`: support surface and ordered U/V parameter intervals;
 - `ruled`: two directrices;
 - `blend`: two optional oriented supports, optional spine, radius law, and circular, conic, or polynomial cross-section;
 - `unknown`: optional opaque-record reference.
 
 A blend radius law is constant, linear between endpoint radii, or an explicit NURBS law. An unresolved support occupies its fixed side as `null`; omission of the semantic source is reported as decode loss.
 
-Procedural curve definitions are intersection, projection, offset, blend spine, or unknown. Intersection keeps two fixed optional support slots. Projection identifies source curve, support surface, and optional projection direction. Offset identifies source curve, signed distance, and optional support surface.
+Procedural curve definitions are intersection, projection, offset, blend spine, or unknown. Intersection keeps two fixed optional support slots. Projection identifies source curve, support surface, and optional projection direction. Offset identifies its source curve, signed distance, optional support surface, and an optional fixed plane-normal direction when the source defines a free-space planar offset.
 
 ## Source-fidelity annotations
 
@@ -168,7 +169,11 @@ Absence from sidecar exactness means `byte_exact` for a decoded source-backed va
 
 Each feature has an ID, source-history `ordinal`, optional name, suppression state, optional parent, output bodies, a neutral definition, and optional `native_ref`.
 
-Neutral definitions are extrude, revolve, fillet, chamfer, shell, hole, and pattern. `native` is the sole escape hatch for a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
+Neutral definitions include directly stored geometry, extrude, revolve, fillet, chamfer, shell,
+hole, and pattern. A stored-geometry feature has no fabricated replay construction; its feature
+outputs identify any retained exact bodies. `native` is the sole escape hatch for a feature with
+no neutral definition and carries its source kind, parameter map, and non-parameter property map.
+Length wrappers are millimeters and angle wrappers are radians.
 
 Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native profile identity or solved faces. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
@@ -213,7 +218,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "6"`. The `model.subds` arena is required, including when empty. Version 6 removes source-byte accounting from the neutral product model; version 5 documents migrate their semantic content by dropping `byte_ledger`. Version 5 introduced loop boundary roles, anchored and unanchored vertex uses, and ordered pcurve uses. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
+Readers accept exactly `ir_version: "53"`. `CadIr::migrate_json` explicitly migrates version 52. The `model.subds` arena is required, including when empty. Source-byte accounting is excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -235,7 +240,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "6",
+  "ir_version": "53",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

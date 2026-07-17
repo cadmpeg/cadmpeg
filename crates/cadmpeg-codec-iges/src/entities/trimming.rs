@@ -95,6 +95,7 @@ fn face_vertex(
     let point_id = PointId(format!("iges:model:point#{stem}:{boundary}:{index}"));
     let vertex_id = VertexId(format!("iges:model:vertex#{stem}:{boundary}:{index}"));
     candidate.model.points.push(Point {
+        source_object: None,
         id: point_id.clone(),
         position,
     });
@@ -127,7 +128,9 @@ pub(super) fn pcurve_geometry(
         SurfaceGeometry::Sphere { .. }
         | SurfaceGeometry::Torus { .. }
         | SurfaceGeometry::Nurbs(_) => (1.0 / factor, 1.0 / factor),
-        SurfaceGeometry::Unknown { .. } => return None,
+        SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
+        | SurfaceGeometry::Unknown { .. } => return None,
     };
     match &curve.geometry {
         CurveGeometry::Nurbs(nurbs) => Some((

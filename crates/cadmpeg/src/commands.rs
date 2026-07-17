@@ -31,6 +31,11 @@ fn validate_ir(
             .findings
             .extend(cadmpeg_codec_f3d::validate_native(ir));
     }
+    if ir.native.namespace("fcstd").is_some() {
+        report
+            .findings
+            .extend(cadmpeg_codec_freecad::validate_native(ir));
+    }
     if ir.native.namespace("sldprt").is_some() {
         report
             .findings
@@ -91,7 +96,7 @@ pub fn inspect(
         Some(ForcedInput::Cadir) => bail!("inspect requires a container input, not cadir"),
         None => {
             let (codec, confidence) = registry.detect(&prefix).ok_or_else(|| {
-                anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES; use --input-format to override detection", path.display())
+                anyhow!("no codec recognized {}; inspect supports container inputs only, not .cadir.json IR documents; supported: FCStd, f3d, sldprt, CATPart, NX/Creo prt, Rhino 3DM, IGES, STEP; use --input-format to override detection", path.display())
             })?;
             (codec, Some(confidence))
         }

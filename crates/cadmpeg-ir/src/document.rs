@@ -8,10 +8,15 @@ use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::appearance::{Appearance, AppearanceBinding};
 use crate::attributes::SourceAttribute;
+use crate::drawings::Drawing;
 use crate::features::{DesignConfiguration, DesignParameter, Feature};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
+use crate::presentation::{PresentationDocument, ViewPresentation};
+use crate::products::{AssemblyJoint, Component, Occurrence};
+use crate::semantic_annotations::SemanticAnnotation;
 use crate::sketches::{Sketch, SketchConstraint, SketchEntity};
+use crate::spreadsheets::Spreadsheet;
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
@@ -42,12 +47,20 @@ macro_rules! arena_registry {
             sketches: Sketch, "Planar sketch arena.", [serde(default)] => |e| e.id.0.clone();
             sketch_entities: SketchEntity, "Solved sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
             sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
+            spreadsheets: Spreadsheet, "Spreadsheet arena.", [serde(default)] => |e| e.id.0.clone();
+            components: Component, "Product component arena.", [serde(default)] => |e| e.id.0.clone();
+            occurrences: Occurrence, "Product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
+            assembly_joints: AssemblyJoint, "Assembly joint arena.", [serde(default)] => |e| e.id.0.clone();
+            drawings: Drawing, "Drawing page, resource, view, and annotation arena.", [serde(default)] => |e| e.id.0.clone();
+            semantic_annotations: SemanticAnnotation, "Semantic dimension, note, symbol, and callout arena.", [serde(default)] => |e| e.id.0.clone();
+            presentation_documents: PresentationDocument, "Document presentation arena.", [serde(default)] => |e| e.id.0.clone();
+            view_presentations: ViewPresentation, "View-provider presentation arena.", [serde(default)] => |e| e.id.0.clone();
             tessellations: Tessellation, "Tessellation arena.", [] => |e| e.id.clone();
             appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
             appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();
             attributes: SourceAttribute, "Attribute arena.", [] => |e| e.id.0.clone();
             products: crate::product::Product, "Product prototype arena.", [serde(default)] => |e| e.id.0.clone();
-            occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
+            product_occurrences: crate::product::ProductOccurrence, "Placed product occurrence arena.", [serde(default)] => |e| e.id.0.clone();
             pmi: crate::pmi::PmiAnnotation, "Product-manufacturing information arena.", [serde(default)] => |e| e.id.0.clone();
             presentation_layers: crate::presentation::PresentationLayer, "Presentation layer arena.", [serde(default)] => |e| e.id.0.clone();
         }
@@ -82,7 +95,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "6";
+pub const IR_VERSION: &str = "53";
+
+/// Immediately preceding IR version supported by the explicit JSON migration.
+pub const PREVIOUS_IR_VERSION: &str = "52";
 
 arena_registry!(declare_model);
 
@@ -230,10 +246,67 @@ impl CadIr {
         serde_json::from_value(value)
     }
 
+    /// Migrate JSON from the immediately preceding IR version and parse it.
+    ///
+    /// The immediately preceding version is upgraded, including structural
+    /// normalization required by the current schema. Older versions remain
+    /// unsupported.
+    pub fn migrate_json(s: &str) -> Result<Self, serde_json::Error> {
+        let mut value: serde_json::Value = serde_json::from_str(s)?;
+        let version = value.get("ir_version").and_then(serde_json::Value::as_str);
+        match version {
+            Some(IR_VERSION) => serde_json::from_value(value),
+            Some(PREVIOUS_IR_VERSION) => {
+                migrate_previous_external_documents(&mut value);
+                value
+                    .as_object_mut()
+                    .expect("a versioned CADIR document is a JSON object")
+                    .insert("ir_version".into(), IR_VERSION.into());
+                serde_json::from_value(value)
+            }
+            _ => Err(<serde_json::Error as serde::de::Error>::custom(format!(
+                "cannot migrate ir_version {version:?}; expected {PREVIOUS_IR_VERSION} or {IR_VERSION}"
+            ))),
+        }
+    }
+
     /// Sort model, native, and unknown-record arenas by identity.
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
+    }
+}
+
+fn migrate_previous_external_documents(value: &mut serde_json::Value) {
+    let Some(occurrences) = value
+        .get_mut("model")
+        .and_then(|model| model.get_mut("occurrences"))
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for occurrence in occurrences {
+        let Some(document) = occurrence
+            .get_mut("prototype")
+            .and_then(serde_json::Value::as_object_mut)
+            .filter(|prototype| {
+                prototype.get("scope").and_then(serde_json::Value::as_str) == Some("external")
+            })
+            .and_then(|prototype| prototype.get_mut("document"))
+        else {
+            continue;
+        };
+        if let Some(identity) = document.as_str().map(str::to_owned) {
+            let resolution = if identity.is_empty() {
+                "missing_reference"
+            } else {
+                "unresolved"
+            };
+            *document = serde_json::json!({
+                "document_id": identity,
+                "resolution": resolution
+            });
+        }
     }
 }
 

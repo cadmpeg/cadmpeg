@@ -267,6 +267,8 @@ fn offset_analytic(
         }
         SurfaceGeometry::Cone { .. }
         | SurfaceGeometry::Nurbs(_)
+        | SurfaceGeometry::Polygonal { .. }
+        | SurfaceGeometry::Transformed { .. }
         | SurfaceGeometry::Unknown { .. } => return None,
     };
     if dot(normal, indicator) >= 0.0 {
@@ -841,7 +843,7 @@ pub(super) fn project(
                     axis_origin: procedural_axis_origin,
                     axis_direction: procedural_axis_direction,
                     angular_interval: [start_angle, end_angle],
-                    parameter_interval,
+                    parameter_interval: Some(parameter_interval),
                     transposed: false,
                 },
                 cache_fit_tolerance: None,
@@ -1149,7 +1151,10 @@ pub(super) fn project(
             } => *major_radius > 0.0 && *minor_radius > 0.0,
             SurfaceGeometry::Cone { radius, .. } => *radius > 0.0,
             SurfaceGeometry::Plane { .. } => true,
-            SurfaceGeometry::Nurbs(_) | SurfaceGeometry::Unknown { .. } => false,
+            SurfaceGeometry::Nurbs(_)
+            | SurfaceGeometry::Polygonal { .. }
+            | SurfaceGeometry::Transformed { .. }
+            | SurfaceGeometry::Unknown { .. } => false,
         };
         if !regular {
             losses.push(entity_loss(
@@ -1170,8 +1175,8 @@ pub(super) fn project(
             definition: ProceduralSurfaceDefinition::Offset {
                 support: support_id,
                 distance: signed_distance,
-                u_sense: 0,
-                v_sense: 0,
+                u_sense: Some(0),
+                v_sense: Some(0),
                 extension_flags: Vec::new(),
             },
             cache_fit_tolerance: None,

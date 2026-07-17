@@ -2281,6 +2281,10 @@ fn explicit_brep_c2_curve(
             }
             Ok((NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)))
         }
+        _ => Err(CodecError::NotImplemented(format!(
+            "pcurve {} geometry is not writable as Rhino Brep trim geometry",
+            pcurve.id.0
+        ))),
     }
 }
 
@@ -2381,6 +2385,12 @@ fn validate_nurbs_trim_loop(
             cadmpeg_ir::geometry::PcurveGeometry::Nurbs { control_points, .. } => control_points
                 .iter()
                 .all(|point| inside_domain(point.u, point.v)),
+            _ => {
+                return Err(CodecError::NotImplemented(format!(
+                    "pcurve {} geometry is not writable on a Rhino NURBS face",
+                    pcurve.id.0
+                )))
+            }
         };
         if !control_hull_inside {
             return Err(CodecError::Malformed(format!(
@@ -3482,6 +3492,7 @@ mod tests {
         ir.model.points.push(Point {
             id: PointId("point:a".into()),
             position: Point3::new(1.25, -2.5, 3.75),
+            source_object: None,
         });
 
         for (version, value) in [
@@ -3511,6 +3522,7 @@ mod tests {
         ir.model.points.push(Point {
             id: PointId("point:coarse-tolerance".into()),
             position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
         });
 
         let mut bytes = Vec::new();
@@ -3730,6 +3742,8 @@ mod tests {
             .push(cadmpeg_ir::tessellation::Tessellation {
                 id: "cadir:model:tessellation#mesh".into(),
                 body: None,
+                faces: Vec::new(),
+                chordal_deflection: None,
                 source_object: None,
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -3777,6 +3791,8 @@ mod tests {
             .push(cadmpeg_ir::tessellation::Tessellation {
                 id: "cadir:model:tessellation#precision".into(),
                 body: None,
+                faces: Vec::new(),
+                chordal_deflection: None,
                 source_object: None,
                 vertices: vec![
                     Point3::new(0.1, 0.0, 0.0),
@@ -3838,6 +3854,8 @@ mod tests {
             .push(cadmpeg_ir::tessellation::Tessellation {
                 id: "cadir:model:tessellation#channels".into(),
                 body: None,
+                faces: Vec::new(),
+                chordal_deflection: None,
                 source_object: None,
                 vertices,
                 triangles: vec![[0, 1, 2]],
@@ -3872,6 +3890,8 @@ mod tests {
             .push(cadmpeg_ir::tessellation::Tessellation {
                 id: "cadir:model:tessellation#chunk-like-channel".into(),
                 body: None,
+                faces: Vec::new(),
+                chordal_deflection: None,
                 source_object: None,
                 vertices: vec![
                     Point3::new(0.0, 0.0, 0.0),
@@ -3949,6 +3969,7 @@ mod tests {
             ir.model.points.push(cadmpeg_ir::topology::Point {
                 id: point,
                 position: Point3::new(index as f64, index as f64 + 2.0, 3.0),
+                source_object: None,
             });
         }
         let mut bytes = Vec::new();
@@ -3975,6 +3996,7 @@ mod tests {
         source.model.points.push(Point {
             id: PointId("cadir:model:point#retained".into()),
             position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
@@ -4005,6 +4027,7 @@ mod tests {
         source.model.points.push(Point {
             id: PointId("cadir:model:point#retained".into()),
             position: Point3::new(1.0, 2.0, 3.0),
+            source_object: None,
         });
         let mut bytes = Vec::new();
         RhinoEncoder::new(RhinoArchiveVersion::V8)
@@ -4767,6 +4790,7 @@ mod tests {
         ir.model.points.push(Point {
             id: PointId("cadir:model:point#free".into()),
             position: Point3::new(5.0, 6.0, 7.0),
+            source_object: None,
         });
         ir.model.curves.push(Curve {
             id: CurveId("cadir:model:curve#free".into()),
@@ -4961,6 +4985,7 @@ mod tests {
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: points[index],
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_ids[index].clone(),
@@ -5042,6 +5067,7 @@ mod tests {
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: points[index],
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_ids[index].clone(),
@@ -5183,6 +5209,7 @@ mod tests {
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: positions[index],
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_ids[index].clone(),
@@ -5318,6 +5345,7 @@ mod tests {
             ir.model.points.push(Point {
                 id: point_ids[index].clone(),
                 position: positions[index],
+                source_object: None,
             });
             ir.model.vertices.push(Vertex {
                 id: vertex_ids[index].clone(),

@@ -1844,8 +1844,8 @@ fn decode_emits_offset_surface_construction() {
         panic!("offset definition");
     };
     assert_eq!(*distance, 2.5);
-    assert_eq!(*u_sense, 0);
-    assert_eq!(*v_sense, 0);
+    assert_eq!(*u_sense, Some(0));
+    assert_eq!(*v_sense, Some(0));
     assert!(extension_flags.is_empty());
     assert_ne!(procedural.surface, *support);
     assert_eq!(result.ir.model.faces[0].surface, procedural.surface);
