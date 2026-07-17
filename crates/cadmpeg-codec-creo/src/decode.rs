@@ -23110,7 +23110,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
         scan.feature_definitions
             .iter()
             .filter_map(|definition| definition.variables.as_ref())
-            .map(|variables| variables.points.len())
+            .map(|variables| {
+                let (points, ambiguous) = variables.reconciled_points();
+                points.len() + ambiguous.len()
+            })
             .sum::<usize>()
             .to_string(),
     );

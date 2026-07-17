@@ -843,7 +843,8 @@ type-2 `var_arr` values is the bounded segment between those two `[u, v]`
 points. A neutral ordinate requires exactly one `var_arr` row with the point
 key and coordinate type, or repeated rows whose defined values agree.
 Complementary coordinate rows combine by point key. Conflicting values leave
-the point identity unresolved. It is construction geometry when its `ext_id` is
+the point identity unresolved. Type-3 radius keys do not define section-point
+identities. It is construction geometry when its `ext_id` is
 absent from `ent_tab`.
 Every `segtab` row remains a section design entity when its carrier coordinates
 are incomplete; incomplete coordinates affect evaluation, not entity identity

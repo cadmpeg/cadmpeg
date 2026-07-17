@@ -639,7 +639,7 @@ pub struct FeatureOutline {
 /// One positional solver-variable row from `var_arr`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FeatureVariableRow {
-    /// Coordinate class: `1` is section `u`, `2` is section `v`.
+    /// Variable class: `1` is section `u`, `2` is section `v`, `3` is radius.
     pub variable_type: u32,
     /// Point or solver-variable key.
     pub key: u32,
@@ -1624,7 +1624,7 @@ fn variable_table_from_rows(
 ) -> Option<FeatureVariableTable> {
     (!rows.is_empty()).then(|| {
         let mut coordinates = BTreeMap::<u32, (Option<f64>, Option<f64>)>::new();
-        for row in &rows {
+        for row in rows.iter().filter(|row| matches!(row.variable_type, 1 | 2)) {
             coordinates.entry(row.key).or_insert((None, None));
         }
         for (&point_id, point) in &mut coordinates {
@@ -6447,6 +6447,33 @@ mod tests {
         assert_eq!(table.points[0].point_id, 7);
         assert_eq!(table.points[0].u, None);
         assert_eq!(table.points[0].v, Some(3.0));
+    }
+
+    #[test]
+    fn radius_variables_do_not_create_section_points() {
+        let row = |variable_type, key, value, offset| FeatureVariableRow {
+            variable_type,
+            key,
+            value: Some(value),
+            guess: None,
+            uvar_id: None,
+            dimension_driven: false,
+            offset,
+        };
+        let table = variable_table_from_rows(
+            3,
+            Some(119),
+            vec![row(1, 7, 2.0, 10), row(2, 7, 3.0, 20), row(3, 99, 4.0, 30)],
+            5,
+        )
+        .expect("variable table");
+
+        assert_eq!(table.points.len(), 1);
+        assert_eq!(table.points[0].point_id, 7);
+        let (points, ambiguous) = table.reconciled_points();
+        assert_eq!(points.get(&7), Some(&[Some(2.0), Some(3.0)]));
+        assert!(!points.contains_key(&99));
+        assert!(ambiguous.is_empty());
     }
 
     #[test]
