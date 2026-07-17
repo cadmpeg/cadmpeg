@@ -8,15 +8,17 @@ closure argument.
 
 ## Migrated modules
 
-All three graduated modules are context-independent primitive decoders over
-caller-owned slices. None threads `DecodeContext`, so none charges any budget
-dimension.
+The four graduated modules are context-independent. The first three are
+primitive decoders over caller-owned slices; `topology.rs` traverses
+already-decoded typed rows. None threads `DecodeContext`, so none charges any
+budget dimension.
 
 | Module | Peak alloc charged | Work charged | Depth | Basis |
 |---|---|---|---|---|
 | `psb.rs` | 0 | 0 | 0 | token/int/float reads are bounds-checked `Option` probes; `tokens` accumulation is proportional to input length, not an untrusted count |
 | `scalar.rs` | 0 | 0 | 0 | `ScalarCache` grows one entry per distinct `0x46` token in `0..section.len()`; `decode` probes are bounds-checked |
 | `datum.rs` | 0 | 0 | 0 | `planes` accumulates one candidate per byte position in `0..payload.len()`; `scalars` fills a fixed 10-wide row; all reads bounds-checked |
+| `topology.rs` | 0 | 0 | 0 | `build`/`face_components`/`vertex_orbits` consume already-decoded `CurveTopologyRow` values; edge graph is `Vec::new`+push bounded by `rows.len() * 2`; traversals iterate under monotone `BTreeSet` visited guards, no recursion |
 
 Observation: on the crate test fixtures (87 unit tests, whole-file decode in
 `tests.rs`) the migrated modules perform no charged allocation and no work
@@ -46,15 +48,14 @@ consumes bytes. The migration obligation is the ratchet — remove the disallowe
 - `surface.rs` — `with_capacity(count)` + `resize(count, None)` at 612/622 sized
   by two `u8` fields (<=65025 slots); `compact_int`-count fill/collect at 397/404
   (<=16383).
-- `container.rs` — `Vec::new`+push id collection at 702 (no disallowed method;
+- `container.rs` — `BTreeSet` insert id collection at 703 (no disallowed method;
   capped by the 16383 varint and a no-progress break, needs only a `work`
-  charge); summed namespace counts at 388 (no allocation);
+  charge); summed namespace counts at 392 (no allocation);
   `with_capacity(hits.len())` at 332 bounded by the scan. One audited
   `View::window()` egress at 923 (section splitter input).
 - `curve.rs` — superlinear `framed_segment` suffix search (O(section^2)-
   O(section^3)); no untrusted-count allocation, but the honest cost model is not
   proportional-to-input and is uncharged.
-- `topology.rs` — edge graph at 201 (bounded by decoded rows, uncharged work).
 - `decode.rs` — per-record orchestration, no per-record work charge.
 
 ## Freeze recommendation
