@@ -10343,6 +10343,39 @@ fn body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
     Some(faces)
 }
 
+fn connected_solid_body_faces<'a>(ir: &'a CadIr, body_id: &BodyId) -> Option<Vec<&'a Face>> {
+    let body = ir.model.bodies.iter().find(|body| body.id == *body_id)?;
+    if body.kind != cadmpeg_ir::topology::BodyKind::Solid {
+        return None;
+    }
+    let [region_id] = body.regions.as_slice() else {
+        return None;
+    };
+    let region = ir
+        .model
+        .regions
+        .iter()
+        .find(|region| region.id == *region_id && region.body == body.id)?;
+    let [shell_id] = region.shells.as_slice() else {
+        return None;
+    };
+    let shell = ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| shell.id == *shell_id && shell.region == region.id)?;
+    shell
+        .faces
+        .iter()
+        .map(|face_id| {
+            ir.model
+                .faces
+                .iter()
+                .find(|face| face.id == *face_id && face.shell == shell.id)
+        })
+        .collect()
+}
+
 fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>> {
     Some(
         body_faces(ir, body_id)?
@@ -11164,7 +11197,7 @@ pub(crate) fn hole_diameters_for_operations(
         .collect::<BTreeMap<_, _>>();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = body_faces(ir, &body) else {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return BTreeMap::new();
         };
         let radii = body_faces
@@ -11258,7 +11291,7 @@ pub(crate) fn simple_hole_chamfers(
     let angular_tolerance = ir.tolerances.angular.max(1e-12);
     let mut treatments = BTreeMap::new();
     for (body, operations) in operations_by_body {
-        let Some(body_faces) = body_faces(ir, &body) else {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return BTreeMap::new();
         };
         let bores = body_faces

@@ -3335,6 +3335,17 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         &outputs,
     )
     .is_empty());
+    let mut sheet = ir.clone();
+    sheet.model.bodies[0].kind = BodyKind::Sheet;
+    assert!(crate::decode::hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());
+    let mut disconnected = ir.clone();
+    disconnected.model.bodies[0]
+        .regions
+        .push(RegionId("second-region".into()));
+    assert!(
+        crate::decode::hole_diameters_for_operations(&disconnected, &operations, &outputs)
+            .is_empty()
+    );
     let mut shared_carrier = ir.clone();
     shared_carrier.model.faces.push(Face {
         id: FaceId("unowned-shared-cylinder-face".into()),
@@ -3502,6 +3513,9 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ),
         ])
     );
+    let mut sheet = chamfered.clone();
+    sheet.model.bodies[0].kind = BodyKind::Sheet;
+    assert!(crate::decode::simple_hole_chamfers(&sheet, &templates, &outputs).is_empty());
     let mut unrelated = chamfered.clone();
     unrelated.model.surfaces.push(Surface {
         id: SurfaceId("unrelated-cone".into()),
