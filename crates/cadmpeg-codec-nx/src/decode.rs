@@ -10803,7 +10803,7 @@ pub(crate) fn block_projection(
     {
         return None;
     }
-    let bands = bands
+    let mut bands = bands
         .into_iter()
         .map(|mut band| {
             band.offsets.sort_by(f64::total_cmp);
@@ -10829,6 +10829,14 @@ pub(crate) fn block_projection(
             })
         })
         .collect::<Option<Vec<_>>>()?;
+    bands.sort_by(|left, right| {
+        right
+            .normal
+            .x
+            .total_cmp(&left.normal.x)
+            .then_with(|| right.normal.y.total_cmp(&left.normal.y))
+            .then_with(|| right.normal.z.total_cmp(&left.normal.z))
+    });
     let mut ordered = if let Some(dimensions) = dimensions {
         let permutations = [
             [0usize, 1usize, 2usize],
@@ -10847,21 +10855,10 @@ pub(crate) fn block_projection(
                 })
             })
             .collect::<Vec<_>>();
-        let [permutation] = matches.as_slice() else {
-            return None;
-        };
+        let permutation = matches.first()?;
         permutation.map(|index| bands[index])
     } else {
-        let mut bands: [PlaneExtent; 3] = bands.try_into().ok()?;
-        bands.sort_by(|left, right| {
-            right
-                .normal
-                .x
-                .total_cmp(&left.normal.x)
-                .then_with(|| right.normal.y.total_cmp(&left.normal.y))
-                .then_with(|| right.normal.z.total_cmp(&left.normal.z))
-        });
-        bands
+        bands.try_into().ok()?
     };
     if dot_vector(
         cross_vector(ordered[0].normal, ordered[1].normal),

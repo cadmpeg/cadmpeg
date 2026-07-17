@@ -2922,7 +2922,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
 }
 
 #[test]
-fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
+fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let dimensions = [10.0, 20.0, 30.0];
     for axis in 0..3 {
@@ -2975,6 +2975,32 @@ fn nx_block_placement_requires_one_ordered_planar_extent_bijection() {
             std::slice::from_ref(&output),
         ),
         None
+    );
+
+    let mut repeated = ir.clone();
+    let high_y = repeated
+        .model
+        .surfaces
+        .iter_mut()
+        .filter_map(|surface| {
+            let SurfaceGeometry::Plane { origin, normal, .. } = &mut surface.geometry else {
+                return None;
+            };
+            (normal.y.abs() > 0.5 && origin.y > 0.0).then_some(origin)
+        })
+        .next()
+        .expect("positive y plane");
+    high_y.y = 10.0;
+    assert_eq!(
+        crate::decode::block_projection(
+            &repeated,
+            Some([10.0, 10.0, 30.0]),
+            std::slice::from_ref(&output),
+        ),
+        Some((
+            [10.0, 10.0, 30.0],
+            cadmpeg_ir::transform::Transform::identity()
+        ))
     );
 
     let mut stepped = ir.clone();
