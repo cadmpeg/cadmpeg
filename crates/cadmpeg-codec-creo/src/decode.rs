@@ -19657,7 +19657,60 @@ fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool;
     ]
 }
 
-fn circle_edge_parameter_range(
+#[derive(Clone, Copy)]
+struct PeriodicConicFrame {
+    center: [f64; 3],
+    normal: [f64; 3],
+    x_axis: [f64; 3],
+    y_axis: [f64; 3],
+    radii: [f64; 2],
+}
+
+fn periodic_conic_frame(geometry: &CurveGeometry) -> Option<PeriodicConicFrame> {
+    let (center, axis, x_axis, radii) = match geometry {
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } => (
+            [center.x, center.y, center.z],
+            [axis.x, axis.y, axis.z],
+            [ref_direction.x, ref_direction.y, ref_direction.z],
+            [*radius, *radius],
+        ),
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } => (
+            [center.x, center.y, center.z],
+            [axis.x, axis.y, axis.z],
+            [major_direction.x, major_direction.y, major_direction.z],
+            [*major_radius, *minor_radius],
+        ),
+        _ => return None,
+    };
+    let axis = normalized(axis)?;
+    let x_axis = normalized(x_axis)?;
+    (dot(axis, x_axis).abs() <= 1e-9).then_some(())?;
+    let y_axis = normalized(cross(axis, x_axis))?;
+    (center.into_iter().all(f64::is_finite)
+        && radii
+            .into_iter()
+            .all(|radius| radius > 0.0 && radius.is_finite()))
+    .then_some(PeriodicConicFrame {
+        center,
+        normal: axis,
+        x_axis,
+        y_axis,
+        radii,
+    })
+}
+
+fn periodic_conic_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
     interior: [f64; 3],
@@ -19667,22 +19720,17 @@ fn circle_edge_parameter_range(
     {
         return None;
     }
-    let CurveGeometry::Circle {
+    let PeriodicConicFrame {
         center,
-        axis,
-        ref_direction,
-        radius,
-    } = geometry
-    else {
-        return None;
-    };
-    let center = [center.x, center.y, center.z];
-    let x_axis = [ref_direction.x, ref_direction.y, ref_direction.z];
-    let y_axis = cross([axis.x, axis.y, axis.z], x_axis);
+        x_axis,
+        y_axis,
+        radii,
+        ..
+    } = periodic_conic_frame(geometry)?;
     let parameter = |point: [f64; 3]| {
         let relative = std::array::from_fn(|index| point[index] - center[index]);
-        dot(relative, y_axis)
-            .atan2(dot(relative, x_axis))
+        (dot(relative, y_axis) / radii[1])
+            .atan2(dot(relative, x_axis) / radii[0])
             .rem_euclid(std::f64::consts::TAU)
     };
     let [first, second] = points.map(parameter);
@@ -19702,7 +19750,7 @@ fn circle_edge_parameter_range(
     } else {
         increasing(second, first)
     };
-    let scale = radius.abs().max(1.0);
+    let scale = radii.into_iter().fold(1.0, f64::max);
     let matches_interior = |range: [f64; 2]| {
         cadmpeg_ir::eval::curve_point(geometry, f64::midpoint(range[0], range[1])).is_some_and(
             |point| {
@@ -19749,7 +19797,7 @@ fn native_pcurve_midpoint(
 
 type NativePcurveCandidates = BTreeMap<(u32, u32), Vec<([[f64; 2]; 2], usize)>>;
 
-fn pcurve_backed_circle_edge_parameter_range(
+fn pcurve_backed_periodic_conic_parameter_range(
     geometry: &CurveGeometry,
     curve_id: u32,
     faces: [u32; 2],
@@ -19770,7 +19818,7 @@ fn pcurve_backed_circle_edge_parameter_range(
             let Some(interior) = native_pcurve_midpoint(surface, *endpoints, points) else {
                 continue;
             };
-            let candidate = circle_edge_parameter_range(geometry, points, interior)?;
+            let candidate = periodic_conic_edge_parameter_range(geometry, points, interior)?;
             if selected.is_some_and(|selected: [f64; 2]| {
                 candidate
                     .into_iter()
@@ -19795,6 +19843,16 @@ mod native_edge_parameter_tests {
             axis: Vector3::new(0.0, 0.0, 1.0),
             ref_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: 2.0,
+        }
+    }
+
+    fn ellipse() -> CurveGeometry {
+        CurveGeometry::Ellipse {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 4.0,
+            minor_radius: 2.0,
         }
     }
 
@@ -19828,20 +19886,48 @@ mod native_edge_parameter_tests {
         let points = [[2.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
         let root_two = std::f64::consts::SQRT_2;
         assert_eq!(
-            circle_edge_parameter_range(&circle, points, [root_two, root_two, 0.0]),
+            periodic_conic_edge_parameter_range(&circle, points, [root_two, root_two, 0.0]),
             Some([0.0, std::f64::consts::FRAC_PI_2])
         );
         assert_eq!(
-            circle_edge_parameter_range(&circle, points, [-root_two, -root_two, 0.0]),
+            periodic_conic_edge_parameter_range(&circle, points, [-root_two, -root_two, 0.0]),
             Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
         );
         assert_eq!(
-            circle_edge_parameter_range(&circle, [points[0], points[0]], [-2.0, 0.0, 0.0],),
+            periodic_conic_edge_parameter_range(&circle, [points[0], points[0]], [-2.0, 0.0, 0.0],),
             Some([0.0, std::f64::consts::TAU])
         );
         assert_eq!(
-            circle_edge_parameter_range(&circle, [points[0], points[0]], points[0]),
+            periodic_conic_edge_parameter_range(&circle, [points[0], points[0]], points[0]),
             None
+        );
+    }
+
+    #[test]
+    fn conic_parameters_preserve_ellipse_axis_scales() {
+        let ellipse = ellipse();
+        let points = [[4.0, 0.0, 0.0], [0.0, 2.0, 0.0]];
+        let root_two = std::f64::consts::SQRT_2;
+        assert!(curve_contains_points(&ellipse, points));
+        assert!(!curve_contains_points(
+            &ellipse,
+            [points[0], [0.0, 4.0, 0.0]],
+        ));
+        assert_eq!(
+            periodic_conic_edge_parameter_range(&ellipse, points, [2.0 * root_two, root_two, 0.0],),
+            Some([0.0, std::f64::consts::FRAC_PI_2])
+        );
+        assert_eq!(
+            periodic_conic_edge_parameter_range(
+                &ellipse,
+                points,
+                [-2.0 * root_two, -root_two, 0.0],
+            ),
+            Some([std::f64::consts::FRAC_PI_2, std::f64::consts::TAU])
+        );
+        assert_eq!(
+            periodic_conic_edge_parameter_range(&ellipse, [points[0], points[0]], [-4.0, 0.0, 0.0],),
+            Some([0.0, std::f64::consts::TAU])
         );
     }
 
@@ -19889,7 +19975,7 @@ mod native_edge_parameter_tests {
             vec![([[0.0, 0.0], [std::f64::consts::FRAC_PI_2, 0.0]], 20)],
         );
         assert_eq!(
-            pcurve_backed_circle_edge_parameter_range(
+            pcurve_backed_periodic_conic_parameter_range(
                 &circle(),
                 7,
                 [10, 11],
@@ -19905,7 +19991,7 @@ mod native_edge_parameter_tests {
             vec![([[0.0, 0.0], [-3.0 * std::f64::consts::FRAC_PI_2, 0.0]], 20)],
         );
         assert_eq!(
-            pcurve_backed_circle_edge_parameter_range(
+            pcurve_backed_periodic_conic_parameter_range(
                 &circle(),
                 7,
                 [10, 11],
@@ -20225,7 +20311,7 @@ fn transfer_plane_brep(
                 .find(|candidate| candidate.id == curve)
                 .and_then(|candidate| {
                     exact_line_edge_parameter_range(&candidate.geometry, points).or_else(|| {
-                        pcurve_backed_circle_edge_parameter_range(
+                        pcurve_backed_periodic_conic_parameter_range(
                             &candidate.geometry,
                             *curve_id,
                             *curve_faces.get(curve_id)?,
@@ -22427,21 +22513,25 @@ fn curve_contains_points(geometry: &CurveGeometry, points: [[f64; 3]; 2]) -> boo
                 dot(residual, residual).sqrt() <= 1e-7 * scale
             })
         }
-        CurveGeometry::Circle {
-            center,
-            axis,
-            radius,
-            ..
-        } => {
-            let center = [center.x, center.y, center.z];
-            let Some(axis) = normalized([axis.x, axis.y, axis.z]) else {
+        CurveGeometry::Circle { .. } | CurveGeometry::Ellipse { .. } => {
+            let Some(PeriodicConicFrame {
+                center,
+                normal,
+                x_axis,
+                y_axis,
+                radii,
+            }) = periodic_conic_frame(geometry)
+            else {
                 return false;
             };
             points.into_iter().all(|point| {
                 let relative: [f64; 3] = std::array::from_fn(|index| point[index] - center[index]);
-                let scale = radius.abs().max(1.0);
-                dot(relative, axis).abs() <= 1e-7 * scale
-                    && (dot(relative, relative).sqrt() - radius).abs() <= 1e-7 * scale
+                let scale = radii.into_iter().fold(1.0, f64::max);
+                let x = dot(relative, x_axis) / radii[0];
+                let y = dot(relative, y_axis) / radii[1];
+                dot(relative, normal).abs() <= 1e-7 * scale
+                    && x.mul_add(x, y * y).is_finite()
+                    && (x.mul_add(x, y * y) - 1.0).abs() <= 1e-7
             })
         }
         _ => false,
