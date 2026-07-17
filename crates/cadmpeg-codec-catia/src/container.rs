@@ -502,7 +502,7 @@ fn brep_descriptors(dir: &InnerDir) -> Option<(&Descriptor, &Descriptor)> {
 /// [`brep_stream`] concatenates them (largest `MainDataStream` then largest
 /// `SurfacicReps`, each in `log_off` order). These are the `Concat` segments of
 /// the reconstructed logical stream.
-fn brep_extent_ranges(data: &[u8], dir: &InnerDir) -> Option<Vec<Range<usize>>> {
+pub(crate) fn brep_extent_ranges(data: &[u8], dir: &InnerDir) -> Option<Vec<Range<usize>>> {
     let (main, surf) = brep_descriptors(dir)?;
     // Both descriptors carry at most `MAX_EXTENTS_PER_DESCRIPTOR` already-admitted
     // extents; the range list is a lint-invisible `Vec::new`+push over that

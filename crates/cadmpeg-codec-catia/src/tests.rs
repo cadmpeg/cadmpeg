@@ -3345,3 +3345,111 @@ fn every_decode_path_populates_v1_annotations() {
         .unwrap();
     assert_every_entity_has_v1_annotation(&container_only.ir);
 }
+
+/// L1 coarse source-fidelity tiling (doc §6.1, §10 Phase 3C).
+mod ledger {
+    use cadmpeg_ir::{LedgerCapability, LedgerLevel, SerializedOrigin, SpanClass};
+
+    use super::{
+        fbb_only_catpart, standard_catpart, tetrahedron_topology_catpart, with_scan,
+        zero_entity_catpart,
+    };
+    use crate::ledger::container_ledger;
+
+    /// Every fixture's every space tiles `[0, length)` exactly with no gap and no
+    /// overlap, and validation passes — the L1 completeness invariant.
+    #[test]
+    fn ledger_tiles_every_space_completely() {
+        let fixtures = [
+            standard_catpart(),
+            fbb_only_catpart(),
+            tetrahedron_topology_catpart(),
+            zero_entity_catpart(),
+        ];
+        for fixture in fixtures {
+            with_scan(&fixture, |scan| {
+                let sidecar = container_ledger(scan).expect("ledger validates");
+                assert_eq!(sidecar.level, LedgerLevel::L1);
+                assert_eq!(sidecar.capability, LedgerCapability::Accounted);
+                for space in &sidecar.spaces {
+                    let mut cursor = 0u64;
+                    for span in &space.spans {
+                        assert_eq!(
+                            span.range.start,
+                            cursor,
+                            "gap or overlap in {}",
+                            space.id.as_str()
+                        );
+                        assert!(span.range.end >= span.range.start);
+                        cursor = span.range.end;
+                    }
+                    assert_eq!(
+                        cursor,
+                        space.length,
+                        "space {} does not reach its end",
+                        space.id.as_str()
+                    );
+                }
+                // Re-running validation on the built sidecar must also succeed.
+                sidecar.validate().expect("built sidecar re-validates");
+            });
+        }
+    }
+
+    /// The standard fixture yields a `source` root space plus the reconstructed
+    /// BREP `Concat` stream whose segments name in-bounds `source` ranges.
+    #[test]
+    fn ledger_serializes_brep_concat_stream() {
+        with_scan(&standard_catpart(), |scan| {
+            let sidecar = container_ledger(scan).expect("ledger validates");
+            let source = sidecar
+                .spaces
+                .iter()
+                .find(|s| s.id.is_source())
+                .expect("source space present");
+            assert!(matches!(source.origin, SerializedOrigin::Root));
+            assert!(source
+                .spans
+                .iter()
+                .any(|s| s.class == SpanClass::Structural));
+
+            let stream = sidecar
+                .spaces
+                .iter()
+                .find(|s| s.id.as_str() == "stream:brep#0")
+                .expect("brep stream space present");
+            let SerializedOrigin::Concat { segments } = &stream.origin else {
+                panic!("brep stream is a concat");
+            };
+            assert!(!segments.is_empty());
+            let seg_total: u64 = segments.iter().map(|e| e.range.len()).sum();
+            assert_eq!(seg_total, stream.length, "concat segments cover the stream");
+            assert!(segments.iter().all(|e| e.space.is_source()));
+        });
+    }
+
+    /// Two decodes of one file serialize byte-identical canonical JSON — the
+    /// determinism invariant (§10 Phase 3C).
+    #[test]
+    fn ledger_serialization_is_deterministic() {
+        let fixture = tetrahedron_topology_catpart();
+        let first = with_scan(&fixture, |scan| {
+            container_ledger(scan).unwrap().to_canonical_json().unwrap()
+        });
+        let second = with_scan(&fixture, |scan| {
+            container_ledger(scan).unwrap().to_canonical_json().unwrap()
+        });
+        assert_eq!(first, second);
+    }
+
+    /// A container with no nested directory still tiles its single `source`
+    /// space completely and emits no stream space.
+    #[test]
+    fn ledger_covers_flat_container() {
+        with_scan(&zero_entity_catpart(), |scan| {
+            let sidecar = container_ledger(scan).expect("ledger validates");
+            assert_eq!(sidecar.spaces.len(), 1);
+            assert!(sidecar.spaces[0].id.is_source());
+        });
+    }
+}

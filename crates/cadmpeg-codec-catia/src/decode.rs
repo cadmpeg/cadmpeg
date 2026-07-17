@@ -60,7 +60,11 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 
     if ctx.container_only() {
         let ir = build_metadata_ir(&scan)?;
-        let report = build_container_report(&scan, true);
+        let mut report = build_container_report(&scan, true);
+        report.source_fidelity = Some(
+            crate::ledger::container_ledger(&scan)
+                .map_err(|error| CodecError::Malformed(error.to_string()))?,
+        );
         return Ok(DecodeResult::new(ir, report));
     }
 
@@ -111,11 +115,18 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 fn finish_decode<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
-    _scan: &ContainerScan<'a>,
+    scan: &ContainerScan<'a>,
     mut ir: CadIr,
-    report: DecodeReport,
+    mut report: DecodeReport,
 ) -> Result<DecodeResult, CodecError> {
     CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
+    // L1 container accounting (§10 Phase 3C): the validated coarse ledger rides
+    // the decode report so byte conservation over the source spaces is provable
+    // from the result. A tiling defect surfaces here as a `Malformed` failure.
+    report.source_fidelity = Some(
+        crate::ledger::container_ledger(scan)
+            .map_err(|error| CodecError::Malformed(error.to_string()))?,
+    );
     Ok(DecodeResult::new(ir, report))
 }
 
@@ -201,6 +212,7 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeRepo
     let report = DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -319,6 +331,7 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<(CadIr, DecodeReport)> {
         DecodeReport {
             retention_degraded: false,
             profile_versions: ProfileVersions::default(),
+            source_fidelity: None,
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
@@ -855,6 +868,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<(CadIr, Deco
         DecodeReport {
             retention_degraded: false,
             profile_versions: ProfileVersions::default(),
+            source_fidelity: None,
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
@@ -1772,6 +1786,7 @@ fn build_geometry_report(
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1912,6 +1927,7 @@ fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> Dec
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
+        source_fidelity: None,
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,

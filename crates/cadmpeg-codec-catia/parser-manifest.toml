@@ -221,3 +221,20 @@ charges = []
 cost_model = "no budget charge; a pure classifier mapping structural census facts to a storage-family enum, no read, no scan, no allocation"
 window_egress = []
 ledger_level = 0
+
+# ---------------------------------------------------------------------------
+# L1 container accounting (doc section 10 Phase 3C). Not a byte parser: builds
+# the coarse source-fidelity ledger from already-scanned `ContainerScan` facts,
+# tiling the source space and serializing the reconstructed BREP stream as a
+# `Concat` over source extents. No hostile read, no `.window()` egress, and no
+# budget charge of its own; the container scan already charged the bytes. Emits
+# the serialized L1 ledger.
+[[module]]
+path = "crates/cadmpeg-codec-catia/src/ledger.rs"
+status = "migrated"
+input_spaces = ["source"]
+fuzz_targets = []
+charges = []
+cost_model = "no budget charge; builds the L1 source-fidelity ledger from already-scanned container facts, digesting bounded source spans; output proportional to the physical-extent count"
+window_egress = []
+ledger_level = 1
