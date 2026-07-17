@@ -1895,7 +1895,7 @@ impl<'a> DecodeContext<'a> {
             DecodeReport {
                 retention_degraded: false,
                 profile_versions: ProfileVersions::default(),
-                source_fidelity: None,
+                source_fidelity: Some(crate::fidelity::ledger(self.scan)),
                 format: "rhino".to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
@@ -1917,8 +1917,10 @@ impl<'a> DecodeContext<'a> {
     /// module, so it resolves [`Structural`](RecordDisposition::Structural): the
     /// platform's checkable dispositions name model entities (`Typed`) or
     /// retained-store blobs (`Retained`), and a native `UnknownRecord` is
-    /// neither. Rhino does not egress the platform retained store
-    /// (`source_fidelity: None`); routing undecoded records through `ctx.retain`
+    /// neither. Rhino's L2 sidecar is [`Accounted`](cadmpeg_ir::LedgerCapability),
+    /// not `Recoverable`: it does not egress the platform retained store, and
+    /// byte recovery rides the codec's own capped native opaque-record store
+    /// instead. Routing undecoded records through `ctx.retain`
     /// would duplicate the codec's own capped IR retention purely as
     /// bookkeeping and charge the platform `RetainedBytes` budget against
     /// untrusted input, flipping `retention_degraded` on large salvage decodes

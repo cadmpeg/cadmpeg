@@ -1,13 +1,182 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exhaustive source-byte accounting and identity-preserving record retention.
+//!
+//! [`partition`] walks a completed [`Scan`] once and returns a gap-free ascending
+//! tiling of the whole source image. Two consumers ride that single partition so
+//! the native byte-census and the platform source-fidelity sidecar can never
+//! diverge: [`install`] projects it into the `rhino` native namespace (byte spans
+//! plus retained record bytes for recovery), and [`crate::fidelity::ledger`]
+//! projects it into a [`LedgerLevel::L2`](cadmpeg_ir::LedgerLevel) sidecar.
 
 use std::ops::Range;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
+use cadmpeg_ir::SpanClass;
 use serde::Serialize;
 
-use crate::container::{Record, Scan};
+use crate::container::Scan;
+
+/// The object-record typecode; its retained bytes live under the object-record
+/// identity, not the generic source-opaque namespace.
+const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
+
+/// The retention role of one partition tile.
+///
+/// Framing and the typed header carry no retained identity. Every opaque tile
+/// names how its bytes are recovered so [`install`] can mint a stable id and,
+/// where the codec owns the bytes, retain them for recovery.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum TileRole {
+    /// Container framing; structural, not retained.
+    Framing,
+    /// The 32-byte archive header; typed, not retained.
+    Header,
+    /// The leading comment chunk, retained under a fixed identity.
+    Comment,
+    /// An object record; recovered under the object-record identity, not the
+    /// generic opaque namespace.
+    ObjectRecord {
+        /// Global source order of the object record.
+        source_order: usize,
+    },
+    /// A retained non-object table record.
+    TableRecord {
+        /// Source-order index of the owning table.
+        table_index: usize,
+        /// Source-order index of the record within its table.
+        record_index: usize,
+    },
+    /// A whole undissected table record stream (a table whose records the
+    /// scanner does not retain individually, e.g. the user table).
+    TableRecordStream {
+        /// Source-order index of the owning table.
+        table_index: usize,
+    },
+}
+
+/// One non-overlapping tile of the source image, in archive order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Tile {
+    /// Byte range within the source image.
+    pub(crate) range: Range<usize>,
+    /// Byte classification.
+    pub(crate) class: SpanClass,
+    /// Human-readable meaning label.
+    pub(crate) meaning: String,
+    /// How this tile's bytes are recovered.
+    pub(crate) role: TileRole,
+}
+
+/// Build the complete gap-free partition of the source image in archive order.
+///
+/// The tiles tile `[0, data.len())` exactly: header, comment, then each table's
+/// framing, records, and terminator, and finally any end-of-file chunk. The
+/// caller may assert contiguity; both projections rely on it.
+pub(crate) fn partition(scan: &Scan<'_>) -> Vec<Tile> {
+    let data = scan.data;
+    let mut tiles = Vec::new();
+    let object_orders = scan
+        .objects
+        .iter()
+        .enumerate()
+        .map(|(source_order, object)| (object.range.start, source_order))
+        .collect::<std::collections::BTreeMap<_, _>>();
+
+    tiles.push(Tile {
+        range: 0..32,
+        class: SpanClass::Typed,
+        meaning: "archive_header".to_string(),
+        role: TileRole::Header,
+    });
+    tiles.push(Tile {
+        range: scan.comment.range.clone(),
+        class: SpanClass::Opaque,
+        meaning: "comment_chunk".to_string(),
+        role: TileRole::Comment,
+    });
+
+    for (table_index, table) in scan.tables.iter().enumerate() {
+        let mut cursor = table.range.start;
+        if table.records.is_empty() && table.record_count != 0 {
+            if cursor < table.body.start {
+                tiles.push(Tile {
+                    range: cursor..table.body.start,
+                    class: SpanClass::Structural,
+                    meaning: format!("table_{table_index:02}_framing"),
+                    role: TileRole::Framing,
+                });
+            }
+            tiles.push(Tile {
+                range: table.body.start..table.range.end,
+                class: SpanClass::Opaque,
+                meaning: format!("table_{table_index:02}_record_stream"),
+                role: TileRole::TableRecordStream { table_index },
+            });
+            continue;
+        }
+        for (record_index, record) in table.records.iter().enumerate() {
+            if cursor < record.range.start {
+                tiles.push(Tile {
+                    range: cursor..record.range.start,
+                    class: SpanClass::Structural,
+                    meaning: format!("table_{table_index:02}_framing"),
+                    role: TileRole::Framing,
+                });
+            }
+            let meaning = format!(
+                "table_{table_index:02}_record_{record_index:06}_{:#010x}",
+                record.typecode
+            );
+            let role = if record.typecode == TCODE_OBJECT_RECORD {
+                let source_order = object_orders
+                    .get(&record.range.start)
+                    .copied()
+                    .expect("scanned object record has a global source order");
+                TileRole::ObjectRecord { source_order }
+            } else {
+                TileRole::TableRecord {
+                    table_index,
+                    record_index,
+                }
+            };
+            tiles.push(Tile {
+                range: record.range.clone(),
+                class: SpanClass::Opaque,
+                meaning,
+                role,
+            });
+            cursor = record.range.end;
+        }
+        if cursor < table.range.end {
+            tiles.push(Tile {
+                range: cursor..table.range.end,
+                class: SpanClass::Structural,
+                meaning: format!("table_{table_index:02}_terminator_and_checksum"),
+                role: TileRole::Framing,
+            });
+        }
+    }
+    if scan.eof_offset < data.len() {
+        tiles.push(Tile {
+            range: scan.eof_offset..data.len(),
+            class: SpanClass::Structural,
+            meaning: "end_of_file_chunk".to_string(),
+            role: TileRole::Framing,
+        });
+    }
+
+    let mut cursor = 0_usize;
+    for tile in &tiles {
+        assert_eq!(
+            tile.range.start, cursor,
+            "Rhino byte-accounting gap or overlap"
+        );
+        cursor = tile.range.end;
+    }
+    assert_eq!(cursor, data.len(), "Rhino byte-accounting suffix gap");
+    tiles
+}
 
 /// One non-overlapping source span in archive order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -34,32 +203,22 @@ struct OpaqueRecord {
     data: Vec<u8>,
 }
 
-fn span(
-    data: &[u8],
-    range: Range<usize>,
-    classification: &'static str,
-    kind: impl Into<String>,
-    opaque_record: Option<String>,
-) -> ByteSpan {
-    ByteSpan {
-        id: format!("rhino:source:span#{:012x}", range.start),
-        offset: range.start as u64,
-        byte_len: range.len() as u64,
-        classification,
-        kind: kind.into(),
-        sha256: sha256_hex(&data[range]),
-        opaque_record,
+fn classification(class: SpanClass) -> &'static str {
+    match class {
+        SpanClass::Typed => "typed",
+        SpanClass::Structural => "structural",
+        SpanClass::Opaque => "opaque",
     }
 }
 
-fn retained(data: &[u8], record: &Record, id: String) -> OpaqueRecord {
+fn opaque_record(data: &[u8], id: String, range: Range<usize>, typecode: u32) -> OpaqueRecord {
     OpaqueRecord {
         id,
-        offset: record.range.start as u64,
-        byte_len: record.range.len() as u64,
-        typecode: format!("{:#010x}", record.typecode),
-        sha256: sha256_hex(&data[record.range.clone()]),
-        data: data[record.range.clone()].to_vec(),
+        offset: range.start as u64,
+        byte_len: range.len() as u64,
+        typecode: format!("{typecode:#010x}"),
+        sha256: sha256_hex(&data[range.clone()]),
+        data: data[range].to_vec(),
     }
 }
 
@@ -69,119 +228,60 @@ pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let data = scan.data;
     let mut spans = Vec::new();
     let mut opaque = Vec::new();
-    let object_orders = scan
-        .objects
-        .iter()
-        .enumerate()
-        .map(|(source_order, object)| (object.range.start, source_order))
-        .collect::<std::collections::BTreeMap<_, _>>();
 
-    spans.push(span(data, 0..32, "typed", "archive_header", None));
-    let comment_id = "rhino:source:opaque#comment".to_string();
-    opaque.push(retained(data, &scan.comment, comment_id.clone()));
-    spans.push(span(
-        data,
-        scan.comment.range.clone(),
-        "opaque",
-        "comment_chunk",
-        Some(comment_id),
-    ));
-
-    for (table_index, table) in scan.tables.iter().enumerate() {
-        let mut cursor = table.range.start;
-        if table.records.is_empty() && table.record_count != 0 {
-            if cursor < table.body.start {
-                spans.push(span(
+    for tile in partition(scan) {
+        let record_id = match &tile.role {
+            TileRole::Framing | TileRole::Header => None,
+            TileRole::Comment => {
+                let id = "rhino:source:opaque#comment".to_string();
+                opaque.push(opaque_record(
                     data,
-                    cursor..table.body.start,
-                    "structural",
-                    format!("table_{table_index:02}_framing"),
-                    None,
+                    id.clone(),
+                    tile.range.clone(),
+                    scan.comment.typecode,
                 ));
+                Some(id)
             }
-            let id = format!("rhino:source:opaque#table-{table_index:02}-record-stream");
-            let synthetic = Record {
-                typecode: table.typecode,
-                range: table.body.start..table.range.end,
-                body: table.body.clone(),
-                short: false,
-                value: 0,
-            };
-            opaque.push(retained(data, &synthetic, id.clone()));
-            spans.push(span(
-                data,
-                synthetic.range,
-                "opaque",
-                format!("table_{table_index:02}_record_stream"),
-                Some(id),
-            ));
-            continue;
-        }
-        for (record_index, record) in table.records.iter().enumerate() {
-            if cursor < record.range.start {
-                spans.push(span(
-                    data,
-                    cursor..record.range.start,
-                    "structural",
-                    format!("table_{table_index:02}_framing"),
-                    None,
-                ));
+            TileRole::ObjectRecord { source_order } => {
+                Some(format!("rhino:object:record#{source_order:06}"))
             }
-            let kind = format!(
-                "table_{table_index:02}_record_{record_index:06}_{:#010x}",
-                record.typecode
-            );
-            if record.typecode == 0x2000_8070 {
-                let source_order = object_orders
-                    .get(&record.range.start)
-                    .copied()
-                    .expect("scanned object record has a global source order");
-                spans.push(span(
-                    data,
-                    record.range.clone(),
-                    "opaque",
-                    kind,
-                    Some(format!("rhino:object:record#{source_order:06}")),
-                ));
-            } else {
+            TileRole::TableRecord {
+                table_index,
+                record_index,
+            } => {
                 let id =
                     format!("rhino:source:opaque#table-{table_index:02}-record-{record_index:06}");
-                opaque.push(retained(data, record, id.clone()));
-                spans.push(span(data, record.range.clone(), "opaque", kind, Some(id)));
+                let typecode = scan.tables[*table_index].records[*record_index].typecode;
+                opaque.push(opaque_record(
+                    data,
+                    id.clone(),
+                    tile.range.clone(),
+                    typecode,
+                ));
+                Some(id)
             }
-            cursor = record.range.end;
-        }
-        if cursor < table.range.end {
-            spans.push(span(
-                data,
-                cursor..table.range.end,
-                "structural",
-                format!("table_{table_index:02}_terminator_and_checksum"),
-                None,
-            ));
-        }
+            TileRole::TableRecordStream { table_index } => {
+                let id = format!("rhino:source:opaque#table-{table_index:02}-record-stream");
+                let typecode = scan.tables[*table_index].typecode;
+                opaque.push(opaque_record(
+                    data,
+                    id.clone(),
+                    tile.range.clone(),
+                    typecode,
+                ));
+                Some(id)
+            }
+        };
+        spans.push(ByteSpan {
+            id: format!("rhino:source:span#{:012x}", tile.range.start),
+            offset: tile.range.start as u64,
+            byte_len: tile.range.len() as u64,
+            classification: classification(tile.class),
+            kind: tile.meaning,
+            sha256: sha256_hex(&data[tile.range]),
+            opaque_record: record_id,
+        });
     }
-    if scan.eof_offset < data.len() {
-        spans.push(span(
-            data,
-            scan.eof_offset..data.len(),
-            "structural",
-            "end_of_file_chunk",
-            None,
-        ));
-    }
-
-    spans.sort_by_key(|item| item.offset);
-    let mut cursor = 0_u64;
-    for item in &spans {
-        assert_eq!(item.offset, cursor, "Rhino byte-accounting gap or overlap");
-        cursor += item.byte_len;
-    }
-    assert_eq!(
-        cursor,
-        data.len() as u64,
-        "Rhino byte-accounting suffix gap"
-    );
 
     let namespace = ir.native.namespace_mut("rhino");
     namespace.version = namespace.version.max(2);

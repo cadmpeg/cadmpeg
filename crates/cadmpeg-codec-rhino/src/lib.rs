@@ -24,6 +24,7 @@ pub(crate) mod detail;
 pub(crate) mod dimensions;
 pub(crate) mod document_data;
 pub(crate) mod extrusion;
+pub(crate) mod fidelity;
 pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;

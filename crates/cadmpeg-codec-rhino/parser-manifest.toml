@@ -437,3 +437,16 @@ charges = []
 cost_model = "no budget charge; sums typed per-class outcome counters"
 window_egress = []
 ledger_level = 0
+
+# L2 source-fidelity sidecar builder. Projects the shared `accounting::partition`
+# tiling of the source image into a validated record-granular sidecar; no
+# untrusted-byte read path of its own.
+[[module]]
+path = "crates/cadmpeg-codec-rhino/src/fidelity.rs"
+status = "migrated"
+input_spaces = ["source"]
+fuzz_targets = []
+charges = []
+cost_model = "no budget charge; digests the already-scanned source partition into an L2 sidecar; output proportional to the record count"
+window_egress = []
+ledger_level = 2

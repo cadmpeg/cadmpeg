@@ -2287,6 +2287,30 @@ fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
     let opaque = namespace.arenas.get("opaque_records").unwrap();
     assert_eq!(opaque.len(), 1);
     assert_eq!(opaque[0].id, "rhino:source:opaque#comment");
+
+    // The decode report carries the L2 source-fidelity sidecar: complete refined
+    // tiling at record granularity over the single `source` space.
+    let sidecar = result
+        .report
+        .source_fidelity
+        .as_ref()
+        .expect("full decode reports a source-fidelity sidecar");
+    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L2);
+    assert_eq!(sidecar.capability, cadmpeg_ir::LedgerCapability::Accounted);
+    assert_eq!(sidecar.spaces.len(), 1);
+    assert_eq!(sidecar.spaces[0].id, cadmpeg_ir::CanonicalSpaceId::source());
+    assert_eq!(sidecar.spaces[0].length, bytes.len() as u64);
+    assert_eq!(sidecar.validate(), Ok(()));
+
+    // A fresh scan of the same bytes projects a byte-identical sidecar:
+    // canonical ids and ordering derive from the scan alone, so repeat decodes
+    // serialize identically.
+    let again = crate::fidelity::ledger(&crate::container::scan_owned(bytes.clone()).unwrap());
+    assert_eq!(
+        sidecar.to_canonical_json().unwrap(),
+        again.to_canonical_json().unwrap()
+    );
+
     assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
