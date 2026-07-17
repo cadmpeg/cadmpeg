@@ -273,9 +273,10 @@ pub trait CodecEntry: Codec + sealed::Sealed {
     /// container-only request, runs [`Codec::decode_impl`], and finalizes the
     /// context so a fused decode cannot return `Ok`.
     ///
-    /// The root buffer is currently read whole into the arena while each
-    /// `decode_impl` re-reads it through its legacy `std::io` path — a
-    /// transitional double buffer that Phase 1 container migration removes.
+    /// The root buffer is read once into the arena and handed to `decode_impl`
+    /// as the session root [`View`]: Phase 1 container migration removed the
+    /// transitional `std::io` double buffer, so no codec re-reads the input on
+    /// the decode path.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,

@@ -60,7 +60,9 @@ impl<S: LossSink + ?Sized> LossSink for &mut S {
 /// boundaries: [`Exact`](Transfer::Exact) and [`Derived`](Transfer::Derived)
 /// carry a faithful record-to-entity or computed value, `Fallback` carries a
 /// defaulted field or a resolver's substituted carrier/axis, and `Dropped`
-/// carries an unsupported concept omitted by a decoder or a writer.
+/// carries an unsupported concept omitted by a decoder or a writer. `Exact`,
+/// `fallback`, and `omitted` have ergonomic constructors; `Derived` is built by
+/// struct literal until a graduated module first computes one.
 #[must_use = "a Transfer carries a possible loss; resolve it through a LossSink"]
 pub enum Transfer<T> {
     /// Read verbatim from the source with no substitution.
@@ -90,19 +92,9 @@ impl<T> Transfer<T> {
         Transfer::Exact(value)
     }
 
-    /// A value computed from byte-exact inputs.
-    pub fn derived(value: T, exactness: Exactness) -> Self {
-        Transfer::Derived { value, exactness }
-    }
-
-    /// A field filled from convention because the source carried no value
-    /// (defaulted-field boundary). The note is what strict mode weighs.
-    pub fn defaulted(value: T, note: LossNote) -> Self {
-        Transfer::Fallback { value, note }
-    }
-
     /// A resolver's substituted carrier or axis (resolver to fallback
-    /// carrier/axis boundary).
+    /// carrier/axis boundary), and the defaulted-field boundary — both map to
+    /// [`Fallback`](Transfer::Fallback). The note is what strict mode weighs.
     pub fn fallback(value: T, note: LossNote) -> Self {
         Transfer::Fallback { value, note }
     }
@@ -111,18 +103,6 @@ impl<T> Transfer<T> {
     /// concept to omission boundary).
     pub fn omitted(note: LossNote) -> Self {
         Transfer::Dropped(note)
-    }
-
-    /// The exactness this outcome establishes for annotation tables.
-    /// [`Dropped`](Transfer::Dropped) has no value, so it reports
-    /// [`Exactness::Unknown`].
-    pub fn exactness(&self) -> Exactness {
-        match self {
-            Transfer::Exact(_) => Exactness::ByteExact,
-            Transfer::Derived { exactness, .. } => *exactness,
-            Transfer::Fallback { .. } => Exactness::Inferred,
-            Transfer::Dropped(_) => Exactness::Unknown,
-        }
     }
 
     /// Extracts the value, recording any loss into `sink`.
@@ -149,30 +129,6 @@ impl<T> Transfer<T> {
     }
 }
 
-/// A schema-declared optional field crossing a boundary (§6.2).
-///
-/// [`Absent`](OptionalTransfer::Absent) is legitimate only for a field the
-/// schema declares optional — a genuinely absent value, distinct from a
-/// [`Transfer::Dropped`] omission of a value that should have been present.
-#[must_use = "an OptionalTransfer may carry a loss; resolve it through a LossSink"]
-pub enum OptionalTransfer<T> {
-    /// The field is present with a transfer outcome.
-    Present(Transfer<T>),
-    /// The field is legitimately absent (schema-optional).
-    Absent,
-}
-
-impl<T> OptionalTransfer<T> {
-    /// Resolves a present outcome through `sink`; an absent field yields
-    /// [`None`] with no loss.
-    pub fn resolve(self, sink: &mut impl LossSink) -> Option<T> {
-        match self {
-            OptionalTransfer::Present(transfer) => transfer.resolve(sink),
-            OptionalTransfer::Absent => None,
-        }
-    }
-}
-
 /// The single construction path for a graduated module: one [`LossSink`]
 /// threaded through every Phase-4B boundary the module crosses.
 ///
@@ -193,11 +149,6 @@ impl<'s, S: LossSink> Builder<'s, S> {
 
     /// Resolves one transfer, recording any loss into the shared sink.
     pub fn take<T>(&mut self, transfer: Transfer<T>) -> Option<T> {
-        transfer.resolve(self.sink)
-    }
-
-    /// Resolves an optional transfer, recording any loss into the shared sink.
-    pub fn take_optional<T>(&mut self, transfer: OptionalTransfer<T>) -> Option<T> {
         transfer.resolve(self.sink)
     }
 
@@ -228,7 +179,11 @@ mod tests {
         let mut sink: Vec<LossNote> = Vec::new();
         assert_eq!(Transfer::exact(7).resolve(&mut sink), Some(7));
         assert_eq!(
-            Transfer::derived(9, Exactness::Derived).resolve(&mut sink),
+            Transfer::Derived {
+                value: 9,
+                exactness: Exactness::Derived,
+            }
+            .resolve(&mut sink),
             Some(9)
         );
         assert!(sink.is_empty());
@@ -254,13 +209,6 @@ mod tests {
     }
 
     #[test]
-    fn absent_optional_records_no_loss() {
-        let mut sink: Vec<LossNote> = Vec::new();
-        assert_eq!(OptionalTransfer::<i32>::Absent.resolve(&mut sink), None);
-        assert!(sink.is_empty());
-    }
-
-    #[test]
     fn builder_threads_one_sink() {
         let mut sink: Vec<LossNote> = Vec::new();
         let mut builder = Builder::new(&mut sink);
@@ -272,22 +220,5 @@ mod tests {
         let dropped: Option<i32> = builder.take(Transfer::omitted(note(LossCode::PcurveOmitted)));
         assert_eq!(dropped, None);
         assert_eq!(sink.len(), 2);
-    }
-
-    #[test]
-    fn exactness_classifies_each_variant() {
-        assert_eq!(Transfer::exact(0).exactness(), Exactness::ByteExact);
-        assert_eq!(
-            Transfer::derived(0, Exactness::Derived).exactness(),
-            Exactness::Derived
-        );
-        assert_eq!(
-            Transfer::fallback(0, note(LossCode::CarrierAxisInferred)).exactness(),
-            Exactness::Inferred
-        );
-        assert_eq!(
-            Transfer::<i32>::omitted(note(LossCode::PcurveOmitted)).exactness(),
-            Exactness::Unknown
-        );
     }
 }

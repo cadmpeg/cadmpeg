@@ -1,25 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Probe and commit result types.
+//! Committed-parse failure types.
 //!
 //! Reverse-engineered decoding is speculative: try an interpretation, and a
 //! miss means try the next. Leaf reads stay `Option` so the probe path builds
-//! no errors and makes no allocations. The commit transition is an explicit
-//! type so it cannot decay into a convention: once an interpretation is
-//! accepted, a failure is classified and cannot be turned back into "try the
-//! next candidate".
+//! no errors and makes no allocations. The commit transition is realized by the
+//! `req_*` mirror API on [`View`](super::View): a committed required read
+//! returns `Result<T, ParseError>`, so once an interpretation is accepted a
+//! failure is classified and cannot be turned back into "try the next
+//! candidate".
 
 use super::error::SourceLocation;
-
-/// The outcome of attempting one interpretation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Probe<T> {
-    /// The interpretation did not apply; try the next one.
-    NoMatch,
-    /// The interpretation applied and produced a value.
-    Match(T),
-    /// The interpretation was accepted, then failed: classified, not retried.
-    CommittedError(ParseError),
-}
 
 /// A classified failure after commitment, with its location.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -59,7 +59,9 @@ pub struct ResourceLimits {
     /// calibration.
     pub max_depth: u32,
     /// Maximum bytes retained opaque in salvage mode.
-    /// **Provisional** until the Phase 3 retained calibration (§5.2).
+    /// **Frozen** at Phase 3 (§5.2 retained freeze): the multi-space fidelity
+    /// ledger's retained-byte charges measured well inside this ceiling, so the
+    /// value is unchanged and now load-bearing.
     pub max_retained_bytes: u64,
 }
 
@@ -94,14 +96,16 @@ impl ResourceLimits {
     }
 
     /// Version tag for the desktop profile's ceilings (§5.2). The §5.2
-    /// per-dimension freeze schedule is complete: `max_input_bytes` (Phase 0B),
-    /// `max_decompressed_bytes_*` (Phase 1), `max_alloc_bytes`/`max_work`/
-    /// `max_depth` (Phase 2), and `max_retained_bytes` (Phase 3) are all frozen.
-    /// The Phase 3 retained freeze, like the Phase 2 freeze before it, left every
-    /// ceiling value unchanged — the migrated charge sites calibrated well inside
-    /// them — so the tag stays `desktop-v1`; it advances only when a ceiling
-    /// *value* changes. The `desktop_version_pins_its_ceilings` test pins the tag
-    /// to its values so a ceiling cannot change without one.
+    /// per-dimension freeze schedule is nearly complete: `max_input_bytes`
+    /// (Phase 0B), `max_alloc_bytes`/`max_work`/`max_depth` (Phase 2), and
+    /// `max_retained_bytes` (Phase 3) are frozen. `max_decompressed_bytes_*`
+    /// remains **provisional**: the Phase 1 gate deliberately declined the
+    /// decompression freeze pending report-only cumulative-charge calibration
+    /// (§5.2), so those two ceilings are not yet calibration-defended. Every
+    /// freeze so far left its ceiling value unchanged — the migrated charge sites
+    /// calibrated well inside them — so the tag stays `desktop-v1`; it advances
+    /// only when a ceiling *value* changes. The `desktop_version_pins_its_ceilings`
+    /// test pins the tag to its values so a ceiling cannot change without one.
     pub const DESKTOP_VERSION: &'static str = "desktop-v1";
 
     /// Version tag for the service profile's ceilings (§5.2), advanced whenever
@@ -200,13 +204,17 @@ impl Envelope {
     /// the migrated charge sites (container framing plus graduated leaves) at
     /// bytes-to-low-KiB cumulative `alloc_bytes` and tens-to-low-thousands
     /// `work` units per fixture — orders of magnitude inside these constants —
-    /// so the freeze left every value unchanged. `decompressed_*` froze at
-    /// Phase 1; `retained_bytes` froze at Phase 3, where the retained-byte charge
-    /// sites became real — the multi-space fidelity ledger charges blob retention
-    /// against this dimension, and the measured per-fixture retention sits far
-    /// inside `base`, so the freeze again left every value unchanged. The whole
-    /// §5.2 schedule is now frozen. A false reject on a legitimate file remains a
-    /// calibration bug, not a contract.
+    /// so the freeze left every value unchanged. `retained_bytes` froze at
+    /// Phase 3, where the retained-byte charge sites became real — the
+    /// multi-space fidelity ledger charges blob retention against this dimension,
+    /// and the measured per-fixture retention sits far inside `base`, so the
+    /// freeze again left every value unchanged. The `decompressed_*` terms remain
+    /// **provisional**: the Phase 1 gate declined the decompression freeze
+    /// pending report-only cumulative-charge calibration (the in-tree harness
+    /// calibrates the process-wide peak-allocation oracle, not the cumulative
+    /// `decompressed_bytes` charge profile), so those two terms are the one
+    /// unfrozen dimension left in the §5.2 schedule. A false reject on a
+    /// legitimate file remains a calibration bug, not a contract.
     pub(crate) const PLATFORM_DEFAULT: Envelope = Envelope {
         base: DimensionAmounts {
             alloc_bytes: 64 * MIB,
@@ -234,9 +242,13 @@ impl Envelope {
     /// this version. `envelope-v3` records the Phase 3 freeze of the envelope's
     /// `retained_bytes` term: it moved from a provisional starting point to a
     /// frozen, calibration-defended value (its magnitude was unchanged — the
-    /// measured retention charges sit far inside it — but its status did),
-    /// completing the §5.2 schedule. `envelope-v2` before it recorded the Phase 2
-    /// freeze of `alloc_bytes` and `work` on the same terms. The `max_depth`
+    /// measured retention charges sit far inside it — but its status did).
+    /// `envelope-v2` before it recorded the Phase 2 freeze of `alloc_bytes` and
+    /// `work` on the same terms. The `decompressed_*` terms are not yet frozen —
+    /// the Phase 1 gate declined the decompression freeze pending report-only
+    /// cumulative-charge calibration (§5.2) — so the schedule is not complete;
+    /// the tag advances again when those terms freeze or any constant changes.
+    /// The `max_depth`
     /// ceiling is not an envelope term; its Phase 2
     /// freeze is recorded by `DESKTOP_VERSION`/`SERVICE_VERSION` and their
     /// pinning tests, not here.

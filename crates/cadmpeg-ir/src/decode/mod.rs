@@ -33,9 +33,9 @@
 //! - Counters never decrease; the depth gauge releases on guard drop. The
 //!   input basis grows as expansions finalize, raising input-proportional
 //!   allowances without loosening pre-expansion ones.
-//! - The commit transition is an explicit type. Probe reads return `Option`;
-//!   the [`Probe`] and `req_*` mirror APIs classify failure only after an
-//!   interpretation is accepted.
+//! - The commit transition is realized by the reader API. Probe reads return
+//!   `Option`; the `req_*` mirror API returns [`Result<T, ParseError>`], so
+//!   failure is classified only after an interpretation is accepted.
 
 mod arena;
 mod budget;
@@ -59,7 +59,7 @@ pub use error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
-pub use probe::{ParseError, ParseErrorKind, Probe};
+pub use probe::{ParseError, ParseErrorKind};
 pub use retained::{RetainedBlob, RetainedBlobId, RetainedRange, Retention};
 pub use space::{ByteRange, SourceSpan, SpaceId, SpaceOrigin, TransformKind};
 pub use view::{BoundedCount, View};

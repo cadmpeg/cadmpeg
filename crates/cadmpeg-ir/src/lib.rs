@@ -97,7 +97,6 @@ pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
     SubdVertexTag,
 };
-pub use transfer::{Builder as TransferBuilder, LossSink, OptionalTransfer, Transfer};
 pub use unknown::UnknownRecord;
 pub use validate::validate;
 
