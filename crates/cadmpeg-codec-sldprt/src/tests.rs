@@ -16171,11 +16171,16 @@ fn decode_projects_feature_input_extrusion_operations() {
         payload
     }
 
-    fn inline_operation_payload(operation: u8, object_id: u32) -> Vec<u8> {
-        let mut payload = operation_payload(14, object_id, "Extrude1", "moICE_c", true, 8);
+    fn inline_operation_payload(family: u8, operation: u8, object_id: u32) -> Vec<u8> {
+        let class_name = if family == 0x40 {
+            "moExtrusion_c"
+        } else {
+            "moICE_c"
+        };
+        let mut payload = operation_payload(14, object_id, "Extrude1", class_name, true, 8);
         payload.truncate(payload.len() - 12);
         payload.extend_from_slice(&[0; 4]);
-        payload.extend_from_slice(&[0xca, 1, operation, 0x40]);
+        payload.extend_from_slice(&[family, 1, operation, 0x40]);
         payload.extend_from_slice(&object_id.to_le_bytes());
         payload.extend_from_slice(&[0; 4]);
         payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
@@ -16285,9 +16290,9 @@ fn decode_projects_feature_input_extrusion_operations() {
         ));
     }
 
-    for (operation, expected) in [
-        (0, cadmpeg_ir::features::BooleanOp::Join),
-        (2, cadmpeg_ir::features::BooleanOp::Cut),
+    for (family, operation, expected) in [
+        (0x40, 0, cadmpeg_ir::features::BooleanOp::Join),
+        (0xca, 2, cadmpeg_ir::features::BooleanOp::Cut),
     ] {
         let mut source = sldprt_with_body(&triangle_body());
         source.extend(make_block(
@@ -16298,7 +16303,7 @@ fn decode_projects_feature_input_extrusion_operations() {
         source.extend(make_block(
             0x45,
             "Contents/Config-0-ResolvedFeatures",
-            &inline_operation_payload(operation, 8),
+            &inline_operation_payload(family, operation, 8),
         ));
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(source), &DecodeOptions::default())

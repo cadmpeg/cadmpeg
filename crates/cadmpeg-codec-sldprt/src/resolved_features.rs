@@ -1243,6 +1243,61 @@ mod marker_tests {
     }
 
     #[test]
+    fn inline_operation_binds_join_and_cut_to_their_family_words() {
+        use super::{feature_inline_operation, feature_inline_operation_fields};
+        use crate::records::{FeatureInputLane, FeatureInputName};
+        use cadmpeg_ir::features::BooleanOp;
+
+        let value = "F";
+        let name_offset = 10usize;
+        let mut payload = vec![0; 40];
+        let trailer = name_offset + 6 + 2;
+        payload[trailer + 4] = 0x40;
+        payload[trailer + 5] = 1;
+        payload[trailer + 7] = 0xc0;
+        payload[trailer + 8..trailer + 12].copy_from_slice(&7u32.to_le_bytes());
+        payload[trailer + 16..trailer + 19].copy_from_slice(&[0xff, 0xfe, 0xff]);
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+        let name = FeatureInputName {
+            id: "name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: name_offset as u64,
+            value: value.into(),
+            object_id: Some(7),
+        };
+        let mut lane = lane;
+        assert_eq!(
+            feature_inline_operation(&lane, &name),
+            Some(BooleanOp::Join)
+        );
+        // A zero operation byte on an moICE_c object carries no operation.
+        lane.native_payload[trailer + 4] = 0xca;
+        assert_eq!(feature_inline_operation(&lane, &name), None);
+        assert!(feature_inline_operation_fields(&lane, &name).is_some());
+        lane.native_payload[trailer + 6] = 2;
+        assert_eq!(feature_inline_operation(&lane, &name), Some(BooleanOp::Cut));
+        lane.native_payload[trailer + 4] = 0x40;
+        assert_eq!(feature_inline_operation(&lane, &name), None);
+        lane.native_payload[trailer + 6] = 3;
+        assert_eq!(feature_inline_operation_fields(&lane, &name), None);
+    }
+
+    #[test]
     fn compact_extrusion_through_all_both_accepts_both_carriers() {
         let dimension_tail = |payload: &mut Vec<u8>| {
             let block = payload.len();
@@ -5319,7 +5374,13 @@ pub(crate) fn bind_sweep_operations(
     }
 }
 
-fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<BooleanOp> {
+/// Inline extrusion trailer fields: the low byte of the family word and the
+/// operation byte. The family word is `0x0140` for `moExtrusion_c` objects
+/// and `0x01ca` for `moICE_c` objects.
+fn feature_inline_operation_fields(
+    lane: &FeatureInputLane,
+    name: &FeatureInputName,
+) -> Option<(u8, u8)> {
     let name_offset = usize::try_from(name.offset).ok()?;
     let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
     let trailer = name_offset.checked_add(6 + name_bytes)?;
@@ -5329,12 +5390,20 @@ fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) ->
         || bytes[8..12] != name.object_id?.to_le_bytes()
         || bytes[12..16] != [0; 4]
         || bytes[16..19] != [0xff, 0xfe, 0xff]
+        || !matches!(bytes[6], 0 | 2)
     {
         return None;
     }
-    match bytes[6] {
-        0 => Some(BooleanOp::Join),
-        2 => Some(BooleanOp::Cut),
+    Some((bytes[4], bytes[6]))
+}
+
+/// Inline Boolean operation, when the trailer carries one. A zero operation
+/// byte on an `moICE_c` object is not an operation carrier; those objects use
+/// class-scoped form semantics instead.
+fn feature_inline_operation(lane: &FeatureInputLane, name: &FeatureInputName) -> Option<BooleanOp> {
+    match feature_inline_operation_fields(lane, name)? {
+        (0x40, 0) => Some(BooleanOp::Join),
+        (0xca, 2) => Some(BooleanOp::Cut),
         _ => None,
     }
 }
@@ -8013,7 +8082,9 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         objects.sort_by_key(|(name, _)| name.offset);
         let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {
             let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
-            if kind == NativeClassKind::Unknown && feature_inline_operation(lane, name).is_some() {
+            if kind == NativeClassKind::Unknown
+                && feature_inline_operation_fields(lane, name).is_some()
+            {
                 NativeClassKind::Extrusion
             } else {
                 kind
