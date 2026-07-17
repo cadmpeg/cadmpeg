@@ -3275,6 +3275,40 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             color: None,
             tolerance: None,
         });
+        for boundary in 0..2 {
+            let loop_id = LoopId(format!("loop-{ordinal}-{boundary}"));
+            let curve = CurveId(format!("bore-curve-{ordinal}-{boundary}"));
+            let edge = EdgeId(format!("bore-edge-{ordinal}-{boundary}"));
+            let coedge = CoedgeId(format!("bore-coedge-{ordinal}-{boundary}"));
+            model.curves.push(Curve {
+                id: curve.clone(),
+                geometry: CurveGeometry::Circle {
+                    center: Point3::new(ordinal as f64, boundary as f64, 0.0),
+                    axis: Vector3::new(0.0, 1.0, 0.0),
+                    ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                    radius: 2.55,
+                },
+                source_object: None,
+            });
+            model.edges.push(Edge {
+                id: edge.clone(),
+                curve: Some(curve),
+                start: VertexId("vertex".into()),
+                end: VertexId("vertex".into()),
+                param_range: None,
+                tolerance: None,
+            });
+            model.coedges.push(Coedge {
+                id: coedge.clone(),
+                owner_loop: loop_id,
+                edge,
+                next: coedge.clone(),
+                previous: coedge.clone(),
+                radial_next: coedge,
+                sense: Sense::Forward,
+                pcurve: None,
+            });
+        }
     }
     let body = BodyId("body".into());
     model.bodies.push(Body {
@@ -3340,6 +3374,28 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
     assert!(crate::decode::hole_diameters_for_operations(
         &ir,
         &[operations[0].clone(), operations[0].clone()],
+        &outputs,
+    )
+    .is_empty());
+    let mut invalid_boundary = ir.clone();
+    let CurveGeometry::Circle { radius, .. } = &mut invalid_boundary.model.curves[0].geometry
+    else {
+        unreachable!()
+    };
+    *radius += 0.1;
+    assert!(
+        crate::decode::hole_diameters_for_operations(&invalid_boundary, &operations, &outputs,)
+            .is_empty()
+    );
+    let mut coincident_boundaries = ir.clone();
+    let CurveGeometry::Circle { center, .. } = &mut coincident_boundaries.model.curves[1].geometry
+    else {
+        unreachable!()
+    };
+    center.y = 0.0;
+    assert!(crate::decode::hole_diameters_for_operations(
+        &coincident_boundaries,
+        &operations,
         &outputs,
     )
     .is_empty());
@@ -3411,6 +3467,17 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         unreachable!()
     };
     *radius = 3.0;
+    for curve in distinct
+        .model
+        .curves
+        .iter_mut()
+        .filter(|curve| curve.id.0.starts_with("bore-curve-1-"))
+    {
+        let CurveGeometry::Circle { radius, .. } = &mut curve.geometry else {
+            unreachable!()
+        };
+        *radius = 3.0;
+    }
     let distinct_outputs = std::collections::BTreeMap::from([
         ("hole-a".to_string(), vec![BodyId("body".into())]),
         ("hole-b".to_string(), vec![BodyId("second-body".into())]),

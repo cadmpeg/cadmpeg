@@ -11171,26 +11171,17 @@ pub(crate) fn hole_diameters_for_operations(
             .push(operation.clone());
     }
 
-    let surfaces = ir
-        .model
-        .surfaces
-        .iter()
-        .map(|surface| (&surface.id, &surface.geometry))
-        .collect::<BTreeMap<_, _>>();
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return BTreeMap::new();
         };
-        let radii = body_faces
+        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
+            return BTreeMap::new();
+        };
+        let radii = bores
             .into_iter()
-            .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-            .filter_map(|face| match surfaces.get(&face.surface)? {
-                SurfaceGeometry::Cylinder { radius, .. } if radius.is_finite() && *radius > 0.0 => {
-                    Some(*radius)
-                }
-                _ => None,
-            })
+            .map(|(_, _, radius)| radius)
             .collect::<Vec<_>>();
         let Some(radius) = radii.first().copied() else {
             return BTreeMap::new();
@@ -11209,6 +11200,98 @@ pub(crate) fn hole_diameters_for_operations(
         );
     }
     diameters
+}
+
+fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point3, Vector3, f64)>> {
+    let surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .map(|surface| (&surface.id, &surface.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let edges = ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| (&edge.id, edge.curve.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let curves = ir
+        .model
+        .curves
+        .iter()
+        .map(|curve| (&curve.id, &curve.geometry))
+        .collect::<BTreeMap<_, _>>();
+    let mut coedges_by_loop = BTreeMap::<&LoopId, Vec<&Coedge>>::new();
+    for coedge in &ir.model.coedges {
+        coedges_by_loop
+            .entry(&coedge.owner_loop)
+            .or_default()
+            .push(coedge);
+    }
+    let linear_tolerance = ir.tolerances.linear.max(1e-9);
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    body_faces
+        .iter()
+        .copied()
+        .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
+        .filter_map(|face| match surfaces.get(&face.surface)? {
+            SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                radius,
+                ..
+            } if radius.is_finite() && *radius > 0.0 => Some((face, *origin, *axis, *radius)),
+            _ => None,
+        })
+        .map(|(face, origin, axis, radius)| {
+            let mut loop_offsets = Vec::with_capacity(2);
+            for loop_id in &face.loops {
+                let coedges = coedges_by_loop.get(loop_id)?;
+                if coedges.is_empty() {
+                    return None;
+                }
+                let mut loop_offset = None::<f64>;
+                for coedge in coedges {
+                    let curve_id = edges.get(&coedge.edge).copied().flatten()?;
+                    let CurveGeometry::Circle {
+                        center,
+                        axis: circle_axis,
+                        radius: circle_radius,
+                        ..
+                    } = curves.get(curve_id)?
+                    else {
+                        return None;
+                    };
+                    if (circle_radius - radius).abs() > linear_tolerance
+                        || (1.0 - dot_vector(axis, *circle_axis).abs()) > angular_tolerance
+                    {
+                        return None;
+                    }
+                    let delta = Vector3::new(
+                        center.x - origin.x,
+                        center.y - origin.y,
+                        center.z - origin.z,
+                    );
+                    if cross_vector(delta, axis).norm() > linear_tolerance {
+                        return None;
+                    }
+                    let offset = dot_vector(delta, axis);
+                    if loop_offset.is_some_and(|value| (value - offset).abs() > linear_tolerance) {
+                        return None;
+                    }
+                    loop_offset = Some(offset);
+                }
+                loop_offsets.push(loop_offset?);
+            }
+            let [first, second] = loop_offsets.as_slice() else {
+                return None;
+            };
+            if (first - second).abs() <= linear_tolerance {
+                return None;
+            }
+            Some((origin, axis, radius))
+        })
+        .collect()
 }
 
 /// Derive identical entry and exit chamfer treatments only when every simple
@@ -11276,20 +11359,9 @@ pub(crate) fn simple_hole_chamfers(
         let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
             return BTreeMap::new();
         };
-        let bores = body_faces
-            .iter()
-            .copied()
-            .filter(|face| face.sense == Sense::Reversed && face.loops.len() == 2)
-            .filter_map(|face| match surfaces.get(&face.surface)? {
-                SurfaceGeometry::Cylinder {
-                    origin,
-                    axis,
-                    radius,
-                    ..
-                } if radius.is_finite() && *radius > 0.0 => Some((*origin, *axis, *radius)),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
+        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
+            return BTreeMap::new();
+        };
         let [(_, _, bore_radius), ..] = bores.as_slice() else {
             return BTreeMap::new();
         };
