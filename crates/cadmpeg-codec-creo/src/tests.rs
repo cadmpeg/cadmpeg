@@ -2341,6 +2341,7 @@ fn decode_transfers_featdefs_sketch_variables_as_native_design_data() {
     assert_eq!(points[0]["point_id"], 7);
     assert_eq!(points[0]["u"], 1.0);
     assert_eq!(points[0]["v"], 3.0);
+    assert_eq!(points[0]["state"], "resolved");
     let variables = sketches[0].fields["variables"]
         .as_array()
         .expect("variables array");

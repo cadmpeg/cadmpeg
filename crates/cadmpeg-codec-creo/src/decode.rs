@@ -109,6 +109,7 @@ struct CreoSketchSectionPoint {
     point_id: u32,
     u: Option<f64>,
     v: Option<f64>,
+    state: &'static str,
 }
 
 #[derive(Serialize)]
@@ -2751,16 +2752,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     offset: section.offset,
                 }),
             table_headers: sketch_table_headers(definition),
-            section_points: definition
-                .variables
-                .iter()
-                .flat_map(|table| &table.points)
-                .map(|point| CreoSketchSectionPoint {
-                    point_id: point.point_id,
-                    u: point.u,
-                    v: point.v,
-                })
-                .collect(),
+            section_points: sketch_section_point_records(definition),
             solved_external_ids: definition
                 .trim_entities
                 .as_ref()
@@ -2948,6 +2940,40 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     offset: triple.offset,
                 })
                 .collect(),
+        })
+        .collect()
+}
+
+fn sketch_section_point_records(
+    definition: &crate::feature::FeatureDefinition,
+) -> Vec<CreoSketchSectionPoint> {
+    let Some(variables) = &definition.variables else {
+        return Vec::new();
+    };
+    let (points, ambiguous) = variables.reconciled_points();
+    points
+        .keys()
+        .copied()
+        .chain(ambiguous.iter().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .map(|point_id| {
+            let [u, v] = points.get(&point_id).copied().unwrap_or([None; 2]);
+            let state = if ambiguous.contains(&point_id) {
+                "conflicting"
+            } else {
+                match (u.is_some(), v.is_some()) {
+                    (true, true) => "resolved",
+                    (true, false) | (false, true) => "partial",
+                    (false, false) => "unresolved",
+                }
+            };
+            CreoSketchSectionPoint {
+                point_id,
+                u,
+                v,
+                state,
+            }
         })
         .collect()
 }
@@ -16255,6 +16281,12 @@ mod resolved_sketch_tests {
             .points
             .push(conflicting);
         assert!(!resolved_section_points(&conflicting_definition).contains_key(&2));
+        let conflicting_record = sketch_section_point_records(&conflicting_definition)
+            .into_iter()
+            .find(|point| point.point_id == 2)
+            .expect("conflicting point record");
+        assert_eq!(conflicting_record.state, "conflicting");
+        assert_eq!([conflicting_record.u, conflicting_record.v], [None; 2]);
         let mut saved_definition = definition;
         saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 1,
