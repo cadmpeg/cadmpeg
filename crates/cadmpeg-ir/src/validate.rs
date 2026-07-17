@@ -45,7 +45,8 @@ use identity_order::{check_identity_and_order, check_version, collect_native_ids
 use sketches::check_sketches;
 use subd::{check_procedural_surfaces, check_source_associations, check_subds};
 use topology::{
-    check_coedge_pairing, check_loops, check_references, check_units, check_wire_topology, IdSets,
+    check_coedge_pairing, check_loops, check_references, check_shell_connectivity, check_units,
+    check_wire_topology, IdSets,
 };
 
 /// A radius/length that is not a finite positive number is invalid geometry.
@@ -68,6 +69,7 @@ pub fn validate(ir: &CadIr, losses: Vec<LossNote>) -> ValidationReport {
     check_references(ir, &ids, &mut findings);
     check_loops(ir, &mut findings);
     check_coedge_pairing(ir, &mut findings);
+    check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     check_carrier_reachability(ir, &mut findings);
     check_annotations(ir, &all_ids, &mut findings);
