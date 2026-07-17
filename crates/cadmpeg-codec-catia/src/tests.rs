@@ -4563,6 +4563,29 @@ fn outer_object_graph_accepts_one_length_closed_record() {
 }
 
 #[test]
+fn outer_object_graph_does_not_promote_unassigned_head_bytes() {
+    let bytes = object_graph_from_records(&[object_graph_record(
+        &[0x04, 0x01, 0xe5, 0xff, 0xff, 0xff, 0xe4],
+        &[0xfe],
+    )]);
+    let graph = crate::object_graph::parse(&bytes).expect("literal head bytes");
+
+    assert_eq!(graph.records[0].owner_ref, None);
+    assert_eq!(graph.records[0].class_ref, None);
+    assert_eq!(graph.records[0].storage_ref, None);
+    assert_eq!(
+        &graph.records[0].head[2..],
+        [
+            crate::object_graph::HeadToken::Literal(0xe5),
+            crate::object_graph::HeadToken::Literal(0xff),
+            crate::object_graph::HeadToken::Literal(0xff),
+            crate::object_graph::HeadToken::Literal(0xff),
+            crate::object_graph::HeadToken::Literal(0xe4),
+        ]
+    );
+}
+
+#[test]
 fn object_graph_payload_reads_fixed_width_escaped_values() {
     use crate::object_graph::PayloadField;
 

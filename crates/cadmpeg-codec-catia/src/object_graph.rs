@@ -72,7 +72,7 @@ pub enum HeadToken {
     Separator,
     /// Compact or continued reference.
     Reference(u32),
-    /// Literal byte below `0x80`.
+    /// Literal byte outside an assigned reference or sentinel form.
     Literal(u8),
     /// Four-byte absent-handle sentinel.
     NullHandle,
@@ -447,7 +447,7 @@ fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
                 u32::from(byte - 0xd1) * 256 + u32::from(bytes[at + 1]) + 1,
             ));
             at += 2;
-        } else if byte >= 0x80 {
+        } else if (0x80..=0xd0).contains(&byte) {
             tokens.push(HeadToken::Reference(u32::from(byte - 0x80)));
             at += 1;
         } else {
