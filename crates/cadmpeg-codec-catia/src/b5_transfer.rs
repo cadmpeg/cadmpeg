@@ -263,6 +263,12 @@ fn transfer_complete(
                         })
                 } else if matches!(geometry, CurveGeometry::Line { .. }) {
                     oriented_line_plan(&geometry, edge_start, edge_end)
+                } else if matches!(geometry, CurveGeometry::Circle { .. }) {
+                    edge_pcurve_parameters(graph, edge_id, pcurve_id).and_then(|parameters| {
+                        oriented_circle_plan(
+                            pcurve, surface, &geometry, parameters, edge_start, edge_end,
+                        )
+                    })
                 } else {
                     None
                 };
@@ -961,6 +967,122 @@ fn oriented_line_plan(
         edge_tolerance: (residual > 1e-9).then_some(residual + 1e-9),
         cache_fit_tolerance: None,
     })
+}
+
+fn oriented_circle_plan(
+    pcurve: &B5Pcurve,
+    surface: &B5Surface,
+    geometry: &CurveGeometry,
+    endpoint_parameters: [f64; 2],
+    edge_start: [f64; 3],
+    edge_end: [f64; 3],
+) -> Option<CurvePlan> {
+    let (dimension, scale) = isoparametric_angle_coordinate(pcurve, surface)?;
+    if !scale.is_finite() || scale.abs() <= f64::EPSILON {
+        return None;
+    }
+    if let Some(weights) = &pcurve.weights {
+        if weights.len() != pcurve.control_points.len()
+            || weights
+                .iter()
+                .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        {
+            return None;
+        }
+    }
+    let endpoints =
+        endpoint_parameters.map(|parameter| crate::b5::evaluate_pcurve(pcurve, parameter));
+    let [Some(start_uv), Some(end_uv)] = endpoints else {
+        return None;
+    };
+    let angles = [start_uv[dimension] / scale, end_uv[dimension] / scale];
+    let delta = angles[1] - angles[0];
+    if !delta.is_finite() || delta.abs() <= 1e-12 || delta.abs() > std::f64::consts::TAU + 1e-9 {
+        return None;
+    }
+    let direction = delta.signum();
+    if pcurve
+        .control_points
+        .windows(2)
+        .any(|points| direction * (points[1][dimension] - points[0][dimension]) / scale < -1e-12)
+    {
+        return None;
+    }
+
+    let CurveGeometry::Circle {
+        center,
+        axis,
+        ref_direction,
+        radius,
+    } = geometry
+    else {
+        return None;
+    };
+    if !radius.is_finite() || radius.abs() <= f64::EPSILON {
+        return None;
+    }
+    let mut axis = *axis;
+    let mut ref_direction = *ref_direction;
+    let radius = if *radius < 0.0 {
+        ref_direction = Vector3::new(-ref_direction.x, -ref_direction.y, -ref_direction.z);
+        -*radius
+    } else {
+        *radius
+    };
+    let oriented_angles = if delta < 0.0 {
+        axis = Vector3::new(-axis.x, -axis.y, -axis.z);
+        [-angles[0], -angles[1]]
+    } else {
+        angles
+    };
+    let parameter_range = crate::geometry::canonical_periodic_range(oriented_angles)?;
+    let geometry = CurveGeometry::Circle {
+        center: *center,
+        axis,
+        ref_direction,
+        radius,
+    };
+    let evaluated = parameter_range.map(|parameter| curve_point(&geometry, parameter));
+    let [Some(start), Some(end)] = evaluated else {
+        return None;
+    };
+    let residual = distance([start.x, start.y, start.z], edge_start)
+        .max(distance([end.x, end.y, end.z], edge_end));
+    if residual > POINT_TOLERANCE {
+        return None;
+    }
+    Some(CurvePlan {
+        geometry,
+        parameter_range: Some(parameter_range),
+        edge_tolerance: (residual > 1e-9).then_some(residual + 1e-9),
+        cache_fit_tolerance: None,
+    })
+}
+
+fn isoparametric_angle_coordinate(pcurve: &B5Pcurve, surface: &B5Surface) -> Option<(usize, f64)> {
+    match surface {
+        B5Surface::Cylinder { radius, .. }
+            if constant_coordinate(&pcurve.control_points, 1).is_some() =>
+        {
+            Some((0, *radius))
+        }
+        B5Surface::Cone { angular_scale, .. }
+            if constant_coordinate(&pcurve.control_points, 1).is_some() =>
+        {
+            Some((0, *angular_scale))
+        }
+        B5Surface::Torus { minor_scale, .. }
+            if constant_coordinate(&pcurve.control_points, 0).is_some() =>
+        {
+            Some((1, *minor_scale))
+        }
+        B5Surface::Torus { major_scale, .. }
+            if constant_coordinate(&pcurve.control_points, 1).is_some() =>
+        {
+            Some((0, *major_scale))
+        }
+        _ => None,
+    }
 }
 
 fn oriented_nurbs_range(
@@ -1878,10 +2000,10 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        b5_edge_support_definition, body_kind_if_owned, cylinder_helix, lifted_curve_geometry,
-        merge_curve_plan, neutral_pcurve_point, oriented_line_plan, oriented_nurbs_range,
-        rational_arc, revolution_surface, revolve_nurbs, transfer_vertex_tolerances, CurvePlan,
-        SurfacePlan,
+        b5_edge_support_definition, body_kind_if_owned, cylinder_helix, cylinder_point,
+        lifted_curve_geometry, merge_curve_plan, neutral_pcurve_point, oriented_circle_plan,
+        oriented_line_plan, oriented_nurbs_range, rational_arc, revolution_surface, revolve_nurbs,
+        transfer_vertex_tolerances, CurvePlan, SurfacePlan,
     };
     use crate::b5::{B5Face, B5Graph, B5Loop, B5Pcurve, B5Profile, B5Surface};
     use cadmpeg_ir::eval::surface_point;
@@ -2257,6 +2379,130 @@ mod tests {
         assert_eq!(tolerant.cache_fit_tolerance, None);
         assert!(oriented_line_plan(&line, [1.01, 2.0, 5.0], [1.0, 2.0, 9.0]).is_none());
         assert!(oriented_line_plan(&line, [1.0, 2.0, 5.0], [1.0, 2.0, 5.0]).is_none());
+    }
+
+    #[test]
+    fn isoparametric_circle_range_preserves_winding_and_seams() {
+        let cylinder = B5Surface::Cylinder {
+            origin: [0.0, 0.0, 0.0],
+            reference_x: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            radius: 2.0,
+        };
+        let pcurve = B5Pcurve {
+            object_id: 1,
+            surface: 2,
+            degree: 1,
+            distinct_knots: vec![0.0, 1.0],
+            multiplicities: vec![2, 2],
+            control_points: vec![[11.0, 3.0], [13.0, 3.0]],
+            weights: None,
+            lifted_endpoints: None,
+        };
+        let geometry = lifted_curve_geometry(&pcurve, &cylinder).expect("cylinder latitude");
+        let edge_start = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            2.0,
+            pcurve.control_points[0],
+        );
+        let edge_end = cylinder_point(
+            [0.0; 3],
+            [1.0, 0.0, 0.0],
+            [0.0, 0.0, 1.0],
+            2.0,
+            pcurve.control_points[1],
+        );
+        let forward = oriented_circle_plan(
+            &pcurve,
+            &cylinder,
+            &geometry,
+            [0.0, 1.0],
+            edge_start,
+            edge_end,
+        )
+        .expect("seam-crossing circle range");
+        assert_eq!(forward.parameter_range, Some([5.5, 6.5]));
+
+        let reversed_pcurve = B5Pcurve {
+            control_points: pcurve.control_points.iter().copied().rev().collect(),
+            ..pcurve.clone()
+        };
+        let reversed = oriented_circle_plan(
+            &reversed_pcurve,
+            &cylinder,
+            &geometry,
+            [0.0, 1.0],
+            edge_end,
+            edge_start,
+        )
+        .expect("reversed circle range");
+        let [start, end] = reversed.parameter_range.expect("canonical range");
+        assert!(start >= 0.0 && end > start && end - start == 1.0);
+        assert!(matches!(
+            reversed.geometry,
+            CurveGeometry::Circle { axis, .. } if axis == Vector3::new(0.0, 0.0, -1.0)
+        ));
+
+        let turnback = B5Pcurve {
+            degree: 2,
+            multiplicities: vec![3, 3],
+            control_points: vec![[0.0, 3.0], [4.0, 3.0], [2.0, 3.0]],
+            ..pcurve
+        };
+        let turnback_geometry =
+            lifted_curve_geometry(&turnback, &cylinder).expect("turnback latitude locus");
+        let turnback_end =
+            cylinder_point([0.0; 3], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, [2.0, 3.0]);
+        assert!(oriented_circle_plan(
+            &turnback,
+            &cylinder,
+            &turnback_geometry,
+            [0.0, 1.0],
+            [2.0, 0.0, 3.0],
+            turnback_end,
+        )
+        .is_none());
+
+        let half_angle = std::f64::consts::FRAC_PI_6;
+        let cone = B5Surface::Cone {
+            apex: [0.0; 3],
+            direction_x: [1.0, 0.0, 0.0],
+            direction_y: [0.0, 1.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            half_angle,
+            angular_offset: 0.0,
+            slant_range: [-4.0, 0.0],
+            angular_scale: 2.0,
+        };
+        let cone_pcurve = B5Pcurve {
+            control_points: vec![[0.0, -4.0], [2.0, -4.0]],
+            ..reversed_pcurve
+        };
+        let cone_geometry =
+            lifted_curve_geometry(&cone_pcurve, &cone).expect("signed cone latitude");
+        let cone_point = |angle: f64| {
+            [
+                -4.0 * half_angle.sin() * angle.cos(),
+                -4.0 * half_angle.sin() * angle.sin(),
+                -4.0 * half_angle.cos(),
+            ]
+        };
+        let signed = oriented_circle_plan(
+            &cone_pcurve,
+            &cone,
+            &cone_geometry,
+            [0.0, 1.0],
+            cone_point(0.0),
+            cone_point(1.0),
+        )
+        .expect("normalized signed-radius circle");
+        assert!(matches!(
+            signed.geometry,
+            CurveGeometry::Circle { radius, ref_direction, .. }
+                if radius == 2.0 && ref_direction == Vector3::new(-1.0, 0.0, 0.0)
+        ));
     }
 
     #[test]

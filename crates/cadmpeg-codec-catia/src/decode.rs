@@ -1280,7 +1280,7 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        attach_standard_free_vertices, build_standard_edge_curve, canonical_periodic_range,
+        attach_standard_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch,
         circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
         e5_body_kinds, e5_boundary_curve, e5_occurrence_intersection_context, e5_pcurve_on_surface,
@@ -2173,8 +2173,8 @@ mod chart_tests {
     #[test]
     fn canonical_periodic_range_snaps_roundoff_at_the_turn_seam() {
         let tau = std::f64::consts::TAU;
-        let range =
-            canonical_periodic_range([tau - 1e-14, tau + 0.25]).expect("canonical seam range");
+        let range = crate::geometry::canonical_periodic_range([tau - 1e-14, tau + 0.25])
+            .expect("canonical seam range");
         assert_eq!(range[0], 0.0);
         assert!((range[1] - 0.25).abs() < 2e-14);
     }
@@ -3494,7 +3494,7 @@ fn e5_boundary_curve(
                 ref_direction: *u_axis,
                 radius: *radius,
             },
-            canonical_periodic_range(range)?,
+            geometry::canonical_periodic_range(range)?,
         ));
     }
     if let (
@@ -3567,7 +3567,11 @@ fn e5_boundary_curve(
                     start_uv,
                     span_direction,
                 )?;
-                Some((axis, ref_direction, canonical_periodic_range(range)?))
+                Some((
+                    axis,
+                    ref_direction,
+                    geometry::canonical_periodic_range(range)?,
+                ))
             })
             .collect::<Vec<_>>();
         let [(axis, ref_direction, curve_range)] = candidates.as_slice() else {
@@ -3865,18 +3869,6 @@ fn add_scaled_point(point: Point3, vector: Vector3, scale: f64) -> Point3 {
 
 fn add_vectors(left: Vector3, right: Vector3) -> Vector3 {
     Vector3::new(left.x + right.x, left.y + right.y, left.z + right.z)
-}
-
-fn canonical_periodic_range(range: [f64; 2]) -> Option<[f64; 2]> {
-    let sweep = range[1] - range[0];
-    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + 1e-9 {
-        return None;
-    }
-    let mut start = range[0].rem_euclid(std::f64::consts::TAU);
-    if std::f64::consts::TAU - start <= 1e-9 {
-        start = 0.0;
-    }
-    Some([start, start + sweep])
 }
 
 fn rational_pcurve_arc(center: [f64; 2], radius: f64, range: [f64; 2]) -> Option<PcurveGeometry> {
@@ -6468,7 +6460,11 @@ fn build_standard_edge_curve(
                         start,
                         end,
                     )?;
-                    Some((axis, ref_direction, canonical_periodic_range(range)?))
+                    Some((
+                        axis,
+                        ref_direction,
+                        geometry::canonical_periodic_range(range)?,
+                    ))
                 })
                 .collect::<Vec<_>>();
             let (axis, ref_direction, param_range) = match candidates.as_slice() {
@@ -6627,7 +6623,7 @@ fn standard_circle_pair_solution_is_simple(
                     start,
                     end,
                 )?;
-                canonical_periodic_range(range)
+                geometry::canonical_periodic_range(range)
             })
             .collect::<Vec<_>>();
         let [range] = candidates.as_slice() else {

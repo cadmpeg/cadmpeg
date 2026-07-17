@@ -24,6 +24,19 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::le::{f64_at, u16_at as u16_le, u32_at as u32_le};
 use cadmpeg_ir::math::{Point3, Vector3};
 
+/// Normalize an increasing circular interval to the canonical one-turn domain.
+pub(crate) fn canonical_periodic_range(range: [f64; 2]) -> Option<[f64; 2]> {
+    let sweep = range[1] - range[0];
+    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + 1e-9 {
+        return None;
+    }
+    let mut start = range[0].rem_euclid(std::f64::consts::TAU);
+    if std::f64::consts::TAU - start <= 1e-9 {
+        start = 0.0;
+    }
+    Some([start, start + sweep])
+}
+
 /// Angle-parameterized degree-1 cache for an exact circular helix.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CircularHelixCache {

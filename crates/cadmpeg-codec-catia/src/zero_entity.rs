@@ -472,7 +472,7 @@ fn orient_conic_interval(
     }
     let start = if span < 0.0 { -start } else { start };
     let sweep = span.abs();
-    let range = canonical_periodic_interval([start, start + sweep])?;
+    let range = crate::geometry::canonical_periodic_range([start, start + sweep])?;
     let expected_end = conic_point(curve, range[1])?;
     (point_distance(
         [expected_end.x, expected_end.y, expected_end.z],
@@ -576,15 +576,6 @@ fn conic_scale(curve: &CurveGeometry) -> Option<f64> {
         } => Some((*major_radius).max(*minor_radius)),
         _ => None,
     }
-}
-
-fn canonical_periodic_interval(range: [f64; 2]) -> Option<[f64; 2]> {
-    let sweep = range[1] - range[0];
-    if !sweep.is_finite() || sweep <= 0.0 || sweep > std::f64::consts::TAU + 1e-9 {
-        return None;
-    }
-    let start = range[0].rem_euclid(std::f64::consts::TAU);
-    Some([start, start + sweep])
 }
 
 fn orient_nurbs_interval(curve: &mut NurbsCurve, range: [f64; 2]) -> Option<[f64; 2]> {
