@@ -1635,6 +1635,14 @@ mod chart_tests {
         assert_eq!(plan[0].kind, BodyKind::Sheet);
         assert_eq!(plan[0].components, vec![vec![1], vec![2]]);
 
+        let plan = e5_ownership_plan(
+            &topology(vec![face(1, 10), face(2, 10), face(3, 11)], vec![10, 11]),
+            &[(None, vec![1, 2, 3])],
+        )
+        .unwrap();
+        assert_eq!(plan[0].kind, BodyKind::General);
+        assert_eq!(plan[0].components, vec![vec![1, 2], vec![3]]);
+
         assert!(e5_ownership_plan(
             &topology(vec![face(1, 10), face(2, 10)], vec![10]),
             &[(Some(1), vec![1]), (Some(2), vec![2])],
@@ -4176,19 +4184,35 @@ fn e5_ownership_plan(
             }
             let mut labels = HashMap::<usize, usize>::new();
             let mut components = Vec::<Vec<u32>>::new();
+            let mut face_components = Vec::with_capacity(faces.len());
             for (face_index, face) in faces.iter().copied().enumerate() {
                 let root = index_root(&mut parents, face_index);
                 let next = labels.len();
                 let component = *labels.entry(root).or_insert(next);
+                face_components.push(component);
                 if component == components.len() {
                     components.push(Vec::new());
                 }
                 components[component].push(face);
             }
             let body_uses = &uses[body];
-            let kind = if body_uses.values().any(|count| *count > 2) {
+            let mut closed_components = vec![true; components.len()];
+            let mut component_has_edges = vec![false; components.len()];
+            for (&edge, &count) in body_uses {
+                let component = face_components[first_face_by_edge[&edge]];
+                component_has_edges[component] = true;
+                closed_components[component] &= count == 2;
+            }
+            let closed_component_count = closed_components
+                .iter()
+                .zip(component_has_edges)
+                .filter(|(closed, has_edges)| **closed && *has_edges)
+                .count();
+            let kind = if body_uses.values().any(|count| *count > 2)
+                || (closed_component_count != 0 && closed_component_count != components.len())
+            {
                 BodyKind::General
-            } else if !body_uses.is_empty() && body_uses.values().all(|count| *count == 2) {
+            } else if closed_component_count == components.len() && !components.is_empty() {
                 BodyKind::Solid
             } else {
                 BodyKind::Sheet
