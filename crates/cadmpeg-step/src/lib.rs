@@ -276,6 +276,32 @@ impl<'a> Builder<'a> {
         });
     }
 
+    /// Record an entity-to-writer omission (§10 Phase 4B) through the `Transfer`
+    /// barrier. The dropped concept — a curveless edge, an unknown-surface face,
+    /// a hidden body, a pcurve, a `SubD`, or a tessellation — carries no STEP value
+    /// the writer can emit, so the omission is a [`Transfer::omitted`] that
+    /// resolves to [`None`]: the note recording the drop is inseparable from the
+    /// decision to drop, and cannot be removed while the geometry is still
+    /// omitted. The counts are already aggregated at the call site, so one
+    /// resolved omission yields exactly one aggregate note.
+    fn omit(
+        &mut self,
+        code: LossCode,
+        category: LossCategory,
+        severity: Severity,
+        message: String,
+    ) {
+        let dropped: Option<()> = Transfer::omitted(LossNote {
+            code,
+            category,
+            severity,
+            message,
+            provenance: None,
+        })
+        .resolve(&mut self.losses);
+        debug_assert!(dropped.is_none());
+    }
+
     fn build(&mut self) {
         // Product structure and unit-bearing context first; the representation
         // instance that ties them to the geometry is emitted last.
@@ -597,7 +623,7 @@ impl<'a> Builder<'a> {
             .map(|body| body.id.0.as_str())
             .collect();
         if !hidden.is_empty() {
-            self.loss(
+            self.omit(
                 LossCode::HiddenBodyOmitted,
                 LossCategory::Metadata,
                 Severity::Info,
@@ -878,7 +904,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.curveless_edges.is_empty() {
-            self.loss(
+            self.omit(
                 LossCode::CurvelessEdgeOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
@@ -890,7 +916,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.unknown_surface_faces.is_empty() {
-            self.loss(
+            self.omit(
                 LossCode::UnknownSurfaceFaceOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
@@ -910,7 +936,7 @@ impl<'a> Builder<'a> {
             .filter(|c| c.pcurve.is_some())
             .count();
         if pcurve_count > 0 {
-            self.loss(
+            self.omit(
                 LossCode::PcurveOmitted,
                 LossCategory::Geometry,
                 Severity::Info,
@@ -922,7 +948,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.pcurves.is_empty() {
-            self.loss(
+            self.omit(
                 LossCode::PcurveOmitted,
                 LossCategory::Geometry,
                 Severity::Info,
@@ -933,7 +959,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.subds.is_empty() {
-            self.loss(
+            self.omit(
                 LossCode::SubdOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
@@ -945,7 +971,7 @@ impl<'a> Builder<'a> {
             );
         }
         if !self.ir.model.tessellations.is_empty() {
-            self.loss(
+            self.omit(
                 LossCode::TessellationOmitted,
                 LossCategory::Geometry,
                 Severity::Warning,
