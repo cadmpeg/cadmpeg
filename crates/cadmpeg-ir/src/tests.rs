@@ -1281,6 +1281,31 @@ fn json_round_trips_and_is_deterministic() {
 }
 
 #[test]
+fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
+    // Byte-backed writers compare parsed documents against fresh decodes with
+    // exact f64 equality, so JSON parsing must be correctly rounded. The
+    // values one to a few ULPs below 1.0 are the ones a fast non-roundtrip
+    // float parser misparses by one ULP.
+    let mut ir = unit_cube();
+    let edge_values: Vec<f64> = (1..40)
+        .map(|n| 1.0f64 - f64::from(n) * f64::EPSILON / 2.0)
+        .collect();
+    for (point, value) in ir.model.points.iter_mut().zip(edge_values.iter().cycle()) {
+        point.position.x = *value;
+    }
+    let json = ir.to_canonical_json().unwrap();
+    let parsed = crate::CadIr::from_json(&json).unwrap();
+    for (before, after) in ir.model.points.iter().zip(&parsed.model.points) {
+        assert_eq!(
+            before.position.x.to_bits(),
+            after.position.x.to_bits(),
+            "JSON round-trip changed {} by at least one ULP",
+            before.position.x
+        );
+    }
+}
+
+#[test]
 fn appearance_asset_and_binding_round_trip() {
     use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use crate::ids::AppearanceId;
