@@ -682,14 +682,62 @@ pub struct FeatureVariableTable {
 }
 
 impl FeatureVariableTable {
-    /// Resolve a uniquely identified section point.
-    pub fn point(&self, point_id: u32) -> Option<&FeatureSectionPoint> {
-        let mut matches = self
+    /// Reconcile repeated and complementary section-point rows by identity.
+    pub fn reconciled_points(&self) -> (BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>) {
+        let point_ids = self
             .points
             .iter()
-            .filter(|point| point.point_id == point_id);
-        let point = matches.next()?;
-        matches.next().is_none().then_some(point)
+            .map(|point| point.point_id)
+            .chain(
+                self.rows
+                    .iter()
+                    .filter_map(|row| matches!(row.variable_type, 1 | 2).then_some(row.key)),
+            )
+            .collect::<BTreeSet<_>>();
+        let mut points = BTreeMap::new();
+        let mut ambiguous = BTreeSet::new();
+        for point_id in point_ids {
+            let mut point = [None; 2];
+            let mut conflict = false;
+            for coordinate in 0..2 {
+                let variable_type = coordinate as u32 + 1;
+                let raw_rows = self
+                    .rows
+                    .iter()
+                    .filter(|row| row.key == point_id && row.variable_type == variable_type)
+                    .collect::<Vec<_>>();
+                let values = if raw_rows.is_empty() {
+                    self.points
+                        .iter()
+                        .filter(|point| point.point_id == point_id)
+                        .filter_map(|point| [point.u, point.v][coordinate])
+                        .collect::<Vec<_>>()
+                } else {
+                    raw_rows
+                        .into_iter()
+                        .filter_map(|row| row.value)
+                        .collect::<Vec<_>>()
+                };
+                let Some(first) = values.first().copied() else {
+                    continue;
+                };
+                let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+                if values
+                    .iter()
+                    .all(|candidate| (*candidate - first).abs() <= 1e-9 * scale)
+                {
+                    point[coordinate] = Some(first);
+                } else {
+                    conflict = true;
+                }
+            }
+            if conflict {
+                ambiguous.insert(point_id);
+            } else {
+                points.insert(point_id, point);
+            }
+        }
+        (points, ambiguous)
     }
 }
 
@@ -2398,10 +2446,10 @@ fn entity_intersection(
 ) -> Option<[f64; 2]> {
     let segments = segments?;
     let variables = variables?;
+    let (points, _) = variables.reconciled_points();
     let point = |point_id| {
-        variables
-            .point(point_id)
-            .and_then(|point| Some([point.u?, point.v?]))
+        let point = points.get(&point_id)?;
+        Some([point[0]?, point[1]?])
     };
     let first = segments.segment(entity_ids[0])?;
     let second = segments.segment(entity_ids[1])?;
@@ -6670,8 +6718,39 @@ mod tests {
 
         let mut duplicate_points = variables.clone();
         duplicate_points.points.push(variables.points[0].clone());
-        assert!(duplicate_points.point(2).is_none());
+        assert_eq!(
+            duplicate_points.reconciled_points().0.get(&2),
+            Some(&[Some(3.0), Some(4.0)])
+        );
+        assert_eq!(
+            entity_intersection([9, 10], Some(&segments), Some(&duplicate_points)),
+            Some([3.0, 4.0])
+        );
+        duplicate_points.points[1].u = Some(5.0);
+        assert!(duplicate_points.reconciled_points().1.contains(&2));
         assert!(entity_intersection([9, 10], Some(&segments), Some(&duplicate_points)).is_none());
+        let row = |variable_type, value, offset| FeatureVariableRow {
+            variable_type,
+            key: 2,
+            value: Some(value),
+            guess: None,
+            uvar_id: None,
+            dimension_driven: false,
+            offset,
+        };
+        let mut repeated_raw = variables.clone();
+        repeated_raw.points[0] = FeatureSectionPoint {
+            point_id: 2,
+            u: None,
+            v: None,
+        };
+        repeated_raw.rows = vec![row(1, 3.0, 30), row(1, 3.0, 31), row(2, 4.0, 32)];
+        assert_eq!(
+            repeated_raw.reconciled_points().0.get(&2),
+            Some(&[Some(3.0), Some(4.0)])
+        );
+        repeated_raw.rows[1].value = Some(5.0);
+        assert!(repeated_raw.reconciled_points().1.contains(&2));
     }
 
     #[test]

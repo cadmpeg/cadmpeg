@@ -301,9 +301,10 @@ fn feature_generated_plane_equation(
     let segment = segments.segment(id)?;
     (segment.kind == FeatureSegmentKind::Line).then_some(())?;
     let variables = definition.variables.as_ref()?;
+    let (points, _) = variables.reconciled_points();
     let point = |point_id| {
-        let point = variables.point(point_id)?;
-        Some([point.u?, point.v?])
+        let point = points.get(&point_id)?;
+        Some([point[0]?, point[1]?])
     };
     let start = point(segment.point_ids[0])?;
     let end = point(segment.point_ids[1])?;

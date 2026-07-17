@@ -3616,20 +3616,7 @@ pub(crate) fn resolved_section_points(
     let Some(variables) = &definition.variables else {
         return BTreeMap::new();
     };
-    let mut point_counts = BTreeMap::new();
-    for point in &variables.points {
-        *point_counts.entry(point.point_id).or_insert(0usize) += 1;
-    }
-    let ambiguous_point_ids = point_counts
-        .iter()
-        .filter_map(|(point_id, count)| (*count > 1).then_some(*point_id))
-        .collect::<BTreeSet<_>>();
-    let mut points = variables
-        .points
-        .iter()
-        .filter(|point| !ambiguous_point_ids.contains(&point.point_id))
-        .map(|point| (point.point_id, [point.u, point.v]))
-        .collect::<BTreeMap<_, _>>();
+    let (mut points, ambiguous_point_ids) = variables.reconciled_points();
     let mut segment_counts = BTreeMap::new();
     for segment in definition.segments.iter().flat_map(|table| &table.rows) {
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
@@ -4234,21 +4221,21 @@ fn section_axis_line_carrier(
 ) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
     let variables = definition.variables.as_ref()?;
-    let endpoint = |id| variables.point(id);
+    let (points, _) = variables.reconciled_points();
+    let endpoint = |id| points.get(&id);
     let [first, second] = segment.point_ids.map(endpoint);
     let (Some(first), Some(second)) = (first, second) else {
         return None;
     };
-    let scale = first
-        .u
+    let scale = first[0]
         .into_iter()
-        .chain(first.v)
-        .chain(second.u)
-        .chain(second.v)
+        .chain(first[1])
+        .chain(second[0])
+        .chain(second[1])
         .map(f64::abs)
         .fold(1.0, f64::max);
     if segment.directions[0] == Some(0) {
-        let (Some(first_u), Some(second_u)) = (first.u, second.u) else {
+        let (Some(first_u), Some(second_u)) = (first[0], second[0]) else {
             return None;
         };
         ((first_u - second_u).abs() <= 1e-9 * scale).then(|| SketchGeometry::Line {
@@ -4256,7 +4243,7 @@ fn section_axis_line_carrier(
             end: cadmpeg_ir::math::Point2::new(first_u, scale),
         })
     } else if segment.directions[1] == Some(0) {
-        let (Some(first_v), Some(second_v)) = (first.v, second.v) else {
+        let (Some(first_v), Some(second_v)) = (first[1], second[1]) else {
             return None;
         };
         ((first_v - second_v).abs() <= 1e-9 * scale).then(|| SketchGeometry::Line {
@@ -16228,7 +16215,7 @@ mod resolved_sketch_tests {
         let duplicate = ambiguous_definition
             .variables
             .as_ref()
-            .and_then(|table| table.point(5))
+            .and_then(|table| table.points.iter().find(|point| point.point_id == 5))
             .cloned()
             .expect("point 5");
         ambiguous_definition
@@ -16237,7 +16224,37 @@ mod resolved_sketch_tests {
             .expect("variables")
             .points
             .push(duplicate);
-        assert!(!resolved_section_points(&ambiguous_definition).contains_key(&5));
+        assert_eq!(
+            resolved_section_points(&ambiguous_definition).get(&5),
+            Some(&[3.0, 4.0])
+        );
+        let complementary = ambiguous_definition
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+            .last_mut()
+            .expect("duplicate point");
+        complementary.u = Some(3.0);
+        assert_eq!(
+            resolved_section_points(&ambiguous_definition).get(&5),
+            Some(&[3.0, 4.0])
+        );
+        let mut conflicting_definition = coincident_definition.clone();
+        let mut conflicting = conflicting_definition
+            .variables
+            .as_ref()
+            .and_then(|table| table.points.iter().find(|point| point.point_id == 2))
+            .cloned()
+            .expect("point 2");
+        conflicting.u = Some(30.0);
+        conflicting_definition
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+            .push(conflicting);
+        assert!(!resolved_section_points(&conflicting_definition).contains_key(&2));
         let mut saved_definition = definition;
         saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 1,
