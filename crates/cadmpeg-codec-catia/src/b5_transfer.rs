@@ -2079,9 +2079,23 @@ fn ownership_plan(graph: &B5Graph) -> Option<OwnershipPlan> {
     for (face, component) in face_components.iter().copied().enumerate() {
         component_faces[component].push(face);
     }
-    let body_kind = if edge_uses.values().any(|uses| *uses > 2) {
+    let mut closed_components = vec![true; component_faces.len()];
+    let mut component_has_edges = vec![false; component_faces.len()];
+    for (&edge, &uses) in &edge_uses {
+        let component = face_components[first_face_by_edge[&edge]];
+        component_has_edges[component] = true;
+        closed_components[component] &= uses == 2;
+    }
+    let closed_component_count = closed_components
+        .iter()
+        .zip(component_has_edges)
+        .filter(|(closed, has_edges)| **closed && *has_edges)
+        .count();
+    let body_kind = if edge_uses.values().any(|uses| *uses > 2)
+        || (closed_component_count != 0 && closed_component_count != component_faces.len())
+    {
         BodyKind::General
-    } else if !edge_uses.is_empty() && edge_uses.values().all(|uses| *uses == 2) {
+    } else if closed_component_count == component_faces.len() && !component_faces.is_empty() {
         BodyKind::Solid
     } else {
         BodyKind::Sheet
@@ -2628,6 +2642,10 @@ mod tests {
         assert_eq!(ownership.face_components, vec![0, 1]);
         assert_eq!(ownership.components.len(), 2);
         assert_eq!(ownership.body_kind, BodyKind::Sheet);
+
+        graph.loops.get_mut(&2).unwrap().edges.push(3);
+        assert_eq!(ownership_plan(&graph).unwrap().body_kind, BodyKind::General);
+        graph.loops.get_mut(&2).unwrap().edges.pop();
 
         graph.loops.get_mut(&6).unwrap().edges[0] = 3;
         let ownership = ownership_plan(&graph).unwrap();
