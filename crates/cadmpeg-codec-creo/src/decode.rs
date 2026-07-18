@@ -17957,6 +17957,65 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
+        let first = CarrierEquation::Cone(ConeEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 2.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        });
+        let second = CarrierEquation::Cone(ConeEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 4.0,
+            half_angle: 0.5_f64.atan(),
+        });
+        let candidates = coaxial_cones_circle_candidates(first, second);
+        assert_eq!(candidates.len(), 2);
+        assert!(matches!(
+            select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cones_circle"))
+                if (center.z - 4.0).abs() < 1e-12 && (radius - 6.0).abs() < 1e-12
+        ));
+        let tangent_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [10.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 1.0],
+        });
+        let vertex = solve_carriers(&[first, second, tangent_plane])
+            .expect("unique coaxial-cone circle tangent");
+        assert!((vertex[0] - 6.0).abs() < 1e-12);
+        assert!(vertex[1].abs() < 1e-12);
+        assert!((vertex[2] - 4.0).abs() < 1e-12);
+
+        let reversed = CarrierEquation::Cone(ConeEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, -1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 4.0,
+            half_angle: 0.5_f64.atan(),
+        });
+        let reversed_candidates = coaxial_cones_circle_candidates(first, reversed);
+        assert_eq!(reversed_candidates.len(), 2);
+        assert!(reversed_candidates.iter().any(|(geometry, _)| matches!(
+            geometry,
+            CurveGeometry::Circle { center, radius, .. }
+                if (center.z - 4.0 / 3.0).abs() < 1e-12
+                    && (radius - 10.0 / 3.0).abs() < 1e-12
+        )));
+        assert!(coaxial_cones_circle_candidates(first, first).is_empty());
+        let shifted = CarrierEquation::Cone(ConeEquation {
+            origin: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 4.0,
+            half_angle: 0.5_f64.atan(),
+        });
+        assert!(coaxial_cones_circle_candidates(first, shifted).is_empty());
+    }
+
+    #[test]
     fn carrier_solver_accepts_unique_plane_plane_cylinder_vertex() {
         let cylinder = CarrierEquation::Cylinder(CylinderEquation {
             origin: [0.0, 0.0, 0.0],
@@ -18826,7 +18885,11 @@ fn intersect_plane_with_circle(
     if remaining < -1e-12 * scale * scale {
         return Vec::new();
     }
-    let parameter_delta = remaining.max(0.0).sqrt() / denominator.sqrt();
+    let parameter_delta = if remaining.abs() <= 1e-12 * scale * scale {
+        0.0
+    } else {
+        remaining.sqrt() / denominator.sqrt()
+    };
     let mut points = vec![std::array::from_fn(|index| {
         nearest[index] - parameter_delta * line_direction[index]
     })];
@@ -19141,6 +19204,14 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 } else if let ([first, second], [cone]) = (planes.as_slice(), cones.as_slice()) {
                     if cylinders.is_empty() && spheres.is_empty() && tori.is_empty() {
                         candidates.extend(intersect_two_planes_with_cone(*first, *second, *cone));
+                    }
+                } else if let ([plane], [first, second]) = (planes.as_slice(), cones.as_slice()) {
+                    if cylinders.is_empty() && spheres.is_empty() && tori.is_empty() {
+                        candidates.extend(intersect_plane_with_carrier_components(
+                            *plane,
+                            CarrierEquation::Cone(*first),
+                            CarrierEquation::Cone(*second),
+                        ));
                     }
                 } else if let ([plane], [cylinder], [sphere]) =
                     (planes.as_slice(), cylinders.as_slice(), spheres.as_slice())
@@ -22557,6 +22628,91 @@ fn coaxial_cone_cylinder_circle_candidates(
         .collect()
 }
 
+fn coaxial_cones_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let (CarrierEquation::Cone(first), CarrierEquation::Cone(second)) = (first, second) else {
+        return Vec::new();
+    };
+    let (Some(first_axis), Some(second_axis), Some(reference)) = (
+        normalized(first.axis),
+        normalized(second.axis),
+        normalized(first.ref_direction),
+    ) else {
+        return Vec::new();
+    };
+    let axis_alignment = dot(first_axis, second_axis);
+    if (axis_alignment.abs() - 1.0).abs() > 1e-10 {
+        return Vec::new();
+    }
+    let relative: [f64; 3] =
+        std::array::from_fn(|index| second.origin[index] - first.origin[index]);
+    let second_origin_axial = dot(relative, first_axis);
+    let transverse: [f64; 3] =
+        std::array::from_fn(|index| relative[index] - second_origin_axial * first_axis[index]);
+    let scale = first.radius.max(second.radius).max(1.0);
+    let first_slope = first.half_angle.tan();
+    let second_slope = axis_alignment * second.half_angle.tan();
+    let second_intercept = second.radius - second_slope * second_origin_axial;
+    if dot(transverse, transverse).sqrt() > 1e-9 * scale
+        || first.radius < 0.0
+        || second.radius < 0.0
+        || first_slope.abs() <= 1e-12
+        || second_slope.abs() <= 1e-12
+        || !first_slope.is_finite()
+        || !second_slope.is_finite()
+    {
+        return Vec::new();
+    }
+
+    let mut parameters = Vec::<f64>::new();
+    let slope_scale = first_slope.abs().max(second_slope.abs()).max(1.0);
+    let intercept_scale = first
+        .radius
+        .max(second_intercept.abs())
+        .max(second.radius)
+        .max(1.0);
+    for radial_sense in [-1.0, 1.0] {
+        let denominator = first_slope - radial_sense * second_slope;
+        let numerator = radial_sense * second_intercept - first.radius;
+        if denominator.abs() <= 1e-12 * slope_scale {
+            if numerator.abs() <= 1e-9 * intercept_scale {
+                return Vec::new();
+            }
+            continue;
+        }
+        let parameter = numerator / denominator;
+        let radius = (first.radius + parameter * first_slope).abs();
+        if radius <= 1e-12 * scale {
+            continue;
+        }
+        if !parameters
+            .iter()
+            .any(|known| (parameter - known).abs() <= 1e-9 * scale)
+        {
+            parameters.push(parameter);
+        }
+    }
+    parameters
+        .into_iter()
+        .map(|parameter| {
+            let radius = (first.radius + parameter * first_slope).abs();
+            let center: [f64; 3] =
+                std::array::from_fn(|index| first.origin[index] + parameter * first_axis[index]);
+            (
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
+                },
+                "coaxial_cones_circle",
+            )
+        })
+        .collect()
+}
+
 fn apex_plane_cone_generator_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
@@ -23041,6 +23197,7 @@ fn multi_component_intersection_candidates(
     candidates.extend(parallel_cylinder_generator_candidates(first, second));
     candidates.extend(coaxial_cylinder_sphere_circle_candidates(first, second));
     candidates.extend(coaxial_cone_cylinder_circle_candidates(first, second));
+    candidates.extend(coaxial_cones_circle_candidates(first, second));
     candidates.extend(apex_plane_cone_generator_candidates(first, second));
     candidates.extend(coaxial_cone_sphere_circle_candidates(first, second));
     candidates.extend(coaxial_cone_torus_circle_candidates(first, second));
