@@ -5052,10 +5052,20 @@ impl MeshQuotient {
         }
     }
 
+    #[cfg(test)]
     fn close_coordinate_roots(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
+    ) -> Option<HashMap<usize, usize>> {
+        self.close_coordinate_roots_with_budget(point_count, edge_candidates, None)
+    }
+
+    fn close_coordinate_roots_with_budget(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
     ) -> Option<HashMap<usize, usize>> {
         fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
             candidates.is_empty()
@@ -5077,6 +5087,7 @@ impl MeshQuotient {
             solutions: &mut Vec<Vec<usize>>,
             states: &mut usize,
             exhausted: &mut bool,
+            budget: Option<&MeshConstraintBudget>,
         ) {
             const MAX_COORDINATE_CLOSURE_STATES: usize = 256;
 
@@ -5092,6 +5103,10 @@ impl MeshQuotient {
             }
 
             if solutions.len() > 1 || *exhausted {
+                return;
+            }
+            if budget.is_some_and(|budget| !budget.charge()) {
+                *exhausted = true;
                 return;
             }
             let viable_values = |root: usize, assigned: &[Option<usize>]| {
@@ -5116,6 +5131,14 @@ impl MeshQuotient {
 
             let mut propagated = Vec::new();
             let branch = loop {
+                let scan_work = domains.iter().try_fold(assigned.len(), |total, domain| {
+                    total.checked_add(domain.len())
+                });
+                if scan_work.is_none_or(|work| budget.is_some_and(|budget| !budget.charge_by(work)))
+                {
+                    *exhausted = true;
+                    break None;
+                }
                 let remaining = assigned.iter().filter(|point| point.is_none()).count();
                 let unused = component_points
                     .iter()
@@ -5207,6 +5230,7 @@ impl MeshQuotient {
                     solutions,
                     states,
                     exhausted,
+                    budget,
                 );
                 point_uses[point] -= 1;
                 assigned[root] = None;
@@ -5227,7 +5251,7 @@ impl MeshQuotient {
             return None;
         }
         if roots.len() == point_count {
-            return self.point_assignment(point_count, edge_candidates);
+            return self.point_assignment_with_budget(point_count, edge_candidates, budget);
         }
         let root_indices = roots
             .iter()
@@ -5339,6 +5363,7 @@ impl MeshQuotient {
                 &mut solutions,
                 &mut states,
                 &mut exhausted,
+                budget,
             );
             if exhausted {
                 return None;
@@ -5909,7 +5934,17 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> Option<HashMap<usize, usize>> {
-        let mut solutions = self.point_assignments(point_count, edge_candidates, 2);
+        self.point_assignment_with_budget(point_count, edge_candidates, None)
+    }
+
+    fn point_assignment_with_budget(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
+    ) -> Option<HashMap<usize, usize>> {
+        let mut solutions =
+            self.point_assignments_with_budget(point_count, edge_candidates, 2, budget);
         (solutions.len() == 1).then(|| solutions.remove(0))
     }
 
@@ -5931,15 +5966,6 @@ impl MeshQuotient {
         !self
             .point_assignments_with_budget(point_count, edge_candidates, 1, budget)
             .is_empty()
-    }
-
-    fn point_assignments(
-        &mut self,
-        point_count: usize,
-        edge_candidates: &[Vec<[usize; 2]>],
-        solution_limit: usize,
-    ) -> Vec<HashMap<usize, usize>> {
-        self.point_assignments_with_budget(point_count, edge_candidates, solution_limit, None)
     }
 
     fn point_assignments_with_budget(
@@ -7467,7 +7493,11 @@ impl MeshSelectionSearch<'_> {
         }
         let remaining_merges = self.remaining_equation_merge_capacity(&mut measured)?;
         if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
-            measured.close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)?;
+            measured.close_coordinate_roots_with_budget(
+                self.vertex_points.len(),
+                self.edge_candidates,
+                Some(budget),
+            )?;
         }
         if root_count == self.vertex_points.len()
             && !measured.point_assignment_exists_with_budget(
@@ -7527,9 +7557,16 @@ impl MeshSelectionSearch<'_> {
             };
             if root_count.saturating_sub(remaining_merges) > self.vertex_points.len()
                 && measured
-                    .close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)
+                    .close_coordinate_roots_with_budget(
+                        self.vertex_points.len(),
+                        self.edge_candidates,
+                        Some(budget),
+                    )
                     .is_none()
             {
+                if budget.exhausted.get() {
+                    self.exhausted = true;
+                }
                 return;
             }
             if root_count == self.vertex_points.len()
@@ -7624,9 +7661,14 @@ impl MeshSelectionSearch<'_> {
         }
         let Some((_, supported, _, _, _, face)) = next else {
             let mut quotient = measured.clone();
-            let Some(root_points) =
-                quotient.close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)
-            else {
+            let Some(root_points) = quotient.close_coordinate_roots_with_budget(
+                self.vertex_points.len(),
+                self.edge_candidates,
+                Some(budget),
+            ) else {
+                if budget.exhausted.get() {
+                    self.exhausted = true;
+                }
                 return;
             };
             let selected = self.selected.iter().cloned().collect::<Option<Vec<_>>>();
@@ -10847,6 +10889,21 @@ mod motif_tests {
         assert_eq!(assignment[&quotient.union.find(0)], 0);
         assert_eq!(assignment[&quotient.union.find(1)], 1);
         assert_eq!(assignment[&quotient.union.find(3)], 2);
+    }
+
+    #[test]
+    fn quotient_coordinate_closure_declines_when_its_work_budget_is_exhausted() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![Arc::new(HashSet::from([0])); 2],
+            members: (0..2).map(|node| vec![node]).collect(),
+        };
+        let budget = MeshConstraintBudget::new(0);
+
+        assert!(quotient
+            .close_coordinate_roots_with_budget(1, &[vec![]], Some(&budget))
+            .is_none());
+        assert!(budget.exhausted.get());
     }
 
     #[test]
