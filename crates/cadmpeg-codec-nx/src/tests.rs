@@ -4373,7 +4373,12 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
     };
     let references = [reference(1, 97), reference(0, 96)];
 
-    let sketches = crate::native::feature_sketch_records(&[label], &[record], &inputs, &references);
+    let sketches = crate::native::feature_sketch_records(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        &inputs,
+        &references,
+    );
     assert_eq!(sketches.len(), 1);
     assert_eq!(sketches[0].ordinal, 7);
     assert_eq!(
@@ -4394,6 +4399,15 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
             "nx:feature-history:sketch-reference#0-7-1"
         ]
     );
+    let mut duplicate_record = record.clone();
+    duplicate_record.id.push_str("-duplicate");
+    assert!(crate::native::feature_sketch_records(
+        std::slice::from_ref(&label),
+        &[record.clone(), duplicate_record],
+        &inputs,
+        &references,
+    )
+    .is_empty());
     let construction = crate::native::feature_sketch_construction_inputs(&sketches, &references);
     assert_eq!(construction.len(), 1);
     assert_eq!(

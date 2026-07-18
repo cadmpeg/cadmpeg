@@ -7013,9 +7013,13 @@ pub fn feature_sketch_records(
         .iter()
         .filter(|label| label.value == "SKETCH")
         .filter_map(|label| {
-            let record = records
+            let mut operation_records = records
                 .iter()
-                .find(|record| record.operation_label == label.id)?;
+                .filter(|record| record.operation_label == label.id);
+            let record = operation_records.next()?;
+            if operation_records.next().is_some() {
+                return None;
+            }
             let mut input_blocks = inputs
                 .iter()
                 .filter(|input| input.operation_label == label.id)
