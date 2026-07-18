@@ -20,7 +20,7 @@ use crate::geometry::{
 };
 use crate::math::Vector3;
 use crate::report::{Check, Finding, LossNote, Severity, ValidationReport};
-use crate::source_fidelity::{SourceFidelity, SOURCE_FIDELITY_VERSION};
+use crate::source_fidelity::SourceFidelity;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
 use crate::units::LengthUnit;
@@ -123,14 +123,11 @@ pub fn validate_with_source_fidelity(
     losses: Vec<LossNote>,
 ) -> ValidationReport {
     let (mut report, mut all_ids) = validate_with_ids(ir, losses);
-    if source_fidelity.version != SOURCE_FIDELITY_VERSION {
+    if let Err(error) = source_fidelity.validate() {
         report.findings.push(Finding {
-            check: Check::Version,
+            check: Check::ByteAccounting,
             severity: Severity::Error,
-            message: format!(
-                "unsupported source fidelity version {:?}; expected {:?}",
-                source_fidelity.version, SOURCE_FIDELITY_VERSION
-            ),
+            message: format!("invalid source fidelity: {error}"),
             entity: None,
         });
     }

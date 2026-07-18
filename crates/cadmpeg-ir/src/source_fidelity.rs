@@ -264,6 +264,22 @@ pub enum FidelityError {
         /// The referenced space's length.
         length: u64,
     },
+    /// A slice or concatenation length disagrees with its source extents.
+    #[error("space {id} declares length {declared} but its origin yields {derived}")]
+    OriginLengthMismatch {
+        /// The derived space id.
+        id: String,
+        /// The space's declared length.
+        declared: u64,
+        /// The length implied by the origin.
+        derived: u64,
+    },
+    /// A concatenation's source extents exceed the representable length.
+    #[error("space {id} concatenated origin length overflows u64")]
+    OriginLengthOverflow {
+        /// The derived space id.
+        id: String,
+    },
     /// The origin graph contains a cycle reaching the named space.
     #[error("origin cycle reaches space {id}")]
     OriginCycle {
@@ -603,8 +619,35 @@ impl SourceFidelity {
         }
 
         let is_slice = matches!(space.origin, SerializedOrigin::Slice { .. });
+        if !is_root && !is_slice && space.origin.referenced().is_empty() {
+            return Err(FidelityError::OriginWithoutReference {
+                id: space.id.as_str().to_string(),
+            });
+        }
         if let SerializedOrigin::Slice { parent, range } = &space.origin {
             Self::check_extent(space, lengths, parent, *range)?;
+            if space.length != range.len() {
+                return Err(FidelityError::OriginLengthMismatch {
+                    id: space.id.as_str().to_string(),
+                    declared: space.length,
+                    derived: range.len(),
+                });
+            }
+        }
+        if let SerializedOrigin::Concat { segments } = &space.origin {
+            let derived = segments.iter().try_fold(0_u64, |total, segment| {
+                total.checked_add(segment.range.len())
+            });
+            let derived = derived.ok_or_else(|| FidelityError::OriginLengthOverflow {
+                id: space.id.as_str().to_string(),
+            })?;
+            if space.length != derived {
+                return Err(FidelityError::OriginLengthMismatch {
+                    id: space.id.as_str().to_string(),
+                    declared: space.length,
+                    derived,
+                });
+            }
         }
         for extent in space.origin.referenced() {
             Self::check_extent(space, lengths, &extent.space, extent.range)?;
@@ -614,11 +657,6 @@ impl SourceFidelity {
         // acyclicity this forces every space to reach `source` by following
         // origins; an empty `Concat`/`Transform` would otherwise validate as a
         // second, un-derived root.
-        if !is_root && !is_slice && space.origin.referenced().is_empty() {
-            return Err(FidelityError::OriginWithoutReference {
-                id: space.id.as_str().to_string(),
-            });
-        }
         Ok(())
     }
 
@@ -953,6 +991,56 @@ mod tests {
         assert!(matches!(
             sidecar.validate(),
             Err(FidelityError::RangeOutOfBounds { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_slice_length_that_disagrees_with_parent_range() {
+        let sidecar = SourceFidelity::new(vec![
+            root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
+            AddressSpaceLedger {
+                id: CanonicalSpaceId::entry("a"),
+                length: 3,
+                origin: SerializedOrigin::Slice {
+                    parent: CanonicalSpaceId::source(),
+                    range: SerializedRange { start: 0, end: 2 },
+                },
+                spans: vec![span(0, 3, SpanClass::Opaque)],
+            },
+        ]);
+        assert!(matches!(
+            sidecar.validate(),
+            Err(FidelityError::OriginLengthMismatch {
+                declared: 3,
+                derived: 2,
+                ..
+            })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_concat_length_that_disagrees_with_segments() {
+        let sidecar = SourceFidelity::new(vec![
+            root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
+            AddressSpaceLedger {
+                id: CanonicalSpaceId::stream("a", 0),
+                length: 3,
+                origin: SerializedOrigin::Concat {
+                    segments: vec![SpaceExtent {
+                        space: CanonicalSpaceId::source(),
+                        range: SerializedRange { start: 0, end: 2 },
+                    }],
+                },
+                spans: vec![span(0, 3, SpanClass::Opaque)],
+            },
+        ]);
+        assert!(matches!(
+            sidecar.validate(),
+            Err(FidelityError::OriginLengthMismatch {
+                declared: 3,
+                derived: 2,
+                ..
+            })
         ));
     }
 
