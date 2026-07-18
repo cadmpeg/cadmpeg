@@ -33,6 +33,8 @@ pub mod role {
     pub const DIRECTORY_ENTRY: &str = "directory-entry";
     /// A cache-cell section-index grid entry (not a compressed payload).
     pub const CACHE_CELL: &str = "cache-cell";
+    /// A named stream in a Compound File Binary container.
+    pub const COMPOUND_STREAM: &str = "compound-stream";
 }
 
 /// Classify a decompressed block payload by signature.
@@ -155,6 +157,17 @@ pub struct CacheCell {
     pub name: String,
 }
 
+/// One named stream in a Compound File Binary container.
+#[derive(Debug, Clone)]
+pub struct CompoundStream {
+    /// Storage-qualified stream path.
+    pub path: String,
+    /// First regular or mini sector identifier.
+    pub start_sector: u32,
+    /// Exact stream bytes.
+    pub payload: Vec<u8>,
+}
+
 /// Complete result of an outer-container scan.
 pub struct ContainerScan {
     /// Complete source image for exact passthrough writing.
@@ -167,6 +180,8 @@ pub struct ContainerScan {
     pub directory: Vec<DirectoryEntry>,
     /// Cache-cell grid entries, in file order.
     pub cache_cells: Vec<CacheCell>,
+    /// Named streams when the source uses the Compound File Binary envelope.
+    pub compound_streams: Vec<CompoundStream>,
 }
 
 /// The outer header magic length (`file_id` + `version`).
@@ -217,6 +232,25 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
 /// Truncated input produces a scan containing every structure that could be
 /// validated; missing outer-header bytes yield version zero.
 pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
+    if bytes.starts_with(&COMPOUND_FILE_MAGIC) {
+        let compound_streams = crate::compound::streams(bytes)
+            .unwrap_or_default()
+            .into_iter()
+            .map(|stream| CompoundStream {
+                path: stream.path,
+                start_sector: stream.start_sector,
+                payload: stream.bytes,
+            })
+            .collect();
+        return ContainerScan {
+            source_image: bytes.to_vec(),
+            version: 0,
+            blocks: Vec::new(),
+            directory: Vec::new(),
+            cache_cells: Vec::new(),
+            compound_streams,
+        };
+    }
     let version = cadmpeg_ir::be::u32_at(bytes, 4).unwrap_or(0);
 
     let mut blocks = Vec::new();
@@ -250,6 +284,7 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
         blocks,
         directory,
         cache_cells,
+        compound_streams: Vec::new(),
     }
 }
 
@@ -471,13 +506,32 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         });
     }
 
+    for stream in &scan.compound_streams {
+        let mut attributes = BTreeMap::new();
+        attributes.insert("start_sector".to_string(), stream.start_sector.to_string());
+        attributes.insert("sha256".to_string(), sha256_hex(&stream.payload));
+        attributes.insert(
+            "family".to_string(),
+            payload_family(&stream.payload).to_string(),
+        );
+        entries.push(ContainerEntry {
+            name: stream.path.clone(),
+            role: role::COMPOUND_STREAM.to_string(),
+            compression: "compound-file".to_string(),
+            compressed_size: stream.payload.len() as u64,
+            uncompressed_size: stream.payload.len() as u64,
+            attributes,
+        });
+    }
+
     let mut notes = vec![format!(
         "outer version word: 0x{:08x}; {} CRC-validated block(s), {} tail-directory \
-         entry/entries, {} cache-cell(s)",
+         entry/entries, {} cache-cell(s), {} compound stream(s)",
         scan.version,
         scan.blocks.len(),
         scan.directory.len(),
-        scan.cache_cells.len()
+        scan.cache_cells.len(),
+        scan.compound_streams.len()
     )];
     match select_active_parasolid(scan) {
         Some((b, sch)) => notes.push(format!(
@@ -501,7 +555,12 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
 
     ContainerSummary {
         format: "sldprt".to_string(),
-        container_kind: "sldprt-blocks".to_string(),
+        container_kind: if scan.compound_streams.is_empty() {
+            "sldprt-blocks"
+        } else {
+            "compound-file-binary"
+        }
+        .to_string(),
         entries,
         notes,
     }

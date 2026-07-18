@@ -69,6 +69,7 @@ mod annotations;
 mod appearance;
 pub mod brep;
 mod classification;
+mod compound;
 pub mod container;
 pub mod decode;
 mod history;

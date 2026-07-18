@@ -11,6 +11,22 @@ frames below. The compound-document envelope begins with the OLE2 magic
 `d0 cf 11 e0 a1 b1 1a e1`; its UTF-16LE directory contains the
 `ISolidWorksInformation` stream.
 
+The compound-document envelope uses Compound File Binary version 3 or 4. Its
+header sector is 512 or 4096 bytes respectively; regular sectors have the same
+size and mini sectors are 64 bytes. Header DIFAT entries and chained DIFAT
+sectors identify FAT sectors. FAT chains identify the directory stream, the
+root mini stream, the mini-FAT stream, and regular streams. Directory entries
+are 128 bytes and carry a NUL-terminated UTF-16LE name, object type, left and
+right sibling identifiers, child identifier, first sector, and u64 stream size.
+The sibling trees and storage children form slash-qualified stream paths such
+as `Contents/Config-0-Partition`.
+
+Streams smaller than the 4096-byte mini-stream cutoff use 64-byte sectors in
+the root storage stream and follow the mini FAT. Other streams follow the
+regular FAT. In both allocation modes, the chain contains exactly
+`ceil(stream_size / sector_size)` sectors and the final sector is truncated to
+the directory entry's stream size.
+
 ### 1.1 Outer header and block frame
 
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.
