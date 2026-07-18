@@ -5898,8 +5898,9 @@ fn decode_projects_groove_class_as_cut_revolution() {
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains("1 revolution feature(s)")
-            && loss.message.contains("0 sketch feature(s)")
+            && loss
+                .message
+                .contains("1 revolution, 0 sweep, and 0 sketch feature(s)")
     }));
 }
 
@@ -5926,9 +5927,45 @@ fn decode_projects_sketch_class_as_unresolved_sketch_node() {
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains("0 revolution feature(s)")
-            && loss.message.contains("1 sketch feature(s)")
+            && loss
+                .message
+                .contains("0 revolution, 0 sweep, and 1 sketch feature(s)")
     }));
+}
+
+#[test]
+fn decode_projects_rib_and_slot_classes_as_solid_sweeps() {
+    for (class, expected_op) in [
+        ("Rib", cadmpeg_ir::features::BooleanOp::Join),
+        ("Slot", cadmpeg_ir::features::BooleanOp::Cut),
+    ] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_design_class(class)),
+                &DecodeOptions::default(),
+            )
+            .expect("decode generated sweep design");
+
+        assert!(matches!(
+            decoded.ir.model.features.as_slice(),
+            [cadmpeg_ir::features::Feature {
+                name: Some(name),
+                definition: cadmpeg_ir::features::FeatureDefinition::Sweep {
+                    profile: None,
+                    path: None,
+                    mode: cadmpeg_ir::features::SweepMode::Solid { op },
+                    ..
+                },
+                ..
+            }] if name == class && *op == expected_op
+        ));
+        assert!(decoded.report.losses.iter().any(|loss| {
+            loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+                && loss
+                    .message
+                    .contains("0 revolution, 1 sweep, and 0 sketch feature(s)")
+        }));
+    }
 }
 
 #[test]

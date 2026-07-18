@@ -16,6 +16,7 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     BooleanOp, Feature, FeatureDefinition, FeatureId, RevolutionConstruction, SketchSpace,
+    SweepMode,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -103,7 +104,7 @@ fn finish_decode(
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
-    let (transferred_revolutions, transferred_sketches) =
+    let (transferred_revolutions, transferred_sweeps, transferred_sketches) =
         transfer_design_features(&mut ir, &native, &mut annotations);
     let object_record_count = native
         .object_graphs
@@ -120,7 +121,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {transferred_revolutions} revolution feature(s) and {transferred_sketches} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {transferred_revolutions} revolution, {transferred_sweeps} sweep, and {transferred_sketches} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len()
             ),
@@ -135,7 +136,7 @@ fn transfer_design_features(
     ir: &mut CadIr,
     native: &CatiaNative,
     annotations: &mut cadmpeg_ir::Annotations,
-) -> (usize, usize) {
+) -> (usize, usize, usize) {
     let recognized = native
         .design_objects
         .iter()
@@ -145,9 +146,11 @@ fn transfer_design_features(
                     .field_classes
                     .iter()
                     .filter_map(|class| match class.as_str() {
-                        "Groove" => Some(("Groove", Some(BooleanOp::Cut))),
-                        "Shaft" => Some(("Shaft", Some(BooleanOp::Join))),
-                        "Sketch" => Some(("Sketch", None)),
+                        "Groove" => Some(("Groove", CatiaFeatureKind::Revolve(BooleanOp::Cut))),
+                        "Shaft" => Some(("Shaft", CatiaFeatureKind::Revolve(BooleanOp::Join))),
+                        "Rib" => Some(("Rib", CatiaFeatureKind::Sweep(BooleanOp::Join))),
+                        "Slot" => Some(("Slot", CatiaFeatureKind::Sweep(BooleanOp::Cut))),
+                        "Sketch" => Some(("Sketch", CatiaFeatureKind::Sketch)),
                         _ => None,
                     });
             let family = families.next()?;
@@ -155,7 +158,7 @@ fn transfer_design_features(
         })
         .collect::<Vec<_>>();
     if recognized.is_empty() {
-        return (0, 0);
+        return (0, 0, 0);
     }
     let stream = annotations
         .streams
@@ -175,8 +178,9 @@ fn transfer_design_features(
         .collect::<HashMap<_, _>>();
 
     let mut revolution_count = 0;
+    let mut sweep_count = 0;
     let mut sketch_count = 0;
-    for (ordinal, (object, (family, op))) in recognized.into_iter().enumerate() {
+    for (ordinal, (object, (family, kind))) in recognized.into_iter().enumerate() {
         let key = object
             .id
             .strip_prefix("catia:outer:design-object#")
@@ -194,26 +198,46 @@ fn transfer_design_features(
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: if let Some(op) = op {
-                revolution_count += 1;
-                FeatureDefinition::Revolve {
-                    construction: RevolutionConstruction {
-                        profile: None,
-                        axis: None,
-                        extent: None,
-                        axis_reference: None,
-                        solid: None,
-                        face_maker_class: None,
-                        fuse_order: None,
-                        allow_multi_profile_faces: None,
-                    },
-                    op,
+            definition: match kind {
+                CatiaFeatureKind::Revolve(op) => {
+                    revolution_count += 1;
+                    FeatureDefinition::Revolve {
+                        construction: RevolutionConstruction {
+                            profile: None,
+                            axis: None,
+                            extent: None,
+                            axis_reference: None,
+                            solid: None,
+                            face_maker_class: None,
+                            fuse_order: None,
+                            allow_multi_profile_faces: None,
+                        },
+                        op,
+                    }
                 }
-            } else {
-                sketch_count += 1;
-                FeatureDefinition::Sketch {
-                    space: SketchSpace::default(),
-                    sketch: None,
+                CatiaFeatureKind::Sweep(op) => {
+                    sweep_count += 1;
+                    FeatureDefinition::Sweep {
+                        profile: None,
+                        sections: Vec::new(),
+                        path: None,
+                        mode: SweepMode::Solid { op },
+                        orientation: None,
+                        transition: None,
+                        transformation: None,
+                        path_tangent: false,
+                        linearize: false,
+                        twist: None,
+                        scale: None,
+                        allow_multi_profile_faces: None,
+                    }
+                }
+                CatiaFeatureKind::Sketch => {
+                    sketch_count += 1;
+                    FeatureDefinition::Sketch {
+                        space: SketchSpace::default(),
+                        sketch: None,
+                    }
                 }
             },
             native_ref: Some(object.id.clone()),
@@ -238,7 +262,14 @@ fn transfer_design_features(
             },
         );
     }
-    (revolution_count, sketch_count)
+    (revolution_count, sweep_count, sketch_count)
+}
+
+#[derive(Clone, Copy)]
+enum CatiaFeatureKind {
+    Revolve(BooleanOp),
+    Sweep(BooleanOp),
+    Sketch,
 }
 
 fn decode_result(
