@@ -1742,8 +1742,15 @@ number of entity entries.
 Every bucket index from zero through `bucket_count - 1` is stored explicitly in
 ascending order. Populated and empty buckets both contribute an index; a
 missing, repeated, or out-of-order index makes the bucket frame incomplete.
+Each populated bucket stores an array opener whose count is the number of
+entries in that bucket. Empty buckets store no entry array and have an entry
+count of zero. The named first bucket stores its entry count in `bucket_xar`;
+later populated buckets store the count immediately after their bucket index.
 
 `vert_tab` chains bind a solved trim-vertex identifier to two incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A solved trim vertex is the intersection of its two defining `segtab` carriers evaluated from `var_arr` or the joined saved-section geometry; its identifier differs from a `segtab` point identifier. A neutral sketch line uses its `ent_tab` start and end intersections, not the untrimmed carrier endpoints.
+Native `vert_tab` rows are retained from their own complete entry bodies. Their
+retention does not depend on whether either incident entity is present in the
+decoded `ent_tab` subset.
 All stored, saved-section, and propagated coordinates for one trim-vertex
 identifier must agree. Conflicting candidates leave that vertex unresolved.
 When the two incident `segtab` rows have exactly one common endpoint

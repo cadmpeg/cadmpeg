@@ -119,9 +119,15 @@ struct CreoSketchTableHeader {
     declared_count: Option<u32>,
     entity_ref: Option<u32>,
     entry_ref: Option<u32>,
-    bucket_indices: Vec<u32>,
+    buckets: Vec<CreoSketchBucketHeader>,
     row_count: usize,
     offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchBucketHeader {
+    index: u32,
+    declared_entry_count: u32,
 }
 
 #[derive(Serialize)]
@@ -2995,18 +3001,17 @@ fn sketch_table_headers(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<CreoSketchTableHeader> {
     let mut headers = Vec::new();
-    let mut push =
-        |kind, declared_count, entity_ref, entry_ref, bucket_indices, row_count, offset| {
-            headers.push(CreoSketchTableHeader {
-                kind,
-                declared_count,
-                entity_ref,
-                entry_ref,
-                bucket_indices,
-                row_count,
-                offset,
-            });
-        };
+    let mut push = |kind, declared_count, entity_ref, entry_ref, buckets, row_count, offset| {
+        headers.push(CreoSketchTableHeader {
+            kind,
+            declared_count,
+            entity_ref,
+            entry_ref,
+            buckets,
+            row_count,
+            offset,
+        });
+    };
     if let Some(table) = &definition.variables {
         push(
             "variables",
@@ -3035,7 +3040,14 @@ fn sketch_table_headers(
             table.declared_count,
             table.entity_ref,
             table.entry_ref,
-            table.bucket_indices.clone(),
+            table
+                .buckets
+                .iter()
+                .map(|bucket| CreoSketchBucketHeader {
+                    index: bucket.index,
+                    declared_entry_count: bucket.declared_entry_count,
+                })
+                .collect(),
             table.rows.len(),
             table.offset,
         );
@@ -3046,7 +3058,14 @@ fn sketch_table_headers(
             table.declared_count,
             table.entity_ref,
             table.entry_ref,
-            table.bucket_indices.clone(),
+            table
+                .buckets
+                .iter()
+                .map(|bucket| CreoSketchBucketHeader {
+                    index: bucket.index,
+                    declared_entry_count: bucket.declared_entry_count,
+                })
+                .collect(),
             table.rows.len(),
             table.offset,
         );
@@ -15349,7 +15368,7 @@ mod resolved_sketch_tests {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
-            bucket_indices: Vec::new(),
+            buckets: Vec::new(),
             rows: vec![crate::feature::FeatureTrimEntity {
                 external_id: 42,
                 mode: Some(0),
@@ -15603,7 +15622,7 @@ mod resolved_sketch_tests {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
-            bucket_indices: Vec::new(),
+            buckets: Vec::new(),
             rows: vec![crate::feature::FeatureTrimEntity {
                 external_id: 42,
                 mode: Some(0),
@@ -15624,7 +15643,7 @@ mod resolved_sketch_tests {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
-            bucket_indices: Vec::new(),
+            buckets: Vec::new(),
             rows: vec![
                 crate::feature::FeatureTrimVertex {
                     vertex_id: 1,
@@ -15743,7 +15762,7 @@ mod resolved_sketch_tests {
                 declared_count: None,
                 entity_ref: None,
                 entry_ref: None,
-                bucket_indices: Vec::new(),
+                buckets: Vec::new(),
                 rows: vec![crate::feature::FeatureTrimEntity {
                     external_id: 42,
                     mode: Some(0),
@@ -18240,7 +18259,7 @@ mod resolved_sketch_tests {
                 declared_count: None,
                 entity_ref: None,
                 entry_ref: None,
-                bucket_indices: Vec::new(),
+                buckets: Vec::new(),
                 rows: [(10, [1, 2]), (11, [3, 2]), (12, [3, 4]), (13, [4, 1])]
                     .into_iter()
                     .map(
@@ -18285,7 +18304,7 @@ mod resolved_sketch_tests {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
-            bucket_indices: Vec::new(),
+            buckets: Vec::new(),
             rows: [(10, [1, 2]), (11, [2, 1])]
                 .into_iter()
                 .map(

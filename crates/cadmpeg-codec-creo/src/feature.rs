@@ -844,6 +844,15 @@ pub struct FeatureTrimEntity {
     pub offset: usize,
 }
 
+/// One stored hash bucket in a native trim table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureTrimBucket {
+    /// Zero-based bucket index.
+    pub index: u32,
+    /// Number of entries declared by the bucket array opener.
+    pub declared_entry_count: u32,
+}
+
 /// Solved/trimmed entity graph for one feature definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureTrimEntityTable {
@@ -853,8 +862,8 @@ pub struct FeatureTrimEntityTable {
     pub entity_ref: Option<u32>,
     /// Native row-class reference when present.
     pub entry_ref: Option<u32>,
-    /// Explicit hash-bucket indices decoded in ascending stored order.
-    pub bucket_indices: Vec<u32>,
+    /// Explicit hash buckets decoded in stored order.
+    pub buckets: Vec<FeatureTrimBucket>,
     /// Complete positional rows in stored order.
     pub rows: Vec<FeatureTrimEntity>,
     /// Sorted external IDs present in the trimmed profile.
@@ -866,7 +875,7 @@ pub struct FeatureTrimEntityTable {
 impl FeatureTrimEntityTable {
     /// Whether every declared hash-bucket index was decoded in order.
     pub fn has_complete_bucket_index_sequence(&self) -> bool {
-        complete_bucket_index_sequence(self.declared_count, &self.bucket_indices)
+        complete_bucket_index_sequence(self.declared_count, &self.buckets)
     }
 }
 
@@ -892,8 +901,8 @@ pub struct FeatureTrimVertexTable {
     pub entity_ref: Option<u32>,
     /// Native row-class reference when present.
     pub entry_ref: Option<u32>,
-    /// Explicit hash-bucket indices decoded in ascending stored order.
-    pub bucket_indices: Vec<u32>,
+    /// Explicit hash buckets decoded in stored order.
+    pub buckets: Vec<FeatureTrimBucket>,
     /// Complete validated vertex rows in stored order.
     pub rows: Vec<FeatureTrimVertex>,
     /// Byte offset of the `vert_tab` label in the original stream.
@@ -903,13 +912,17 @@ pub struct FeatureTrimVertexTable {
 impl FeatureTrimVertexTable {
     /// Whether every declared hash-bucket index was decoded in order.
     pub fn has_complete_bucket_index_sequence(&self) -> bool {
-        complete_bucket_index_sequence(self.declared_count, &self.bucket_indices)
+        complete_bucket_index_sequence(self.declared_count, &self.buckets)
     }
 }
 
-fn complete_bucket_index_sequence(declared_count: Option<u32>, indices: &[u32]) -> bool {
+fn complete_bucket_index_sequence(
+    declared_count: Option<u32>,
+    buckets: &[FeatureTrimBucket],
+) -> bool {
     declared_count.is_none_or(|count| {
-        usize::try_from(count).ok() == Some(indices.len()) && indices.iter().copied().eq(0..count)
+        usize::try_from(count).ok() == Some(buckets.len())
+            && buckets.iter().map(|bucket| bucket.index).eq(0..count)
     })
 }
 
@@ -2168,8 +2181,8 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
     }
     let first_row = cursor;
     let region_end = find_bytes(payload, b"vert_tab", cursor, end).unwrap_or(end);
-    let bucket_indices = header.map_or_else(Vec::new, |header| {
-        trim_bucket_indices(payload, table, region_end, header.declared_count)
+    let buckets = header.map_or_else(Vec::new, |header| {
+        trim_buckets(payload, table, region_end, header)
     });
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
@@ -2209,7 +2222,7 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
         declared_count: header.map(|header| header.declared_count),
         entity_ref: header.map(|header| header.classes.table),
         entry_ref: header.map(|header| header.classes.entry),
-        bucket_indices,
+        buckets,
         solved_external_ids: seen.into_iter().collect(),
         rows,
         offset: table,
@@ -2229,8 +2242,13 @@ struct TrimTableHeader {
     classes: TrimTableClasses,
 }
 
-fn trim_bucket_indices(payload: &[u8], table: usize, end: usize, declared_count: u32) -> Vec<u32> {
-    if declared_count == 0 {
+fn trim_buckets(
+    payload: &[u8],
+    table: usize,
+    end: usize,
+    header: TrimTableHeader,
+) -> Vec<FeatureTrimBucket> {
+    if header.declared_count == 0 {
         return Vec::new();
     }
     let Some(label) = find_bytes(payload, b"bucket_index\0", table, end) else {
@@ -2242,34 +2260,89 @@ fn trim_bucket_indices(payload: &[u8], table: usize, end: usize, declared_count:
     if first != 0 {
         return Vec::new();
     }
-    let mut indices = vec![first];
-    while indices.len() < usize::try_from(declared_count).unwrap_or(usize::MAX) {
-        let expected = u32::try_from(indices.len()).unwrap_or(u32::MAX);
+    let Some(first_count) = named_trim_bucket_count(payload, cursor, end, header.classes.bucket)
+    else {
+        return Vec::new();
+    };
+    let mut buckets = vec![FeatureTrimBucket {
+        index: first,
+        declared_entry_count: first_count,
+    }];
+    while buckets.len() < usize::try_from(header.declared_count).unwrap_or(usize::MAX) {
+        let expected = u32::try_from(buckets.len()).unwrap_or(u32::MAX);
         let Some((index, next)) = (cursor..end).find_map(|offset| {
             (payload.get(offset.saturating_sub(1)) == Some(&0xe2)).then_some(())?;
             let (Some(index), next) = segment_int(payload, offset) else {
                 return None;
             };
-            (index == expected && trim_bucket_transition(payload, next, end))
-                .then_some((index, next))
+            (index == expected).then_some((index, next))
         }) else {
             break;
         };
-        indices.push(index);
+        let Some(declared_entry_count) =
+            positional_trim_bucket_count(payload, next, end, header.classes)
+        else {
+            break;
+        };
+        buckets.push(FeatureTrimBucket {
+            index,
+            declared_entry_count,
+        });
         cursor = next;
     }
-    indices
+    buckets
 }
 
-fn trim_bucket_transition(payload: &[u8], offset: usize, end: usize) -> bool {
-    if offset == end {
-        return true;
+fn named_trim_bucket_count(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    bucket_class: u32,
+) -> Option<u32> {
+    let label = find_bytes(payload, b"bucket_xar\0", start, end)? + b"bucket_xar\0".len();
+    let opener = (label..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
+    trim_bucket_array_count(payload, opener, bucket_class).map(|(count, _)| count)
+}
+
+fn positional_trim_bucket_count(
+    payload: &[u8],
+    mut cursor: usize,
+    end: usize,
+    classes: TrimTableClasses,
+) -> Option<u32> {
+    match payload.get(cursor)? {
+        &psb::token::ARRAY_OPEN => {
+            trim_bucket_array_count(payload, cursor, classes.bucket).map(|(count, _)| count)
+        }
+        0xf0 => {
+            (payload.get(cursor + 1) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (class, next) = psb::reference_id(payload, cursor + 2).ok()?;
+            (class == classes.bucket).then_some(())?;
+            cursor = next;
+            (payload.get(cursor) == Some(&psb::token::ARRAY_OPEN)).then_some(())?;
+            trim_bucket_array_count(payload, cursor, classes.bucket).map(|(count, _)| count)
+        }
+        0xf1 => {
+            (payload.get(cursor + 1) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+            let (class, next) = psb::reference_id(payload, cursor + 2).ok()?;
+            (class == classes.table && payload.get(next) == Some(&0xe2)).then_some(0)
+        }
+        0xe2 | 0xe0 if cursor < end => Some(0),
+        _ => None,
     }
-    match payload.get(offset) {
-        Some(&psb::token::ARRAY_OPEN | 0xe0 | 0xe2) => true,
-        Some(&0xf0 | 0xf1) => payload.get(offset + 1) == Some(&psb::token::ENTITY_REF),
-        _ => false,
-    }
+}
+
+fn trim_bucket_array_count(
+    payload: &[u8],
+    opener: usize,
+    bucket_class: u32,
+) -> Option<(u32, usize)> {
+    let (count, after_count) = psb::compact_int(payload, opener + 1);
+    (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (class, after_reference) = psb::reference_id(payload, after_count + 1).ok()?;
+    (class == bucket_class
+        && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe3]))
+    .then_some((count, after_reference + 2))
 }
 
 fn trim_table_header(
@@ -2417,7 +2490,15 @@ fn positional_trim_entity_table(
         declared_count: Some(declared_count),
         entity_ref: Some(table_class),
         entry_ref: Some(entry_class),
-        bucket_indices: trim_bucket_indices(payload, table, region_end, declared_count),
+        buckets: trim_buckets(
+            payload,
+            table,
+            region_end,
+            TrimTableHeader {
+                declared_count,
+                classes,
+            },
+        ),
         solved_external_ids: seen.into_iter().collect(),
         rows,
         offset: table,
@@ -2428,7 +2509,6 @@ fn trim_vertex_table(
     payload: &[u8],
     start: usize,
     end: usize,
-    entities: Option<&FeatureTrimEntityTable>,
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
 ) -> Option<FeatureTrimVertexTable> {
@@ -2464,20 +2544,6 @@ fn trim_vertex_table(
     block_marker.push(0xe2);
     cursor = find_bytes(payload, &block_marker, reference_end, region_end)?;
 
-    let valid_entities = entities.map(|table| {
-        table
-            .rows
-            .iter()
-            .map(|row| row.external_id)
-            .collect::<BTreeSet<_>>()
-    });
-    let valid_vertices = entities.map(|table| {
-        table
-            .rows
-            .iter()
-            .flat_map(|row| row.vertices.into_iter().chain(row.center_vertex))
-            .collect::<BTreeSet<_>>()
-    });
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
     while cursor < region_end {
@@ -2520,15 +2586,7 @@ fn trim_vertex_table(
             cursor += 1;
             continue;
         }
-        let valid = match (&valid_entities, &valid_vertices) {
-            (Some(entity_ids), Some(vertex_ids)) => {
-                entity_ids.contains(&entity_1)
-                    && entity_ids.contains(&entity_2)
-                    && vertex_ids.contains(&vertex_id)
-            }
-            _ => entity_1 > 2 && entity_2 > 2,
-        };
-        if valid && entity_1 != entity_2 && seen.insert(vertex_id) {
+        if entity_1 != entity_2 && seen.insert(vertex_id) {
             rows.push(FeatureTrimVertex {
                 vertex_id,
                 entities: [entity_1, entity_2],
@@ -2542,8 +2600,8 @@ fn trim_vertex_table(
         declared_count: header.map(|header| header.declared_count),
         entity_ref: header.map(|header| header.classes.table),
         entry_ref: header.map(|header| header.classes.entry),
-        bucket_indices: header.map_or_else(Vec::new, |header| {
-            trim_bucket_indices(payload, table, region_end, header.declared_count)
+        buckets: header.map_or_else(Vec::new, |header| {
+            trim_buckets(payload, table, region_end, header)
         }),
         rows,
         offset: table,
@@ -2555,7 +2613,6 @@ fn positional_trim_vertex_table(
     start: usize,
     end: usize,
     classes: TrimTableClasses,
-    entities: Option<&FeatureTrimEntityTable>,
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
 ) -> Option<FeatureTrimVertexTable> {
@@ -2566,20 +2623,6 @@ fn positional_trim_vertex_table(
     } = classes;
     let (table, declared_count, rows_start, region_end) =
         positional_table_region(payload, start, end, table_class, None)?;
-    let valid_entities = entities.map(|table| {
-        table
-            .rows
-            .iter()
-            .map(|row| row.external_id)
-            .collect::<BTreeSet<_>>()
-    });
-    let valid_vertices = entities.map(|table| {
-        table
-            .rows
-            .iter()
-            .flat_map(|row| row.vertices.into_iter().chain(row.center_vertex))
-            .collect::<BTreeSet<_>>()
-    });
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
     let mut cursor = rows_start;
@@ -2605,16 +2648,7 @@ fn positional_trim_vertex_table(
             cursor += 1;
             continue;
         };
-        let valid = match (&valid_entities, &valid_vertices) {
-            (Some(entity_ids), Some(vertex_ids)) => {
-                entity_ids.contains(&entity_1)
-                    && entity_ids.contains(&entity_2)
-                    && vertex_ids.contains(&vertex_id)
-            }
-            _ => entity_1 > 2 && entity_2 > 2,
-        };
-        if payload.get(next) == Some(&0) && valid && entity_1 != entity_2 && seen.insert(vertex_id)
-        {
+        if payload.get(next) == Some(&0) && entity_1 != entity_2 && seen.insert(vertex_id) {
             rows.push(FeatureTrimVertex {
                 vertex_id,
                 entities: [entity_1, entity_2],
@@ -2628,7 +2662,15 @@ fn positional_trim_vertex_table(
         declared_count: Some(declared_count),
         entity_ref: Some(table_class),
         entry_ref: Some(entry_class),
-        bucket_indices: trim_bucket_indices(payload, table, region_end, declared_count),
+        buckets: trim_buckets(
+            payload,
+            table,
+            region_end,
+            TrimTableHeader {
+                declared_count,
+                classes,
+            },
+        ),
         rows,
         offset: table,
     })
@@ -5458,29 +5500,23 @@ fn definitions_in_ranges(
             replay_trim_entity_classes =
                 trim_table_header(payload, b"ent_tab\0", start, end).map(|header| header.classes);
         }
-        let trim_vertices = trim_vertex_table(
-            payload,
-            start,
-            end,
-            trim_entities.as_ref(),
-            segments.as_ref(),
-            variables.as_ref(),
-        )
-        .or_else(|| {
-            if positional {
-                positional_trim_vertex_table(
-                    payload,
-                    start,
-                    end,
-                    replay_trim_vertex_classes?,
-                    trim_entities.as_ref(),
-                    segments.as_ref(),
-                    variables.as_ref(),
-                )
-            } else {
-                None
-            }
-        });
+        let trim_vertices =
+            trim_vertex_table(payload, start, end, segments.as_ref(), variables.as_ref()).or_else(
+                || {
+                    if positional {
+                        positional_trim_vertex_table(
+                            payload,
+                            start,
+                            end,
+                            replay_trim_vertex_classes?,
+                            segments.as_ref(),
+                            variables.as_ref(),
+                        )
+                    } else {
+                        None
+                    }
+                },
+            );
         if !positional {
             replay_trim_vertex_classes =
                 trim_table_header(payload, b"vert_tab\0", start, end).map(|header| header.classes);
@@ -7252,36 +7288,9 @@ mod tests {
     }
 
     #[test]
-    fn positional_trim_vertex_table_uses_inherited_entry_class() {
+    fn positional_trim_vertex_table_is_independent_of_entity_rows() {
         let payload = b"prefix\xf8\x13\xf7\x44\xfb\xe2\xf7\x45\
-            \x09\x0a\x03\x00\xe2";
-        let entities = FeatureTrimEntityTable {
-            declared_count: None,
-            entity_ref: None,
-            entry_ref: None,
-            bucket_indices: Vec::new(),
-            rows: vec![
-                FeatureTrimEntity {
-                    external_id: 9,
-                    mode: Some(0),
-                    vertices: [3, 4],
-                    center_vertex: None,
-                    kind: TrimEntityKind::Line,
-                    offset: 0,
-                },
-                FeatureTrimEntity {
-                    external_id: 10,
-                    mode: Some(0),
-                    vertices: [3, 5],
-                    center_vertex: None,
-                    kind: TrimEntityKind::Line,
-                    offset: 0,
-                },
-            ],
-            solved_external_ids: vec![9, 10],
-            offset: 0,
-        };
-
+            \x01\x02\x03\x00\xe2";
         let vertices = positional_trim_vertex_table(
             payload,
             0,
@@ -7291,7 +7300,6 @@ mod tests {
                 bucket: 69,
                 entry: 69,
             },
-            Some(&entities),
             None,
             None,
         )
@@ -7302,7 +7310,7 @@ mod tests {
         assert_eq!(vertices.entry_ref, Some(69));
         assert_eq!(vertices.rows.len(), 1);
         assert_eq!(vertices.rows[0].vertex_id, 3);
-        assert_eq!(vertices.rows[0].entities, [9, 10]);
+        assert_eq!(vertices.rows[0].entities, [1, 2]);
     }
 
     #[test]
@@ -7318,7 +7326,6 @@ mod tests {
                 bucket: 69,
                 entry: 69,
             },
-            None,
             None,
             None,
         )
@@ -7436,23 +7443,41 @@ mod tests {
     }
 
     #[test]
-    fn trim_bucket_indices_require_the_complete_declared_sequence() {
-        let payload = b"bucket_index\0\x00\xe2\x01\xf8\x01\xf7\x43\xfb\xe3\
+    fn trim_buckets_require_the_complete_declared_sequence_and_counts() {
+        let payload = b"bucket_index\0\x00bucket_xar\0\xf8\x01\xf7\x43\xfb\xe3\
+            \xf7\x44\x09\x0a\x03\x00\xe2\x01\xf8\x01\xf7\x43\xfb\xe3\
             \xf7\x44\x09\x0a\x03\x00\xe2\x02\xf1\xf7\x42\xe2\x03\xe2\
             \x04\xf0\xf7\x43\xf8\x01\xf7\x43\xfb\xe3\xf7\x44\x0b\x0c\
             \x05\x00\xe2\x05\xf8\x01\xf7\x43\xfb\xe3\xf7\x44\x0d\x0e\
             \x06\x00\xe2\x06\xe0\x00next\0";
+        let header = TrimTableHeader {
+            declared_count: 7,
+            classes: TrimTableClasses {
+                table: 66,
+                bucket: 67,
+                entry: 68,
+            },
+        };
 
         assert_eq!(
-            trim_bucket_indices(payload, 0, payload.len(), 7),
-            (0..7).collect::<Vec<_>>()
+            trim_buckets(payload, 0, payload.len(), header),
+            (0..7)
+                .zip([1, 1, 0, 0, 1, 1, 0])
+                .map(|(index, declared_entry_count)| FeatureTrimBucket {
+                    index,
+                    declared_entry_count,
+                })
+                .collect::<Vec<_>>()
         );
         let truncated = payload
             .windows(2)
             .position(|bytes| bytes == [0xe2, 0x06])
             .expect("last bucket index");
         assert_eq!(
-            trim_bucket_indices(payload, 0, truncated, 7),
+            trim_buckets(payload, 0, truncated, header)
+                .iter()
+                .map(|bucket| bucket.index)
+                .collect::<Vec<_>>(),
             (0..6).collect::<Vec<_>>()
         );
     }
