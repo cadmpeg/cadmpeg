@@ -5268,7 +5268,7 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
-        crate::resolved_features::project_single_profile_dissected_sketches(
+        crate::resolved_features::project_dissected_sketches(
             &mut features,
             &ir.model.sketches,
             histories,

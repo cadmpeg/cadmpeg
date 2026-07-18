@@ -8650,8 +8650,8 @@ fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
             })
 }
 
-/// Bind a dissected child to its owning sketch when that sketch has one complete profile.
-pub(crate) fn project_single_profile_dissected_sketches(
+/// Classify dissected sketch children and bind unambiguous profile aliases.
+pub(crate) fn project_dissected_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
     sketches: &[cadmpeg_ir::sketches::Sketch],
     histories: &[crate::records::FeatureHistory],
@@ -8676,12 +8676,9 @@ pub(crate) fn project_single_profile_dissected_sketches(
             else {
                 return None;
             };
-            single_profile_sketches
-                .contains(sketch)
-                .then(|| (feature.id.clone(), sketch.clone()))
+            Some((feature.id.clone(), sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
-
     let aliases = features
         .iter()
         .filter(|feature| {
@@ -8708,6 +8705,11 @@ pub(crate) fn project_single_profile_dissected_sketches(
                 .then(|| (feature.id.clone(), (owner.clone(), sketch.clone())))
         })
         .collect::<HashMap<_, _>>();
+    let profile_aliases = aliases
+        .iter()
+        .filter(|(_, (_, sketch))| single_profile_sketches.contains(sketch))
+        .map(|(child, owner)| (child.clone(), owner.clone()))
+        .collect::<HashMap<_, _>>();
 
     for feature in features {
         if aliases.contains_key(&feature.id) {
@@ -8720,7 +8722,7 @@ pub(crate) fn project_single_profile_dissected_sketches(
             let cadmpeg_ir::features::ProfileRef::Feature(child) = profile else {
                 return None;
             };
-            let (owner, sketch) = aliases.get(child)?;
+            let (owner, sketch) = profile_aliases.get(child)?;
             let child = child.clone();
             *profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
             Some((child, owner.clone()))
@@ -13291,12 +13293,12 @@ mod profile_join_tests {
         bind_sweep_adjacent_profiles, dimensioned_circle_surface_transforms,
         dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
         line_reference_direction, marker_entities, marker_point_locus, owned_relation_parameters,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        profile_loci_by_marker, project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_relation_point_geometry,
-        project_relation_solved_point_geometry, project_single_profile_dissected_sketches,
-        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
-        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
-        single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
+        project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
+        relation_parameter_by_display_name, resolved_marker_locus,
+        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
+        sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
@@ -13562,7 +13564,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn dissected_child_shares_only_a_single_profile_owner_sketch() {
+    fn dissected_child_classification_does_not_imply_profile_alias() {
         let native_feature = |id: &str, name: &str, description: Option<&str>| NativeFeature {
             id: id.into(),
             parent: "history".into(),
@@ -13659,6 +13661,15 @@ mod profile_join_tests {
                 native_ref: Some("consumer-native".into()),
             },
         ];
+        let mut multi_consumer = features[4].clone();
+        multi_consumer.id = FeatureId("multi-consumer".into());
+        multi_consumer.ordinal = 4;
+        multi_consumer.dependencies = vec![FeatureId("multi-child".into())];
+        let FeatureDefinition::Extrude { profile, .. } = &mut multi_consumer.definition else {
+            unreachable!();
+        };
+        *profile = ProfileRef::Feature(FeatureId("multi-child".into()));
+        features.push(multi_consumer);
         let sketch = |id: SketchId, profile_count: usize| Sketch {
             id,
             name: None,
@@ -13678,11 +13689,7 @@ mod profile_join_tests {
         };
         let sketches = vec![sketch(single.clone(), 1), sketch(multiple, 2)];
 
-        project_single_profile_dissected_sketches(
-            &mut features,
-            &sketches,
-            std::slice::from_ref(&history),
-        );
+        project_dissected_sketches(&mut features, &sketches, std::slice::from_ref(&history));
 
         assert!(matches!(
             &features[1].definition,
@@ -13692,7 +13699,9 @@ mod profile_join_tests {
         ));
         assert!(matches!(
             features[3].definition,
-            FeatureDefinition::Sketch { sketch: None, .. }
+            FeatureDefinition::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+            }
         ));
         assert!(matches!(
             &features[4].definition,
@@ -13702,6 +13711,14 @@ mod profile_join_tests {
             } if sketch == &single
         ));
         assert_eq!(features[4].dependencies, [FeatureId("owner".into())]);
+        assert!(matches!(
+            &features[5].definition,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Feature(feature),
+                ..
+            } if feature == &FeatureId("multi-child".into())
+        ));
+        assert_eq!(features[5].dependencies, [FeatureId("multi-child".into())]);
     }
 
     #[test]
