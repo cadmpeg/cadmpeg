@@ -345,6 +345,26 @@ fn transfer_complete(
         return false;
     };
     let vertex_tolerances = transfer_vertex_tolerances(graph, &pcurve_plan, &surface_plan);
+    for (&edge, supports) in &mut edge_support_plan {
+        let vertices = graph.edge_vertices[&edge];
+        let [Some(start), Some(end)] = vertices.map(|vertex| b5_vertex_point(graph, vertex)) else {
+            continue;
+        };
+        let tolerances = vertices.map(|vertex| {
+            vertex_tolerances
+                .get(&vertex)
+                .copied()
+                .unwrap_or(POINT_TOLERANCE)
+                .max(POINT_TOLERANCE)
+        });
+        orient_b5_supports_to_edge(
+            supports,
+            [start, end],
+            tolerances,
+            &surface_plan,
+            &pcurve_plan,
+        );
+    }
     let exact_support_edges = edge_support_plan
         .iter()
         .filter_map(|(&edge, supports)| {
@@ -1828,6 +1848,27 @@ fn b5_supports_follow_edge(
     })
 }
 
+fn orient_b5_supports_to_edge(
+    supports: &mut [(u32, u32, [f64; 2])],
+    endpoints: [[f64; 3]; 2],
+    tolerances: [f64; 2],
+    surfaces: &BTreeMap<u32, SurfacePlan>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+) {
+    for support in supports {
+        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
+            continue;
+        };
+        let forward = distance(start, endpoints[0]) <= tolerances[0]
+            && distance(end, endpoints[1]) <= tolerances[1];
+        let reversed = distance(end, endpoints[0]) <= tolerances[0]
+            && distance(start, endpoints[1]) <= tolerances[1];
+        if !forward && reversed {
+            support.2.swap(0, 1);
+        }
+    }
+}
+
 fn b5_supports_agree(
     supports: &[(u32, u32, [f64; 2])],
     surfaces: &BTreeMap<u32, SurfacePlan>,
@@ -2415,9 +2456,10 @@ mod tests {
         b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
         curve_cache_has_ordered_knots, cylinder_helix, cylinder_point, edge_pcurve_parameters,
         isocurve_endpoint_parameters, lifted_curve_geometry, merge_curve_plan,
-        neutral_pcurve_point, ordered_subrange, orient_loop_members, oriented_circle_plan,
-        oriented_line_plan, oriented_nurbs_range, ownership_plan, rational_arc, revolution_surface,
-        revolve_nurbs, transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
+        neutral_pcurve_point, ordered_subrange, orient_b5_supports_to_edge, orient_loop_members,
+        oriented_circle_plan, oriented_line_plan, oriented_nurbs_range, ownership_plan,
+        rational_arc, revolution_surface, revolve_nurbs, transfer, transfer_vertex_tolerances,
+        CurvePlan, SurfacePlan,
     };
     use crate::b5::{
         loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
@@ -2748,6 +2790,22 @@ mod tests {
         assert!(!b5_supports_follow_edge(
             &supports,
             [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            [1.5e-3; 2],
+            &surfaces,
+            &pcurves,
+        ));
+        let mut reversed_supports = [(10, 20, [1.0, 0.0])];
+        orient_b5_supports_to_edge(
+            &mut reversed_supports,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            [1.5e-3; 2],
+            &surfaces,
+            &pcurves,
+        );
+        assert_eq!(reversed_supports[0].2, [0.0, 1.0]);
+        assert!(b5_supports_follow_edge(
+            &reversed_supports,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
             [1.5e-3; 2],
             &surfaces,
             &pcurves,
