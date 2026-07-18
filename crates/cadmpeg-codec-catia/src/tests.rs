@@ -5274,6 +5274,46 @@ fn decode_retains_outer_object_graph_order_and_dependencies() {
 }
 
 #[test]
+fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
+    let mut bytes = object_graph_stream();
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store CATIA native namespace");
+
+    for arena_name in ["catalogs", "object_graphs"] {
+        let mut malformed = namespace.clone();
+        malformed
+            .arenas
+            .get_mut(arena_name)
+            .expect("owner arena")
+            .clear();
+        assert!(matches!(
+            crate::native::CatiaNative::load(&malformed),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+    }
+
+    for arena_name in ["catalogs", "object_graphs"] {
+        let mut malformed = namespace.clone();
+        let arena = malformed.arenas.get_mut(arena_name).expect("owner arena");
+        arena.push(arena.first().expect("owner record").clone());
+        assert!(matches!(
+            crate::native::CatiaNative::load(&malformed),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+    }
+}
+
+#[test]
 fn decode_retains_catalog_schema_names_without_promoting_features() {
     let decoded = CatiaCodec
         .decode(

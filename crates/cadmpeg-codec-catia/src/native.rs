@@ -3,7 +3,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::catalog;
 use crate::container;
@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 42;
+pub const CATIA_NATIVE_VERSION: u32 = 43;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -603,6 +603,24 @@ impl CatiaNative {
     ) -> Result<Self, cadmpeg_ir::NativeConvertError> {
         let mut catalogs: Vec<CatiaCatalog> = namespace.arena_as("catalogs")?;
         let entries: Vec<CatiaCatalogEntry> = namespace.arena_as("catalog_entries")?;
+        let catalog_ids = catalogs
+            .iter()
+            .map(|catalog| catalog.id.as_str())
+            .collect::<HashSet<_>>();
+        if catalog_ids.len() != catalogs.len() {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "duplicate CATIA catalog identity".to_string(),
+            ));
+        }
+        if let Some(entry) = entries
+            .iter()
+            .find(|entry| !catalog_ids.contains(entry.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "catalog entry `{}` references missing catalog `{}`",
+                entry.id, entry.parent
+            )));
+        }
         for catalog in &mut catalogs {
             catalog.entries = entries
                 .iter()
@@ -613,6 +631,24 @@ impl CatiaNative {
         }
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
         let records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
+        let graph_ids = graphs
+            .iter()
+            .map(|graph| graph.id.as_str())
+            .collect::<HashSet<_>>();
+        if graph_ids.len() != graphs.len() {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "duplicate CATIA object-graph identity".to_string(),
+            ));
+        }
+        if let Some(record) = records
+            .iter()
+            .find(|record| !graph_ids.contains(record.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object record `{}` references missing graph `{}`",
+                record.id, record.parent
+            )));
+        }
         for graph in &mut graphs {
             graph.records = records
                 .iter()
