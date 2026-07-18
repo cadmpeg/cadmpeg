@@ -3086,6 +3086,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             source: BodySelection::Unresolved,
         }
     );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("SKIN", &[], None, None, None),
+        FeatureDefinition::LoftUnresolved
+    );
 
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),

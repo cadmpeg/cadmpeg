@@ -650,6 +650,8 @@ pub enum FeatureDefinition {
         /// Binding and derived-shape construction semantics.
         construction: BinderConstruction,
     },
+    /// Loft-family skin whose section and result semantics are unresolved.
+    LoftUnresolved,
     /// Loft through an ordered sequence of section profiles.
     Loft {
         /// Ordered section profiles.
