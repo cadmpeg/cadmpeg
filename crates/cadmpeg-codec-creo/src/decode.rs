@@ -17893,6 +17893,70 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn coaxial_cone_torus_components_support_edges_and_vertices() {
+        let cone = CarrierEquation::Cone(ConeEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 2.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        });
+        let secant_torus = CarrierEquation::Torus(TorusEquation {
+            center: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        });
+        let candidates = coaxial_cone_torus_circle_candidates(cone, secant_torus);
+        assert_eq!(candidates.len(), 2);
+        let upper_parameter = (1.0 + 7.0_f64.sqrt()) / 2.0;
+        let upper_radius = 2.0 + upper_parameter;
+        assert!(matches!(
+            select_unique_curve_candidate(
+                candidates,
+                [
+                    [upper_radius, 0.0, upper_parameter],
+                    [0.0, upper_radius, upper_parameter],
+                ],
+            ),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_torus_circle"))
+                if (center.z - upper_parameter).abs() < 1e-12
+                    && (radius - upper_radius).abs() < 1e-12
+        ));
+        let tangent_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [3.0 + 7.0_f64.sqrt(), 0.0, 0.0],
+            normal: [1.0, 0.0, 1.0],
+        });
+        let vertex = solve_carriers(&[cone, secant_torus, tangent_plane])
+            .expect("unique cone-torus circle tangent");
+        assert!((vertex[0] - upper_radius).abs() < 1e-12);
+        assert!(vertex[1].abs() < 1e-12);
+        assert!((vertex[2] - upper_parameter).abs() < 1e-12);
+
+        let tangent_torus = CarrierEquation::Torus(TorusEquation {
+            center: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 5.0,
+            minor_radius: 3.0 / 2.0_f64.sqrt(),
+        });
+        assert!(matches!(
+            coaxial_cone_torus_circle_candidates(cone, tangent_torus).as_slice(),
+            [(CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_torus_circle")]
+                if (center.z - 1.5).abs() < 1e-12 && (radius - 3.5).abs() < 1e-12
+        ));
+        let shifted_torus = CarrierEquation::Torus(TorusEquation {
+            center: [1.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 3.0,
+            minor_radius: 2.0,
+        });
+        assert!(coaxial_cone_torus_circle_candidates(cone, shifted_torus).is_empty());
+    }
+
+    #[test]
     fn carrier_solver_accepts_unique_plane_plane_cylinder_vertex() {
         let cylinder = CarrierEquation::Cylinder(CylinderEquation {
             origin: [0.0, 0.0, 0.0],
@@ -19142,6 +19206,16 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                             *plane,
                             CarrierEquation::Cone(*cone),
                             CarrierEquation::Sphere(*sphere),
+                        ));
+                    }
+                } else if let ([plane], [cone], [torus]) =
+                    (planes.as_slice(), cones.as_slice(), tori.as_slice())
+                {
+                    if cylinders.is_empty() && spheres.is_empty() {
+                        candidates.extend(intersect_plane_with_carrier_components(
+                            *plane,
+                            CarrierEquation::Cone(*cone),
+                            CarrierEquation::Torus(*torus),
                         ));
                     }
                 } else if let ([plane], [sphere], [torus]) =
@@ -22608,6 +22682,100 @@ fn coaxial_cone_sphere_circle_candidates(
         .collect()
 }
 
+fn coaxial_cone_torus_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Cone(cone), CarrierEquation::Torus(torus))
+    | (CarrierEquation::Torus(torus), CarrierEquation::Cone(cone))) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let (Some(cone_axis), Some(torus_axis), Some(reference)) = (
+        normalized(cone.axis),
+        normalized(torus.axis),
+        normalized(cone.ref_direction),
+    ) else {
+        return Vec::new();
+    };
+    if (dot(cone_axis, torus_axis).abs() - 1.0).abs() > 1e-10 {
+        return Vec::new();
+    }
+    let relative: [f64; 3] = std::array::from_fn(|index| torus.center[index] - cone.origin[index]);
+    let torus_axial = dot(relative, cone_axis);
+    let transverse: [f64; 3] =
+        std::array::from_fn(|index| relative[index] - torus_axial * cone_axis[index]);
+    let scale = cone
+        .radius
+        .max(torus.major_radius)
+        .max(torus.minor_radius)
+        .max(1.0);
+    let slope = cone.half_angle.tan();
+    if dot(transverse, transverse).sqrt() > 1e-9 * scale
+        || cone.radius < 0.0
+        || torus.major_radius <= 1e-12 * scale
+        || torus.minor_radius <= 1e-12 * scale
+        || slope.abs() <= 1e-12
+        || !slope.is_finite()
+    {
+        return Vec::new();
+    }
+
+    let quadratic = 1.0 + slope * slope;
+    let mut parameters = Vec::<f64>::new();
+    for radial_sense in [-1.0, 1.0] {
+        let radial_offset = radial_sense * cone.radius - torus.major_radius;
+        let radial_slope = radial_sense * slope;
+        let linear = 2.0 * (radial_offset * radial_slope - torus_axial);
+        let constant = radial_offset * radial_offset + torus_axial * torus_axial
+            - torus.minor_radius * torus.minor_radius;
+        let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+        let discriminant_scale = linear
+            .abs()
+            .max((4.0 * quadratic * constant).abs().sqrt())
+            .max(1.0);
+        let tolerance = 1e-9 * discriminant_scale * discriminant_scale;
+        let deltas = if discriminant < -tolerance {
+            continue;
+        } else if discriminant.abs() <= tolerance {
+            vec![0.0]
+        } else {
+            let root = discriminant.sqrt();
+            vec![-root, root]
+        };
+        for delta in deltas {
+            let parameter = (-linear + delta) / (2.0 * quadratic);
+            let radius = radial_sense * (cone.radius + parameter * slope);
+            if radius <= 1e-12 * scale {
+                continue;
+            }
+            if !parameters
+                .iter()
+                .any(|known| (parameter - known).abs() <= 1e-9 * scale)
+            {
+                parameters.push(parameter);
+            }
+        }
+    }
+    parameters
+        .into_iter()
+        .map(|parameter| {
+            let radius = (cone.radius + parameter * slope).abs();
+            let center: [f64; 3] =
+                std::array::from_fn(|index| cone.origin[index] + parameter * cone_axis[index]);
+            (
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(cone_axis[0], cone_axis[1], cone_axis[2]),
+                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                    radius,
+                },
+                "coaxial_cone_torus_circle",
+            )
+        })
+        .collect()
+}
+
 fn coaxial_cylinder_torus_circle_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
@@ -22875,6 +23043,7 @@ fn multi_component_intersection_candidates(
     candidates.extend(coaxial_cone_cylinder_circle_candidates(first, second));
     candidates.extend(apex_plane_cone_generator_candidates(first, second));
     candidates.extend(coaxial_cone_sphere_circle_candidates(first, second));
+    candidates.extend(coaxial_cone_torus_circle_candidates(first, second));
     candidates.extend(coaxial_cylinder_torus_circle_candidates(first, second));
     candidates.extend(coaxial_sphere_torus_circle_candidates(first, second));
     candidates.extend(coaxial_tori_circle_candidates(first, second));
