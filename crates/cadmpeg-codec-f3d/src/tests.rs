@@ -190,10 +190,7 @@ fn decode_emits_validated_l1_source_fidelity_ledger() {
     let policy = DecodePolicy::default();
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let decoded = crate::decode::decode(&ctx, root).unwrap();
-    let sidecar = decoded
-        .report
-        .source_fidelity
-        .expect("decode report carries the L1 container-accounting ledger");
+    let sidecar = decoded.source_fidelity;
     assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(sidecar.validate(), Ok(()));
 }

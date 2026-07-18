@@ -429,7 +429,10 @@ pub fn diff(
     let left = loader::load_ir(registry, a, args.options(), None)?;
     let right = loader::load_ir(registry, b, args.options(), None)?;
     let result = cadmpeg_ir::diff(&left.ir, &right.ir);
-    let fidelity = fidelity_diff(left.decode_report.as_ref(), right.decode_report.as_ref());
+    let fidelity = fidelity_diff(
+        left.source_fidelity.as_ref(),
+        right.source_fidelity.as_ref(),
+    );
     let different = !result.is_empty() || fidelity_differs(&fidelity);
     if json {
         println!(
@@ -496,9 +499,7 @@ enum FidelitySummary {
     Both(FidelityDiff),
 }
 
-fn fidelity_diff(left: Option<&DecodeReport>, right: Option<&DecodeReport>) -> FidelitySummary {
-    let left = left.and_then(|report| report.source_fidelity.as_ref());
-    let right = right.and_then(|report| report.source_fidelity.as_ref());
+fn fidelity_diff(left: Option<&SourceFidelity>, right: Option<&SourceFidelity>) -> FidelitySummary {
     match (left, right) {
         (Some(left), Some(right)) => FidelitySummary::Both(diff_source_fidelity(left, right)),
         (Some(_), None) => FidelitySummary::OnlyLeft,

@@ -67,7 +67,6 @@ fn decode_exchange_mode(
     let mut report = DecodeReport {
         retention_degraded: false,
         profile_versions: cadmpeg_ir::ProfileVersions::default(),
-        source_fidelity: None,
         format: "step".into(),
         container_only: options.container_only,
         geometry_transferred: false,

@@ -130,7 +130,6 @@ pub(crate) fn decode(
         DecodeReport {
             retention_degraded: false,
             profile_versions: cadmpeg_ir::ProfileVersions::default(),
-            source_fidelity: None,
             format: "iges".into(),
             container_only: options.container_only,
             geometry_transferred,

@@ -61,7 +61,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         resolve_record_tickets(ctx, tickets, None, &[]);
-        return decode_result(ir, report, annotations, unknowns);
+        return decode_result(ir, report, annotations, unknowns, &scan);
     }
 
     let streams = active_body_streams(&scan);
@@ -78,7 +78,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
             )?;
             let outputs = typed_outputs(&ir);
             resolve_record_tickets(ctx, tickets, Some(typed_offset), &outputs);
-            return decode_result(ir, report, annotations, unknowns);
+            return decode_result(ir, report, annotations, unknowns, &scan);
         }
     }
 
@@ -86,7 +86,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let report = build_container_report(&scan, false);
     reject_unrepresentable_in_strict(ctx, &report)?;
     resolve_record_tickets(ctx, tickets, None, &[]);
-    decode_result(ir, report, annotations, unknowns)
+    decode_result(ir, report, annotations, unknowns, &scan)
 }
 
 fn decode_result(
@@ -94,8 +94,9 @@ fn decode_result(
     report: DecodeReport,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
+    scan: &ContainerScan,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = report.source_fidelity.clone().unwrap_or_default();
+    let mut source_fidelity = crate::fidelity::container_ledger(scan);
     source_fidelity.annotations = annotations;
     let source_image = unknowns
         .iter()
@@ -962,7 +963,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "sldprt".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1417,7 +1417,6 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "sldprt".to_string(),
         container_only,
         geometry_transferred: false,

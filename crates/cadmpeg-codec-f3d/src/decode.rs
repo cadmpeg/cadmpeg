@@ -39,7 +39,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let (ir, unknowns) = build_metadata_ir(&scan);
         let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None, &unknowns);
         let mut report = build_container_report(&scan, true);
-        report.source_fidelity = Some(build_source_fidelity(&scan)?);
         account_records(
             ctx,
             source_space,
@@ -54,6 +53,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             annotations,
             &unknowns,
             &preserve_source_image(&scan),
+            build_source_fidelity(&scan)?,
         );
     }
 
@@ -162,7 +162,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 Some((&active.name, &annotation_records)),
                 &unknowns,
             );
-            report.source_fidelity = Some(build_source_fidelity(&scan)?);
             account_records(
                 ctx,
                 source_space,
@@ -178,6 +177,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 annotations,
                 &unknowns,
                 &preserve_source_image(&scan),
+                build_source_fidelity(&scan)?,
             );
         }
     }
@@ -221,7 +221,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
     let mut report = build_container_report(&scan, false);
-    report.source_fidelity = Some(build_source_fidelity(&scan)?);
     account_records(
         ctx,
         source_space,
@@ -237,6 +236,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         annotations,
         &unknowns,
         &preserve_source_image(&scan),
+        build_source_fidelity(&scan)?,
     )
 }
 
@@ -246,8 +246,8 @@ fn decode_result(
     annotations: cadmpeg_ir::Annotations,
     unknowns: &[UnknownRecord],
     source_image: &UnknownRecord,
+    mut source_fidelity: cadmpeg_ir::SourceFidelity,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = report.source_fidelity.clone().unwrap_or_default();
     source_fidelity.annotations = annotations;
     source_fidelity.attach_native_unknown_records(&mut ir, "f3d", unknowns)?;
     source_fidelity.retain_unknown_records("f3d", std::slice::from_ref(source_image));
@@ -923,7 +923,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "f3d".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1050,7 +1049,6 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "f3d".to_string(),
         container_only,
         geometry_transferred: false,

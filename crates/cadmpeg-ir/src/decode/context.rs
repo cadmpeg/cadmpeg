@@ -805,7 +805,7 @@ impl<'a> DecodeContext<'a> {
             &self.retained,
             &unknown_ids,
             &result.report.losses,
-            result.report.source_fidelity.as_ref(),
+            Some(&result.source_fidelity),
         );
         if !violations.is_empty() {
             match self.policy.mode {

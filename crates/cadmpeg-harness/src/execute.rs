@@ -62,11 +62,11 @@ pub struct ReportSummary {
 
 impl ReportSummary {
     /// Extract the judged facts from a successful decode's report.
-    fn from_report(report: &cadmpeg_ir::DecodeReport) -> ReportSummary {
-        let (ledger_present, ledger_valid) = match &report.source_fidelity {
-            Some(fidelity) => (true, fidelity.validate().is_ok()),
-            None => (false, true),
-        };
+    fn from_result(result: &DecodeResult) -> ReportSummary {
+        let report = &result.report;
+        let fidelity = &result.source_fidelity;
+        let ledger_present = fidelity.level != cadmpeg_ir::LedgerLevel::L0;
+        let ledger_valid = !ledger_present || fidelity.validate().is_ok();
         ReportSummary {
             losses: report.losses.len(),
             error_losses: report.error_count(),
@@ -185,7 +185,7 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
                 Ok(result) => RunOnce {
                     class: ResultClass::Ok,
                     digest: decode_digest(&result),
-                    report: Some(ReportSummary::from_report(&result.report)),
+                    report: Some(ReportSummary::from_result(&result)),
                 },
                 Err(error) => error_run(&error),
             }

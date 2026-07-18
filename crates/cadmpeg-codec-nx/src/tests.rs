@@ -3025,10 +3025,7 @@ fn source_fidelity_serialization_is_deterministic() {
 fn decode_installs_validated_source_fidelity_sidecar() {
     let mut cur = Cursor::new(prt_with_arrangements());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
-    let sidecar = result
-        .report
-        .source_fidelity
-        .expect("decode report carries the L1 source-fidelity sidecar");
+    let sidecar = result.source_fidelity;
     assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(sidecar.validate(), Ok(()));
 }

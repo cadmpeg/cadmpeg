@@ -2294,11 +2294,7 @@ fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
     assert_eq!(opaque.len(), 1);
     assert_eq!(opaque[0].id, "rhino:source:opaque#comment");
 
-    let sidecar = result
-        .report
-        .source_fidelity
-        .as_ref()
-        .expect("full decode reports a source-fidelity sidecar");
+    let sidecar = &result.source_fidelity;
     assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L2);
     assert_eq!(sidecar.capability, cadmpeg_ir::LedgerCapability::Accounted);
     assert_eq!(sidecar.spaces.len(), 1);

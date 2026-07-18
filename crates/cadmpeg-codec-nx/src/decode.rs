@@ -100,22 +100,20 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let mut report = build_container_report(&scan, true);
-        report.source_fidelity = Some(crate::accounting::ledger(&scan));
         issue_stream_tickets(ctx, source, &scan, &ir, &mut report);
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, &unknowns, &scan);
     }
 
     if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(ctx, source, &scan) {
         enforce_strict(ctx.mode(), &report)?;
-        return decode_result(ir, report, annotations, &unknowns);
+        return decode_result(ir, report, annotations, &unknowns, &scan);
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
-    report.source_fidelity = Some(crate::accounting::ledger(&scan));
     issue_stream_tickets(ctx, source, &scan, &ir, &mut report);
     enforce_strict(ctx.mode(), &report)?;
-    decode_result(ir, report, annotations, &unknowns)
+    decode_result(ir, report, annotations, &unknowns, &scan)
 }
 
 fn decode_result(
@@ -123,8 +121,9 @@ fn decode_result(
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
     unknowns: &[UnknownRecord],
+    scan: &Scan,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = report.source_fidelity.clone().unwrap_or_default();
+    let mut source_fidelity = crate::accounting::ledger(scan);
     source_fidelity.annotations = annotations;
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
@@ -677,7 +676,6 @@ fn try_decode_geometry(
     let mut annotations = annotations.build();
     retain_live_annotations(&ir, &unknowns, &mut annotations);
     let mut report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
-    report.source_fidelity = Some(crate::accounting::ledger(scan));
     issue_stream_tickets(ctx, source, scan, &ir, &mut report);
     Some((ir, report, annotations, unknowns))
 }
@@ -1523,7 +1521,6 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "nx".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1629,7 +1626,6 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "nx".to_string(),
         container_only,
         geometry_transferred: false,

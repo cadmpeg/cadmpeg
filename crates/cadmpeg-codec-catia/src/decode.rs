@@ -62,7 +62,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let mut report = build_container_report(&scan, true);
-        report.source_fidelity = Some(crate::ledger::container_ledger(&scan));
         crate::tickets::account_records(ctx, root, &ir, &mut report);
         return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
     }
@@ -121,12 +120,11 @@ fn finish_decode<'a>(
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
-    report.source_fidelity = Some(crate::ledger::container_ledger(scan));
     crate::tickets::account_records(ctx, root, &ir, &mut report);
     if !report.container_only {
         reject_unrepresentable_in_strict(ctx, &report)?;
     }
-    let mut source_fidelity = report.source_fidelity.clone().unwrap_or_default();
+    let mut source_fidelity = crate::ledger::container_ledger(scan);
     source_fidelity.annotations = annotations;
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
@@ -251,7 +249,6 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<Decoded> {
     let report = DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -379,7 +376,6 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<Decoded> {
         DecodeReport {
             retention_degraded: false,
             profile_versions: ProfileVersions::default(),
-            source_fidelity: None,
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
@@ -931,7 +927,6 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<Decoded> {
         DecodeReport {
             retention_degraded: false,
             profile_versions: ProfileVersions::default(),
-            source_fidelity: None,
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
@@ -1865,7 +1860,6 @@ fn build_geometry_report(
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -2002,7 +1996,6 @@ fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> Dec
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,

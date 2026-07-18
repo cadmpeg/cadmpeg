@@ -61,7 +61,6 @@ fn result_with_bodies(ids: &[&str]) -> DecodeResult {
         notes: Vec::new(),
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
     };
     DecodeResult::new(ir, report)
 }
@@ -620,7 +619,7 @@ fn source_ledger(length: u64, class: crate::source_fidelity::SpanClass) -> Decod
     };
 
     let mut result = dummy_result();
-    result.report.source_fidelity = Some(SourceFidelity::new(
+    result.source_fidelity = SourceFidelity::new(
         LedgerLevel::L1,
         LedgerCapability::Accounted,
         vec![AddressSpaceLedger {
@@ -639,7 +638,7 @@ fn source_ledger(length: u64, class: crate::source_fidelity::SpanClass) -> Decod
                 retained: None,
             }],
         }],
-    ));
+    );
     result
 }
 

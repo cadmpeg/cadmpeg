@@ -572,8 +572,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let (mut ir, dropped_losses, annotations, unknowns) = build_ir(ctx, space, &scan)?;
     let mut report = build_report(&scan, ctx.container_only());
     report.losses.extend(dropped_losses);
-    report.source_fidelity = Some(fidelity::coarse_ledger(&scan)?);
-    let mut source_fidelity = report.source_fidelity.clone().unwrap_or_default();
+    let mut source_fidelity = fidelity::coarse_ledger(&scan)?;
     source_fidelity.annotations = annotations;
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
@@ -1271,7 +1270,6 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
     DecodeReport {
         retention_degraded: false,
         profile_versions: ProfileVersions::default(),
-        source_fidelity: None,
         format: "creo".to_string(),
         container_only,
         geometry_transferred: !scan.datum_planes.is_empty() || placed_plane_count != 0,

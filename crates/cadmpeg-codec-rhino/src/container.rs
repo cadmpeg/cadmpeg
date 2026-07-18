@@ -691,7 +691,6 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
         DecodeReport {
             retention_degraded: false,
             profile_versions: ProfileVersions::default(),
-            source_fidelity: Some(crate::fidelity::ledger(scan)),
             format: "rhino".to_string(),
             container_only: true,
             geometry_transferred: false,
