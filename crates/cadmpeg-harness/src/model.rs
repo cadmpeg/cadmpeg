@@ -8,7 +8,7 @@ use cadmpeg_ir::{Confidence, DecodePolicy};
 
 /// One decode-platform entry point exercised by the sweep.
 ///
-/// The four operations are distinct oracle surfaces: detection reads only a
+/// The four operations exercise distinct surfaces: detection reads only a
 /// prefix, inspection walks the container directory, container-only decode
 /// stops at the container layer, and full decode drives entity decode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

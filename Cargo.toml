@@ -104,10 +104,10 @@ missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 module_name_repetitions = "allow"
 
-# Allocation ratchet: `clippy.toml` lists the growth methods
+# `clippy.toml` lists growth methods
 # (`Vec::with_capacity`, `reserve`, `resize`, `repeat_n`, ...) that a decoder
 # must not call on an unfloored, attacker-controlled count. The workspace
-# baseline stays `allow` because some encoders and decoders use
+# workspace setting stays `allow` because some encoders and decoders use
 # these methods with trusted counts. Hardened decoder modules re-enable the
 # lint with `#![deny(clippy::disallowed_methods)]`.
 disallowed_methods = "allow"

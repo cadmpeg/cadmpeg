@@ -19,7 +19,7 @@ pub const CODEC_IDS: &[&str] = &["f3d", "sldprt", "catia", "creo", "nx", "rhino"
 
 /// The machine-readable result the child writes to stdout.
 ///
-/// The parent driver fills the oracle verdicts around this; the child reports
+/// The parent driver applies subprocess checks around this; the child reports
 /// only what it can measure from inside its own process. The determinism
 /// comparison runs entirely in-child (both runs share the process), so only
 /// its verdict crosses the pipe, not the per-run digests it compares.

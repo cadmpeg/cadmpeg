@@ -18,7 +18,7 @@ pub const ENV_CORPUS: &str = "CADMPEG_HARNESS_CORPUS";
 pub struct Fixture {
     /// Owning codec id.
     pub codec_id: String,
-    /// Path relative to the corpus root, used as the baseline `fixture` key.
+    /// Path relative to the corpus root, used in result labels.
     pub rel_path: String,
     /// Absolute path on disk.
     pub abs_path: PathBuf,

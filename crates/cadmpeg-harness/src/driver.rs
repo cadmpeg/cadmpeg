@@ -6,7 +6,6 @@
 //! forever; the parent observes each of those as an exit status or a timeout
 //! kill rather than a crashed or hung test process.
 
-use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -14,8 +13,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::execute::RunnerOutcome;
+use crate::limits::RunLimits;
 use crate::model::{Operation, PolicyProfile};
-use crate::oracle::{Oracle, OracleLimits, OracleStatus};
 
 /// The identity of one subprocess run.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -50,13 +49,19 @@ impl RunKey {
     }
 }
 
-/// The parent's judgment of one run.
+/// The measured result of one run.
 #[derive(Debug, Clone)]
 pub struct RunResult {
     /// Identity of the run.
     pub key: RunKey,
-    /// Each oracle's verdict.
-    pub oracles: BTreeMap<Oracle, OracleStatus>,
+    /// Whether the child exited successfully with a valid outcome.
+    pub exited_cleanly: bool,
+    /// Whether peak allocation was measured and stayed within its limit.
+    pub peak_within_limit: Option<bool>,
+    /// Whether elapsed time stayed within its limit.
+    pub completed_in_time: bool,
+    /// Whether two executions produced identical results, when measured.
+    pub deterministic: Option<bool>,
     /// Classified result label, when the child reported one.
     pub result_class: Option<String>,
     /// Peak process allocation the child measured, when it reported an outcome.
@@ -70,9 +75,30 @@ pub struct RunResult {
 }
 
 impl RunResult {
-    /// Whether every oracle passed.
+    /// Whether every check passed.
     pub fn all_pass(&self) -> bool {
-        self.oracles.values().all(|s| *s == OracleStatus::Pass)
+        self.exited_cleanly
+            && self.peak_within_limit == Some(true)
+            && self.completed_in_time
+            && self.deterministic == Some(true)
+    }
+
+    /// Labels for failed or unavailable checks.
+    pub fn failures(&self) -> Vec<&'static str> {
+        let mut failures = Vec::new();
+        if !self.exited_cleanly {
+            failures.push("exit");
+        }
+        if self.peak_within_limit != Some(true) {
+            failures.push("peak_alloc");
+        }
+        if !self.completed_in_time {
+            failures.push("wall_clock");
+        }
+        if self.deterministic != Some(true) {
+            failures.push("determinism");
+        }
+        failures
     }
 }
 
@@ -88,7 +114,7 @@ fn drain<R: Read + Send + 'static>(mut reader: Option<R>) -> thread::JoinHandle<
     })
 }
 
-/// Run one job in a child process and judge it against the oracles.
+/// Run one job in a child process and apply the resource and repeatability checks.
 ///
 /// `runner` is the `harness-runner` executable path (an integration test passes
 /// `env!("CARGO_BIN_EXE_harness-runner")`). `bytes` is the exact — possibly
@@ -97,7 +123,7 @@ pub fn run_job(
     runner: &Path,
     key: RunKey,
     bytes: &[u8],
-    limits: &OracleLimits,
+    limits: &RunLimits,
 ) -> std::io::Result<RunResult> {
     let mut child = Command::new(runner)
         .arg(&key.codec)
@@ -158,46 +184,25 @@ pub fn run_job(
         serde_json::from_slice(&stdout).ok()
     };
 
-    let mut oracles = BTreeMap::new();
-
     // No panic/abort: a normal `Err(CodecError)` still exits 0 with an outcome;
     // only a panic, an abort, or a signal produces a broken exit. A timeout is
-    // the wall-clock oracle's business, not this one.
-    let no_panic = if timed_out {
-        OracleStatus::Unevaluated
-    } else if status.is_some_and(|s| s.success()) && outcome.is_some() {
-        OracleStatus::Pass
-    } else {
-        OracleStatus::Fail
-    };
-    oracles.insert(Oracle::NoPanic, no_panic);
+    // the wall-clock check's business, not this one.
+    let exited_cleanly = !timed_out && status.is_some_and(|s| s.success()) && outcome.is_some();
 
-    let wall_clock = if timed_out || elapsed > limits.wall_clock {
-        OracleStatus::Fail
-    } else {
-        OracleStatus::Pass
-    };
-    oracles.insert(Oracle::WallClock, wall_clock);
+    let completed_in_time = !timed_out && elapsed <= limits.wall_clock;
 
-    let peak_alloc = match &outcome {
-        Some(outcome) if outcome.peak_alloc_bytes <= limits.peak_envelope_bytes => {
-            OracleStatus::Pass
-        }
-        Some(_) => OracleStatus::Fail,
-        None => OracleStatus::Unevaluated,
-    };
-    oracles.insert(Oracle::PeakAlloc, peak_alloc);
+    let peak_within_limit = outcome
+        .as_ref()
+        .map(|outcome| outcome.peak_alloc_bytes <= limits.peak_bytes);
 
-    let determinism = match &outcome {
-        Some(outcome) if outcome.determinism_ok => OracleStatus::Pass,
-        Some(_) => OracleStatus::Fail,
-        None => OracleStatus::Unevaluated,
-    };
-    oracles.insert(Oracle::Determinism, determinism);
+    let deterministic = outcome.as_ref().map(|outcome| outcome.determinism_ok);
 
     Ok(RunResult {
         key,
-        oracles,
+        exited_cleanly,
+        peak_within_limit,
+        completed_in_time,
+        deterministic,
         result_class: outcome.as_ref().map(|o| o.result_class.clone()),
         peak_alloc_bytes: outcome.as_ref().map(|o| o.peak_alloc_bytes),
         elapsed,

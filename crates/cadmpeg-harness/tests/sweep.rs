@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The exhaustive stage-1 truncation and mutation sweep.
+//! Truncation and mutation sweeps.
 //!
 //! Ignored by default so `cargo test` stays fast; run it deliberately:
 //!
@@ -10,7 +10,7 @@
 //! Every discovered fixture is truncated at each boundary neighbourhood, at
 //! stratified offsets, and (below the size threshold) at every byte, and
 //! single-byte-mutated at header/count positions. Each derived input runs
-//! through all four operations under both profiles; any oracle failure is a
+//! through all four operations under both profiles; any check failure is a
 //! sweep failure. `CADMPEG_HARNESS_SWEEP_LIMIT` caps the number of derived
 //! inputs for a quick smoke.
 
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use cadmpeg_harness::boundary::provider_for;
 use cadmpeg_harness::driver::{run_job, RunKey};
 use cadmpeg_harness::fixtures::{default_corpus_root, discover};
-use cadmpeg_harness::oracle::OracleLimits;
+use cadmpeg_harness::limits::RunLimits;
 use cadmpeg_harness::sweep::all_cases;
 use cadmpeg_harness::{Operation, PolicyProfile};
 
@@ -33,7 +33,7 @@ const ENV_SMOKE_PER_FIXTURE: &str = "CADMPEG_HARNESS_SMOKE_PER_FIXTURE";
 /// Default number selected from each case family.
 const DEFAULT_SMOKE_PER_FIXTURE: usize = 1;
 
-/// A bounded truncation sweep that runs in the fast gate, unlike [`full_sweep`].
+/// A bounded truncation and mutation sweep that runs in the fast test suite.
 #[test]
 fn sweep_smoke() {
     let corpus = default_corpus_root();
@@ -49,7 +49,7 @@ fn sweep_smoke() {
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(DEFAULT_SMOKE_PER_FIXTURE);
 
-    let limits = OracleLimits::from_env();
+    let limits = RunLimits::from_env();
     let mut covered = 0usize;
     let mut failures = Vec::new();
 
@@ -82,15 +82,11 @@ fn sweep_smoke() {
                 let result =
                     run_job(&runner(), key.clone(), &case.bytes, &limits).expect("run smoke job");
                 if !result.all_pass() {
-                    let broken: Vec<String> = result
-                        .oracles
-                        .iter()
-                        .filter(|(_, status)| {
-                            **status != cadmpeg_harness::oracle::OracleStatus::Pass
-                        })
-                        .map(|(oracle, status)| format!("{}={}", oracle.label(), status.label()))
-                        .collect();
-                    failures.push(format!("{} [{}]", key.joined(), broken.join(",")));
+                    failures.push(format!(
+                        "{} [{}]",
+                        key.joined(),
+                        result.failures().join(",")
+                    ));
                 }
             }
         }
@@ -103,14 +99,14 @@ fn sweep_smoke() {
     );
     assert!(
         failures.is_empty(),
-        "sweep-smoke oracle failures ({}):\n{}",
+        "sweep-smoke failures ({}):\n{}",
         failures.len(),
         failures.join("\n")
     );
 }
 
 #[test]
-#[ignore = "exhaustive sweep; run deliberately, not in the fast gate"]
+#[ignore = "exhaustive sweep; run deliberately"]
 fn full_sweep() {
     let corpus = default_corpus_root();
     let fixtures = discover(&corpus).expect("discover fixtures");
@@ -120,7 +116,7 @@ fn full_sweep() {
         corpus.display()
     );
 
-    let limits = OracleLimits::from_env();
+    let limits = RunLimits::from_env();
     let case_limit = std::env::var("CADMPEG_HARNESS_SWEEP_LIMIT")
         .ok()
         .and_then(|value| value.parse::<usize>().ok());
@@ -147,20 +143,10 @@ fn full_sweep() {
                         .expect("run sweep job");
                     runs += 1;
                     if !result.all_pass() {
-                        let broken: Vec<String> = result
-                            .oracles
-                            .iter()
-                            .filter(|(_, status)| {
-                                **status != cadmpeg_harness::oracle::OracleStatus::Pass
-                            })
-                            .map(|(oracle, status)| {
-                                format!("{}={}", oracle.label(), status.label())
-                            })
-                            .collect();
                         failures.push(format!(
                             "{} [{}]{}",
                             key.joined(),
-                            broken.join(","),
+                            result.failures().join(","),
                             if result.stderr.is_empty() {
                                 String::new()
                             } else {
@@ -179,7 +165,7 @@ fn full_sweep() {
     );
     assert!(
         failures.is_empty(),
-        "sweep oracle failures ({}):\n{}",
+        "sweep failures ({}):\n{}",
         failures.len(),
         failures.join("\n")
     );

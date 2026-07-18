@@ -20,7 +20,7 @@
 //! - [`sweep`] turns a fixture plus its boundaries into truncation and
 //!   single-byte mutation cases.
 //! - [`fixtures`] discovers per-codec inputs from the checked-in corpora.
-//! - [`oracle`] defines the subprocess checks and their resource envelopes.
+//! - [`limits`] defines subprocess resource limits.
 //!
 //! # Checks
 //!
@@ -49,7 +49,7 @@ pub mod boundary;
 pub mod driver;
 pub mod execute;
 pub mod fixtures;
-pub mod oracle;
+pub mod limits;
 pub mod sweep;
 
 mod model;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Turning a fixture and its boundaries into truncation and mutation cases.
 //!
-//! Two families, per the stage-1 design:
+//! Two case families:
 //!
 //! - **Truncation**: at every recognized boundary offset minus one, at it, and
 //!   plus one; at a fixed set of stratified fractions of the length; and, only
@@ -143,7 +143,7 @@ pub fn mutation_cases(bytes: &[u8], boundaries: &[Boundary]) -> Vec<SweepCase> {
     out
 }
 
-/// The full stage-1 case set for one fixture: truncations then mutations.
+/// The full case set for one fixture: truncations then mutations.
 pub fn all_cases(provider: &dyn BoundaryProvider, bytes: &[u8]) -> Vec<SweepCase> {
     let boundaries = provider.boundaries(bytes);
     let mut cases = truncation_cases(bytes, &boundaries);
