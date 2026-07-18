@@ -5900,7 +5900,7 @@ fn decode_projects_groove_class_as_cut_revolution() {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss
                 .message
-                .contains("1 revolution, 0 sweep, and 0 sketch feature(s)")
+                .contains("1 revolution, 0 sweep, 0 shell, and 0 sketch feature(s)")
     }));
 }
 
@@ -5929,7 +5929,7 @@ fn decode_projects_sketch_class_as_unresolved_sketch_node() {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss
                 .message
-                .contains("0 revolution, 0 sweep, and 1 sketch feature(s)")
+                .contains("0 revolution, 0 sweep, 0 shell, and 1 sketch feature(s)")
     }));
 }
 
@@ -5963,9 +5963,38 @@ fn decode_projects_rib_and_slot_classes_as_solid_sweeps() {
             loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
                 && loss
                     .message
-                    .contains("0 revolution, 1 sweep, and 0 sketch feature(s)")
+                    .contains("0 revolution, 1 sweep, 0 shell, and 0 sketch feature(s)")
         }));
     }
+}
+
+#[test]
+fn decode_projects_shell_class_with_unresolved_operands() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_design_class("Shell")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated Shell design");
+
+    assert!(matches!(
+        decoded.ir.model.features.as_slice(),
+        [cadmpeg_ir::features::Feature {
+            name: Some(name),
+            definition: cadmpeg_ir::features::FeatureDefinition::Shell {
+                removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                thickness: None,
+                ..
+            },
+            ..
+        }] if name == "Shell"
+    ));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss
+                .message
+                .contains("0 revolution, 0 sweep, 1 shell, and 0 sketch feature(s)")
+    }));
 }
 
 #[test]

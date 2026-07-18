@@ -15,8 +15,8 @@ use cadmpeg_ir::annotations::{ExactnessNote, Provenance};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    BooleanOp, Feature, FeatureDefinition, FeatureId, RevolutionConstruction, SketchSpace,
-    SweepMode,
+    BooleanOp, FaceSelection, Feature, FeatureDefinition, FeatureId, RevolutionConstruction,
+    SketchSpace, SweepMode,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -104,8 +104,7 @@ fn finish_decode(
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
-    let (transferred_revolutions, transferred_sweeps, transferred_sketches) =
-        transfer_design_features(&mut ir, &native, &mut annotations);
+    let transferred = transfer_design_features(&mut ir, &native, &mut annotations);
     let object_record_count = native
         .object_graphs
         .iter()
@@ -121,9 +120,13 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {transferred_revolutions} revolution, {transferred_sweeps} sweep, and {transferred_sketches} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} shell, and {} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
                 native.design_objects.len(),
-                native.value_blocks.len()
+                native.value_blocks.len(),
+                transferred.revolutions,
+                transferred.sweeps,
+                transferred.shells,
+                transferred.sketches,
             ),
             provenance: None,
         });
@@ -136,7 +139,7 @@ fn transfer_design_features(
     ir: &mut CadIr,
     native: &CatiaNative,
     annotations: &mut cadmpeg_ir::Annotations,
-) -> (usize, usize, usize) {
+) -> TransferredDesignCounts {
     let recognized = native
         .design_objects
         .iter()
@@ -150,6 +153,7 @@ fn transfer_design_features(
                         "Shaft" => Some(("Shaft", CatiaFeatureKind::Revolve(BooleanOp::Join))),
                         "Rib" => Some(("Rib", CatiaFeatureKind::Sweep(BooleanOp::Join))),
                         "Slot" => Some(("Slot", CatiaFeatureKind::Sweep(BooleanOp::Cut))),
+                        "Shell" => Some(("Shell", CatiaFeatureKind::Shell)),
                         "Sketch" => Some(("Sketch", CatiaFeatureKind::Sketch)),
                         _ => None,
                     });
@@ -158,7 +162,7 @@ fn transfer_design_features(
         })
         .collect::<Vec<_>>();
     if recognized.is_empty() {
-        return (0, 0, 0);
+        return TransferredDesignCounts::default();
     }
     let stream = annotations
         .streams
@@ -177,9 +181,7 @@ fn transfer_design_features(
         .map(|record| (record.id.as_str(), record.byte_offset))
         .collect::<HashMap<_, _>>();
 
-    let mut revolution_count = 0;
-    let mut sweep_count = 0;
-    let mut sketch_count = 0;
+    let mut counts = TransferredDesignCounts::default();
     for (ordinal, (object, (family, kind))) in recognized.into_iter().enumerate() {
         let key = object
             .id
@@ -200,7 +202,7 @@ fn transfer_design_features(
             outputs: Vec::new(),
             definition: match kind {
                 CatiaFeatureKind::Revolve(op) => {
-                    revolution_count += 1;
+                    counts.revolutions += 1;
                     FeatureDefinition::Revolve {
                         construction: RevolutionConstruction {
                             profile: None,
@@ -216,7 +218,7 @@ fn transfer_design_features(
                     }
                 }
                 CatiaFeatureKind::Sweep(op) => {
-                    sweep_count += 1;
+                    counts.sweeps += 1;
                     FeatureDefinition::Sweep {
                         profile: None,
                         sections: Vec::new(),
@@ -232,8 +234,20 @@ fn transfer_design_features(
                         allow_multi_profile_faces: None,
                     }
                 }
+                CatiaFeatureKind::Shell => {
+                    counts.shells += 1;
+                    FeatureDefinition::Shell {
+                        removed_faces: FaceSelection::Unresolved,
+                        thickness: None,
+                        outward: None,
+                        mode: None,
+                        join: None,
+                        resolve_intersections: None,
+                        allow_self_intersections: None,
+                    }
+                }
                 CatiaFeatureKind::Sketch => {
-                    sketch_count += 1;
+                    counts.sketches += 1;
                     FeatureDefinition::Sketch {
                         space: SketchSpace::default(),
                         sketch: None,
@@ -262,14 +276,23 @@ fn transfer_design_features(
             },
         );
     }
-    (revolution_count, sweep_count, sketch_count)
+    counts
 }
 
 #[derive(Clone, Copy)]
 enum CatiaFeatureKind {
     Revolve(BooleanOp),
     Sweep(BooleanOp),
+    Shell,
     Sketch,
+}
+
+#[derive(Default)]
+struct TransferredDesignCounts {
+    revolutions: usize,
+    sweeps: usize,
+    shells: usize,
+    sketches: usize,
 }
 
 fn decode_result(
