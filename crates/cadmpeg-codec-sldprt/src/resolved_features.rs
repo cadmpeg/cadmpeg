@@ -714,6 +714,26 @@ mod marker_tests {
             0x00, 0x65,
         ]);
         payload.extend([0; 80]);
+        let component_start = payload.len();
+        let mut component = [0u8; 138];
+        component[..4].copy_from_slice(&549u32.to_le_bytes());
+        component[14] = 1;
+        for (offset, value) in [
+            (15, 1.0),
+            (23, 0.0),
+            (31, 0.0),
+            (39, 0.0),
+            (47, 1.0),
+            (55, 0.0),
+            (63, 0.0),
+            (71, 0.0),
+            (79, 1.0),
+        ] {
+            component[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        component[122..126].copy_from_slice(&4u32.to_le_bytes());
+        component[126..130].fill(0xff);
+        payload.extend(component);
         let profile_start = payload.len();
         payload.extend([0xaa; 64]);
 
@@ -725,6 +745,15 @@ mod marker_tests {
                 payload.len(),
             ),
             Some(2)
+        );
+        assert_eq!(
+            compact_profile_reference_plane_source(
+                &payload,
+                component_start,
+                component_start,
+                payload.len(),
+            ),
+            Some(549)
         );
     }
 
@@ -5576,28 +5605,7 @@ pub(crate) fn project_compact_sketch_profiles(
         .flat_map(|history| &history.features)
         .map(|feature| (feature.id.as_str(), feature))
         .collect::<HashMap<_, _>>();
-    let plane_frames = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(|feature| {
-            let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
-            let neutral = features
-                .iter()
-                .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?;
-            let frame = match neutral.definition {
-                cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
-                    principal_sketch_frame(plane)
-                }
-                cadmpeg_ir::features::FeatureDefinition::DatumPlane {
-                    origin,
-                    normal,
-                    u_axis,
-                } => (origin, normal, u_axis),
-                _ => return None,
-            };
-            Some((source, frame))
-        })
-        .collect::<HashMap<_, _>>();
+    let plane_frames = sketch_plane_frames(features, histories);
 
     for lane in lanes {
         let mut objects = native_features
@@ -5974,6 +5982,185 @@ pub(crate) fn project_compact_sketch_profiles(
     }
 }
 
+/// Materialize planar sketch ownership and construction geometry when marker
+/// records have a unique reference-plane frame but no solved profile stream.
+pub(crate) fn project_marker_backed_sketches(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &mut Vec<Sketch>,
+    sketch_entities: &mut Vec<SketchEntity>,
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let plane_frames = sketch_plane_frames(features, histories);
+    for lane in lanes {
+        let mut objects = native_features
+            .values()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
+            .collect::<Vec<_>>();
+        objects.sort_by_key(|(offset, _)| *offset);
+        for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
+            let Some(feature_index) = features.iter().position(|feature| {
+                feature.native_ref.as_deref() == Some(native_feature.id.as_str())
+                    && matches!(
+                        feature.definition,
+                        cadmpeg_ir::features::FeatureDefinition::Sketch {
+                            space: cadmpeg_ir::features::SketchSpace::Planar,
+                            sketch: None,
+                        }
+                    )
+            }) else {
+                continue;
+            };
+            let markers = lane
+                .sketch_entities
+                .iter()
+                .filter(|marker| {
+                    marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
+                        && marker.coordinates_m.is_some()
+                        && matches!(
+                            marker.kind,
+                            SketchInputKind::Point
+                                | SketchInputKind::ConstrainedPoint
+                                | SketchInputKind::LineOrCircle
+                                | SketchInputKind::Arc
+                        )
+                })
+                .collect::<Vec<_>>();
+            if markers.is_empty() {
+                continue;
+            }
+            let end = objects
+                .get(object_index + 1)
+                .map_or(lane.native_payload.len() as u64, |(offset, _)| *offset);
+            let context_start = object_index
+                .checked_sub(1)
+                .and_then(|index| objects.get(index))
+                .map_or(0, |(offset, _)| *offset);
+            let (Ok(context_start), Ok(start), Ok(end)) = (
+                usize::try_from(context_start),
+                usize::try_from(start),
+                usize::try_from(end),
+            ) else {
+                continue;
+            };
+            let Some(source_id) = compact_profile_reference_plane_source(
+                &lane.native_payload,
+                context_start,
+                start,
+                end,
+            ) else {
+                continue;
+            };
+            let Some(&(origin, normal, u_axis)) = plane_frames.get(&source_id) else {
+                continue;
+            };
+            let lane_key = lane
+                .id
+                .rsplit_once('#')
+                .map_or(lane.id.as_str(), |(_, key)| key);
+            let sketch_id = SketchId(format!(
+                "sldprt:model:sketch#markers:{lane_key}:{}",
+                native_feature.ordinal
+            ));
+            let sketch = Sketch {
+                id: sketch_id.clone(),
+                name: Some(native_feature.name.clone()),
+                configuration: lane.configuration.clone(),
+                origin,
+                normal,
+                u_axis,
+                profiles: Vec::new(),
+                native_ref: Some(lane.id.clone()),
+            };
+            let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
+                continue;
+            };
+            let projected = markers
+                .into_iter()
+                .filter_map(|marker| {
+                    let [u, v] = marker.coordinates_m?;
+                    let point = transform.apply(quantize(
+                        Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
+                        QUANTUM,
+                    ))?;
+                    let point = Point2::new(point.0 as f64 * QUANTUM, point.1 as f64 * QUANTUM);
+                    let geometry = match marker.kind {
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                            SketchGeometry::Point { position: point }
+                        }
+                        SketchInputKind::LineOrCircle | SketchInputKind::Arc => {
+                            SketchGeometry::Native {
+                                native_kind: format!(
+                                    "sldprt:marker-geometry:{}",
+                                    marker.kind.native_code()
+                                ),
+                            }
+                        }
+                        SketchInputKind::Relation(_) | SketchInputKind::Native(_) => return None,
+                    };
+                    Some(SketchEntity {
+                        id: SketchEntityId(format!(
+                            "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
+                            native_feature.ordinal, marker.ordinal
+                        )),
+                        sketch: sketch_id.clone(),
+                        construction: true,
+                        native_ref: Some(marker.id.clone()),
+                        geometry_ref: None,
+                        endpoint_refs: Vec::new(),
+                        geometry,
+                    })
+                })
+                .collect::<Vec<_>>();
+            if projected.is_empty() {
+                continue;
+            }
+            sketch_entities.extend(projected);
+            sketches.push(sketch);
+            features[feature_index].definition = cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: cadmpeg_ir::features::SketchSpace::Planar,
+                sketch: Some(sketch_id),
+            };
+        }
+    }
+}
+
+fn sketch_plane_frames(
+    features: &[cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+) -> HashMap<u32, (Point3, Vector3, Vector3)> {
+    histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| {
+            let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
+            let neutral = features
+                .iter()
+                .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?;
+            let frame = match neutral.definition {
+                cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
+                    principal_sketch_frame(plane)
+                }
+                cadmpeg_ir::features::FeatureDefinition::DatumPlane {
+                    origin,
+                    normal,
+                    u_axis,
+                } => (origin, normal, u_axis),
+                _ => return None,
+            };
+            Some((source, frame))
+        })
+        .collect()
+}
+
 fn ordered_rectangle_corners(points: &[Point2]) -> Option<[Point2; 4]> {
     let [_, _, _, _] = points else {
         return None;
@@ -6227,29 +6414,7 @@ fn compact_line_chain_addresses(payload: &[u8]) -> Option<Vec<u16>> {
 }
 
 fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
-    const CLASS: &[u8] = b"moCompRefPlane_c";
-    let class_count = payload
-        .windows(CLASS.len())
-        .filter(|bytes| *bytes == CLASS)
-        .count();
-    let declared = (class_count == 1)
-        .then(|| {
-            payload.windows(67).filter_map(|bytes| {
-                let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
-                (source != 0
-                    && bytes.get(8..12) == Some(&[0, 0, 3, 0])
-                    && bytes.get(12..39)?.iter().all(|byte| *byte == 0)
-                    && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
-                    && bytes.get(47..63)
-                        == Some(&[
-                            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00,
-                            0x00, 0x00, 0x00, 0x65,
-                        ]))
-                .then_some(source)
-            })
-        })
-        .into_iter()
-        .flatten();
+    let declared = compact_declared_reference_plane_source(payload).into_iter();
     let component = payload.windows(138).filter_map(|bytes| {
         let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
         let scalar = |offset| {
@@ -6285,6 +6450,36 @@ fn compact_reference_plane_source(payload: &[u8]) -> Option<u32> {
     matches.next().is_none().then_some(source)
 }
 
+fn compact_declared_reference_plane_source(payload: &[u8]) -> Option<u32> {
+    const CLASS: &[u8] = b"moCompRefPlane_c";
+    let class_count = payload
+        .windows(CLASS.len())
+        .filter(|bytes| *bytes == CLASS)
+        .count();
+    if class_count != 1 {
+        return None;
+    }
+    let matches = payload
+        .windows(67)
+        .filter_map(|bytes| {
+            let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+            (source != 0
+                && bytes.get(8..12) == Some(&[0, 0, 3, 0])
+                && bytes.get(12..39)?.iter().all(|byte| *byte == 0)
+                && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
+                && bytes.get(47..63)
+                    == Some(&[
+                        0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00,
+                        0x00, 0x00, 0x00, 0x65,
+                    ]))
+            .then_some(source)
+        })
+        .collect::<HashSet<_>>();
+    let mut matches = matches.into_iter();
+    let source = matches.next()?;
+    matches.next().is_none().then_some(source)
+}
+
 fn compact_profile_reference_plane_source(
     payload: &[u8],
     context_start: usize,
@@ -6298,6 +6493,7 @@ fn compact_profile_reference_plane_source(
                 .get(context_start..profile_end)
                 .and_then(compact_reference_plane_source)
         })
+        .or_else(|| compact_declared_reference_plane_source(payload))
         .or_else(|| compact_reference_plane_source(payload))
 }
 
@@ -12714,10 +12910,11 @@ mod profile_join_tests {
         dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
         line_reference_direction, marker_entities, marker_point_locus, owned_relation_parameters,
         profile_loci_by_marker, project_dimensioned_sketch_geometry,
-        project_relation_point_geometry, project_relation_solved_point_geometry,
-        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
-        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
-        single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
+        project_marker_backed_sketches, project_relation_point_geometry,
+        project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
+        relation_parameter_by_display_name, resolved_marker_locus,
+        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
+        sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
@@ -12809,6 +13006,152 @@ mod profile_join_tests {
             relation_operand_marker(&relation, 0, &SketchId("sketch".into()), &markers),
             Some("stored-marker")
         );
+    }
+
+    #[test]
+    fn marker_backed_sketch_retains_unsolved_curves_and_projects_points() {
+        let native_feature = |id: &str, source_id: &str, name: &str| NativeFeature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(source_id.into()),
+            parent_source_id: None,
+            ordinal: source_id.parse().unwrap(),
+            name: name.into(),
+            kind: String::new(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                native_feature("plane-native", "2", "Front Plane"),
+                native_feature("sketch-native", "7", "Sketch1"),
+            ],
+        };
+        let feature = |id: &str, native_ref: &str, ordinal, definition| Feature {
+            id: FeatureId(id.into()),
+            ordinal,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: Some(native_ref.into()),
+        };
+        let mut features = vec![
+            feature(
+                "plane",
+                "plane-native",
+                0,
+                FeatureDefinition::DatumPrincipalPlane {
+                    plane: cadmpeg_ir::features::PrincipalPlane::Front,
+                },
+            ),
+            feature(
+                "sketch",
+                "sketch-native",
+                1,
+                FeatureDefinition::Sketch {
+                    space: SketchSpace::Planar,
+                    sketch: None,
+                },
+            ),
+        ];
+        let mut payload = vec![0; 100];
+        payload.extend_from_slice(b"moCompRefPlane_c");
+        payload.extend([0; 12]);
+        payload.extend(2u32.to_le_bytes());
+        payload.extend(0x6554_f1b8_u32.to_le_bytes());
+        payload.extend([0, 0, 3, 0]);
+        payload.extend([0; 27]);
+        payload.extend(1.0f64.to_le_bytes());
+        payload.extend([
+            0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+            0x00, 0x65,
+        ]);
+        payload.extend([0; 32]);
+        let mut point = marker("point", Some([0.001, 0.002]));
+        point.feature_ref = Some("sketch-native".into());
+        let mut curve = marker("curve", Some([0.003, 0.004]));
+        curve.feature_ref = Some("sketch-native".into());
+        curve.ordinal = 1;
+        curve.kind = SketchInputKind::LineOrCircle;
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: vec![
+                FeatureInputName {
+                    id: "plane-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: 0,
+                    value: "Front Plane".into(),
+                    object_id: Some(2),
+                },
+                FeatureInputName {
+                    id: "sketch-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 1,
+                    offset: 100,
+                    value: "Sketch1".into(),
+                    object_id: Some(7),
+                },
+            ],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![point, curve],
+        };
+        let mut sketches = Vec::new();
+        let mut entities = Vec::new();
+        project_marker_backed_sketches(
+            &mut features,
+            &mut sketches,
+            &mut entities,
+            &[history],
+            &[lane],
+        );
+
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(entities.len(), 2);
+        assert!(matches!(
+            entities[0].geometry,
+            SketchGeometry::Point { position }
+                if position == Point2::new(-2.0, 1.0)
+        ));
+        assert!(matches!(
+            entities[1].geometry,
+            SketchGeometry::Native { .. }
+        ));
+        assert!(matches!(
+            features[1].definition,
+            FeatureDefinition::Sketch {
+                sketch: Some(_),
+                ..
+            }
+        ));
     }
 
     #[test]
