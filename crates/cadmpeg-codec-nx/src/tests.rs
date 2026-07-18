@@ -3227,7 +3227,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             side: None,
         }
     ));
-    for kind in ["Pattern Feature", "Pattern Geometry"] {
+    for kind in ["Pattern Feature", "Pattern Geometry", "Geometry Instance"] {
         assert!(matches!(
             crate::decode::non_boolean_feature_definition(kind, &[], None, None, None),
             FeatureDefinition::Pattern {

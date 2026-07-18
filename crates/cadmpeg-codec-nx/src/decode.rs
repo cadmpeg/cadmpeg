@@ -11416,10 +11416,12 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             thickness: None,
             side: None,
         },
-        "Pattern Feature" | "Pattern Geometry" => FeatureDefinition::Pattern {
-            seeds: Vec::new(),
-            pattern: PatternKind::Unresolved { form: None },
-        },
+        "Pattern Feature" | "Pattern Geometry" | "Geometry Instance" => {
+            FeatureDefinition::Pattern {
+                seeds: Vec::new(),
+                pattern: PatternKind::Unresolved { form: None },
+            }
+        }
         _ => FeatureDefinition::Native {
             kind: kind.to_string(),
             parameters: native_parameters,
