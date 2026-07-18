@@ -536,6 +536,8 @@ The shifted-disc18 layout uses one `0x20/flo2` region with a slot-1 sentinel and
 
 The disc1e-root layout uses one `0x1e/flo2` region with a slot-1 sentinel and the chain `0x1e.slot2 -> 0x1a`, `0x1a.slot2 -> 0x18`, `0x18.slot2 -> 0x16`, and `0x16.slot2 -> 0x12`. The `0x16` record is the shell root. `0x12.slot2` begins a nonempty chain of `0x10/flo2` records linked through slot 2 and terminated by a sentinel. A complete chain assigns every canonical `0x0e/flo1` face in the site to that shell.
 
+The disc12-face layout uses one `0x1a/flo2` region with a slot-1 sentinel and the chain `0x1a.slot2 -> 0x18`, `0x18.slot2 -> 0x16`, `0x16.slot2 -> 0x10`, `0x10.slot2 -> 0x0e`, and `0x0e.slot2 -> 0x04`. The `0x16` record is the shell root. A complete chain assigns every canonical `0x12/flo1` face in the site to that shell.
+
 Sites whose entity families fall outside these disc layouts carry the same ownership content in a class-number-independent form. The bridge owner field names a canonical face entity whose slot 0 is the bridge attribute. A body list head is a `flo = 2` record shaped `[key, root, 1, …]` whose root record carries slot 0 equal to `key` and slot 2 naming the head. The root begins a descending chain of records that share slot 0 = `key` and link through slot 1; the chain terminates at a slot-1 sentinel, and each chain is one stored body with one shell. List heads partition the stream into section intervals in offset order; a body owns the canonical faces whose entity records lie in its interval. A sole chain owns every canonical face in the site.
 
 ---
