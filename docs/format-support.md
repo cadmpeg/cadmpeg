@@ -296,8 +296,9 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   components require endpoints that select exactly one candidate.
   Positive-ratio elliptical cones transfer tangent apex generators and
   endpoint-selected two-generator apex sections.
-  Coaxial positive-ratio cones with equal ratios and aligned principal frames
-  transfer unique or endpoint-selected axis-normal elliptical sections.
+  Coaxial positive-ratio cones with proportional transverse quadratic forms
+  transfer unique or endpoint-selected axis-normal elliptical sections,
+  including reciprocal-ratio sections with exchanged principal frames.
   A cylinder through a sphere center transfers its equatorial tangent circle
   or one endpoint-selected secant circle.
   Third-plane intersections resolve vertices across every transferred

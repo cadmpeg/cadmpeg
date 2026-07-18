@@ -18115,6 +18115,36 @@ mod resolved_sketch_tests {
         elliptical_second_equation.ref_direction = [0.0, 1.0, 0.0];
         let incompatible_frame = CarrierEquation::Cone(elliptical_second_equation);
         assert!(coaxial_cones_section_candidates(elliptical_first, incompatible_frame).is_empty());
+
+        elliptical_second_equation.ratio = 2.0;
+        elliptical_second_equation.half_angle = 0.25_f64.atan();
+        let reciprocal_swapped = CarrierEquation::Cone(elliptical_second_equation);
+        let candidates = coaxial_cones_section_candidates(elliptical_first, reciprocal_swapped);
+        assert_eq!(candidates.len(), 2);
+        let selected =
+            select_unique_curve_candidate(candidates, [[14.0, 0.0, 12.0], [0.0, 7.0, 12.0]])
+                .expect("selected reciprocal-frame cone section");
+        assert!(matches!(
+            &selected,
+            (
+                CurveGeometry::Ellipse {
+                    center,
+                    major_radius,
+                    minor_radius,
+                    ..
+                },
+                "coaxial_cones_ellipse"
+            ) if (center.z - 12.0).abs() < 1e-12
+                && (major_radius - 14.0).abs() < 1e-12
+                && (minor_radius - 7.0).abs() < 1e-12
+        ));
+        for parameter in [-1.0, 0.0, 1.0] {
+            let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
+                .expect("reciprocal-frame section point");
+            let point = [point.x, point.y, point.z];
+            assert!(point_on_carrier(point, elliptical_first));
+            assert!(point_on_carrier(point, reciprocal_swapped));
+        }
     }
 
     #[test]
@@ -24291,15 +24321,38 @@ fn coaxial_cones_section_candidates(
         return Vec::new();
     };
     let axis_alignment = dot(first_axis, second_axis);
-    let ratio_scale = first.ratio.max(second.ratio).max(1.0);
     if (axis_alignment.abs() - 1.0).abs() > 1e-10
         || dot(first_axis, reference).abs() > 1e-10
         || dot(second_axis, second_reference).abs() > 1e-10
-        || (first.ratio - second.ratio).abs() > 1e-10 * ratio_scale
-        || (!circular_cone(first) && (dot(reference, second_reference).abs() - 1.0).abs() > 1e-10)
     {
         return Vec::new();
     }
+    let first_y = cross(first_axis, reference);
+    let second_y = cross(second_axis, second_reference);
+    let second_metric = |direction: [f64; 3]| {
+        let x = dot(direction, second_reference);
+        let y = dot(direction, second_y) / second.ratio;
+        x.mul_add(x, y * y)
+    };
+    let metric_xx = second_metric(reference);
+    let metric_yy = second_metric(first_y);
+    let metric_xy = dot(reference, second_reference).mul_add(
+        dot(first_y, second_reference),
+        dot(reference, second_y) * dot(first_y, second_y) / (second.ratio * second.ratio),
+    );
+    let metric_scale_squared = metric_xx;
+    let metric_coefficient_scale = metric_xx.abs().max(metric_yy.abs()).max(1.0);
+    if metric_scale_squared <= 0.0
+        || !metric_scale_squared.is_finite()
+        || !metric_yy.is_finite()
+        || !metric_xy.is_finite()
+        || metric_xy.abs() > 1e-10 * metric_coefficient_scale
+        || (metric_yy - metric_scale_squared / (first.ratio * first.ratio)).abs()
+            > 1e-10 * metric_coefficient_scale
+    {
+        return Vec::new();
+    }
+    let metric_scale = metric_scale_squared.sqrt();
     let relative: [f64; 3] =
         std::array::from_fn(|index| second.origin[index] - first.origin[index]);
     let second_origin_axial = dot(relative, first_axis);
@@ -24321,15 +24374,18 @@ fn coaxial_cones_section_candidates(
     }
 
     let mut parameters = Vec::<f64>::new();
-    let slope_scale = first_slope.abs().max(second_slope.abs()).max(1.0);
+    let scaled_first_slope = metric_scale * first_slope;
+    let scaled_first_radius = metric_scale * first.radius;
+    let slope_scale = scaled_first_slope.abs().max(second_slope.abs()).max(1.0);
     let intercept_scale = first
         .radius
+        .max(scaled_first_radius.abs())
         .max(second_intercept.abs())
         .max(second.radius)
         .max(1.0);
     for radial_sense in [-1.0, 1.0] {
-        let denominator = first_slope - radial_sense * second_slope;
-        let numerator = radial_sense * second_intercept - first.radius;
+        let denominator = scaled_first_slope - radial_sense * second_slope;
+        let numerator = radial_sense * second_intercept - scaled_first_radius;
         if denominator.abs() <= 1e-12 * slope_scale {
             if numerator.abs() <= 1e-9 * intercept_scale {
                 return Vec::new();
