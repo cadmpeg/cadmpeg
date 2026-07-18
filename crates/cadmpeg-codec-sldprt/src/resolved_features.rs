@@ -49,10 +49,21 @@ const SPATIAL_VERTEX_PREFIX: &[u8] = &[
 ];
 
 pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
-    scan.sections()
+    let sections = scan.sections().collect::<Vec<_>>();
+    let has_explicit_lanes = sections.iter().any(|source| {
+        source
+            .name()
+            .is_some_and(|name| name.to_ascii_lowercase().contains("resolvedfeatures"))
+    });
+    sections
+        .into_iter()
         .filter_map(|source| {
             let section = source.name()?;
-            if !section.to_ascii_lowercase().contains("resolvedfeatures") {
+            if if has_explicit_lanes {
+                !section.to_ascii_lowercase().contains("resolvedfeatures")
+            } else {
+                !legacy_feature_input_section(section)
+            } {
                 return None;
             }
             let parent = format!(
@@ -102,6 +113,17 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             })
         })
         .collect()
+}
+
+fn legacy_feature_input_section(section: &str) -> bool {
+    let normalized = section.replace('\\', "/");
+    let Some(configuration) = normalized
+        .strip_prefix("Contents/Config-")
+        .or_else(|| normalized.strip_prefix("contents/config-"))
+    else {
+        return false;
+    };
+    !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
 }
 
 /// Project spatial sketches whose feature object contains one bounded line.
@@ -388,16 +410,16 @@ mod marker_tests {
         compact_surface_selection_at, complete_ordered_compact_line_profile,
         component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, constraint_midplane_frame,
-        coordinate_marker_local_links, fixed_reference_plane_frame, legacy_reference_axis_triads,
-        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
-        marker_object_index, named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
-        plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        coordinate_marker_local_links, fixed_reference_plane_frame, legacy_feature_input_section,
+        legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, marker_object_index, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers, sketch_plane_frames,
+        solved_tangent, spatial_vertex_coordinates, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -535,6 +557,15 @@ mod marker_tests {
 
         features[4].source_id = Some("99".into());
         assert!(legacy_reference_axis_triads(&features).is_empty());
+    }
+
+    #[test]
+    fn legacy_feature_input_section_is_an_exact_numeric_config_stream() {
+        assert!(legacy_feature_input_section("Contents/Config-0"));
+        assert!(legacy_feature_input_section("Contents\\Config-37"));
+        assert!(!legacy_feature_input_section("Contents/Config-0-Partition"));
+        assert!(!legacy_feature_input_section("Contents/Config-name"));
+        assert!(!legacy_feature_input_section("Other/Config-0"));
     }
 
     #[test]

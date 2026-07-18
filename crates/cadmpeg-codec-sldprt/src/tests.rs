@@ -7474,6 +7474,42 @@ fn decode_extracts_parametric_history() {
 }
 
 #[test]
+fn decode_uses_plain_numeric_config_as_legacy_feature_input_lane() {
+    let legacy = resolved_feature_classes_with_ids(&[("Fillet_c", "Round", 41)]);
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Config-7", &legacy));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let lanes = &sldprt_native(&decoded.ir).feature_input_lanes;
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].configuration.as_deref(), Some("7"));
+    assert_eq!(lanes[0].native_payload, legacy);
+}
+
+#[test]
+fn decode_prefers_explicit_feature_input_lanes_over_plain_config_streams() {
+    let legacy = resolved_feature_classes_with_ids(&[("Fillet_c", "Round", 41)]);
+    let explicit = resolved_feature_classes_with_ids(&[("Chamfer_c", "Bevel", 42)]);
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Config-7", &legacy));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-7-ResolvedFeatures",
+        &explicit,
+    ));
+
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let lanes = &sldprt_native(&decoded.ir).feature_input_lanes;
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].configuration.as_deref(), Some("7"));
+    assert_eq!(lanes[0].native_payload, explicit);
+}
+
+#[test]
 fn decode_types_non_modeling_feature_tree_nodes() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
 
