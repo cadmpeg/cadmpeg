@@ -149,35 +149,13 @@ fn transfer_design_features(
         .design_objects
         .iter()
         .filter_map(|object| {
-            let mut families =
-                object
-                    .field_classes
-                    .iter()
-                    .filter_map(|class| match class.as_str() {
-                        "Groove" => Some(("Groove", CatiaFeatureKind::Revolve(BooleanOp::Cut))),
-                        "Shaft" => Some(("Shaft", CatiaFeatureKind::Revolve(BooleanOp::Join))),
-                        "Rib" => Some(("Rib", CatiaFeatureKind::Sweep(BooleanOp::Join))),
-                        "Slot" => Some(("Slot", CatiaFeatureKind::Sweep(BooleanOp::Cut))),
-                        "Hole" => Some(("Hole", CatiaFeatureKind::Hole)),
-                        "RectPattern" => Some((
-                            "RectPattern",
-                            CatiaFeatureKind::Pattern(PatternForm::Linear),
-                        )),
-                        "CircPattern" => Some((
-                            "CircPattern",
-                            CatiaFeatureKind::Pattern(PatternForm::Circular),
-                        )),
-                        "Shell" => Some(("Shell", CatiaFeatureKind::Shell)),
-                        "EdgeFillet" => Some(("EdgeFillet", CatiaFeatureKind::Fillet)),
-                        "Chamfer" => Some(("Chamfer", CatiaFeatureKind::Chamfer)),
-                        "Sketch" => Some(("Sketch", CatiaFeatureKind::Sketch)),
-                        "GSMLoft" => Some(("GSMLoft", CatiaFeatureKind::Native("GSMLoft"))),
-                        "GSMPointBetweenValues" => Some((
-                            "GSMPointBetweenValues",
-                            CatiaFeatureKind::Native("GSMPointBetweenValues"),
-                        )),
-                        _ => None,
-                    });
+            if let Some(family) = object.owner_class.as_deref().and_then(catia_feature_family) {
+                return Some((object, family));
+            }
+            let mut families = object
+                .field_classes
+                .iter()
+                .filter_map(|class| catia_feature_family(class));
             let family = families.next()?;
             families.next().is_none().then_some((object, family))
         })
@@ -351,6 +329,42 @@ fn transfer_design_features(
         );
     }
     counts
+}
+
+fn catia_feature_family(class: &str) -> Option<(&'static str, CatiaFeatureKind)> {
+    match class {
+        "Groove" => Some(("Groove", CatiaFeatureKind::Revolve(BooleanOp::Cut))),
+        "Shaft" => Some(("Shaft", CatiaFeatureKind::Revolve(BooleanOp::Join))),
+        "Rib" => Some(("Rib", CatiaFeatureKind::Sweep(BooleanOp::Join))),
+        "Slot" => Some(("Slot", CatiaFeatureKind::Sweep(BooleanOp::Cut))),
+        "Hole" => Some(("Hole", CatiaFeatureKind::Hole)),
+        "RectPattern" => Some((
+            "RectPattern",
+            CatiaFeatureKind::Pattern(PatternForm::Linear),
+        )),
+        "CircPattern" => Some((
+            "CircPattern",
+            CatiaFeatureKind::Pattern(PatternForm::Circular),
+        )),
+        "Shell" => Some(("Shell", CatiaFeatureKind::Shell)),
+        "EdgeFillet" => Some(("EdgeFillet", CatiaFeatureKind::Fillet)),
+        "Chamfer" => Some(("Chamfer", CatiaFeatureKind::Chamfer)),
+        "Sketch" => Some(("Sketch", CatiaFeatureKind::Sketch)),
+        "GSMLoft" => Some(("GSMLoft", CatiaFeatureKind::Native("GSMLoft"))),
+        "GSMPointBetweenValues" => Some((
+            "GSMPointBetweenValues",
+            CatiaFeatureKind::Native("GSMPointBetweenValues"),
+        )),
+        "Prism_ThickThin2" => Some((
+            "Prism_ThickThin2",
+            CatiaFeatureKind::Native("Prism_ThickThin2"),
+        )),
+        "Revol_ThickThin1" => Some((
+            "Revol_ThickThin1",
+            CatiaFeatureKind::Native("Revol_ThickThin1"),
+        )),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy)]

@@ -1943,6 +1943,8 @@ fn standard_catpart_with_catalog() -> Vec<u8> {
         "Pad",
         "GSMLoft",
         "GSMPointBetweenValues",
+        "Prism_ThickThin2",
+        "Revol_ThickThin1",
     ]);
     let mut file = standard_catpart();
     file.splice(16..16, catalog);
@@ -1983,6 +1985,34 @@ fn standard_catpart_with_design_class(class: &str) -> Vec<u8> {
         "",
         "CurrentFeature",
         class,
+    ]));
+    let mut file = standard_catpart();
+    file.splice(16..16, stream);
+    let file_len = u32::try_from(file.len()).unwrap();
+    file[8..12].copy_from_slice(&be32(file_len));
+    file
+}
+
+fn standard_catpart_with_design_owner(owner_class: &str, field_class: &str) -> Vec<u8> {
+    let mut stream = object_graph_from_records(&[
+        object_graph_record(
+            &[0x04, 0x01, 0x82, 0x83, 0x84],
+            &[0x81, 0x85, 0x3a, 0x87, 0xfe],
+        ),
+        object_graph_record(
+            &[0x14, 0x01, 0x82, 0x84],
+            &[0xe5, 0x02, 0, 0, 0, 0xaa, 0xbb, 0xfe],
+        ),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+    ]);
+    stream.extend(value_block_stream(&[0x81]));
+    stream.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        owner_class,
+        field_class,
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -5803,6 +5833,8 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
     assert_eq!(native.catalogs[0].entries[5].value, "Pad");
     assert_eq!(native.catalogs[0].entries[6].value, "GSMLoft");
     assert_eq!(native.catalogs[0].entries[7].value, "GSMPointBetweenValues");
+    assert_eq!(native.catalogs[0].entries[8].value, "Prism_ThickThin2");
+    assert_eq!(native.catalogs[0].entries[9].value, "Revol_ThickThin1");
     assert!(decoded.ir.model.features.is_empty());
 }
 
@@ -6038,6 +6070,31 @@ fn decode_projects_exact_gsm_constructions_as_native_operations() {
                     "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 1 native operation feature(s)",
                 )
         }));
+    }
+}
+
+#[test]
+fn decode_uses_exact_design_owner_class_before_field_classes() {
+    for class in ["Prism_ThickThin2", "Revol_ThickThin1"] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_design_owner(class, "Sketch")),
+                &DecodeOptions::default(),
+            )
+            .expect("decode generated owner-class operation");
+
+        assert!(matches!(
+            decoded.ir.model.features.as_slice(),
+            [cadmpeg_ir::features::Feature {
+                name: Some(name),
+                definition: cadmpeg_ir::features::FeatureDefinition::Native {
+                    kind,
+                    parameters,
+                    properties,
+                },
+                ..
+            }] if name == class && kind == class && parameters.is_empty() && properties.is_empty()
+        ));
     }
 }
 
