@@ -2155,11 +2155,6 @@ fn project_extrude(
         BooleanOp, Extent, ExtrudeStart, FaceSelection, FeatureDefinition, Length, ProfileRef,
     };
 
-    let profile = scope.extrude_profile.as_ref()?;
-    let profile_placement = placements.iter().find(|placement| {
-        native_stream(&placement.id) == native_stream(&scope.id)
-            && placement.entity_id == profile.entity_id
-    })?;
     let supported_parameter = |source_kind: &str| {
         matches!(
             source_kind,
@@ -2190,14 +2185,32 @@ fn project_extrude(
         .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Profile))
         .copied()
         .collect::<Vec<_>>();
-    if !profile_groups.is_empty()
-        && !matches!(
-            profile_groups.as_slice(),
-            [group] if group.members.first() == Some(&profile.record_index)
-        )
-    {
-        return None;
-    }
+    let (profile_ref, profile_placement) = match scope.extrude_profile.as_ref() {
+        Some(profile) => {
+            if !profile_groups.is_empty()
+                && !matches!(
+                    profile_groups.as_slice(),
+                    [group] if group.members.first() == Some(&profile.record_index)
+                )
+            {
+                return None;
+            }
+            let placement = placements.iter().find(|placement| {
+                native_stream(&placement.id) == native_stream(&scope.id)
+                    && placement.entity_id == profile.entity_id
+            })?;
+            (
+                ProfileRef::Sketch(neutral_sketch_id(placement)),
+                Some(placement),
+            )
+        }
+        None => {
+            let [group] = profile_groups.as_slice() else {
+                return None;
+            };
+            (ProfileRef::Native(group.id.clone()), None)
+        }
+    };
     let face_groups = scope_groups
         .iter()
         .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces))
@@ -2322,6 +2335,7 @@ fn project_extrude(
         _ => return None,
     };
     let direction = if reverse_direction {
+        let profile_placement = profile_placement?;
         Some(Vector3::new(
             -profile_placement.transform[0][2],
             -profile_placement.transform[1][2],
@@ -2352,7 +2366,7 @@ fn project_extrude(
         _ => return None,
     };
     Some(FeatureDefinition::Extrude {
-        profile: ProfileRef::Sketch(neutral_sketch_id(profile_placement)),
+        profile: profile_ref,
         direction,
         start,
         extent,
