@@ -438,6 +438,8 @@ fn frame_impl(
         let mut depth = 0i32;
         let mut name_done = false;
         let mut is_delta = false;
+        let mut embedded_history_entity = None;
+        let mut payload_start = true;
 
         loop {
             if eof_terminates_final_record && pos == limit && depth == 0 && !name_parts.is_empty() {
@@ -464,21 +466,34 @@ fn frame_impl(
                         break;
                     }
                 }
-                Lexed::SubIdent(_) | Lexed::Ident(_) => {
+                Lexed::Ident(identifier) => {
                     // Identifier tokens after the name belong to the payload
-                    // (e.g. subtype names inside a spline). Ignore for framing;
-                    // they carry no value this codec reads positionally.
+                    // (e.g. subtype names inside a spline). An archived ASM
+                    // history record may wrap an edge record in the exact
+                    // End-of-ASM-History-Section marker chain; its following
+                    // identifier is the wrapped record's dispatch name.
+                    if payload_start
+                        && name_parts.join("-") == "End-of-ASM-History-Section"
+                        && identifier == "edge"
+                    {
+                        embedded_history_entity = Some(identifier);
+                    }
+                    payload_start = false;
                 }
+                Lexed::SubIdent(_) => payload_start = false,
                 Lexed::Value(Token::SubtypeOpen) => {
+                    payload_start = false;
                     depth += 1;
                     name_done = true;
                     tokens.push(Token::SubtypeOpen);
                 }
                 Lexed::Value(Token::SubtypeClose) => {
+                    payload_start = false;
                     depth -= 1;
                     tokens.push(Token::SubtypeClose);
                 }
                 Lexed::Value(v) => {
+                    payload_start = false;
                     name_done = true;
                     tokens.push(v);
                 }
@@ -488,8 +503,11 @@ fn frame_impl(
         if is_delta {
             break;
         }
-        let name = name_parts.join("-");
-        let head = name_parts.first().cloned().unwrap_or_default();
+        let mut name = name_parts.join("-");
+        if let Some(embedded) = embedded_history_entity {
+            name = embedded;
+        }
+        let head = name.split('-').next().unwrap_or_default().to_owned();
 
         records.push(Record {
             index,
@@ -517,6 +535,41 @@ mod tests {
         assert_eq!(records.len(), 1);
         assert_eq!(records[0].name, "edge");
         assert_eq!(records[0].len, bytes.len());
+    }
+
+    #[test]
+    fn history_marker_dispatches_its_embedded_edge_record() {
+        let mut bytes = Vec::new();
+        for part in ["End", "of", "ASM", "History"] {
+            bytes.extend_from_slice(&[0x0e, u8::try_from(part.len()).unwrap()]);
+            bytes.extend_from_slice(part.as_bytes());
+        }
+        bytes.extend_from_slice(&[0x0d, 7]);
+        bytes.extend_from_slice(b"Section");
+        bytes.extend_from_slice(&[0x0d, 4]);
+        bytes.extend_from_slice(b"edge");
+        for reference in [4i64, -1, 5, 6, 7, 8] {
+            bytes.push(0x0c);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+        }
+        bytes.push(0x11);
+
+        let records = frame_history(&bytes, 0, bytes.len(), 8).expect("wrapped edge");
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].name, "edge");
+        assert_eq!(records[0].head, "edge");
+        assert_eq!(records[0].ref_at(0), Some(4));
+        assert_eq!(records[0].ref_at(5), Some(8));
+
+        let embedded_offset = bytes
+            .windows(6)
+            .position(|window| window == [0x0d, 4, b'e', b'd', b'g', b'e'])
+            .unwrap();
+        let mut non_wrapper = bytes;
+        non_wrapper.splice(embedded_offset..embedded_offset, [0x02, 0]);
+        let records = frame_history(&non_wrapper, 0, non_wrapper.len(), 8)
+            .expect("marker with a later payload identifier");
+        assert_eq!(records[0].name, "End-of-ASM-History-Section");
     }
 
     fn generated_pcurve_record(ref_width: usize) -> Vec<u8> {
