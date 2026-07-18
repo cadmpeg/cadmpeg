@@ -21052,19 +21052,10 @@ fn planar_curve_pcurve(
     }
 }
 
-fn cylindrical_circle_pcurve(
+fn surface_of_revolution_circle_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
-    let SurfaceGeometry::Cylinder {
-        origin,
-        axis,
-        ref_direction,
-        radius: surface_radius,
-    } = surface
-    else {
-        return None;
-    };
     let CurveGeometry::Circle {
         center,
         axis: circle_axis,
@@ -21074,11 +21065,33 @@ fn cylindrical_circle_pcurve(
     else {
         return None;
     };
-    (surface_radius.is_finite()
-        && circle_radius.is_finite()
-        && *surface_radius > 0.0
-        && *circle_radius > 0.0)
-        .then_some(())?;
+    (circle_radius.is_finite() && *circle_radius > 0.0).then_some(())?;
+    let (origin, axis, ref_direction, reference_radius, radius_slope) = match surface {
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } if radius.is_finite() && *radius > 0.0 => (*origin, *axis, *ref_direction, *radius, 0.0),
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } if radius.is_finite()
+            && ratio.is_finite()
+            && (*ratio - 1.0).abs() <= 1e-12
+            && half_angle.is_finite() =>
+        {
+            let slope = half_angle.tan();
+            slope
+                .is_finite()
+                .then_some((*origin, *axis, *ref_direction, *radius, slope))?
+        }
+        _ => return None,
+    };
     let unit = |vector: [f64; 3]| {
         let length = dot(vector, vector).sqrt();
         (length.is_finite() && (length - 1.0).abs() <= 1e-10).then_some(vector)
@@ -21101,15 +21114,19 @@ fn cylindrical_circle_pcurve(
     let v = dot(center_relative, surface_axis);
     let center_radial =
         std::array::from_fn::<_, 3, _>(|index| center_relative[index] - v * surface_axis[index]);
+    let surface_radius = reference_radius + v * radius_slope;
     let scale = surface_radius.abs().max(circle_radius.abs()).max(1.0);
     (dot(center_radial, center_radial).sqrt() <= 1e-9 * scale
-        && (surface_radius - circle_radius).abs() <= 1e-9 * scale)
+        && surface_radius.abs() > 1e-12 * scale
+        && (surface_radius.abs() - circle_radius).abs() <= 1e-9 * scale)
         .then_some(())?;
-    let phase = dot(circle_x, surface_y).atan2(dot(circle_x, surface_x));
+    let radius_sign = surface_radius.signum();
+    let phase =
+        (radius_sign * dot(circle_x, surface_y)).atan2(radius_sign * dot(circle_x, surface_x));
     let surface_tangent = std::array::from_fn::<_, 3, _>(|index| {
         -phase.sin() * surface_x[index] + phase.cos() * surface_y[index]
     });
-    let orientation = dot(circle_y, surface_tangent);
+    let orientation = radius_sign * dot(circle_y, surface_tangent);
     ((orientation.abs() - 1.0).abs() <= 1e-10).then_some(())?;
     Some(PcurveGeometry::Line {
         origin: Point2::new(phase, v),
@@ -21262,7 +21279,8 @@ mod native_pcurve_tests {
             ref_direction: Vector3::new(0.0, 1.0, 0.0),
             radius: 2.0,
         };
-        let pcurve = cylindrical_circle_pcurve(&surface, &circle).expect("cylinder pcurve");
+        let pcurve =
+            surface_of_revolution_circle_pcurve(&surface, &circle).expect("cylinder pcurve");
         let PcurveGeometry::Line { origin, direction } = &pcurve else {
             panic!("cylinder-circle pcurve: {pcurve:#?}");
         };
@@ -21285,7 +21303,7 @@ mod native_pcurve_tests {
             ref_direction: Vector3::new(0.0, 1.0, 0.0),
             radius: 2.0,
         };
-        assert!(cylindrical_circle_pcurve(&surface, &off_axis).is_none());
+        assert!(surface_of_revolution_circle_pcurve(&surface, &off_axis).is_none());
 
         let scaled_frame = SurfaceGeometry::Cylinder {
             origin: Point3::new(1.0, 2.0, 3.0),
@@ -21293,7 +21311,63 @@ mod native_pcurve_tests {
             ref_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: 2.0,
         };
-        assert!(cylindrical_circle_pcurve(&scaled_frame, &circle).is_none());
+        assert!(surface_of_revolution_circle_pcurve(&scaled_frame, &circle).is_none());
+    }
+
+    #[test]
+    fn projects_circular_cone_sections_on_either_side_of_the_apex() {
+        let surface = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        for (height, radius, expected_phase) in [(3.0, 5.0, 0.0), (-3.0, 1.0, std::f64::consts::PI)]
+        {
+            let circle = CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, height),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius,
+            };
+            let pcurve = surface_of_revolution_circle_pcurve(&surface, &circle)
+                .expect("cone section pcurve");
+            let PcurveGeometry::Line { origin, direction } = &pcurve else {
+                panic!("cone-circle pcurve: {pcurve:#?}");
+            };
+            assert!((origin.u - expected_phase).sin().abs() <= 1e-12);
+            assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1e-12);
+            assert!((origin.v - height).abs() <= 1e-12);
+            assert_eq!(*direction, Point2::new(1.0, 0.0));
+            for parameter in [-1.0, 0.0, 2.0] {
+                let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
+                let mapped =
+                    cadmpeg_ir::eval::surface_point(&surface, uv.u, uv.v).expect("surface point");
+                let expected =
+                    cadmpeg_ir::eval::curve_point(&circle, parameter).expect("curve point");
+                assert!((mapped.x - expected.x).abs() <= 1e-10);
+                assert!((mapped.y - expected.y).abs() <= 1e-10);
+                assert!((mapped.z - expected.z).abs() <= 1e-10);
+            }
+        }
+
+        let elliptical = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 0.5,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(0.0, 0.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+        };
+        assert!(surface_of_revolution_circle_pcurve(&elliptical, &circle).is_none());
     }
 }
 
@@ -21833,11 +21907,13 @@ fn transfer_native_brep(
                                 planar_curve_pcurve(&surface.geometry, &curve.geometry)
                                     .map(|geometry| (geometry, "projected_planar_pcurve"))
                                     .or_else(|| {
-                                        cylindrical_circle_pcurve(
+                                        surface_of_revolution_circle_pcurve(
                                             &surface.geometry,
                                             &curve.geometry,
                                         )
-                                        .map(|geometry| (geometry, "projected_cylindrical_pcurve"))
+                                        .map(|geometry| {
+                                            (geometry, "projected_revolution_circle_pcurve")
+                                        })
                                     })?;
                             Some((
                                 geometry,
