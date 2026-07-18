@@ -2216,6 +2216,50 @@ mod history_reference_tests {
             } if sketch == &sketch_id
         ));
     }
+
+    #[test]
+    fn configuration_numeric_override_inherits_parameter_dimension() {
+        use cadmpeg_ir::features::{
+            ConfigurationId, DesignConfiguration, DesignParameter, FeatureId, ParameterId,
+            ParameterValue,
+        };
+
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        let parameter_id = ParameterId("test:model:parameter#depth".into());
+        ir.model.parameters.push(DesignParameter {
+            id: parameter_id.clone(),
+            owner: FeatureId("test:model:feature#extrude".into()),
+            ordinal: 0,
+            name: "Depth".into(),
+            expression: "7mm".into(),
+            display: None,
+            value: Some(ParameterValue::Length(Length(7.0))),
+            dependencies: Vec::new(),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: ConfigurationId("test:model:configuration#default".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: Vec::new(),
+            parameter_values: BTreeMap::from([(parameter_id.clone(), ParameterValue::Integer(7))]),
+            feature_states: BTreeMap::new(),
+            native_ref: None,
+        });
+
+        align_configuration_parameter_kinds(&mut ir);
+
+        assert_eq!(
+            ir.model.configurations[0].parameter_values[&parameter_id],
+            ParameterValue::Length(Length(7.0))
+        );
+    }
 }
 
 /// Bind a uniquely identified native sketch history node to solved sketch geometry.
@@ -5185,6 +5229,49 @@ pub(crate) fn project_configuration_sketch_states(
     }
 }
 
+/// Give configuration-local numeric overrides the dimensional kind established
+/// by their neutral parameter definition.
+pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
+    let parameter_kinds = ir
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| Some((&parameter.id, parameter.value.as_ref()?)))
+        .collect::<HashMap<_, _>>();
+    for value in ir
+        .model
+        .configurations
+        .iter_mut()
+        .flat_map(|configuration| &mut configuration.parameter_values)
+    {
+        let (parameter, value) = value;
+        let Some(canonical) = parameter_kinds.get(parameter) else {
+            continue;
+        };
+        let aligned = match (&**canonical, &*value) {
+            (ParameterValue::Length(_), ParameterValue::Integer(integer)) => {
+                exact_integer_f64(*integer).map(|value| ParameterValue::Length(Length(value)))
+            }
+            (ParameterValue::Length(_), ParameterValue::Real(real)) if real.is_finite() => {
+                Some(ParameterValue::Length(Length(*real)))
+            }
+            (ParameterValue::Angle(_), ParameterValue::Integer(integer)) => {
+                exact_integer_f64(*integer).map(|value| ParameterValue::Angle(Angle(value)))
+            }
+            (ParameterValue::Angle(_), ParameterValue::Real(real)) if real.is_finite() => {
+                Some(ParameterValue::Angle(Angle(*real)))
+            }
+            (ParameterValue::Real(_), ParameterValue::Integer(integer)) => {
+                exact_integer_f64(*integer).map(ParameterValue::Real)
+            }
+            _ => None,
+        };
+        if let Some(aligned) = aligned {
+            *value = aligned;
+        }
+    }
+}
+
 pub(crate) fn configuration_lane_assignments(
     configurations: &[DesignConfiguration],
     lanes: &[crate::records::FeatureInputLane],
@@ -5931,6 +6018,7 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
     );
+    align_configuration_parameter_kinds(&mut current_projection);
     project_configuration_sketch_states(
         &mut current_projection,
         &native.feature_histories,
@@ -5970,6 +6058,7 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
     );
+    align_configuration_parameter_kinds(&mut projected);
     project_configuration_sketch_states(
         &mut projected,
         &native.feature_histories,

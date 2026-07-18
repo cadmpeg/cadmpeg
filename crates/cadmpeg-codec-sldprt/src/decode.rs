@@ -1480,6 +1480,7 @@ fn build_geometry_ir(
         &ir.model.features,
         &lanes,
     );
+    crate::history::align_configuration_parameter_kinds(&mut ir);
     stamp_parameter_baseline(&mut ir);
     let (mut sketches, mut sketch_entities, mut sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
@@ -2094,6 +2095,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &ir.model.features,
         &lanes,
     );
+    crate::history::align_configuration_parameter_kinds(&mut ir);
     stamp_parameter_baseline(&mut ir);
     crate::resolved_features::bind_sketch_profiles(
         &mut ir.model.features,
