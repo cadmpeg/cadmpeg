@@ -16,7 +16,7 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     BooleanOp, ChamferSpec, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    HoleKind, RadiusSpec, RevolutionConstruction, SketchSpace, SweepMode,
+    HoleKind, PatternForm, PatternKind, RadiusSpec, RevolutionConstruction, SketchSpace, SweepMode,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -120,12 +120,13 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} hole, {} shell, {} fillet, {} chamfer, and {} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} hole, {} pattern, {} shell, {} fillet, {} chamfer, and {} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len(),
                 transferred.revolutions,
                 transferred.sweeps,
                 transferred.holes,
+                transferred.patterns,
                 transferred.shells,
                 transferred.fillets,
                 transferred.chamfers,
@@ -157,6 +158,14 @@ fn transfer_design_features(
                         "Rib" => Some(("Rib", CatiaFeatureKind::Sweep(BooleanOp::Join))),
                         "Slot" => Some(("Slot", CatiaFeatureKind::Sweep(BooleanOp::Cut))),
                         "Hole" => Some(("Hole", CatiaFeatureKind::Hole)),
+                        "RectPattern" => Some((
+                            "RectPattern",
+                            CatiaFeatureKind::Pattern(PatternForm::Linear),
+                        )),
+                        "CircPattern" => Some((
+                            "CircPattern",
+                            CatiaFeatureKind::Pattern(PatternForm::Circular),
+                        )),
                         "Shell" => Some(("Shell", CatiaFeatureKind::Shell)),
                         "EdgeFillet" => Some(("EdgeFillet", CatiaFeatureKind::Fillet)),
                         "Chamfer" => Some(("Chamfer", CatiaFeatureKind::Chamfer)),
@@ -263,6 +272,13 @@ fn transfer_design_features(
                         allow_multi_profile_faces: None,
                     }
                 }
+                CatiaFeatureKind::Pattern(form) => {
+                    counts.patterns += 1;
+                    FeatureDefinition::Pattern {
+                        seeds: Vec::new(),
+                        pattern: PatternKind::Unresolved { form: Some(form) },
+                    }
+                }
                 CatiaFeatureKind::Shell => {
                     counts.shells += 1;
                     FeatureDefinition::Shell {
@@ -328,6 +344,7 @@ enum CatiaFeatureKind {
     Revolve(BooleanOp),
     Sweep(BooleanOp),
     Hole,
+    Pattern(PatternForm),
     Shell,
     Fillet,
     Chamfer,
@@ -339,6 +356,7 @@ struct TransferredDesignCounts {
     revolutions: usize,
     sweeps: usize,
     holes: usize,
+    patterns: usize,
     shells: usize,
     fillets: usize,
     chamfers: usize,
