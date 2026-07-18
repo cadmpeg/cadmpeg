@@ -119,6 +119,7 @@ struct CreoSketchTableHeader {
     declared_count: Option<u32>,
     entity_ref: Option<u32>,
     entry_ref: Option<u32>,
+    bucket_indices: Vec<u32>,
     row_count: usize,
     offset: usize,
 }
@@ -2994,22 +2995,25 @@ fn sketch_table_headers(
     definition: &crate::feature::FeatureDefinition,
 ) -> Vec<CreoSketchTableHeader> {
     let mut headers = Vec::new();
-    let mut push = |kind, declared_count, entity_ref, entry_ref, row_count, offset| {
-        headers.push(CreoSketchTableHeader {
-            kind,
-            declared_count,
-            entity_ref,
-            entry_ref,
-            row_count,
-            offset,
-        });
-    };
+    let mut push =
+        |kind, declared_count, entity_ref, entry_ref, bucket_indices, row_count, offset| {
+            headers.push(CreoSketchTableHeader {
+                kind,
+                declared_count,
+                entity_ref,
+                entry_ref,
+                bucket_indices,
+                row_count,
+                offset,
+            });
+        };
     if let Some(table) = &definition.variables {
         push(
             "variables",
             Some(table.declared_count),
             table.entity_ref,
             None,
+            Vec::new(),
             table.rows.len(),
             table.offset,
         );
@@ -3020,6 +3024,7 @@ fn sketch_table_headers(
             Some(table.declared_count),
             table.entity_ref,
             None,
+            Vec::new(),
             table.rows.len(),
             table.offset,
         );
@@ -3030,6 +3035,7 @@ fn sketch_table_headers(
             table.declared_count,
             table.entity_ref,
             table.entry_ref,
+            table.bucket_indices.clone(),
             table.rows.len(),
             table.offset,
         );
@@ -3040,6 +3046,7 @@ fn sketch_table_headers(
             table.declared_count,
             table.entity_ref,
             table.entry_ref,
+            table.bucket_indices.clone(),
             table.rows.len(),
             table.offset,
         );
@@ -3050,6 +3057,7 @@ fn sketch_table_headers(
             Some(table.declared_count),
             table.entity_ref,
             None,
+            Vec::new(),
             table.rows.len(),
             table.offset,
         );
@@ -3060,6 +3068,7 @@ fn sketch_table_headers(
             Some(table.declared_count),
             table.entity_ref,
             None,
+            Vec::new(),
             table.rows.len(),
             table.offset,
         );
@@ -3070,6 +3079,7 @@ fn sketch_table_headers(
             Some(table.declared_count),
             table.entity_ref,
             None,
+            Vec::new(),
             table.rows.len(),
             table.offset,
         );
@@ -3079,6 +3089,7 @@ fn sketch_table_headers(
                 Some(header.declared_count),
                 Some(header.entity_ref),
                 None,
+                Vec::new(),
                 table.skamps.len(),
                 header.offset,
             );
@@ -3089,6 +3100,7 @@ fn sketch_table_headers(
                 Some(header.declared_count),
                 Some(header.entity_ref),
                 None,
+                Vec::new(),
                 table.triples.len(),
                 header.offset,
             );
@@ -3100,6 +3112,7 @@ fn sketch_table_headers(
             None,
             None,
             None,
+            Vec::new(),
             table.entities.len(),
             table.offset,
         );
@@ -15336,6 +15349,7 @@ mod resolved_sketch_tests {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
+            bucket_indices: Vec::new(),
             rows: vec![crate::feature::FeatureTrimEntity {
                 external_id: 42,
                 mode: Some(0),
@@ -15589,6 +15603,7 @@ mod resolved_sketch_tests {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
+            bucket_indices: Vec::new(),
             rows: vec![crate::feature::FeatureTrimEntity {
                 external_id: 42,
                 mode: Some(0),
@@ -15609,6 +15624,7 @@ mod resolved_sketch_tests {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
+            bucket_indices: Vec::new(),
             rows: vec![
                 crate::feature::FeatureTrimVertex {
                     vertex_id: 1,
@@ -15727,6 +15743,7 @@ mod resolved_sketch_tests {
                 declared_count: None,
                 entity_ref: None,
                 entry_ref: None,
+                bucket_indices: Vec::new(),
                 rows: vec![crate::feature::FeatureTrimEntity {
                     external_id: 42,
                     mode: Some(0),
@@ -18223,6 +18240,7 @@ mod resolved_sketch_tests {
                 declared_count: None,
                 entity_ref: None,
                 entry_ref: None,
+                bucket_indices: Vec::new(),
                 rows: [(10, [1, 2]), (11, [3, 2]), (12, [3, 4]), (13, [4, 1])]
                     .into_iter()
                     .map(
@@ -18267,6 +18285,7 @@ mod resolved_sketch_tests {
             declared_count: None,
             entity_ref: None,
             entry_ref: None,
+            bucket_indices: Vec::new(),
             rows: [(10, [1, 2]), (11, [2, 1])]
                 .into_iter()
                 .map(
