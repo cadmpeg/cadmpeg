@@ -438,8 +438,73 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
     if out.is_empty() {
         out.extend(disc1e_disc04_face_root_body(&by_attr));
     }
+    if out.is_empty() {
+        out.extend(compact_disc16_face_root_body(&by_attr));
+    }
     out.sort_by_key(|record| record.attr);
     out
+}
+
+fn compact_disc16_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    let regions = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x001a && record.flo() == 2)
+        .collect::<Vec<_>>();
+    let [region] = regions.as_slice() else {
+        return Vec::new();
+    };
+    if region.refs.get(1).is_some_and(|attr| *attr > 1) {
+        return Vec::new();
+    }
+    let follows = |record: &EntityRecord, disc: u16, flo: u8| {
+        record
+            .refs
+            .get(2)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|next| next.disc == disc && next.flo() == flo)
+    };
+    let Some(shell) = follows(region, 0x0014, 2) else {
+        return Vec::new();
+    };
+    let Some(disc_10) = follows(shell, 0x0010, 2) else {
+        return Vec::new();
+    };
+    let Some(disc_0e) = follows(disc_10, 0x000e, 2) else {
+        return Vec::new();
+    };
+    if follows(disc_0e, 0x0004, 1).is_none() {
+        return Vec::new();
+    }
+    let disc16_faces = by_attr
+        .values()
+        .filter(|record| record.disc == 0x0016 && record.flo() == 1)
+        .count();
+    let disc18_uses = by_attr
+        .values()
+        .filter(|record| record.disc == 0x0018 && record.flo() == 1)
+        .count();
+    if disc16_faces == 0 || disc16_faces != disc18_uses {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: region.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: region.offset,
+        regions: vec![RegionRecord {
+            attr: region.attr,
+            offset: region.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
 }
 
 fn disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
@@ -1722,6 +1787,33 @@ mod tests {
         };
         assert_eq!(body.attr, 10);
         assert_eq!(body.regions[0].shells[0].attr, 12);
+        assert!(body.refs.contains(&20) && body.refs.contains(&21));
+    }
+
+    #[test]
+    fn compact_disc16_face_root_lattice_owns_the_site() {
+        let records = vec![
+            flo2(10, 0x1a, [3, 1, 11, 1, 1, 1]),
+            flo2(11, 0x14, [3, 10, 12, 1, 1, 1]),
+            flo2(12, 0x10, [3, 11, 13, 1, 1, 1]),
+            flo2(13, 0x0e, [3, 12, 14, 1, 1, 1]),
+            record(14, 0x04, [3, 13, 1, 1, 1, 1]),
+            record(20, 0x16, [1; 6]),
+            record(21, 0x16, [1; 6]),
+            record(30, 0x18, [1; 6]),
+            record(31, 0x18, [1; 6]),
+        ];
+        let by_attr = records
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+
+        let bodies = compact_disc16_face_root_body(&by_attr);
+        let [body] = bodies.as_slice() else {
+            panic!("one compact-disc16-face-root body");
+        };
+        assert_eq!(body.attr, 10);
+        assert_eq!(body.regions[0].shells[0].attr, 11);
         assert!(body.refs.contains(&20) && body.refs.contains(&21));
     }
 
