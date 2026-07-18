@@ -19981,6 +19981,45 @@ fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool;
     ]
 }
 
+fn nurbs_control_extent(nurbs: &NurbsCurve) -> Option<f64> {
+    let bounds = nurbs.control_points.iter().try_fold(
+        [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
+        |mut bounds, point| {
+            for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+                coordinate.is_finite().then_some(())?;
+                bounds[0][index] = bounds[0][index].min(coordinate);
+                bounds[1][index] = bounds[1][index].max(coordinate);
+            }
+            Some(bounds)
+        },
+    )?;
+    Some(
+        (0..3)
+            .map(|index| bounds[1][index] - bounds[0][index])
+            .fold(1.0, f64::max),
+    )
+}
+
+fn nurbs_intrinsic_parameter_range(nurbs: &NurbsCurve) -> Option<[f64; 2]> {
+    let degree = usize::try_from(nurbs.degree).ok()?;
+    (degree > 0
+        && nurbs.control_points.len() > degree
+        && nurbs.knots.len() == nurbs.control_points.len().checked_add(degree + 1)?
+        && nurbs_control_extent(nurbs).is_some()
+        && nurbs.knots.iter().all(|knot| knot.is_finite())
+        && nurbs.knots.windows(2).all(|pair| pair[0] <= pair[1])
+        && nurbs
+            .weights
+            .as_ref()
+            .is_none_or(|weights| weights.len() == nurbs.control_points.len()))
+    .then_some(())?;
+    let range = [
+        *nurbs.knots.get(degree)?,
+        *nurbs.knots.get(nurbs.control_points.len())?,
+    ];
+    (range[0] < range[1]).then_some(range)
+}
+
 fn nonperiodic_nurbs_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
@@ -19992,19 +20031,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
         return None;
     }
     let degree = usize::try_from(nurbs.degree).ok()?;
-    (degree > 0
-        && nurbs.control_points.len() > degree
-        && nurbs.knots.len() == nurbs.control_points.len().checked_add(degree + 1)?
-        && nurbs
-            .weights
-            .as_ref()
-            .is_none_or(|weights| weights.len() == nurbs.control_points.len()))
-    .then_some(())?;
-    let range = [
-        *nurbs.knots.get(degree)?,
-        *nurbs.knots.get(nurbs.control_points.len())?,
-    ];
-    (range[0].is_finite() && range[1].is_finite() && range[0] < range[1]).then_some(())?;
+    let range = nurbs_intrinsic_parameter_range(nurbs)?;
 
     if degree == 1 {
         nurbs
@@ -20016,19 +20043,7 @@ fn nonperiodic_nurbs_edge_parameter_range(
                     .all(|weight| weight.is_finite() && *weight > 0.0)
             })
             .then_some(())?;
-        let bounds = nurbs.control_points.iter().fold(
-            [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
-            |mut bounds, point| {
-                for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
-                    bounds[0][index] = bounds[0][index].min(coordinate);
-                    bounds[1][index] = bounds[1][index].max(coordinate);
-                }
-                bounds
-            },
-        );
-        let scale = (0..3)
-            .map(|index| bounds[1][index] - bounds[0][index])
-            .fold(1.0, f64::max);
+        let scale = nurbs_control_extent(nurbs)?;
         let tolerance = 1e-9 * scale;
         let first = degree_one_nurbs_point_parameter(geometry, nurbs, points[0], range, tolerance)?;
         let second =
@@ -20052,6 +20067,40 @@ fn nonperiodic_nurbs_edge_parameter_range(
         [true, false] | [false, true] => Some(range),
         _ => None,
     }
+}
+
+fn full_periodic_nurbs_edge_parameter_range(
+    geometry: &CurveGeometry,
+    point: [f64; 3],
+) -> Option<[f64; 2]> {
+    let CurveGeometry::Nurbs(nurbs) = geometry else {
+        return None;
+    };
+    nurbs.periodic.then_some(())?;
+    nurbs
+        .weights
+        .as_ref()
+        .is_none_or(|weights| {
+            weights
+                .iter()
+                .all(|weight| weight.is_finite() && *weight > 0.0)
+        })
+        .then_some(())?;
+    let range = nurbs_intrinsic_parameter_range(nurbs)?;
+    let mapped = range.map(|parameter| {
+        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
+    });
+    let [Some(first), Some(second)] = mapped else {
+        return None;
+    };
+    let tolerance = 1e-9 * nurbs_control_extent(nurbs)?;
+    [first, second]
+        .into_iter()
+        .all(|mapped| {
+            let delta: [f64; 3] = std::array::from_fn(|index| mapped[index] - point[index]);
+            dot(delta, delta).sqrt() <= tolerance
+        })
+        .then_some(range)
 }
 
 fn degree_one_nurbs_point_parameter(
@@ -20572,6 +20621,27 @@ mod native_edge_parameter_tests {
             nonperiodic_nurbs_edge_parameter_range(&nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],),
             None
         );
+
+        let closed = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![2.0, 2.0, 4.0, 7.0, 9.0, 9.0],
+            control_points: vec![
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+                Point3::new(-1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: true,
+        });
+        assert_eq!(
+            full_periodic_nurbs_edge_parameter_range(&closed, [1.0, 0.0, 0.0]),
+            Some([2.0, 9.0])
+        );
+        assert_eq!(
+            full_periodic_nurbs_edge_parameter_range(&closed, [0.0, 1.0, 0.0]),
+            None
+        );
     }
 
     #[test]
@@ -21088,6 +21158,13 @@ fn transfer_plane_brep(
         let [start, end] = edge_vertices[curve_id];
         let curve = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
         let points = [solved_vertices[&start], solved_vertices[&end]];
+        let unbacked_closed_edge = start == end
+            && closed_single_edge_curves.contains(curve_id)
+            && curve_faces.get(curve_id).is_some_and(|face_ids| {
+                !face_ids
+                    .iter()
+                    .any(|face_id| native_pcurves.contains_key(&(*curve_id, *face_id)))
+            });
         let derived_line = derived_intersection_curves.contains(&curve)
             && ir.model.curves.iter().any(|candidate| {
                 candidate.id == curve && matches!(candidate.geometry, CurveGeometry::Line { .. })
@@ -21119,20 +21196,20 @@ fn transfer_plane_brep(
                                         )
                                     })
                                     .or_else(|| {
-                                        (start == end
-                                            && closed_single_edge_curves.contains(curve_id)
-                                            && !curve_faces.get(curve_id)?.iter().any(|face_id| {
-                                                native_pcurves.contains_key(&(*curve_id, *face_id))
-                                            }))
-                                        .then_some(())
-                                        .and_then(
-                                            |()| {
-                                                full_periodic_conic_edge_parameter_range(
-                                                    &candidate.geometry,
-                                                    points[0],
-                                                )
-                                            },
-                                        )
+                                        unbacked_closed_edge.then_some(()).and_then(|()| {
+                                            full_periodic_conic_edge_parameter_range(
+                                                &candidate.geometry,
+                                                points[0],
+                                            )
+                                        })
+                                    })
+                                    .or_else(|| {
+                                        unbacked_closed_edge.then_some(()).and_then(|()| {
+                                            full_periodic_nurbs_edge_parameter_range(
+                                                &candidate.geometry,
+                                                points[0],
+                                            )
+                                        })
                                     })
                             },
                         )
