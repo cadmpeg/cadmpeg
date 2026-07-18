@@ -1395,7 +1395,8 @@ mod chart_tests {
         point_on_known_surface, point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
         standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_native_edge_references, standard_pcurve_geometry, unique_index_owners,
+        standard_native_edge_references, standard_pcurve_geometry,
+        standard_plane_normal_from_circle_centers, unique_index_owners,
         unique_native_identity_points, unresolved_carrier_counts, UnknownRecord,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
@@ -1713,6 +1714,31 @@ mod chart_tests {
     #[test]
     fn rational_arc_rejects_unbounded_subdivision_counts() {
         assert!(rational_pcurve_arc([0.0, 0.0], 1.0, [0.0, 1.0e300]).is_none());
+    }
+
+    #[test]
+    fn incident_circle_centers_determine_a_unique_plane_normal() {
+        let circle = |center| StandardCurveSupport {
+            pos: 0,
+            tag: 0,
+            faces: [2, 3],
+            geometry: StandardCurveGeometry::Circle {
+                center,
+                radius: 1.0,
+            },
+        };
+        let mut supports = vec![
+            circle(Point3::new(0.0, 0.0, 2.0)),
+            circle(Point3::new(2.0, 0.0, 2.0)),
+            circle(Point3::new(0.0, 3.0, 2.0)),
+        ];
+
+        assert_eq!(
+            standard_plane_normal_from_circle_centers(&supports, 2),
+            Some([0.0, 0.0, 1.0])
+        );
+        supports.push(circle(Point3::new(1.0, 1.0, 2.5)));
+        assert!(standard_plane_normal_from_circle_centers(&supports, 2).is_none());
     }
 
     #[test]
@@ -4867,7 +4893,10 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         .count();
     let freeform_record_count = records.len() - analytic_record_count;
     let face_frame_vectors = topology::standard_face_frame_vectors(brep);
+    let curve_supports = geometry::standard_curve_supports(brep, face_count);
     let mut plane_normal_candidates = HashMap::<u32, Option<[f64; 3]>>::new();
+    let mut derived_plane_targets = HashSet::new();
+    let mut exact_plane_targets = HashSet::new();
     for (face, record) in records.iter().enumerate() {
         let geometry::StandardSurfaceRecord::Analytic(prefix) = record else {
             continue;
@@ -4875,9 +4904,17 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         if prefix.kind != 0x32 {
             continue;
         }
-        let Some(normal) = face_frame_vectors.get(face).copied().flatten() else {
+        let frame_normal = face_frame_vectors.get(face).copied().flatten();
+        let normal = frame_normal
+            .or_else(|| standard_plane_normal_from_circle_centers(&curve_supports, face));
+        let Some(normal) = normal else {
             continue;
         };
+        if frame_normal.is_none() {
+            derived_plane_targets.insert(prefix.target);
+        } else {
+            exact_plane_targets.insert(prefix.target);
+        }
         plane_normal_candidates
             .entry(prefix.target)
             .and_modify(|stored| {
@@ -4941,7 +4978,13 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                     id.clone(),
                     prefix.pos,
                     Some(prefix.kind),
-                    Exactness::ByteExact,
+                    if derived_plane_targets.contains(&prefix.target)
+                        && !exact_plane_targets.contains(&prefix.target)
+                    {
+                        Exactness::Derived
+                    } else {
+                        Exactness::ByteExact
+                    },
                 ));
                 surfaces.push(Surface {
                     id,
@@ -6430,6 +6473,63 @@ fn intersection_line_direction(left: &SurfaceGeometry, right: &SurfaceGeometry) 
             .then_some(*left_axis),
         _ => None,
     }
+}
+
+fn standard_plane_normal_from_circle_centers(
+    supports: &[geometry::StandardCurveSupport],
+    face: usize,
+) -> Option<[f64; 3]> {
+    const TOLERANCE: f64 = 1e-5;
+
+    let mut centers = supports
+        .iter()
+        .filter(|support| support.faces.contains(&face))
+        .filter_map(|support| match &support.geometry {
+            geometry::StandardCurveGeometry::Circle { center, .. } => Some(*center),
+            geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut distinct = Vec::new();
+    for center in centers {
+        if !distinct
+            .iter()
+            .any(|stored| point_distance_squared(*stored, center) <= TOLERANCE.powi(2))
+        {
+            distinct.push(center);
+        }
+    }
+    centers = distinct;
+    let origin = *centers.first()?;
+    let normal = centers[1..]
+        .iter()
+        .enumerate()
+        .flat_map(|(left, &left_center)| {
+            centers[left + 2..].iter().map(move |&right_center| {
+                cross_vector(
+                    point_delta(left_center, origin),
+                    point_delta(right_center, origin),
+                )
+            })
+        })
+        .find(|normal| vector_norm(*normal) > TOLERANCE)?;
+    let norm = vector_norm(normal);
+    let mut normal = [normal.x / norm, normal.y / norm, normal.z / norm];
+    if centers.iter().any(|center| {
+        let offset = point_delta(*center, origin);
+        (offset.x * normal[0] + offset.y * normal[1] + offset.z * normal[2]).abs() > TOLERANCE
+    }) {
+        return None;
+    }
+    if normal
+        .iter()
+        .find(|component| component.abs() > TOLERANCE)
+        .is_some_and(|component| *component < 0.0)
+    {
+        normal = normal.map(|component| -component);
+    }
+    Some(normal)
 }
 
 fn face_surface<'a>(
