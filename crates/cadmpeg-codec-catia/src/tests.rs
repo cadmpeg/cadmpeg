@@ -4863,6 +4863,21 @@ fn native_design_objects_follow_first_field_order() {
     );
     assert_eq!(native.design_objects[0].fields.len(), 2);
     assert_eq!(native.design_objects[1].fields.len(), 1);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store source-ordered design objects");
+    let loaded =
+        crate::native::CatiaNative::load(&namespace).expect("load source-ordered design objects");
+    assert_eq!(
+        loaded
+            .design_objects
+            .iter()
+            .map(|object| object.owner_ordinal)
+            .collect::<Vec<_>>(),
+        [3, 1]
+    );
 }
 
 #[test]
@@ -5311,6 +5326,17 @@ fn native_load_rejects_orphaned_and_ambiguously_owned_design_records() {
             Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
         ));
     }
+
+    let mut stale_design_objects = namespace.clone();
+    stale_design_objects
+        .arenas
+        .get_mut("design_objects")
+        .expect("derived design-object arena")
+        .clear();
+    assert!(matches!(
+        crate::native::CatiaNative::load(&stale_design_objects),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]
