@@ -4599,6 +4599,16 @@ fn historical_selection_regions(
         return unique_resolved_selection(state_selections.into_iter().map(Some));
     }
     {
+        if let Some(selection) = members
+            .iter()
+            .map(|member| resolved_selection_member_points(member, sketch, entities))
+            .collect::<Option<Vec<_>>>()
+            .and_then(|member_points| {
+                selection_for_member_points(members, sketch, entities, &member_points, tolerance)
+            })
+        {
+            return Some(selection);
+        }
         let selections = members
             .iter()
             .map(|member| {
@@ -18691,6 +18701,48 @@ mod relation_tests {
                 &sketch,
                 std::slice::from_ref(&entity),
                 &[point],
+                1.0e-6,
+            ),
+            Some(super::ResolvedProfileSelection::Loops(vec![0]))
+        );
+
+        let mut branched_sketch = sketch.clone();
+        let start_branch_id = SketchEntityId("start-branch".into());
+        let end_branch_id = SketchEntityId("end-branch".into());
+        branched_sketch.profiles.extend([
+            vec![SketchEntityUse {
+                entity: start_branch_id.clone(),
+                reversed: false,
+            }],
+            vec![SketchEntityUse {
+                entity: end_branch_id.clone(),
+                reversed: false,
+            }],
+        ]);
+        let branch_entity = |id, start, end| SketchEntity {
+            id,
+            sketch: branched_sketch.id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line { start, end },
+        };
+        let branched_entities = [
+            entity.clone(),
+            branch_entity(
+                start_branch_id,
+                Point2::new(0.0, 0.0),
+                Point2::new(0.0, 1.0),
+            ),
+            branch_entity(end_branch_id, Point2::new(2.0, 0.0), Point2::new(2.0, 1.0)),
+        ];
+        let endpoints = [Point3::new(10.0, 20.0, 5.0), Point3::new(12.0, 20.0, 5.0)];
+        assert_eq!(
+            super::selection_containing_points(
+                &branched_sketch,
+                &branched_entities,
+                &endpoints,
                 1.0e-6,
             ),
             Some(super::ResolvedProfileSelection::Loops(vec![0]))
