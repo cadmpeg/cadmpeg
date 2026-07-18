@@ -300,6 +300,11 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                     binding.as_ref().map(|(native, _)| (*source, *native))
                 })
                 .collect::<HashMap<_, _>>();
+            let features_by_source = history
+                .features
+                .iter()
+                .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+                .collect::<HashMap<_, _>>();
             history
                 .features
                 .iter()
@@ -325,7 +330,12 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                     source_text: feature.text.clone(),
                     source_content: project_feature_content(feature, &by_native),
                     outputs: Vec::new(),
-                    definition: project_definition(feature, &by_source, &native_by_source),
+                    definition: project_definition(
+                        feature,
+                        &by_source,
+                        &native_by_source,
+                        &features_by_source,
+                    ),
                     native_ref: Some(feature.id.clone()),
                 })
         })
@@ -1800,6 +1810,60 @@ mod history_reference_tests {
         assert_eq!(native.unwrap().feature_histories[0].features.len(), 1);
     }
 
+    #[test]
+    fn simple_hole_uses_its_profile_dimension_roles() {
+        let mut hole = feature("hole", Some("214"), 0);
+        hole.xml_tag = "HoleWizard".into();
+        hole.properties
+            .insert("DissectableChildren".into(), "212".into());
+        let mut profile = feature("profile", Some("212"), 1);
+        profile.xml_tag = "Sketch".into();
+        profile.kind = "Sketch".into();
+        profile
+            .parameters
+            .insert("localized diameter".into(), "<MOD-DIAM>4.5".into());
+        profile
+            .parameters
+            .insert("localized depth".into(), "13.2".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![hole, profile],
+        };
+
+        let projected = project_features(std::slice::from_ref(&history));
+        let FeatureDefinition::Hole {
+            diameter, extent, ..
+        } = &projected[0].definition
+        else {
+            panic!("expected a hole definition");
+        };
+        assert_eq!(*diameter, Some(Length(4.5)));
+        assert_eq!(
+            *extent,
+            Some(Extent::Blind {
+                length: Length(13.2)
+            })
+        );
+
+        let mut ambiguous = history;
+        ambiguous.features[1]
+            .parameters
+            .insert("another length".into(), "2".into());
+        let ambiguous = project_features(&[ambiguous]);
+        let FeatureDefinition::Hole {
+            diameter, extent, ..
+        } = &ambiguous[0].definition
+        else {
+            panic!("expected a hole definition");
+        };
+        assert_eq!(*diameter, Some(Length(4.5)));
+        assert_eq!(*extent, None);
+    }
+
     fn design_configuration(
         id: &str,
         ordinal: u32,
@@ -2927,6 +2991,7 @@ fn project_definition(
     feature: &Feature,
     by_source: &HashMap<&str, FeatureId>,
     native_by_source: &HashMap<&str, &str>,
+    features_by_source: &HashMap<&str, &Feature>,
 ) -> FeatureDefinition {
     if let Some(role) = feature_tree_node_role(feature) {
         return FeatureDefinition::TreeNode { role };
@@ -3028,7 +3093,7 @@ fn project_definition(
     } else if class == Some(FeatureClass::Scale) {
         project_scale(feature)
     } else if class == Some(FeatureClass::Hole) {
-        project_hole(feature)
+        project_hole(feature, features_by_source)
     } else if class == Some(FeatureClass::Revolve) {
         project_revolve(feature, native_by_source)
     } else if class == Some(FeatureClass::Pattern) {
@@ -3944,12 +4009,18 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
     }
 }
 
-fn project_hole(feature: &Feature) -> FeatureDefinition {
+fn project_hole(
+    feature: &Feature,
+    features_by_source: &HashMap<&str, &Feature>,
+) -> FeatureDefinition {
+    let (profile_diameter, profile_depth) =
+        simple_hole_profile_dimensions(feature, features_by_source).unwrap_or_default();
     let diameter = feature
         .parameters
         .get("Diameter")
         .and_then(|value| parse_positive_length_mm(value))
-        .map(Length);
+        .map(Length)
+        .or(profile_diameter);
     let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
         || feature.parameters.contains_key("CounterboreDepth");
     let has_countersink = feature.parameters.contains_key("CountersinkDiameter")
@@ -4012,9 +4083,9 @@ fn project_hole(feature: &Feature) -> FeatureDefinition {
             .parameters
             .get("Depth")
             .and_then(|value| parse_positive_length_mm(value))
-            .map(|length| Extent::Blind {
-                length: Length(length),
-            }),
+            .map(Length)
+            .or(profile_depth)
+            .map(|length| Extent::Blind { length }),
         Some("ThroughAll") => Some(Extent::ThroughAll),
         Some(_) => None,
     };
@@ -4036,6 +4107,50 @@ fn project_hole(feature: &Feature) -> FeatureDefinition {
         diameter,
         extent,
     }
+}
+
+fn simple_hole_profile_dimensions(
+    feature: &Feature,
+    features_by_source: &HashMap<&str, &Feature>,
+) -> Option<(Option<Length>, Option<Length>)> {
+    let children = feature.properties.get("DissectableChildren")?;
+    let sources = children
+        .split(',')
+        .map(str::trim)
+        .filter(|source| !source.is_empty())
+        .collect::<Vec<_>>();
+    let [source] = sources.as_slice() else {
+        return None;
+    };
+    let profile = *features_by_source.get(source)?;
+    if classify(profile) != Some(FeatureClass::Sketch) {
+        return None;
+    }
+    let mut diameters = Vec::new();
+    let mut other_lengths = Vec::new();
+    for expression in profile.parameters.values() {
+        if expression.to_ascii_uppercase().contains("<MOD-DIAM>") {
+            if let Some(value) = parse_dimension_display_length(expression)
+                .filter(|value| *value > 0.0)
+                .map(Length)
+            {
+                diameters.push(value);
+            }
+        } else {
+            if let Some(value) = parse_positive_dimension_length_mm(expression).map(Length) {
+                other_lengths.push(value);
+            }
+        }
+    }
+    let diameter = match diameters.as_slice() {
+        [diameter] => Some(*diameter),
+        _ => None,
+    };
+    let depth = match (diameter, other_lengths.as_slice()) {
+        (Some(_), [depth]) => Some(*depth),
+        _ => None,
+    };
+    Some((diameter, depth))
 }
 
 fn project_shell(feature: &Feature) -> FeatureDefinition {
