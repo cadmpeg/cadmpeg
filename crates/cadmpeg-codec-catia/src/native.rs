@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 48;
+pub const CATIA_NATIVE_VERSION: u32 = 49;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -472,6 +472,37 @@ fn finjpl_family(kind: container::FinjplKind) -> &'static str {
     }
 }
 
+fn preview_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaPreviewImage> {
+    segments
+        .iter()
+        .flat_map(|segment| {
+            container::preview_images(&segment.data)
+                .into_iter()
+                .filter_map(move |preview| {
+                    Some((
+                        segment
+                            .byte_offset
+                            .checked_add(u64::try_from(preview.range.start).ok()?)?,
+                        preview,
+                        segment,
+                    ))
+                })
+        })
+        .enumerate()
+        .map(
+            |(index, (byte_offset, preview, segment))| CatiaPreviewImage {
+                id: format!("catia:outer:preview#{index}"),
+                byte_offset,
+                byte_len: (preview.range.end - preview.range.start) as u64,
+                width: preview.width,
+                height: preview.height,
+                components: preview.components,
+                data: segment.data[preview.range].to_vec(),
+            },
+        )
+        .collect()
+}
+
 fn validate_native_links(
     aliases: &[CatiaAliasRow],
     catalogs: &[CatiaCatalog],
@@ -485,6 +516,7 @@ fn validate_native_links(
         let expected_id = format!("catia:outer:finjpl#{index}");
         if segment.id != expected_id
             || u64::try_from(segment.data.len()).ok() != Some(segment.byte_len)
+            || segment.byte_offset.checked_add(segment.byte_len).is_none()
             || !matches!(parsed.as_slice(), [parsed]
                 if parsed.range == (0..segment.data.len())
                     && parsed.type_word == segment.type_word
@@ -496,6 +528,14 @@ fn validate_native_links(
                 segment.id
             )));
         }
+    }
+    if segments
+        .windows(2)
+        .any(|pair| pair[0].byte_offset.checked_add(pair[0].byte_len) != Some(pair[1].byte_offset))
+    {
+        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "CATIA FINJPL segment extents are not contiguous".to_string(),
+        ));
     }
     for block in value_blocks {
         let Some(catalog) = catalogs.iter().find(|catalog| catalog.id == block.catalog) else {
@@ -677,19 +717,6 @@ impl CatiaNative {
                 Some(CatiaValueBlock::from_parts(block, catalog, object_graph))
             })
             .collect();
-        let preview_images = container::preview_images(bytes)
-            .into_iter()
-            .enumerate()
-            .map(|(index, preview)| CatiaPreviewImage {
-                id: format!("catia:outer:preview#{index}"),
-                byte_offset: preview.range.start as u64,
-                byte_len: (preview.range.end - preview.range.start) as u64,
-                width: preview.width,
-                height: preview.height,
-                components: preview.components,
-                data: bytes[preview.range].to_vec(),
-            })
-            .collect();
         let finjpl_segments = container::finjpl_segments(bytes, 0, bytes.len())
             .into_iter()
             .enumerate()
@@ -703,6 +730,7 @@ impl CatiaNative {
                 data: bytes[segment.range].to_vec(),
             })
             .collect::<Vec<_>>();
+        let preview_images = preview_views(&finjpl_segments);
         let external_references = container::external_references(bytes)
             .into_iter()
             .enumerate()
@@ -869,6 +897,13 @@ impl CatiaNative {
                 Vec::new()
             };
         preview_images.sort_by_key(|preview| preview.byte_offset);
+        let expected_preview_images = preview_views(&finjpl_segments);
+        if preview_images != expected_preview_images {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "stored CATIA previews disagree with their summary segments".to_string(),
+            ));
+        }
+        let preview_images = expected_preview_images;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
         validate_native_links(
             &alias_rows,

@@ -5571,6 +5571,55 @@ fn native_load_restores_segment_source_order_and_validates_retained_views() {
     let mut invalid_type = native;
     invalid_type.finjpl_segments[0].type_word ^= 1;
     assert_rejected(invalid_type);
+
+    let mut invalid_offset = crate::native::CatiaNative::decode(&bytes);
+    invalid_offset.finjpl_segments[1].byte_offset += 1;
+    assert_rejected(invalid_offset);
+}
+
+#[test]
+fn native_load_derives_complete_source_ordered_preview_views() {
+    let mut bytes = Vec::new();
+    for _ in 0..12 {
+        bytes.extend(summary_preview_segment());
+    }
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.preview_images.len(), 12);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store indexed preview views");
+    let loaded = crate::native::CatiaNative::load(&namespace).expect("load indexed preview views");
+    assert_eq!(
+        loaded
+            .preview_images
+            .iter()
+            .map(|preview| preview.id.clone())
+            .collect::<Vec<_>>(),
+        (0..12)
+            .map(|index| format!("catia:outer:preview#{index}"))
+            .collect::<Vec<_>>()
+    );
+
+    let assert_rejected = |malformed: crate::native::CatiaNative| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed
+            .store(&mut namespace)
+            .expect("store malformed preview view");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+    };
+    let mut missing = native.clone();
+    missing.preview_images.pop();
+    assert_rejected(missing);
+    let mut invalid_width = native.clone();
+    invalid_width.preview_images[0].width += 1;
+    assert_rejected(invalid_width);
+    let mut invalid_data = native;
+    invalid_data.preview_images[0].data[0] = 0;
+    assert_rejected(invalid_data);
 }
 
 #[test]
