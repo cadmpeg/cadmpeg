@@ -790,6 +790,8 @@ pub enum FeatureTreeNodeRole {
     CosmeticThread,
     /// Design-binder container.
     DesignBinder,
+    /// Detail-item container.
+    Details,
     /// Profile-selection handle generated from a dissectable sketch.
     DissectedProfile,
     /// Directional scene light.
@@ -800,6 +802,8 @@ pub enum FeatureTreeNodeRole {
     ExplodedViews,
     /// Favorites container.
     Favorites,
+    /// User-created feature folder.
+    FeatureFolder,
     /// Generic history folder.
     History,
     /// Lights, cameras, and scene container.
@@ -820,6 +824,8 @@ pub enum FeatureTreeNodeRole {
     SolidBodies,
     /// Surface-body container.
     SurfaceBodies,
+    /// Table container.
+    Tables,
 }
 
 /// Canonical role of a built-in reference plane.

@@ -206,6 +206,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         ),
 
         "moDetailCabinet_c" => tree_node_class(FeatureTreeNodeRole::Annotations),
+        "moDetailFolder_c" => tree_node_class(FeatureTreeNodeRole::Details),
         "moCommentsFolder_c" => tree_node_class(FeatureTreeNodeRole::Comments),
         "moCosmeticThread_c" | "moDerivedCosmeticThread_c" => {
             tree_node_class(FeatureTreeNodeRole::CosmeticThread)
@@ -213,6 +214,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moDocsFolder_c" => tree_node_class(FeatureTreeNodeRole::DesignBinder),
         "moEqnFolder_c" => tree_node_class(FeatureTreeNodeRole::Equations),
         "moFavoriteFolder_c" => tree_node_class(FeatureTreeNodeRole::Favorites),
+        "moFtrFolder_c" => tree_node_class(FeatureTreeNodeRole::FeatureFolder),
         "moHistoryFolder_c" => tree_node_class(FeatureTreeNodeRole::History),
         "moInkMarkupFolder_c" => tree_node_class(FeatureTreeNodeRole::Markups),
         "moMaterialFolder_c" => tree_node_class(FeatureTreeNodeRole::Materials),
@@ -221,6 +223,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moSensorFolder_c" => tree_node_class(FeatureTreeNodeRole::Sensors),
         "moSolidBodyFolder_c" => tree_node_class(FeatureTreeNodeRole::SolidBodies),
         "moSurfaceBodyFolder_c" => tree_node_class(FeatureTreeNodeRole::SurfaceBodies),
+        "moTableFolder_c" => tree_node_class(FeatureTreeNodeRole::Tables),
 
         "sgSketch" => (NativeClassKind::Sketch, Sketch, None, None),
         "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" | "sgSplineHandle" => {
@@ -539,6 +542,17 @@ mod tests {
                 Some(FeatureTreeNodeRole::CosmeticThread),
                 "{class}"
             );
+        }
+
+        for (class, role) in [
+            ("moDetailFolder_c", FeatureTreeNodeRole::Details),
+            ("moFtrFolder_c", FeatureTreeNodeRole::FeatureFolder),
+            ("moTableFolder_c", FeatureTreeNodeRole::Tables),
+        ] {
+            let folder = native_object_class(class);
+            assert_eq!(folder.role, FeatureInputClassRole::Auxiliary, "{class}");
+            assert_eq!(folder.feature, None, "{class}");
+            assert_eq!(folder.tree_node, Some(role), "{class}");
         }
 
         let origin = native_object_class("moOriginProfileFeature_c");

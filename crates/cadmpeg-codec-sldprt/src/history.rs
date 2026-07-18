@@ -3165,11 +3165,13 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::Comments => "Comments",
         FeatureTreeNodeRole::CosmeticThread => "Cosmetic Thread",
         FeatureTreeNodeRole::DesignBinder => "Design Binder",
+        FeatureTreeNodeRole::Details => "Details",
         FeatureTreeNodeRole::DissectedProfile => "Profile Selection",
         FeatureTreeNodeRole::DirectionalLight => "Directional",
         FeatureTreeNodeRole::Equations => "Equations",
         FeatureTreeNodeRole::ExplodedViews => "Exploded Views",
         FeatureTreeNodeRole::Favorites => "Favorites",
+        FeatureTreeNodeRole::FeatureFolder => "Folder",
         FeatureTreeNodeRole::History => "History",
         FeatureTreeNodeRole::LightsAndCameras => "Lights and Cameras",
         FeatureTreeNodeRole::Markups => "Markups",
@@ -3180,6 +3182,7 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::Sensors => "Sensors",
         FeatureTreeNodeRole::SolidBodies => "Solid Bodies",
         FeatureTreeNodeRole::SurfaceBodies => "Surface Bodies",
+        FeatureTreeNodeRole::Tables => "Tables",
     }
 }
 
