@@ -2,7 +2,7 @@
 //! Byte-level topology for standard nested CATIA V5 B-rep streams.
 
 use std::{
-    cell::RefCell,
+    cell::{Cell, RefCell},
     collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
@@ -12,6 +12,7 @@ use cadmpeg_ir::topology::BodyKind;
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
+const MAX_MESH_SUPPORT_OPERATIONS: usize = 1_000_000;
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
@@ -1188,6 +1189,7 @@ impl IncidenceComponentSearch<'_> {
                     mesh_assignment_endpoint_cycles_viable_where(
                         assignment,
                         self.choices,
+                        None,
                         |candidate_edge, candidate_pair| {
                             let selected = if candidate_edge == edge {
                                 Some(pair)
@@ -1304,6 +1306,7 @@ impl IncidenceComponentSearch<'_> {
                     mesh_assignment_endpoint_cycles_viable_where(
                         assignment,
                         self.choices,
+                        None,
                         |edge, pair| {
                             self.assignment[edge]
                                 .is_none_or(|selected| same_unordered_pair(selected, pair))
@@ -6305,6 +6308,7 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 fn mesh_assignment_endpoint_cycles_viable_where(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
+    budget: Option<&MeshSupportBudget>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<bool> {
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
@@ -6327,6 +6331,9 @@ fn mesh_assignment_endpoint_cycles_viable_where(
         };
         let mut states = HashSet::new();
         for [left, right] in candidates(boundary[0].edge) {
+            if budget.is_some_and(|budget| !budget.charge()) {
+                return None;
+            }
             states.insert((left, right));
             states.insert((right, left));
             if states.len() > MAX_LOCAL_ENDPOINT_STATES {
@@ -6337,6 +6344,9 @@ fn mesh_assignment_endpoint_cycles_viable_where(
             let mut next = HashSet::new();
             for &(start, current) in &states {
                 for [left, right] in candidates(use_.edge) {
+                    if budget.is_some_and(|budget| !budget.charge()) {
+                        return None;
+                    }
                     if left == current {
                         next.insert((start, right));
                     }
@@ -6364,19 +6374,52 @@ fn mesh_assignment_endpoint_cycles_viable_with(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
     required: Option<(usize, [usize; 2])>,
+    budget: Option<&MeshSupportBudget>,
 ) -> Option<bool> {
-    mesh_assignment_endpoint_cycles_viable_where(assignment, edge_candidates, |edge, pair| {
-        required.is_none_or(|(required_edge, required_pair)| {
-            edge != required_edge || same_unordered_pair(pair, required_pair)
-        })
-    })
+    mesh_assignment_endpoint_cycles_viable_where(
+        assignment,
+        edge_candidates,
+        budget,
+        |edge, pair| {
+            required.is_none_or(|(required_edge, required_pair)| {
+                edge != required_edge || same_unordered_pair(pair, required_pair)
+            })
+        },
+    )
 }
 
+#[cfg(test)]
 fn mesh_assignment_endpoint_cycles_viable(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> bool {
-    mesh_assignment_endpoint_cycles_viable_with(assignment, edge_candidates, None).unwrap_or(true)
+    mesh_assignment_endpoint_cycles_viable_with(assignment, edge_candidates, None, None)
+        .unwrap_or(true)
+}
+
+struct MeshSupportBudget {
+    remaining: Cell<usize>,
+    exhausted: Cell<bool>,
+}
+
+impl MeshSupportBudget {
+    fn new(limit: usize) -> Self {
+        Self {
+            remaining: Cell::new(limit),
+            exhausted: Cell::new(false),
+        }
+    }
+
+    fn charge(&self) -> bool {
+        let remaining = self.remaining.get();
+        if remaining == 0 {
+            self.exhausted.set(true);
+            false
+        } else {
+            self.remaining.set(remaining - 1);
+            true
+        }
+    }
 }
 
 fn mesh_face_endpoint_configurations(
@@ -6519,13 +6562,35 @@ fn prune_mesh_endpoint_pair_support(
     assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
     edge_candidates: &mut [Vec<[usize; 2]>],
 ) -> bool {
+    prune_mesh_endpoint_pair_support_with_limit(
+        assignments,
+        edge_candidates,
+        MAX_MESH_SUPPORT_OPERATIONS,
+    )
+}
+
+fn prune_mesh_endpoint_pair_support_with_limit(
+    assignments: &mut [Vec<MeshFaceBoundaryAssignment>],
+    edge_candidates: &mut [Vec<[usize; 2]>],
+    limit: usize,
+) -> bool {
+    let budget = MeshSupportBudget::new(limit);
     'fixpoint: loop {
         let mut changed = false;
         for face in assignments.iter_mut() {
             let before = face.len();
             face.retain(|assignment| {
-                mesh_assignment_endpoint_cycles_viable(assignment, edge_candidates)
+                mesh_assignment_endpoint_cycles_viable_with(
+                    assignment,
+                    edge_candidates,
+                    None,
+                    Some(&budget),
+                )
+                .unwrap_or(true)
             });
+            if budget.exhausted.get() {
+                return false;
+            }
             if face.is_empty() {
                 return false;
             }
@@ -6565,11 +6630,15 @@ fn prune_mesh_endpoint_pair_support(
                                 assignment,
                                 &snapshot,
                                 Some((edge, *pair)),
+                                Some(&budget),
                             )
                             .unwrap_or(true)
                     })
                 })
             });
+            if budget.exhausted.get() {
+                return false;
+            }
             if edge_candidates[edge].is_empty() {
                 return false;
             }
@@ -8519,13 +8588,13 @@ mod motif_tests {
         parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
         possible_face_choices, possible_face_equations, propagate_edge_port_points,
         propagate_partial_edge_port_points, prune_edge_candidates_by_port_domains,
-        prune_mesh_endpoint_pair_support, reconstruct_incidence, reconstruct_incidence_candidates,
-        resolve_edge_faces_from_runs, same_unordered_pair, standard_face_count,
-        unique_coordinate_bijection, unique_duplicate_face_assignment,
-        uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
-        FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
-        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
-        MAX_FACE_EQUATION_CACHE_ENTRIES,
+        prune_mesh_endpoint_pair_support, prune_mesh_endpoint_pair_support_with_limit,
+        reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
+        same_unordered_pair, standard_face_count, unique_coordinate_bijection,
+        unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
+        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun,
+        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
+        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -10704,6 +10773,25 @@ mod motif_tests {
         ));
         assert_eq!(candidates[0], vec![[0, 1]]);
         assert_eq!(assignments[1], vec![assignment(&[0, 3, 4])]);
+    }
+
+    #[test]
+    fn mesh_endpoint_pair_support_declines_when_its_work_budget_is_exhausted() {
+        let mut assignments = vec![vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            }]],
+        }]];
+        let mut candidates = vec![vec![[0, 0]]];
+
+        assert!(!prune_mesh_endpoint_pair_support_with_limit(
+            &mut assignments,
+            &mut candidates,
+            0,
+        ));
     }
 
     #[test]
