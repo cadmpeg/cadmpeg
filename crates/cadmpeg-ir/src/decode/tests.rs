@@ -220,7 +220,9 @@ fn read_counted_reads_and_charges() {
     let (ctx, mut view) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
     let count = view.counted(2, 4).unwrap();
-    let values = ctx.read_counted(&mut view, count, |v| v.u32_le()).unwrap();
+    let values = ctx
+        .read_counted(&mut view, count, super::view::View::u32_le)
+        .unwrap();
     assert_eq!(values, vec![1u32, 2]);
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 8);
 }
@@ -233,7 +235,7 @@ fn read_counted_classifies_exhausted_input_as_truncated() {
     let (ctx, mut view) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
     let count = view.counted(2, 4).unwrap();
-    let result = ctx.read_counted(&mut view, count, |v| v.u64_le());
+    let result = ctx.read_counted(&mut view, count, super::view::View::u64_le);
     assert!(matches!(result, Err(CodecError::Truncated { .. })));
 }
 
