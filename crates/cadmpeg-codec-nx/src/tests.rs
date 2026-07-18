@@ -3297,6 +3297,20 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
     )
     .is_empty());
 
+    let unknown = FeaturePayloadString {
+        id: "payload-string#3-1".to_string(),
+        operation_record: record.id.clone(),
+        ordinal: 1,
+        value: "Hole_Unknown".to_string(),
+        source_offset: 194,
+    };
+    assert!(crate::native::feature_simple_hole_templates(
+        std::slice::from_ref(&label),
+        std::slice::from_ref(&record),
+        &[string.clone(), unknown],
+    )
+    .is_empty());
+
     let mut malformed = string;
     malformed.value = "Hole_GeneralHole_Simple_Through_EndChamfer_StartChamfer".to_string();
     assert!(

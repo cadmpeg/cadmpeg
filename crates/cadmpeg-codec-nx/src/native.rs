@@ -5768,12 +5768,28 @@ pub fn feature_simple_hole_templates(
         .iter()
         .map(|record| (record.id.as_str(), record))
         .collect::<BTreeMap<_, _>>();
-    let mut templates_by_operation = BTreeMap::<String, Vec<FeatureSimpleHoleTemplate>>::new();
+    let mut templates_by_operation = BTreeMap::<String, Vec<_>>::new();
     for string in strings {
-        let Some(template) = (|| {
-            let record = records_by_id.get(string.operation_record.as_str())?;
-            let label = labels_by_id.get(record.operation_label.as_str())?;
-            (label.value == "SIMPLE HOLE").then_some(())?;
+        let Some(record) = records_by_id.get(string.operation_record.as_str()) else {
+            continue;
+        };
+        let Some(label) = labels_by_id.get(record.operation_label.as_str()) else {
+            continue;
+        };
+        if label.value != "SIMPLE HOLE" || !string.value.starts_with("Hole_") {
+            continue;
+        }
+        templates_by_operation
+            .entry(label.id.clone())
+            .or_default()
+            .push((string, *label));
+    }
+    templates_by_operation
+        .into_values()
+        .filter_map(|candidates| {
+            let [(string, label)] = candidates.as_slice() else {
+                return None;
+            };
             let (family, form, extent, start_treatment, end_treatment) =
                 parse_simple_hole_template(&string.value)?;
             Some(FeatureSimpleHoleTemplate {
@@ -5788,20 +5804,6 @@ pub fn feature_simple_hole_templates(
                 start_treatment,
                 end_treatment,
             })
-        })() else {
-            continue;
-        };
-        templates_by_operation
-            .entry(template.operation_label.clone())
-            .or_default()
-            .push(template);
-    }
-    templates_by_operation
-        .into_values()
-        .filter_map(|templates| {
-            let mut templates = templates.into_iter();
-            let template = templates.next()?;
-            templates.next().is_none().then_some(template)
         })
         .collect()
 }
