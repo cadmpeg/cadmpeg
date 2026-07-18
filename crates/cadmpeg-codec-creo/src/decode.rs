@@ -11180,6 +11180,7 @@ fn resolved_feature_dimension_parameter(
     table: &crate::feature::FeatureDimensionTable,
     ordinal: usize,
 ) -> Option<(&crate::feature::FeatureDimension, ParameterId)> {
+    feature_dimension_table_complete(table).then_some(())?;
     let dimension = table.rows.get(ordinal)?;
     (table
         .rows
@@ -11197,6 +11198,10 @@ fn resolved_feature_dimension_parameter(
                 ),
             )
         })
+}
+
+fn feature_dimension_table_complete(table: &crate::feature::FeatureDimensionTable) -> bool {
+    usize::try_from(table.declared_count).ok() == Some(table.rows.len())
 }
 
 fn feature_dimension_parameter_layout(
@@ -11261,6 +11266,9 @@ fn transfer_feature_dimensions(
         let Some(table) = &definition.dimensions else {
             continue;
         };
+        if !feature_dimension_table_complete(table) {
+            continue;
+        }
         for (source_ordinal, dimension) in table.rows.iter().enumerate() {
             candidates.push((owner_feature_id, definition, source_ordinal, dimension));
         }
@@ -15913,6 +15921,14 @@ mod resolved_sketch_tests {
                 &unresolved_dimension,
                 ParameterId("creo:featdefs:parameter#917:40:4".to_string())
             ))
+        );
+        let incomplete_table = crate::feature::FeatureDimensionTable {
+            declared_count: 2,
+            ..unresolved_table
+        };
+        assert_eq!(
+            resolved_feature_dimension_parameter(917, 40, &incomplete_table, 0),
+            None
         );
         table.rows.push(dimension);
         definition.dimensions = Some(table);
