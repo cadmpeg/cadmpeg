@@ -5766,6 +5766,7 @@ fn attach_standard_topology(
         .filter(|bounds| bounds.len() == face_count);
     let mut endpoint_candidates = Vec::with_capacity(supports.len());
     let mut incidence_candidates = HashMap::<[usize; 2], Vec<usize>>::new();
+    let mut face_incidence_candidates = HashMap::<usize, Vec<usize>>::new();
     for support in &supports {
         let Some(surface0) = face_surface(ir, bindings, &surface_indices, support.faces[0]) else {
             return false;
@@ -5785,29 +5786,37 @@ fn attach_standard_topology(
             geometry::StandardCurveGeometry::Line | geometry::StandardCurveGeometry::Bspline => {
                 let mut faces = support.faces;
                 faces.sort_unstable();
-                incidence_candidates
-                    .entry(faces)
-                    .or_insert_with(|| {
+                for (face, surface) in [
+                    (support.faces[0], &surface0.geometry),
+                    (support.faces[1], &surface1.geometry),
+                ] {
+                    face_incidence_candidates.entry(face).or_insert_with(|| {
                         ir.model
                             .points
                             .iter()
                             .enumerate()
                             .filter_map(|(index, point)| {
-                                let incident = point_on_standard_face(
+                                point_on_standard_face(
                                     point.position,
-                                    &surface0.geometry,
-                                    face_bounds
-                                        .as_ref()
-                                        .and_then(|bounds| bounds[support.faces[0]]),
-                                ) && point_on_standard_face(
-                                    point.position,
-                                    &surface1.geometry,
-                                    face_bounds
-                                        .as_ref()
-                                        .and_then(|bounds| bounds[support.faces[1]]),
-                                );
-                                incident.then_some(index)
+                                    surface,
+                                    face_bounds.as_ref().and_then(|bounds| bounds[face]),
+                                )
+                                .then_some(index)
                             })
+                            .collect()
+                    });
+                }
+                incidence_candidates
+                    .entry(faces)
+                    .or_insert_with(|| {
+                        let right = face_incidence_candidates[&faces[1]]
+                            .iter()
+                            .copied()
+                            .collect::<HashSet<_>>();
+                        face_incidence_candidates[&faces[0]]
+                            .iter()
+                            .copied()
+                            .filter(|point| right.contains(point))
                             .collect()
                     })
                     .clone()

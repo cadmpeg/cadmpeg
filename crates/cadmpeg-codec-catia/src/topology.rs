@@ -8068,14 +8068,16 @@ pub fn parse_standard_mesh_endpoint_candidates(
     if total_work > MAX_SELECTION_WORK {
         return None;
     }
+    let face_equations = possible_face_equations(&assignments);
+    let face_choices = possible_face_choices_with_limit(
+        &assignments,
+        &face_equations,
+        MAX_MESH_CONSTRAINT_OPERATIONS,
+    )?;
     let mut search = MeshSelectionSearch {
         assignments: &assignments,
-        possible_face_equations: possible_face_equations(&assignments),
-        possible_face_choices: possible_face_choices_with_limit(
-            &assignments,
-            &possible_face_equations(&assignments),
-            MAX_MESH_CONSTRAINT_OPERATIONS,
-        )?,
+        possible_face_equations: face_equations,
+        possible_face_choices: face_choices,
         face_work,
         edge_candidates: &edge_candidates,
         edge_rows: &edge_rows,
