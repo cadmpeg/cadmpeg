@@ -41,7 +41,6 @@
 //! [`StepError`] represents output-sink failures. Since the writer streams the
 //! header and DATA section, such a failure can leave partial output.
 
-pub mod entity_table;
 mod geometry;
 pub mod lex;
 pub mod parse;
