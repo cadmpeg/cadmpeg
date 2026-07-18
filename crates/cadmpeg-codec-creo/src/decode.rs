@@ -19693,6 +19693,42 @@ fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool;
     ]
 }
 
+fn full_nurbs_edge_parameter_range(
+    geometry: &CurveGeometry,
+    points: [[f64; 3]; 2],
+) -> Option<[f64; 2]> {
+    let CurveGeometry::Nurbs(nurbs) = geometry else {
+        return None;
+    };
+    if nurbs.periodic {
+        return None;
+    }
+    let degree = usize::try_from(nurbs.degree).ok()?;
+    (degree > 0
+        && nurbs.control_points.len() > degree
+        && nurbs.knots.len() == nurbs.control_points.len().checked_add(degree + 1)?
+        && nurbs
+            .weights
+            .as_ref()
+            .is_none_or(|weights| weights.len() == nurbs.control_points.len()))
+    .then_some(())?;
+    let range = [
+        *nurbs.knots.get(degree)?,
+        *nurbs.knots.get(nurbs.control_points.len())?,
+    ];
+    (range[0].is_finite() && range[1].is_finite() && range[0] < range[1]).then_some(())?;
+    let mapped = range.map(|parameter| {
+        cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
+    });
+    let [Some(first), Some(second)] = mapped else {
+        return None;
+    };
+    match point_pair_alignments([first, second], points) {
+        [true, false] | [false, true] => Some(range),
+        _ => None,
+    }
+}
+
 #[derive(Clone, Copy)]
 struct PeriodicConicFrame {
     center: [f64; 3],
@@ -19996,6 +20032,44 @@ mod native_edge_parameter_tests {
         };
         assert_eq!(
             exact_line_edge_parameter_range(&line, [[7.0, 2.0, 3.0], [-3.0, 2.1, 3.0]]),
+            None
+        );
+    }
+
+    #[test]
+    fn full_nonperiodic_nurbs_recovers_its_intrinsic_domain() {
+        let nurbs = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 2,
+            knots: vec![2.0, 2.0, 2.0, 5.0, 5.0, 5.0],
+            control_points: vec![
+                Point3::new(1.0, 2.0, 3.0),
+                Point3::new(4.0, 7.0, 3.0),
+                Point3::new(9.0, 8.0, 3.0),
+            ],
+            weights: Some(vec![1.0, 0.5, 1.0]),
+            periodic: false,
+        });
+        assert_eq!(
+            full_nurbs_edge_parameter_range(&nurbs, [[9.0, 8.0, 3.0], [1.0, 2.0, 3.0]],),
+            Some([2.0, 5.0])
+        );
+        assert_eq!(
+            full_nurbs_edge_parameter_range(&nurbs, [[9.0, 8.0, 3.0], [1.0, 2.1, 3.0]],),
+            None
+        );
+    }
+
+    #[test]
+    fn periodic_nurbs_does_not_imply_a_full_edge_trim() {
+        let nurbs = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: true,
+        });
+        assert_eq!(
+            full_nurbs_edge_parameter_range(&nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],),
             None
         );
     }
@@ -20491,18 +20565,19 @@ fn transfer_plane_brep(
                 .find(|candidate| candidate.id == curve)
                 .and_then(|candidate| {
                     exact_line_edge_parameter_range(&candidate.geometry, points).or_else(|| {
-                        nonperiodic_conic_edge_parameter_range(&candidate.geometry, points).or_else(
-                            || {
-                                pcurve_backed_periodic_conic_parameter_range(
-                                    &candidate.geometry,
-                                    *curve_id,
-                                    *curve_faces.get(curve_id)?,
-                                    &native_pcurves,
-                                    &ir.model.surfaces,
-                                    points,
-                                )
-                            },
-                        )
+                        full_nurbs_edge_parameter_range(&candidate.geometry, points).or_else(|| {
+                            nonperiodic_conic_edge_parameter_range(&candidate.geometry, points)
+                                .or_else(|| {
+                                    pcurve_backed_periodic_conic_parameter_range(
+                                        &candidate.geometry,
+                                        *curve_id,
+                                        *curve_faces.get(curve_id)?,
+                                        &native_pcurves,
+                                        &ir.model.surfaces,
+                                        points,
+                                    )
+                                })
+                        })
                     })
                 })
         };
