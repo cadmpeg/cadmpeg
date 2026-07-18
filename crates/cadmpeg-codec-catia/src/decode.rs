@@ -1396,6 +1396,7 @@ mod chart_tests {
         resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
         standard_circle_endpoint_candidates, standard_circle_param_range,
         standard_native_edge_references, standard_pcurve_geometry,
+        standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, unique_index_owners,
         unique_native_identity_points, unresolved_carrier_counts, UnknownRecord,
     };
@@ -1739,6 +1740,43 @@ mod chart_tests {
         );
         supports.push(circle(Point3::new(1.0, 1.0, 2.5)));
         assert!(standard_plane_normal_from_circle_centers(&supports, 2).is_none());
+    }
+
+    #[test]
+    fn adjacent_cone_latitudes_determine_a_cap_plane_normal() {
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 52.5),
+            axis: Vector3::new(0.0, 0.0, -1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 0.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let supports = vec![StandardCurveSupport {
+            pos: 0,
+            tag: 0,
+            faces: [2, 3],
+            geometry: StandardCurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, 50.0),
+                radius: 2.5,
+            },
+        }];
+        let surfaces = vec![None, None, None, Some(cone)];
+
+        assert_eq!(
+            standard_plane_normal_from_adjacent_circle_carriers(&supports, &surfaces, 2),
+            Some([0.0, 0.0, 1.0])
+        );
+
+        let mut mismatched = supports;
+        let StandardCurveGeometry::Circle { radius, .. } = &mut mismatched[0].geometry else {
+            unreachable!()
+        };
+        *radius = 3.0;
+        assert!(
+            standard_plane_normal_from_adjacent_circle_carriers(&mismatched, &surfaces, 2)
+                .is_none()
+        );
     }
 
     #[test]
@@ -4894,6 +4932,16 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
     let freeform_record_count = records.len() - analytic_record_count;
     let face_frame_vectors = topology::standard_face_frame_vectors(brep);
     let curve_supports = geometry::standard_curve_supports(brep, face_count);
+    let curved_surfaces = records
+        .iter()
+        .map(|record| match record {
+            geometry::StandardSurfaceRecord::Analytic(prefix) if prefix.kind != 0x32 => {
+                geometry::decode_curved(brep, prefix)
+            }
+            geometry::StandardSurfaceRecord::Analytic(_)
+            | geometry::StandardSurfaceRecord::Freeform { .. } => None,
+        })
+        .collect::<Vec<_>>();
     let mut plane_normal_candidates = HashMap::<u32, Option<[f64; 3]>>::new();
     let mut derived_plane_targets = HashSet::new();
     let mut exact_plane_targets = HashSet::new();
@@ -4906,6 +4954,13 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         }
         let frame_normal = face_frame_vectors.get(face).copied().flatten();
         let normal = frame_normal
+            .or_else(|| {
+                standard_plane_normal_from_adjacent_circle_carriers(
+                    &curve_supports,
+                    &curved_surfaces,
+                    face,
+                )
+            })
             .or_else(|| standard_plane_normal_from_circle_centers(&curve_supports, face));
         let Some(normal) = normal else {
             continue;
@@ -4965,7 +5020,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         let decoded = if prefix.kind == 0x32 {
             planes.get(&prefix.target).map(geometry::decode_plane)
         } else {
-            geometry::decode_curved(brep, prefix)
+            curved_surfaces[i].clone()
         };
         match decoded {
             Some(geom) => {
@@ -6525,6 +6580,39 @@ fn standard_plane_normal_from_circle_centers(
     if normal
         .iter()
         .find(|component| component.abs() > TOLERANCE)
+        .is_some_and(|component| *component < 0.0)
+    {
+        normal = normal.map(|component| -component);
+    }
+    Some(normal)
+}
+
+fn standard_plane_normal_from_adjacent_circle_carriers(
+    supports: &[geometry::StandardCurveSupport],
+    surfaces: &[Option<SurfaceGeometry>],
+    face: usize,
+) -> Option<[f64; 3]> {
+    let mut axes = supports.iter().filter_map(|support| {
+        let geometry::StandardCurveGeometry::Circle { center, radius } = &support.geometry else {
+            return None;
+        };
+        let adjacent = if support.faces[0] == face {
+            support.faces[1]
+        } else if support.faces[1] == face {
+            support.faces[0]
+        } else {
+            return None;
+        };
+        circle_axis_from_carrier(*center, *radius, surfaces.get(adjacent)?.as_ref()?)
+    });
+    let axis = axes.next()?;
+    if axes.any(|other| axis_dot(axis, other).abs() < 0.9999) {
+        return None;
+    }
+    let mut normal = [axis.x, axis.y, axis.z];
+    if normal
+        .iter()
+        .find(|component| component.abs() > 1e-5)
         .is_some_and(|component| *component < 0.0)
     {
         normal = normal.map(|component| -component);
