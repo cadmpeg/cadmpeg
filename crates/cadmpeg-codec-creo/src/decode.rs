@@ -17910,6 +17910,11 @@ mod resolved_sketch_tests {
         });
         let candidates = coaxial_cone_torus_circle_candidates(cone, secant_torus);
         assert_eq!(candidates.len(), 2);
+        assert!(resolve_curve_candidates(
+            coaxial_cone_torus_circle_candidates(cone, secant_torus),
+            None,
+        )
+        .is_none());
         let upper_parameter = (1.0 + 7.0_f64.sqrt()) / 2.0;
         let upper_radius = 2.0 + upper_parameter;
         assert!(matches!(
@@ -17941,11 +17946,22 @@ mod resolved_sketch_tests {
             major_radius: 5.0,
             minor_radius: 3.0 / 2.0_f64.sqrt(),
         });
+        let tangent_candidates = coaxial_cone_torus_circle_candidates(cone, tangent_torus);
         assert!(matches!(
-            coaxial_cone_torus_circle_candidates(cone, tangent_torus).as_slice(),
+            tangent_candidates.as_slice(),
             [(CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_torus_circle")]
                 if (center.z - 1.5).abs() < 1e-12 && (radius - 3.5).abs() < 1e-12
         ));
+        assert!(matches!(
+            resolve_curve_candidates(tangent_candidates, None),
+            Some((CurveGeometry::Circle { center, radius, .. }, "coaxial_cone_torus_circle"))
+                if (center.z - 1.5).abs() < 1e-12 && (radius - 3.5).abs() < 1e-12
+        ));
+        assert!(resolve_curve_candidates(
+            coaxial_cone_torus_circle_candidates(cone, tangent_torus),
+            Some([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        )
+        .is_none());
         let shifted_torus = CarrierEquation::Torus(TorusEquation {
             center: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
@@ -23286,6 +23302,19 @@ fn select_unique_curve_candidate(
     Some(candidate.clone())
 }
 
+fn resolve_curve_candidates(
+    candidates: Vec<(CurveGeometry, &'static str)>,
+    points: Option<[[f64; 3]; 2]>,
+) -> Option<(CurveGeometry, &'static str)> {
+    if let Some(points) = points {
+        return select_unique_curve_candidate(candidates, points);
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
+}
+
 fn analytic_curve_branches(
     geometry: &CurveGeometry,
     tag: &'static str,
@@ -23360,20 +23389,12 @@ fn transfer_carrier_intersection_curves(
         })();
         let resolved = carrier_intersection_curve(first, second)
             .and_then(|(geometry, tag)| {
-                let branches = analytic_curve_branches(&geometry, tag);
-                if let Some(points) = points {
-                    select_unique_curve_candidate(branches, points)
-                } else {
-                    let [branch] = branches.as_slice() else {
-                        return None;
-                    };
-                    Some(branch.clone())
-                }
+                resolve_curve_candidates(analytic_curve_branches(&geometry, tag), points)
             })
             .or_else(|| {
-                select_unique_curve_candidate(
+                resolve_curve_candidates(
                     multi_component_intersection_candidates(first, second),
-                    points?,
+                    points,
                 )
             });
         let Some((geometry, tag)) = resolved else {

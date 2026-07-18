@@ -291,6 +291,9 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   Invariant-complete positional conic records additionally transfer as model-space ellipses.
   Strict-secant parallel cylinders transfer one common generator when solved
   native endpoints select exactly one of the two candidates.
+  Analytic carrier pairs with one derived curve component transfer without
+  solved endpoints; present endpoints must agree with that component. Multiple
+  components require endpoints that select exactly one candidate.
   A cylinder through a sphere center transfers its equatorial tangent circle
   or one endpoint-selected secant circle.
   Third-plane intersections resolve vertices across every transferred
