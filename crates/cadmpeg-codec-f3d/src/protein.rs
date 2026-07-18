@@ -65,7 +65,8 @@ pub(crate) struct DecodedRecord {
 }
 
 /// Decode every supported `InstanceProperties` record using the schemas
-/// packaged in the same Protein archive.
+/// packaged in the same Protein archive. A record whose schema-specific value
+/// block cannot be consumed is isolated at the next paged-record marker.
 pub(crate) fn decode(protein: &[u8], logical: &[u8]) -> Result<Vec<DecodedRecord>, CodecError> {
     let schemas = schemas(protein)?;
     let starts = logical
@@ -76,7 +77,7 @@ pub(crate) fn decode(protein: &[u8], logical: &[u8]) -> Result<Vec<DecodedRecord
     let mut records = Vec::new();
     for (ordinal, start) in starts.iter().copied().enumerate() {
         let end = starts.get(ordinal + 1).copied().unwrap_or(logical.len());
-        if let Some(record) = decode_record(&logical[start..end], &schemas)? {
+        if let Ok(Some(record)) = decode_record(&logical[start..end], &schemas) {
             records.push(record);
         }
     }
@@ -343,14 +344,7 @@ fn read_value(
         }
         Carrier::Reference => PropertyValue::Reference,
         Carrier::TextureUri => {
-            take::<1>(bytes, at).ok_or_else(malformed)?;
-            let count = usize::try_from(u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?))
-                .map_err(|_| malformed())?;
-            if count > 1_024 {
-                return Err(CodecError::Malformed(format!(
-                    "Protein texture property {id} has implausible path count {count}"
-                )));
-            }
+            let count = usize::from(take::<1>(bytes, at).ok_or_else(malformed)?[0]);
             let mut paths = Vec::with_capacity(count);
             for _ in 0..count {
                 paths.push(take_lp(bytes, at).ok_or_else(malformed)?);
@@ -458,15 +452,19 @@ mod tests {
         push_connections(&mut logical, &["first-guid", "second-guid"]);
         logical.extend_from_slice(&0x2016_u32.to_le_bytes());
         logical.extend_from_slice(&2.5_f64.to_le_bytes());
-        logical.push(0);
-        logical.extend_from_slice(&2_u32.to_le_bytes());
+        logical.push(2);
         push_lp(&mut logical, "cloud/resource/one");
         push_lp(&mut logical, "cloud/resource/two");
         logical.extend_from_slice(&0x200e_u32.to_le_bytes());
         logical.extend_from_slice(&4.5_f64.to_le_bytes());
         push_connections(&mut logical, &["reference-guid"]);
 
-        let records = decode(&protein, &logical).expect("schema record decodes");
+        let mut instance_stream = RECORD_MARKER.to_vec();
+        for value in ["TextureSchema", "truncated-guid", "Truncated", ""] {
+            push_lp(&mut instance_stream, value);
+        }
+        instance_stream.extend_from_slice(&logical);
+        let records = decode(&protein, &instance_stream).expect("schema record decodes");
         assert_eq!(records.len(), 1);
         let properties = &records[0].properties;
         assert_eq!(
