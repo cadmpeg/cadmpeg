@@ -157,6 +157,9 @@ pub struct Block {
     /// resolution references; `None` on the writer/test [`scan_bytes`] path,
     /// which runs without a [`DecodeContext`] and issues no tickets.
     pub retained_digest: Option<String>,
+    /// Whether `retained_digest` records only a digest because salvage-mode
+    /// retained-byte accounting exhausted its allowance.
+    pub retention_degraded: bool,
 }
 
 /// One tail-directory entry naming a section.
@@ -389,13 +392,13 @@ fn admit_block(
     // exhaustion fuses the context and propagates as an unswallowable
     // `ResourceLimit`; salvage degrades recovery to accounting and keeps the
     // digest, which still satisfies the disposition check.
-    let retained_digest = if retain {
+    let (retained_digest, retention_degraded) = if retain {
         match ctx.retain(inflated)? {
-            Retention::Retained(range) => Some(range.blob().as_str().to_owned()),
-            Retention::Accounted { digest } => Some(digest),
+            Retention::Retained(range) => (Some(range.blob().as_str().to_owned()), false),
+            Retention::Accounted { digest } => (Some(digest), true),
         }
     } else {
-        None
+        (None, false)
     };
 
     let preamble = bytes
@@ -447,6 +450,7 @@ fn admit_block(
         ps_streams,
         ps_stream_offsets,
         retained_digest,
+        retention_degraded,
     }))
 }
 
@@ -641,6 +645,7 @@ struct RawBlock {
     ps_streams: Vec<Vec<u8>>,
     ps_stream_offsets: Vec<usize>,
     retained_digest: Option<String>,
+    retention_degraded: bool,
 }
 
 impl RawBlock {
@@ -657,6 +662,7 @@ impl RawBlock {
             ps_streams: self.ps_streams,
             ps_stream_offsets: self.ps_stream_offsets,
             retained_digest: self.retained_digest,
+            retention_degraded: self.retention_degraded,
         }
     }
 }
@@ -718,6 +724,7 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
         ps_streams,
         ps_stream_offsets,
         retained_digest: None,
+        retention_degraded: false,
     })
 }
 

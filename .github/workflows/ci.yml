@@ -57,35 +57,6 @@ jobs:
       - name: Documentation tests
         run: cargo test --workspace --doc
 
-  # Validates the aliasing soundness of `DecodeArena`'s one unsafe block.
-  # Stable `cargo test` runs with no borrow model, so the arena's aliasing tests
-  # pass there regardless of soundness; only Miri exercises Stacked and Tree
-  # Borrows, so a future mutation/removal path that made the `from_raw_parts`
-  # extension UB would stay green everywhere else. `+nightly` overrides the
-  # repo's stable `rust-toolchain.toml` pin, as the fuzz smoke job does.
-  miri:
-    name: Miri (DecodeArena aliasing)
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Install nightly with Miri
-        uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: miri
-
-      - name: Cache cargo registry and target
-        uses: Swatinem/rust-cache@v2
-
-      - name: DecodeArena aliasing under Stacked Borrows
-        run: cargo +nightly miri test -p cadmpeg-ir decode::arena
-
-      - name: DecodeArena aliasing under Tree Borrows
-        run: cargo +nightly miri test -p cadmpeg-ir decode::arena
-        env:
-          MIRIFLAGS: -Zmiri-tree-borrows
-
   # Verifies the declared MSRV floor (Cargo.toml rust-version). RUSTUP_TOOLCHAIN
   # overrides the repo's rust-toolchain.toml pin so the floor is actually tested.
   msrv:

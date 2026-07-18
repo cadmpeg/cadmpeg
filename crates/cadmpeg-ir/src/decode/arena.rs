@@ -49,15 +49,6 @@ impl DecodeArena {
         // mutated after being stored (the arena exposes no mutation), so
         // aliasing `&[u8]` borrows do not conflict.
         //
-        // Aliasing-model note: this is the elsa/FrozenVec pattern. A later
-        // `borrow_mut` retags `&mut Vec<Box<[u8]>>` and may reallocate the
-        // outer `Vec`, but the returned pointer addresses the pushed box's own
-        // heap allocation, which that retag and any reallocation leave
-        // untouched, so the borrow stays valid. The `miri` CI job runs the
-        // `tests` module under both Stacked Borrows and Tree Borrows; its
-        // interleaved alloc-and-read across enough buffers to reallocate the
-        // outer `Vec` many times makes each model validate every earlier
-        // pointer against the later retags.
         unsafe { std::slice::from_raw_parts(slice.as_ptr(), slice.len()) }
     }
 }

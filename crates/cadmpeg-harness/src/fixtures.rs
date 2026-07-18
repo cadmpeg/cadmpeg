@@ -13,18 +13,6 @@ use crate::execute::CODEC_IDS;
 /// Environment override for the corpus root.
 pub const ENV_CORPUS: &str = "CADMPEG_HARNESS_CORPUS";
 
-/// The curated per-codec fixtures the fast regression gate covers, as
-/// corpus-relative paths. One representative whole-file input per codec keeps
-/// the gate quick; the full sweep discovers every fixture.
-pub const GATE_FIXTURES: &[&str] = &[
-    "f3d_container/full_f3d_with_smbh",
-    "sldprt_container/synthetic_sldprt",
-    "catia_container/standard_nested",
-    "creo_container/minimal_prt",
-    "nx_container/single_part",
-    "rhino_container/archive_50",
-];
-
 /// One discovered fixture.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fixture {
@@ -92,32 +80,4 @@ pub fn discover(corpus_root: &Path) -> std::io::Result<Vec<Fixture>> {
         }
     }
     Ok(fixtures)
-}
-
-/// Resolve the curated [`GATE_FIXTURES`] under `corpus_root`, skipping any that
-/// are absent so a slimmed corpus still runs.
-///
-/// A present fixture whose leading directory maps to no codec is a routing bug
-/// in [`GATE_FIXTURES`] — dispatching it under an empty codec id would run it as
-/// a vacuously green "unknown codec" — so it panics rather than pass silently.
-pub fn gate_fixtures(corpus_root: &Path) -> Vec<Fixture> {
-    let mut fixtures = Vec::new();
-    for rel_path in GATE_FIXTURES {
-        let abs_path = corpus_root.join(rel_path);
-        if !abs_path.is_file() {
-            continue;
-        }
-        let Some(codec_id) = rel_path.split('/').next().and_then(codec_of_container_dir) else {
-            panic!(
-                "gate fixture `{rel_path}` is present but its directory is not a \
-                 `<codec>_container`; fix GATE_FIXTURES or the corpus layout"
-            );
-        };
-        fixtures.push(Fixture {
-            codec_id: codec_id.to_owned(),
-            rel_path: (*rel_path).to_owned(),
-            abs_path,
-        });
-    }
-    fixtures
 }

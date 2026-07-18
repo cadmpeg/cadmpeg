@@ -1312,6 +1312,11 @@ pub enum RecordDisposition {
         /// The retained-record ids.
         records: Vec<String>,
     },
+    /// Accounted by digest after retained-byte exhaustion.
+    Accounted {
+        /// Digests recorded without their bytes.
+        records: Vec<String>,
+    },
     /// Dropped with an accountable loss note.
     Dropped {
         /// Why the record was dropped.
@@ -1412,6 +1417,18 @@ impl TicketTable {
                         if !retained.contains_record(record) {
                             violations.push(format!(
                                 "{at} names retained record `{record}` absent from the retained ledger"
+                            ));
+                        }
+                    }
+                }
+                Some(RecordDisposition::Accounted { records }) => {
+                    if records.is_empty() {
+                        violations.push(format!("{at} resolved Accounted but names no digests"));
+                    }
+                    for record in records {
+                        if !retained.contains_accounted(record) {
+                            violations.push(format!(
+                                "{at} names accounted digest `{record}` absent from degraded retention"
                             ));
                         }
                     }

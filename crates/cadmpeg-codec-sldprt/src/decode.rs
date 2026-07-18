@@ -153,6 +153,7 @@ struct PendingTicket {
     block_offset: Option<usize>,
     /// Retained-blob digest of the block payload, when the block was retained.
     retained_digest: Option<String>,
+    retention_degraded: bool,
 }
 
 fn commit_record_tickets(
@@ -170,6 +171,7 @@ fn commit_record_tickets(
             ticket: ctx.commit_record(location_at(block.offset), RecordKind("sldprt_block")),
             block_offset: Some(block.offset),
             retained_digest: block.retained_digest.clone(),
+            retention_degraded: block.retention_degraded,
         });
     }
     for entry in &scan.directory {
@@ -180,6 +182,7 @@ fn commit_record_tickets(
             ),
             block_offset: None,
             retained_digest: None,
+            retention_degraded: false,
         });
     }
     for cell in &scan.cache_cells {
@@ -187,6 +190,7 @@ fn commit_record_tickets(
             ticket: ctx.commit_record(location_at(cell.offset), RecordKind("sldprt_cache_cell")),
             block_offset: None,
             retained_digest: None,
+            retention_degraded: false,
         });
     }
     tickets
@@ -215,6 +219,9 @@ fn resolve_record_tickets(
                     outputs: typed_outputs.to_vec(),
                 }
             }
+            (Some(_), Some(digest)) if pending.retention_degraded => RecordDisposition::Accounted {
+                records: vec![digest],
+            },
             (Some(_), Some(digest)) => RecordDisposition::Retained {
                 records: vec![digest],
             },

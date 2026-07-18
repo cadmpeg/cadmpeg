@@ -27,10 +27,10 @@ fn runner() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_harness-runner"))
 }
 
-/// Environment override for the per-fixture case cap of [`sweep_smoke`].
+/// Environment override for the number of cases selected from each case family.
 const ENV_SMOKE_PER_FIXTURE: &str = "CADMPEG_HARNESS_SMOKE_PER_FIXTURE";
 
-/// Default per-fixture derived-case cap for the smoke.
+/// Default number selected from each case family.
 const DEFAULT_SMOKE_PER_FIXTURE: usize = 1;
 
 /// A bounded truncation sweep that runs in the fast gate, unlike [`full_sweep`].
@@ -58,7 +58,18 @@ fn sweep_smoke() {
             continue;
         };
         let bytes = std::fs::read(&fixture.abs_path).expect("read fixture");
-        for case in all_cases(provider, &bytes).into_iter().take(per_fixture) {
+        let cases = all_cases(provider, &bytes);
+        let selected = cases
+            .iter()
+            .filter(|case| matches!(case.kind, cadmpeg_harness::sweep::CaseKind::Truncation { len } if len > 0))
+            .take(per_fixture)
+            .chain(
+                cases
+                    .iter()
+                    .filter(|case| matches!(case.kind, cadmpeg_harness::sweep::CaseKind::Mutation { .. }))
+                    .take(per_fixture),
+            );
+        for case in selected {
             covered += 1;
             let fixture_label = format!("{}#{}", fixture.rel_path, case.label);
             for profile in PolicyProfile::ALL {
