@@ -3090,6 +3090,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         crate::decode::non_boolean_feature_definition("SKIN", &[], None, None, None),
         FeatureDefinition::LoftUnresolved
     );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("Studio Surface", &[], None, None, None),
+        FeatureDefinition::FreeformSurfaceUnresolved
+    );
 
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),

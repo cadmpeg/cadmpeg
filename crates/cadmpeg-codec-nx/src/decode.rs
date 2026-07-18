@@ -11281,6 +11281,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             source: BodySelection::Unresolved,
         },
         "SKIN" => FeatureDefinition::LoftUnresolved,
+        "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
         "CPROJ" | "CPROJ_CMB" => FeatureDefinition::ProjectedCurve {
             source: PathRef::Unresolved,
             target_faces: FaceSelection::Unresolved,

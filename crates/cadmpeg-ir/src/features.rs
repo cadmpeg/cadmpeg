@@ -652,6 +652,8 @@ pub enum FeatureDefinition {
     },
     /// Loft-family skin whose section and result semantics are unresolved.
     LoftUnresolved,
+    /// Freeform surface construction whose control geometry is unresolved.
+    FreeformSurfaceUnresolved,
     /// Loft through an ordered sequence of section profiles.
     Loft {
         /// Ordered section profiles.

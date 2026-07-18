@@ -3881,6 +3881,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::FreeformSurfaceUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved freeform-surface semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::ImportedGeometry { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported external-import semantics",
@@ -7443,6 +7449,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::HelicalSweep { .. } => "Helix",
         FeatureDefinition::Binder { .. } => "Feature",
         FeatureDefinition::LoftUnresolved => "Loft",
+        FeatureDefinition::FreeformSurfaceUnresolved => "Feature",
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",
         FeatureDefinition::Fillet { .. } => "Fillet",

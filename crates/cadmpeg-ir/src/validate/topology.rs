@@ -2803,6 +2803,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::LoftUnresolved
+            | FeatureDefinition::FreeformSurfaceUnresolved
             | FeatureDefinition::Native { .. } => {}
             FeatureDefinition::DerivedGeometry { source } => {
                 match features.get(source.0.as_str()) {
