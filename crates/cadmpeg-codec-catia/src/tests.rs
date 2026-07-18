@@ -5899,7 +5899,7 @@ fn decode_projects_groove_class_as_cut_revolution() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "1 revolution, 0 sweep, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                "1 revolution, 0 sweep, 0 hole, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
             )
     }));
 }
@@ -5928,7 +5928,40 @@ fn decode_projects_sketch_class_as_unresolved_sketch_node() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 0 shell, 0 fillet, 0 chamfer, and 1 sketch feature(s)",
+                "0 revolution, 0 sweep, 0 hole, 0 shell, 0 fillet, 0 chamfer, and 1 sketch feature(s)",
+            )
+    }));
+}
+
+#[test]
+fn decode_projects_hole_class_with_unresolved_operands() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_design_class("Hole")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated Hole design");
+
+    assert!(matches!(
+        decoded.ir.model.features.as_slice(),
+        [cadmpeg_ir::features::Feature {
+            name: Some(name),
+            definition: cadmpeg_ir::features::FeatureDefinition::Hole {
+                profile: None,
+                face: None,
+                diameter: None,
+                extent: None,
+                kind: cadmpeg_ir::features::HoleKind::Unresolved { form: None, .. },
+                ..
+            },
+            native_ref: Some(native_ref),
+            ..
+        }] if name == "Hole" && native_ref.starts_with("catia:outer:design-object#")
+    ));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.message.contains(
+                "0 revolution, 0 sweep, 1 hole, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
             )
     }));
 }
@@ -5962,7 +5995,7 @@ fn decode_projects_rib_and_slot_classes_as_solid_sweeps() {
         assert!(decoded.report.losses.iter().any(|loss| {
             loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
                 && loss.message.contains(
-                    "0 revolution, 1 sweep, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                    "0 revolution, 1 sweep, 0 hole, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
                 )
         }));
     }
@@ -5992,7 +6025,7 @@ fn decode_projects_shell_class_with_unresolved_operands() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 1 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                "0 revolution, 0 sweep, 0 hole, 1 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
             )
     }));
 }
@@ -6020,7 +6053,7 @@ fn decode_projects_edge_fillet_class_with_unresolved_operands() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 0 shell, 1 fillet, 0 chamfer, and 0 sketch feature(s)",
+                "0 revolution, 0 sweep, 0 hole, 0 shell, 1 fillet, 0 chamfer, and 0 sketch feature(s)",
             )
     }));
 }
@@ -6049,7 +6082,7 @@ fn decode_projects_chamfer_class_with_unresolved_operands() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 0 shell, 0 fillet, 1 chamfer, and 0 sketch feature(s)",
+                "0 revolution, 0 sweep, 0 hole, 0 shell, 0 fillet, 1 chamfer, and 0 sketch feature(s)",
             )
     }));
 }

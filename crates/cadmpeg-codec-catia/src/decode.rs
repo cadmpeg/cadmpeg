@@ -16,7 +16,7 @@ use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     BooleanOp, ChamferSpec, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    RadiusSpec, RevolutionConstruction, SketchSpace, SweepMode,
+    HoleKind, RadiusSpec, RevolutionConstruction, SketchSpace, SweepMode,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -120,11 +120,12 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} shell, {} fillet, {} chamfer, and {} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} hole, {} shell, {} fillet, {} chamfer, and {} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len(),
                 transferred.revolutions,
                 transferred.sweeps,
+                transferred.holes,
                 transferred.shells,
                 transferred.fillets,
                 transferred.chamfers,
@@ -155,6 +156,7 @@ fn transfer_design_features(
                         "Shaft" => Some(("Shaft", CatiaFeatureKind::Revolve(BooleanOp::Join))),
                         "Rib" => Some(("Rib", CatiaFeatureKind::Sweep(BooleanOp::Join))),
                         "Slot" => Some(("Slot", CatiaFeatureKind::Sweep(BooleanOp::Cut))),
+                        "Hole" => Some(("Hole", CatiaFeatureKind::Hole)),
                         "Shell" => Some(("Shell", CatiaFeatureKind::Shell)),
                         "EdgeFillet" => Some(("EdgeFillet", CatiaFeatureKind::Fillet)),
                         "Chamfer" => Some(("Chamfer", CatiaFeatureKind::Chamfer)),
@@ -238,6 +240,29 @@ fn transfer_design_features(
                         allow_multi_profile_faces: None,
                     }
                 }
+                CatiaFeatureKind::Hole => {
+                    counts.holes += 1;
+                    FeatureDefinition::Hole {
+                        profile: None,
+                        profile_filter: None,
+                        face: None,
+                        position: None,
+                        direction: None,
+                        kind: HoleKind::Unresolved {
+                            form: None,
+                            counterbore_diameter: None,
+                            counterbore_depth: None,
+                            countersink_diameter: None,
+                            countersink_angle: None,
+                        },
+                        diameter: None,
+                        extent: None,
+                        bottom: None,
+                        taper_angle: None,
+                        specification: None,
+                        allow_multi_profile_faces: None,
+                    }
+                }
                 CatiaFeatureKind::Shell => {
                     counts.shells += 1;
                     FeatureDefinition::Shell {
@@ -302,6 +327,7 @@ fn transfer_design_features(
 enum CatiaFeatureKind {
     Revolve(BooleanOp),
     Sweep(BooleanOp),
+    Hole,
     Shell,
     Fillet,
     Chamfer,
@@ -312,6 +338,7 @@ enum CatiaFeatureKind {
 struct TransferredDesignCounts {
     revolutions: usize,
     sweeps: usize,
+    holes: usize,
     shells: usize,
     fillets: usize,
     chamfers: usize,
