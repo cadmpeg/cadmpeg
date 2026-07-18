@@ -18,14 +18,14 @@ use crate::records::{
     DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedExtrudeParameters,
-    DesignFixedFilletParameters, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignPathFeatureConstruction, DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
-    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
-    LostEdgeReference, PersistentReference, PersistentReferenceKind, PersistentSubentityTag,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
+    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObject, DesignObjectKind,
+    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignSketchPlacement,
+    DesignSolidPrimitive, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -774,23 +774,36 @@ pub fn project_parameter_design_with_edge_identities(
                     }
                 }
             } else if family == Some(DesignFeatureFamily::Chamfer) {
-                project_chamfer(
-                    scope,
-                    &parameters,
-                    construction_groups,
-                    edge_operands,
-                    edge_identity_operands,
-                )
-                .unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
-                    parameters: parameters
-                        .iter()
-                        .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
-                        })
-                        .collect(),
-                    properties: native_scope_properties(scope, native_scope),
-                })
+                parameters
+                    .is_empty()
+                    .then(|| {
+                        project_fixed_chamfer(
+                            scope,
+                            construction_groups,
+                            edge_operands,
+                            edge_identity_operands,
+                        )
+                    })
+                    .flatten()
+                    .or_else(|| {
+                        project_chamfer(
+                            scope,
+                            &parameters,
+                            construction_groups,
+                            edge_operands,
+                            edge_identity_operands,
+                        )
+                    })
+                    .unwrap_or_else(|| FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    })
             } else if family == Some(DesignFeatureFamily::Loft) {
                 project_fixed_loft(scope, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -1576,6 +1589,44 @@ fn project_chamfer(
         })
         .collect();
     Some(FeatureDefinition::Chamfer { groups })
+}
+
+fn project_fixed_chamfer(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, FeatureDefinition, Length};
+
+    let fixed = scope.fixed_chamfer_parameters.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let [group] = groups.as_slice() else {
+        return None;
+    };
+    Some(FeatureDefinition::Chamfer {
+        groups: vec![ChamferGroup {
+            edges: resolved_edge_group(
+                group,
+                construction_groups,
+                edge_operands,
+                edge_identity_operands,
+                scope.previous_history_state_id,
+                &neutral_feature_id(scope),
+                None,
+            ),
+            spec: ChamferSpec::Distance {
+                distance: Length(fixed.distance * 10.0),
+            },
+        }],
+    })
 }
 
 fn resolved_edge_group(
@@ -12672,6 +12723,7 @@ pub fn decode_parameter_scopes(
             scope.direct_face_operation = exact_direct_face_operation(bytes, &scope);
             scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(bytes, &scope);
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
+            scope.fixed_chamfer_parameters = exact_fixed_chamfer_parameters(bytes, &scope);
             scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
             scope.id = format!(
                 "f3d:{}:design-parameter-scope#{}",
@@ -12940,6 +12992,35 @@ fn exact_fixed_fillet_parameters(
             .iter()
             .map(|(_, scalar)| scalar.value_offset)
             .collect(),
+    })
+}
+
+fn exact_fixed_chamfer_parameters(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignFixedChamferParameters> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Chamfer) {
+        return None;
+    }
+    let lanes = scope
+        .reference_members
+        .iter()
+        .filter_map(|record_index| {
+            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            (scalar.owner_record_index == Some(scope.record_index))
+                .then_some((*record_index, scalar))
+        })
+        .collect::<Vec<_>>();
+    let [(distance_record_index, distance)] = lanes.as_slice() else {
+        return None;
+    };
+    if distance.ordinal != 0 || distance.value <= 0.0 {
+        return None;
+    }
+    Some(DesignFixedChamferParameters {
+        distance: distance.value,
+        distance_record_index: *distance_record_index,
+        distance_offset: distance.value_offset,
     })
 }
 
@@ -15098,6 +15179,7 @@ fn parse_parameter_scope(
         direct_face_operation: None,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
+        fixed_chamfer_parameters: None,
         path_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
@@ -17901,16 +17983,16 @@ mod relation_tests {
         contiguous_i32_program, decode_constraint_kinds, decode_fillet_radius_groups,
         decode_pattern_definition, design_feature_family, design_parameter_prefix,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_direct_face_operation, exact_fixed_extrude_parameters,
-        exact_fixed_fillet_parameters, exact_offset_constraint, exact_path_feature_construction,
-        exact_solid_primitive, exact_work_plane_frame, expression_identifiers,
-        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
-        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        next_indexed_record_offset_with_index, null_locus_dimension_definition,
-        offset_parameter_factor, parse_construction_operand_group,
+        exact_counted_offset, exact_direct_face_operation, exact_fixed_chamfer_parameters,
+        exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_offset_constraint,
+        exact_path_feature_construction, exact_solid_primitive, exact_work_plane_frame,
+        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
+        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        historical_profile_face_candidates, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, next_indexed_record_offset_with_index,
+        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -17938,12 +18020,12 @@ mod relation_tests {
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
         DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
         DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart,
-        DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind,
-        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignPathFeatureConstruction, DesignRecipeReference,
-        DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference,
-        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-        SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
+        DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+        DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+        DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
+        LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -20733,6 +20815,31 @@ mod relation_tests {
             })
         );
 
+        let chamfer_scalar_start = bytes.len();
+        let mut chamfer_scalar = vec![0; 104];
+        chamfer_scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        chamfer_scalar[4..7].copy_from_slice(b"277");
+        chamfer_scalar[7..11].copy_from_slice(&86u32.to_le_bytes());
+        chamfer_scalar[24] = 1;
+        chamfer_scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        chamfer_scalar[35] = 0;
+        chamfer_scalar[40..48].copy_from_slice(&0.04f64.to_le_bytes());
+        chamfer_scalar.extend_from_slice(&3u32.to_le_bytes());
+        chamfer_scalar.extend_from_slice(b"261");
+        chamfer_scalar.extend_from_slice(&86u32.to_le_bytes());
+        bytes.extend_from_slice(&chamfer_scalar);
+        let mut chamfer_scope = scope.clone();
+        chamfer_scope.kind = "Chamfer".into();
+        chamfer_scope.reference_members = vec![86];
+        assert_eq!(
+            exact_fixed_chamfer_parameters(&bytes, &chamfer_scope),
+            Some(DesignFixedChamferParameters {
+                distance: 0.04,
+                distance_record_index: 86,
+                distance_offset: (chamfer_scalar_start + 40) as u64,
+            })
+        );
+
         let loft_start = bytes.len();
         let mut loft = vec![0; 376];
         loft[29..33].copy_from_slice(&1u32.to_le_bytes());
@@ -21156,6 +21263,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -21363,6 +21471,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -21647,6 +21756,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -25303,6 +25413,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -25415,6 +25526,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -25574,6 +25686,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -26075,6 +26188,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -26724,6 +26838,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -26925,6 +27040,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
             path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -27028,6 +27144,7 @@ mod relation_tests {
                 direct_face_operation: None,
                 fixed_extrude_parameters: None,
                 fixed_fillet_parameters: None,
+                fixed_chamfer_parameters: None,
                 path_feature_construction: None,
                 work_plane_transform: None,
                 work_plane_transform_offset: None,

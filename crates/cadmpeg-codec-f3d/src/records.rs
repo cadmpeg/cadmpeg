@@ -873,6 +873,17 @@ pub struct DesignFixedFilletParameters {
     pub radius_offsets: Vec<u64>,
 }
 
+/// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedChamferParameters {
+    /// Positive equal distance in source centimetres.
+    pub distance: f64,
+    /// Referenced distance scalar record.
+    pub distance_record_index: u32,
+    /// Byte offset of the distance scalar.
+    pub distance_offset: u64,
+}
+
 /// Exact fixed construction carried by a Loft or Sweep scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -1003,6 +1014,9 @@ pub struct DesignParameterScope {
     /// Exact fixed scalar lanes carried by a Fillet scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_fillet_parameters: Option<DesignFixedFilletParameters>,
+    /// Exact fixed scalar lane carried by an equal-distance Chamfer scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed_chamfer_parameters: Option<DesignFixedChamferParameters>,
     /// Exact fixed construction carried by a Loft or Sweep scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_feature_construction: Option<DesignPathFeatureConstruction>,
