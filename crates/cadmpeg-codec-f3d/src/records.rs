@@ -856,6 +856,23 @@ pub struct DesignFixedExtrudeParameters {
     pub taper_angle_offset: u64,
 }
 
+/// Exact fixed scalar lanes carried by a Fillet scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedFilletParameters {
+    /// Dimensionless tangency weight.
+    pub tangency_weight: f64,
+    /// Referenced tangency-weight scalar record.
+    pub tangency_weight_record_index: u32,
+    /// Byte offset of the tangency-weight scalar.
+    pub tangency_weight_offset: u64,
+    /// One constant radius or two endpoint radii in source centimetres.
+    pub radii: Vec<f64>,
+    /// Referenced radius scalar records in lane order.
+    pub radius_record_indexes: Vec<u32>,
+    /// Byte offsets of the radius scalars in lane order.
+    pub radius_offsets: Vec<u64>,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -956,6 +973,9 @@ pub struct DesignParameterScope {
     /// Exact fixed scalar lanes carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
+    /// Exact fixed scalar lanes carried by a Fillet scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed_fillet_parameters: Option<DesignFixedFilletParameters>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_transform: Option<[[f64; 4]; 4]>,

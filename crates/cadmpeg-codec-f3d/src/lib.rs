@@ -886,10 +886,55 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
-        let is_fillet = scopes_by_index
-            .get(&(native_stream, group.scope_record_index))
-            .is_some_and(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"));
-        if is_fillet && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
+        let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
+        let is_fillet =
+            scope.is_some_and(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"));
+        let has_fixed_assignment = scope
+            .and_then(|scope| {
+                scope
+                    .fixed_fillet_parameters
+                    .as_ref()
+                    .map(|fixed| (scope, fixed))
+            })
+            .is_some_and(|(scope, fixed)| {
+                let radius_count = fixed.radii.len();
+                fixed.tangency_weight.is_finite()
+                    && fixed.tangency_weight > 0.0
+                    && (1..=2).contains(&radius_count)
+                    && fixed
+                        .radii
+                        .iter()
+                        .all(|radius| radius.is_finite() && *radius >= 0.0)
+                    && fixed.radii.iter().any(|radius| *radius > 0.0)
+                    && fixed.radius_record_indexes.len() == radius_count
+                    && fixed.radius_offsets.len() == radius_count
+                    && native.design_parameter_owners.iter().all(|owner| {
+                        design_stream(&owner.id) != native_stream
+                            || owner.scope_record_index != scope.record_index
+                    })
+                    && std::iter::once(fixed.tangency_weight_record_index)
+                        .chain(fixed.radius_record_indexes.iter().copied())
+                        .all(|record_index| {
+                            scope
+                                .reference_members
+                                .iter()
+                                .filter(|member| **member == record_index)
+                                .count()
+                                == 1
+                        })
+                    && native
+                        .design_construction_operand_groups
+                        .iter()
+                        .filter(|candidate| {
+                            design_stream(&candidate.id) == native_stream
+                                && candidate.scope_record_index == scope.record_index
+                        })
+                        .count()
+                        == 1
+            });
+        if is_fillet
+            && !has_fixed_assignment
+            && !fillet_radius_group_records.contains(&(native_stream, group.record_index))
         {
             findings.push(Finding {
                 check: Check::NativeLinks,

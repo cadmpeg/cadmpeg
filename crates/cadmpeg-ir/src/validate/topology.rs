@@ -1860,8 +1860,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                                         && points.iter().all(|point| {
                                             point.parameter.is_finite()
                                                 && (0.0..=1.0).contains(&point.parameter)
-                                                && positive_feature_length(point.radius)
+                                                && point.radius.0.is_finite()
+                                                && point.radius.0 >= 0.0
                                         })
+                                        && points.iter().any(|point| point.radius.0 > 0.0)
                                         && points
                                             .windows(2)
                                             .all(|pair| pair[0].parameter < pair[1].parameter)

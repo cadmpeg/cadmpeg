@@ -9199,6 +9199,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         solid_primitive: None,
         direct_face_operation: None,
         fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,

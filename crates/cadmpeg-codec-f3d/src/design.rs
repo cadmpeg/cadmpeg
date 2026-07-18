@@ -18,13 +18,13 @@ use crate::records::{
     DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedExtrudeParameters, DesignObject,
-    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    DesignSolidPrimitive, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedExtrudeParameters,
+    DesignFixedFilletParameters, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, DesignTopologyRecipeEntry,
+    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -622,131 +622,150 @@ pub fn project_parameter_design_with_edge_identities(
                     properties: native_scope_properties(scope, native_scope),
                 })
             } else if family == Some(DesignFeatureFamily::Fillet) {
-                let mut assignments = fillet_radius_groups
-                    .iter()
-                    .filter(|assignment| {
-                        native_stream(&assignment.id) == Some(native_scope)
-                            && assignment.scope_record_index == scope.record_index
+                if let Some(definition) = parameters
+                    .is_empty()
+                    .then(|| {
+                        project_fixed_fillet(
+                            scope,
+                            construction_groups,
+                            edge_operands,
+                            edge_identity_operands,
+                        )
                     })
-                    .collect::<Vec<_>>();
-                assignments.sort_by_key(|assignment| assignment.group_ordinal);
-                let assigned_parameter_records = assignments
-                    .iter()
-                    .flat_map(|assignment| {
-                        std::iter::once(assignment.radius_parameter_record_index)
-                            .chain(assignment.tangency_weight_parameter_record_index)
-                    })
-                    .collect::<Vec<_>>();
-                let incomplete_assignment = if assignments.is_empty() {
-                    let radii = parameters
-                        .iter()
-                        .filter(|(_, parameter)| parameter.source_kind == "Radius")
-                        .map(|(_, parameter)| *parameter)
-                        .collect::<Vec<_>>();
-                    radii.len() != 1
-                        || radii.iter().any(|parameter| {
-                            design_length(parameter).is_none_or(|value| value.0 <= 0.0)
-                        })
-                        || parameters
-                            .iter()
-                            .any(|(_, parameter)| parameter.source_kind != "Radius")
+                    .flatten()
+                {
+                    definition
                 } else {
-                    assigned_parameter_records.len() != parameters.len()
-                        || parameters.iter().any(|(_, parameter)| {
-                            !matches!(parameter.source_kind.as_str(), "Radius" | "TangencyWeight")
-                                || assigned_parameter_records
+                    let mut assignments = fillet_radius_groups
+                        .iter()
+                        .filter(|assignment| {
+                            native_stream(&assignment.id) == Some(native_scope)
+                                && assignment.scope_record_index == scope.record_index
+                        })
+                        .collect::<Vec<_>>();
+                    assignments.sort_by_key(|assignment| assignment.group_ordinal);
+                    let assigned_parameter_records = assignments
+                        .iter()
+                        .flat_map(|assignment| {
+                            std::iter::once(assignment.radius_parameter_record_index)
+                                .chain(assignment.tangency_weight_parameter_record_index)
+                        })
+                        .collect::<Vec<_>>();
+                    let incomplete_assignment = if assignments.is_empty() {
+                        let radii = parameters
+                            .iter()
+                            .filter(|(_, parameter)| parameter.source_kind == "Radius")
+                            .map(|(_, parameter)| *parameter)
+                            .collect::<Vec<_>>();
+                        radii.len() != 1
+                            || radii.iter().any(|parameter| {
+                                design_length(parameter).is_none_or(|value| value.0 <= 0.0)
+                            })
+                            || parameters
+                                .iter()
+                                .any(|(_, parameter)| parameter.source_kind != "Radius")
+                    } else {
+                        assigned_parameter_records.len() != parameters.len()
+                            || parameters.iter().any(|(_, parameter)| {
+                                !matches!(
+                                    parameter.source_kind.as_str(),
+                                    "Radius" | "TangencyWeight"
+                                ) || assigned_parameter_records
                                     .iter()
                                     .filter(|record_index| **record_index == parameter.record_index)
                                     .count()
                                     != 1
-                        })
-                        || parameters.iter().any(|(_, parameter)| {
-                            if parameter.source_kind == "Radius" {
-                                design_length(parameter).is_none_or(|value| value.0 <= 0.0)
-                            } else {
-                                !parameter.evaluated_value.is_finite()
-                            }
-                        })
-                };
-                if incomplete_assignment {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
                             })
-                            .collect(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
-                } else {
-                    let groups = assignments
-                        .into_iter()
-                        .map(|assignment| {
-                            let radius = parameters
+                            || parameters.iter().any(|(_, parameter)| {
+                                if parameter.source_kind == "Radius" {
+                                    design_length(parameter).is_none_or(|value| value.0 <= 0.0)
+                                } else {
+                                    !parameter.evaluated_value.is_finite()
+                                }
+                            })
+                    };
+                    if incomplete_assignment {
+                        FeatureDefinition::Native {
+                            kind: scope.kind.clone(),
+                            parameters: parameters
                                 .iter()
-                                .find(|(_, parameter)| {
-                                    parameter.record_index
-                                        == assignment.radius_parameter_record_index
+                                .map(|(_, parameter)| {
+                                    (parameter.name.clone(), parameter.expression.clone())
                                 })
-                                .and_then(|(_, parameter)| design_length(parameter))
-                                .expect("complete Fillet assignment has a positive radius");
-                            let tangency_weight = assignment
-                                .tangency_weight_parameter_record_index
-                                .and_then(|record_index| {
-                                    native.iter().find(|parameter| {
-                                        native_stream(&parameter.id) == Some(native_scope)
-                                            && parameter.record_index == record_index
+                                .collect(),
+                            properties: native_scope_properties(scope, native_scope),
+                        }
+                    } else {
+                        let groups = assignments
+                            .into_iter()
+                            .map(|assignment| {
+                                let radius = parameters
+                                    .iter()
+                                    .find(|(_, parameter)| {
+                                        parameter.record_index
+                                            == assignment.radius_parameter_record_index
                                     })
-                                })
-                                .map(|parameter| parameter.evaluated_value)
-                                .filter(|weight| weight.is_finite());
-                            let edge_radius = Some(radius.0);
-                            let edges = construction_groups
-                                .iter()
-                                .find(|group| {
-                                    native_stream(&group.id) == Some(native_scope)
-                                        && group.record_index == assignment.group_record_index
-                                })
-                                .map_or_else(
-                                    || EdgeSelection::Native(assignment.id.clone()),
-                                    |group| {
-                                        resolved_edge_group(
-                                            group,
-                                            construction_groups,
-                                            edge_operands,
-                                            edge_identity_operands,
-                                            scope.previous_history_state_id,
-                                            &neutral_feature_id(scope),
-                                            edge_radius,
-                                        )
+                                    .and_then(|(_, parameter)| design_length(parameter))
+                                    .expect("complete Fillet assignment has a positive radius");
+                                let tangency_weight = assignment
+                                    .tangency_weight_parameter_record_index
+                                    .and_then(|record_index| {
+                                        native.iter().find(|parameter| {
+                                            native_stream(&parameter.id) == Some(native_scope)
+                                                && parameter.record_index == record_index
+                                        })
+                                    })
+                                    .map(|parameter| parameter.evaluated_value)
+                                    .filter(|weight| weight.is_finite());
+                                let edge_radius = Some(radius.0);
+                                let edges = construction_groups
+                                    .iter()
+                                    .find(|group| {
+                                        native_stream(&group.id) == Some(native_scope)
+                                            && group.record_index == assignment.group_record_index
+                                    })
+                                    .map_or_else(
+                                        || EdgeSelection::Native(assignment.id.clone()),
+                                        |group| {
+                                            resolved_edge_group(
+                                                group,
+                                                construction_groups,
+                                                edge_operands,
+                                                edge_identity_operands,
+                                                scope.previous_history_state_id,
+                                                &neutral_feature_id(scope),
+                                                edge_radius,
+                                            )
+                                        },
+                                    );
+                                FilletGroup {
+                                    edges,
+                                    radius: RadiusSpec::Constant { radius },
+                                    tangency_weight,
+                                }
+                            })
+                            .collect::<Vec<_>>();
+                        FeatureDefinition::Fillet {
+                            groups: if groups.is_empty() {
+                                vec![FilletGroup {
+                                    edges: EdgeSelection::Native(scope.id.clone()),
+                                    radius: RadiusSpec::Constant {
+                                        radius: parameters
+                                            .iter()
+                                            .filter(|(_, parameter)| {
+                                                parameter.source_kind == "Radius"
+                                            })
+                                            .find_map(|(_, parameter)| design_length(parameter))
+                                            .expect(
+                                                "complete ungrouped Fillet has one positive radius",
+                                            ),
                                     },
-                                );
-                            FilletGroup {
-                                edges,
-                                radius: RadiusSpec::Constant { radius },
-                                tangency_weight,
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    FeatureDefinition::Fillet {
-                        groups: if groups.is_empty() {
-                            vec![FilletGroup {
-                                edges: EdgeSelection::Native(scope.id.clone()),
-                                radius: RadiusSpec::Constant {
-                                    radius: parameters
-                                        .iter()
-                                        .filter(|(_, parameter)| parameter.source_kind == "Radius")
-                                        .find_map(|(_, parameter)| design_length(parameter))
-                                        .expect(
-                                            "complete ungrouped Fillet has one positive radius",
-                                        ),
-                                },
-                                tangency_weight: None,
-                            }]
-                        } else {
-                            groups
-                        },
+                                    tangency_weight: None,
+                                }]
+                            } else {
+                                groups
+                            },
+                        }
                     }
                 }
             } else if family == Some(DesignFeatureFamily::Chamfer) {
@@ -2506,6 +2525,70 @@ fn selector_candidate_edges(
     } else {
         &selector.incidence_matching_edge_slots
     }
+}
+
+fn project_fixed_fillet(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FilletGroup, Length, RadiusSpec, VariableRadius,
+    };
+
+    let fixed = scope.fixed_fillet_parameters.as_ref()?;
+    let stream = native_stream(&scope.id)?;
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let [group] = groups.as_slice() else {
+        return None;
+    };
+    let radius = match fixed.radii.as_slice() {
+        [radius] if *radius > 0.0 => RadiusSpec::Constant {
+            radius: Length(*radius * 10.0),
+        },
+        [first, second] if *first >= 0.0 && *second >= 0.0 && (*first > 0.0 || *second > 0.0) => {
+            RadiusSpec::Variable {
+                points: vec![
+                    VariableRadius {
+                        parameter: 0.0,
+                        radius: Length(*first * 10.0),
+                    },
+                    VariableRadius {
+                        parameter: 1.0,
+                        radius: Length(*second * 10.0),
+                    },
+                ],
+            }
+        }
+        _ => return None,
+    };
+    let edge_radius = match radius {
+        RadiusSpec::Constant { radius } => Some(radius.0),
+        _ => None,
+    };
+    let edges = resolved_edge_group(
+        group,
+        construction_groups,
+        edge_operands,
+        edge_identity_operands,
+        scope.previous_history_state_id,
+        &neutral_feature_id(scope),
+        edge_radius,
+    );
+    Some(FeatureDefinition::Fillet {
+        groups: vec![FilletGroup {
+            edges,
+            radius,
+            tangency_weight: Some(fixed.tangency_weight),
+        }],
+    })
 }
 
 fn project_extrude(
@@ -12469,6 +12552,7 @@ pub fn decode_parameter_scopes(
             scope.solid_primitive = exact_solid_primitive(bytes, &scope);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &scope);
             scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(bytes, &scope);
+            scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
             scope.id = format!(
                 "f3d:{}:design-parameter-scope#{}",
                 entry.name, scope.byte_offset
@@ -12685,6 +12769,57 @@ fn exact_fixed_extrude_parameters(
         taper_angle: taper.value,
         taper_angle_record_index: *taper_angle_record_index,
         taper_angle_offset: taper.value_offset,
+    })
+}
+
+fn exact_fixed_fillet_parameters(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignFixedFilletParameters> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Fillet) {
+        return None;
+    }
+    let lanes = scope
+        .reference_members
+        .iter()
+        .filter_map(|record_index| {
+            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            (scalar.owner_record_index == Some(scope.record_index))
+                .then_some((*record_index, scalar))
+        })
+        .collect::<Vec<_>>();
+    if !(2..=3).contains(&lanes.len())
+        || lanes
+            .iter()
+            .enumerate()
+            .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
+    {
+        return None;
+    }
+    let (tangency_weight_record_index, tangency) = lanes[0];
+    if tangency.value <= 0.0 {
+        return None;
+    }
+    let radii = lanes[1..]
+        .iter()
+        .map(|(_, scalar)| scalar.value)
+        .collect::<Vec<_>>();
+    if radii.iter().any(|radius| *radius < 0.0) || radii.iter().all(|radius| *radius == 0.0) {
+        return None;
+    }
+    Some(DesignFixedFilletParameters {
+        tangency_weight: tangency.value,
+        tangency_weight_record_index,
+        tangency_weight_offset: tangency.value_offset,
+        radii,
+        radius_record_indexes: lanes[1..]
+            .iter()
+            .map(|(record_index, _)| *record_index)
+            .collect(),
+        radius_offsets: lanes[1..]
+            .iter()
+            .map(|(_, scalar)| scalar.value_offset)
+            .collect(),
     })
 }
 
@@ -14789,6 +14924,7 @@ fn parse_parameter_scope(
         solid_primitive: None,
         direct_face_operation: None,
         fixed_extrude_parameters: None,
+        fixed_fillet_parameters: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
@@ -17592,9 +17728,9 @@ mod relation_tests {
         decode_pattern_definition, design_feature_family, design_parameter_prefix,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_direct_face_operation, exact_fixed_extrude_parameters,
-        exact_offset_constraint, exact_solid_primitive, exact_work_plane_frame,
-        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
-        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        exact_fixed_fillet_parameters, exact_offset_constraint, exact_solid_primitive,
+        exact_work_plane_frame, expression_identifiers, feature_input_topology_id,
+        find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
         historical_profile_face_candidates, identity_matrix, indexed_record_containing,
         indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
         neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
@@ -17627,11 +17763,12 @@ mod relation_tests {
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
         DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
         DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart,
-        DesignFixedExtrudeParameters, DesignObjectKind, DesignParameter, DesignParameterCompanion,
-        DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecipeReference,
-        DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference,
-        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-        SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind,
+        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+        DesignParameterScope, DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement,
+        DesignSolidPrimitive, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+        SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -20380,6 +20517,39 @@ mod relation_tests {
         extrude_scope.reference_members.push(75);
         assert_eq!(exact_fixed_extrude_parameters(&bytes, &extrude_scope), None);
 
+        let fillet_start = bytes.len();
+        for (record_index, ordinal, value) in [(77u32, 0u8, 1.0f64), (78, 1, 0.0), (79, 2, 0.65)] {
+            let mut scalar = vec![0; 104];
+            scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+            scalar[4..7].copy_from_slice(b"277");
+            scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+            scalar[24] = 1;
+            scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+            scalar[35] = ordinal;
+            scalar[40..48].copy_from_slice(&value.to_le_bytes());
+            scalar.extend_from_slice(&3u32.to_le_bytes());
+            scalar.extend_from_slice(b"261");
+            scalar.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&scalar);
+        }
+        let mut fillet_scope = scope.clone();
+        fillet_scope.kind = "Fillet".into();
+        fillet_scope.reference_members = vec![77, 50, 78, 79];
+        assert_eq!(
+            exact_fixed_fillet_parameters(&bytes, &fillet_scope),
+            Some(DesignFixedFilletParameters {
+                tangency_weight: 1.0,
+                tangency_weight_record_index: 77,
+                tangency_weight_offset: (fillet_start + 40) as u64,
+                radii: vec![0.0, 0.65],
+                radius_record_indexes: vec![78, 79],
+                radius_offsets: vec![
+                    (fillet_start + 115 + 40) as u64,
+                    (fillet_start + 230 + 40) as u64
+                ],
+            })
+        );
+
         let mut companion = DesignParameterCompanion {
             id: "f3d:native:parameter-companion#11".into(),
             byte_offset: 0,
@@ -20747,6 +20917,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -20952,6 +21123,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -21234,6 +21406,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -24888,6 +25061,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -24998,6 +25172,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25155,6 +25330,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25654,6 +25830,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26301,6 +26478,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26500,6 +26678,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26601,6 +26780,7 @@ mod relation_tests {
                 solid_primitive: None,
                 direct_face_operation: None,
                 fixed_extrude_parameters: None,
+                fixed_fillet_parameters: None,
                 work_plane_transform: None,
                 work_plane_transform_offset: None,
                 work_plane_reference: None,
