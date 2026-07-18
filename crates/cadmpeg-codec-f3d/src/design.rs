@@ -4280,36 +4280,33 @@ fn region_containing_points(
                 .iter()
                 .all(|point| boundary.contains_point(*point))
         })
-        .map(|(index, boundary)| (index, boundary, boundary.area()))
+        .map(|(index, _)| index)
         .collect::<Vec<_>>();
     if containing.iter().enumerate().any(|(left_index, left)| {
         containing
             .iter()
             .skip(left_index + 1)
-            .any(|right| !containment[left.0][right.0] && !containment[right.0][left.0])
+            .any(|right| !containment[*left][*right] && !containment[*right][*left])
     }) {
         return None;
     }
-    let &(outer, _, _) = containing
-        .iter()
-        .min_by(|left, right| left.2.total_cmp(&right.2))?;
+    let &outer = containing.iter().find(|candidate| {
+        containing
+            .iter()
+            .all(|other| other == *candidate || containment[*other][**candidate])
+    })?;
     let mut holes = Vec::new();
-    for (candidate, boundary) in boundaries.iter().enumerate() {
+    for candidate in 0..boundaries.len() {
         if candidate == outer || !containment[outer][candidate] {
             continue;
         }
-        let candidate_area = boundary.area();
-        let parent = boundaries
-            .iter()
-            .enumerate()
-            .filter(|(index, parent)| {
-                *index != candidate
-                    && parent.area() > candidate_area
-                    && containment[*index][candidate]
-            })
-            .min_by(|left, right| left.1.area().total_cmp(&right.1.area()))
-            .map(|(index, _)| index);
-        if parent == Some(outer) {
+        let has_intermediate_parent = boundaries.iter().enumerate().any(|(index, _)| {
+            index != outer
+                && index != candidate
+                && containment[outer][index]
+                && containment[index][candidate]
+        });
+        if !has_intermediate_parent {
             holes.push(u32::try_from(candidate).ok()?);
         }
     }
@@ -4323,6 +4320,20 @@ enum ProfileBoundary {
     Polygon(Vec<Point2>),
     CircularArcLoop(Vec<ProfileBoundarySegment>),
     Circle { center: Point2, radius: f64 },
+    CertifiedLoop(CertifiedProfileLoop),
+}
+
+#[derive(Clone)]
+struct CertifiedProfileLoop {
+    vertices: Vec<Point2>,
+    tubes: Vec<CertifiedCurveTube>,
+}
+
+#[derive(Clone)]
+struct CertifiedCurveTube {
+    start: Point2,
+    end: Point2,
+    error: f64,
 }
 
 enum ProfileBoundarySegment {
@@ -4339,19 +4350,12 @@ enum ProfileBoundarySegment {
 }
 
 impl ProfileBoundary {
-    fn area(&self) -> f64 {
-        match self {
-            Self::Polygon(vertices) => polygon_area(vertices),
-            Self::CircularArcLoop(segments) => circular_arc_loop_area(segments),
-            Self::Circle { radius, .. } => std::f64::consts::PI * radius * radius,
-        }
-    }
-
     fn contains_point(&self, point: Point2) -> bool {
         match self {
             Self::Polygon(vertices) => point_in_polygon(point, vertices),
             Self::CircularArcLoop(segments) => point_in_circular_arc_loop(point, segments),
             Self::Circle { center, radius } => point_distance(*center, point) < *radius,
+            Self::CertifiedLoop(loop_) => loop_.contains_point(point),
         }
     }
 
@@ -4403,7 +4407,54 @@ impl ProfileBoundary {
                         point_in_circular_arc_loop(boundary_segment_endpoints(segment).0, outer)
                     })
             }
+            (outer, inner) => outer
+                .certified_loop()
+                .zip(inner.certified_loop())
+                .is_some_and(|(outer, inner)| outer.strictly_contains(&inner)),
         }
+    }
+
+    fn certified_loop(&self) -> Option<CertifiedProfileLoop> {
+        match self {
+            Self::Polygon(vertices) => CertifiedProfileLoop::from_vertices(vertices.clone()),
+            Self::CircularArcLoop(segments) => certified_analytic_loop(segments),
+            Self::Circle { center, radius } => certified_circle(*center, *radius),
+            Self::CertifiedLoop(loop_) => Some(loop_.clone()),
+        }
+    }
+}
+
+impl CertifiedProfileLoop {
+    fn from_vertices(vertices: Vec<Point2>) -> Option<Self> {
+        (vertices.len() >= 3).then(|| Self {
+            tubes: polygon_edges(&vertices)
+                .map(|(start, end)| CertifiedCurveTube {
+                    start,
+                    end,
+                    error: 0.0,
+                })
+                .collect(),
+            vertices,
+        })
+    }
+
+    fn contains_point(&self, point: Point2) -> bool {
+        self.tubes
+            .iter()
+            .all(|tube| point_segment_distance(point, (tube.start, tube.end)) > tube.error)
+            && point_in_polygon(point, &self.vertices)
+    }
+
+    fn strictly_contains(&self, inner: &Self) -> bool {
+        self.tubes.iter().all(|outer| {
+            inner.tubes.iter().all(|inner| {
+                segment_distance((outer.start, outer.end), (inner.start, inner.end))
+                    > outer.error + inner.error
+            })
+        }) && inner
+            .vertices
+            .first()
+            .is_some_and(|point| self.contains_point(*point))
     }
 }
 
@@ -4429,6 +4480,264 @@ fn profile_boundary(
             circular_arc_profile_segments(profile, entities, tolerance)
                 .map(ProfileBoundary::CircularArcLoop)
         })
+        .or_else(|| {
+            certified_profile_loop(profile, entities, tolerance).map(ProfileBoundary::CertifiedLoop)
+        })
+}
+
+fn certified_profile_loop(
+    profile: &[cadmpeg_ir::sketches::SketchEntityUse],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> Option<CertifiedProfileLoop> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let scale = entities
+        .iter()
+        .filter_map(sketch_entity_endpoints)
+        .flatten()
+        .flat_map(|point| [point.u.abs(), point.v.abs()])
+        .fold(1.0_f64, f64::max);
+    // The tube need only separate the selected point and peer boundaries; it
+    // is not a geometric approximation exposed by the codec.  A square-root
+    // scale keeps the conservative tube practical while exact boundary tests
+    // continue to govern the source linear tolerance.
+    let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
+    let mut vertices = Vec::new();
+    let mut tubes = Vec::new();
+    let mut previous_end = None;
+    for use_ in profile {
+        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        let mut entity_tubes = match &entity.geometry {
+            SketchGeometry::Line { start, end } => vec![CertifiedCurveTube {
+                start: *start,
+                end: *end,
+                error: 0.0,
+            }],
+            SketchGeometry::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => certified_arc_tubes(*center, radius.0, start_angle.0, end_angle.0, target_error)?,
+            SketchGeometry::Nurbs {
+                degree,
+                knots,
+                control_points,
+                weights,
+                periodic: false,
+            } => certified_nurbs_tubes(
+                *degree,
+                knots,
+                control_points,
+                weights.as_deref(),
+                target_error,
+            )?,
+            _ => return None,
+        };
+        if use_.reversed {
+            entity_tubes.reverse();
+            for tube in &mut entity_tubes {
+                std::mem::swap(&mut tube.start, &mut tube.end);
+            }
+        }
+        let first = entity_tubes.first()?.start;
+        if previous_end.is_some_and(|end| point_distance(end, first) > tolerance) {
+            return None;
+        }
+        vertices.extend(entity_tubes.iter().map(|tube| tube.start));
+        previous_end = entity_tubes.last().map(|tube| tube.end);
+        tubes.extend(entity_tubes);
+    }
+    if tubes.len() < 3
+        || previous_end.is_none_or(|end| point_distance(end, tubes[0].start) > tolerance)
+    {
+        return None;
+    }
+    Some(CertifiedProfileLoop { vertices, tubes })
+}
+
+fn certified_analytic_loop(segments: &[ProfileBoundarySegment]) -> Option<CertifiedProfileLoop> {
+    let scale = segments
+        .iter()
+        .flat_map(|segment| {
+            let (start, end) = boundary_segment_endpoints(segment);
+            [start.u.abs(), start.v.abs(), end.u.abs(), end.v.abs()]
+        })
+        .fold(1.0_f64, f64::max);
+    let tolerance = 1.0e-6 * scale;
+    let mut vertices = Vec::new();
+    let mut tubes = Vec::new();
+    for segment in segments {
+        let segment_tubes = match segment {
+            ProfileBoundarySegment::Line { start, end } => vec![CertifiedCurveTube {
+                start: *start,
+                end: *end,
+                error: 0.0,
+            }],
+            ProfileBoundarySegment::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => certified_arc_tubes(*center, *radius, *start_angle, *end_angle, tolerance)?,
+        };
+        vertices.extend(segment_tubes.iter().map(|tube| tube.start));
+        tubes.extend(segment_tubes);
+    }
+    Some(CertifiedProfileLoop { vertices, tubes })
+}
+
+fn certified_circle(center: Point2, radius: f64) -> Option<CertifiedProfileLoop> {
+    let tolerance = 1.0e-6 * (1.0 + center.u.abs().max(center.v.abs()).max(radius));
+    let tubes = certified_arc_tubes(center, radius, 0.0, std::f64::consts::TAU, tolerance)?;
+    let vertices = tubes.iter().map(|tube| tube.start).collect();
+    Some(CertifiedProfileLoop { vertices, tubes })
+}
+
+fn certified_arc_tubes(
+    center: Point2,
+    radius: f64,
+    start: f64,
+    end: f64,
+    target_error: f64,
+) -> Option<Vec<CertifiedCurveTube>> {
+    let sweep = end - start;
+    if !radius.is_finite() || radius <= 0.0 || !sweep.is_finite() || sweep == 0.0 {
+        return None;
+    }
+    let count = subdivision_count(radius * sweep.abs(), target_error)?;
+    let error = radius * sweep.abs() / count as f64;
+    (0..count)
+        .map(|index| {
+            let parameter = |ordinal: usize| start + sweep * ordinal as f64 / count as f64;
+            let point = |angle: f64| {
+                Point2::new(
+                    center.u + radius * angle.cos(),
+                    center.v + radius * angle.sin(),
+                )
+            };
+            Some(CertifiedCurveTube {
+                start: point(parameter(index)),
+                end: point(parameter(index + 1)),
+                error,
+            })
+        })
+        .collect()
+}
+
+fn certified_nurbs_tubes(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+    target_error: f64,
+) -> Option<Vec<CertifiedCurveTube>> {
+    let speed = nurbs_speed_bound(degree, knots, control_points, weights)?;
+    let degree = usize::try_from(degree).ok()?;
+    let count = control_points.len();
+    let mut tubes = Vec::new();
+    for span in knots.get(degree..=count)?.windows(2) {
+        if span[0] == span[1] {
+            continue;
+        }
+        let subdivisions = subdivision_count(speed * (span[1] - span[0]), target_error)?;
+        let error = speed * (span[1] - span[0]) / subdivisions as f64;
+        for index in 0..subdivisions {
+            let parameter = |ordinal: usize| {
+                span[0] + (span[1] - span[0]) * ordinal as f64 / subdivisions as f64
+            };
+            tubes.push(CertifiedCurveTube {
+                start: cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    degree as u32,
+                    knots,
+                    control_points,
+                    weights,
+                    parameter(index),
+                )?,
+                end: cadmpeg_ir::eval::nurbs_pcurve_uv(
+                    degree as u32,
+                    knots,
+                    control_points,
+                    weights,
+                    parameter(index + 1),
+                )?,
+                error,
+            });
+        }
+    }
+    (!tubes.is_empty()).then_some(tubes)
+}
+
+fn subdivision_count(travel_bound: f64, target_error: f64) -> Option<usize> {
+    const MAX_SUBDIVISIONS: usize = 100_000;
+    if !travel_bound.is_finite() || travel_bound < 0.0 || !target_error.is_finite() {
+        return None;
+    }
+    let count = (travel_bound / target_error).ceil().max(1.0);
+    (count <= MAX_SUBDIVISIONS as f64).then_some(count as usize)
+}
+
+fn nurbs_speed_bound(
+    degree: u32,
+    knots: &[f64],
+    control_points: &[Point2],
+    weights: Option<&[f64]>,
+) -> Option<f64> {
+    let degree_usize = usize::try_from(degree).ok()?;
+    let count = control_points.len();
+    if degree_usize == 0
+        || count <= degree_usize
+        || knots.len() < count.checked_add(degree_usize)?.checked_add(1)?
+    {
+        return None;
+    }
+    let owned_weights;
+    let weights = match weights {
+        Some(weights) if weights.len() == count => weights,
+        Some(_) => return None,
+        None => {
+            owned_weights = vec![1.0; count];
+            &owned_weights
+        }
+    };
+    if knots.iter().any(|value| !value.is_finite())
+        || knots.windows(2).any(|pair| pair[0] > pair[1])
+        || control_points.iter().zip(weights).any(|(point, weight)| {
+            !point.u.is_finite() || !point.v.is_finite() || !weight.is_finite() || *weight <= 0.0
+        })
+    {
+        return None;
+    }
+    let minimum_weight = weights.iter().copied().fold(f64::INFINITY, f64::min);
+    let maximum_numerator = control_points
+        .iter()
+        .zip(weights)
+        .map(|(point, weight)| weight * point.u.hypot(point.v))
+        .fold(0.0_f64, f64::max);
+    let mut numerator_speed = 0.0_f64;
+    let mut weight_speed = 0.0_f64;
+    for index in 0..count - 1 {
+        let denominator = knots[index + degree_usize + 1] - knots[index + 1];
+        if denominator == 0.0 {
+            continue;
+        }
+        let factor = f64::from(degree) / denominator;
+        let first = Point2::new(
+            weights[index] * control_points[index].u,
+            weights[index] * control_points[index].v,
+        );
+        let second = Point2::new(
+            weights[index + 1] * control_points[index + 1].u,
+            weights[index + 1] * control_points[index + 1].v,
+        );
+        numerator_speed =
+            numerator_speed.max(factor * (second.u - first.u).hypot(second.v - first.v));
+        weight_speed = weight_speed.max(factor * (weights[index + 1] - weights[index]).abs());
+    }
+    let bound = numerator_speed / minimum_weight
+        + maximum_numerator * weight_speed / minimum_weight.powi(2);
+    bound.is_finite().then_some(bound)
 }
 
 fn circular_arc_profile_segments(
@@ -4536,27 +4845,6 @@ fn boundary_segment_endpoints(segment: &ProfileBoundarySegment) -> (Point2, Poin
             ),
         ),
     }
-}
-
-fn circular_arc_loop_area(segments: &[ProfileBoundarySegment]) -> f64 {
-    segments
-        .iter()
-        .map(|segment| match segment {
-            ProfileBoundarySegment::Line { start, end } => start.u * end.v - end.u * start.v,
-            ProfileBoundarySegment::Arc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-            } => {
-                radius * center.u * (start_angle.cos() - end_angle.cos())
-                    + radius * center.v * (end_angle.sin() - start_angle.sin())
-                    + radius * radius * (end_angle - start_angle)
-            }
-        })
-        .sum::<f64>()
-        .abs()
-        * 0.5
 }
 
 fn point_in_circular_arc_loop(point: Point2, segments: &[ProfileBoundarySegment]) -> bool {
@@ -4716,18 +5004,6 @@ fn point_in_polygon(point: Point2, vertices: &[Point2]) -> bool {
         == 1
 }
 
-fn polygon_area(vertices: &[Point2]) -> f64 {
-    vertices
-        .iter()
-        .copied()
-        .zip(vertices.iter().copied().cycle().skip(1))
-        .take(vertices.len())
-        .map(|(start, end)| start.u * end.v - end.u * start.v)
-        .sum::<f64>()
-        .abs()
-        * 0.5
-}
-
 fn polygon_strictly_contains(outer: &[Point2], inner: &[Point2]) -> bool {
     inner.iter().all(|point| point_in_polygon(*point, outer))
         && !polygon_edges(outer).any(|outer_edge| {
@@ -4756,6 +5032,21 @@ fn point_segment_distance(point: Point2, (start, end): (Point2, Point2)) -> f64 
         point,
         Point2::new(start.u + parameter * du, start.v + parameter * dv),
     )
+}
+
+fn segment_distance(left: (Point2, Point2), right: (Point2, Point2)) -> f64 {
+    if segments_intersect(left, right) {
+        0.0
+    } else {
+        [
+            point_segment_distance(left.0, right),
+            point_segment_distance(left.1, right),
+            point_segment_distance(right.0, left),
+            point_segment_distance(right.1, left),
+        ]
+        .into_iter()
+        .fold(f64::INFINITY, f64::min)
+    }
 }
 
 fn segments_intersect(left: (Point2, Point2), right: (Point2, Point2)) -> bool {
@@ -15977,6 +16268,102 @@ mod relation_tests {
     }
 
     #[test]
+    fn nonperiodic_nurbs_boundary_resolves_atomic_region() {
+        let sketch_id = SketchId("sketch".into());
+        let definitions = [
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 0.0),
+            },
+            SketchGeometry::Line {
+                start: Point2::new(10.0, 0.0),
+                end: Point2::new(10.0, 10.0),
+            },
+            SketchGeometry::Nurbs {
+                degree: 2,
+                knots: vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                control_points: vec![
+                    Point2::new(10.0, 10.0),
+                    Point2::new(5.0, 12.0),
+                    Point2::new(0.0, 10.0),
+                ],
+                weights: Some(vec![1.0, 0.75, 1.0]),
+                periodic: false,
+            },
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 10.0),
+                end: Point2::new(0.0, 0.0),
+            },
+        ];
+        let mut entities = Vec::new();
+        let outer = definitions
+            .into_iter()
+            .enumerate()
+            .map(|(index, geometry)| {
+                let id = SketchEntityId(format!("outer-{index}"));
+                entities.push(SketchEntity {
+                    id: id.clone(),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry,
+                });
+                SketchEntityUse {
+                    entity: id,
+                    reversed: false,
+                }
+            })
+            .collect::<Vec<_>>();
+        let corners = [
+            Point2::new(3.0, 3.0),
+            Point2::new(7.0, 3.0),
+            Point2::new(7.0, 7.0),
+            Point2::new(3.0, 7.0),
+        ];
+        let inner = (0..corners.len())
+            .map(|index| {
+                let id = SketchEntityId(format!("inner-{index}"));
+                entities.push(SketchEntity {
+                    id: id.clone(),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: None,
+                    geometry_ref: None,
+                    endpoint_refs: Vec::new(),
+                    geometry: SketchGeometry::Line {
+                        start: corners[index],
+                        end: corners[(index + 1) % corners.len()],
+                    },
+                });
+                SketchEntityUse {
+                    entity: id,
+                    reversed: false,
+                }
+            })
+            .collect::<Vec<_>>();
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: vec![outer, inner],
+            native_ref: None,
+        };
+
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6),
+            Some(SketchProfileRegion {
+                outer: 0,
+                holes: vec![1],
+            })
+        );
+    }
+
+    #[test]
     fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
         let sketch_id = SketchId("sketch".into());
         let corners = [
@@ -16054,7 +16441,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn circular_arc_loop_uses_analytic_area_containment_and_distance() {
+    fn circular_arc_loop_uses_analytic_containment_and_distance() {
         let segments = vec![
             super::ProfileBoundarySegment::Line {
                 start: Point2::new(0.0, -2.0),
@@ -16073,7 +16460,6 @@ mod relation_tests {
             radius: 0.5,
         };
 
-        assert!((boundary.area() - 2.0 * std::f64::consts::PI).abs() < 1.0e-12);
         assert!(boundary.contains_point(Point2::new(-1.0, 0.0)));
         assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
         assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
