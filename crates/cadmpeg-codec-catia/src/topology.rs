@@ -1143,6 +1143,7 @@ struct IncidenceComponentSearch<'a> {
     solutions: Vec<Vec<(usize, [usize; 2])>>,
     solution_filter: Option<MeshEndpointSolutionFilter<'a>>,
     dead_states: HashSet<Vec<Option<[usize; 2]>>>,
+    budget: &'a MeshConstraintBudget,
     states: usize,
     exhausted: bool,
 }
@@ -1183,13 +1184,13 @@ impl IncidenceComponentSearch<'_> {
         let mut faces = self.edge_faces[edge].to_vec();
         faces.sort_unstable();
         faces.dedup();
-        faces.into_iter().all(|face| {
+        let viable = faces.into_iter().all(|face| {
             mesh_assignments.get(face).is_some_and(|assignments| {
                 assignments.iter().any(|assignment| {
                     mesh_assignment_endpoint_cycles_viable_where(
                         assignment,
                         self.choices,
-                        None,
+                        Some(self.budget),
                         |candidate_edge, candidate_pair| {
                             let selected = if candidate_edge == edge {
                                 Some(pair)
@@ -1204,7 +1205,8 @@ impl IncidenceComponentSearch<'_> {
                     .unwrap_or(true)
                 })
             })
-        })
+        });
+        viable && !self.budget.exhausted.get()
     }
 
     fn constraint_options(&self, face: usize, point: usize) -> Vec<(usize, [usize; 2])> {
@@ -1300,13 +1302,13 @@ impl IncidenceComponentSearch<'_> {
         let Some(mesh_assignments) = self.mesh_assignments else {
             return true;
         };
-        faces.into_iter().all(|face| {
+        let viable = faces.into_iter().all(|face| {
             mesh_assignments.get(face).is_some_and(|assignments| {
                 assignments.iter().any(|assignment| {
                     mesh_assignment_endpoint_cycles_viable_where(
                         assignment,
                         self.choices,
-                        None,
+                        Some(self.budget),
                         |edge, pair| {
                             self.assignment[edge]
                                 .is_none_or(|selected| same_unordered_pair(selected, pair))
@@ -1315,7 +1317,8 @@ impl IncidenceComponentSearch<'_> {
                     .unwrap_or(true)
                 })
             })
-        })
+        });
+        viable && !self.budget.exhausted.get()
     }
 
     fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
@@ -1324,6 +1327,9 @@ impl IncidenceComponentSearch<'_> {
         let mesh_assignments = self.mesh_assignments?;
         let mut best = None::<Vec<Vec<(usize, [usize; 2])>>>;
         for (face, assignments) in mesh_assignments.iter().enumerate() {
+            if !self.budget.charge() {
+                return Some(Vec::new());
+            }
             if !self.face_edges[face]
                 .iter()
                 .any(|edge| self.active[*edge] && self.assignment[*edge].is_none())
@@ -1375,6 +1381,9 @@ impl IncidenceComponentSearch<'_> {
                     continue;
                 }
                 if !self.candidate_fits(edge, pair) {
+                    if self.budget.exhausted.get() {
+                        self.exhausted = true;
+                    }
                     viable = false;
                     break;
                 }
@@ -1397,6 +1406,10 @@ impl IncidenceComponentSearch<'_> {
 
     fn search(&mut self) {
         if self.exhausted {
+            return;
+        }
+        if !self.budget.charge() {
+            self.exhausted = true;
             return;
         }
         let state = self
@@ -1423,7 +1436,12 @@ impl IncidenceComponentSearch<'_> {
             self.exhausted = true;
             return;
         }
-        if let Some(options) = self.face_configuration_options() {
+        let face_options = self.face_configuration_options();
+        if self.budget.exhausted.get() {
+            self.exhausted = true;
+            return;
+        }
+        if let Some(options) = face_options {
             if !options.is_empty() && self.charge_branch(options.len()) {
                 self.search_face_configurations(options);
             }
@@ -1459,7 +1477,14 @@ impl IncidenceComponentSearch<'_> {
             return;
         }
         for (edge, pair) in options {
-            if self.assignment[edge].is_some() || !self.candidate_fits(edge, pair) {
+            if self.assignment[edge].is_some() {
+                continue;
+            }
+            if !self.candidate_fits(edge, pair) {
+                if self.budget.exhausted.get() {
+                    self.exhausted = true;
+                    return;
+                }
                 continue;
             }
             self.adjust(edge, pair, true);
@@ -1520,6 +1545,7 @@ where
     }
     let component_count = components.len();
     let mut combined = vec![fixed.clone()];
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     for (component_index, component) in components.into_iter().enumerate() {
         let mut active = vec![false; choices.len()];
         let mut constraints = HashSet::<(usize, usize)>::new();
@@ -1565,6 +1591,7 @@ where
                 solutions: Vec::new(),
                 solution_filter,
                 dead_states: HashSet::new(),
+                budget: &budget,
                 states: 0,
                 exhausted: false,
             };
@@ -8657,6 +8684,7 @@ mod motif_tests {
         FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget, MeshEdgeRun,
         MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
         TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        MAX_MESH_CONSTRAINT_OPERATIONS,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -8980,6 +9008,7 @@ mod motif_tests {
         let edge_faces = [[0, 0]];
         let face_edges = vec![vec![0]];
         let edges = [0];
+        let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
         let mut search = super::IncidenceComponentSearch {
             choices: &choices,
             edge_faces: &edge_faces,
@@ -8993,6 +9022,7 @@ mod motif_tests {
             solutions: Vec::new(),
             solution_filter: None,
             dead_states: HashSet::new(),
+            budget: &budget,
             states: 4_096,
             exhausted: false,
         };
@@ -9002,6 +9032,37 @@ mod motif_tests {
         assert!(!search.exhausted);
         assert_eq!(search.states, 4_096);
         assert_eq!(search.solutions, vec![vec![(0, [0, 0])]]);
+    }
+
+    #[test]
+    fn incidence_component_declines_when_its_work_budget_is_exhausted() {
+        let choices = vec![vec![[0, 0]]];
+        let edge_faces = [[0, 0]];
+        let face_edges = vec![vec![0]];
+        let edges = [0];
+        let budget = MeshConstraintBudget::new(0);
+        let mut search = super::IncidenceComponentSearch {
+            choices: &choices,
+            edge_faces: &edge_faces,
+            face_edges: &face_edges,
+            mesh_assignments: None,
+            active: vec![true],
+            edges: &edges,
+            constraints: vec![(0, 0)],
+            assignment: vec![None],
+            degrees: vec![vec![0]],
+            solutions: Vec::new(),
+            solution_filter: None,
+            dead_states: HashSet::new(),
+            budget: &budget,
+            states: 0,
+            exhausted: false,
+        };
+
+        search.search();
+
+        assert!(search.exhausted);
+        assert!(search.solutions.is_empty());
     }
 
     #[test]
