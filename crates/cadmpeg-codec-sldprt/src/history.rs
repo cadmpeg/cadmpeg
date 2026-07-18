@@ -4083,6 +4083,26 @@ mod literal_tests {
             assert_eq!(parse_parameter_literal(literal), None, "{literal}");
         }
     }
+
+    #[test]
+    fn bare_binary_digits_are_integer_parameters() {
+        assert_eq!(
+            parse_parameter_literal("0"),
+            Some(ParameterValue::Integer(0))
+        );
+        assert_eq!(
+            parse_parameter_literal("1"),
+            Some(ParameterValue::Integer(1))
+        );
+        assert_eq!(
+            parse_parameter_literal("true"),
+            Some(ParameterValue::Boolean(true))
+        );
+        assert_eq!(
+            parse_parameter_literal("false"),
+            Some(ParameterValue::Boolean(false))
+        );
+    }
 }
 
 fn parse_point3_mm(value: &str) -> Option<Point3> {
@@ -4239,8 +4259,12 @@ fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
         return parse_dimension_display_length(expression)
             .map(|value| ParameterValue::Length(Length(value)));
     }
-    if let Some(value) = parse_bool(expression.trim()) {
-        return Some(ParameterValue::Boolean(value));
+    let expression = expression.trim();
+    if expression.eq_ignore_ascii_case("true") {
+        return Some(ParameterValue::Boolean(true));
+    }
+    if expression.eq_ignore_ascii_case("false") {
+        return Some(ParameterValue::Boolean(false));
     }
     if let Some(value) = parse_length_mm(expression) {
         return Some(ParameterValue::Length(Length(value)));
