@@ -1278,6 +1278,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 parameter: None,
                 ..
             } => (entities.clone(), None),
+            Definition::RectangularPattern { instances, .. } => (
+                instances
+                    .iter()
+                    .flat_map(|instance| instance.entities.iter().cloned())
+                    .collect(),
+                None,
+            ),
             Definition::Native {
                 entities,
                 parameter: Some(parameter),
@@ -1406,6 +1413,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         if let Some(parameter) = parameter {
             if !parameters.contains(parameter) {
                 ref_error(findings, &constraint.id.0, "parameter", parameter);
+            }
+        }
+        if let Definition::RectangularPattern { directions, .. } = &constraint.definition {
+            for parameter in directions.iter().flat_map(|direction| {
+                [
+                    direction.spacing_parameter.0.as_str(),
+                    direction.count_parameter.0.as_str(),
+                ]
+            }) {
+                if !parameters.contains(parameter) {
+                    ref_error(findings, &constraint.id.0, "parameter", parameter);
+                }
             }
         }
     }

@@ -220,6 +220,30 @@ pub struct SketchOffsetPair {
     pub result: SketchEntityId,
 }
 
+/// One axis of a parameter-driven rectangular sketch pattern.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchPatternDirection {
+    /// Unit direction in sketch coordinates.
+    pub direction: [f64; 2],
+    /// Adjacent-instance spacing along `direction`.
+    pub spacing: Length,
+    /// Number of instances along this axis, including the seed instance.
+    pub count: u32,
+    /// Driving spacing parameter.
+    pub spacing_parameter: ParameterId,
+    /// Driving instance-count parameter.
+    pub count_parameter: ParameterId,
+}
+
+/// One resolved rectangular-pattern instance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchPatternInstance {
+    /// Zero-based indices along the two pattern directions.
+    pub indices: [u32; 2],
+    /// Entities in fixed seed-entity order.
+    pub entities: Vec<SketchEntityId>,
+}
+
 /// One independently measured pair within a repeated linear dimension.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -266,6 +290,13 @@ pub enum SketchConstraintDefinition {
         /// Ordered spline-group members: the spline's defining entities and
         /// its curve entity.
         entities: Vec<SketchEntityId>,
+    },
+    /// A complete two-axis rectangular pattern with resolved instances.
+    RectangularPattern {
+        /// Ordered pattern directions.
+        directions: [SketchPatternDirection; 2],
+        /// Instances in source order; `[0, 0]` is the seed instance.
+        instances: Vec<SketchPatternInstance>,
     },
     /// Two or more explicit entity loci coincide.
     CoincidentLoci {

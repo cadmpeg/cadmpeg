@@ -4296,6 +4296,7 @@ fn union_endpoint_nodes(parents: &mut [usize], first: usize, second: usize) {
 /// native aggregate when its member roles do not determine neutral loci.
 pub fn project_sketch_constraints(
     placements: &[DesignSketchPlacement],
+    parameters: &[DesignParameter],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     relations: &[SketchRelation],
@@ -4389,6 +4390,11 @@ pub fn project_sketch_constraints(
             .iter()
             .filter_map(|record_index| projected.get(&(scope, *record_index)).copied())
             .collect::<Vec<_>>();
+        let return_entities = relation
+            .return_members
+            .iter()
+            .filter_map(|record_index| projected.get(&(scope, *record_index)).copied())
+            .collect::<Vec<_>>();
         let exact = relation.unknown_constraint_bits == 0
             && relation.constraint_kinds.len() == 1
             && member_entities.len() == relation.members.len();
@@ -4416,6 +4422,7 @@ pub fn project_sketch_constraints(
         } else {
             None
         })
+        .or_else(|| exact_rectangular_pattern(relation, scope, parameters, &return_entities))
         .or_else(|| exact_offset_constraint(relation, scope, &projected))
         .unwrap_or_else(|| Definition::Native {
             native_kind: relation_kind_name(relation),
@@ -4450,6 +4457,266 @@ pub fn project_sketch_constraints(
     let mut constraints = projected_constraints.collect::<Vec<_>>();
     constraints.sort_by_key(|constraint| constraint.id.clone());
     constraints
+}
+
+fn exact_rectangular_pattern(
+    relation: &SketchRelation,
+    scope: &str,
+    parameters: &[DesignParameter],
+    entities: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use crate::records::SketchPatternDefinition;
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition as Definition, SketchPatternDirection, SketchPatternInstance,
+    };
+
+    if relation.unknown_constraint_bits != 0
+        || relation.constraint_kinds != [SketchConstraintKind::RectangularPattern]
+        || entities.len() != relation.return_members.len()
+    {
+        return None;
+    }
+    let SketchPatternDefinition::Rectangular { directions } = relation.pattern.as_ref()? else {
+        return None;
+    };
+    let directions = directions
+        .iter()
+        .map(|direction| {
+            if direction.direction[2].abs() > 1.0e-9 {
+                return None;
+            }
+            let count_parameter = parameters.iter().find(|parameter| {
+                native_stream(&parameter.id) == Some(scope)
+                    && parameter.owner_record_index == Some(direction.count_parameter)
+            })?;
+            let spacing_parameter = parameters.iter().find(|parameter| {
+                native_stream(&parameter.id) == Some(scope)
+                    && parameter.owner_record_index == Some(direction.distance_parameter)
+            })?;
+            let count = direction.evaluated_count;
+            if !scalar_close(count_parameter.evaluated_value, f64::from(count)) {
+                return None;
+            }
+            let spacing = design_length(spacing_parameter)?;
+            if !scalar_close(spacing.0, direction.evaluated_distance * 10.0) {
+                return None;
+            }
+            Some(SketchPatternDirection {
+                direction: [direction.direction[0], direction.direction[1]],
+                spacing,
+                count,
+                spacing_parameter: neutral_parameter_id(spacing_parameter),
+                count_parameter: neutral_parameter_id(count_parameter),
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let directions: [SketchPatternDirection; 2] = directions.try_into().ok()?;
+    if directions.iter().any(|direction| {
+        let length = direction.direction[0].hypot(direction.direction[1]);
+        !scalar_close(length, 1.0)
+    }) {
+        return None;
+    }
+    let dot = directions[0].direction[0] * directions[1].direction[0]
+        + directions[0].direction[1] * directions[1].direction[1];
+    if dot.abs() > 1.0e-9 {
+        return None;
+    }
+    let instance_count = usize::try_from(directions[0].count)
+        .ok()?
+        .checked_mul(usize::try_from(directions[1].count).ok()?)?;
+    if instance_count == 0 || !entities.len().is_multiple_of(instance_count) {
+        return None;
+    }
+    let entity_count = entities.len() / instance_count;
+    let seed = entities.get(..entity_count)?;
+    if seed.is_empty() {
+        return None;
+    }
+    let mut instances = Vec::with_capacity(instance_count);
+    let mut occupied = HashSet::new();
+    for instance in entities.chunks_exact(entity_count) {
+        let candidates = (0..directions[0].count)
+            .flat_map(|first| (0..directions[1].count).map(move |second| [first, second]))
+            .filter(|indices| {
+                let translation = Point2::new(
+                    f64::from(indices[0]) * directions[0].spacing.0 * directions[0].direction[0]
+                        + f64::from(indices[1])
+                            * directions[1].spacing.0
+                            * directions[1].direction[0],
+                    f64::from(indices[0]) * directions[0].spacing.0 * directions[0].direction[1]
+                        + f64::from(indices[1])
+                            * directions[1].spacing.0
+                            * directions[1].direction[1],
+                );
+                seed.iter().zip(instance).all(|(source, result)| {
+                    translated_sketch_geometry_matches(
+                        &source.geometry,
+                        &result.geometry,
+                        translation,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        let [indices] = candidates.as_slice() else {
+            return None;
+        };
+        if !occupied.insert(*indices) {
+            return None;
+        }
+        instances.push(SketchPatternInstance {
+            indices: *indices,
+            entities: instance.iter().map(|entity| entity.id.clone()).collect(),
+        });
+    }
+    if instances.first().map(|instance| instance.indices) != Some([0, 0]) {
+        return None;
+    }
+    Some(Definition::RectangularPattern {
+        directions,
+        instances,
+    })
+}
+
+fn scalar_close(first: f64, second: f64) -> bool {
+    first.is_finite()
+        && second.is_finite()
+        && (first - second).abs() <= 1.0e-9 * (1.0 + first.abs().max(second.abs()))
+}
+
+fn translated_sketch_geometry_matches(
+    source: &cadmpeg_ir::sketches::SketchGeometry,
+    result: &cadmpeg_ir::sketches::SketchGeometry,
+    translation: Point2,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let point_matches = |first: Point2, second: Point2| {
+        scalar_close(first.u + translation.u, second.u)
+            && scalar_close(first.v + translation.v, second.v)
+    };
+    match (source, result) {
+        (SketchGeometry::Point { position: first }, SketchGeometry::Point { position: second }) => {
+            point_matches(*first, *second)
+        }
+        (
+            SketchGeometry::Line {
+                start: first_start,
+                end: first_end,
+            },
+            SketchGeometry::Line {
+                start: second_start,
+                end: second_end,
+            },
+        ) => point_matches(*first_start, *second_start) && point_matches(*first_end, *second_end),
+        (
+            SketchGeometry::Circle {
+                center: first_center,
+                radius: first_radius,
+            },
+            SketchGeometry::Circle {
+                center: second_center,
+                radius: second_radius,
+            },
+        ) => {
+            point_matches(*first_center, *second_center)
+                && scalar_close(first_radius.0, second_radius.0)
+        }
+        (
+            SketchGeometry::Arc {
+                center: first_center,
+                radius: first_radius,
+                start_angle: first_start,
+                end_angle: first_end,
+            },
+            SketchGeometry::Arc {
+                center: second_center,
+                radius: second_radius,
+                start_angle: second_start,
+                end_angle: second_end,
+            },
+        ) => {
+            point_matches(*first_center, *second_center)
+                && scalar_close(first_radius.0, second_radius.0)
+                && scalar_close(first_start.0, second_start.0)
+                && scalar_close(first_end.0, second_end.0)
+        }
+        (
+            SketchGeometry::Ellipse {
+                center: first_center,
+                major_angle: first_major_angle,
+                major_radius: first_major_radius,
+                minor_radius: first_minor_radius,
+                start_angle: first_start,
+                end_angle: first_end,
+            },
+            SketchGeometry::Ellipse {
+                center: second_center,
+                major_angle: second_major_angle,
+                major_radius: second_major_radius,
+                minor_radius: second_minor_radius,
+                start_angle: second_start,
+                end_angle: second_end,
+            },
+        ) => {
+            point_matches(*first_center, *second_center)
+                && scalar_close(first_major_angle.0, second_major_angle.0)
+                && scalar_close(first_major_radius.0, second_major_radius.0)
+                && scalar_close(first_minor_radius.0, second_minor_radius.0)
+                && optional_angle_matches(first_start.as_ref(), second_start.as_ref())
+                && optional_angle_matches(first_end.as_ref(), second_end.as_ref())
+        }
+        (
+            SketchGeometry::Nurbs {
+                degree: first_degree,
+                knots: first_knots,
+                control_points: first_points,
+                weights: first_weights,
+                periodic: first_periodic,
+            },
+            SketchGeometry::Nurbs {
+                degree: second_degree,
+                knots: second_knots,
+                control_points: second_points,
+                weights: second_weights,
+                periodic: second_periodic,
+            },
+        ) => {
+            *first_degree == *second_degree
+                && first_periodic == second_periodic
+                && equal_scalars(first_knots, second_knots)
+                && first_points.len() == second_points.len()
+                && first_points
+                    .iter()
+                    .zip(second_points)
+                    .all(|(first, second)| point_matches(*first, *second))
+                && match (first_weights, second_weights) {
+                    (None, None) => true,
+                    (Some(first), Some(second)) => equal_scalars(first, second),
+                    _ => false,
+                }
+        }
+        _ => false,
+    }
+}
+
+fn optional_angle_matches(
+    first: Option<&cadmpeg_ir::features::Angle>,
+    second: Option<&cadmpeg_ir::features::Angle>,
+) -> bool {
+    match (first, second) {
+        (None, None) => true,
+        (Some(first), Some(second)) => scalar_close(first.0, second.0),
+        _ => false,
+    }
+}
+
+fn equal_scalars(first: &[f64], second: &[f64]) -> bool {
+    first.len() == second.len()
+        && first
+            .iter()
+            .zip(second)
+            .all(|(first, second)| scalar_close(*first, *second))
 }
 
 /// Project dimensional parameter companions into parameter-backed sketch
@@ -17644,6 +17911,7 @@ mod relation_tests {
         horizontal_point.unknown_constraint_bits = 0x8000_0000;
         let constraints = project_sketch_constraints(
             &placements,
+            &[],
             &points,
             &curves,
             &[
@@ -18213,6 +18481,44 @@ mod relation_tests {
             &inner_circle,
             &displaced_circle,
             0.25,
+        ));
+    }
+
+    #[test]
+    fn rectangular_pattern_instances_require_exact_translated_geometry() {
+        let source = SketchGeometry::Line {
+            start: Point2::new(1.0, 2.0),
+            end: Point2::new(4.0, 6.0),
+        };
+        let translated = SketchGeometry::Line {
+            start: Point2::new(11.0, -1.0),
+            end: Point2::new(14.0, 3.0),
+        };
+        assert!(super::translated_sketch_geometry_matches(
+            &source,
+            &translated,
+            Point2::new(10.0, -3.0),
+        ));
+        let reversed = SketchGeometry::Line {
+            start: Point2::new(14.0, 3.0),
+            end: Point2::new(11.0, -1.0),
+        };
+        assert!(!super::translated_sketch_geometry_matches(
+            &source,
+            &reversed,
+            Point2::new(10.0, -3.0),
+        ));
+        let resized = SketchGeometry::Circle {
+            center: Point2::new(12.0, 0.0),
+            radius: cadmpeg_ir::features::Length(3.1),
+        };
+        assert!(!super::translated_sketch_geometry_matches(
+            &SketchGeometry::Circle {
+                center: Point2::new(2.0, 3.0),
+                radius: cadmpeg_ir::features::Length(3.0),
+            },
+            &resized,
+            Point2::new(10.0, -3.0),
         ));
     }
 
@@ -19151,7 +19457,7 @@ mod relation_tests {
 
         let (mut sketches, mut entities) = project_sketch_design(&placements, &points, &[], 1.0e-6);
         let mut constraints =
-            project_sketch_constraints(&placements, &points, &[], &relations, &entities);
+            project_sketch_constraints(&placements, &[], &points, &[], &relations, &entities);
         assert_eq!(sketches.len(), 2);
         assert_eq!(entities.len(), 2);
         assert_eq!(constraints.len(), 2);

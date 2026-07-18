@@ -193,14 +193,14 @@ struct DesignProjectionGaps {
     unresolved_edge_selections: usize,
 }
 
-fn constraint_parameter(
+fn constraint_parameters(
     definition: &cadmpeg_ir::sketches::SketchConstraintDefinition,
-) -> Option<&cadmpeg_ir::features::ParameterId> {
+) -> Vec<&cadmpeg_ir::features::ParameterId> {
     use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
 
     match definition {
         Definition::Offset { parameter, .. } | Definition::Native { parameter, .. } => {
-            parameter.as_ref()
+            parameter.iter().collect()
         }
         Definition::Distance { parameter, .. }
         | Definition::DistanceLoci { parameter, .. }
@@ -210,7 +210,11 @@ fn constraint_parameter(
         | Definition::Angle { parameter, .. }
         | Definition::AngleToAxis { parameter, .. }
         | Definition::Radius { parameter, .. }
-        | Definition::Diameter { parameter, .. } => Some(parameter),
+        | Definition::Diameter { parameter, .. } => vec![parameter],
+        Definition::RectangularPattern { directions, .. } => directions
+            .iter()
+            .flat_map(|direction| [&direction.spacing_parameter, &direction.count_parameter])
+            .collect(),
         Definition::Coincident { .. }
         | Definition::Polygon { .. }
         | Definition::SplineGroup { .. }
@@ -226,7 +230,7 @@ fn constraint_parameter(
         | Definition::Tangent { .. }
         | Definition::Curvature { .. }
         | Definition::Equal { .. }
-        | Definition::Fixed { .. } => None,
+        | Definition::Fixed { .. } => Vec::new(),
     }
 }
 
@@ -319,7 +323,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .model
         .sketch_constraints
         .iter()
-        .filter_map(|constraint| constraint_parameter(&constraint.definition))
+        .flat_map(|constraint| constraint_parameters(&constraint.definition))
         .cloned()
         .collect::<HashSet<_>>();
 
@@ -833,6 +837,7 @@ pub fn decode(
             );
             ir.model.sketch_constraints = crate::design::project_sketch_constraints(
                 &native.design_sketch_placements,
+                &native.design_parameters,
                 &native.sketch_points,
                 &native.sketch_curve_identities,
                 &native.sketch_relations,
@@ -1104,6 +1109,7 @@ pub fn decode(
     );
     ir.model.sketch_constraints = crate::design::project_sketch_constraints(
         &native.design_sketch_placements,
+        &native.design_parameters,
         &native.sketch_points,
         &native.sketch_curve_identities,
         &native.sketch_relations,

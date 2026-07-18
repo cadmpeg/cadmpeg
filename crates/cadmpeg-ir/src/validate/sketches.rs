@@ -201,6 +201,45 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         let valid = match &constraint.definition {
             Constraint::Coincident { entities } => entities.len() >= 2,
             Constraint::SplineGroup { entities } => entities.len() >= 2,
+            Constraint::RectangularPattern {
+                directions,
+                instances,
+            } => {
+                let expected_instances =
+                    directions.iter().try_fold(1usize, |product, direction| {
+                        product.checked_mul(usize::try_from(direction.count).ok()?)
+                    });
+                let seed_arity = instances
+                    .first()
+                    .map_or(0, |instance| instance.entities.len());
+                let mut indices = HashSet::new();
+                let mut entities = HashSet::new();
+                let dot = directions[0].direction[0] * directions[1].direction[0]
+                    + directions[0].direction[1] * directions[1].direction[1];
+                expected_instances == Some(instances.len())
+                    && seed_arity > 0
+                    && dot.abs() <= 1.0e-9
+                    && instances
+                        .first()
+                        .is_some_and(|instance| instance.indices == [0, 0])
+                    && directions.iter().all(|direction| {
+                        let length = direction.direction[0].hypot(direction.direction[1]);
+                        direction.count > 0
+                            && direction.spacing.0.is_finite()
+                            && direction.direction.iter().all(|value| value.is_finite())
+                            && (length - 1.0).abs() <= 1.0e-9
+                    })
+                    && instances.iter().all(|instance| {
+                        instance.indices[0] < directions[0].count
+                            && instance.indices[1] < directions[1].count
+                            && instance.entities.len() == seed_arity
+                            && indices.insert(instance.indices)
+                            && instance
+                                .entities
+                                .iter()
+                                .all(|entity| entities.insert(entity))
+                    })
+            }
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
             Constraint::RepeatedDistance { measurements, .. } => {
