@@ -652,6 +652,7 @@ pub(crate) fn project_feature_input_topologies(
 pub(crate) fn bind_face_operand_history_candidates(
     operands: &mut [crate::records::DesignFaceOperand],
     scopes: &[crate::records::DesignParameterScope],
+    operand_groups: &[crate::records::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
 ) {
     let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
@@ -661,7 +662,7 @@ pub(crate) fn bind_face_operand_history_candidates(
             .and_modify(|state| *state = None)
             .or_insert(Some(state));
     }
-    for operand in operands {
+    for operand in &mut *operands {
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
         operand.historical_support_contexts.clear();
@@ -712,6 +713,140 @@ pub(crate) fn bind_face_operand_history_candidates(
         operand.resolved_face_slot =
             crate::design::resolve_face_operand_history_candidates(operand);
     }
+    bind_profile_face_group_cardinality(operands, scopes, operand_groups, histories);
+}
+
+fn bind_profile_face_group_cardinality(
+    operands: &mut [crate::records::DesignFaceOperand],
+    scopes: &[crate::records::DesignParameterScope],
+    operand_groups: &[crate::records::DesignConstructionOperandGroup],
+    histories: &[AsmHistory],
+) {
+    let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    let mut groups = HashMap::<(String, u32, u32), Vec<usize>>::new();
+    for (index, operand) in operands.iter().enumerate() {
+        let (Some(stream), Some(group)) = (
+            crate::design::native_stream(&operand.id),
+            operand.group_record_index,
+        ) else {
+            continue;
+        };
+        groups
+            .entry((stream.to_owned(), operand.scope_record_index, group))
+            .or_default()
+            .push(index);
+    }
+    for ((stream, scope_record_index, group_record_index), mut indices) in groups {
+        let mut matching_groups = operand_groups.iter().filter(|group| {
+            group.record_index == group_record_index
+                && group.scope_record_index == scope_record_index
+                && crate::design::native_stream(&group.id) == Some(stream.as_str())
+        });
+        let Some(group) = matching_groups.next() else {
+            continue;
+        };
+        if matching_groups.next().is_some()
+            || group.extrude_role != Some(crate::records::DesignExtrudeOperandRole::Profile)
+            || group.members.len() != indices.len()
+        {
+            continue;
+        }
+        if indices.len() < 2
+            || indices.iter().any(|index| {
+                let operand = &operands[*index];
+                operand.resolved_face_slot.is_some()
+                    || !crate::design::face_operand_candidates(operand).is_empty()
+                    || !operand.recipe_references.is_empty()
+            })
+        {
+            continue;
+        }
+        indices.sort_by_key(|index| operands[*index].group_member_ordinal);
+        if indices.iter().enumerate().any(|(ordinal, index)| {
+            operands[*index].group_member_ordinal != u32::try_from(ordinal).ok()
+                || group.members.get(ordinal) != Some(&operands[*index].record_index)
+        }) {
+            continue;
+        }
+        let mut matching_scopes = scopes.iter().filter(|scope| {
+            scope.record_index == scope_record_index
+                && crate::design::native_stream(&scope.id) == Some(stream.as_str())
+        });
+        let Some(scope) = matching_scopes.next() else {
+            continue;
+        };
+        if matching_scopes.next().is_some() {
+            continue;
+        }
+        let (Some(state_id), Some(previous_state_id)) =
+            (scope.history_state_id, scope.previous_history_state_id)
+        else {
+            continue;
+        };
+        let (Some(Some(state)), Some(Some(previous))) =
+            (states.get(&state_id), states.get(&previous_state_id))
+        else {
+            continue;
+        };
+        let (Some(topology), Some(changed_faces)) = (
+            previous.topology.as_ref(),
+            face_changes_across_state_chain(state, previous_state_id, &states),
+        ) else {
+            continue;
+        };
+        let Some(faces) =
+            profile_face_group_cardinality_candidates(topology, &changed_faces, indices.len())
+        else {
+            continue;
+        };
+        for (index, face) in indices.into_iter().zip(faces) {
+            let face_id = cadmpeg_ir::ids::FaceId(format!("f3d:brep:entity#{face}"));
+            operands[index].preceding_candidate_faces = vec![face_id.clone()];
+            operands[index].changed_candidate_faces = vec![face_id];
+            operands[index].resolved_face_slot = Some(face);
+        }
+    }
+}
+
+fn profile_face_group_cardinality_candidates(
+    topology: &AsmHistoricalTopology,
+    changed_faces: &HashSet<i64>,
+    member_count: usize,
+) -> Option<Vec<i64>> {
+    let preceding_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    let mut faces_by_carrier = HashMap::<i64, Vec<i64>>::new();
+    for face in changed_faces
+        .iter()
+        .copied()
+        .filter(|face| preceding_faces.contains(face))
+    {
+        let mut bindings = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == face);
+        let Some(carrier) = bindings.next().map(|binding| binding.carrier) else {
+            continue;
+        };
+        if bindings.next().is_none() {
+            faces_by_carrier.entry(carrier).or_default().push(face);
+        }
+    }
+    let mut candidates = faces_by_carrier
+        .into_values()
+        .filter(|faces| faces.len() == member_count);
+    let mut faces = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    faces.sort_unstable();
+    faces.dedup();
+    (faces.len() == member_count).then_some(faces)
 }
 
 fn face_changes_across_state_chain<'a>(
@@ -3727,5 +3862,50 @@ mod tests {
             ]
         );
         assert_eq!(states[2].entity_versions[1].record_ref, 4);
+    }
+
+    #[test]
+    fn profile_face_group_cardinality_requires_one_changed_surface_family() {
+        let topology = AsmHistoricalTopology {
+            faces: vec![10, 11, 12, 20],
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 10,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 11,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 12,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 20,
+                    carrier: 200,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        let changed = [20, 12, 10, 11].into_iter().collect();
+        assert_eq!(
+            profile_face_group_cardinality_candidates(&topology, &changed, 3),
+            Some(vec![10, 11, 12])
+        );
+
+        let mut ambiguous = topology;
+        ambiguous.faces.extend([30, 31, 32]);
+        ambiguous
+            .face_surfaces
+            .extend([30, 31, 32].map(|entity| AsmHistoricalCarrierBinding {
+                entity,
+                carrier: 300,
+            }));
+        let changed = [10, 11, 12, 30, 31, 32].into_iter().collect();
+        assert_eq!(
+            profile_face_group_cardinality_candidates(&ambiguous, &changed, 3),
+            None
+        );
     }
 }

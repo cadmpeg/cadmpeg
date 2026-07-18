@@ -1330,6 +1330,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     history::bind_face_operand_history_candidates(
         &mut expected_face_operands,
         &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
         &native.asm_histories,
     );
     let expected_face_operands = expected_face_operands
@@ -1343,8 +1344,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let header = records_by_index.get(&(native_stream, operand.record_index));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
         let mut expected_faces = recipe
-            .and_then(|recipe| recipe.design_id.as_deref())
-            .and_then(|value| value.parse::<i64>().ok())
+            .map(|recipe| i64::from(recipe.record_index))
+            .filter(|value| *value >= 0)
             .map(|design_reference| {
                 native
                     .persistent_subentity_tags
@@ -1367,8 +1368,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             design::bind_recipe_reference_candidates(reference, &native.persistent_subentity_tags);
         }
         let recipe_design_reference = recipe
-            .and_then(|recipe| recipe.design_id.as_deref())
-            .and_then(|value| value.parse::<i64>().ok());
+            .map(|recipe| i64::from(recipe.record_index))
+            .filter(|value| *value >= 0);
         let referenced_faces = expected_references
             .iter()
             .filter(|reference| Some(reference.design_reference) == recipe_design_reference)
@@ -1490,26 +1491,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 .program
                                 .get(3..)
                                 .and_then(design::face_recipe_structure)
-                                .and_then(|structure| {
-                                    design::face_recipe_local_topology_references(
-                                        &structure,
-                                        usize::try_from(operand.recipe_program[2])
-                                            .unwrap_or(usize::MAX),
-                                    )
-                                    .map(|_| structure)
-                                })
-                        && node.recipe_structure.as_ref().map_or_else(
-                            || node.local_topology_references.is_empty(),
-                            |structure| {
-                                design::face_recipe_local_topology_references(
-                                    structure,
-                                    usize::try_from(operand.recipe_program[2])
-                                        .unwrap_or(usize::MAX),
-                                )
-                                .as_ref()
-                                    == Some(&node.local_topology_references)
-                            },
-                        )
                         && u64::try_from(node.program.len()).ok().is_some_and(|words| {
                             start.saturating_add(words.saturating_mul(4)) == end
                         })

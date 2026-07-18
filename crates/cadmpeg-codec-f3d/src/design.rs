@@ -13515,20 +13515,6 @@ pub(crate) fn face_recipe_structure(
     })
 }
 
-pub(crate) fn face_recipe_local_topology_references(
-    structure: &crate::records::DesignFaceRecipeStructure,
-    node_count: usize,
-) -> Option<Vec<std::num::NonZeroU32>> {
-    let words = std::iter::once(structure.root)
-        .chain(std::iter::once(structure.prelude[0]))
-        .chain(structure.sides.iter().flat_map(|side| {
-            [Some(side.first), Some(side.second), side.third]
-                .into_iter()
-                .flatten()
-        }));
-    topology_recipe_references(words, node_count)
-}
-
 fn topology_recipe_references(
     words: impl IntoIterator<Item = i32>,
     reference_count: usize,
@@ -13733,8 +13719,8 @@ fn parse_face_operand(
     if recipe_program.get(0..2) != Some(&[0, -1]) {
         return None;
     }
-    let local_topology_count = usize::try_from(*recipe_program.get(2)?).ok()?;
-    if local_topology_count == 0 || local_topology_count > 100_000 {
+    let header_value = usize::try_from(*recipe_program.get(2)?).ok()?;
+    if header_value == 0 || header_value > 100_000 {
         return None;
     }
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
@@ -13763,21 +13749,13 @@ fn parse_face_operand(
         )
         .map(|(start, end)| {
             let program = recipe_program.get(start..end)?.to_vec();
-            let (recipe_structure, local_topology_references) = program
-                .get(3..)
-                .and_then(face_recipe_structure)
-                .and_then(|structure| {
-                    face_recipe_local_topology_references(&structure, local_topology_count)
-                        .map(|references| (Some(structure), references))
-                })
-                .unwrap_or((None, Vec::new()));
+            let recipe_structure = program.get(3..).and_then(face_recipe_structure);
             Some(crate::records::DesignFaceRecipeNode {
                 byte_offset: u64::try_from(recipe_program_at.checked_add(start.checked_mul(4)?)?)
                     .ok()?,
                 end_byte_offset: u64::try_from(recipe_program_at.checked_add(end.checked_mul(4)?)?)
                     .ok()?,
                 recipe_structure,
-                local_topology_references,
                 program,
             })
         })
@@ -20566,15 +20544,6 @@ mod relation_tests {
         assert_eq!(face.sides[1].header_value, 0);
         assert_eq!(face.sides[1].first, 1);
         assert_eq!(face.sides[1].second, 3);
-        assert_eq!(
-            super::face_recipe_local_topology_references(&face, 3)
-                .expect("bounded face-node topology references")
-                .iter()
-                .map(|ordinal| ordinal.get())
-                .collect::<Vec<_>>(),
-            [1, 2, 1, 1, 3]
-        );
-        assert!(super::face_recipe_local_topology_references(&face, 2).is_none());
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(

@@ -1633,10 +1633,6 @@ pub struct DesignFaceRecipeNode {
     pub program: Vec<i32>,
     /// Shared two-side topology recipe structure following the node opener.
     pub recipe_structure: Option<DesignFaceRecipeStructure>,
-    /// Ordered nonzero local topology references from the root, first prelude
-    /// scalar, and side scalar runs.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub local_topology_references: Vec<NonZeroU32>,
 }
 
 /// Structured topology program following a face-recipe node opener.

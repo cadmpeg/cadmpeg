@@ -1934,6 +1934,7 @@ fn extend_related_design_records(
     crate::history::bind_face_operand_history_candidates(
         &mut native.design_face_operands,
         &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
         &native.asm_histories,
     );
     native.design_sketch_placements = crate::design::decode_sketch_placements(
