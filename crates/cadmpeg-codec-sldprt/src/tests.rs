@@ -9696,6 +9696,7 @@ fn decode_binds_following_profile_marked_as_dissected_child() {
         0x42,
         "Contents/Keywords",
         br#"<Keywords>
+            <Sketch Name="Previous" Type="Sketch" id="7"/>
             <Extrusion Name="Boss" Type="Extrusion" id="9"/>
             <Sketch Name="Profile&lt;3&gt;" Type="Sketch" id="8" Description="Profile&lt;3&gt;"/>
         </Keywords>"#,
@@ -9704,6 +9705,7 @@ fn decode_binds_following_profile_marked_as_dissected_child() {
         0x42,
         "Contents/Config-0-ResolvedFeatures",
         &resolved_feature_classes_with_ids(&[
+            ("moProfileFeature_c", "Previous", 7),
             ("moICE_c", "Boss", 9),
             ("moProfileFeature_c", "Profile<3>", 8),
         ]),

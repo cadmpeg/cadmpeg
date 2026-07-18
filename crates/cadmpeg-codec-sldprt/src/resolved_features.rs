@@ -8471,8 +8471,8 @@ pub(crate) fn project_adjacent_extrusion_profiles(
     #[derive(PartialEq)]
     enum ProfileVote {
         Missing,
-        Unique(String),
-        Ambiguous,
+        Unique { profile: String, strength: u8 },
+        Ambiguous { strength: u8 },
     }
 
     let native_features = histories
@@ -8520,16 +8520,16 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             };
             let first_kind = object_kind(first_name, first);
             let second_kind = object_kind(second_name, second);
-            let (profile, extrusion) = match (first_kind, second_kind) {
+            let (profile, extrusion, strength) = match (first_kind, second_kind) {
                 (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion)
                     if !is_dissectable(second) =>
                 {
-                    (*first, *second)
+                    (*first, *second, 0)
                 }
                 (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature)
                     if is_dissectable(first) || is_dissected_profile_feature(second) =>
                 {
-                    (*second, *first)
+                    (*second, *first, 1)
                 }
                 _ => continue,
             };
@@ -8540,21 +8540,44 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 continue;
             };
             *vote = match vote {
-                ProfileVote::Missing => ProfileVote::Unique(profile.id.clone()),
-                ProfileVote::Unique(existing) if existing == &profile.id => {
-                    ProfileVote::Unique(existing.clone())
+                ProfileVote::Missing => ProfileVote::Unique {
+                    profile: profile.id.clone(),
+                    strength,
+                },
+                ProfileVote::Unique {
+                    profile: existing,
+                    strength: existing_strength,
+                } if existing == &profile.id => ProfileVote::Unique {
+                    profile: existing.clone(),
+                    strength: (*existing_strength).max(strength),
+                },
+                ProfileVote::Unique {
+                    strength: existing_strength,
+                    ..
                 }
-                ProfileVote::Unique(_) | ProfileVote::Ambiguous => ProfileVote::Ambiguous,
+                | ProfileVote::Ambiguous {
+                    strength: existing_strength,
+                } if strength > *existing_strength => ProfileVote::Unique {
+                    profile: profile.id.clone(),
+                    strength,
+                },
+                ProfileVote::Unique {
+                    strength: existing_strength,
+                    ..
+                } if strength == *existing_strength => ProfileVote::Ambiguous { strength },
+                ProfileVote::Unique { .. } | ProfileVote::Ambiguous { .. } => {
+                    continue;
+                }
             };
         }
     }
     for (extrusion, votes) in profiles {
-        let Some(ProfileVote::Unique(profile)) = votes.first() else {
+        let Some(ProfileVote::Unique { profile, .. }) = votes.first() else {
             continue;
         };
         if !votes
             .iter()
-            .all(|vote| matches!(vote, ProfileVote::Unique(candidate) if candidate == profile))
+            .all(|vote| matches!(vote, ProfileVote::Unique { profile: candidate, .. } if candidate == profile))
         {
             continue;
         }

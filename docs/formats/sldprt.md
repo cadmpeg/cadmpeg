@@ -105,7 +105,7 @@ An extrusion object without an `EndCondition` attribute, without an owned `Depth
 
 An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile unless it has the following dissected-child signature. A nested profile stream owned by an extrusion resolves the profile to its transferred sketch.
 
-An extrusion immediately followed by an `moProfileFeature_c` object whose `Description` equals its name and whose name ends in `<n>` for decimal `n` uses that following feature as its dissected profile. This child signature applies when the extrusion omits its `Dissectable` property. An ordinary following profile without the child signature is not an extrusion operand.
+An extrusion immediately followed by an `moProfileFeature_c` object whose `Description` equals its name and whose name ends in `<n>` for decimal `n` uses that following feature as its dissected profile. This child signature applies when the extrusion omits its `Dissectable` property and supersedes an immediately preceding generic profile object. An ordinary following profile without the child signature is not an extrusion operand.
 
 A dissected child with exactly one dependency on a planar sketch feature selects that feature's complete profile when the sketch contains exactly one profile chain. The child is a profile-selection tree record, not another owner of the sketch. A sketch with multiple profile chains does not identify which chain the child selects and leaves the child profile unresolved.
 
