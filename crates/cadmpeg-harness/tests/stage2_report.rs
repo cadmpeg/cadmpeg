@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use cadmpeg_harness::driver::{run_job, RunKey};
+use cadmpeg_harness::execute::probe_runtime_gates;
 use cadmpeg_harness::fixtures::{default_corpus_root, gate_fixtures};
 use cadmpeg_harness::oracle::OracleLimits;
 use cadmpeg_harness::stage2::{status_from_manifest, workspace_root};
@@ -38,6 +39,13 @@ fn report_oracles_hold_on_gate_fixtures() {
         let status = status_from_manifest(root, &fixture.codec_id)
             .unwrap_or_else(|error| panic!("read {} manifest: {error}", fixture.codec_id));
         let bytes = std::fs::read(&fixture.abs_path).expect("read fixture");
+        let runtime = probe_runtime_gates(&fixture.codec_id, &bytes);
+        for violation in status.judge_runtime(&runtime) {
+            failures.push(format!(
+                "{} [{:?}] {}",
+                fixture.rel_path, violation.oracle, violation.detail
+            ));
+        }
         for profile in PolicyProfile::ALL {
             let key = RunKey::new(
                 &fixture.codec_id,

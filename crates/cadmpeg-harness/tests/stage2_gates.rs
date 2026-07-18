@@ -3,10 +3,9 @@
 
 use cadmpeg_harness::stage2::{statuses, Stage2Oracle};
 
-const BASE: [Stage2Oracle; 4] = [
+const BASE: [Stage2Oracle; 3] = [
     Stage2Oracle::NoBypass,
     Stage2Oracle::ResourceClassification,
-    Stage2Oracle::StrictTruncation,
     Stage2Oracle::BudgetEnforcement,
 ];
 

@@ -8,8 +8,12 @@
 
 use std::io::Cursor;
 
+use cadmpeg_ir::decode::ResourceDimension;
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::{Codec, CodecEntry, CodecError, DecodeOptions, DecodeResult, InspectOptions};
+use cadmpeg_ir::{
+    Codec, CodecEntry, CodecError, DecodeMode, DecodeOptions, DecodePolicy, DecodeResult,
+    InspectOptions,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{Operation, PolicyProfile, ResultClass};
@@ -47,6 +51,9 @@ pub struct ReportSummary {
     pub losses: usize,
     /// Loss notes at or above `Error` severity.
     pub error_losses: usize,
+    /// Transfer-accounting violations emitted by salvage finalization.
+    #[serde(default)]
+    pub transfer_accounting_losses: usize,
     /// A source-fidelity ledger is present (the codec adopted container
     /// accounting).
     pub ledger_present: bool,
@@ -70,6 +77,11 @@ impl ReportSummary {
         ReportSummary {
             losses: report.losses.len(),
             error_losses: report.error_count(),
+            transfer_accounting_losses: report
+                .losses
+                .iter()
+                .filter(|loss| loss.code == cadmpeg_ir::LossCode::TransferAccounting)
+                .count(),
             ledger_present,
             ledger_valid,
             retention_degraded: report.retention_degraded,
@@ -88,6 +100,20 @@ pub struct ExecOutcome {
     pub report: Option<ReportSummary>,
 }
 
+/// Falsifiable results for the four runtime stage-2 gates. Each field is
+/// produced by executing the codec under an adversarial policy or truncation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeGateProbe {
+    /// An oversized root input is refused as `InputBytes`.
+    pub no_bypass: bool,
+    /// Expansion refusal remains classified as decompressed-byte exhaustion.
+    pub resource_classification: Option<bool>,
+    /// At least one truncated prefix reports truncation after format commitment.
+    pub strict_truncation: bool,
+    /// Work and allocation ceilings both produce their exact resource class.
+    pub budget_enforcement: Option<bool>,
+}
+
 /// Construct a codec by id, or `None` for an unknown id.
 fn codec_for(id: &str) -> Option<Box<dyn Codec>> {
     Some(match id {
@@ -99,6 +125,69 @@ fn codec_for(id: &str) -> Option<Box<dyn Codec>> {
         "rhino" => Box::new(cadmpeg_codec_rhino::RhinoCodec),
         _ => return None,
     })
+}
+
+fn decode_with_policy(
+    codec_id: &str,
+    bytes: &[u8],
+    policy: DecodePolicy,
+) -> Result<(), CodecError> {
+    let codec = codec_for(codec_id).ok_or_else(|| CodecError::Malformed("unknown codec".into()))?;
+    let mut reader = Cursor::new(bytes.to_vec());
+    codec
+        .decode(
+            &mut reader,
+            &DecodeOptions {
+                container_only: false,
+                policy,
+            },
+        )
+        .map(|_| ())
+}
+
+fn refused_dimension(result: &Result<(), CodecError>, expected: ResourceDimension) -> bool {
+    matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == expected)
+}
+
+/// Execute the four stage-2 runtime probes against one valid codec fixture.
+pub fn probe_runtime_gates(codec_id: &str, bytes: &[u8]) -> RuntimeGateProbe {
+    let normal = decode_with_policy(codec_id, bytes, DecodePolicy::desktop());
+    let mut root_policy = DecodePolicy::desktop();
+    root_policy.limits.max_input_bytes = u64::try_from(bytes.len().saturating_sub(1)).unwrap_or(0);
+    let root = decode_with_policy(codec_id, bytes, root_policy);
+
+    let mut expansion_policy = DecodePolicy::desktop();
+    expansion_policy.limits.max_decompressed_bytes_total = 0;
+    expansion_policy.limits.max_decompressed_bytes_per_expand = 0;
+    let expansion = decode_with_policy(codec_id, bytes, expansion_policy);
+
+    let mut strict_policy = DecodePolicy::desktop();
+    strict_policy.mode = DecodeMode::Strict;
+    let strict_truncation = (1..bytes.len()).rev().any(|length| {
+        matches!(
+            decode_with_policy(codec_id, &bytes[..length], strict_policy),
+            Err(CodecError::Truncated { .. })
+        )
+    });
+
+    let mut work_policy = DecodePolicy::desktop();
+    work_policy.limits.max_work = 0;
+    let work = decode_with_policy(codec_id, bytes, work_policy);
+    let mut alloc_policy = DecodePolicy::desktop();
+    alloc_policy.limits.max_alloc_bytes = 0;
+    let alloc = decode_with_policy(codec_id, bytes, alloc_policy);
+
+    RuntimeGateProbe {
+        no_bypass: refused_dimension(&root, ResourceDimension::InputBytes),
+        resource_classification: normal.is_ok().then(|| {
+            refused_dimension(&expansion, ResourceDimension::DecompressedBytes) || expansion.is_ok()
+        }),
+        strict_truncation,
+        budget_enforcement: normal.is_ok().then(|| {
+            refused_dimension(&work, ResourceDimension::Work)
+                && refused_dimension(&alloc, ResourceDimension::AllocBytes)
+        }),
+    }
 }
 
 /// Classify a codec error, tolerating future `#[non_exhaustive]` variants.

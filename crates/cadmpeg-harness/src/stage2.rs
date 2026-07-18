@@ -4,7 +4,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::execute::{ReportSummary, CODEC_IDS};
+use crate::execute::{ReportSummary, RuntimeGateProbe, CODEC_IDS};
 
 /// Legacy manifest signal for record-ticket support.
 pub const TICKET_MODULE: &str = "tickets.rs";
@@ -104,8 +104,11 @@ impl CodecStage2Status {
         match capability {
             Capability::SharedSession
             | Capability::ContainerMigration
-            | Capability::CommitApiMigration
             | Capability::BudgetedLeafMigration => true,
+            // No codec manifest currently claims complete committed-read
+            // migration. The runtime probe remains active, but a codec cannot
+            // advertise this gate until that ownership is explicit.
+            Capability::CommitApiMigration => false,
             Capability::LedgerAccounting => self.ledger_level >= 1,
             Capability::TicketIssuance => self.ticket_issuance,
             Capability::TypedLossyBuilder => self.typed_lossy_builder,
@@ -120,28 +123,51 @@ impl CodecStage2Status {
             .collect()
     }
 
+    /// Judge the four stage-2 properties that require active hostile-input or
+    /// hostile-policy execution.
+    pub fn judge_runtime(&self, probe: &RuntimeGateProbe) -> Vec<ReportViolation> {
+        [
+            (Stage2Oracle::NoBypass, Some(probe.no_bypass)),
+            (
+                Stage2Oracle::ResourceClassification,
+                probe.resource_classification,
+            ),
+            (
+                Stage2Oracle::StrictTruncation,
+                Some(probe.strict_truncation),
+            ),
+            (Stage2Oracle::BudgetEnforcement, probe.budget_enforcement),
+        ]
+        .into_iter()
+        .filter(|(oracle, passed)| self.adopts(oracle.capability()) && *passed == Some(false))
+        .map(|(oracle, _)| ReportViolation {
+            oracle,
+            detail: "runtime probe did not establish the advertised property".to_owned(),
+        })
+        .collect()
+    }
+
     /// Judge a successful decode's [`ReportSummary`] against the stage-2 report
     /// oracles this codec has adopted, returning every runtime violation.
     ///
     /// Two rows are judgeable from the summary:
     ///
     /// - [`Stage2Oracle::ByteAccounting`], for a codec that adopts a ledger:
-    ///   when a decode produces a source-fidelity ledger it must validate
-    ///   (byte conservation over the source spaces). A run that produced
-    ///   no ledger for this fixture is not judged.
+    ///   every successful decode must produce a valid source-fidelity ledger.
     /// - [`Stage2Oracle::NoSilentFallback`], for a codec that adopts the typed
     ///   builder: a retention degradation must be paired with a loss note, so no
     ///   drop is silent.
     ///
-    /// [`Stage2Oracle::DispositionValidation`] is adopted as a gating row but its
-    /// per-record disposition accounting is not carried in the summary, so it is
-    /// not judged here.
+    /// - [`Stage2Oracle::DispositionValidation`]: salvage finalization must not
+    ///   emit any transfer-accounting violation.
     pub fn judge_report(&self, report: &ReportSummary) -> Vec<ReportViolation> {
         let mut out = Vec::new();
-        if self.adopts(Capability::LedgerAccounting)
-            && report.ledger_present
-            && !report.ledger_valid
-        {
+        if self.adopts(Capability::LedgerAccounting) && !report.ledger_present {
+            out.push(ReportViolation {
+                oracle: Stage2Oracle::ByteAccounting,
+                detail: "adopted source-fidelity ledger is absent".to_owned(),
+            });
+        } else if self.adopts(Capability::LedgerAccounting) && !report.ledger_valid {
             out.push(ReportViolation {
                 oracle: Stage2Oracle::ByteAccounting,
                 detail: "source-fidelity ledger failed validation".to_owned(),
@@ -154,6 +180,15 @@ impl CodecStage2Status {
             out.push(ReportViolation {
                 oracle: Stage2Oracle::NoSilentFallback,
                 detail: "retention degraded to accounted with no paired loss note".to_owned(),
+            });
+        }
+        if self.adopts(Capability::TicketIssuance) && report.transfer_accounting_losses > 0 {
+            out.push(ReportViolation {
+                oracle: Stage2Oracle::DispositionValidation,
+                detail: format!(
+                    "{} transfer-accounting violation(s) were emitted",
+                    report.transfer_accounting_losses
+                ),
             });
         }
         out
@@ -312,7 +347,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn base_capabilities_always_adopted() {
+    fn base_capabilities_exclude_unadopted_commit_api() {
         let status = CodecStage2Status {
             codec_id: "x".to_string(),
             ledger_level: 0,
@@ -324,7 +359,6 @@ mod tests {
             vec![
                 Stage2Oracle::NoBypass,
                 Stage2Oracle::ResourceClassification,
-                Stage2Oracle::StrictTruncation,
                 Stage2Oracle::BudgetEnforcement,
             ]
         );
@@ -441,6 +475,7 @@ record_tickets = true
         ReportSummary {
             losses,
             error_losses: 0,
+            transfer_accounting_losses: 0,
             ledger_present,
             ledger_valid,
             retention_degraded,
@@ -461,9 +496,9 @@ record_tickets = true
         assert!(status
             .judge_report(&summary(true, true, false, 0))
             .is_empty());
-        assert!(status
-            .judge_report(&summary(false, true, false, 0))
-            .is_empty());
+        let absent = status.judge_report(&summary(false, true, false, 0));
+        assert_eq!(absent.len(), 1);
+        assert_eq!(absent[0].oracle, Stage2Oracle::ByteAccounting);
     }
 
     #[test]
@@ -480,6 +515,25 @@ record_tickets = true
     }
 
     #[test]
+    fn runtime_gates_fail_from_observed_probe_results() {
+        let status = CodecStage2Status {
+            codec_id: "x".to_string(),
+            ledger_level: 0,
+            ticket_issuance: false,
+            typed_lossy_builder: false,
+        };
+        let violations = status.judge_runtime(&RuntimeGateProbe {
+            no_bypass: true,
+            resource_classification: Some(false),
+            strict_truncation: true,
+            budget_enforcement: Some(false),
+        });
+        assert_eq!(violations.len(), 2);
+        assert_eq!(violations[0].oracle, Stage2Oracle::ResourceClassification);
+        assert_eq!(violations[1].oracle, Stage2Oracle::BudgetEnforcement);
+    }
+
+    #[test]
     fn no_silent_fallback_flags_an_unpaired_retention_degradation() {
         let status = CodecStage2Status {
             codec_id: "x".to_string(),
@@ -493,6 +547,21 @@ record_tickets = true
         assert!(status
             .judge_report(&summary(false, true, true, 1))
             .is_empty());
+    }
+
+    #[test]
+    fn disposition_gate_rejects_transfer_accounting_losses() {
+        let status = CodecStage2Status {
+            codec_id: "x".to_string(),
+            ledger_level: 0,
+            ticket_issuance: true,
+            typed_lossy_builder: false,
+        };
+        let mut report = summary(false, true, false, 1);
+        report.transfer_accounting_losses = 1;
+        let violations = status.judge_report(&report);
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].oracle, Stage2Oracle::DispositionValidation);
     }
 
     #[test]
