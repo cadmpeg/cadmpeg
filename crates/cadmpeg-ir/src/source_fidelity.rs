@@ -12,9 +12,8 @@
 //! rooted at the `source` space; [`SourceFidelity::validate`] rejects cycles,
 //! dangling references, and ranges that fall outside the space they index.
 //!
-//! [`LedgerCapability`] states whether every opaque span additionally resolves
-//! to retained bytes. Retention can be refused while classification still
-//! succeeds.
+//! An opaque span may reference retained bytes. Validation proves every such
+//! reference against the retained record's bytes, range, length, and digest.
 
 use std::collections::BTreeMap;
 
@@ -29,31 +28,6 @@ use crate::unknown::UnknownRecord;
 
 /// Serialized schema version written into every v2 sidecar.
 pub const SOURCE_FIDELITY_VERSION: &str = "2";
-
-/// Whether opaque spans additionally resolve to retained bytes.
-///
-/// `max_retained_bytes` can refuse the retention recovery needs while
-/// classification still succeeds.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum LedgerCapability {
-    /// Every byte classified; opaque spans carry digests, not necessarily
-    /// bytes.
-    Accounted,
-    /// Additionally, every opaque span resolves to retained bytes through a
-    /// subrange reference.
-    Recoverable,
-}
-
-impl LedgerCapability {
-    /// Returns whether this capability requires opaque spans to resolve to
-    /// retained bytes.
-    pub fn requires_retained_bytes(self) -> bool {
-        matches!(self, LedgerCapability::Recoverable)
-    }
-}
 
 /// A stable serialized address-space identity.
 ///
@@ -306,21 +280,13 @@ pub enum FidelityError {
         /// The offset where tiling broke.
         offset: u64,
     },
-    /// A recoverable ledger has an opaque span without retained bytes.
-    #[error("space {id} opaque span at {offset} lacks retained bytes required by capability")]
-    MissingRetained {
-        /// The offending space id.
-        id: String,
-        /// The opaque span's start offset.
-        offset: u64,
-    },
     /// Two retained records share an id, making references ambiguous.
     #[error("duplicate retained record id: {id}")]
     DuplicateRetainedRecord {
         /// The repeated retained-record id.
         id: String,
     },
-    /// A recoverable reference names no retained record.
+    /// A retained reference names no retained record.
     #[error("space {id} opaque span at {offset} references unknown retained record {blob}")]
     DanglingRetainedReference {
         /// The offending space id.
@@ -330,7 +296,7 @@ pub enum FidelityError {
         /// The missing retained-record id.
         blob: String,
     },
-    /// A retained record has no bytes despite a recoverable capability.
+    /// A referenced retained record has no bytes.
     #[error("retained record {id} has no data")]
     MissingRetainedData {
         /// The retained-record id.
@@ -368,7 +334,7 @@ pub enum FidelityError {
         /// Retained-record length.
         length: u64,
     },
-    /// A recoverable span digest disagrees with its retained bytes.
+    /// A span digest disagrees with its retained bytes.
     #[error("space {id} opaque span at {offset} disagrees with retained bytes")]
     RetainedSpanDigestMismatch {
         /// The offending space id.
@@ -376,7 +342,7 @@ pub enum FidelityError {
         /// The opaque span's start offset.
         offset: u64,
     },
-    /// A recoverable opaque span's retained subrange does not cover the span.
+    /// An opaque span's retained subrange does not cover the span.
     #[error(
         "space {id} opaque span at {offset} spans {span_len} bytes but retains {retained_len}"
     )]
@@ -426,8 +392,6 @@ pub struct RetainedSourceRecord {
 pub struct SourceFidelity {
     /// The schema version; always [`SOURCE_FIDELITY_VERSION`] when written.
     pub version: String,
-    /// Whether opaque spans resolve to retained bytes.
-    pub capability: LedgerCapability,
     /// The address spaces, in canonical (id-ascending) order.
     pub spaces: Vec<AddressSpaceLedger>,
     /// Flat source-stream accounting used by codecs that do not expose derived
@@ -446,7 +410,6 @@ impl Default for SourceFidelity {
     fn default() -> Self {
         Self {
             version: SOURCE_FIDELITY_VERSION.into(),
-            capability: LedgerCapability::Accounted,
             spaces: Vec::new(),
             byte_ledger: ByteLedger::default(),
             annotations: Annotations::default(),
@@ -462,10 +425,9 @@ impl SourceFidelity {
     /// Ordering is independent of the order spaces were supplied, so repeat
     /// decodes serialize identically. Call [`SourceFidelity::validate`] to
     /// enforce the conservation invariant.
-    pub fn new(capability: LedgerCapability, spaces: Vec<AddressSpaceLedger>) -> Self {
+    pub fn new(spaces: Vec<AddressSpaceLedger>) -> Self {
         let mut sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
-            capability,
             spaces,
             ..SourceFidelity::default()
         };
@@ -598,14 +560,7 @@ impl SourceFidelity {
                     id: record.id.clone(),
                 });
             }
-            if self.capability.requires_retained_bytes() {
-                let data =
-                    record
-                        .data
-                        .as_deref()
-                        .ok_or_else(|| FidelityError::MissingRetainedData {
-                            id: record.id.clone(),
-                        })?;
+            if let Some(data) = record.data.as_deref() {
                 let actual = u64::try_from(data.len()).unwrap_or(u64::MAX);
                 if record.byte_len != actual {
                     return Err(FidelityError::RetainedRecordLengthMismatch {
@@ -714,19 +669,11 @@ impl SourceFidelity {
     }
 
     fn validate_retention(&self, space: &AddressSpaceLedger) -> Result<(), FidelityError> {
-        if !self.capability.requires_retained_bytes() {
-            return Ok(());
-        }
         for span in &space.spans {
-            if span.class != SpanClass::Opaque {
+            if span.class != SpanClass::Opaque || span.retained.is_none() {
                 continue;
             }
-            let Some(retained) = &span.retained else {
-                return Err(FidelityError::MissingRetained {
-                    id: space.id.as_str().to_string(),
-                    offset: span.range.start,
-                });
-            };
+            let retained = span.retained.as_ref().expect("checked above");
             if retained.range.len() != span.range.len() {
                 return Err(FidelityError::RetainedLengthMismatch {
                     id: space.id.as_str().to_string(),
@@ -930,11 +877,8 @@ mod tests {
             },
             spans: vec![span(0, 4, SpanClass::Opaque)],
         };
-        let a = SourceFidelity::new(
-            LedgerCapability::Accounted,
-            vec![entry.clone(), source.clone()],
-        );
-        let b = SourceFidelity::new(LedgerCapability::Accounted, vec![source, entry]);
+        let a = SourceFidelity::new(vec![entry.clone(), source.clone()]);
+        let b = SourceFidelity::new(vec![source, entry]);
         assert_eq!(a, b);
         assert_eq!(a.spaces[0].id, CanonicalSpaceId::entry("a"));
         assert_eq!(a.spaces[1].id, CanonicalSpaceId::source());
@@ -943,33 +887,28 @@ mod tests {
 
     #[test]
     fn validate_accepts_a_tiled_dag() {
-        let sidecar = SourceFidelity::new(
-            LedgerCapability::Accounted,
-            vec![
-                root_space(8, vec![span(0, 8, SpanClass::Opaque)]),
-                AddressSpaceLedger {
-                    id: CanonicalSpaceId::stream("s", 0),
-                    length: 3,
-                    origin: SerializedOrigin::Transform {
-                        inputs: vec![SpaceExtent {
-                            space: CanonicalSpaceId::source(),
-                            range: SerializedRange { start: 0, end: 8 },
-                        }],
-                        transform: SerializedTransformKind::Decompress,
-                    },
-                    spans: vec![span(0, 3, SpanClass::Typed)],
+        let sidecar = SourceFidelity::new(vec![
+            root_space(8, vec![span(0, 8, SpanClass::Opaque)]),
+            AddressSpaceLedger {
+                id: CanonicalSpaceId::stream("s", 0),
+                length: 3,
+                origin: SerializedOrigin::Transform {
+                    inputs: vec![SpaceExtent {
+                        space: CanonicalSpaceId::source(),
+                        range: SerializedRange { start: 0, end: 8 },
+                    }],
+                    transform: SerializedTransformKind::Decompress,
                 },
-            ],
-        );
+                spans: vec![span(0, 3, SpanClass::Typed)],
+            },
+        ]);
         assert_eq!(sidecar.validate(), Ok(()));
     }
 
     #[test]
     fn validate_rejects_tiling_gap() {
-        let sidecar = SourceFidelity::new(
-            LedgerCapability::Accounted,
-            vec![root_space(10, vec![span(0, 4, SpanClass::Opaque)])],
-        );
+        let sidecar =
+            SourceFidelity::new(vec![root_space(10, vec![span(0, 4, SpanClass::Opaque)])]);
         assert!(matches!(
             sidecar.validate(),
             Err(FidelityError::TilingGap { .. })
@@ -980,7 +919,6 @@ mod tests {
     fn validate_rejects_dangling_reference() {
         let sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
-            capability: LedgerCapability::Accounted,
             spaces: vec![AddressSpaceLedger {
                 id: CanonicalSpaceId::entry("a"),
                 length: 2,
@@ -1000,21 +938,18 @@ mod tests {
 
     #[test]
     fn validate_rejects_out_of_bounds_range() {
-        let sidecar = SourceFidelity::new(
-            LedgerCapability::Accounted,
-            vec![
-                root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
-                AddressSpaceLedger {
-                    id: CanonicalSpaceId::entry("a"),
-                    length: 2,
-                    origin: SerializedOrigin::Slice {
-                        parent: CanonicalSpaceId::source(),
-                        range: SerializedRange { start: 0, end: 99 },
-                    },
-                    spans: vec![span(0, 2, SpanClass::Opaque)],
+        let sidecar = SourceFidelity::new(vec![
+            root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
+            AddressSpaceLedger {
+                id: CanonicalSpaceId::entry("a"),
+                length: 2,
+                origin: SerializedOrigin::Slice {
+                    parent: CanonicalSpaceId::source(),
+                    range: SerializedRange { start: 0, end: 99 },
                 },
-            ],
-        );
+                spans: vec![span(0, 2, SpanClass::Opaque)],
+            },
+        ]);
         assert!(matches!(
             sidecar.validate(),
             Err(FidelityError::RangeOutOfBounds { .. })
@@ -1025,7 +960,6 @@ mod tests {
     fn validate_rejects_origin_cycle() {
         let sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
-            capability: LedgerCapability::Accounted,
             spaces: vec![
                 root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
                 AddressSpaceLedger {
@@ -1059,7 +993,6 @@ mod tests {
     fn validate_rejects_origin_id_mismatch() {
         let sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
-            capability: LedgerCapability::Accounted,
             spaces: vec![AddressSpaceLedger {
                 id: CanonicalSpaceId::entry("a"),
                 length: 4,
@@ -1075,36 +1008,21 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_recoverable_without_retained_bytes() {
-        let sidecar = SourceFidelity::new(
-            LedgerCapability::Recoverable,
-            vec![root_space(4, vec![span(0, 4, SpanClass::Opaque)])],
-        );
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::MissingRetained { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_recoverable_with_short_retained_range() {
-        let sidecar = SourceFidelity::new(
-            LedgerCapability::Recoverable,
-            vec![root_space(
-                4,
-                vec![LedgerSpan {
-                    range: SerializedRange { start: 0, end: 4 },
-                    class: SpanClass::Opaque,
-                    owner: "owner".to_string(),
-                    meaning: "meaning".to_string(),
-                    digest: "00".to_string(),
-                    retained: Some(RetainedRef {
-                        blob: "b".to_string(),
-                        range: SerializedRange { start: 0, end: 0 },
-                    }),
-                }],
-            )],
-        );
+    fn validate_rejects_short_retained_range() {
+        let sidecar = SourceFidelity::new(vec![root_space(
+            4,
+            vec![LedgerSpan {
+                range: SerializedRange { start: 0, end: 4 },
+                class: SpanClass::Opaque,
+                owner: "owner".to_string(),
+                meaning: "meaning".to_string(),
+                digest: "00".to_string(),
+                retained: Some(RetainedRef {
+                    blob: "b".to_string(),
+                    range: SerializedRange { start: 0, end: 0 },
+                }),
+            }],
+        )]);
         assert!(matches!(
             sidecar.validate(),
             Err(FidelityError::RetainedLengthMismatch {
@@ -1115,25 +1033,22 @@ mod tests {
         ));
     }
 
-    fn recoverable_sidecar(data: Vec<u8>) -> SourceFidelity {
+    fn retained_sidecar(data: Vec<u8>) -> SourceFidelity {
         let digest = crate::hash::sha256_hex(&data);
-        let mut sidecar = SourceFidelity::new(
-            LedgerCapability::Recoverable,
-            vec![root_space(
-                4,
-                vec![LedgerSpan {
+        let mut sidecar = SourceFidelity::new(vec![root_space(
+            4,
+            vec![LedgerSpan {
+                range: SerializedRange { start: 0, end: 4 },
+                class: SpanClass::Opaque,
+                owner: "owner".to_string(),
+                meaning: "meaning".to_string(),
+                digest: digest.clone(),
+                retained: Some(RetainedRef {
+                    blob: "b".to_string(),
                     range: SerializedRange { start: 0, end: 4 },
-                    class: SpanClass::Opaque,
-                    owner: "owner".to_string(),
-                    meaning: "meaning".to_string(),
-                    digest: digest.clone(),
-                    retained: Some(RetainedRef {
-                        blob: "b".to_string(),
-                        range: SerializedRange { start: 0, end: 4 },
-                    }),
-                }],
-            )],
-        );
+                }),
+            }],
+        )]);
         sidecar.retained_records.push(RetainedSourceRecord {
             id: "b".to_string(),
             stream: "source".to_string(),
@@ -1147,12 +1062,12 @@ mod tests {
 
     #[test]
     fn validate_recoverable_proves_span_bytes_can_be_recovered() {
-        assert_eq!(recoverable_sidecar(vec![1, 2, 3, 4]).validate(), Ok(()));
+        assert_eq!(retained_sidecar(vec![1, 2, 3, 4]).validate(), Ok(()));
     }
 
     #[test]
     fn validate_rejects_recoverable_record_with_false_digest() {
-        let mut sidecar = recoverable_sidecar(vec![1, 2, 3, 4]);
+        let mut sidecar = retained_sidecar(vec![1, 2, 3, 4]);
         sidecar.retained_records[0].sha256 = crate::hash::sha256_hex(&[4, 3, 2, 1]);
         assert!(matches!(
             sidecar.validate(),
@@ -1162,7 +1077,7 @@ mod tests {
 
     #[test]
     fn validate_rejects_span_that_disagrees_with_retained_subrange() {
-        let mut sidecar = recoverable_sidecar(vec![1, 2, 3, 4]);
+        let mut sidecar = retained_sidecar(vec![1, 2, 3, 4]);
         sidecar.spaces[0].spans[0].digest = crate::hash::sha256_hex(&[4, 3, 2, 1]);
         assert!(matches!(
             sidecar.validate(),
@@ -1172,18 +1087,15 @@ mod tests {
 
     #[test]
     fn validate_rejects_non_root_without_reference() {
-        let sidecar = SourceFidelity::new(
-            LedgerCapability::Accounted,
-            vec![
-                root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
-                AddressSpaceLedger {
-                    id: CanonicalSpaceId::entry("x"),
-                    length: 4,
-                    origin: SerializedOrigin::Concat { segments: vec![] },
-                    spans: vec![span(0, 4, SpanClass::Opaque)],
-                },
-            ],
-        );
+        let sidecar = SourceFidelity::new(vec![
+            root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
+            AddressSpaceLedger {
+                id: CanonicalSpaceId::entry("x"),
+                length: 4,
+                origin: SerializedOrigin::Concat { segments: vec![] },
+                spans: vec![span(0, 4, SpanClass::Opaque)],
+            },
+        ]);
         assert!(matches!(
             sidecar.validate(),
             Err(FidelityError::OriginWithoutReference { .. })
@@ -1192,10 +1104,7 @@ mod tests {
 
     #[test]
     fn canonical_json_round_trips() {
-        let sidecar = SourceFidelity::new(
-            LedgerCapability::Accounted,
-            vec![root_space(4, vec![span(0, 4, SpanClass::Typed)])],
-        );
+        let sidecar = SourceFidelity::new(vec![root_space(4, vec![span(0, 4, SpanClass::Typed)])]);
         let json = sidecar.to_canonical_json().expect("serialize");
         let parsed = SourceFidelity::from_json(&json).expect("parse");
         assert_eq!(sidecar, parsed);
@@ -1204,7 +1113,7 @@ mod tests {
 
     #[test]
     fn from_json_rejects_wrong_version() {
-        let sidecar = SourceFidelity::new(LedgerCapability::Accounted, vec![root_space(0, vec![])]);
+        let sidecar = SourceFidelity::new(vec![root_space(0, vec![])]);
         let mut value: serde_json::Value =
             serde_json::from_str(&sidecar.to_canonical_json().expect("serialize"))
                 .expect("parse value");

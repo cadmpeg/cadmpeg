@@ -449,7 +449,7 @@ fn untransferred_asset_loss(role_label: &str, name: &str) -> LossNote {
     }
 }
 
-/// Build the validated L1 container-accounting ledger for the scanned archive.
+/// Build the validated container-accounting ledger for the scanned archive.
 fn build_source_fidelity(
     scan: &ContainerScan<'_>,
 ) -> Result<cadmpeg_ir::source_fidelity::SourceFidelity, CodecError> {

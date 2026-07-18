@@ -2960,8 +2960,6 @@ fn source_fidelity_tiles_every_physical_space() {
     let file = prt_with_arrangements();
     let scan = scan_of(&file);
     let sidecar = crate::accounting::build_sidecar(&scan);
-
-    assert_eq!(sidecar.capability, cadmpeg_ir::LedgerCapability::Accounted);
     assert_eq!(sidecar.validate(), Ok(()));
 
     assert_eq!(sidecar.spaces.len(), scan.streams.len() + 1);

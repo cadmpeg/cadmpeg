@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! L1 container accounting for the `.sldprt` outer container.
+//! container accounting for the `.sldprt` outer container.
 //!
 //! [`container_ledger`] turns a completed [`ContainerScan`] into a v2
 //! source-fidelity sidecar ([`SourceFidelity`]) with complete
@@ -9,7 +9,7 @@
 //! unclaimed run between frames as an explicit `Opaque` padding span. Each block
 //! also registers its decompressed payload as a child `Transform` space carrying
 //! one `Opaque` span; that is the coarse boundary — sub-payload structure
-//! (Parasolid streams, records) is L2 refinement and is not tiled here.
+//! (Parasolid streams, records) is finer refinement and is not tiled here.
 //!
 //! Canonical ids derive only from the scan, never from runtime registration
 //! order: the root is `source`, and a block's decompressed space is
@@ -21,8 +21,8 @@
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
-    SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
+    SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass,
 };
 
 use crate::container::{
@@ -36,7 +36,7 @@ const OWNER: &str = "sldprt";
 /// header plus a 14-byte descriptor.
 const DIRECTORY_HEADER_LEN: usize = BLOCK_HEADER_LEN + 14;
 
-/// Build the L1 source-fidelity sidecar for a scanned `.sldprt` container.
+/// Build the source-fidelity sidecar for a scanned `.sldprt` container.
 ///
 /// The returned sidecar is in canonical order but not yet validated; call
 /// [`SourceFidelity::validate`] to enforce complete tiling and origin
@@ -58,7 +58,7 @@ pub fn container_ledger(scan: &ContainerScan) -> SourceFidelity {
         spaces.push(block_space(source, block, index as u32));
     }
 
-    SourceFidelity::new(LedgerCapability::Accounted, spaces)
+    SourceFidelity::new(spaces)
 }
 
 /// Priority of a preserved-payload claim: it must win any overlap against

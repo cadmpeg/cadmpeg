@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! L1 coarse source-fidelity accounting for the NX SPLMSSTR container.
+//! Coarse source-fidelity accounting for the NX SPLMSSTR container.
 //!
 //! [`ledger`] builds a complete coarse tiling of every physical space the
 //! decode produces and stores it as the serialized v2 sidecar. Two
@@ -12,16 +12,15 @@
 //!   by a [`SerializedTransformKind::Decompress`] transform of the compressed
 //!   member's source extent and tiled by a single opaque span.
 //!
-//! The ledger is [`LedgerCapability::Accounted`]: every
-//! byte of every space is classified, but opaque spans carry only digests, not
+//! Every byte of every space is classified, but opaque spans carry only digests, not
 //! retained bytes. [`ledger`] validates the sidecar before returning it, so
 //! an accounting-enabled result never carries a ledger that violates the
 //! conservation invariant.
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
-    SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
+    SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass,
 };
 
 use crate::decode::Scan;
@@ -35,7 +34,7 @@ const PART_PATH: &str = "/Root/UG_PART/UG_PART";
 /// not input-dependent control flow; a failure is a decoder bug. The caller
 /// rides the result on [`DecodeReport::source_fidelity`](cadmpeg_ir::report::DecodeReport::source_fidelity),
 /// the platform's designated sidecar surface, rather than a private
-/// native arena, so a consumer reading the standard slot sees the L1 ledger.
+/// native arena, so a consumer reading the standard slot sees the ledger.
 pub(crate) fn ledger(scan: &Scan) -> SourceFidelity {
     let sidecar = build_sidecar(scan);
     sidecar
@@ -44,11 +43,11 @@ pub(crate) fn ledger(scan: &Scan) -> SourceFidelity {
     sidecar
 }
 
-/// Build the complete coarse (L1) sidecar for a parsed NX container.
+/// Build the complete coarse sidecar for a parsed NX container.
 pub(crate) fn build_sidecar(scan: &Scan) -> SourceFidelity {
     let mut spaces = vec![source_space(scan)];
     spaces.extend(stream_spaces(scan));
-    SourceFidelity::new(LedgerCapability::Accounted, spaces)
+    SourceFidelity::new(spaces)
 }
 
 /// Tile the root `source` space: catalogued payloads opaque, all else structural.

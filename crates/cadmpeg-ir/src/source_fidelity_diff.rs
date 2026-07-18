@@ -2,13 +2,13 @@
 //! Interpreted deltas between two source-fidelity sidecars.
 //!
 //! [`diff_source_fidelity`] compares two [`SourceFidelity`] sidecars and reports
-//! what changed in conservation terms — level and capability transitions, spaces
+//! what changed in conservation terms — spaces
 //! that appeared or disappeared, and per-space byte movement between the
 //! [`SpanClass`] categories — rather than dumping raw spans. Equality still
 //! covers every serialized field: origins, full span metadata, flat accounting,
 //! annotations, and retained records cannot disappear behind the summary.
 
-use crate::source_fidelity::{AddressSpaceLedger, LedgerCapability, SourceFidelity, SpanClass};
+use crate::source_fidelity::{AddressSpaceLedger, SourceFidelity, SpanClass};
 
 /// Per-class byte totals for one space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
@@ -76,9 +76,6 @@ pub struct FidelityDiff {
     /// Schema-version transition, when it changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<(String, String)>,
-    /// Capability transition, when it changed.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub capability: Option<(LedgerCapability, LedgerCapability)>,
     /// Canonical ids of spaces present only in the right sidecar.
     pub added_spaces: Vec<String>,
     /// Canonical ids of spaces present only in the left sidecar.
@@ -97,7 +94,6 @@ impl FidelityDiff {
     /// Returns whether the two sidecars are materially identical.
     pub fn is_empty(&self) -> bool {
         self.version.is_none()
-            && self.capability.is_none()
             && self.added_spaces.is_empty()
             && self.removed_spaces.is_empty()
             && self.changed_spaces.is_empty()
@@ -115,8 +111,6 @@ impl FidelityDiff {
 pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> FidelityDiff {
     let version =
         (left.version != right.version).then(|| (left.version.clone(), right.version.clone()));
-    let capability =
-        (left.capability != right.capability).then_some((left.capability, right.capability));
 
     let mut added_spaces = Vec::new();
     let mut removed_spaces = Vec::new();
@@ -149,7 +143,6 @@ pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> Fi
 
     FidelityDiff {
         version,
-        capability,
         added_spaces,
         removed_spaces,
         changed_spaces,
@@ -178,15 +171,12 @@ mod tests {
     }
 
     fn source(spans: Vec<LedgerSpan>, length: u64) -> SourceFidelity {
-        SourceFidelity::new(
-            LedgerCapability::Accounted,
-            vec![AddressSpaceLedger {
-                id: CanonicalSpaceId::source(),
-                length,
-                origin: SerializedOrigin::Root,
-                spans,
-            }],
-        )
+        SourceFidelity::new(vec![AddressSpaceLedger {
+            id: CanonicalSpaceId::source(),
+            length,
+            origin: SerializedOrigin::Root,
+            spans,
+        }])
     }
 
     #[test]

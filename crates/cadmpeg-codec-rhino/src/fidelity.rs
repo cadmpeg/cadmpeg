@@ -14,15 +14,14 @@
 //! The tiling is total and canonical by construction: [`partition`] walks the
 //! scan in archive order and yields a gap-free ascending partition of the whole
 //! image, so [`SourceFidelity::new`] returns byte-identical sidecars for repeat
-//! decodes of the same input. The capability is [`LedgerCapability::Accounted`]:
-//! every span carries a digest, and byte recovery rides the codec's native
+//! decodes of the same input. Every span carries a digest, and byte recovery rides the codec's native
 //! opaque-record store rather than the platform retained store (see
 //! `issue_object_tickets`).
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
-    SerializedRange, SourceFidelity,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
+    SourceFidelity,
 };
 
 use crate::accounting::partition;
@@ -60,7 +59,7 @@ pub(crate) fn ledger(scan: &Scan<'_>) -> SourceFidelity {
         origin: SerializedOrigin::Root,
         spans,
     };
-    let sidecar = SourceFidelity::new(LedgerCapability::Accounted, vec![source]);
+    let sidecar = SourceFidelity::new(vec![source]);
     sidecar
         .validate()
         .expect("Rhino source-fidelity ledger tiles the source space completely");

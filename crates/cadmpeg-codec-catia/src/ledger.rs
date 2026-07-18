@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! L1 coarse source-fidelity tiling for the `V5_CFV2` container.
+//! coarse source-fidelity tiling for the `V5_CFV2` container.
 //!
 //! [`container_ledger`] turns a parsed [`ContainerScan`] into a validated v2
 //! [`SourceFidelity`] sidecar: every physical byte of
@@ -21,15 +21,14 @@
 //! tiled inside `source` as opaque extent spans and referenced from the BREP
 //! stream's `Concat` segments, so no byte is duplicated across spaces.
 //!
-//! The ledger is built at [`LedgerCapability::Accounted`]: spans carry digests,
-//! not retained bytes. [`container_ledger`] validates before returning, so an
+//! Spans carry digests, not retained bytes. [`container_ledger`] validates before returning, so an
 //! accounting-enabled result never escapes with a ledger that fails the
 //! conservation invariant.
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
-    SerializedRange, SourceFidelity, SpaceExtent, SpanClass,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
+    SourceFidelity, SpaceExtent, SpanClass,
 };
 
 use crate::container::{self, ContainerScan, InnerDir};
@@ -48,7 +47,7 @@ struct Claim {
     meaning: String,
 }
 
-/// Builds and validates the L1 source-fidelity sidecar for a scanned
+/// Builds and validates the source-fidelity sidecar for a scanned
 /// `.CATPart`.
 ///
 /// The returned [`SourceFidelity`] is canonicalized and has passed
@@ -62,7 +61,7 @@ pub(crate) fn container_ledger(scan: &ContainerScan<'_>) -> SourceFidelity {
     if let Some(stream) = brep_stream_space(scan) {
         spaces.push(stream);
     }
-    let sidecar = SourceFidelity::new(LedgerCapability::Accounted, spaces);
+    let sidecar = SourceFidelity::new(spaces);
     sidecar
         .validate()
         .expect("catia source-fidelity ledger tiles completely and derives a valid origin DAG");

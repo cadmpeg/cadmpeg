@@ -21,8 +21,8 @@
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::source_fidelity::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
-    SerializedRange, SourceFidelity, SpanClass,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
+    SourceFidelity, SpanClass,
 };
 
 use crate::container::ContainerScan;
@@ -44,14 +44,13 @@ struct CoarseSpan {
     meaning: String,
 }
 
-/// Build the complete L1 coarse-tiling ledger for a scanned `.prt` file.
+/// Build the complete coarse-tiling ledger for a scanned `.prt` file.
 ///
 /// Produces one `source` [`AddressSpaceLedger`] whose spans tile
 /// `[0, data.len())` exactly: the header/TOC framing as structural, each
 /// section as an opaque digest span, and explicit opaque spans for any
-/// unattributed gap or trailing region. The returned [`SourceFidelity`] is at
-/// [`LedgerCapability::Accounted`] and has already passed
-/// [`SourceFidelity::validate`]; a validation failure surfaces as
+/// unattributed gap or trailing region. The returned [`SourceFidelity`] has
+/// already passed [`SourceFidelity::validate`]; a validation failure surfaces as
 /// [`CodecError::Malformed`] because it means the container framing the scan
 /// reported cannot be reconciled into a conserving tiling.
 pub fn coarse_ledger(scan: &ContainerScan<'_>) -> Result<SourceFidelity, CodecError> {
@@ -96,7 +95,7 @@ pub fn coarse_ledger(scan: &ContainerScan<'_>) -> Result<SourceFidelity, CodecEr
         origin: SerializedOrigin::Root,
         spans,
     };
-    let sidecar = SourceFidelity::new(LedgerCapability::Accounted, vec![ledger]);
+    let sidecar = SourceFidelity::new(vec![ledger]);
     sidecar
         .validate()
         .map_err(|error| CodecError::Malformed(format!("creo coarse ledger: {error}")))?;

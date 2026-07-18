@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![deny(clippy::disallowed_methods)]
-//! L1 container accounting: the coarse source-fidelity ledger for a `.f3d`.
+//! container accounting: the coarse source-fidelity ledger for a `.f3d`.
 //!
 //! [`build_ledger`] tiles every physical byte of every space the container scan
 //! produced. The root `source` space is tiled completely: each entry's
@@ -12,8 +12,7 @@
 //! [`SerializedOrigin::Transform`] when compressed, each tiled by a single
 //! opaque span covering its unrefined payload.
 //!
-//! This uses [`LedgerCapability::Accounted`]: every byte
-//! is classified and digested, but opaque spans carry no retained bytes. Spans
+//! Every byte is classified and digested, but opaque spans carry no retained bytes. Spans
 //! and spaces are emitted in registration order and the returned sidecar is
 //! canonicalized, so two decodes of the same archive serialize identically.
 //! Callers must run [`SourceFidelity::validate`] before trusting the ledger;
@@ -21,9 +20,8 @@
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::source_fidelity::{
-    AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerCapability, LedgerSpan,
-    SerializedOrigin, SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent,
-    SpanClass,
+    AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerSpan, SerializedOrigin,
+    SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass,
 };
 
 use crate::container::{ContainerScan, EntryLayout};
@@ -33,7 +31,7 @@ const OWNER_FRAMING: &str = "f3d-zip";
 /// Span owner label for an entry payload, in the root and its derived space.
 const OWNER_ENTRY: &str = "f3d-entry";
 
-/// Builds the L1 fidelity sidecar for a scanned `.f3d` archive.
+/// Builds the fidelity sidecar for a scanned `.f3d` archive.
 ///
 /// The result is canonicalized but not validated; prefer
 /// [`build_validated_ledger`] unless the caller validates separately.
@@ -44,10 +42,10 @@ pub fn build_ledger(scan: &ContainerScan<'_>) -> SourceFidelity {
             spaces.push(space);
         }
     }
-    SourceFidelity::new(LedgerCapability::Accounted, spaces)
+    SourceFidelity::new(spaces)
 }
 
-/// Builds and validates the L1 fidelity sidecar.
+/// Builds and validates the fidelity sidecar.
 ///
 /// Validation is mandatory for an accounting-enabled result: a ledger that does
 /// not tile every space exactly is not a level and must not be trusted.

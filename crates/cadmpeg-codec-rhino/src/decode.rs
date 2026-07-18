@@ -1968,10 +1968,9 @@ impl<'a> DecodeContext<'a> {
     /// module, so it resolves [`Structural`](RecordDisposition::Structural): the
     /// platform's checkable dispositions name model entities (`Typed`) or
     /// retained-store blobs (`Retained`), and a native `UnknownRecord` is
-    /// neither. Rhino's L2 sidecar is [`Accounted`](cadmpeg_ir::LedgerCapability),
-    /// not `Recoverable`: it does not egress the platform retained store, and
-    /// byte recovery rides the codec's own capped native opaque-record store
-    /// instead. Routing undecoded records through `ctx.retain`
+    /// neither. Rhino does not egress the platform retained store; byte
+    /// recovery rides the codec's own capped native opaque-record store.
+    /// Routing undecoded records through `ctx.retain`
     /// would duplicate the codec's own capped IR retention purely as
     /// bookkeeping and charge the platform `RetainedBytes` budget against
     /// untrusted input, flipping `retention_degraded` on large salvage decodes

@@ -113,7 +113,7 @@ pub use sketches::{
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
 pub use source_fidelity::{
-    AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerCapability, LedgerSpan, RetainedRef,
+    AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerSpan, RetainedRef,
     RetainedSourceRecord, SerializedOrigin, SerializedRange, SerializedTransformKind,
     SourceFidelity, SpaceExtent, SpanClass, SOURCE_FIDELITY_VERSION,
 };

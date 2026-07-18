@@ -550,9 +550,6 @@ fn print_fidelity_summary(summary: &FidelitySummary) {
     if let Some((before, after)) = &diff.version {
         println!("    version: {before} → {after}");
     }
-    if let Some((before, after)) = &diff.capability {
-        println!("    capability: {before:?} → {after:?}");
-    }
     if diff.byte_ledger_changed {
         println!("    flat byte ledger changed");
     }

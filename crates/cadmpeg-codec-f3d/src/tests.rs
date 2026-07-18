@@ -16865,7 +16865,7 @@ mod fidelity {
     use crate::container;
     use crate::fidelity::{build_ledger, build_validated_ledger};
     use cadmpeg_ir::source_fidelity::{
-        CanonicalSpaceId, LedgerCapability, SerializedOrigin, SerializedTransformKind, SpanClass,
+        CanonicalSpaceId, SerializedOrigin, SerializedTransformKind, SpanClass,
     };
 
     /// The root space's spans must tile `[0, length)` with no gap or overlap,
@@ -16877,8 +16877,6 @@ mod fidelity {
         with_scan(&f3d, |ctx, root| {
             let scan = container::scan(ctx, root).unwrap();
             let sidecar = build_validated_ledger(&scan).unwrap();
-            assert_eq!(sidecar.capability, LedgerCapability::Accounted);
-
             let source = sidecar
                 .spaces
                 .iter()

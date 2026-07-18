@@ -1930,9 +1930,7 @@ mod phase4b {
 }
 
 mod fidelity {
-    use cadmpeg_ir::source_fidelity::{
-        CanonicalSpaceId, LedgerCapability, SerializedOrigin, SpanClass,
-    };
+    use cadmpeg_ir::source_fidelity::{CanonicalSpaceId, SerializedOrigin, SpanClass};
 
     use crate::container::{self, role};
     use crate::fidelity::coarse_ledger;
@@ -1950,8 +1948,6 @@ mod fidelity {
         );
         let scan = container::scan_bytes(&data);
         let sidecar = coarse_ledger(&scan).expect("coarse ledger builds and validates");
-
-        assert_eq!(sidecar.capability, LedgerCapability::Accounted);
         assert_eq!(sidecar.spaces.len(), 1);
 
         let space = &sidecar.spaces[0];
