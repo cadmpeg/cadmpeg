@@ -1857,6 +1857,36 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn configuration_lane_index_swaps_are_simultaneous() {
+        let mut native = native_with_configuration_lanes(
+            vec![
+                native_configuration("first-native", 0, Some(1)),
+                native_configuration("second-native", 1, Some(2)),
+            ],
+            vec![
+                feature_input_lane("first-lane", Some("1")),
+                feature_input_lane("second-lane", Some("2")),
+            ],
+        );
+        let configurations = [
+            design_configuration("first", 0, Some(2), Some("first-native")),
+            design_configuration("second", 1, Some(1), Some("second-native")),
+        ];
+
+        sync_neutral_configurations(&configurations, &mut native);
+
+        assert_eq!(
+            native
+                .unwrap()
+                .feature_input_lanes
+                .into_iter()
+                .map(|lane| lane.configuration)
+                .collect::<Vec<_>>(),
+            [Some("2".into()), Some("1".into())]
+        );
+    }
+
+    #[test]
     fn configuration_lane_follows_effective_index_changes() {
         for (previous_ordinal, previous_source, previous_lane, ordinal, source, expected) in [
             (2, Some(7), "7", 3, None, "3"),
@@ -6111,6 +6141,7 @@ fn sync_neutral_configurations(
             .and_modify(|owner| *owner = None)
             .or_insert_with(|| Some(configuration.id.clone()));
     }
+    let mut lane_configuration_remaps = HashMap::<String, String>::new();
     for configuration in configurations {
         let existing = native
             .feature_histories
@@ -6132,12 +6163,8 @@ fn sync_neutral_configurations(
                     .and_then(Clone::clone)
                     == Some(existing_id)
             {
-                let previous_index = previous_index.to_string();
-                for lane in &mut native.feature_input_lanes {
-                    if lane.configuration.as_deref() == Some(previous_index.as_str()) {
-                        lane.configuration = Some(configuration_index.to_string());
-                    }
-                }
+                lane_configuration_remaps
+                    .insert(previous_index.to_string(), configuration_index.to_string());
             }
         } else {
             let parent = native.feature_histories[0].id.clone();
@@ -6154,6 +6181,14 @@ fn sync_neutral_configurations(
                     material: configuration.material.clone(),
                     properties: configuration.properties.clone(),
                 });
+        }
+    }
+    for lane in &mut native.feature_input_lanes {
+        let Some(configuration) = lane.configuration.as_ref() else {
+            continue;
+        };
+        if let Some(remapped) = lane_configuration_remaps.get(configuration) {
+            lane.configuration = Some(remapped.clone());
         }
     }
     for history in &mut native.feature_histories {
