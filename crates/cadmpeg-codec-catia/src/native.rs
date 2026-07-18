@@ -3,7 +3,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 use crate::catalog;
 use crate::container;
@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 39;
+pub const CATIA_NATIVE_VERSION: u32 = 40;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -291,13 +291,19 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
     graphs
         .iter()
         .flat_map(|graph| {
-            let mut fields = BTreeMap::<u32, Vec<&CatiaObjectRecord>>::new();
+            let mut fields = Vec::<(u32, Vec<&CatiaObjectRecord>)>::new();
+            let mut owner_indices = HashMap::<u32, usize>::new();
             for record in &graph.records {
                 if let Some(owner) = record.owner_ref {
-                    fields.entry(owner).or_default().push(record);
+                    let index = owner_indices.get(&owner).copied().unwrap_or_else(|| {
+                        let index = fields.len();
+                        fields.push((owner, Vec::new()));
+                        owner_indices.insert(owner, index);
+                        index
+                    });
+                    fields[index].1.push(record);
                 }
             }
-            let owners = fields.keys().copied().collect::<Vec<_>>();
             fields.into_iter().map(move |(owner_ordinal, records)| {
                 let owner_record = object_record_index(owner_ordinal, graph.records.len())
                     .and_then(|index| graph.records.get(index));
@@ -311,7 +317,7 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                         .and_then(|record| record.owner_ref);
                     if let Some(target_owner) = target_owner.filter(|target| {
                         *target != owner_ordinal
-                            && owners.contains(target)
+                            && owner_indices.contains_key(target)
                             && !dependency_owners.contains(target)
                     }) {
                         dependency_owners.push(target_owner);

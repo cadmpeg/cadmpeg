@@ -4845,6 +4845,27 @@ fn native_design_objects_preserve_unresolved_owner_identities() {
 }
 
 #[test]
+fn native_design_objects_follow_first_field_order() {
+    let bytes = object_graph_from_records(&[
+        object_graph_record(&[0x04, 0x01, 0x83, 0x81], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0xfe]),
+        object_graph_record(&[0x04, 0x01, 0x83, 0x81], &[0xfe]),
+    ]);
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert_eq!(
+        native
+            .design_objects
+            .iter()
+            .map(|object| object.owner_ordinal)
+            .collect::<Vec<_>>(),
+        [3, 1]
+    );
+    assert_eq!(native.design_objects[0].fields.len(), 2);
+    assert_eq!(native.design_objects[1].fields.len(), 1);
+}
+
+#[test]
 fn incomplete_object_lists_do_not_assert_reference_links() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x04, 0x01, 0x81, 0x81], &[0x3b, 0x83, 0x81, 0x82, 0xfe]),
