@@ -327,8 +327,9 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   spheres, and tori project into exact affine surface-chart pcurves under the
   same absence rule, preserving their native angular parameter and edge
   interval across either cone nappe and signed torus ring branches.
-  Exact torus meridian circles project to constant-azimuth affine pcurves,
-  preserving their native angular parameter and edge interval.
+  Exact sphere and torus meridian circles project to constant-azimuth affine
+  pcurves, preserving their native angular parameter and edge interval through
+  sphere poles.
   Exact generator lines on cylinders and circular cones project to
   constant-azimuth affine pcurves, preserving arbitrary nonzero native line
   scales and edge intervals.

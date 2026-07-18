@@ -21186,19 +21186,37 @@ fn surface_of_revolution_circle_pcurve(
     })
 }
 
-fn torus_meridian_circle_pcurve(
+fn meridian_circle_pcurve(
     surface: &SurfaceGeometry,
     geometry: &CurveGeometry,
 ) -> Option<PcurveGeometry> {
-    let SurfaceGeometry::Torus {
-        center: torus_center,
-        axis: torus_axis,
-        ref_direction: torus_x,
-        major_radius,
-        minor_radius,
-    } = surface
-    else {
-        return None;
+    let (surface_center, surface_axis, surface_x, major_radius, meridian_radius) = match surface {
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } if radius.is_finite() && *radius > 0.0 => (*center, *axis, *ref_direction, None, *radius),
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if major_radius.is_finite()
+            && minor_radius.is_finite()
+            && *major_radius > 0.0
+            && *minor_radius > 0.0 =>
+        {
+            (
+                *center,
+                *axis,
+                *ref_direction,
+                Some(*major_radius),
+                *minor_radius,
+            )
+        }
+        _ => return None,
     };
     let CurveGeometry::Circle {
         center: circle_center,
@@ -21209,46 +21227,47 @@ fn torus_meridian_circle_pcurve(
     else {
         return None;
     };
-    (major_radius.is_finite()
-        && minor_radius.is_finite()
-        && circle_radius.is_finite()
-        && *major_radius > 0.0
-        && *minor_radius > 0.0
-        && *circle_radius > 0.0)
-        .then_some(())?;
-    let torus_axis = stored_unit_vector([torus_axis.x, torus_axis.y, torus_axis.z])?;
-    let torus_x = stored_unit_vector([torus_x.x, torus_x.y, torus_x.z])?;
-    (dot(torus_axis, torus_x).abs() <= 1e-10).then_some(())?;
-    let torus_y = cross(torus_axis, torus_x);
+    (circle_radius.is_finite() && *circle_radius > 0.0).then_some(())?;
+    let surface_axis = stored_unit_vector([surface_axis.x, surface_axis.y, surface_axis.z])?;
+    let surface_x = stored_unit_vector([surface_x.x, surface_x.y, surface_x.z])?;
+    (dot(surface_axis, surface_x).abs() <= 1e-10).then_some(())?;
+    let surface_y = cross(surface_axis, surface_x);
     let circle_axis = stored_unit_vector([circle_axis.x, circle_axis.y, circle_axis.z])?;
     let circle_x = stored_unit_vector([circle_x.x, circle_x.y, circle_x.z])?;
     (dot(circle_axis, circle_x).abs() <= 1e-10).then_some(())?;
     let circle_y = cross(circle_axis, circle_x);
     let center_relative = [
-        circle_center.x - torus_center.x,
-        circle_center.y - torus_center.y,
-        circle_center.z - torus_center.z,
+        circle_center.x - surface_center.x,
+        circle_center.y - surface_center.y,
+        circle_center.z - surface_center.z,
     ];
-    let axial = dot(center_relative, torus_axis);
-    let radial =
-        std::array::from_fn::<_, 3, _>(|index| center_relative[index] - axial * torus_axis[index]);
-    let radial_length = dot(radial, radial).sqrt();
     let scale = major_radius
+        .unwrap_or(0.0)
         .abs()
-        .max(minor_radius.abs())
+        .max(meridian_radius.abs())
         .max(circle_radius.abs())
         .max(1.0);
-    (axial.abs() <= 1e-9 * scale
-        && (radial_length - major_radius).abs() <= 1e-9 * scale
-        && (circle_radius - minor_radius).abs() <= 1e-9 * scale)
-        .then_some(())?;
-    let radial = radial.map(|coordinate| coordinate / radial_length);
-    let meridian_normal = cross(torus_axis, radial);
+    ((circle_radius - meridian_radius).abs() <= 1e-9 * scale).then_some(())?;
+    let radial = if let Some(major_radius) = major_radius {
+        let axial = dot(center_relative, surface_axis);
+        let radial = std::array::from_fn::<_, 3, _>(|index| {
+            center_relative[index] - axial * surface_axis[index]
+        });
+        let radial_length = dot(radial, radial).sqrt();
+        (axial.abs() <= 1e-9 * scale && (radial_length - major_radius).abs() <= 1e-9 * scale)
+            .then_some(())?;
+        radial.map(|coordinate| coordinate / radial_length)
+    } else {
+        (dot(center_relative, center_relative).sqrt() <= 1e-9 * scale).then_some(())?;
+        let radial = cross(circle_axis, surface_axis);
+        stored_unit_vector(radial)?
+    };
+    let meridian_normal = cross(surface_axis, radial);
     ((dot(circle_axis, meridian_normal).abs() - 1.0).abs() <= 1e-10).then_some(())?;
-    let u = dot(radial, torus_y).atan2(dot(radial, torus_x));
-    let phase = dot(circle_x, torus_axis).atan2(dot(circle_x, radial));
+    let u = dot(radial, surface_y).atan2(dot(radial, surface_x));
+    let phase = dot(circle_x, surface_axis).atan2(dot(circle_x, radial));
     let surface_tangent = std::array::from_fn::<_, 3, _>(|index| {
-        -phase.sin() * radial[index] + phase.cos() * torus_axis[index]
+        -phase.sin() * radial[index] + phase.cos() * surface_axis[index]
     });
     let orientation = dot(circle_y, surface_tangent);
     ((orientation.abs() - 1.0).abs() <= 1e-10).then_some(())?;
@@ -21658,7 +21677,7 @@ mod native_pcurve_tests {
             ref_direction: Vector3::new(0.0, 0.0, 1.0),
             radius: 1.5,
         };
-        let pcurve = torus_meridian_circle_pcurve(&surface, &circle).expect("meridian pcurve");
+        let pcurve = meridian_circle_pcurve(&surface, &circle).expect("meridian pcurve");
         let PcurveGeometry::Line { origin, direction } = &pcurve else {
             panic!("torus-meridian pcurve: {pcurve:#?}");
         };
@@ -21673,7 +21692,50 @@ mod native_pcurve_tests {
             ref_direction: Vector3::new(0.0, 0.0, 1.0),
             radius: 1.5,
         };
-        assert!(torus_meridian_circle_pcurve(&surface, &displaced).is_none());
+        assert!(meridian_circle_pcurve(&surface, &displaced).is_none());
+    }
+
+    #[test]
+    fn projects_sphere_meridians_through_both_poles() {
+        let surface = SurfaceGeometry::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+        };
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            ref_direction: Vector3::new(0.0, 0.0, 1.0),
+            radius: 5.0,
+        };
+        let pcurve = meridian_circle_pcurve(&surface, &circle).expect("sphere meridian pcurve");
+        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+            panic!("sphere-meridian pcurve: {pcurve:#?}");
+        };
+        assert!(origin.u.abs() <= 1e-12);
+        assert!((origin.v - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
+        assert_eq!(*direction, Point2::new(0.0, -1.0));
+        assert_pcurve_matches_curve(
+            &surface,
+            &circle,
+            &pcurve,
+            &[
+                -std::f64::consts::PI,
+                -std::f64::consts::FRAC_PI_2,
+                0.0,
+                std::f64::consts::FRAC_PI_2,
+                std::f64::consts::PI,
+            ],
+        );
+
+        let small_circle = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            ref_direction: Vector3::new(0.0, 0.0, 1.0),
+            radius: 4.0,
+        };
+        assert!(meridian_circle_pcurve(&surface, &small_circle).is_none());
     }
 
     #[test]
@@ -22278,13 +22340,8 @@ fn transfer_native_brep(
                                         })
                                     })
                                     .or_else(|| {
-                                        torus_meridian_circle_pcurve(
-                                            &surface.geometry,
-                                            &curve.geometry,
-                                        )
-                                        .map(|geometry| {
-                                            (geometry, "projected_torus_meridian_pcurve")
-                                        })
+                                        meridian_circle_pcurve(&surface.geometry, &curve.geometry)
+                                            .map(|geometry| (geometry, "projected_meridian_pcurve"))
                                     })
                                     .or_else(|| {
                                         ruled_generator_line_pcurve(

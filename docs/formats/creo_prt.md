@@ -1313,15 +1313,18 @@ pcurve retains the edge parameter interval. Off-axis centers, unequal local
 radii, apex or pole points, elliptical cones, ambiguous torus branches, and
 misaligned frames do not define this pcurve.
 
-When a native circular edge with no native pcurve candidate is a torus
-meridian, its center is one major radius from the torus center in the torus
-equatorial plane, its radius is the minor radius, and its plane contains the
-torus axis. The center direction fixes constant `u`. The signed phase from that
-center direction toward the torus axis fixes the pcurve `v` origin, and the
-circle-frame handedness fixes a `v` direction of `+1` or `-1`. This affine
-pcurve retains the circle's native angle parameter and the edge parameter
-interval. A displaced center, unequal radius, or misaligned meridian plane does
-not define this pcurve.
+When a native circular edge with no native pcurve candidate is a sphere or
+torus meridian, its plane contains the surface axis. A sphere meridian is a
+great circle centered at the sphere center. Its oriented plane normal and the
+sphere axis fix the constant-`u` radial direction. A torus meridian is centered
+one major radius from the torus center in the equatorial plane and has the
+minor radius; its center fixes the constant-`u` radial direction. The signed
+phase from that radial direction toward the surface axis fixes the pcurve `v`
+origin, and circle-frame handedness fixes a `v` direction of `+1` or `-1`.
+This affine pcurve retains the circle's native angle parameter and the edge
+parameter interval, including a full sphere meridian through both poles. A
+displaced center, unequal radius, or misaligned meridian plane does not define
+this pcurve.
 
 When a native line with no native pcurve candidate is a constant-`u`
 generator of a solved cylinder or circular cone, its line origin fixes the
