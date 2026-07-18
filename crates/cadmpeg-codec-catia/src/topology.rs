@@ -1134,7 +1134,7 @@ struct IncidenceComponentSearch<'a> {
     choices: &'a [Vec<[usize; 2]>],
     edge_faces: &'a [[usize; 2]],
     face_edges: &'a [Vec<usize>],
-    mesh_assignments: Option<&'a [Vec<MeshFaceBoundaryAssignment>]>,
+    mesh_assignments: Option<&'a [MeshFaceBoundaryDomain]>,
     active: Vec<bool>,
     edges: &'a [usize],
     constraints: Vec<(usize, usize)>,
@@ -1185,7 +1185,10 @@ impl IncidenceComponentSearch<'_> {
         faces.sort_unstable();
         faces.dedup();
         let viable = faces.into_iter().all(|face| {
-            mesh_assignments.get(face).is_some_and(|assignments| {
+            mesh_assignments.get(face).is_some_and(|domain| {
+                let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+                    return true;
+                };
                 assignments.iter().any(|assignment| {
                     mesh_assignment_endpoint_cycles_viable_where(
                         assignment,
@@ -1303,7 +1306,10 @@ impl IncidenceComponentSearch<'_> {
             return true;
         };
         let viable = faces.into_iter().all(|face| {
-            mesh_assignments.get(face).is_some_and(|assignments| {
+            mesh_assignments.get(face).is_some_and(|domain| {
+                let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+                    return true;
+                };
                 assignments.iter().any(|assignment| {
                     mesh_assignment_endpoint_cycles_viable_where(
                         assignment,
@@ -1326,7 +1332,10 @@ impl IncidenceComponentSearch<'_> {
 
         let mesh_assignments = self.mesh_assignments?;
         let mut best = None::<Vec<Vec<(usize, [usize; 2])>>>;
-        for (face, assignments) in mesh_assignments.iter().enumerate() {
+        for (face, domain) in mesh_assignments.iter().enumerate() {
+            let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+                continue;
+            };
             if !self.budget.charge() {
                 return Some(Vec::new());
             }
@@ -1501,12 +1510,26 @@ impl IncidenceComponentSearch<'_> {
     }
 }
 
+fn unordered_boundary_domains_close(
+    domains: Option<&[MeshFaceBoundaryDomain]>,
+    edge_points: &[[usize; 2]],
+) -> bool {
+    domains.is_none_or(|domains| {
+        domains.iter().all(|domain| match domain {
+            MeshFaceBoundaryDomain::Ordered(_) | MeshFaceBoundaryDomain::DeferredValidation => true,
+            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
+                incidence_cycles(edges, edge_points).is_some_and(|cycles| cycles.len() == 1)
+            }
+        })
+    })
+}
+
 fn component_incidence_pair_solutions<F>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
     face_count: usize,
     point_count: usize,
-    mesh_assignments: Option<&[Vec<MeshFaceBoundaryAssignment>]>,
+    mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
     solution_valid: &F,
 ) -> Option<Vec<Vec<[usize; 2]>>>
 where
@@ -1541,7 +1564,9 @@ where
     }
     if components.is_empty() {
         let pairs = fixed.into_iter().collect::<Option<Vec<_>>>()?;
-        return solution_valid(&pairs).then_some(vec![pairs]);
+        return (unordered_boundary_domains_close(mesh_assignments, &pairs)
+            && solution_valid(&pairs))
+        .then_some(vec![pairs]);
     }
     let component_count = components.len();
     let mut combined = vec![fixed.clone()];
@@ -1572,7 +1597,10 @@ where
                 assignment
                     .into_iter()
                     .collect::<Option<Vec<_>>>()
-                    .is_some_and(|pairs| solution_valid(&pairs))
+                    .is_some_and(|pairs| {
+                        unordered_boundary_domains_close(mesh_assignments, &pairs)
+                            && solution_valid(&pairs)
+                    })
             })
         };
         let solution_filter = (component_index + 1 == component_count)
@@ -1685,7 +1713,7 @@ fn incidence_endpoint_pair_solutions<F>(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
     face_count: usize,
-    mesh_assignments: Option<&[Vec<MeshFaceBoundaryAssignment>]>,
+    mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
     solution_valid: &F,
 ) -> Option<Vec<Vec<[usize; 2]>>>
 where
@@ -2268,6 +2296,13 @@ pub struct MeshFaceCoverage {
     pub missing_edges: Vec<usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MeshFaceAssignmentDomain {
+    Ordered(Vec<Vec<MeshEdgePlacementCandidate>>),
+    UnorderedFullCycle(Vec<usize>),
+    DeferredValidation,
+}
+
 /// One admissible placement of an unmatched physical edge within a recovered
 /// trim-boundary gap. Domains contain only placements participating in a
 /// complete end-to-end partition of every gap on the face.
@@ -2309,6 +2344,13 @@ pub struct MeshBoundaryEdgeCandidate {
     pub end: usize,
     /// Stored-row direction when an interior handle sequence fixes it.
     pub reversed: Option<bool>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MeshFaceBoundaryDomain {
+    Ordered(Vec<MeshFaceBoundaryAssignment>),
+    UnorderedFullCycle(Vec<usize>),
+    DeferredValidation,
 }
 
 /// One complete choice of all unmatched placements on a face, expressed as
@@ -2576,12 +2618,13 @@ fn bounded_endpoint_cycle_orders(
     Some(orders)
 }
 
-fn standard_mesh_missing_edge_assignments_impl(
+fn standard_mesh_missing_edge_assignment_domains(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
-) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
+    defer_validation: bool,
+) -> Option<Vec<MeshFaceAssignmentDomain>> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
@@ -3193,6 +3236,32 @@ fn standard_mesh_missing_edge_assignments_impl(
         }
         let assignment_results = coverage.iter().map(|face| {
             let cycle_lengths = cycles[face.face].iter().map(Vec::len).collect::<Vec<_>>();
+            let unordered_full_cycle = edge_candidates.and_then(|candidates| {
+                let [gap] = face.gaps.as_slice() else {
+                    return None;
+                };
+                (cycles[face.face].len() == 1
+                    && gap.cycle == 0
+                    && gap.start == 0
+                    && gap.length == cycles[face.face][0].len()
+                    && gap.length == face.missing_edges.len()
+                    && face
+                        .missing_edges
+                        .iter()
+                        .all(|&edge| edge_rows[edge].handles.len() == 2)
+                    && defer_validation
+                    && face
+                        .missing_edges
+                        .iter()
+                        .any(|&edge| candidates[edge].len() > 1))
+                .then(|| face.missing_edges.clone())
+            });
+            if let Some(edges) = unordered_full_cycle {
+                return Some(MeshFaceAssignmentDomain::UnorderedFullCycle(edges));
+            }
+            if defer_validation && edge_candidates.is_some() {
+                return Some(MeshFaceAssignmentDomain::DeferredValidation);
+            }
             let cycle_assignments = edge_candidates.and_then(|candidates| {
                 endpoint_cycle_assignments(
                     face.face,
@@ -3255,14 +3324,36 @@ fn standard_mesh_missing_edge_assignments_impl(
                         canonicalize_spans,
                     )
                 });
-            assignments
+            assignments.map(MeshFaceAssignmentDomain::Ordered)
         });
-        let assignments = assignment_results.collect::<Option<Vec<_>>>()?;
-        solutions.push(assignments);
+        let domains = assignment_results.collect::<Option<Vec<_>>>()?;
+        solutions.push(domains);
     }
-    <[Vec<Vec<Vec<MeshEdgePlacementCandidate>>>; 1]>::try_from(solutions)
+    <[Vec<MeshFaceAssignmentDomain>; 1]>::try_from(solutions)
         .ok()
-        .map(|[assignments]| assignments)
+        .map(|[domains]| domains)
+}
+
+fn standard_mesh_missing_edge_assignments_impl(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: Option<&[Vec<[usize; 2]>]>,
+    canonicalize_spans: bool,
+) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
+    standard_mesh_missing_edge_assignment_domains(
+        bytes,
+        edge_faces,
+        edge_candidates,
+        canonicalize_spans,
+        false,
+    )?
+    .into_iter()
+    .map(|domain| match domain {
+        MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
+        MeshFaceAssignmentDomain::UnorderedFullCycle(_)
+        | MeshFaceAssignmentDomain::DeferredValidation => None,
+    })
+    .collect()
 }
 
 /// Project complete unmatched-edge assignments to the placement domain for
@@ -3305,8 +3396,29 @@ fn standard_mesh_boundary_assignments_impl(
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
-    let assignments =
-        standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, edge_candidates, true)?;
+    standard_mesh_boundary_domains_impl(bytes, edge_faces, edge_candidates, false)?
+        .into_iter()
+        .map(|domain| match domain {
+            MeshFaceBoundaryDomain::Ordered(assignments) => Some(assignments),
+            MeshFaceBoundaryDomain::UnorderedFullCycle(_)
+            | MeshFaceBoundaryDomain::DeferredValidation => None,
+        })
+        .collect()
+}
+
+fn standard_mesh_boundary_domains_impl(
+    bytes: &[u8],
+    edge_faces: &[[usize; 2]],
+    edge_candidates: Option<&[Vec<[usize; 2]>]>,
+    defer_validation: bool,
+) -> Option<Vec<MeshFaceBoundaryDomain>> {
+    let domains = standard_mesh_missing_edge_assignment_domains(
+        bytes,
+        edge_faces,
+        edge_candidates,
+        true,
+        defer_validation,
+    )?;
     let runs = standard_mesh_edge_runs(bytes)?;
     let (face_start, face_count, _) = largest_fbb_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
@@ -3323,11 +3435,17 @@ fn standard_mesh_boundary_assignments_impl(
         })
         .collect::<Option<Vec<_>>>()?;
     let [cycle_lengths] = <[Vec<Vec<usize>>; 1]>::try_from(cycle_solutions).ok()?;
-    assignments
+    domains
         .into_iter()
         .enumerate()
-        .map(|(face, assignments)| {
-            assignments
+        .map(|(face, domain)| match domain {
+            MeshFaceAssignmentDomain::UnorderedFullCycle(edges) => {
+                Some(MeshFaceBoundaryDomain::UnorderedFullCycle(edges))
+            }
+            MeshFaceAssignmentDomain::DeferredValidation => {
+                Some(MeshFaceBoundaryDomain::DeferredValidation)
+            }
+            MeshFaceAssignmentDomain::Ordered(assignments) => assignments
                 .into_iter()
                 .map(|assignment| {
                     let mut boundaries = vec![Vec::new(); cycle_lengths[face].len()];
@@ -3376,6 +3494,7 @@ fn standard_mesh_boundary_assignments_impl(
                     Some(MeshFaceBoundaryAssignment { boundaries })
                 })
                 .collect::<Option<Vec<_>>>()
+                .map(MeshFaceBoundaryDomain::Ordered),
         })
         .collect()
 }
@@ -8317,50 +8436,38 @@ where
     {
         return None;
     }
-    let mut mesh_assignments =
-        standard_mesh_boundary_assignments_impl(bytes, edge_faces, Some(edge_candidates))?;
-    if mesh_assignments.len() != face_count {
+    let mut mesh_domains =
+        standard_mesh_boundary_domains_impl(bytes, edge_faces, Some(edge_candidates), true)?;
+    if mesh_domains.len() != face_count {
         return None;
     }
-    deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
+    for domain in &mut mesh_domains {
+        if let MeshFaceBoundaryDomain::Ordered(assignments) = domain {
+            deduplicate_mesh_quotient_assignments(std::slice::from_mut(assignments));
+        }
+    }
     let port_identities = standard_edge_port_identities(bytes)?;
     if port_identities.len() != edge_rows.len() {
         return None;
     }
-    let mut pair_domains = edge_candidates.to_vec();
-    if !prune_mesh_endpoint_pair_support(&mut mesh_assignments, &mut pair_domains) {
-        return None;
-    }
-    let complete_solution_valid = |pairs: &[[usize; 2]]| {
-        if !pair_solution_valid(pairs) {
-            return false;
-        }
-        let singleton = pairs
-            .iter()
-            .copied()
-            .map(|pair| vec![pair])
-            .collect::<Vec<_>>();
-        resolve_standard_mesh_endpoint_candidates(
-            &edge_rows,
-            &vertex_points,
-            &singleton,
-            mesh_assignments.clone(),
-            &port_identities,
-        )
-        .is_some()
-    };
     let pair_solutions = incidence_endpoint_pair_solutions(
         &edge_rows,
         &vertex_points,
         edge_faces,
-        &pair_domains,
+        edge_candidates,
         face_count,
-        Some(&mesh_assignments),
-        &complete_solution_valid,
+        Some(&mesh_domains),
+        &pair_solution_valid,
     )?;
     let mut solution = None;
     for pairs in pair_solutions {
         let singleton = pairs.into_iter().map(|pair| vec![pair]).collect::<Vec<_>>();
+        let Some(mut mesh_assignments) =
+            standard_mesh_boundary_assignments_impl(bytes, edge_faces, Some(&singleton))
+        else {
+            continue;
+        };
+        deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
         let Some(candidate) = resolve_standard_mesh_endpoint_candidates(
             &edge_rows,
             &vertex_points,
@@ -9060,8 +9167,8 @@ mod motif_tests {
         standard_face_count, unique_coordinate_bijection, unique_duplicate_face_assignment,
         uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
         FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget, MeshEdgeRun,
-        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        MeshFaceBoundaryAssignment, MeshFaceBoundaryDomain, MeshQuotient, MeshSelectionSearch,
+        StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
         MAX_MESH_CONSTRAINT_OPERATIONS,
     };
 
@@ -9551,16 +9658,18 @@ mod motif_tests {
             vec![[3, 0]],
         ];
         let edge_faces = [[0, 0]; 4];
-        let mesh_assignments = vec![vec![MeshFaceBoundaryAssignment {
-            boundaries: vec![(0..4)
-                .map(|edge| MeshBoundaryEdgeCandidate {
-                    edge,
-                    start: 0,
-                    end: 0,
-                    reversed: None,
-                })
-                .collect()],
-        }]];
+        let mesh_assignments = vec![MeshFaceBoundaryDomain::Ordered(vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![(0..4)
+                    .map(|edge| MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    })
+                    .collect()],
+            },
+        ])];
 
         let solutions = super::component_incidence_pair_solutions(
             &choices,
@@ -9574,6 +9683,30 @@ mod motif_tests {
 
         assert_eq!(solutions.len(), 1);
         assert_eq!(solutions[0], [[0, 1], [1, 2], [2, 3], [3, 0]]);
+    }
+
+    #[test]
+    fn incidence_unordered_full_cycle_rejects_disconnected_degree_cycles() {
+        let choices = vec![
+            vec![[0, 1]],
+            vec![[0, 1], [1, 2]],
+            vec![[2, 3]],
+            vec![[2, 3], [0, 3]],
+        ];
+        let edge_faces = [[0, 0]; 4];
+        let domains = vec![MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3])];
+
+        let solutions = super::component_incidence_pair_solutions(
+            &choices,
+            &edge_faces,
+            1,
+            4,
+            Some(&domains),
+            &|_| true,
+        )
+        .expect("connected cycle solution");
+
+        assert_eq!(solutions, vec![vec![[0, 1], [1, 2], [2, 3], [0, 3]]]);
     }
 
     #[test]
