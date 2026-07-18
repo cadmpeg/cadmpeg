@@ -344,18 +344,30 @@ fn transfer_complete(
     let Some(loop_orientation) = orient_loop_members(graph, loop_senses) else {
         return false;
     };
+    let vertex_tolerances = transfer_vertex_tolerances(graph, &pcurve_plan, &surface_plan);
     let exact_support_edges = edge_support_plan
         .iter()
         .filter_map(|(&edge, supports)| {
-            let endpoints = graph
-                .edge_vertices
-                .get(&edge)?
-                .map(|vertex| b5_vertex_point(graph, vertex));
+            let vertices = *graph.edge_vertices.get(&edge)?;
+            let endpoints = vertices.map(|vertex| b5_vertex_point(graph, vertex));
             let [Some(start), Some(end)] = endpoints else {
                 return None;
             };
-            b5_supports_follow_edge(supports, [start, end], &surface_plan, &pcurve_plan)
-                .then_some(edge)
+            let tolerances = vertices.map(|vertex| {
+                vertex_tolerances
+                    .get(&vertex)
+                    .copied()
+                    .unwrap_or(POINT_TOLERANCE)
+                    .max(POINT_TOLERANCE)
+            });
+            b5_supports_follow_edge(
+                supports,
+                [start, end],
+                tolerances,
+                &surface_plan,
+                &pcurve_plan,
+            )
+            .then_some(edge)
         })
         .collect::<HashSet<_>>();
     let exact_support_curves = edge_support_plan
@@ -363,13 +375,13 @@ fn transfer_complete(
         .filter_map(|(&edge, supports)| {
             edge_curve_plan
                 .get(&edge)
-                .is_none_or(|plan| {
-                    b5_supports_follow_curve(supports, plan, &surface_plan, &pcurve_plan)
-                })
+                .map_or_else(
+                    || b5_supports_agree(supports, &surface_plan, &pcurve_plan),
+                    |plan| b5_supports_follow_curve(supports, plan, &surface_plan, &pcurve_plan),
+                )
                 .then_some(edge)
         })
         .collect::<HashSet<_>>();
-    let vertex_tolerances = transfer_vertex_tolerances(graph, &pcurve_plan, &surface_plan);
 
     let used_vertices: HashSet<usize> = edge_ids
         .iter()
@@ -1803,28 +1815,54 @@ fn b5_edge_support_definition(
 fn b5_supports_follow_edge(
     supports: &[(u32, u32, [f64; 2])],
     endpoints: [[f64; 3]; 2],
+    tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
 ) -> bool {
-    supports.iter().all(|(surface, pcurve, range)| {
-        let (Some(surface), Some((pcurve, _, domain))) =
-            (surfaces.get(surface), pcurves.get(pcurve))
-        else {
+    supports.iter().all(|support| {
+        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
             return false;
         };
-        if bounded_occurrence_range(*range, *domain).is_none() {
-            return false;
-        }
-        let lifted = range.map(|parameter| {
-            let uv = pcurve_uv(pcurve, parameter)?;
-            let point = surface_point(&surface.geometry, uv.u, uv.v)?;
-            Some([point.x, point.y, point.z])
-        });
-        let [Some(start), Some(end)] = lifted else {
-            return false;
-        };
-        distance(start, endpoints[0]).max(distance(end, endpoints[1])) <= POINT_TOLERANCE
+        distance(start, endpoints[0]) <= tolerances[0]
+            && distance(end, endpoints[1]) <= tolerances[1]
     })
+}
+
+fn b5_supports_agree(
+    supports: &[(u32, u32, [f64; 2])],
+    surfaces: &BTreeMap<u32, SurfacePlan>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+) -> bool {
+    let mut lifted = supports
+        .iter()
+        .map(|support| b5_support_endpoints(support, surfaces, pcurves));
+    let Some(Some(reference)) = lifted.next() else {
+        return false;
+    };
+    lifted.all(|candidate| {
+        candidate.is_some_and(|candidate| {
+            distance(reference[0], candidate[0]).max(distance(reference[1], candidate[1])) <= 1e-6
+        })
+    })
+}
+
+fn b5_support_endpoints(
+    (surface, pcurve, range): &(u32, u32, [f64; 2]),
+    surfaces: &BTreeMap<u32, SurfacePlan>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+) -> Option<[[f64; 3]; 2]> {
+    let surface = surfaces.get(surface)?;
+    let (pcurve, _, domain) = pcurves.get(pcurve)?;
+    bounded_occurrence_range(*range, *domain)?;
+    let lifted = range.map(|parameter| {
+        let uv = pcurve_uv(pcurve, parameter)?;
+        let point = surface_point(&surface.geometry, uv.u, uv.v)?;
+        Some([point.x, point.y, point.z])
+    });
+    let [Some(start), Some(end)] = lifted else {
+        return None;
+    };
+    Some([start, end])
 }
 
 fn b5_supports_follow_curve(
@@ -1842,30 +1880,13 @@ fn b5_supports_follow_curve(
     let [Some(solved_start), Some(solved_end)] = solved else {
         return false;
     };
-    supports.iter().all(|(surface, pcurve, support_range)| {
-        let (Some(surface), Some((pcurve, _, domain))) =
-            (surfaces.get(surface), pcurves.get(pcurve))
-        else {
+    supports.iter().all(|support| {
+        let Some([start, end]) = b5_support_endpoints(support, surfaces, pcurves) else {
             return false;
         };
-        if bounded_occurrence_range(*support_range, *domain).is_none() {
-            return false;
-        }
-        let lifted = support_range.map(|parameter| {
-            let uv = pcurve_uv(pcurve, parameter)?;
-            surface_point(&surface.geometry, uv.u, uv.v)
-        });
-        let [Some(start), Some(end)] = lifted else {
-            return false;
-        };
-        distance(
-            [solved_start.x, solved_start.y, solved_start.z],
-            [start.x, start.y, start.z],
-        )
-        .max(distance(
-            [solved_end.x, solved_end.y, solved_end.z],
-            [end.x, end.y, end.z],
-        )) <= EXACT_TOLERANCE
+        distance([solved_start.x, solved_start.y, solved_start.z], start)
+            .max(distance([solved_end.x, solved_end.y, solved_end.z], end))
+            <= EXACT_TOLERANCE
     })
 }
 
@@ -2713,18 +2734,28 @@ mod tests {
         assert!(b5_supports_follow_edge(
             &supports,
             [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            [1.5e-3; 2],
             &surfaces,
             &pcurves,
         ));
         assert!(!b5_supports_follow_edge(
             &supports,
             [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+            [1.5e-3; 2],
             &surfaces,
             &pcurves,
         ));
         assert!(!b5_supports_follow_edge(
             &supports,
             [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            [1.5e-3; 2],
+            &surfaces,
+            &pcurves,
+        ));
+        assert!(b5_supports_follow_edge(
+            &supports,
+            [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+            [1.01; 2],
             &surfaces,
             &pcurves,
         ));
