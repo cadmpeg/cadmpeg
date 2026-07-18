@@ -739,7 +739,14 @@ fn parameter_aliases(
         for alias in names {
             aliases
                 .entry(alias)
-                .and_modify(|candidate| *candidate = None)
+                .and_modify(|candidate| {
+                    if candidate
+                        .as_ref()
+                        .is_some_and(|existing| existing != &parameter.id)
+                    {
+                        *candidate = None;
+                    }
+                })
                 .or_insert_with(|| Some(parameter.id.clone()));
         }
     }
@@ -1552,6 +1559,48 @@ mod history_reference_tests {
             text: None,
             content: Vec::new(),
         }
+    }
+
+    #[test]
+    fn repeated_aliases_from_one_parameter_remain_unambiguous() {
+        let mut owner = feature("owner", Some("1"), 0);
+        owner.parameters.insert("Width".into(), "4mm".into());
+        owner.dimension_properties.insert(
+            "Width".into(),
+            BTreeMap::from([("EquationId".into(), "Width".into())]),
+        );
+        let parameters = project_parameters(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }]);
+
+        let aliases = parameter_aliases(&parameters, &HashMap::new());
+
+        assert_eq!(aliases.get("Width"), Some(&Some(parameters[0].id.clone())));
+    }
+
+    #[test]
+    fn aliases_shared_by_distinct_parameters_are_ambiguous() {
+        let mut first = feature("first", Some("1"), 0);
+        first.parameters.insert("Width".into(), "4mm".into());
+        let mut second = feature("second", Some("2"), 1);
+        second.parameters.insert("Width".into(), "5mm".into());
+        let parameters = project_parameters(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![first, second],
+        }]);
+
+        let aliases = parameter_aliases(&parameters, &HashMap::new());
+
+        assert_eq!(aliases.get("Width"), Some(&None));
     }
 
     #[test]
