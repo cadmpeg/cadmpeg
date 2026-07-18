@@ -553,6 +553,15 @@ fn print_fidelity_summary(summary: &FidelitySummary) {
     if let Some((before, after)) = &diff.capability {
         println!("    capability: {before:?} → {after:?}");
     }
+    if diff.byte_ledger_changed {
+        println!("    flat byte ledger changed");
+    }
+    if diff.annotations_changed {
+        println!("    annotations changed");
+    }
+    if diff.retained_records_changed {
+        println!("    retained records changed");
+    }
     for id in &diff.removed_spaces {
         println!("    - space {id}");
     }
@@ -576,8 +585,12 @@ fn print_fidelity_summary(summary: &FidelitySummary) {
             after.opaque,
             space.spans.0,
             space.spans.1,
-            if space.content_changed {
+            if space.content_changed && space.origin_changed {
+                ", content and origin changed"
+            } else if space.content_changed {
                 ", content changed"
+            } else if space.origin_changed {
+                ", origin changed"
             } else {
                 ""
             }

@@ -4,13 +4,10 @@
 //! [`diff_source_fidelity`] compares two [`SourceFidelity`] sidecars and reports
 //! what changed in conservation terms — level and capability transitions, spaces
 //! that appeared or disappeared, and per-space byte movement between the
-//! [`SpanClass`] categories — rather than dumping raw spans. A space that exists
-//! in both sidecars is summarized by its per-class byte totals, its span count,
-//! and whether the ordered digest of its spans changed, so a caller learns
-//! *that* a space's bytes moved between classification categories or changed
-//! content without walking every tile.
+//! [`SpanClass`] categories — rather than dumping raw spans. Equality still
+//! covers every serialized field: origins, full span metadata, flat accounting,
+//! annotations, and retained records cannot disappear behind the summary.
 
-use crate::hash::sha256_hex;
 use crate::source_fidelity::{
     AddressSpaceLedger, LedgerCapability, LedgerLevel, SourceFidelity, SpanClass,
 };
@@ -57,8 +54,11 @@ pub struct SpaceDelta {
     pub class_bytes_after: ClassBytes,
     /// Span count before and after.
     pub spans: (usize, usize),
-    /// Whether the ordered digest of the space's spans changed.
+    /// Whether any span range, class, owner, meaning, digest, or retained
+    /// reference changed.
     pub content_changed: bool,
+    /// Whether the space's derivation changed.
+    pub origin_changed: bool,
 }
 
 impl SpaceDelta {
@@ -68,6 +68,7 @@ impl SpaceDelta {
             && self.class_bytes_before == self.class_bytes_after
             && self.spans.0 == self.spans.1
             && !self.content_changed
+            && !self.origin_changed
     }
 }
 
@@ -86,6 +87,12 @@ pub struct FidelityDiff {
     pub removed_spaces: Vec<String>,
     /// Interpreted deltas for spaces present in both, materially changed.
     pub changed_spaces: Vec<SpaceDelta>,
+    /// Whether flat byte-ledger accounting changed.
+    pub byte_ledger_changed: bool,
+    /// Whether provenance or exactness annotations changed.
+    pub annotations_changed: bool,
+    /// Whether retained-record metadata or bytes changed.
+    pub retained_records_changed: bool,
 }
 
 impl FidelityDiff {
@@ -96,27 +103,10 @@ impl FidelityDiff {
             && self.added_spaces.is_empty()
             && self.removed_spaces.is_empty()
             && self.changed_spaces.is_empty()
+            && !self.byte_ledger_changed
+            && !self.annotations_changed
+            && !self.retained_records_changed
     }
-}
-
-/// Digest a space's ordered span digests into one content fingerprint.
-///
-/// Two spaces with the same fingerprint carry byte-identical, identically
-/// classified content in the same order; a difference means the space's bytes or
-/// their classification changed.
-fn content_fingerprint(space: &AddressSpaceLedger) -> String {
-    let mut acc = String::new();
-    for span in &space.spans {
-        acc.push_str(match span.class {
-            SpanClass::Typed => "t",
-            SpanClass::Structural => "s",
-            SpanClass::Opaque => "o",
-        });
-        acc.push(':');
-        acc.push_str(&span.digest);
-        acc.push('\n');
-    }
-    sha256_hex(acc.as_bytes())
 }
 
 /// Compare two source-fidelity sidecars into an interpreted delta.
@@ -150,7 +140,8 @@ pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> Fi
             class_bytes_before: ClassBytes::of(left_space),
             class_bytes_after: ClassBytes::of(right_space),
             spans: (left_space.spans.len(), right_space.spans.len()),
-            content_changed: content_fingerprint(left_space) != content_fingerprint(right_space),
+            content_changed: left_space.spans != right_space.spans,
+            origin_changed: left_space.origin != right_space.origin,
         };
         if !delta.is_empty() {
             changed_spaces.push(delta);
@@ -163,6 +154,9 @@ pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> Fi
         added_spaces,
         removed_spaces,
         changed_spaces,
+        byte_ledger_changed: left.byte_ledger != right.byte_ledger,
+        annotations_changed: left.annotations != right.annotations,
+        retained_records_changed: left.retained_records != right.retained_records,
     }
 }
 
@@ -253,5 +247,39 @@ mod tests {
         let b = source(vec![span(0, 4, SpanClass::Opaque, "aa")], 4);
         let diff = diff_source_fidelity(&a, &b);
         assert_eq!(diff.level, Some((LedgerLevel::L1, LedgerLevel::L2)));
+    }
+
+    #[test]
+    fn changed_span_metadata_is_material() {
+        let a = source(vec![span(0, 4, SpanClass::Typed, "aa")], 4);
+        let mut b = a.clone();
+        b.spaces[0].spans[0].owner = "different-owner".to_string();
+        assert!(diff_source_fidelity(&a, &b).changed_spaces[0].content_changed);
+    }
+
+    #[test]
+    fn changed_annotations_are_material() {
+        let a = source(vec![span(0, 4, SpanClass::Typed, "aa")], 4);
+        let mut b = a.clone();
+        b.annotations.streams.push("source".to_string());
+        let diff = diff_source_fidelity(&a, &b);
+        assert!(diff.annotations_changed);
+        assert!(!diff.is_empty());
+    }
+
+    #[test]
+    fn changed_retained_records_are_material() {
+        let a = source(vec![span(0, 4, SpanClass::Typed, "aa")], 4);
+        let mut b = a.clone();
+        b.retained_records
+            .push(crate::source_fidelity::RetainedSourceRecord {
+                id: "record".to_string(),
+                stream: "source".to_string(),
+                offset: 0,
+                byte_len: 1,
+                sha256: "00".to_string(),
+                data: Some(vec![0]),
+            });
+        assert!(diff_source_fidelity(&a, &b).retained_records_changed);
     }
 }

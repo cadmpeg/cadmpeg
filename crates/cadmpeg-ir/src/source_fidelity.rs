@@ -334,6 +334,68 @@ pub enum FidelityError {
         /// The opaque span's start offset.
         offset: u64,
     },
+    /// Two retained records share an id, making references ambiguous.
+    #[error("duplicate retained record id: {id}")]
+    DuplicateRetainedRecord {
+        /// The repeated retained-record id.
+        id: String,
+    },
+    /// A recoverable reference names no retained record.
+    #[error("space {id} opaque span at {offset} references unknown retained record {blob}")]
+    DanglingRetainedReference {
+        /// The offending space id.
+        id: String,
+        /// The opaque span's start offset.
+        offset: u64,
+        /// The missing retained-record id.
+        blob: String,
+    },
+    /// A retained record has no bytes despite a recoverable capability.
+    #[error("retained record {id} has no data")]
+    MissingRetainedData {
+        /// The retained-record id.
+        id: String,
+    },
+    /// Retained metadata disagrees with the actual byte count.
+    #[error("retained record {id} declares {declared} bytes but contains {actual}")]
+    RetainedRecordLengthMismatch {
+        /// The retained-record id.
+        id: String,
+        /// Declared byte count.
+        declared: u64,
+        /// Actual byte count.
+        actual: u64,
+    },
+    /// Retained metadata disagrees with the actual byte digest.
+    #[error("retained record {id} has an invalid digest")]
+    RetainedRecordDigestMismatch {
+        /// The retained-record id.
+        id: String,
+    },
+    /// A retained reference indexes bytes outside its retained record.
+    #[error("space {id} opaque span at {offset} references {start}..{end} outside retained record {blob} (length {length})")]
+    RetainedRangeOutOfBounds {
+        /// The offending space id.
+        id: String,
+        /// The opaque span's start offset.
+        offset: u64,
+        /// The retained-record id.
+        blob: String,
+        /// Referenced start.
+        start: u64,
+        /// Referenced end.
+        end: u64,
+        /// Retained-record length.
+        length: u64,
+    },
+    /// A recoverable span digest disagrees with its retained bytes.
+    #[error("space {id} opaque span at {offset} disagrees with retained bytes")]
+    RetainedSpanDigestMismatch {
+        /// The offending space id.
+        id: String,
+        /// The opaque span's start offset.
+        offset: u64,
+    },
     /// A recoverable opaque span's retained subrange does not cover the span.
     #[error(
         "space {id} opaque span at {offset} spans {span_len} bytes but retains {retained_len}"
@@ -573,6 +635,37 @@ impl SourceFidelity {
             }
         }
 
+        let mut retained = BTreeMap::new();
+        for record in &self.retained_records {
+            if retained.insert(record.id.as_str(), record).is_some() {
+                return Err(FidelityError::DuplicateRetainedRecord {
+                    id: record.id.clone(),
+                });
+            }
+            if self.capability.requires_retained_bytes() {
+                let data =
+                    record
+                        .data
+                        .as_deref()
+                        .ok_or_else(|| FidelityError::MissingRetainedData {
+                            id: record.id.clone(),
+                        })?;
+                let actual = u64::try_from(data.len()).unwrap_or(u64::MAX);
+                if record.byte_len != actual {
+                    return Err(FidelityError::RetainedRecordLengthMismatch {
+                        id: record.id.clone(),
+                        declared: record.byte_len,
+                        actual,
+                    });
+                }
+                if crate::hash::sha256_hex(data) != record.sha256 {
+                    return Err(FidelityError::RetainedRecordDigestMismatch {
+                        id: record.id.clone(),
+                    });
+                }
+            }
+        }
+
         for space in &self.spaces {
             Self::validate_origin(space, &lengths)?;
             Self::validate_tiling(space)?;
@@ -682,6 +775,56 @@ impl SourceFidelity {
                     retained_len: retained.range.len(),
                 });
             }
+            let Some(record) = self.retained_record(&retained.blob) else {
+                return Err(FidelityError::DanglingRetainedReference {
+                    id: space.id.as_str().to_string(),
+                    offset: span.range.start,
+                    blob: retained.blob.clone(),
+                });
+            };
+            if !retained.range.within(record.byte_len) {
+                return Err(FidelityError::RetainedRangeOutOfBounds {
+                    id: space.id.as_str().to_string(),
+                    offset: span.range.start,
+                    blob: retained.blob.clone(),
+                    start: retained.range.start,
+                    end: retained.range.end,
+                    length: record.byte_len,
+                });
+            }
+            let data =
+                record
+                    .data
+                    .as_deref()
+                    .ok_or_else(|| FidelityError::MissingRetainedData {
+                        id: record.id.clone(),
+                    })?;
+            let start = usize::try_from(retained.range.start).map_err(|_| {
+                FidelityError::RetainedRangeOutOfBounds {
+                    id: space.id.as_str().to_string(),
+                    offset: span.range.start,
+                    blob: retained.blob.clone(),
+                    start: retained.range.start,
+                    end: retained.range.end,
+                    length: record.byte_len,
+                }
+            })?;
+            let end = usize::try_from(retained.range.end).map_err(|_| {
+                FidelityError::RetainedRangeOutOfBounds {
+                    id: space.id.as_str().to_string(),
+                    offset: span.range.start,
+                    blob: retained.blob.clone(),
+                    start: retained.range.start,
+                    end: retained.range.end,
+                    length: record.byte_len,
+                }
+            })?;
+            if crate::hash::sha256_hex(&data[start..end]) != span.digest {
+                return Err(FidelityError::RetainedSpanDigestMismatch {
+                    id: space.id.as_str().to_string(),
+                    offset: span.range.start,
+                });
+            }
         }
         Ok(())
     }
@@ -776,8 +919,10 @@ impl SourceFidelity {
 
     /// Parses a sidecar of any supported version, migrating v1 forward.
     ///
-    /// A v1 sidecar migrates to v2 through [`migrate_v1`], preserving its level
-    /// and capability. The result is canonical but not validated; call
+    /// A v1 sidecar migrates to v2 through [`migrate_v1`], preserving its level.
+    /// V1 carried retained ids but not the retained bytes needed to prove
+    /// recoverability, so migration downgrades that capability to accounted.
+    /// The result is canonical but not validated; call
     /// [`SourceFidelity::validate`] to enforce the invariant.
     pub fn from_json_any(
         s: &str,
@@ -837,7 +982,8 @@ pub fn migrate_v1(
         origin: SerializedOrigin::Root,
         spans,
     };
-    SourceFidelity::new(level, capability, vec![space])
+    let _previous_capability = capability;
+    SourceFidelity::new(level, LedgerCapability::Accounted, vec![space])
 }
 
 /// The prior single-stream sidecar schema, retained for migration.
@@ -1134,6 +1280,62 @@ mod tests {
         ));
     }
 
+    fn recoverable_sidecar(data: Vec<u8>) -> SourceFidelity {
+        let digest = crate::hash::sha256_hex(&data);
+        let mut sidecar = SourceFidelity::new(
+            LedgerLevel::L2,
+            LedgerCapability::Recoverable,
+            vec![root_space(
+                4,
+                vec![LedgerSpan {
+                    range: SerializedRange { start: 0, end: 4 },
+                    class: SpanClass::Opaque,
+                    owner: "owner".to_string(),
+                    meaning: "meaning".to_string(),
+                    digest: digest.clone(),
+                    retained: Some(RetainedRef {
+                        blob: "b".to_string(),
+                        range: SerializedRange { start: 0, end: 4 },
+                    }),
+                }],
+            )],
+        );
+        sidecar.retained_records.push(RetainedSourceRecord {
+            id: "b".to_string(),
+            stream: "source".to_string(),
+            offset: 0,
+            byte_len: 4,
+            sha256: digest,
+            data: Some(data),
+        });
+        sidecar
+    }
+
+    #[test]
+    fn validate_recoverable_proves_span_bytes_can_be_recovered() {
+        assert_eq!(recoverable_sidecar(vec![1, 2, 3, 4]).validate(), Ok(()));
+    }
+
+    #[test]
+    fn validate_rejects_recoverable_record_with_false_digest() {
+        let mut sidecar = recoverable_sidecar(vec![1, 2, 3, 4]);
+        sidecar.retained_records[0].sha256 = crate::hash::sha256_hex(&[4, 3, 2, 1]);
+        assert!(matches!(
+            sidecar.validate(),
+            Err(FidelityError::RetainedRecordDigestMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn validate_rejects_span_that_disagrees_with_retained_subrange() {
+        let mut sidecar = recoverable_sidecar(vec![1, 2, 3, 4]);
+        sidecar.spaces[0].spans[0].digest = crate::hash::sha256_hex(&[4, 3, 2, 1]);
+        assert!(matches!(
+            sidecar.validate(),
+            Err(FidelityError::RetainedSpanDigestMismatch { .. })
+        ));
+    }
+
     #[test]
     fn validate_rejects_non_root_without_reference() {
         let sidecar = SourceFidelity::new(
@@ -1210,6 +1412,7 @@ mod tests {
         let migrated = migrate_v1(v1, LedgerLevel::L2, LedgerCapability::Recoverable);
         assert_eq!(migrated.version, SOURCE_FIDELITY_VERSION);
         assert_eq!(migrated.spaces.len(), 1);
+        assert_eq!(migrated.capability, LedgerCapability::Accounted);
         let source = &migrated.spaces[0];
         assert_eq!(source.id, CanonicalSpaceId::source());
         assert_eq!(source.length, 8);
