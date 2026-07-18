@@ -3852,11 +3852,7 @@ pub(crate) fn resolved_section_points(
             matching_segments.next().is_none().then_some(())?;
             let coordinate =
                 1usize.checked_sub(section_line_fixed_coordinate(definition, segment)?)?;
-            let magnitude = definition
-                .dimensions
-                .as_ref()?
-                .rows
-                .get(usize::try_from(relation.dimension_id).ok()?)?
+            let magnitude = section_relation_length_dimension(definition, relation)?
                 .value
                 .filter(|value| value.is_finite() && *value >= 0.0)?;
             let delta = match relation.sign {
@@ -4571,10 +4567,7 @@ pub(crate) fn resolved_section_radii(
         if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] {
             continue;
         }
-        let Some(value) = definition
-            .dimensions
-            .as_ref()
-            .and_then(|table| table.rows.get(usize::try_from(relation.dimension_id).ok()?))
+        let Some(value) = section_relation_length_dimension(definition, relation)
             .and_then(|dimension| dimension.value)
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
@@ -4680,6 +4673,18 @@ pub(crate) fn resolved_section_radii(
         remaining.retain(|radius_id| !component.contains(radius_id));
     }
     radii
+}
+
+fn section_relation_length_dimension<'a>(
+    definition: &'a crate::feature::FeatureDefinition,
+    relation: &crate::feature::FeatureRelation,
+) -> Option<&'a crate::feature::FeatureDimension> {
+    let dimension = definition
+        .dimensions
+        .as_ref()?
+        .rows
+        .get(usize::try_from(relation.dimension_id).ok()?)?;
+    (dimension.value_unit == crate::feature::DimensionUnit::Millimeters).then_some(dimension)
 }
 
 #[derive(Clone, Copy)]
@@ -17137,6 +17142,7 @@ mod resolved_sketch_tests {
                 ..
             } if native_kind == "creo:relation:0"
         ));
+        assert!(!resolved_section_points(&angular_distance).contains_key(&2));
         let mut duplicate_dimension = distance_definition.clone();
         let duplicate = duplicate_dimension
             .dimensions
@@ -17226,6 +17232,7 @@ mod resolved_sketch_tests {
                 ..
             } if native_kind == "creo:relation:14"
         ));
+        assert!(!resolved_section_radii(&radius_definition).contains_key(&101));
         let mut incidence_distance = distance_definition.clone();
         let incidence_relations = incidence_distance.relations.as_mut().expect("relations");
         incidence_relations.rows[0].operand_vectors = None;

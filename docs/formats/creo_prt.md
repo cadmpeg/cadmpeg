@@ -833,6 +833,8 @@ Its dimension selector is a zero-based index into `dimtab_ptr`. `verhor=1`
 selects the section `u` difference and `verhor=0` selects the section `v`
 difference. Sign `1` defines `second-first=+value`; sign `f6` defines
 `second-first=-value`; sign zero stores only the unsigned magnitude.
+Only a linear selected dimension contributes this section-coordinate equation;
+an angular or schema-defined dimension does not supply a length ordinate.
 The two point identifiers denote endpoint loci shared by every incident
 `segtab` entity. Exactly one segment spanning the pair is required to refine the
 relation to a horizontal or vertical distance constraint. The selected
@@ -849,6 +851,7 @@ A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 type-three `var_arr` radius with that key. An arc's `radius` field selects the
 same radius key. The solved center point and positive radius define its
 unbounded circular carrier before both arc endpoints are available.
+Only a linear selected dimension contributes a solved radius.
 The selected dimension is the neutral radius constraint parameter when exactly
 one arc's `radius` field names that key and the selected dimension type is linear.
 A non-linear or schema-defined selected dimension does not define a neutral
