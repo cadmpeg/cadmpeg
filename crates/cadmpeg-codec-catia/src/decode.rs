@@ -15,8 +15,8 @@ use cadmpeg_ir::annotations::{ExactnessNote, Provenance};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
-    BooleanOp, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId, RadiusSpec,
-    RevolutionConstruction, SketchSpace, SweepMode,
+    BooleanOp, ChamferSpec, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
+    RadiusSpec, RevolutionConstruction, SketchSpace, SweepMode,
 };
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
@@ -120,13 +120,14 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} shell, {} fillet, and {} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} shell, {} fillet, {} chamfer, and {} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len(),
                 transferred.revolutions,
                 transferred.sweeps,
                 transferred.shells,
                 transferred.fillets,
+                transferred.chamfers,
                 transferred.sketches,
             ),
             provenance: None,
@@ -156,6 +157,7 @@ fn transfer_design_features(
                         "Slot" => Some(("Slot", CatiaFeatureKind::Sweep(BooleanOp::Cut))),
                         "Shell" => Some(("Shell", CatiaFeatureKind::Shell)),
                         "EdgeFillet" => Some(("EdgeFillet", CatiaFeatureKind::Fillet)),
+                        "Chamfer" => Some(("Chamfer", CatiaFeatureKind::Chamfer)),
                         "Sketch" => Some(("Sketch", CatiaFeatureKind::Sketch)),
                         _ => None,
                     });
@@ -255,6 +257,14 @@ fn transfer_design_features(
                         radius: RadiusSpec::Unresolved { form: None },
                     }
                 }
+                CatiaFeatureKind::Chamfer => {
+                    counts.chamfers += 1;
+                    FeatureDefinition::Chamfer {
+                        edges: EdgeSelection::Unresolved,
+                        spec: ChamferSpec::Unresolved { form: None },
+                        flip_direction: false,
+                    }
+                }
                 CatiaFeatureKind::Sketch => {
                     counts.sketches += 1;
                     FeatureDefinition::Sketch {
@@ -294,6 +304,7 @@ enum CatiaFeatureKind {
     Sweep(BooleanOp),
     Shell,
     Fillet,
+    Chamfer,
     Sketch,
 }
 
@@ -303,6 +314,7 @@ struct TransferredDesignCounts {
     sweeps: usize,
     shells: usize,
     fillets: usize,
+    chamfers: usize,
     sketches: usize,
 }
 

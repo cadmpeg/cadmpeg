@@ -5898,9 +5898,9 @@ fn decode_projects_groove_class_as_cut_revolution() {
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss
-                .message
-                .contains("1 revolution, 0 sweep, 0 shell, 0 fillet, and 0 sketch feature(s)")
+            && loss.message.contains(
+                "1 revolution, 0 sweep, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+            )
     }));
 }
 
@@ -5927,9 +5927,9 @@ fn decode_projects_sketch_class_as_unresolved_sketch_node() {
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss
-                .message
-                .contains("0 revolution, 0 sweep, 0 shell, 0 fillet, and 1 sketch feature(s)")
+            && loss.message.contains(
+                "0 revolution, 0 sweep, 0 shell, 0 fillet, 0 chamfer, and 1 sketch feature(s)",
+            )
     }));
 }
 
@@ -5961,9 +5961,9 @@ fn decode_projects_rib_and_slot_classes_as_solid_sweeps() {
         ));
         assert!(decoded.report.losses.iter().any(|loss| {
             loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-                && loss
-                    .message
-                    .contains("0 revolution, 1 sweep, 0 shell, 0 fillet, and 0 sketch feature(s)")
+                && loss.message.contains(
+                    "0 revolution, 1 sweep, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                )
         }));
     }
 }
@@ -5991,9 +5991,9 @@ fn decode_projects_shell_class_with_unresolved_operands() {
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss
-                .message
-                .contains("0 revolution, 0 sweep, 1 shell, 0 fillet, and 0 sketch feature(s)")
+            && loss.message.contains(
+                "0 revolution, 0 sweep, 1 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+            )
     }));
 }
 
@@ -6019,9 +6019,38 @@ fn decode_projects_edge_fillet_class_with_unresolved_operands() {
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss
-                .message
-                .contains("0 revolution, 0 sweep, 0 shell, 1 fillet, and 0 sketch feature(s)")
+            && loss.message.contains(
+                "0 revolution, 0 sweep, 0 shell, 1 fillet, 0 chamfer, and 0 sketch feature(s)",
+            )
+    }));
+}
+
+#[test]
+fn decode_projects_chamfer_class_with_unresolved_operands() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_design_class("Chamfer")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated Chamfer design");
+
+    assert!(matches!(
+        decoded.ir.model.features.as_slice(),
+        [cadmpeg_ir::features::Feature {
+            name: Some(name),
+            definition: cadmpeg_ir::features::FeatureDefinition::Chamfer {
+                edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
+                spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
+                flip_direction: false,
+            },
+            ..
+        }] if name == "Chamfer"
+    ));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.message.contains(
+                "0 revolution, 0 sweep, 0 shell, 0 fillet, 1 chamfer, and 0 sketch feature(s)",
+            )
     }));
 }
 
