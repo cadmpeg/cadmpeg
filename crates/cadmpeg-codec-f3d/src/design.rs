@@ -2455,7 +2455,8 @@ fn project_extrude(
             let [group] = profile_groups.as_slice() else {
                 return None;
             };
-            ProfileRef::Native(group.id.clone())
+            resolved_profile_face_group(scope, group, face_operands)
+                .unwrap_or_else(|| ProfileRef::Native(group.id.clone()))
         }
     };
     let face_groups = scope_groups
@@ -2774,6 +2775,58 @@ fn resolved_face_group(
     (!faces.is_empty()).then(|| cadmpeg_ir::features::FaceSelection::Resolved {
         faces,
         native: group.id.clone(),
+    })
+}
+
+fn resolved_profile_face_group(
+    scope: &DesignParameterScope,
+    group: &DesignConstructionOperandGroup,
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    use cadmpeg_ir::features::ProfileRef;
+    use cadmpeg_ir::ids::HistoricalFaceId;
+
+    let previous_state_id = scope.previous_history_state_id?;
+    let stream = native_stream(&group.id)?;
+    let mut faces = Vec::with_capacity(group.members.len());
+    for (ordinal, record_index) in group.members.iter().enumerate() {
+        let ordinal = u32::try_from(ordinal).ok()?;
+        let mut matches = operands.iter().filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == group.scope_record_index
+                && operand.group_record_index == Some(group.record_index)
+                && operand.group_member_ordinal == Some(ordinal)
+                && operand.record_index == *record_index
+        });
+        let operand = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        let face = operand.resolved_face_slot?;
+        if !faces.contains(&face) {
+            faces.push(face);
+        }
+    }
+    (!faces.is_empty()).then(|| {
+        let feature = neutral_feature_id(scope);
+        let feature_key = feature
+            .0
+            .split_once('#')
+            .map_or(feature.0.as_str(), |(_, key)| key);
+        ProfileRef::HistoricalFaces {
+            state: feature_input_topology_id(&feature, previous_state_id),
+            faces: faces
+                .into_iter()
+                .map(|face| {
+                    HistoricalFaceId(format!(
+                        "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
+                        feature_key.len(),
+                        feature_key
+                    ))
+                })
+                .collect(),
+            native: vec![group.id.clone()],
+        }
     })
 }
 
@@ -12136,16 +12189,23 @@ pub fn decode_face_operands(
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    for group in groups
-        .iter()
-        .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Faces))
-    {
+    for group in groups.iter().filter(|group| {
+        matches!(
+            group.extrude_role,
+            Some(DesignExtrudeOperandRole::Profile | DesignExtrudeOperandRole::Faces)
+        )
+    }) {
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
         let Some(scope) = scopes.get(&(stream, group.scope_record_index)) else {
             continue;
         };
+        if group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
+            && scope.extrude_profile.is_some()
+        {
+            continue;
+        }
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
@@ -12154,24 +12214,41 @@ pub fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        for record_index in &group.members {
+        for (group_member_index, record_index) in group.members.iter().enumerate() {
             if !seen.insert((stream, scope.record_index, *record_index)) {
                 continue;
             }
-            let Some(scope_reference_ordinal) = scope
-                .reference_members
-                .iter()
-                .position(|member| member == record_index)
-                .and_then(|ordinal| u32::try_from(ordinal).ok())
-            else {
+            let Ok(group_member_ordinal) = u32::try_from(group_member_index) else {
                 continue;
             };
             let Some(header) = headers.get(&(stream, *record_index)) else {
                 continue;
             };
-            if let Some(operand) =
-                parse_face_operand(bytes, scope, scope_reference_ordinal, header, recipes)
-            {
+            let next_byte_offset = group
+                .members
+                .get(group_member_index + 1)
+                .and_then(|record_index| headers.get(&(stream, *record_index)))
+                .copied()
+                .or_else(|| {
+                    headers
+                        .iter()
+                        .filter(|((candidate_stream, _), candidate)| {
+                            *candidate_stream == stream
+                                && candidate.byte_offset > header.byte_offset
+                        })
+                        .min_by_key(|(_, candidate)| candidate.byte_offset)
+                        .map(|(_, candidate)| *candidate)
+                })
+                .map(|header| header.byte_offset);
+            if let Some(operand) = parse_face_operand(
+                bytes,
+                scope,
+                group.scope_reference_ordinal,
+                Some((group.record_index, group_member_ordinal)),
+                next_byte_offset,
+                header,
+                recipes,
+            ) {
                 out.push(operand);
             }
         }
@@ -12199,9 +12276,15 @@ pub fn decode_face_operands(
             else {
                 continue;
             };
-            if let Some(operand) =
-                parse_face_operand(bytes, scope, scope_reference_ordinal, header, recipes)
-            {
+            if let Some(operand) = parse_face_operand(
+                bytes,
+                scope,
+                scope_reference_ordinal,
+                None,
+                None,
+                header,
+                recipes,
+            ) {
                 out.push(operand);
             }
         }
@@ -13218,11 +13301,12 @@ fn parse_edge_operand(
     let start = usize::try_from(header.byte_offset).ok()?;
     let mut offsets = Vec::with_capacity(5);
     let mut position = start.checked_add(11)?;
-    for _ in 0..5 {
-        let offset = next_indexed_record_offset(bytes, position)?;
+    for record_index in (0..4).map(|delta| header.record_index.checked_add(delta)) {
+        let offset = next_indexed_record_offset_with_index(bytes, position, record_index?)?;
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
+    offsets.push(next_indexed_record_offset(bytes, position)?);
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
         let (class_tag, after_tag) = lp_ascii(bytes, *offset)?;
@@ -13565,17 +13649,23 @@ fn parse_face_operand(
     bytes: &[u8],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
+    group_ownership: Option<(u32, u32)>,
+    next_byte_offset: Option<u64>,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
 ) -> Option<DesignFaceOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
     let mut offsets = Vec::with_capacity(5);
     let mut position = start.checked_add(11)?;
-    for _ in 0..5 {
-        let offset = next_indexed_record_offset(bytes, position)?;
+    for record_index in (0..4).map(|delta| header.record_index.checked_add(delta)) {
+        let offset = next_indexed_record_offset_with_index(bytes, position, record_index?)?;
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
+    offsets.push(match next_byte_offset {
+        Some(offset) => usize::try_from(offset).ok()?,
+        None => next_indexed_record_offset(bytes, position)?,
+    });
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
         let (class_tag, after_tag) = lp_ascii(bytes, *offset)?;
@@ -13643,8 +13733,8 @@ fn parse_face_operand(
     if recipe_program.get(0..2) != Some(&[0, -1]) {
         return None;
     }
-    let node_count = usize::try_from(*recipe_program.get(2)?).ok()?;
-    if node_count == 0 || node_count > 100_000 {
+    let local_topology_count = usize::try_from(*recipe_program.get(2)?).ok()?;
+    if local_topology_count == 0 || local_topology_count > 100_000 {
         return None;
     }
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
@@ -13654,7 +13744,7 @@ fn parse_face_operand(
         .filter(|(_, values)| *values == [-1, -1, 2])
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
-    if recipe_node_indices.len() != node_count || recipe_node_indices.first() != Some(&3) {
+    if recipe_node_indices.is_empty() || recipe_node_indices.first() != Some(&3) {
         return None;
     }
     let recipe_node_offsets = recipe_node_indices
@@ -13677,7 +13767,7 @@ fn parse_face_operand(
                 .get(3..)
                 .and_then(face_recipe_structure)
                 .and_then(|structure| {
-                    face_recipe_local_topology_references(&structure, node_count)
+                    face_recipe_local_topology_references(&structure, local_topology_count)
                         .map(|references| (Some(structure), references))
                 })
                 .unwrap_or((None, Vec::new()));
@@ -13700,6 +13790,8 @@ fn parse_face_operand(
         ),
         scope_record_index: scope.record_index,
         scope_reference_ordinal,
+        group_record_index: group_ownership.map(|ownership| ownership.0),
+        group_member_ordinal: group_ownership.map(|ownership| ownership.1),
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
@@ -16048,6 +16140,21 @@ fn next_indexed_record_offset(bytes: &[u8], mut position: usize) -> Option<usize
     None
 }
 
+fn next_indexed_record_offset_with_index(
+    bytes: &[u8],
+    mut position: usize,
+    record_index: u32,
+) -> Option<usize> {
+    loop {
+        let offset = next_indexed_record_offset(bytes, position)?;
+        let (_, after_tag) = lp_ascii(bytes, offset)?;
+        if u32_at(bytes, after_tag) == Some(record_index) {
+            return Some(offset);
+        }
+        position = offset.checked_add(1)?;
+    }
+}
+
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {
     (bytes.get(position) == Some(&1)).then_some((u32_at(bytes, position + 1)?, position + 5))
 }
@@ -16773,7 +16880,8 @@ mod relation_tests {
         indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
         neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
         neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
+        next_indexed_record_offset_with_index, null_locus_dimension_definition,
+        offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -20535,7 +20643,7 @@ mod relation_tests {
         let face_recipe_name_at = face_bytes.len() + 4;
         face_bytes.extend_from_slice(&24u32.to_le_bytes());
         face_bytes.extend_from_slice(b"bounded_face_recipe_data");
-        for value in [0i32, -1, 1, -1, -1, 2, 7] {
+        for value in [0i32, -1, 4, -1, -1, 2, 7, -1, -1, 2, 8, -1, -1, 2, 9] {
             face_bytes.extend_from_slice(&value.to_le_bytes());
         }
         let face_next_at = header(&mut face_bytes, *b"306", 104);
@@ -20550,6 +20658,8 @@ mod relation_tests {
             &face_bytes,
             &face_scope,
             0,
+            None,
+            None,
             &record,
             std::slice::from_ref(&face_recipe),
         )
@@ -20564,17 +20674,24 @@ mod relation_tests {
             operand.recipe_program_offset,
             face_recipe_name_at as u64 + 24
         );
-        assert_eq!(operand.recipe_program, [0, -1, 1, -1, -1, 2, 7]);
+        assert_eq!(operand.recipe_program[0..3], [0, -1, 4]);
         assert_eq!(
             operand.recipe_node_offsets,
-            [face_recipe_name_at as u64 + 36]
+            [
+                face_recipe_name_at as u64 + 36,
+                face_recipe_name_at as u64 + 52,
+                face_recipe_name_at as u64 + 68,
+            ]
         );
-        assert_eq!(operand.recipe_nodes.len(), 1);
+        assert_eq!(operand.recipe_nodes.len(), 3);
         assert_eq!(
             operand.recipe_nodes[0].byte_offset,
             face_recipe_name_at as u64 + 36
         );
-        assert_eq!(operand.recipe_nodes[0].end_byte_offset, face_next_at);
+        assert_eq!(
+            operand.recipe_nodes[0].end_byte_offset,
+            face_recipe_name_at as u64 + 52
+        );
         assert_eq!(operand.recipe_nodes[0].program, [-1, -1, 2, 7]);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, face_next_at);
@@ -25307,6 +25424,26 @@ mod relation_tests {
         assert_eq!(parsed.entity_genesis, None);
         assert_eq!(parsed.return_members, [1224, 1228, 1236]);
         assert_eq!(parsed.parsed_end, 124);
+    }
+
+    #[test]
+    fn indexed_record_search_requires_the_expected_identity() {
+        let mut bytes = vec![0xaa; 9];
+        let decoy = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"278");
+        bytes.extend_from_slice(&41u32.to_le_bytes());
+        bytes.extend_from_slice(&[0xbb; 7]);
+        let expected = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"306");
+        bytes.extend_from_slice(&42u32.to_le_bytes());
+
+        assert_eq!(next_indexed_record_offset(&bytes, 0), Some(decoy));
+        assert_eq!(
+            next_indexed_record_offset_with_index(&bytes, 0, 42),
+            Some(expected)
+        );
     }
 
     fn push_reference(out: &mut Vec<u8>, reference: u32) {

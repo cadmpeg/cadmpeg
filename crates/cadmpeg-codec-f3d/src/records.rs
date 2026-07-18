@@ -1552,6 +1552,12 @@ pub struct DesignFaceOperand {
     pub scope_record_index: u32,
     /// Zero-based position in the scope's ordered reference table.
     pub scope_reference_ordinal: u32,
+    /// Owning construction-operand group, absent for a direct scope operand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_record_index: Option<u32>,
+    /// Zero-based position in the owning group's ordered member table.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_member_ordinal: Option<u32>,
     /// Primary indexed-record identity named by a face operand group.
     pub record_index: u32,
     /// Byte offset of the primary indexed-record header.

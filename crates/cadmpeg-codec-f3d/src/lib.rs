@@ -1290,10 +1290,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let decoded_profile_face_groups = native
+        .design_face_operands
+        .iter()
+        .filter_map(|operand| Some((design_stream(&operand.id), operand.group_record_index?)))
+        .collect::<HashSet<_>>();
     let face_group_members = native
         .design_construction_operand_groups
         .iter()
-        .filter(|group| group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces))
+        .filter(|group| {
+            group.extrude_role == Some(records::DesignExtrudeOperandRole::Faces)
+                || (group.extrude_role == Some(records::DesignExtrudeOperandRole::Profile)
+                    && decoded_profile_face_groups
+                        .contains(&(design_stream(&group.id), group.record_index)))
+        })
         .flat_map(|group| {
             let native_stream = design_stream(&group.id);
             group
@@ -1302,6 +1312,20 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .map(move |member| (native_stream, group.scope_record_index, *member))
         })
         .collect::<HashSet<_>>();
+    let face_groups_by_index = native
+        .design_construction_operand_groups
+        .iter()
+        .filter(|group| {
+            matches!(
+                group.extrude_role,
+                Some(
+                    records::DesignExtrudeOperandRole::Profile
+                        | records::DesignExtrudeOperandRole::Faces
+                )
+            )
+        })
+        .map(|group| ((design_stream(&group.id), group.record_index), group))
+        .collect::<HashMap<_, _>>();
     let mut expected_face_operands = native.design_face_operands.clone();
     history::bind_face_operand_history_candidates(
         &mut expected_face_operands,
@@ -1400,19 +1424,33 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         design::DesignFeatureFamily::Extrude
                             | design::DesignFeatureFamily::OffsetFaces
                     )
-                ) && usize::try_from(operand.scope_reference_ordinal)
-                    .ok()
-                    .and_then(|ordinal| scope.reference_members.get(ordinal))
-                    == Some(&operand.record_index)
-            })
-            && scope.is_some_and(|scope| {
-                design::design_feature_family(&scope.kind)
-                    == Some(design::DesignFeatureFamily::OffsetFaces)
-                    || face_group_members.contains(&(
-                        native_stream,
-                        operand.scope_record_index,
-                        operand.record_index,
-                    ))
+                ) && match (operand.group_record_index, operand.group_member_ordinal) {
+                    (Some(group_record_index), Some(group_member_ordinal)) => {
+                        let group = face_groups_by_index
+                            .get(&(native_stream, group_record_index))
+                            .copied();
+                        group.is_some_and(|group| {
+                            group.scope_record_index == operand.scope_record_index
+                                && usize::try_from(operand.scope_reference_ordinal)
+                                    .ok()
+                                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                                    == Some(&group_record_index)
+                                && usize::try_from(group_member_ordinal)
+                                    .ok()
+                                    .and_then(|ordinal| group.members.get(ordinal))
+                                    == Some(&operand.record_index)
+                        })
+                    }
+                    (None, None) => {
+                        design::design_feature_family(&scope.kind)
+                            == Some(design::DesignFeatureFamily::OffsetFaces)
+                            && usize::try_from(operand.scope_reference_ordinal)
+                                .ok()
+                                .and_then(|ordinal| scope.reference_members.get(ordinal))
+                                == Some(&operand.record_index)
+                    }
+                    _ => false,
+                }
             })
             && header.is_some_and(|header| {
                 header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
@@ -1434,8 +1472,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             )
             && operand.recipe_program.len() >= 3
             && operand.recipe_program.get(0..2) == Some(&[0, -1])
-            && usize::try_from(operand.recipe_program[2]).ok()
-                == Some(operand.recipe_node_offsets.len())
+            && usize::try_from(operand.recipe_program[2])
+                .ok()
+                .is_some_and(|count| count > 0 && count <= 100_000)
             && operand.recipe_node_offsets == expected_node_offsets
             && operand.recipe_nodes.len() == expected_nodes.len()
             && operand
@@ -1454,7 +1493,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 .and_then(|structure| {
                                     design::face_recipe_local_topology_references(
                                         &structure,
-                                        operand.recipe_nodes.len(),
+                                        usize::try_from(operand.recipe_program[2])
+                                            .unwrap_or(usize::MAX),
                                     )
                                     .map(|_| structure)
                                 })
@@ -1463,7 +1503,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             |structure| {
                                 design::face_recipe_local_topology_references(
                                     structure,
-                                    operand.recipe_nodes.len(),
+                                    usize::try_from(operand.recipe_program[2])
+                                        .unwrap_or(usize::MAX),
                                 )
                                 .as_ref()
                                     == Some(&node.local_topology_references)
@@ -1530,7 +1571,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
                 message: "Fusion Design Extrude face group has an unresolved recipe operand".into(),
-                entity: None,
+                entity: Some(format!(
+                    "{}:design-face-group-member#{}:{}",
+                    member.0, member.1, member.2
+                )),
             });
         }
     }
