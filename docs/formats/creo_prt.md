@@ -838,6 +838,11 @@ The two point identifiers denote endpoint loci shared by every incident
 relation to a horizontal or vertical distance constraint. The selected
 `dimtab_ptr` row is the driving parameter independently of whether both endpoint
 coordinates are evaluated.
+The segment's unique orientation component selects the neutral distance axis.
+A directly stored `verhor` selector and an orientation established through
+type-one, type-two, type-five, or type-seven incidences have the same effect;
+conflicting or unresolved orientation does not select an axis-specific neutral
+constraint.
 
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 `c=[15,0,0,0]`, and sign `1` binds the selected dimension value to the

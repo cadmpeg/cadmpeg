@@ -8872,7 +8872,7 @@ fn section_dimension_constraints(
                                 } else {
                                     [SketchLocus::End(entity.clone()), SketchLocus::Start(entity)]
                                 };
-                                match measured.vertical_horizontal {
+                                match section_line_fixed_coordinate(definition, measured) {
                                     Some(0) => {
                                         return Some(
                                             SketchConstraintDefinition::VerticalDistance {
@@ -16876,6 +16876,12 @@ mod resolved_sketch_tests {
             [Some(0), Some(0), Some(0), Some(0)],
             [Some(15), Some(16), Some(15), Some(1)],
         ]);
+        distance_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .clear();
         assert_eq!(
             section_dimension_constraints(&distance_definition, &SketchId("sketch".into()))[0]
                 .0
@@ -16890,6 +16896,66 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let mut incidence_oriented_distance = distance_definition.clone();
+        incidence_oriented_distance
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows[0]
+            .vertical_horizontal = None;
+        incidence_oriented_distance
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .push(crate::feature::FeatureSkamp {
+                id: 18,
+                kind: 1,
+                flags: 0,
+                status: 0,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                }],
+                offset: 83,
+            });
+        assert_eq!(
+            section_dimension_constraints(&incidence_oriented_distance, &SketchId("sketch".into()))
+                [0]
+            .0
+            .definition,
+            SketchConstraintDefinition::HorizontalDistance {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::End(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+            }
+        );
+        let mut conflicting_orientation = incidence_oriented_distance.clone();
+        let mut vertical = conflicting_orientation
+            .relations
+            .as_ref()
+            .expect("relations")
+            .skamps[0]
+            .clone();
+        vertical.id = 19;
+        vertical.kind = 2;
+        vertical.offset = 84;
+        conflicting_orientation
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps
+            .push(vertical);
+        assert!(matches!(
+            section_dimension_constraints(&conflicting_orientation, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
         let mut solver_definition = distance_definition.clone();
         solver_definition
             .relations
