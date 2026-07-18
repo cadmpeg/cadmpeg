@@ -2951,29 +2951,57 @@ fn check_feature_sketch_references(
                     }
                 }
                 ProfileRef::SketchRegions { regions, .. } => {
-                    let sketch_profile_count = ir
+                    let selected_sketch = ir
                         .model
                         .sketches
                         .iter()
-                        .find(|candidate| candidate.id == *sketch)
-                        .map_or(0, |sketch| sketch.profiles.len());
-                    let unique_regions = regions.iter().collect::<HashSet<_>>();
+                        .find(|candidate| candidate.id == *sketch);
+                    let sketch_profile_count =
+                        selected_sketch.map_or(0, |sketch| sketch.profiles.len());
+                    let duplicate_regions = regions.iter().enumerate().any(|(index, region)| {
+                        regions.iter().skip(index + 1).any(|other| other == region)
+                    });
                     let invalid = regions.is_empty()
-                        || unique_regions.len() != regions.len()
-                        || regions.iter().any(|region| {
-                            let holes = region.holes.iter().copied().collect::<HashSet<_>>();
-                            region.outer as usize >= sketch_profile_count
-                                || holes.len() != region.holes.len()
-                                || holes.contains(&region.outer)
-                                || holes
-                                    .iter()
-                                    .any(|index| *index as usize >= sketch_profile_count)
+                        || duplicate_regions
+                        || regions.iter().any(|region| match region {
+                            crate::features::SketchProfileRegion::Loops { outer, holes } => {
+                                let unique_holes = holes.iter().copied().collect::<HashSet<_>>();
+                                *outer as usize >= sketch_profile_count
+                                    || unique_holes.len() != holes.len()
+                                    || unique_holes.contains(outer)
+                                    || unique_holes
+                                        .iter()
+                                        .any(|index| *index as usize >= sketch_profile_count)
+                            }
+                            crate::features::SketchProfileRegion::Trimmed {
+                                outer_boundary,
+                                hole_boundaries,
+                            } => {
+                                let valid_ring =
+                                    |ring: &[crate::features::SketchProfileBoundaryUse]| {
+                                        !ring.is_empty()
+                                            && ring.iter().all(|use_| {
+                                                use_.parameter_range[0].is_finite()
+                                                    && use_.parameter_range[1].is_finite()
+                                                    && use_.parameter_range[0]
+                                                        != use_.parameter_range[1]
+                                                    && ir.model.sketch_entities.iter().any(
+                                                        |entity| {
+                                                            entity.id == use_.entity
+                                                                && entity.sketch == *sketch
+                                                        },
+                                                    )
+                                            })
+                                    };
+                                !valid_ring(outer_boundary)
+                                    || hole_boundaries.iter().any(|ring| !valid_ring(ring))
+                            }
                         });
                     if invalid {
                         feature_geometry_error(
                             findings,
                             feature,
-                            "sketch regions are empty, repeated, self-referential, or out of range",
+                            "sketch regions have empty, repeated, invalid, or out-of-range boundaries",
                         );
                     }
                 }

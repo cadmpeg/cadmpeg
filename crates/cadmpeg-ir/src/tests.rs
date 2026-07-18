@@ -2761,7 +2761,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         2,
         ProfileRef::SketchRegions {
             sketch: sketch_id.clone(),
-            regions: vec![SketchProfileRegion {
+            regions: vec![SketchProfileRegion::Loops {
                 outer: 0,
                 holes: vec![0, 0],
             }],
@@ -2787,25 +2787,34 @@ fn sketch_profile_subselections_are_bounds_checked() {
                 == "native sketch profile selections are empty or repeated")
     );
     assert!(findings.iter().any(|finding| {
-        finding.message == "sketch regions are empty, repeated, self-referential, or out of range"
+        finding.message
+            == "sketch regions have empty, repeated, invalid, or out-of-range boundaries"
     }));
 }
 
 #[test]
 fn sketch_regions_round_trip_with_explicit_boundary_roles() {
-    use crate::features::{ProfileRef, SketchProfileRegion};
-    use crate::sketches::SketchId;
+    use crate::features::{ProfileRef, SketchProfileBoundaryUse, SketchProfileRegion};
+    use crate::sketches::{SketchEntityId, SketchId};
 
     let profile = ProfileRef::SketchRegions {
         sketch: SketchId("synthetic:test:sketch#region".into()),
         regions: vec![
-            SketchProfileRegion {
+            SketchProfileRegion::Loops {
                 outer: 2,
                 holes: vec![3, 5],
             },
-            SketchProfileRegion {
+            SketchProfileRegion::Loops {
                 outer: 8,
                 holes: Vec::new(),
+            },
+            SketchProfileRegion::Trimmed {
+                outer_boundary: vec![SketchProfileBoundaryUse {
+                    entity: SketchEntityId("synthetic:test:sketch-entity#curve".into()),
+                    parameter_range: [0.25, 0.75],
+                    reversed: true,
+                }],
+                hole_boundaries: Vec::new(),
             },
         ],
     };
@@ -2817,6 +2826,14 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
         serde_json::json!([3, 5])
     );
     assert!(json["value"]["regions"][1].get("holes").is_none());
+    assert_eq!(
+        json["value"]["regions"][2]["outer_boundary"][0]["parameter_range"],
+        serde_json::json!([0.25, 0.75])
+    );
+    assert_eq!(
+        json["value"]["regions"][2]["outer_boundary"][0]["reversed"],
+        true
+    );
     assert_eq!(
         serde_json::from_value::<ProfileRef>(json).expect("deserialize sketch regions"),
         profile

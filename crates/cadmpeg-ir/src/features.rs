@@ -1370,14 +1370,43 @@ pub enum SweepMode {
     Surface,
 }
 
-/// One connected planar region bounded by solved sketch-profile loops.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
-pub struct SketchProfileRegion {
-    /// Exterior-loop index in the referenced sketch's profile-loop table.
-    pub outer: u32,
-    /// Immediate child loops removed from the exterior interior.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub holes: Vec<u32>,
+/// One directed use of a solved sketch curve in an arrangement boundary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchProfileBoundaryUse {
+    /// Sketch entity supplying the curve geometry.
+    pub entity: crate::sketches::SketchEntityId,
+    /// Parameter endpoints on the source curve, ordered in the entity's stored direction.
+    pub parameter_range: [f64; 2],
+    /// Whether boundary traversal opposes the interval's stored direction.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reversed: bool,
+}
+
+/// One connected planar region bounded by solved sketch curves.
+///
+/// Whole-loop regions retain compact profile indices. Arrangement regions
+/// carry exact trimmed curve uses when their boundary switches source loops at
+/// intersections. The untagged representation preserves the established JSON
+/// shape of whole-loop regions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum SketchProfileRegion {
+    /// Exterior and holes are complete entries in the sketch profile table.
+    Loops {
+        /// Exterior-loop index in the referenced sketch's profile-loop table.
+        outer: u32,
+        /// Immediate child loops removed from the exterior interior.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        holes: Vec<u32>,
+    },
+    /// Boundary rings switch source curves at arrangement intersections.
+    Trimmed {
+        /// Directed exterior boundary ring.
+        outer_boundary: Vec<SketchProfileBoundaryUse>,
+        /// Directed hole boundary rings.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        hole_boundaries: Vec<Vec<SketchProfileBoundaryUse>>,
+    },
 }
 
 /// Profile consumed by a profile-driven feature.

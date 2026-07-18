@@ -4073,14 +4073,17 @@ fn region_with_boundary_selection_members(
     let [region] = regions.first()? else {
         return None;
     };
+    let SketchProfileRegion::Loops { outer, holes } = region else {
+        return None;
+    };
     if regions
         .iter()
         .any(|candidate| *candidate != std::slice::from_ref(region))
     {
         return None;
     }
-    let boundary = std::iter::once(region.outer)
-        .chain(region.holes.iter().copied())
+    let boundary = std::iter::once(*outer)
+        .chain(holes.iter().copied())
         .collect::<HashSet<_>>();
     let member_matches = |member: &DesignExtrudeSelectionMember,
                           selection: &Option<ResolvedProfileSelection>| {
@@ -4101,9 +4104,9 @@ fn region_with_boundary_selection_members(
         .zip(selections)
         .all(|(member, selection)| member_matches(member, selection))
         .then(|| {
-            ResolvedProfileSelection::Regions(vec![SketchProfileRegion {
-                outer: region.outer,
-                holes: region.holes.clone(),
+            ResolvedProfileSelection::Regions(vec![SketchProfileRegion::Loops {
+                outer: *outer,
+                holes: holes.clone(),
             }])
         })
 }
@@ -4310,7 +4313,7 @@ fn region_containing_points(
             holes.push(u32::try_from(candidate).ok()?);
         }
     }
-    Some(SketchProfileRegion {
+    Some(SketchProfileRegion::Loops {
         outer: u32::try_from(outer).ok()?,
         holes,
     })
@@ -16149,7 +16152,7 @@ mod relation_tests {
 
         assert_eq!(
             region_containing_points(&sketch, &entities, &[Point3::new(12.0, 21.0, 12.0)], 1.0e-6,),
-            Some(SketchProfileRegion {
+            Some(SketchProfileRegion::Loops {
                 outer: 0,
                 holes: Vec::new(),
             })
@@ -16246,21 +16249,21 @@ mod relation_tests {
 
         assert_eq!(
             region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6,),
-            Some(SketchProfileRegion {
+            Some(SketchProfileRegion::Loops {
                 outer: 0,
                 holes: vec![1],
             })
         );
         assert_eq!(
             region_containing_points(&sketch, &entities, &[Point3::new(3.0, 3.0, 0.0)], 1.0e-6,),
-            Some(SketchProfileRegion {
+            Some(SketchProfileRegion::Loops {
                 outer: 1,
                 holes: vec![2],
             })
         );
         assert_eq!(
             region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,),
-            Some(SketchProfileRegion {
+            Some(SketchProfileRegion::Loops {
                 outer: 2,
                 holes: Vec::new(),
             })
@@ -16356,7 +16359,7 @@ mod relation_tests {
 
         assert_eq!(
             region_containing_points(&sketch, &entities, &[Point3::new(1.0, 1.0, 0.0)], 1.0e-6),
-            Some(SketchProfileRegion {
+            Some(SketchProfileRegion::Loops {
                 outer: 0,
                 holes: vec![1],
             })
@@ -16422,7 +16425,7 @@ mod relation_tests {
             ],
             native_ref: None,
         };
-        let expected = SketchProfileRegion {
+        let expected = SketchProfileRegion::Loops {
             outer: 0,
             holes: vec![1],
         };
@@ -16433,7 +16436,7 @@ mod relation_tests {
         );
         assert_eq!(
             region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6,),
-            Some(SketchProfileRegion {
+            Some(SketchProfileRegion::Loops {
                 outer: 1,
                 holes: Vec::new(),
             })
@@ -16536,7 +16539,7 @@ mod relation_tests {
 
     #[test]
     fn historical_selection_preserves_first_member_region_order() {
-        let region = |outer| SketchProfileRegion {
+        let region = |outer| SketchProfileRegion::Loops {
             outer,
             holes: Vec::new(),
         };
@@ -16586,14 +16589,14 @@ mod relation_tests {
         let regions = [
             ProfileRef::SketchRegions {
                 sketch: sketch.clone(),
-                regions: vec![SketchProfileRegion {
+                regions: vec![SketchProfileRegion::Loops {
                     outer: 4,
                     holes: vec![5],
                 }],
             },
             ProfileRef::SketchRegions {
                 sketch: sketch.clone(),
-                regions: vec![SketchProfileRegion {
+                regions: vec![SketchProfileRegion::Loops {
                     outer: 2,
                     holes: Vec::new(),
                 }],
@@ -16604,11 +16607,11 @@ mod relation_tests {
             Some(ProfileRef::SketchRegions {
                 sketch: sketch.clone(),
                 regions: vec![
-                    SketchProfileRegion {
+                    SketchProfileRegion::Loops {
                         outer: 4,
                         holes: vec![5],
                     },
-                    SketchProfileRegion {
+                    SketchProfileRegion::Loops {
                         outer: 2,
                         holes: Vec::new(),
                     },
