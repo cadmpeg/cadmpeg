@@ -1298,20 +1298,23 @@ frame and every NURBS control point must lie in the plane. A present native
 pcurve candidate remains authoritative; failure to reconcile it does not fall
 back to a derived projection.
 
-When a native circular edge is a constant-`v` parallel of a solved cylinder,
-circular cone, sphere, or torus, has the surface's local ring radius, and has
-no native pcurve candidate, its pcurve is affine in the edge's angle
-parameter. The pcurve `u` origin is the signed phase from the surface reference
-direction to the circle reference direction, and its `u` direction is `+1` or
-`-1` according to the two frames' handedness. Cylinder and cone `v` is the
-circle center's axial displacement from the surface origin. Sphere `v` is the
-canonical polar angle `atan2(axial_displacement, circle_radius)`. A torus
-parallel requires exactly one signed ring-radius solution and uses its tube
-polar angle. A negative cone or torus ring radius adds a half-turn phase and
-reverses the surface's azimuthal tangent before handedness is applied. The
-pcurve retains the edge parameter interval. Off-axis centers, unequal local
-radii, apex or pole points, elliptical cones, ambiguous torus branches, and
-misaligned frames do not define this pcurve.
+When a native circular or elliptical edge is a constant-`v` parallel of a
+solved cylinder, cone, sphere, or torus, has the surface's local ring radii,
+and has no native pcurve candidate, its pcurve is affine in the edge's angle
+parameter. Cylinders, spheres, and tori require equal conic radii. A cone
+parallel's major radius is the absolute local cone radius and its minor radius
+is that radius times the positive cone ratio. The pcurve `u` origin is the
+signed phase from the surface reference direction to the conic reference
+direction, and its `u` direction is `+1` or `-1` according to the two frames'
+handedness. Cylinder and cone `v` is the conic center's axial displacement from
+the surface origin. Sphere `v` is the canonical polar angle
+`atan2(axial_displacement, conic_radius)`. A torus parallel requires exactly
+one signed ring-radius solution and uses its tube polar angle. A negative cone
+or torus ring radius adds a half-turn phase and reverses the surface's
+azimuthal tangent before handedness is applied. The pcurve retains the edge
+parameter interval. Off-axis centers, unequal local radii, apex or pole points,
+nonpositive cone ratios, ambiguous torus branches, and misaligned frames do not
+define this pcurve.
 
 When a native circular edge with no native pcurve candidate is a sphere or
 torus meridian, its plane contains the surface axis. A sphere meridian is a

@@ -323,10 +323,11 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   Exact line, conic, and NURBS edges on solved planar faces project into exact
   plane-chart pcurves when no native pcurve candidate is present, preserving
   the 3D carrier parameterization and edge interval.
-  Coaxial constant-parameter circular edges on cylinders, circular cones,
-  spheres, and tori project into exact affine surface-chart pcurves under the
-  same absence rule, preserving their native angular parameter and edge
-  interval across either cone nappe and signed torus ring branches.
+  Coaxial constant-parameter circular edges on cylinders, spheres, and tori,
+  plus circular or elliptical edges on matching cone parallels, project into
+  exact affine surface-chart pcurves under the same absence rule, preserving
+  their native angular parameter and edge interval across either cone nappe
+  and signed torus ring branches.
   Exact sphere and torus meridian circles project to constant-azimuth affine
   pcurves, preserving their native angular parameter and edge interval through
   sphere poles.
