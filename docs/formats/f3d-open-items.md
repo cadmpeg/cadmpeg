@@ -51,10 +51,6 @@ This document records F3D semantics that the format specification does not yet d
 - The representation of multiple occurrences of a single target document — whether one `DcXRefPCIFeature` record exists per occurrence or per target — is unresolved.
 - The role of the `0x01`-tagged eight-byte value preceding the owning-design GUID in a `DcXRefPCIFeature` record is unresolved.
 
-## Tolerant topology variants
-
-- The semantic role of the boolean before a modern `tcoedge` selector-one curve is unresolved.
-
 ## Material assets
 
 - The `GenericSchema` InstanceProperties value block carries property carriers at fixed offsets in schema-id lexicographic order; the slot assignment for Boolean, Integer, and Choice fields is unspecified.

@@ -494,7 +494,7 @@ fn decode_selects_tolerant_coedge_extension_from_asm_release() {
                 let mut bytes = Vec::new();
                 t_ref(&mut bytes, -1);
                 t_long(&mut bytes, 1);
-                bytes.extend_from_slice(&[0x0b, 0x0f]);
+                bytes.extend_from_slice(&[0x0a, 0x0f]);
                 t_long(&mut bytes, 22800);
                 bytes.extend_from_slice(&[0x10, 0x0a]);
                 t_dbl(&mut bytes, -2.0);
@@ -505,7 +505,7 @@ fn decode_selects_tolerant_coedge_extension_from_asm_release() {
             },
             crate::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
-                flag: false,
+                curve_reversed: true,
                 payload_token_count: 1,
                 parameter_range: Some([-2.0, 3.0]),
             },
@@ -641,7 +641,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
             parameter_range: [0.0, 1.0],
             extension: crate::records::TolerantCoedgeExtension::EmbeddedCurve {
                 target: None,
-                flag: false,
+                curve_reversed: false,
                 payload_token_count: 0,
                 parameter_range: Some([-2.0, 3.0]),
             },

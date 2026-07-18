@@ -427,7 +427,7 @@ fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedgeExtension>
             Some(TolerantCoedgeExtension::Empty { target })
         }
         Token::Long(1) => {
-            let flag = match record.chunk(15)? {
+            let curve_reversed = match record.chunk(15)? {
                 Token::True => true,
                 Token::False => false,
                 _ => return None,
@@ -460,7 +460,7 @@ fn tolerant_coedge_extension(record: &Record) -> Option<TolerantCoedgeExtension>
             };
             Some(TolerantCoedgeExtension::EmbeddedCurve {
                 target,
-                flag,
+                curve_reversed,
                 payload_token_count: u32::try_from(close.checked_sub(17)?).ok()?,
                 parameter_range,
             })

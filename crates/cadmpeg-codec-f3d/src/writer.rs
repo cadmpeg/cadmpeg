@@ -1243,7 +1243,7 @@ fn native_tolerant_coedge_extension(
         }
         crate::records::TolerantCoedgeExtension::EmbeddedCurve {
             target: None,
-            flag,
+            curve_reversed,
             parameter_range,
             ..
         } => {
@@ -1269,7 +1269,7 @@ fn native_tolerant_coedge_extension(
             };
             native_ref(records, -1);
             native_i64(records, 1);
-            records.push(native_bool(flag));
+            records.push(native_bool(curve_reversed));
             records.push(0x0f);
             native_nurbs_curve(records, curve)?;
             records.push(0x10);

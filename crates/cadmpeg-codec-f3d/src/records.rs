@@ -219,8 +219,9 @@ pub enum TolerantCoedgeExtension {
     EmbeddedCurve {
         /// Nullable record reference preceding the one selector.
         target: Option<i64>,
-        /// Boolean stored immediately before the embedded subtype.
-        flag: bool,
+        /// Whether the embedded intcurve is evaluated with parameter negation.
+        #[serde(alias = "flag")]
+        curve_reversed: bool,
         /// Number of tokens inside the balanced outer subtype delimiters.
         payload_token_count: u32,
         /// Optional parameter interval following the embedded subtype.
