@@ -5573,6 +5573,28 @@ fn native_load_rejects_invalid_source_identities_and_extents() {
 }
 
 #[test]
+fn native_store_paths_write_the_current_schema_version() {
+    let mut borrowed = crate::native::CatiaNative::default();
+    borrowed.version = 1;
+    let mut borrowed_namespace = cadmpeg_ir::NativeNamespace::default();
+    borrowed
+        .store(&mut borrowed_namespace)
+        .expect("store borrowed CATIA namespace");
+    assert_eq!(
+        borrowed_namespace.version,
+        crate::native::CATIA_NATIVE_VERSION
+    );
+
+    let mut owned = crate::native::CatiaNative::default();
+    owned.version = 1;
+    let mut owned_namespace = cadmpeg_ir::NativeNamespace::default();
+    owned
+        .store_owned(&mut owned_namespace)
+        .expect("store owned CATIA namespace");
+    assert_eq!(owned_namespace.version, crate::native::CATIA_NATIVE_VERSION);
+}
+
+#[test]
 fn native_load_restores_segment_source_order_and_validates_retained_views() {
     let mut bytes = Vec::new();
     for index in 0..12 {

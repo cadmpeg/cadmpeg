@@ -1101,7 +1101,7 @@ impl CatiaNative {
         namespace: &mut cadmpeg_ir::NativeNamespace,
     ) -> Result<(), cadmpeg_ir::NativeConvertError> {
         let Self {
-            version,
+            version: _,
             alias_rows,
             mut catalogs,
             design_objects,
@@ -1120,7 +1120,7 @@ impl CatiaNative {
             .flat_map(|graph| std::mem::take(&mut graph.records))
             .collect::<Vec<_>>();
 
-        namespace.version = version;
+        namespace.version = CATIA_NATIVE_VERSION;
         namespace.set_arena_owned("catalogs", catalogs)?;
         namespace.set_arena_owned("design_objects", design_objects)?;
         namespace.set_arena_owned("external_references", external_references)?;
