@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 50;
+pub const CATIA_NATIVE_VERSION: u32 = 51;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -599,6 +599,50 @@ fn validate_native_links(
                 "value block `{}` has an invalid adjacent graph link",
                 block.id
             )));
+        }
+    }
+    for graph in graphs {
+        let Some(graph_end) = graph.byte_offset.checked_add(graph.byte_len) else {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` has an overflowing extent",
+                graph.id
+            )));
+        };
+        let mut candidates = catalogs
+            .iter()
+            .filter(|catalog| catalog.byte_offset == graph_end)
+            .chain(
+                value_blocks
+                    .iter()
+                    .filter(|block| block.byte_offset == graph_end)
+                    .filter_map(|block| {
+                        catalogs.iter().find(|catalog| catalog.id == block.catalog)
+                    }),
+            );
+        let catalog = candidates.next();
+        if candidates.next().is_some()
+            || graph.catalog_byte_offset != catalog.map(|catalog| catalog.byte_offset)
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` has an invalid schema-catalog link",
+                graph.id
+            )));
+        }
+        for record in &graph.records {
+            let expected_class = catalog.and_then(|catalog| {
+                usize::try_from(record.class_ref?).ok().and_then(|ordinal| {
+                    catalog
+                        .entries
+                        .get(ordinal)
+                        .map(|entry| entry.value.as_str())
+                })
+            });
+            if record.class_name.as_deref() != expected_class {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object record `{}` has an invalid schema class",
+                    record.id
+                )));
+            }
         }
     }
     let maximum_records = graphs

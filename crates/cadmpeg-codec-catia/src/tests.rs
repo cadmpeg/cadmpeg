@@ -5513,6 +5513,31 @@ fn native_load_rejects_noncanonical_value_block_views() {
 }
 
 #[test]
+fn native_load_rejects_noncanonical_graph_catalog_views() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
+    assert!(native.object_graphs[0].catalog_byte_offset.is_some());
+    assert!(native.object_graphs[0].records[0].class_name.is_some());
+    let assert_rejected = |malformed: crate::native::CatiaNative| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed
+            .store(&mut namespace)
+            .expect("store malformed graph-catalog view");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+    };
+
+    let mut missing_catalog_link = native.clone();
+    missing_catalog_link.object_graphs[0].catalog_byte_offset = None;
+    assert_rejected(missing_catalog_link);
+
+    let mut invalid_class = native;
+    invalid_class.object_graphs[0].records[0].class_name = Some("WrongClass".to_string());
+    assert_rejected(invalid_class);
+}
+
+#[test]
 fn native_load_restores_segment_source_order_and_validates_retained_views() {
     let mut bytes = Vec::new();
     for index in 0..12 {
