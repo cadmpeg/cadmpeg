@@ -149,9 +149,6 @@ fn transfer_design_features(
         .design_objects
         .iter()
         .filter_map(|object| {
-            if let Some(family) = object.owner_class.as_deref().and_then(catia_feature_family) {
-                return Some((object, family));
-            }
             let mut families = object
                 .field_classes
                 .iter()
@@ -356,14 +353,6 @@ fn catia_feature_family(class: &str) -> Option<(&'static str, CatiaFeatureKind)>
             CatiaFeatureKind::Native("GSMPointBetweenValues"),
         )),
         "GSMPlaneAngle" => Some(("GSMPlaneAngle", CatiaFeatureKind::Native("GSMPlaneAngle"))),
-        "Prism_ThickThin2" => Some((
-            "Prism_ThickThin2",
-            CatiaFeatureKind::Native("Prism_ThickThin2"),
-        )),
-        "Revol_ThickThin1" => Some((
-            "Revol_ThickThin1",
-            CatiaFeatureKind::Native("Revol_ThickThin1"),
-        )),
         _ => None,
     }
 }
