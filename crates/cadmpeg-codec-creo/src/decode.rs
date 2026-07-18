@@ -18312,7 +18312,7 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn carrier_solver_accepts_unique_plane_plane_cylinder_vertex() {
+    fn carrier_solver_accepts_unique_plane_plane_quadric_vertices() {
         let cylinder = CarrierEquation::Cylinder(CylinderEquation {
             origin: [0.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
@@ -18350,6 +18350,26 @@ mod resolved_sketch_tests {
         assert_eq!(
             solve_carriers(&[x_axis_cylinder, y_axis_cylinder, tangent_plane]),
             Some([0.0, 0.0, 1.0])
+        );
+        let cone = CarrierEquation::Cone(ConeEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        });
+        let offset_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 1.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        });
+        let generator_parallel_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [1.0, 0.0, -1.0],
+        });
+        assert_eq!(
+            solve_carriers(&[cone, offset_plane, generator_parallel_plane]),
+            Some([0.0, 1.0, 0.0])
         );
         let secant_plane = PlaneEquation {
             origin: [1.0, 0.0, 0.0],
@@ -19282,152 +19302,34 @@ fn plane_intersection_line(
     Some((origin, normalized(direction)?))
 }
 
-fn intersect_two_planes_with_cylinder(
+fn intersect_two_planes_with_quadric(
     first: PlaneEquation,
     second: PlaneEquation,
-    cylinder: CylinderEquation,
+    carrier: CarrierEquation,
 ) -> Vec<[f64; 3]> {
     let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
         return Vec::new();
     };
-    let Some(axis) = normalized(cylinder.axis) else {
+    let Some(quadric) = carrier_quadric(carrier) else {
         return Vec::new();
     };
-    let relative = std::array::from_fn(|index| line_origin[index] - cylinder.origin[index]);
-    let relative_axial = dot(relative, axis);
-    let direction_axial = dot(direction, axis);
-    let radial = std::array::from_fn(|index| relative[index] - relative_axial * axis[index]);
-    let radial_direction =
-        std::array::from_fn(|index| direction[index] - direction_axial * axis[index]);
-    let quadratic = dot(radial_direction, radial_direction);
-    if quadratic <= 1e-18 {
-        return Vec::new();
-    }
-    let linear = 2.0 * dot(radial, radial_direction);
-    let constant = dot(radial, radial) - cylinder.radius * cylinder.radius;
-    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-    let scale = linear
-        .abs()
-        .max((4.0 * quadratic * constant).abs().sqrt())
-        .max(1.0);
-    if discriminant < -1e-12 * scale * scale {
-        return Vec::new();
-    }
-    let root = discriminant.max(0.0).sqrt();
-    let mut parameters = vec![(-linear - root) / (2.0 * quadratic)];
-    if root > 1e-12 * scale {
-        parameters.push((-linear + root) / (2.0 * quadratic));
-    }
-    parameters
+    let matrix_origin = matrix_vector(quadric.matrix, line_origin);
+    let matrix_direction = matrix_vector(quadric.matrix, direction);
+    let quadratic = dot(direction, matrix_direction);
+    let linear = 2.0 * dot(line_origin, matrix_direction) + dot(quadric.linear, direction);
+    let constant =
+        dot(line_origin, matrix_origin) + dot(quadric.linear, line_origin) + quadric.constant;
+    quadratic_real_roots(quadratic, linear, constant)
         .into_iter()
         .map(|parameter| {
             std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
         })
-        .filter(|point: &[f64; 3]| point.iter().all(|value| value.is_finite()))
-        .collect()
-}
-
-fn intersect_two_planes_with_sphere(
-    first: PlaneEquation,
-    second: PlaneEquation,
-    sphere: SphereEquation,
-) -> Vec<[f64; 3]> {
-    let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
-        return Vec::new();
-    };
-    let relative: [f64; 3] = std::array::from_fn(|index| line_origin[index] - sphere.center[index]);
-    let quadratic = dot(direction, direction);
-    let linear = 2.0 * dot(relative, direction);
-    let constant = dot(relative, relative) - sphere.radius * sphere.radius;
-    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-    let scale = linear
-        .abs()
-        .max((4.0 * quadratic * constant).abs().sqrt())
-        .max(1.0);
-    if discriminant < -1e-12 * scale * scale {
-        return Vec::new();
-    }
-    let root = discriminant.max(0.0).sqrt();
-    let mut parameters = vec![(-linear - root) / (2.0 * quadratic)];
-    if root > 1e-12 * scale {
-        parameters.push((-linear + root) / (2.0 * quadratic));
-    }
-    parameters
-        .into_iter()
-        .map(|parameter| {
-            std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
+        .filter(|point| {
+            point.iter().all(|value| value.is_finite())
+                && point_on_carrier(*point, CarrierEquation::Plane(first))
+                && point_on_carrier(*point, CarrierEquation::Plane(second))
+                && point_on_carrier(*point, carrier)
         })
-        .filter(|point: &[f64; 3]| point.iter().all(|value| value.is_finite()))
-        .collect()
-}
-
-fn intersect_two_planes_with_cone(
-    first: PlaneEquation,
-    second: PlaneEquation,
-    cone: ConeEquation,
-) -> Vec<[f64; 3]> {
-    let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
-        return Vec::new();
-    };
-    let Some(axis) = normalized(cone.axis) else {
-        return Vec::new();
-    };
-    let Some(x_axis) = normalized(cone.ref_direction) else {
-        return Vec::new();
-    };
-    if dot(axis, x_axis).abs() > 1e-10
-        || !cone.ratio.is_finite()
-        || cone.ratio <= 0.0
-        || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle)
-    {
-        return Vec::new();
-    }
-    let y_axis = cross(axis, x_axis);
-    let relative = std::array::from_fn(|index| line_origin[index] - cone.origin[index]);
-    let axial = dot(relative, axis);
-    let axial_direction = dot(direction, axis);
-    let radial_x = dot(relative, x_axis);
-    let radial_y = dot(relative, y_axis) / cone.ratio;
-    let radial_direction_x = dot(direction, x_axis);
-    let radial_direction_y = dot(direction, y_axis) / cone.ratio;
-    let slope = cone.half_angle.tan();
-    let local_radius = cone.radius + axial * slope;
-    let radius_rate = axial_direction * slope;
-    let quadratic = radial_direction_x
-        .mul_add(radial_direction_x, radial_direction_y * radial_direction_y)
-        - radius_rate * radius_rate;
-    let linear = 2.0
-        * (radial_x.mul_add(radial_direction_x, radial_y * radial_direction_y)
-            - local_radius * radius_rate);
-    let constant = radial_x.mul_add(radial_x, radial_y * radial_y) - local_radius * local_radius;
-    let scale = quadratic
-        .abs()
-        .max(linear.abs())
-        .max(constant.abs())
-        .max(1.0);
-    let mut parameters = Vec::<f64>::new();
-    if quadratic.abs() <= 1e-14 * scale {
-        if linear.abs() <= 1e-14 * scale {
-            return Vec::new();
-        }
-        parameters.push(-constant / linear);
-    } else {
-        let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
-        if discriminant < -1e-12 * scale * scale {
-            return Vec::new();
-        }
-        let root = discriminant.max(0.0).sqrt();
-        parameters.push((-linear - root) / (2.0 * quadratic));
-        if root > 1e-12 * scale {
-            parameters.push((-linear + root) / (2.0 * quadratic));
-        }
-    }
-    parameters
-        .into_iter()
-        .map(|parameter| {
-            std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
-        })
-        .filter(|point: &[f64; 3]| point.iter().all(|value| value.is_finite()))
         .collect()
 }
 
@@ -20237,23 +20139,20 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                     } else {
                         candidates.extend(reduced);
                     }
-                } else if let ([first, second], [cylinder]) =
-                    (planes.as_slice(), cylinders.as_slice())
+                } else if planes.len() == 2
+                    && tori.is_empty()
+                    && cylinders.len() + cones.len() + spheres.len() == 1
                 {
-                    candidates.extend(intersect_two_planes_with_cylinder(
-                        *first, *second, *cylinder,
+                    let quadric = cylinders
+                        .first()
+                        .copied()
+                        .map(CarrierEquation::Cylinder)
+                        .or_else(|| cones.first().copied().map(CarrierEquation::Cone))
+                        .or_else(|| spheres.first().copied().map(CarrierEquation::Sphere))
+                        .expect("one quadric carrier");
+                    candidates.extend(intersect_two_planes_with_quadric(
+                        planes[0], planes[1], quadric,
                     ));
-                } else if let ([first, second], [], [sphere]) =
-                    (planes.as_slice(), cylinders.as_slice(), spheres.as_slice())
-                {
-                    if cones.is_empty() && tori.is_empty() {
-                        candidates
-                            .extend(intersect_two_planes_with_sphere(*first, *second, *sphere));
-                    }
-                } else if let ([first, second], [cone]) = (planes.as_slice(), cones.as_slice()) {
-                    if cylinders.is_empty() && spheres.is_empty() && tori.is_empty() {
-                        candidates.extend(intersect_two_planes_with_cone(*first, *second, *cone));
-                    }
                 } else if let ([first, second], [torus]) = (planes.as_slice(), tori.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
                         candidates.extend(intersect_two_planes_with_torus(*first, *second, *torus));

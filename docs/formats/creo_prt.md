@@ -1006,6 +1006,12 @@ vertex is emitted only when exactly one resulting point satisfies every
 incident carrier. Proportional coaxial cones use their exact section reduction
 before this general resultant path.
 
+Two independent planes define a model-space line. Substitution of that line
+into any cylinder, positive-ratio cone, or sphere quadric gives a polynomial of
+degree at most two. Its real roots are the complete candidate set, including a
+single linear root when the quadratic term vanishes. A topology vertex is
+emitted only when one candidate satisfies every incident carrier.
+
 A plane normal to a circular cone axis intersects it in one circle away from the apex. Substitution of an oblique plane basis into the cone equation yields a diagonal quadratic whose signs distinguish ellipse, parabola, and hyperbola carriers. Completing the square gives the conic center or vertex, in-plane principal direction, radii, and parabola focal distance.
 
 A positive-ratio elliptical cone uses local frame coordinates
