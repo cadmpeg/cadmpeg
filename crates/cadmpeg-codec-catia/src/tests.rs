@@ -3153,28 +3153,57 @@ fn standard_surface_roster_walks_freeform_and_analytic_records() {
 
 #[test]
 fn plane_bounds_bind_normals_by_persistent_carrier_tag() {
-    fn bounds_record(tag: u32, center: [f32; 3]) -> Vec<u8> {
+    fn bounds_record(
+        tag: u32,
+        center: [f32; 3],
+        half: [f32; 3],
+        sphere: [f32; 3],
+        radius: f32,
+    ) -> Vec<u8> {
         let mut bytes = vec![0xff];
         bytes.extend_from_slice(&tag.to_le_bytes()[..3]);
         bytes.extend_from_slice(&[0x00, 0x02, 0x00, 0x33, 0x32]);
         for value in [
-            center[0], center[1], center[2], 1.0, 1.0, 1.0, center[0], center[1], center[2], 4.0,
+            center[0], center[1], center[2], half[0], half[1], half[2], sphere[0], sphere[1],
+            sphere[2], radius,
         ] {
             bytes.extend_from_slice(&le_f32(value));
         }
         bytes
     }
 
-    let mut bytes = bounds_record(0x010203, [1.0, 2.0, 3.0]);
-    bytes.extend(bounds_record(0x040506, [4.0, 5.0, 6.0]));
-    let normals = HashMap::from([(0x040506, [0.0, 1.0, 0.0]), (0x010203, [1.0, 0.0, 0.0])]);
+    let mut bytes = bounds_record(0x010203, [1.0, 2.0, 3.0], [1.0; 3], [1.0, 2.0, 3.0], 4.0);
+    bytes.extend(bounds_record(
+        0x040506,
+        [4.0, 5.0, 6.0],
+        [1.0; 3],
+        [4.0, 5.0, 6.0],
+        4.0,
+    ));
+    bytes.extend(bounds_record(
+        0x070809,
+        [0.0, 0.0, 50.0],
+        [2.5, 2.5, 0.0],
+        [5.2e-7, 1.6e-7, 50.0],
+        2.5,
+    ));
+    let normals = HashMap::from([
+        (0x040506, [0.0, 1.0, 0.0]),
+        (0x010203, [1.0, 0.0, 0.0]),
+        (0x070809, [0.0, 0.0, 1.0]),
+    ]);
     let planes = crate::geometry::plane_params(&bytes, &normals);
 
-    assert_eq!(planes.len(), 2);
+    assert_eq!(planes.len(), 3);
     assert_eq!(planes[0].target, 0x010203);
     assert_eq!(planes[0].normal, Vector3::new(1.0, 0.0, 0.0));
     assert_eq!(planes[1].target, 0x040506);
     assert_eq!(planes[1].normal, Vector3::new(0.0, 1.0, 0.0));
+    assert_eq!(planes[2].target, 0x070809);
+    assert_eq!(
+        planes[2].origin,
+        Point3::new(f64::from(5.2e-7f32), f64::from(1.6e-7f32), 50.0)
+    );
 }
 
 #[test]

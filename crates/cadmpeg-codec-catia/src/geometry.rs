@@ -443,6 +443,7 @@ pub fn plane_params<S: std::hash::BuildHasher>(
     normals: &HashMap<u32, [f64; 3], S>,
 ) -> Vec<PlaneParams> {
     const MARKER: &[u8; 5] = b"\x00\x02\x00\x33\x32";
+    const TOLERANCE: f32 = 1e-5;
 
     let mut out = Vec::new();
     let mut p = 0usize;
@@ -465,7 +466,11 @@ pub fn plane_params<S: std::hash::BuildHasher>(
         let sphere = [values[6], values[7], values[8]];
         let radius = values[9];
         if radius <= 0.0
-            || (0..3).any(|axis| (values[axis] - sphere[axis]).abs() + half[axis] > radius)
+            || (0..3).any(|axis| {
+                let center_delta = (values[axis] - sphere[axis]).abs();
+                center_delta + half[axis]
+                    > radius + TOLERANCE * (1.0 + center_delta.max(half[axis]).max(radius.abs()))
+            })
         {
             continue;
         }
