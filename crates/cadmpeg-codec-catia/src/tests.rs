@@ -4105,6 +4105,48 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 }
 
 #[test]
+fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
+    use crate::native::CatiaConsolidatedSupportBinding;
+
+    let mut bytes = b2_cylinder_stream();
+    for point in [
+        [1.0f32, 4.0, 3.0],
+        [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+    ] {
+        bytes.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    bytes.extend_from_slice(&a5_native_edge_run_stream(6, 139, 142));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let [run] = native.consolidated_edge_runs.as_slice() else {
+        panic!("one consolidated edge run");
+    };
+    assert!(run.support_bindings.iter().all(|binding| matches!(
+        binding,
+        Some(CatiaConsolidatedSupportBinding::Cylinder { .. })
+    )));
+    assert_eq!(run.shared_loci.as_ref().map(Vec::len), Some(2));
+    assert_eq!(
+        run.endpoint_loci,
+        run.shared_loci
+            .as_ref()
+            .map(|loci| [loci[0], loci[loci.len() - 1]])
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store resolved CATIA edge run");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load resolved CATIA edge run"),
+        native
+    );
+}
+
+#[test]
 fn consolidated_pcurve_parser_reads_width2_frame() {
     let pcurves = crate::geometry::a5_pcurves(&a6_pcurve_stream());
     assert_eq!(pcurves.len(), 1);

@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 54;
+pub const CATIA_NATIVE_VERSION: u32 = 55;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -113,6 +113,50 @@ pub struct CatiaConsolidatedEdgeRun {
     pub parameter_selectors: [u32; 2],
     /// Terminal edge-node layout byte.
     pub tail: u8,
+    /// Uniquely resolved support carrier for each pcurve side.
+    #[serde(default)]
+    pub support_bindings: [Option<CatiaConsolidatedSupportBinding>; 2],
+    /// Index-aligned 3D loci shared by every resolved support side.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shared_loci: Option<Vec<[f64; 3]>>,
+    /// First and last shared loci in physical edge direction.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint_loci: Option<[[f64; 3]; 2]>,
+}
+
+/// Exact carrier selected for one side of a consolidated historical edge.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum CatiaConsolidatedSupportBinding {
+    /// Standalone `b2 03 28` cylinder.
+    Cylinder {
+        /// Carrier record byte offset.
+        byte_offset: u64,
+    },
+    /// Cylinder frame embedded in a `b2 03 60` wrapper.
+    EmbeddedCylinder {
+        /// Embedded frame byte offset.
+        byte_offset: u64,
+        /// Enclosing wrapper byte offset.
+        wrapper_byte_offset: u64,
+    },
+    /// Arc-length `b2 03 19` circle.
+    Circle {
+        /// Carrier record byte offset.
+        byte_offset: u64,
+    },
+    /// `b2 03 29` cone.
+    Cone {
+        /// Carrier record byte offset.
+        byte_offset: u64,
+    },
+    /// Consolidated NURBS carrier with an optional constant normal offset.
+    NurbsCarrier {
+        /// Carrier record byte offset.
+        byte_offset: u64,
+        /// Signed normal offset in millimetres.
+        offset: f64,
+    },
 }
 
 /// One complete outer FINJPL segment retained with its framing identity.
@@ -586,6 +630,10 @@ fn consolidated_edge_runs(
         .iter()
         .map(|pcurve| (pcurve.byte_offset, pcurve.id.clone()))
         .collect::<HashMap<_, _>>();
+    let resolved = geometry::resolve_consolidated_edge_blocks(bytes)
+        .into_iter()
+        .map(|block| (block.block.pcurves[0].pos, block))
+        .collect::<HashMap<_, _>>();
     geometry::consolidated_topology_edge_runs(bytes)
         .into_iter()
         .filter_map(|run| {
@@ -616,6 +664,7 @@ fn consolidated_edge_runs(
         .enumerate()
         .filter_map(
             |(index, (run, use_references, use_senses, pcurve_offsets))| {
+                let resolved = resolved.get(&run.edge.pcurves[0].pos);
                 Some(CatiaConsolidatedEdgeRun {
                     id: format!("catia:consolidated:edge-run#{index}"),
                     byte_offset: pcurve_offsets[0],
@@ -631,10 +680,59 @@ fn consolidated_edge_runs(
                     vertex_refs: [run.node.start_vertex_ref, run.node.end_vertex_ref],
                     parameter_selectors: [run.node.start_parameter_ref, run.node.end_parameter_ref],
                     tail: run.node.tail,
+                    support_bindings: resolved.map_or([None, None], |resolved| {
+                        resolved.supports.each_ref().map(|binding| {
+                            binding.as_ref().map(native_consolidated_support_binding)
+                        })
+                    }),
+                    shared_loci: resolved
+                        .and_then(|resolved| resolved.shared_loci.as_ref())
+                        .map(|points| points.iter().map(point_coordinates).collect()),
+                    endpoint_loci: resolved
+                        .and_then(|resolved| resolved.endpoint_loci.as_ref())
+                        .map(|points| points.map(|point| point_coordinates(&point))),
                 })
             },
         )
         .collect()
+}
+
+fn point_coordinates(point: &cadmpeg_ir::math::Point3) -> [f64; 3] {
+    [point.x, point.y, point.z]
+}
+
+fn native_consolidated_support_binding(
+    binding: &geometry::ConsolidatedSupportBinding,
+) -> CatiaConsolidatedSupportBinding {
+    match binding {
+        geometry::ConsolidatedSupportBinding::Cylinder { pos } => {
+            CatiaConsolidatedSupportBinding::Cylinder {
+                byte_offset: *pos as u64,
+            }
+        }
+        geometry::ConsolidatedSupportBinding::EmbeddedCylinder { pos, wrapper_pos } => {
+            CatiaConsolidatedSupportBinding::EmbeddedCylinder {
+                byte_offset: *pos as u64,
+                wrapper_byte_offset: *wrapper_pos as u64,
+            }
+        }
+        geometry::ConsolidatedSupportBinding::Circle { pos } => {
+            CatiaConsolidatedSupportBinding::Circle {
+                byte_offset: *pos as u64,
+            }
+        }
+        geometry::ConsolidatedSupportBinding::Cone { pos } => {
+            CatiaConsolidatedSupportBinding::Cone {
+                byte_offset: *pos as u64,
+            }
+        }
+        geometry::ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
+            CatiaConsolidatedSupportBinding::NurbsCarrier {
+                byte_offset: *pos as u64,
+                offset: *offset,
+            }
+        }
+    }
 }
 
 fn validate_consolidated_pcurves(
@@ -693,6 +791,26 @@ fn validate_consolidated_edge_runs(
             .curve_ref
             .checked_sub(2)
             .zip(run.curve_ref.checked_sub(1));
+        let loci_valid = run.shared_loci.as_ref().map_or_else(
+            || run.endpoint_loci.is_none(),
+            |loci| {
+                loci.len() >= 2
+                    && loci.iter().flatten().all(|value| value.is_finite())
+                    && run.endpoint_loci
+                        == loci
+                            .first()
+                            .copied()
+                            .zip(loci.last().copied())
+                            .map(|(first, last)| [first, last])
+            },
+        );
+        let bindings_valid = run.support_bindings.iter().flatten().all(|binding| {
+            !matches!(
+                binding,
+                CatiaConsolidatedSupportBinding::NurbsCarrier { offset, .. }
+                    if !offset.is_finite()
+            )
+        });
         if run.id != expected_id
             || pcurve_offsets[0] != Some(run.byte_offset)
             || pcurve_offsets[1].is_none()
@@ -708,6 +826,8 @@ fn validate_consolidated_edge_runs(
             || run.use_senses != [0x88, 0x84]
             || run.parameter_selectors != [2, 1]
             || !matches!(run.tail, 0x01 | 0x21)
+            || !bindings_valid
+            || !loci_valid
             || index > 0 && runs[index - 1].byte_offset >= run.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
