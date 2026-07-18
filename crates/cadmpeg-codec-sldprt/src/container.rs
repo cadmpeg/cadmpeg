@@ -171,17 +171,31 @@ pub struct ContainerScan {
 
 /// The outer header magic length (`file_id` + `version`).
 const OUTER_HEADER_LEN: usize = 8;
+const COMPOUND_FILE_MAGIC: [u8; 8] = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
 
 /// Test whether a prefix contains the container marker after its outer header.
 ///
 /// This structural check does not validate block framing or CRC-32.
 pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
+    if prefix.starts_with(&COMPOUND_FILE_MAGIC)
+        && contains_utf16le_ascii(prefix, b"ISolidWorksInformation")
+    {
+        return true;
+    }
     if prefix.len() < OUTER_HEADER_LEN + MARKER.len() {
         return false;
     }
     prefix[OUTER_HEADER_LEN..]
         .windows(MARKER.len())
         .any(|w| w == MARKER)
+}
+
+fn contains_utf16le_ascii(haystack: &[u8], text: &[u8]) -> bool {
+    let mut encoded = Vec::with_capacity(text.len() * 2);
+    for byte in text {
+        encoded.extend_from_slice(&[*byte, 0]);
+    }
+    contains(haystack, &encoded)
 }
 
 /// Read and scan a complete `.sldprt` stream.

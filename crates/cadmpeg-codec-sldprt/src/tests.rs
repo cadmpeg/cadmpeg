@@ -1709,6 +1709,22 @@ fn detect_high_on_marker_after_header() {
 }
 
 #[test]
+fn detect_high_on_solidworks_compound_document_directory() {
+    let mut file = vec![0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+    file.resize(512, 0);
+    for byte in b"ISolidWorksInformation" {
+        file.extend_from_slice(&[*byte, 0]);
+    }
+    assert_eq!(SldprtCodec.detect(&file), Confidence::High);
+
+    let generic_compound_document = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+    assert_eq!(
+        SldprtCodec.detect(&generic_compound_document),
+        Confidence::No
+    );
+}
+
+#[test]
 fn scan_classifies_blocks_cells_and_directory() {
     let f = synthetic_sldprt();
     let scan = container::scan_bytes(&f);

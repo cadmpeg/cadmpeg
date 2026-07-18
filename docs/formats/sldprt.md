@@ -6,6 +6,11 @@
 
 ## 1. File container
 
+SLDPRT uses two outer envelopes. The block envelope begins with the header and
+frames below. The compound-document envelope begins with the OLE2 magic
+`d0 cf 11 e0 a1 b1 1a e1`; its UTF-16LE directory contains the
+`ISolidWorksInformation` stream.
+
 ### 1.1 Outer header and block frame
 
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.
