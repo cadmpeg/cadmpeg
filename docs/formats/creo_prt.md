@@ -1313,6 +1313,16 @@ pcurve retains the edge parameter interval. Off-axis centers, unequal local
 radii, apex or pole points, elliptical cones, ambiguous torus branches, and
 misaligned frames do not define this pcurve.
 
+When a native circular edge with no native pcurve candidate is a torus
+meridian, its center is one major radius from the torus center in the torus
+equatorial plane, its radius is the minor radius, and its plane contains the
+torus axis. The center direction fixes constant `u`. The signed phase from that
+center direction toward the torus axis fixes the pcurve `v` origin, and the
+circle-frame handedness fixes a `v` direction of `+1` or `-1`. This affine
+pcurve retains the circle's native angle parameter and the edge parameter
+interval. A displaced center, unequal radius, or misaligned meridian plane does
+not define this pcurve.
+
 A NURBS curve has intrinsic domain
 `[knots[degree], knots[control_point_count]]`. A native edge on a nonperiodic
 higher-degree curve uses that complete domain when its two solved vertices
