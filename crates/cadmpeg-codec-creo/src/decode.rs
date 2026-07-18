@@ -21052,6 +21052,71 @@ fn planar_curve_pcurve(
     }
 }
 
+fn cylindrical_circle_pcurve(
+    surface: &SurfaceGeometry,
+    geometry: &CurveGeometry,
+) -> Option<PcurveGeometry> {
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        ref_direction,
+        radius: surface_radius,
+    } = surface
+    else {
+        return None;
+    };
+    let CurveGeometry::Circle {
+        center,
+        axis: circle_axis,
+        ref_direction: circle_x,
+        radius: circle_radius,
+    } = geometry
+    else {
+        return None;
+    };
+    (surface_radius.is_finite()
+        && circle_radius.is_finite()
+        && *surface_radius > 0.0
+        && *circle_radius > 0.0)
+        .then_some(())?;
+    let unit = |vector: [f64; 3]| {
+        let length = dot(vector, vector).sqrt();
+        (length.is_finite() && (length - 1.0).abs() <= 1e-10).then_some(vector)
+    };
+    let surface_axis = unit([axis.x, axis.y, axis.z])?;
+    let surface_x = unit([ref_direction.x, ref_direction.y, ref_direction.z])?;
+    (dot(surface_axis, surface_x).abs() <= 1e-10).then_some(())?;
+    let surface_y = cross(surface_axis, surface_x);
+    let circle_axis = unit([circle_axis.x, circle_axis.y, circle_axis.z])?;
+    let circle_x = unit([circle_x.x, circle_x.y, circle_x.z])?;
+    (dot(circle_axis, circle_x).abs() <= 1e-10
+        && (dot(circle_axis, surface_axis).abs() - 1.0).abs() <= 1e-10)
+        .then_some(())?;
+    let circle_y = cross(circle_axis, circle_x);
+    let center_relative = [
+        center.x - origin.x,
+        center.y - origin.y,
+        center.z - origin.z,
+    ];
+    let v = dot(center_relative, surface_axis);
+    let center_radial =
+        std::array::from_fn::<_, 3, _>(|index| center_relative[index] - v * surface_axis[index]);
+    let scale = surface_radius.abs().max(circle_radius.abs()).max(1.0);
+    (dot(center_radial, center_radial).sqrt() <= 1e-9 * scale
+        && (surface_radius - circle_radius).abs() <= 1e-9 * scale)
+        .then_some(())?;
+    let phase = dot(circle_x, surface_y).atan2(dot(circle_x, surface_x));
+    let surface_tangent = std::array::from_fn::<_, 3, _>(|index| {
+        -phase.sin() * surface_x[index] + phase.cos() * surface_y[index]
+    });
+    let orientation = dot(circle_y, surface_tangent);
+    ((orientation.abs() - 1.0).abs() <= 1e-10).then_some(())?;
+    Some(PcurveGeometry::Line {
+        origin: Point2::new(phase, v),
+        direction: Point2::new(orientation.signum(), 0.0),
+    })
+}
+
 #[cfg(test)]
 mod native_pcurve_tests {
     use super::*;
@@ -21181,6 +21246,54 @@ mod native_pcurve_tests {
             periodic: false,
         });
         assert!(planar_curve_pcurve(&plane(), &malformed_nurbs).is_none());
+    }
+
+    #[test]
+    fn projects_a_coaxial_cylinder_circle_with_its_native_angle() {
+        let surface = SurfaceGeometry::Cylinder {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 8.0),
+            axis: Vector3::new(0.0, 0.0, -1.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius: 2.0,
+        };
+        let pcurve = cylindrical_circle_pcurve(&surface, &circle).expect("cylinder pcurve");
+        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+            panic!("cylinder-circle pcurve: {pcurve:#?}");
+        };
+        assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
+        assert!((origin.v - 5.0).abs() <= 1e-12);
+        assert_eq!(*direction, Point2::new(-1.0, 0.0));
+        for parameter in [-2.0, 0.0, 1.25, 4.0] {
+            let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
+            let mapped =
+                cadmpeg_ir::eval::surface_point(&surface, uv.u, uv.v).expect("surface point");
+            let expected = cadmpeg_ir::eval::curve_point(&circle, parameter).expect("curve point");
+            assert!((mapped.x - expected.x).abs() <= 1e-10);
+            assert!((mapped.y - expected.y).abs() <= 1e-10);
+            assert!((mapped.z - expected.z).abs() <= 1e-10);
+        }
+
+        let off_axis = CurveGeometry::Circle {
+            center: Point3::new(1.1, 2.0, 8.0),
+            axis: Vector3::new(0.0, 0.0, -1.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius: 2.0,
+        };
+        assert!(cylindrical_circle_pcurve(&surface, &off_axis).is_none());
+
+        let scaled_frame = SurfaceGeometry::Cylinder {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 2.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        assert!(cylindrical_circle_pcurve(&scaled_frame, &circle).is_none());
     }
 }
 
@@ -21716,11 +21829,21 @@ fn transfer_native_brep(
                                 candidate.id
                                     == EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
                             })?;
+                            let (geometry, tag) =
+                                planar_curve_pcurve(&surface.geometry, &curve.geometry)
+                                    .map(|geometry| (geometry, "projected_planar_pcurve"))
+                                    .or_else(|| {
+                                        cylindrical_circle_pcurve(
+                                            &surface.geometry,
+                                            &curve.geometry,
+                                        )
+                                        .map(|geometry| (geometry, "projected_cylindrical_pcurve"))
+                                    })?;
                             Some((
-                                planar_curve_pcurve(&surface.geometry, &curve.geometry)?,
+                                geometry,
                                 edge.param_range,
                                 row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
-                                "projected_planar_pcurve",
+                                tag,
                             ))
                         });
                     let pcurves = pcurve_geometry

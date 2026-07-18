@@ -1298,6 +1298,15 @@ frame and every NURBS control point must lie in the plane. A present native
 pcurve candidate remains authoritative; failure to reconcile it does not fall
 back to a derived projection.
 
+When a native circular edge is coaxial with a solved cylindrical face, has the
+cylinder radius, and has no native pcurve candidate, its pcurve is affine in
+the edge's angle parameter. The pcurve `u` origin is the signed phase from the
+cylinder reference direction to the circle reference direction, its `u`
+direction is `+1` or `-1` according to the two frames' handedness, and `v` is
+the circle center's axial displacement from the cylinder origin. The pcurve
+retains the edge parameter interval. Off-axis centers, unequal radii, and
+misaligned frames do not define this pcurve.
+
 A NURBS curve has intrinsic domain
 `[knots[degree], knots[control_point_count]]`. A native edge on a nonperiodic
 higher-degree curve uses that complete domain when its two solved vertices
