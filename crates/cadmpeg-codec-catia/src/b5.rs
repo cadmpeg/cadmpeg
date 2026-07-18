@@ -17,9 +17,6 @@ pub struct B5Graph {
     /// reference-closed graph; `false` when the graph is its maximal closed
     /// subset.
     pub complete: bool,
-    /// Topology-bearing `b5 03` records from length-closed A8/B5 frame runs, in
-    /// stream order.
-    pub records: Vec<B5Record>,
     /// `b5 03 5f` face nodes, in stream declaration order (equal to STEP
     /// `ADVANCED_FACE` order, [spec §6.6](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#66-object-stream-topology-b5-03)).
     pub faces: Vec<B5Face>,
@@ -613,7 +610,6 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
         });
     Some(B5Graph {
         complete,
-        records,
         faces,
         loops,
         pcurves,
@@ -1171,7 +1167,10 @@ fn bind_edge_vertices(
     let mut edges: BTreeMap<u32, [usize; 2]> = BTreeMap::new();
     for loop_ in loops.values() {
         for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
-            let Some(endpoints) = pcurves.get(&pcurve_id)?.lifted_endpoints else {
+            let Some(endpoints) = pcurves
+                .get(&pcurve_id)
+                .and_then(|pcurve| pcurve.lifted_endpoints)
+            else {
                 continue;
             };
             let indices: Option<[usize; 2]> = endpoints
@@ -1939,7 +1938,61 @@ fn compact(bytes: &[u8], position: &mut usize) -> Option<u32> {
 }
 
 fn records(bytes: &[u8]) -> Vec<B5Record> {
-    let recurse: fn(&[u8]) -> Vec<B5Record> = records;
+    let mut records = framed_records(bytes);
+    let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
+    let mut pending: HashSet<u32> = records.iter().flat_map(record_references).collect();
+    let mut admitted = HashSet::new();
+    loop {
+        pending.retain(|object_id| !existing.contains(object_id) && !admitted.contains(object_id));
+        if pending.is_empty() {
+            break;
+        }
+        let mut candidates = HashMap::<u32, Option<B5Record>>::new();
+        for offset in 0..bytes.len().saturating_sub(8) {
+            let Some((end, family, class, object_id)) = object_frame(bytes, offset) else {
+                continue;
+            };
+            if !pending.contains(&object_id) || !is_reference_dependency_class(family, class) {
+                continue;
+            }
+            let header = if family == 0xa8 { 11 } else { 8 };
+            let candidate = B5Record {
+                offset,
+                family,
+                class,
+                object_id,
+                payload: bytes[offset + header..end].to_vec(),
+            };
+            candidates
+                .entry(object_id)
+                .and_modify(|slot| {
+                    if slot.as_ref().is_some_and(|existing| {
+                        existing.family != candidate.family
+                            || existing.class != candidate.class
+                            || existing.payload != candidate.payload
+                    }) {
+                        *slot = None;
+                    }
+                })
+                .or_insert(Some(candidate));
+        }
+        let mut found = candidates.into_values().flatten().collect::<Vec<_>>();
+        if found.is_empty() {
+            break;
+        }
+        found.sort_unstable_by_key(|record| record.offset);
+        pending.clear();
+        for candidate in found {
+            admitted.insert(candidate.object_id);
+            pending.extend(record_references(&candidate));
+            records.push(candidate);
+        }
+    }
+    records
+}
+
+fn framed_records(bytes: &[u8]) -> Vec<B5Record> {
+    let recurse: fn(&[u8]) -> Vec<B5Record> = framed_records;
     let mut records = Vec::new();
     let mut seen = HashMap::<u32, (u8, Vec<u8>)>::new();
     for run in object_runs(bytes) {
@@ -1992,51 +2045,6 @@ fn records(bytes: &[u8]) -> Vec<B5Record> {
             });
         }
     }
-    let existing: HashSet<u32> = records.iter().map(|record| record.object_id).collect();
-    let mut candidates = HashMap::<u32, Option<B5Record>>::new();
-    for offset in 0..bytes.len().saturating_sub(8) {
-        let Some((end, family, class, object_id)) = object_frame(bytes, offset) else {
-            continue;
-        };
-        if existing.contains(&object_id) || !is_reference_dependency_class(family, class) {
-            continue;
-        }
-        let header = if family == 0xa8 { 11 } else { 8 };
-        let candidate = B5Record {
-            offset,
-            family,
-            class,
-            object_id,
-            payload: bytes[offset + header..end].to_vec(),
-        };
-        candidates
-            .entry(object_id)
-            .and_modify(|slot| {
-                if slot.as_ref().is_some_and(|existing| {
-                    existing.family != candidate.family
-                        || existing.class != candidate.class
-                        || existing.payload != candidate.payload
-                }) {
-                    *slot = None;
-                }
-            })
-            .or_insert(Some(candidate));
-    }
-    let mut pending: Vec<u32> = records.iter().flat_map(record_references).collect();
-    let mut admitted = HashSet::new();
-    let mut isolated = Vec::new();
-    while let Some(object_id) = pending.pop() {
-        if existing.contains(&object_id) || !admitted.insert(object_id) {
-            continue;
-        }
-        let Some(Some(candidate)) = candidates.get(&object_id) else {
-            continue;
-        };
-        pending.extend(record_references(candidate));
-        isolated.push(candidate.clone());
-    }
-    isolated.sort_unstable_by_key(|record| record.offset);
-    records.extend(isolated);
     records
 }
 
@@ -2334,6 +2342,20 @@ mod tests {
         assert_eq!(
             loop_chain_senses(&loop_, &BTreeMap::from([(3, [0, 1])])),
             None
+        );
+    }
+
+    #[test]
+    fn opaque_pcurve_occurrences_defer_endpoint_binding_to_native_edges() {
+        let loop_ = B5Loop {
+            object_id: 1,
+            pcurves: vec![2],
+            edges: vec![3],
+            surface: 4,
+        };
+        assert_eq!(
+            bind_edge_vertices(&BTreeMap::from([(1, loop_)]), &BTreeMap::new(), &[]),
+            Some(BTreeMap::new())
         );
     }
 

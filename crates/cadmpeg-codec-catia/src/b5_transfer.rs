@@ -115,7 +115,6 @@ pub(crate) fn transfer(
         }
         graph.complete = true;
     }
-    graph.records.clear();
     transfer_complete(ir, annotations, &graph, payload)
 }
 
@@ -244,13 +243,15 @@ fn transfer_complete(
             }) {
                 supports.push((loop_.surface, pcurve_id, support_range));
             }
-            let lifted = lifted_curve_geometry(pcurve, surface).or_else(|| {
-                let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
-                else {
-                    return None;
-                };
-                nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
-            });
+            let lifted = lifted_curve_geometry(pcurve, surface)
+                .or_else(|| {
+                    let SurfaceGeometry::Nurbs(cache) = &surface_plan.get(&loop_.surface)?.geometry
+                    else {
+                        return None;
+                    };
+                    nurbs_isocurve(pcurve, cache).map(CurveGeometry::Nurbs)
+                })
+                .filter(curve_cache_has_ordered_knots);
             if let Some(geometry) = lifted {
                 let endpoints = graph.edge_vertices[&edge_id];
                 let (Some(edge_start), Some(edge_end)) = (
@@ -343,6 +344,31 @@ fn transfer_complete(
     let Some(loop_orientation) = orient_loop_members(graph, loop_senses) else {
         return false;
     };
+    let exact_support_edges = edge_support_plan
+        .iter()
+        .filter_map(|(&edge, supports)| {
+            let endpoints = graph
+                .edge_vertices
+                .get(&edge)?
+                .map(|vertex| b5_vertex_point(graph, vertex));
+            let [Some(start), Some(end)] = endpoints else {
+                return None;
+            };
+            b5_supports_follow_edge(supports, [start, end], &surface_plan, &pcurve_plan)
+                .then_some(edge)
+        })
+        .collect::<HashSet<_>>();
+    let exact_support_curves = edge_support_plan
+        .iter()
+        .filter_map(|(&edge, supports)| {
+            edge_curve_plan
+                .get(&edge)
+                .is_none_or(|plan| {
+                    b5_supports_follow_curve(supports, plan, &surface_plan, &pcurve_plan)
+                })
+                .then_some(edge)
+        })
+        .collect::<HashSet<_>>();
     let vertex_tolerances = transfer_vertex_tolerances(graph, &pcurve_plan, &surface_plan);
 
     let used_vertices: HashSet<usize> = edge_ids
@@ -575,7 +601,7 @@ fn transfer_complete(
         let id = EdgeId(format!("catia:b5:edge#{edge_id}"));
         let curve_id = CurveId(format!("catia:b5:curve#{edge_id}"));
         let endpoints = graph.edge_vertices[&edge_id];
-        let curve_plan = edge_curve_plan
+        let mut curve_plan = edge_curve_plan
             .remove(&edge_id)
             .unwrap_or_else(|| CurvePlan {
                 geometry: CurveGeometry::Unknown {
@@ -585,6 +611,22 @@ fn transfer_complete(
                 edge_tolerance: None,
                 cache_fit_tolerance: None,
             });
+        if !curve_cache_has_ordered_knots(&curve_plan.geometry) {
+            curve_plan = CurvePlan {
+                geometry: CurveGeometry::Unknown {
+                    record: Some(payload.clone()),
+                },
+                parameter_range: None,
+                edge_tolerance: None,
+                cache_fit_tolerance: None,
+            };
+            edge_helix_plan.remove(&edge_id);
+        }
+        let helix = edge_helix_plan.remove(&edge_id);
+        let edge_range = curve_plan.parameter_range;
+        let support_curve_range = curve_plan_parameter_range(&curve_plan);
+        let edge_tolerance = curve_plan.edge_tolerance;
+        let cache_fit_tolerance = curve_plan.cache_fit_tolerance;
         let geometry = curve_plan.geometry;
         annotate(
             annotations,
@@ -605,10 +647,6 @@ fn transfer_complete(
             geometry,
             source_object: None,
         });
-        let helix = edge_helix_plan.remove(&edge_id);
-        let edge_range = curve_plan.parameter_range;
-        let edge_tolerance = curve_plan.edge_tolerance;
-        let cache_fit_tolerance = curve_plan.cache_fit_tolerance;
         let procedural = helix
             .as_ref()
             .map(|plan| {
@@ -619,11 +657,17 @@ fn transfer_complete(
                 )
             })
             .or_else(|| {
+                let supports = edge_support_plan.get(&edge_id)?;
+                if !exact_support_edges.contains(&edge_id)
+                    || !exact_support_curves.contains(&edge_id)
+                {
+                    return None;
+                }
                 b5_edge_support_definition(
-                    edge_support_plan.get(&edge_id)?,
+                    supports,
                     &surface_ids,
                     &pcurve_plan,
-                    edge_range,
+                    support_curve_range,
                 )
             });
         if let Some((kind, tag, definition)) = procedural {
@@ -961,6 +1005,31 @@ fn merge_curve_plan(
     if existing.cache_fit_tolerance.is_none() {
         existing.cache_fit_tolerance = candidate.cache_fit_tolerance;
     }
+}
+
+fn curve_cache_has_ordered_knots(geometry: &CurveGeometry) -> bool {
+    let CurveGeometry::Nurbs(curve) = geometry else {
+        return true;
+    };
+    curve.knots.iter().all(|knot| knot.is_finite())
+        && curve.knots.windows(2).all(|pair| pair[0] <= pair[1])
+}
+
+fn curve_plan_parameter_range(plan: &CurvePlan) -> Option<[f64; 2]> {
+    plan.parameter_range.or_else(|| {
+        let CurveGeometry::Nurbs(curve) = &plan.geometry else {
+            return None;
+        };
+        let degree = usize::try_from(curve.degree).ok()?;
+        Some([
+            *curve.knots.get(degree)?,
+            *curve
+                .knots
+                .len()
+                .checked_sub(degree + 1)
+                .and_then(|index| curve.knots.get(index))?,
+        ])
+    })
 }
 
 fn b5_vertex_point(graph: &B5Graph, vertex: usize) -> Option<[f64; 3]> {
@@ -1731,6 +1800,75 @@ fn b5_edge_support_definition(
     }
 }
 
+fn b5_supports_follow_edge(
+    supports: &[(u32, u32, [f64; 2])],
+    endpoints: [[f64; 3]; 2],
+    surfaces: &BTreeMap<u32, SurfacePlan>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+) -> bool {
+    supports.iter().all(|(surface, pcurve, range)| {
+        let (Some(surface), Some((pcurve, _, domain))) =
+            (surfaces.get(surface), pcurves.get(pcurve))
+        else {
+            return false;
+        };
+        if bounded_occurrence_range(*range, *domain).is_none() {
+            return false;
+        }
+        let lifted = range.map(|parameter| {
+            let uv = pcurve_uv(pcurve, parameter)?;
+            let point = surface_point(&surface.geometry, uv.u, uv.v)?;
+            Some([point.x, point.y, point.z])
+        });
+        let [Some(start), Some(end)] = lifted else {
+            return false;
+        };
+        distance(start, endpoints[0]).max(distance(end, endpoints[1])) <= POINT_TOLERANCE
+    })
+}
+
+fn b5_supports_follow_curve(
+    supports: &[(u32, u32, [f64; 2])],
+    curve: &CurvePlan,
+    surfaces: &BTreeMap<u32, SurfacePlan>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+) -> bool {
+    const EXACT_TOLERANCE: f64 = 1e-6;
+
+    let Some(range) = curve_plan_parameter_range(curve) else {
+        return false;
+    };
+    let solved = range.map(|parameter| curve_point(&curve.geometry, parameter));
+    let [Some(solved_start), Some(solved_end)] = solved else {
+        return false;
+    };
+    supports.iter().all(|(surface, pcurve, support_range)| {
+        let (Some(surface), Some((pcurve, _, domain))) =
+            (surfaces.get(surface), pcurves.get(pcurve))
+        else {
+            return false;
+        };
+        if bounded_occurrence_range(*support_range, *domain).is_none() {
+            return false;
+        }
+        let lifted = support_range.map(|parameter| {
+            let uv = pcurve_uv(pcurve, parameter)?;
+            surface_point(&surface.geometry, uv.u, uv.v)
+        });
+        let [Some(start), Some(end)] = lifted else {
+            return false;
+        };
+        distance(
+            [solved_start.x, solved_start.y, solved_start.z],
+            [start.x, start.y, start.z],
+        )
+        .max(distance(
+            [solved_end.x, solved_end.y, solved_end.z],
+            [end.x, end.y, end.z],
+        )) <= EXACT_TOLERANCE
+    })
+}
+
 fn revolution_surface(
     profile: Option<&B5Profile>,
     axis_origin: [f64; 3],
@@ -2253,12 +2391,12 @@ fn unit(value: [f64; 3]) -> Option<[f64; 3]> {
 #[cfg(test)]
 mod tests {
     use super::{
-        b5_edge_support_definition, bounded_occurrence_range, cylinder_helix, cylinder_point,
-        edge_pcurve_parameters, isocurve_endpoint_parameters, lifted_curve_geometry,
-        merge_curve_plan, neutral_pcurve_point, ordered_subrange, orient_loop_members,
-        oriented_circle_plan, oriented_line_plan, oriented_nurbs_range, ownership_plan,
-        rational_arc, revolution_surface, revolve_nurbs, transfer, transfer_vertex_tolerances,
-        CurvePlan, SurfacePlan,
+        b5_edge_support_definition, b5_supports_follow_edge, bounded_occurrence_range,
+        curve_cache_has_ordered_knots, cylinder_helix, cylinder_point, edge_pcurve_parameters,
+        isocurve_endpoint_parameters, lifted_curve_geometry, merge_curve_plan,
+        neutral_pcurve_point, ordered_subrange, orient_loop_members, oriented_circle_plan,
+        oriented_line_plan, oriented_nurbs_range, ownership_plan, rational_arc, revolution_surface,
+        revolve_nurbs, transfer, transfer_vertex_tolerances, CurvePlan, SurfacePlan,
     };
     use crate::b5::{
         loop_chain_senses, B5Face, B5Graph, B5Loop, B5ParameterIncidence, B5Pcurve, B5Profile,
@@ -2315,7 +2453,6 @@ mod tests {
     fn edge_parameters_follow_ordered_edge_refs_for_a_closed_vertex() {
         let mut graph = B5Graph {
             complete: false,
-            records: Vec::new(),
             faces: Vec::new(),
             loops: BTreeMap::new(),
             pcurves: BTreeMap::new(),
@@ -2362,7 +2499,6 @@ mod tests {
     fn repeated_source_pcurve_has_independently_trimmed_occurrence_carriers() {
         let graph = B5Graph {
             complete: true,
-            records: Vec::new(),
             faces: vec![B5Face {
                 object_id: 1,
                 surface: 10,
@@ -2550,6 +2686,63 @@ mod tests {
     }
 
     #[test]
+    fn procedural_support_requires_physical_edge_endpoint_agreement() {
+        let surfaces = BTreeMap::from([(
+            10,
+            SurfacePlan {
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                revolution: None,
+            },
+        )]);
+        let pcurves = BTreeMap::from([(
+            20,
+            (
+                PcurveGeometry::Line {
+                    origin: Point2::new(0.0, 0.0),
+                    direction: Point2::new(1.0, 0.0),
+                },
+                false,
+                [0.0, 1.0],
+            ),
+        )]);
+        let supports = [(10, 20, [0.0, 1.0])];
+        assert!(b5_supports_follow_edge(
+            &supports,
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+            &surfaces,
+            &pcurves,
+        ));
+        assert!(!b5_supports_follow_edge(
+            &supports,
+            [[0.0, 1.0, 0.0], [1.0, 1.0, 0.0]],
+            &surfaces,
+            &pcurves,
+        ));
+        assert!(!b5_supports_follow_edge(
+            &supports,
+            [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            &surfaces,
+            &pcurves,
+        ));
+    }
+
+    #[test]
+    fn descending_nurbs_knots_are_not_promoted_as_curve_caches() {
+        let geometry = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![1.0, 1.0, 0.0, 0.0],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        });
+        assert!(!curve_cache_has_ordered_knots(&geometry));
+    }
+
+    #[test]
     fn exact_revolution_builders_reject_unbounded_subdivision_counts() {
         assert!(rational_arc(
             [0.0; 3],
@@ -2580,7 +2773,6 @@ mod tests {
     fn body_kind_requires_unique_complete_loop_ownership() {
         let mut graph = B5Graph {
             complete: true,
-            records: Vec::new(),
             faces: vec![B5Face {
                 object_id: 1,
                 surface: 10,
@@ -2670,7 +2862,6 @@ mod tests {
         };
         let mut graph = B5Graph {
             complete: true,
-            records: Vec::new(),
             faces: Vec::new(),
             loops: BTreeMap::from([(1, loop_(1, vec![3])), (2, loop_(2, vec![4, 5, 3]))]),
             pcurves: BTreeMap::new(),
@@ -2718,7 +2909,6 @@ mod tests {
     fn emitted_carriers_determine_logical_vertex_tolerance() {
         let graph = B5Graph {
             complete: true,
-            records: Vec::new(),
             faces: Vec::new(),
             loops: BTreeMap::from([(
                 1,
