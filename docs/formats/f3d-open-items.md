@@ -21,7 +21,6 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Container, header, and design records
 
-- The manifest relation that selects one asset folder when several asset folders are present is unresolved.
 - The authoritative B-rep entry tie-break when more than one `.smb` or `.smbh` entry joins a nonempty Design body map is unresolved. Filename extension, archive order, face count, and the relative size of the history partition do not define that relation.
 - The relation between `.smb` and `.smbh` stream forms, including the presence of a history partition, is unresolved.
 - The header flags word (both widths): bit 1 (always set) and bits 2 and above (always zero) have no assigned semantic meaning.

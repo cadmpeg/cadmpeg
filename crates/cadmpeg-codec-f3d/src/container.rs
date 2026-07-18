@@ -313,6 +313,7 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
         inflated_entries.insert(name, buf);
     }
 
+    let asset_folder = manifest_asset_folder(&inflated_entries).or(asset_folder);
     Ok(ContainerScan {
         source_image,
         entries,
@@ -322,11 +323,104 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
     })
 }
 
+fn manifest_asset_folder(entries: &BTreeMap<String, Vec<u8>>) -> Option<String> {
+    let top = entries.get("Manifest.dat")?;
+    let folders = entries
+        .keys()
+        .filter_map(|name| name.strip_suffix("/Manifest.dat"))
+        .filter(|name| !name.contains('/'))
+        .collect::<Vec<_>>();
+    if folders.is_empty() {
+        return None;
+    }
+    let (folder_run, manifest_uuid) = counted_folder_run(top, &folders)?;
+    let matches = folder_run
+        .into_iter()
+        .filter(|folder| {
+            entries
+                .get(&format!("{folder}/Manifest.dat"))
+                .and_then(|manifest| first_asset_manifest_uuid(manifest))
+                .is_some_and(|uuid| uuid == manifest_uuid)
+        })
+        .collect::<Vec<_>>();
+    (matches.len() == 1).then(|| matches[0].clone())
+}
+
+fn counted_folder_run(bytes: &[u8], folders: &[&str]) -> Option<(Vec<String>, String)> {
+    let mut resolved = None;
+    for offset in 0..bytes.len().saturating_sub(4) {
+        let count = u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?) as usize;
+        if count == 0 || count > folders.len() {
+            continue;
+        }
+        let mut cursor = offset + 4;
+        let mut names = Vec::with_capacity(count);
+        for _ in 0..count {
+            let Some((name, after)) = read_lp_utf16(bytes, cursor) else {
+                names.clear();
+                break;
+            };
+            if !folders.contains(&name.as_str()) {
+                names.clear();
+                break;
+            }
+            names.push(name);
+            cursor = after;
+        }
+        if names.len() != count {
+            continue;
+        }
+        let Some(uuid) = lp_utf16_ending_at(bytes, offset) else {
+            continue;
+        };
+        if !is_guid(&uuid) || resolved.is_some() {
+            return None;
+        }
+        resolved = Some((names, uuid));
+    }
+    resolved
+}
+
+fn first_asset_manifest_uuid(bytes: &[u8]) -> Option<String> {
+    let (_, cursor) = read_lp_utf16(bytes, 0)?;
+    let (uuid, _) = read_lp_utf16(bytes, cursor)?;
+    is_guid(&uuid).then_some(uuid)
+}
+
+fn lp_utf16_ending_at(bytes: &[u8], end: usize) -> Option<String> {
+    (0..end)
+        .rev()
+        .find_map(|start| read_lp_utf16(bytes, start).filter(|(_, after)| *after == end))
+        .map(|(value, _)| value)
+}
+
+fn read_lp_utf16(bytes: &[u8], offset: usize) -> Option<(String, usize)> {
+    let count = u32::from_le_bytes(bytes.get(offset..offset + 4)?.try_into().ok()?) as usize;
+    let byte_count = count.checked_mul(2)?;
+    let start = offset.checked_add(4)?;
+    let end = start.checked_add(byte_count)?;
+    let payload = bytes.get(start..end)?;
+    let units = payload
+        .chunks_exact(2)
+        .map(|unit| u16::from_le_bytes([unit[0], unit[1]]))
+        .collect::<Vec<_>>();
+    let value = String::from_utf16(&units).ok()?;
+    Some((value, end))
+}
+
+fn is_guid(value: &str) -> bool {
+    value.len() == 36
+        && value.bytes().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+}
+
 /// Build a [`ContainerSummary`] with the active B-rep selection.
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut notes = Vec::new();
     if let Some(folder) = &scan.asset_folder {
-        notes.push(format!("asset folder (from entry paths): {folder}"));
+        notes.push(format!("active asset folder: {folder}"));
     }
     match select_active_brep(scan) {
         Some(b) => notes.push(format!(
@@ -355,11 +449,23 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
 }
 
-/// Select the first `.smbh` B-rep, falling back to the first `.smb`.
+/// Select the first `.smbh` B-rep in the active asset folder, falling back to
+/// the first `.smb` there. Without an asset folder, use archive-wide order.
 pub fn select_active_brep(scan: &ContainerScan) -> Option<&BrepFacts> {
+    if let Some(folder) = &scan.asset_folder {
+        let prefix = format!("{folder}/");
+        let mut scoped = scan
+            .breps
+            .iter()
+            .filter(|brep| brep.name.starts_with(&prefix));
+        return scoped
+            .clone()
+            .find(|brep| brep.is_smbh)
+            .or_else(|| scoped.next());
+    }
     scan.breps
         .iter()
-        .find(|b| b.is_smbh)
+        .find(|brep| brep.is_smbh)
         .or_else(|| scan.breps.first())
 }
 
@@ -370,5 +476,72 @@ fn asm_magic_label(bytes: &[u8]) -> String {
         String::from_utf8_lossy(&bytes[..15]).to_string()
     } else {
         "absent".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn lp_utf16(bytes: &mut Vec<u8>, value: &str) {
+        bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        for unit in value.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+
+    fn brep(name: &str, is_smbh: bool) -> BrepFacts {
+        BrepFacts {
+            name: name.into(),
+            is_smbh,
+            uncompressed_len: 0,
+            header: None,
+            delta_state_offset: None,
+            sha256: String::new(),
+        }
+    }
+
+    #[test]
+    fn manifest_uuid_selects_design_folder_and_scopes_brep() {
+        const DESIGN_UUID: &str = "11111111-2222-3333-4444-555555555555";
+        const OTHER_UUID: &str = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        let mut top = Vec::new();
+        lp_utf16(&mut top, DESIGN_UUID);
+        top.extend_from_slice(&2_u32.to_le_bytes());
+        lp_utf16(&mut top, "DesignAsset");
+        lp_utf16(&mut top, "OtherAsset");
+        let mut design = Vec::new();
+        lp_utf16(&mut design, "DesignAsset");
+        lp_utf16(&mut design, DESIGN_UUID);
+        let mut other = Vec::new();
+        lp_utf16(&mut other, "OtherAsset");
+        lp_utf16(&mut other, OTHER_UUID);
+        let inflated_entries = BTreeMap::from([
+            ("Manifest.dat".into(), top),
+            ("DesignAsset/Manifest.dat".into(), design),
+            ("OtherAsset/Manifest.dat".into(), other),
+        ]);
+
+        assert_eq!(
+            manifest_asset_folder(&inflated_entries).as_deref(),
+            Some("DesignAsset")
+        );
+
+        let mut scan = ContainerScan {
+            source_image: Vec::new(),
+            entries: Vec::new(),
+            breps: vec![
+                brep("OtherAsset/Breps.BlobParts/other.smbh", true),
+                brep("DesignAsset/Breps.BlobParts/design.smb", false),
+            ],
+            asset_folder: Some("DesignAsset".into()),
+            inflated_entries,
+        };
+        assert_eq!(
+            select_active_brep(&scan).map(|brep| brep.name.as_str()),
+            Some("DesignAsset/Breps.BlobParts/design.smb")
+        );
+        scan.asset_folder = Some("NoGeometryAsset".into());
+        assert!(select_active_brep(&scan).is_none());
     }
 }
