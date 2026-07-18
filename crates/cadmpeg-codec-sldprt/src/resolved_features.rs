@@ -1260,6 +1260,27 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_extrusion_to_face_accepts_the_legacy_end_spec_token() {
+        let mut payload = vec![0; 200];
+        payload[..2].copy_from_slice(&[3, 0]);
+        payload[4] = 1;
+        payload[18] = 4;
+        payload[30..33].copy_from_slice(&[1, 1, 0]);
+        payload[33..35].copy_from_slice(&[0x7f, 0x9d]);
+        payload[35..46].copy_from_slice(&[0x2d, 0x80, 0x2b, 0x80, 2, 0, 0, 0, 0x40, 0, 0]);
+        payload[88..92].copy_from_slice(&1u32.to_le_bytes());
+        payload[92..96].copy_from_slice(&[0, 2, 0, 0]);
+        payload[100..116].copy_from_slice(&COMPACT_EDGE_VECTOR_MARKER);
+        payload[118..122].copy_from_slice(&[0x32, 0x80, 0, 0]);
+        payload[122..134].fill(1);
+        payload[134..138].copy_from_slice(&7u32.to_le_bytes());
+
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+        payload[0] = 2;
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+    }
+
+    #[test]
     fn compact_extrusion_through_next_shares_the_traversal_tail() {
         let mut payload = vec![0; 104];
         payload[..2].copy_from_slice(&[0x0c, 0x8e]);
@@ -8225,7 +8246,20 @@ pub(crate) fn compact_extrusion_offset_from_face_at(
 }
 
 pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Option<usize> {
-    if !compact_extrusion_end_spec_header(payload, offset, 4)
+    // Older end-spec streams encode the `moEndSpec_c` class as the fixed
+    // two-byte token `03 00`; their remaining header and child grammar is
+    // identical. Keep that token scoped to the to-face form whose required
+    // single-face child independently validates the interpretation.
+    let legacy_header = payload.get(offset..offset + 2) == Some(&[3, 0])
+        && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+        && payload
+            .get(offset + 12..offset + 16)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|flag| flag <= 1)
+        && payload.get(offset + 16..offset + 18) == Some(&[0, 0])
+        && payload.get(offset + 18..offset + 22) == Some(&[4, 0, 0, 0]);
+    if !(compact_extrusion_end_spec_header(payload, offset, 4) || legacy_header)
         || payload
             .get(offset + 22..offset + 26)
             .and_then(|bytes| bytes.try_into().ok())
