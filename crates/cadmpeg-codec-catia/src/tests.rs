@@ -5409,6 +5409,76 @@ fn native_load_rejects_dangling_cross_arena_links() {
 }
 
 #[test]
+fn native_load_rejects_noncanonical_catalog_and_record_views() {
+    let mut bytes = object_graph_stream();
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Sketch",
+    ]));
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    let mut invalid_count = native.clone();
+    invalid_count.catalogs[0].declared_count += 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_count
+        .store(&mut namespace)
+        .expect("store invalid catalog count");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut invalid_entry_ordinal = native.clone();
+    invalid_entry_ordinal.catalogs[0].entries[0].ordinal = 1;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_entry_ordinal
+        .store(&mut namespace)
+        .expect("store invalid catalog ordinal");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut invalid_record_ordinal = native.clone();
+    invalid_record_ordinal.object_graphs[0].records[0].ordinal = 9;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_record_ordinal
+        .store(&mut namespace)
+        .expect("store invalid record ordinal");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut invalid_design_link = native.clone();
+    invalid_design_link.object_graphs[0].records[0].design_object = None;
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_design_link
+        .store(&mut namespace)
+        .expect("store invalid design-object link");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+
+    let mut invalid_references = native;
+    invalid_references.object_graphs[0].records[0]
+        .references
+        .clear();
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid_references
+        .store(&mut namespace)
+        .expect("store invalid payload-reference links");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
+}
+
+#[test]
 fn decode_retains_catalog_schema_names_without_promoting_features() {
     let decoded = CatiaCodec
         .decode(

@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 45;
+pub const CATIA_NATIVE_VERSION: u32 = 46;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -383,6 +383,20 @@ fn payload_references(payload: &ObjectPayload) -> impl Iterator<Item = u32> + '_
     })
 }
 
+fn resolved_payload_references(
+    payload: &ObjectPayload,
+    record_ids: &[String],
+) -> Vec<CatiaObjectRecordReference> {
+    payload_references(payload)
+        .map(|ordinal| CatiaObjectRecordReference {
+            ordinal,
+            target: object_record_index(ordinal, record_ids.len())
+                .and_then(|index| record_ids.get(index))
+                .cloned(),
+        })
+        .collect()
+}
+
 /// CATIA-native records retained outside the format-neutral model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaNative {
@@ -720,6 +734,21 @@ impl CatiaNative {
                 .cloned()
                 .collect();
             catalog.entries.sort_by_key(|entry| entry.ordinal);
+            if u32::try_from(catalog.entries.len())
+                .ok()
+                .and_then(|count| count.checked_add(1))
+                != Some(catalog.declared_count)
+                || catalog
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .any(|(ordinal, entry)| usize::try_from(entry.ordinal).ok() != Some(ordinal))
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "catalog `{}` has an invalid entry sequence",
+                    catalog.id
+                )));
+            }
         }
         let mut graphs: Vec<CatiaObjectGraph> = namespace.arena_as("object_graphs")?;
         let records: Vec<CatiaObjectRecord> = namespace.arena_as("object_graph_records")?;
@@ -748,6 +777,26 @@ impl CatiaNative {
                 .cloned()
                 .collect();
             graph.records.sort_by_key(|record| record.ordinal);
+            let record_ids = graph
+                .records
+                .iter()
+                .map(|record| record.id.clone())
+                .collect::<Vec<_>>();
+            for (ordinal, record) in graph.records.iter().enumerate() {
+                let expected_design_object = record
+                    .owner_ref
+                    .map(|owner| design_object_id(graph.byte_offset, owner));
+                if usize::try_from(record.ordinal).ok() != Some(ordinal)
+                    || record.design_object != expected_design_object
+                    || record.references
+                        != resolved_payload_references(&record.payload, &record_ids)
+                {
+                    return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                        "object graph `{}` has an invalid record sequence",
+                        graph.id
+                    )));
+                }
+            }
         }
         let value_blocks: Vec<CatiaValueBlock> = namespace.arena_as("value_blocks")?;
         let design_objects = design_objects(&graphs);
@@ -1043,14 +1092,7 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
             record.design_object = record
                 .owner_ref
                 .map(|owner| design_object_id(graph.pos as u64, owner));
-            record.references = payload_references(&record.payload)
-                .map(|ordinal| CatiaObjectRecordReference {
-                    ordinal,
-                    target: object_record_index(ordinal, record_ids.len())
-                        .and_then(|index| record_ids.get(index))
-                        .cloned(),
-                })
-                .collect();
+            record.references = resolved_payload_references(&record.payload, &record_ids);
         }
         Self {
             id,
