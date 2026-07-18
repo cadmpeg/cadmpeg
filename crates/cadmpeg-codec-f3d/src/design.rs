@@ -4314,13 +4314,28 @@ fn region_containing_points(
 
 enum ProfileBoundary {
     Polygon(Vec<Point2>),
+    CircularArcLoop(Vec<ProfileBoundarySegment>),
     Circle { center: Point2, radius: f64 },
+}
+
+enum ProfileBoundarySegment {
+    Line {
+        start: Point2,
+        end: Point2,
+    },
+    Arc {
+        center: Point2,
+        radius: f64,
+        start_angle: f64,
+        end_angle: f64,
+    },
 }
 
 impl ProfileBoundary {
     fn area(&self) -> f64 {
         match self {
             Self::Polygon(vertices) => polygon_area(vertices),
+            Self::CircularArcLoop(segments) => circular_arc_loop_area(segments),
             Self::Circle { radius, .. } => std::f64::consts::PI * radius * radius,
         }
     }
@@ -4328,6 +4343,7 @@ impl ProfileBoundary {
     fn contains_point(&self, point: Point2) -> bool {
         match self {
             Self::Polygon(vertices) => point_in_polygon(point, vertices),
+            Self::CircularArcLoop(segments) => point_in_circular_arc_loop(point, segments),
             Self::Circle { center, radius } => point_distance(*center, point) < *radius,
         }
     }
@@ -4350,9 +4366,20 @@ impl ProfileBoundary {
                     && polygon_edges(outer)
                         .all(|edge| point_segment_distance(*center, edge) > *radius)
             }
+            (Self::CircularArcLoop(outer), Self::Circle { center, radius }) => {
+                point_in_circular_arc_loop(*center, outer)
+                    && outer
+                        .iter()
+                        .all(|segment| point_boundary_segment_distance(*center, segment) > *radius)
+            }
             (Self::Circle { center, radius }, Self::Polygon(inner)) => inner
                 .iter()
                 .all(|point| point_distance(*center, *point) < *radius),
+            (Self::Circle { center, radius }, Self::CircularArcLoop(inner)) => inner
+                .iter()
+                .all(|segment| boundary_segment_max_distance(*center, segment) < *radius),
+            (Self::Polygon(_) | Self::CircularArcLoop(_), Self::CircularArcLoop(_))
+            | (Self::CircularArcLoop(_), Self::Polygon(_)) => false,
         }
     }
 }
@@ -4373,7 +4400,65 @@ fn profile_boundary(
             });
         }
     }
-    line_profile_vertices(profile, entities, tolerance).map(ProfileBoundary::Polygon)
+    line_profile_vertices(profile, entities, tolerance)
+        .map(ProfileBoundary::Polygon)
+        .or_else(|| {
+            circular_arc_profile_segments(profile, entities, tolerance)
+                .map(ProfileBoundary::CircularArcLoop)
+        })
+}
+
+fn circular_arc_profile_segments(
+    profile: &[cadmpeg_ir::sketches::SketchEntityUse],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> Option<Vec<ProfileBoundarySegment>> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let mut segments = Vec::with_capacity(profile.len());
+    let mut previous_end = None;
+    for use_ in profile {
+        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        let segment = match entity.geometry {
+            SketchGeometry::Line { start, end } => {
+                let [start, end] = if use_.reversed {
+                    [end, start]
+                } else {
+                    [start, end]
+                };
+                ProfileBoundarySegment::Line { start, end }
+            }
+            SketchGeometry::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                let (start_angle, end_angle) = if use_.reversed {
+                    (end_angle.0, start_angle.0)
+                } else {
+                    (start_angle.0, end_angle.0)
+                };
+                ProfileBoundarySegment::Arc {
+                    center,
+                    radius: radius.0,
+                    start_angle,
+                    end_angle,
+                }
+            }
+            _ => return None,
+        };
+        let (start, end) = boundary_segment_endpoints(&segment);
+        if previous_end.is_some_and(|previous| point_distance(previous, start) > tolerance) {
+            return None;
+        }
+        previous_end = Some(end);
+        segments.push(segment);
+    }
+    let first_start = segments.first().map(boundary_segment_endpoints)?.0;
+    (segments.len() >= 2
+        && previous_end.is_some_and(|end| point_distance(end, first_start) <= tolerance))
+    .then_some(segments)
 }
 
 fn line_profile_vertices(
@@ -4407,6 +4492,190 @@ fn line_profile_vertices(
         return None;
     }
     Some(vertices)
+}
+
+fn boundary_segment_endpoints(segment: &ProfileBoundarySegment) -> (Point2, Point2) {
+    match segment {
+        ProfileBoundarySegment::Line { start, end } => (*start, *end),
+        ProfileBoundarySegment::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => (
+            Point2::new(
+                center.u + radius * start_angle.cos(),
+                center.v + radius * start_angle.sin(),
+            ),
+            Point2::new(
+                center.u + radius * end_angle.cos(),
+                center.v + radius * end_angle.sin(),
+            ),
+        ),
+    }
+}
+
+fn circular_arc_loop_area(segments: &[ProfileBoundarySegment]) -> f64 {
+    segments
+        .iter()
+        .map(|segment| match segment {
+            ProfileBoundarySegment::Line { start, end } => start.u * end.v - end.u * start.v,
+            ProfileBoundarySegment::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                radius * center.u * (start_angle.cos() - end_angle.cos())
+                    + radius * center.v * (end_angle.sin() - start_angle.sin())
+                    + radius * radius * (end_angle - start_angle)
+            }
+        })
+        .sum::<f64>()
+        .abs()
+        * 0.5
+}
+
+fn point_in_circular_arc_loop(point: Point2, segments: &[ProfileBoundarySegment]) -> bool {
+    segments
+        .iter()
+        .map(|segment| match segment {
+            ProfileBoundarySegment::Line { start, end } => {
+                let crosses_up = start.v <= point.v && point.v < end.v;
+                let crosses_down = end.v <= point.v && point.v < start.v;
+                if !(crosses_up || crosses_down)
+                    || point.u
+                        >= start.u + (point.v - start.v) * (end.u - start.u) / (end.v - start.v)
+                {
+                    0
+                } else if crosses_up {
+                    1
+                } else {
+                    -1
+                }
+            }
+            ProfileBoundarySegment::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => horizontal_ray_arc_winding(point, *center, *radius, *start_angle, *end_angle),
+        })
+        .sum::<i32>()
+        != 0
+}
+
+fn horizontal_ray_arc_winding(
+    point: Point2,
+    center: Point2,
+    radius: f64,
+    start_angle: f64,
+    end_angle: f64,
+) -> i32 {
+    let ordinate = (point.v - center.v) / radius;
+    if ordinate.abs() > 1.0 {
+        return 0;
+    }
+    let principal = ordinate.asin();
+    let sweep = end_angle - start_angle;
+    let angles = if principal.cos().abs() <= 1.0e-12 {
+        vec![principal]
+    } else {
+        vec![principal, std::f64::consts::PI - principal]
+    };
+    angles
+        .into_iter()
+        .filter(|angle| center.u + radius * angle.cos() > point.u)
+        .filter_map(|angle| {
+            let parameter = directed_angle_parameter(angle, start_angle, end_angle)?;
+            let derivative = radius * angle.cos() * sweep;
+            let second_derivative = -radius * angle.sin() * sweep * sweep;
+            let direction = if parameter <= 1.0e-12 && derivative.abs() <= 1.0e-12 {
+                second_derivative
+            } else if parameter >= 1.0 - 1.0e-12 && derivative.abs() <= 1.0e-12 {
+                -second_derivative
+            } else {
+                derivative
+            };
+            if parameter <= 1.0e-12 {
+                (direction > 0.0).then_some(1)
+            } else if parameter >= 1.0 - 1.0e-12 {
+                (direction < 0.0).then_some(-1)
+            } else if direction > 1.0e-12 {
+                Some(1)
+            } else if direction < -1.0e-12 {
+                Some(-1)
+            } else {
+                None
+            }
+        })
+        .sum()
+}
+
+fn directed_angle_parameter(angle: f64, start: f64, end: f64) -> Option<f64> {
+    let sweep = end - start;
+    if sweep == 0.0 || sweep.abs() > std::f64::consts::TAU {
+        return None;
+    }
+    let displacement = if sweep > 0.0 {
+        (angle - start).rem_euclid(std::f64::consts::TAU)
+    } else {
+        -(start - angle).rem_euclid(std::f64::consts::TAU)
+    };
+    (displacement.abs() <= sweep.abs()).then_some(displacement / sweep)
+}
+
+fn point_boundary_segment_distance(point: Point2, segment: &ProfileBoundarySegment) -> f64 {
+    match segment {
+        ProfileBoundarySegment::Line { start, end } => {
+            point_segment_distance(point, (*start, *end))
+        }
+        ProfileBoundarySegment::Arc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let endpoint_distance = [*start_angle, *end_angle]
+                .into_iter()
+                .map(|angle| {
+                    point_distance(
+                        point,
+                        Point2::new(
+                            center.u + radius * angle.cos(),
+                            center.v + radius * angle.sin(),
+                        ),
+                    )
+                })
+                .fold(f64::INFINITY, f64::min);
+            let angle = (point.v - center.v).atan2(point.u - center.u);
+            if directed_angle_parameter(angle, *start_angle, *end_angle).is_some() {
+                endpoint_distance.min((point_distance(point, *center) - radius).abs())
+            } else {
+                endpoint_distance
+            }
+        }
+    }
+}
+
+fn boundary_segment_max_distance(point: Point2, segment: &ProfileBoundarySegment) -> f64 {
+    let (start, end) = boundary_segment_endpoints(segment);
+    let endpoint_distance = point_distance(point, start).max(point_distance(point, end));
+    let ProfileBoundarySegment::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } = segment
+    else {
+        return endpoint_distance;
+    };
+    let farthest_angle = (point.v - center.v).atan2(point.u - center.u) + std::f64::consts::PI;
+    if directed_angle_parameter(farthest_angle, *start_angle, *end_angle).is_some() {
+        endpoint_distance.max(point_distance(point, *center) + radius)
+    } else {
+        endpoint_distance
+    }
 }
 
 fn point_in_polygon(point: Point2, vertices: &[Point2]) -> bool {
@@ -15558,6 +15827,34 @@ mod relation_tests {
                 holes: Vec::new(),
             })
         );
+    }
+
+    #[test]
+    fn circular_arc_loop_uses_analytic_area_containment_and_distance() {
+        let segments = vec![
+            super::ProfileBoundarySegment::Line {
+                start: Point2::new(0.0, -2.0),
+                end: Point2::new(0.0, 2.0),
+            },
+            super::ProfileBoundarySegment::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: 2.0,
+                start_angle: std::f64::consts::FRAC_PI_2,
+                end_angle: 3.0 * std::f64::consts::FRAC_PI_2,
+            },
+        ];
+        let boundary = super::ProfileBoundary::CircularArcLoop(segments);
+        let hole = super::ProfileBoundary::Circle {
+            center: Point2::new(-1.0, 0.0),
+            radius: 0.5,
+        };
+
+        assert!((boundary.area() - 2.0 * std::f64::consts::PI).abs() < 1.0e-12);
+        assert!(boundary.contains_point(Point2::new(-1.0, 0.0)));
+        assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
+        assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
+        assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
+        assert!(boundary.strictly_contains(&hole));
     }
 
     #[test]
