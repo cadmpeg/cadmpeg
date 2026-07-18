@@ -41,6 +41,8 @@ pub struct FaceColor {
 
 #[derive(Debug, Clone, Default)]
 pub struct Facts {
+    /// Number of framed top-level model entity records in the stream.
+    pub entity_count: usize,
     pub bodies: Vec<BodyRecord>,
     /// Cluster-key chain bodies ([spec §6]); consulted when `bodies` binds no face.
     pub cluster_bodies: Vec<BodyRecord>,
@@ -214,6 +216,7 @@ pub fn scan(body: &[u8]) -> Facts {
         }
     }
     Facts {
+        entity_count: entities.len(),
         bodies: bodies(&entities),
         cluster_bodies: cluster_chain_bodies(&entities),
         face_colors: face_colors.into_values().collect(),

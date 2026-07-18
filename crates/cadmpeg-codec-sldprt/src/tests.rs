@@ -1954,6 +1954,21 @@ fn decode_without_geometry_falls_back_to_metadata() {
 }
 
 #[test]
+fn decode_explicit_empty_partition_and_deltas_as_an_empty_model() {
+    let source = sldprt_with_partition_and_deltas(&[], &[]);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded.report.geometry_transferred);
+    assert!(decoded.ir.model.bodies.is_empty());
+    assert!(!decoded.report.losses.iter().any(|loss| {
+        loss.message.contains("geometry was not transferred")
+            || loss.message.contains("topology graph")
+    }));
+}
+
+#[test]
 fn metadata_fallback_binds_resolved_feature_scalars() {
     let mut source = synthetic_sldprt();
     source.extend(make_block(

@@ -1365,7 +1365,23 @@ fn try_decode_brep(
         .enumerate()
         .max_by_key(|(index, (_, _, score, _))| (*score, Reverse(*index)))
         .map(|(index, _)| index)?;
-    if decoded_sites[selected_site].3.faces.is_empty()
+    let selected_is_empty_model = decoded_sites[selected_site].3.stats.source_entity_records == 0
+        && sites[&decoded_sites[selected_site].0].iter().any(|index| {
+            streams[*index]
+                .header
+                .description
+                .to_ascii_lowercase()
+                .contains("partition")
+        })
+        && sites[&decoded_sites[selected_site].0].iter().any(|index| {
+            streams[*index]
+                .header
+                .description
+                .to_ascii_lowercase()
+                .contains("deltas")
+        });
+    if !selected_is_empty_model
+        && decoded_sites[selected_site].3.faces.is_empty()
         && decoded_sites[selected_site].3.surfaces.is_empty()
         && decoded_sites[selected_site].3.points.is_empty()
     {
@@ -1437,6 +1453,7 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.face_colors.append(&mut source.face_colors);
     target.stats.unknown_surface_faces += source.stats.unknown_surface_faces;
     target.stats.unknown_curve_edges += source.stats.unknown_curve_edges;
+    target.stats.source_entity_records += source.stats.source_entity_records;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
 }
 

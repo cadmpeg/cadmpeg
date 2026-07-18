@@ -187,6 +187,8 @@ impl Brep {
 /// Transfer limitations found while building a [`Brep`].
 #[derive(Default)]
 pub struct Stats {
+    /// Framed top-level model entity records across the selected stream site.
+    pub source_entity_records: usize,
     /// Faces on a support surface this codec does not type; emitted with an
     /// unknown-geometry carrier.
     pub unknown_surface_faces: usize,
@@ -318,6 +320,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
                     facts.cluster_bodies = scanned_facts.cluster_bodies;
                 }
                 facts.face_colors.append(&mut scanned_facts.face_colors);
+                facts.entity_count += scanned_facts.entity_count;
             } else {
                 tables = scanned_tables;
                 facts = scanned_facts;
@@ -327,6 +330,7 @@ pub fn decode_bodies(bodies: &[(&[u8], &StreamHeader)], stream: &str) -> Brep {
             carriers.merge_missing(scan_carriers(body));
             tables.merge_deltas(scanned_tables);
             facts.face_colors.append(&mut scanned_facts.face_colors);
+            facts.entity_count += scanned_facts.entity_count;
         }
     }
     decode_graph(&carriers, &tables, facts, stream)
@@ -350,6 +354,10 @@ fn decode_graph(
 
     let mut out = Brep {
         face_colors: entity_facts.face_colors,
+        stats: Stats {
+            source_entity_records: entity_facts.entity_count,
+            ..Stats::default()
+        },
         ..Brep::default()
     };
     let mut annotations = AnnotationBuilder::new();
