@@ -411,8 +411,65 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
     if out.is_empty() {
         out.extend(sparse_root_body(&by_attr));
     }
+    if out.is_empty() {
+        out.extend(disc1c_root_body(&by_attr));
+    }
     out.sort_by_key(|record| record.attr);
     out
+}
+
+fn disc1c_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+    let roots = by_attr
+        .values()
+        .copied()
+        .filter(|record| record.disc == 0x001c && record.flo() == 2)
+        .collect::<Vec<_>>();
+    let [root] = roots.as_slice() else {
+        return Vec::new();
+    };
+    if root.refs.get(1).is_some_and(|attr| *attr > 1) {
+        return Vec::new();
+    }
+    let follows = |record: &EntityRecord, disc: u16| {
+        record
+            .refs
+            .get(2)
+            .and_then(|attr| by_attr.get(attr))
+            .copied()
+            .filter(|next| next.disc == disc)
+    };
+    let Some(disc_18) = follows(root, 0x0018) else {
+        return Vec::new();
+    };
+    let Some(shell) = follows(disc_18, 0x0016) else {
+        return Vec::new();
+    };
+    let Some(disc_14) = follows(shell, 0x0014) else {
+        return Vec::new();
+    };
+    let Some(disc_12) = follows(disc_14, 0x0012) else {
+        return Vec::new();
+    };
+    if follows(disc_12, 0x0010).is_none() || !by_attr.values().any(|record| record.disc == 0x000e) {
+        return Vec::new();
+    }
+    let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
+    refs.sort_unstable();
+    vec![BodyRecord {
+        attr: root.attr,
+        kind: BodyKind::Solid,
+        refs: refs.clone(),
+        offset: root.offset,
+        regions: vec![RegionRecord {
+            attr: root.attr,
+            offset: root.offset,
+            shells: vec![ShellRecord {
+                attr: shell.attr,
+                offset: shell.offset,
+                refs,
+            }],
+        }],
+    }]
 }
 
 fn sparse_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
@@ -865,6 +922,32 @@ mod tests {
         let bodies = sparse_root_body(&by_attr);
         let [body] = bodies.as_slice() else {
             panic!("one sparse-root body");
+        };
+        assert_eq!(body.attr, 10);
+        assert_eq!(body.regions[0].shells[0].attr, 12);
+        assert!(body.refs.contains(&20) && body.refs.contains(&21));
+    }
+
+    #[test]
+    fn disc1c_root_lattice_owns_the_disc0e_site() {
+        let records = vec![
+            flo2(10, 0x1c, [3, 1, 11, 1, 1, 1]),
+            flo2(11, 0x18, [3, 10, 12, 1, 1, 1]),
+            flo2(12, 0x16, [3, 11, 13, 1, 1, 1]),
+            flo2(13, 0x14, [3, 12, 14, 1, 1, 1]),
+            flo2(14, 0x12, [3, 13, 15, 1, 1, 1]),
+            record(15, 0x10, [3, 14, 1, 1, 1, 1]),
+            record(20, 0x0e, [1; 6]),
+            record(21, 0x0e, [1; 6]),
+        ];
+        let by_attr = records
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+
+        let bodies = disc1c_root_body(&by_attr);
+        let [body] = bodies.as_slice() else {
+            panic!("one disc1c-root body");
         };
         assert_eq!(body.attr, 10);
         assert_eq!(body.regions[0].shells[0].attr, 12);
