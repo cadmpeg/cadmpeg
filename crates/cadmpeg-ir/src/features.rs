@@ -1035,6 +1035,17 @@ pub enum FaceSelection {
         /// Format-native selection reference.
         native: String,
     },
+    /// Historical faces proven for part of a native selection.
+    HistoricalPartial {
+        /// Input topology containing every resolved face.
+        state: FeatureInputTopologyId,
+        /// Proven state-local face identities in source operand order.
+        faces: Vec<HistoricalFaceId>,
+        /// Stable native identities of unresolved source operands.
+        unresolved: Vec<String>,
+        /// Format-native selection reference.
+        native: String,
+    },
     /// Format-native selection reference.
     Native(String),
 }

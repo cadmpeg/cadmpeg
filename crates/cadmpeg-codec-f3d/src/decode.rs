@@ -188,6 +188,7 @@ struct DesignProjectionGaps {
     unprojected_dimensions: usize,
     profile_selections: usize,
     face_selections: usize,
+    partially_resolved_face_members: usize,
     native_edge_selections: usize,
     partially_resolved_edge_members: usize,
     unresolved_edge_selections: usize,
@@ -403,6 +404,15 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         | EdgeSelection::Resolved { .. }
         | EdgeSelection::Historical { .. } => {}
     };
+    let mut face_selection = |selection: &FaceSelection| match selection {
+        FaceSelection::Native(_) | FaceSelection::Unresolved => gaps.face_selections += 1,
+        FaceSelection::HistoricalPartial { unresolved, .. } => {
+            gaps.partially_resolved_face_members += unresolved.len();
+        }
+        FaceSelection::Faces(_)
+        | FaceSelection::Resolved { .. }
+        | FaceSelection::Historical { .. } => {}
+    };
     for feature in &ir.model.features {
         match &feature.definition {
             FeatureDefinition::Native { .. } => gaps.native_features += 1,
@@ -418,23 +428,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                 ) {
                     gaps.profile_selections += 1;
                 }
-                if matches!(
-                    start,
-                    ExtrudeStart::FromFace {
-                        face: FaceSelection::Native(_) | FaceSelection::Unresolved,
-                        ..
-                    }
-                ) {
-                    gaps.face_selections += 1;
+                if let ExtrudeStart::FromFace { face, .. } = start {
+                    face_selection(face);
                 }
-                if matches!(
-                    extent,
-                    Extent::ToFace {
-                        face: FaceSelection::Native(_) | FaceSelection::Unresolved,
-                        ..
-                    }
-                ) {
-                    gaps.face_selections += 1;
+                if let Extent::ToFace { face, .. } = extent {
+                    face_selection(face);
                 }
             }
             FeatureDefinition::Fillet { groups } => {
@@ -447,6 +445,7 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     edge_selection(&group.edges);
                 }
             }
+            FeatureDefinition::MoveFace { faces, .. } => face_selection(faces),
             _ => {}
         }
     }
@@ -568,6 +567,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} feature face selection(s) retain native candidates because no unique topological face was resolved.",
             gaps.face_selections
+        ),
+    );
+    push(
+        gaps.partially_resolved_face_members,
+        format!(
+            "{} feature face operand(s) remain unresolved inside state-bound historical selections.",
+            gaps.partially_resolved_face_members
         ),
     );
     push(
@@ -2717,6 +2723,7 @@ mod tests {
                 unprojected_dimensions: 1,
                 profile_selections: 1,
                 face_selections: 1,
+                partially_resolved_face_members: 0,
                 native_edge_selections: 2,
                 partially_resolved_edge_members: 1,
                 unresolved_edge_selections: 1,

@@ -3131,6 +3131,12 @@ fn face_selections_round_trip_through_json() {
             faces: vec![HistoricalFaceId("synthetic:history-input:face#0".into())],
             native: "face:13".into(),
         },
+        FaceSelection::HistoricalPartial {
+            state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+            faces: vec![HistoricalFaceId("synthetic:history-input:face#0".into())],
+            unresolved: vec!["native:face-operand#1".into()],
+            native: "face:12".into(),
+        },
         FaceSelection::Native("sldprt:history:feature#14:0".into()),
     ];
     let json = serde_json::to_string(&selections).unwrap();

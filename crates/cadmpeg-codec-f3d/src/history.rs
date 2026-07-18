@@ -687,47 +687,62 @@ pub(crate) fn bind_face_operand_history_candidates(
         else {
             continue;
         };
-        let (Some(transition), Some(topology)) = (&state.transition, &previous.topology) else {
+        let Some(topology) = &previous.topology else {
             continue;
         };
-        if transition.previous_state_id != Some(previous_state_id) {
+        let Some(changed_faces) =
+            face_changes_across_state_chain(state, previous_state_id, &states)
+        else {
             continue;
-        }
+        };
         operand.preceding_candidate_faces =
             faces_in_topology(crate::design::face_operand_candidates(operand), topology);
-        operand.changed_candidate_faces =
-            faces_changed_by_transition(&operand.preceding_candidate_faces, transition)
-                .into_iter()
-                .cloned()
-                .collect();
+        operand.changed_candidate_faces = operand
+            .preceding_candidate_faces
+            .iter()
+            .filter(|face| stable_ref(&face.0).is_some_and(|slot| changed_faces.contains(&slot)))
+            .cloned()
+            .collect();
         operand.historical_support_contexts = historical_face_support_contexts(
             crate::design::face_operand_candidates(operand),
             histories,
             topology,
-            transition,
+            &changed_faces,
         );
         operand.resolved_face_slot =
             crate::design::resolve_face_operand_history_candidates(operand);
     }
 }
 
+fn face_changes_across_state_chain<'a>(
+    state: &'a AsmDeltaState,
+    previous_state_id: i64,
+    states: &HashMap<i64, Option<&'a AsmDeltaState>>,
+) -> Option<HashSet<i64>> {
+    let mut current = state;
+    let mut visited = HashSet::new();
+    let mut changed = HashSet::new();
+    while current.state_id != previous_state_id {
+        if !visited.insert(current.state_id) {
+            return None;
+        }
+        let transition = current.transition.as_ref()?;
+        changed.extend(transition.topology.faces.deleted.iter().copied());
+        changed.extend(transition.topology.faces.updated.iter().copied());
+        current = states.get(&transition.previous_state_id?)?.as_ref()?;
+    }
+    Some(changed)
+}
+
 fn historical_face_support_contexts(
     candidates: &[cadmpeg_ir::ids::FaceId],
     histories: &[AsmHistory],
     preceding_topology: &AsmHistoricalTopology,
-    transition: &AsmHistoricalTransition,
+    changed_faces: &HashSet<i64>,
 ) -> Vec<crate::records::DesignHistoricalFaceSupportContext> {
     let preceding_faces = preceding_topology
         .faces
         .iter()
-        .copied()
-        .collect::<HashSet<_>>();
-    let changed_faces = transition
-        .topology
-        .faces
-        .deleted
-        .iter()
-        .chain(&transition.topology.faces.updated)
         .copied()
         .collect::<HashSet<_>>();
     candidates
@@ -2868,18 +2883,13 @@ mod tests {
             ],
             ..AsmHistoricalTopology::default()
         };
-        let mut transition = AsmHistoricalTransition {
-            previous_state_id: Some(1),
-            records: AsmHistoricalEntityDelta::default(),
-            topology: AsmHistoricalTopologyDelta::default(),
-        };
-        transition.topology.faces.updated = vec![5];
+        let changed_faces = HashSet::from([5]);
         assert_eq!(
             historical_face_support_contexts(
                 &[FaceId("f3d:brep:entity#40".into())],
                 &[history.clone()],
                 &preceding,
-                &transition,
+                &changed_faces,
             ),
             [crate::records::DesignHistoricalFaceSupportContext {
                 active_face_slot: 40,
@@ -2896,9 +2906,64 @@ mod tests {
             &[FaceId("f3d:brep:entity#40".into())],
             &[variant],
             &preceding,
-            &transition,
+            &changed_faces,
         )
         .is_empty());
+    }
+
+    #[test]
+    fn face_changes_span_complete_intermediate_state_chain() {
+        let state = |state_id| AsmDeltaState {
+            id: format!("state-{state_id}"),
+            parent: "history".into(),
+            byte_offset: 0,
+            state_id,
+            version_flag: 1,
+            state_flag: 0,
+            previous_ref: None,
+            next_ref: None,
+            node_index: state_id,
+            partner_ref: None,
+            owner_ref: 0,
+            bulletin_boards: Vec::new(),
+            records: Vec::new(),
+            entity_versions: Vec::new(),
+            record_table_complete: true,
+            topology: Some(AsmHistoricalTopology::default()),
+            transition: None,
+        };
+        let preceding = state(1);
+        let mut intermediate = state(2);
+        let mut result = state(3);
+        let mut first = AsmHistoricalTransition {
+            previous_state_id: Some(1),
+            records: AsmHistoricalEntityDelta::default(),
+            topology: AsmHistoricalTopologyDelta::default(),
+        };
+        first.topology.faces.updated = vec![10];
+        intermediate.transition = Some(first);
+        let mut second = AsmHistoricalTransition {
+            previous_state_id: Some(2),
+            records: AsmHistoricalEntityDelta::default(),
+            topology: AsmHistoricalTopologyDelta::default(),
+        };
+        second.topology.faces.deleted = vec![11];
+        result.transition = Some(second);
+        let states = HashMap::from([
+            (1, Some(&preceding)),
+            (2, Some(&intermediate)),
+            (3, Some(&result)),
+        ]);
+
+        assert_eq!(
+            face_changes_across_state_chain(&result, 1, &states),
+            Some(HashSet::from([10, 11]))
+        );
+        let incomplete = HashMap::from([(1, Some(&preceding)), (3, Some(&result))]);
+        assert_eq!(
+            face_changes_across_state_chain(&result, 1, &incomplete),
+            None
+        );
     }
 
     #[test]

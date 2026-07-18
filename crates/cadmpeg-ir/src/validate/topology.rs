@@ -2528,6 +2528,59 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                         },
                     );
                 }
+                FaceSelection::HistoricalPartial {
+                    state,
+                    faces,
+                    unresolved,
+                    native,
+                } => {
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            faces.iter().map(crate::ids::HistoricalFaceId::as_str),
+                            native,
+                        ),
+                        "face",
+                        true,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .faces
+                                .iter()
+                                .map(crate::ids::HistoricalFaceId::as_str)
+                                .collect()
+                        },
+                    );
+                    let mut identities = HashSet::new();
+                    for identity in unresolved {
+                        if identity.trim().is_empty() {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: "partial historical face selection has an empty unresolved operand identity".into(),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        } else if !identities.insert(identity) {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!("partial historical face selection repeats unresolved operand `{identity}`"),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
+                    }
+                    if unresolved.is_empty() {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: "partial historical face selection has no unresolved operands"
+                                .into(),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                }
                 FaceSelection::Unresolved | FaceSelection::Native(_) => {}
             }
         }

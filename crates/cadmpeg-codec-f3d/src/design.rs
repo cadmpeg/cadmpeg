@@ -1088,30 +1088,57 @@ fn project_offset_faces(
     if matching.is_empty() {
         return None;
     }
-    let faces = matching
+    let members = matching
         .iter()
-        .map(|operand| operand.resolved_face_slot)
-        .collect::<Option<Vec<_>>>();
+        .map(|operand| (operand.id.as_str(), operand.resolved_face_slot))
+        .collect::<Vec<_>>();
     let feature_id = neutral_feature_id(scope);
     let feature_key = feature_id
         .0
         .split_once('#')
         .map_or(feature_id.0.as_str(), |(_, key)| key);
-    let faces = match (faces, scope.previous_history_state_id) {
-        (Some(faces), Some(previous_state_id)) if !faces.is_empty() => FaceSelection::Historical {
-            state: feature_input_topology_id(&feature_id, previous_state_id),
-            faces: faces
-                .into_iter()
-                .map(|face| {
-                    HistoricalFaceId(format!(
+    let faces = match scope.previous_history_state_id {
+        Some(previous_state_id) if members.iter().all(|(_, face)| face.is_some()) => {
+            FaceSelection::Historical {
+                state: feature_input_topology_id(&feature_id, previous_state_id),
+                faces: members
+                    .iter()
+                    .filter_map(|(_, face)| *face)
+                    .map(|face| {
+                        HistoricalFaceId(format!(
+                            "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
+                            feature_key.len(),
+                            feature_key
+                        ))
+                    })
+                    .collect(),
+                native: scope.id.clone(),
+            }
+        }
+        Some(previous_state_id) if members.iter().any(|(_, face)| face.is_some()) => {
+            let mut faces = Vec::new();
+            let mut unresolved = Vec::new();
+            for (identity, face) in &members {
+                if let Some(face) = face {
+                    let face = HistoricalFaceId(format!(
                         "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
                         feature_key.len(),
-                        feature_key
-                    ))
-                })
-                .collect(),
-            native: scope.id.clone(),
-        },
+                        feature_key,
+                    ));
+                    if !faces.contains(&face) {
+                        faces.push(face);
+                    }
+                } else {
+                    unresolved.push((*identity).to_owned());
+                }
+            }
+            FaceSelection::HistoricalPartial {
+                state: feature_input_topology_id(&feature_id, previous_state_id),
+                faces,
+                unresolved,
+                native: scope.id.clone(),
+            }
+        }
         _ => FaceSelection::Native(scope.id.clone()),
     };
     Some(FeatureDefinition::MoveFace {
@@ -2626,19 +2653,54 @@ fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::
 }
 
 pub(crate) fn resolve_face_operand_history_candidates(operand: &DesignFaceOperand) -> Option<i64> {
-    let candidate = match operand.preceding_candidate_faces.as_slice() {
+    let direct = match operand.preceding_candidate_faces.as_slice() {
         [face] => face,
         _ => {
             let [face] = operand.changed_candidate_faces.as_slice() else {
-                return None;
+                return resolve_face_operand_support_candidate(operand);
             };
             face
         }
     };
-    if !face_operand_candidates(operand).contains(candidate) {
+    if !face_operand_candidates(operand).contains(direct) {
         return None;
     }
-    candidate.0.rsplit_once('#')?.1.parse().ok()
+    direct.0.rsplit_once('#')?.1.parse().ok()
+}
+
+fn resolve_face_operand_support_candidate(operand: &DesignFaceOperand) -> Option<i64> {
+    let reference = operand.recipe_references.first()?;
+    let active_faces = if reference.candidate_faces.is_empty() {
+        &reference.alternate_selector_faces
+    } else {
+        &reference.candidate_faces
+    };
+    let active_slots = active_faces
+        .iter()
+        .filter_map(|face| face.0.rsplit_once('#')?.1.parse::<i64>().ok())
+        .collect::<HashSet<_>>();
+    if active_slots.is_empty() {
+        return None;
+    }
+    let mut candidates = operand
+        .historical_support_contexts
+        .iter()
+        .filter(|context| active_slots.contains(&context.active_face_slot))
+        .flat_map(|context| {
+            if context.changed_preceding_face_slots.is_empty() {
+                context.preceding_face_slots.iter()
+            } else {
+                context.changed_preceding_face_slots.iter()
+            }
+        })
+        .copied()
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 pub(crate) fn face_operand_candidates(operand: &DesignFaceOperand) -> &[cadmpeg_ir::ids::FaceId] {
