@@ -2302,7 +2302,10 @@ fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
     assert_eq!(sidecar.spaces[0].length, bytes.len() as u64);
     assert_eq!(sidecar.validate(), Ok(()));
 
-    let again = crate::fidelity::ledger(&crate::container::scan_owned(bytes.clone()).unwrap());
+    let again = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap()
+        .source_fidelity;
     assert_eq!(
         sidecar.to_canonical_json().unwrap(),
         again.to_canonical_json().unwrap()
