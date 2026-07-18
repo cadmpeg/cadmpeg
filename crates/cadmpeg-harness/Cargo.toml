@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 [package]
 name = "cadmpeg-harness"
-description = "Stage-1 subprocess oracle harness for cadmpeg codecs."
+description = "Subprocess safety and mutation sweeps for cadmpeg codecs."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

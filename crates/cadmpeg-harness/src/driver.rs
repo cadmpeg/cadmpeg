@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The parent side: spawn the runner child, enforce a hard timeout, capture
-//! its status and output, and apply the stage-1 oracles.
+//! its status and output, and apply the subprocess checks.
 //!
 //! Isolation lives here. The child may abort, overflow its stack, or loop
 //! forever; the parent observes each of those as an exit status or a timeout
@@ -13,11 +13,11 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::execute::{ReportSummary, RunnerOutcome};
+use crate::execute::RunnerOutcome;
 use crate::model::{Operation, PolicyProfile};
 use crate::oracle::{Oracle, OracleLimits, OracleStatus};
 
-/// The identity of one run: the full baseline key minus the oracle dimension.
+/// The identity of one subprocess run.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RunKey {
     /// Codec id.
@@ -41,7 +41,7 @@ impl RunKey {
         }
     }
 
-    /// The `codec|fixture|operation|profile` string used as the baseline key.
+    /// A compact display key.
     pub fn joined(&self) -> String {
         format!(
             "{}|{}|{}|{}",
@@ -60,13 +60,7 @@ pub struct RunResult {
     /// Classified result label, when the child reported one.
     pub result_class: Option<String>,
     /// Peak process allocation the child measured, when it reported an outcome.
-    /// Retained as a measured value beside the [`Oracle::PeakAlloc`] pass/fail
-    /// verdict so a large regression that stays inside the envelope is still
-    /// visible to the performance ratchet.
     pub peak_alloc_bytes: Option<u64>,
-    /// The child's decode-report summary, when the operation ran a successful
-    /// decode. The stage-2 report oracles judge this.
-    pub report: Option<ReportSummary>,
     /// Wall-clock time the parent measured.
     pub elapsed: Duration,
     /// Whether the parent killed the child at the ceiling.
@@ -206,7 +200,6 @@ pub fn run_job(
         oracles,
         result_class: outcome.as_ref().map(|o| o.result_class.clone()),
         peak_alloc_bytes: outcome.as_ref().map(|o| o.peak_alloc_bytes),
-        report: outcome.as_ref().and_then(|o| o.report.clone()),
         elapsed,
         timed_out,
         stderr: String::from_utf8_lossy(&stderr).into_owned(),

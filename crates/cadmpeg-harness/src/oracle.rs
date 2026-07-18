@@ -1,9 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stage-1 oracles, verdicts, and resource envelopes.
-//!
-//! An oracle is a single falsifiable property of one run. Baselines key on
-//! each oracle separately so one oracle cannot regress while another improves
-//! behind an aggregate count.
+//! Subprocess checks, verdicts, and resource envelopes.
 
 use std::time::Duration;
 
@@ -29,7 +25,7 @@ pub const ENV_PEAK_BYTES: &str = "CADMPEG_HARNESS_PEAK_BYTES";
 /// Environment override for [`DEFAULT_WALL_CLOCK_MS`].
 pub const ENV_TIMEOUT_MS: &str = "CADMPEG_HARNESS_TIMEOUT_MS";
 
-/// The four stage-1 oracles, in baseline-key order.
+/// The four subprocess checks, in display order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Oracle {
     /// The child neither panicked nor aborted.
@@ -43,7 +39,7 @@ pub enum Oracle {
 }
 
 impl Oracle {
-    /// Every oracle, in baseline-key order.
+    /// Every check, in display order.
     pub const ALL: [Oracle; 4] = [
         Oracle::NoPanic,
         Oracle::PeakAlloc,
@@ -51,7 +47,7 @@ impl Oracle {
         Oracle::Determinism,
     ];
 
-    /// The stable baseline label.
+    /// The stable display label.
     pub fn label(self) -> &'static str {
         match self {
             Oracle::NoPanic => "no_panic",
@@ -75,27 +71,18 @@ pub enum OracleStatus {
     /// The property was violated.
     Fail,
     /// The property could not be judged (the run broke before it could be
-    /// measured). Treated as a regression from a passing baseline.
+    /// measured).
     Unevaluated,
 }
 
 impl OracleStatus {
-    /// The stable baseline label.
+    /// The stable display label.
     pub fn label(self) -> &'static str {
         match self {
             OracleStatus::Pass => "pass",
             OracleStatus::Fail => "fail",
             OracleStatus::Unevaluated => "unevaluated",
         }
-    }
-
-    /// Whether a passing baseline moving to this status is a regression.
-    ///
-    /// Only [`OracleStatus::Pass`] preserves a passing baseline; both `Fail`
-    /// and `Unevaluated` are regressions, because losing the ability to verify
-    /// a previously verified property is itself a loss.
-    pub fn is_regression_from_pass(self) -> bool {
-        self != OracleStatus::Pass
     }
 }
 

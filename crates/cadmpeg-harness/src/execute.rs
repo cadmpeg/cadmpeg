@@ -8,17 +8,13 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::decode::ResourceDimension;
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::{
-    Codec, CodecEntry, CodecError, DecodeMode, DecodeOptions, DecodePolicy, DecodeResult,
-    InspectOptions,
-};
+use cadmpeg_ir::{Codec, CodecEntry, CodecError, DecodeOptions, DecodeResult, InspectOptions};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{Operation, PolicyProfile, ResultClass};
 
-/// Every codec id the harness can dispatch, in baseline-key order.
+/// Every codec id the harness can dispatch.
 pub const CODEC_IDS: &[&str] = &["f3d", "sldprt", "catia", "creo", "nx", "rhino"];
 
 /// The machine-readable result the child writes to stdout.
@@ -35,58 +31,6 @@ pub struct RunnerOutcome {
     pub determinism_ok: bool,
     /// Peak process allocation observed by the runner's global allocator.
     pub peak_alloc_bytes: u64,
-    /// A compact summary of the produced
-    /// [`DecodeReport`](cadmpeg_ir::DecodeReport) when the operation ran a decode
-    /// that succeeded, so the parent can judge the stage-2 report properties
-    /// without the full IR crossing the pipe. `None` for detection, a failed
-    /// decode, or a broken run.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub report: Option<ReportSummary>,
-}
-
-/// The decode-report facts the parent stage-2 oracles judge.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ReportSummary {
-    /// Total loss notes.
-    pub losses: usize,
-    /// Loss notes at or above `Error` severity.
-    pub error_losses: usize,
-    /// Transfer-accounting violations emitted by salvage finalization.
-    #[serde(default)]
-    pub transfer_accounting_losses: usize,
-    /// A source-fidelity ledger is present (the codec adopted container
-    /// accounting).
-    pub ledger_present: bool,
-    /// The present ledger passes
-    /// [`SourceFidelity::validate`](cadmpeg_ir::source_fidelity::SourceFidelity::validate).
-    /// `true` when no ledger is present, so absence never reads as an invalid
-    /// ledger.
-    pub ledger_valid: bool,
-    /// Opaque retention degraded from recoverable to accounted under a salvage
-    /// budget; the report invariant pairs it with a loss note.
-    pub retention_degraded: bool,
-}
-
-impl ReportSummary {
-    /// Extract the judged facts from a successful decode's report.
-    fn from_result(result: &DecodeResult) -> ReportSummary {
-        let report = &result.report;
-        let fidelity = &result.source_fidelity;
-        let ledger_present = fidelity.level != cadmpeg_ir::LedgerLevel::L0;
-        let ledger_valid = !ledger_present || fidelity.validate().is_ok();
-        ReportSummary {
-            losses: report.losses.len(),
-            error_losses: report.error_count(),
-            transfer_accounting_losses: report
-                .losses
-                .iter()
-                .filter(|loss| loss.code == cadmpeg_ir::LossCode::TransferAccounting)
-                .count(),
-            ledger_present,
-            ledger_valid,
-            retention_degraded: report.retention_degraded,
-        }
-    }
 }
 
 /// The in-process outcome before the allocator peak is attached.
@@ -96,22 +40,6 @@ pub struct ExecOutcome {
     pub result_class: ResultClass,
     /// Whether the two runs agreed on class and digest.
     pub determinism_ok: bool,
-    /// The report summary of the first run, when it was a successful decode.
-    pub report: Option<ReportSummary>,
-}
-
-/// Falsifiable results for the four runtime stage-2 gates. Each field is
-/// produced by executing the codec under an adversarial policy or truncation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuntimeGateProbe {
-    /// An oversized root input is refused as `InputBytes`.
-    pub no_bypass: bool,
-    /// Expansion refusal remains classified as decompressed-byte exhaustion.
-    pub resource_classification: Option<bool>,
-    /// At least one truncated prefix reports truncation after format commitment.
-    pub strict_truncation: bool,
-    /// Work and allocation ceilings both produce their exact resource class.
-    pub budget_enforcement: Option<bool>,
 }
 
 /// Construct a codec by id, or `None` for an unknown id.
@@ -127,69 +55,6 @@ fn codec_for(id: &str) -> Option<Box<dyn Codec>> {
     })
 }
 
-fn decode_with_policy(
-    codec_id: &str,
-    bytes: &[u8],
-    policy: DecodePolicy,
-) -> Result<(), CodecError> {
-    let codec = codec_for(codec_id).ok_or_else(|| CodecError::Malformed("unknown codec".into()))?;
-    let mut reader = Cursor::new(bytes.to_vec());
-    codec
-        .decode(
-            &mut reader,
-            &DecodeOptions {
-                container_only: false,
-                policy,
-            },
-        )
-        .map(|_| ())
-}
-
-fn refused_dimension(result: &Result<(), CodecError>, expected: ResourceDimension) -> bool {
-    matches!(result, Err(CodecError::ResourceLimit(limit)) if limit.dimension == expected)
-}
-
-/// Execute the four stage-2 runtime probes against one valid codec fixture.
-pub fn probe_runtime_gates(codec_id: &str, bytes: &[u8]) -> RuntimeGateProbe {
-    let normal = decode_with_policy(codec_id, bytes, DecodePolicy::desktop());
-    let mut root_policy = DecodePolicy::desktop();
-    root_policy.limits.max_input_bytes = u64::try_from(bytes.len().saturating_sub(1)).unwrap_or(0);
-    let root = decode_with_policy(codec_id, bytes, root_policy);
-
-    let mut expansion_policy = DecodePolicy::desktop();
-    expansion_policy.limits.max_decompressed_bytes_total = 0;
-    expansion_policy.limits.max_decompressed_bytes_per_expand = 0;
-    let expansion = decode_with_policy(codec_id, bytes, expansion_policy);
-
-    let mut strict_policy = DecodePolicy::desktop();
-    strict_policy.mode = DecodeMode::Strict;
-    let strict_truncation = (1..bytes.len()).rev().any(|length| {
-        matches!(
-            decode_with_policy(codec_id, &bytes[..length], strict_policy),
-            Err(CodecError::Truncated { .. })
-        )
-    });
-
-    let mut work_policy = DecodePolicy::desktop();
-    work_policy.limits.max_work = 0;
-    let work = decode_with_policy(codec_id, bytes, work_policy);
-    let mut alloc_policy = DecodePolicy::desktop();
-    alloc_policy.limits.max_alloc_bytes = 0;
-    let alloc = decode_with_policy(codec_id, bytes, alloc_policy);
-
-    RuntimeGateProbe {
-        no_bypass: refused_dimension(&root, ResourceDimension::InputBytes),
-        resource_classification: normal.is_ok().then(|| {
-            refused_dimension(&expansion, ResourceDimension::DecompressedBytes) || expansion.is_ok()
-        }),
-        strict_truncation,
-        budget_enforcement: normal.is_ok().then(|| {
-            refused_dimension(&work, ResourceDimension::Work)
-                && refused_dimension(&alloc, ResourceDimension::AllocBytes)
-        }),
-    }
-}
-
 /// Classify a codec error, tolerating future `#[non_exhaustive]` variants.
 fn classify_error(error: &CodecError) -> ResultClass {
     match error {
@@ -203,8 +68,7 @@ fn classify_error(error: &CodecError) -> ResultClass {
     }
 }
 
-/// The canonical digest of a successful decode: IR JSON plus the report, so
-/// determinism covers geometry, notes, and losses together.
+/// The canonical digest of a successful decode.
 fn decode_digest(result: &DecodeResult) -> String {
     let ir_json = result
         .ir
@@ -212,9 +76,15 @@ fn decode_digest(result: &DecodeResult) -> String {
         .unwrap_or_else(|error| format!("ir-json-error:{error}"));
     let report_json = serde_json::to_string(&result.report)
         .unwrap_or_else(|error| format!("report-json-error:{error}"));
+    let fidelity_json = result
+        .source_fidelity
+        .to_canonical_json()
+        .unwrap_or_else(|error| format!("fidelity-json-error:{error}"));
     let mut buf = ir_json;
     buf.push('\n');
     buf.push_str(&report_json);
+    buf.push('\n');
+    buf.push_str(&fidelity_json);
     sha256_hex(buf.as_bytes())
 }
 
@@ -224,7 +94,6 @@ fn decode_digest(result: &DecodeResult) -> String {
 struct RunOnce {
     class: ResultClass,
     digest: String,
-    report: Option<ReportSummary>,
 }
 
 /// Perform one operation once against `bytes`.
@@ -233,7 +102,6 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
         return RunOnce {
             class: ResultClass::Other,
             digest: sha256_hex(b"unknown-codec"),
-            report: None,
         };
     };
 
@@ -243,7 +111,6 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
             RunOnce {
                 class: ResultClass::from_confidence(confidence),
                 digest: sha256_hex(format!("detect:{confidence}").as_bytes()),
-                report: None,
             }
         }
         Operation::Inspect => {
@@ -258,7 +125,6 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
                     RunOnce {
                         class: ResultClass::Ok,
                         digest: sha256_hex(json.as_bytes()),
-                        report: None,
                     }
                 }
                 Err(error) => error_run(&error),
@@ -274,7 +140,6 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
                 Ok(result) => RunOnce {
                     class: ResultClass::Ok,
                     digest: decode_digest(&result),
-                    report: Some(ReportSummary::from_result(&result)),
                 },
                 Err(error) => error_run(&error),
             }
@@ -287,11 +152,7 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
 fn error_run(error: &CodecError) -> RunOnce {
     let class = classify_error(error);
     let digest = sha256_hex(format!("err:{}:{error}", class.label()).as_bytes());
-    RunOnce {
-        class,
-        digest,
-        report: None,
-    }
+    RunOnce { class, digest }
 }
 
 /// Run `op` twice and report the classified result and a determinism verdict.
@@ -306,6 +167,5 @@ pub fn execute(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u
     ExecOutcome {
         result_class: first.class,
         determinism_ok,
-        report: first.report,
     }
 }
