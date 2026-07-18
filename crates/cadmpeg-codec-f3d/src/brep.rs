@@ -998,34 +998,47 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     kept_coedges.insert(ci);
                     if let Some(pc) = ce.ref_at(10) {
                         if let Some(prec) = by_index.get(&pc) {
-                            // An inline pcurve carries its own 2D block; a
-                            // ref-form pcurve delegates to an intcurve entity
-                            // whose record holds several 2D blocks. Decode
-                            // every ref-form candidate and keep the one whose
-                            // endpoints land on the edge's vertices through
-                            // the face surface. An inline scope owns exactly
-                            // one BS2 carrier and needs no disambiguation.
+                            // A wrapped pcurve either owns an inline 2D block
+                            // or delegates through a subtype-table reference;
+                            // a nonzero-discriminator ref form delegates to an
+                            // intcurve entity. Decode every referenced candidate
+                            // and keep the one whose endpoints land on the edge's
+                            // vertices through the face surface. An inline scope
+                            // owns exactly one BS2 carrier and needs no
+                            // disambiguation.
                             let inline = matches!(
                                 (prec.chunk(3), prec.chunk(4)),
                                 (Some(Token::Long(0)), Some(Token::True | Token::False))
                             );
                             let candidates = match (prec.chunk(3), prec.chunk(4)) {
                                 (Some(Token::Long(0)), Some(Token::True | Token::False)) => {
-                                    crate::sab::payload_subtype_span(
+                                    if let Some(span) = crate::sab::payload_subtype_span(
                                         bytes,
                                         prec,
                                         5,
                                         ref_width,
                                         "exp_par_cur",
-                                    )
-                                    .map(|span| {
+                                    ) {
                                         nurbs::decode_pcurve_cache_candidates_resolving_refs(
                                             span,
                                             bytes,
                                             &subtype_tables,
                                         )
-                                    })
-                                    .unwrap_or_default()
+                                    } else if crate::sab::payload_subtype_span(
+                                        bytes, prec, 5, ref_width, "ref",
+                                    )
+                                    .is_some()
+                                    {
+                                        // The resolver needs the `ref N` opener and name,
+                                        // not only the scope interior returned above.
+                                        nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                            record_slice(prec, bytes),
+                                            bytes,
+                                            &subtype_tables,
+                                        )
+                                    } else {
+                                        Vec::new()
+                                    }
                                 }
                                 (Some(Token::Long(1 | 2 | -1)), Some(Token::Ref(reference))) => {
                                     by_index

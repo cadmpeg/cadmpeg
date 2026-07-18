@@ -854,6 +854,43 @@ fn synthetic_geometry_with_pcurve_smbh() -> Vec<u8> {
     synthetic_geometry_with_pcurve_block_smbh(generated_pcurve_block())
 }
 
+fn synthetic_geometry_with_wrapped_ref_pcurve_smbh() -> Vec<u8> {
+    let mut bytes = synthetic_geometry_with_pcurve_smbh();
+    let opener = bytes
+        .windows(b"\x0f\x0d\x0bexp_par_cur".len())
+        .position(|window| window == b"\x0f\x0d\x0bexp_par_cur")
+        .expect("generated wrapped pcurve subtype");
+    let close = bytes[opener..]
+        .windows([0x10, 0x0a, 0x0b, 0x0a, 0x0b].len())
+        .position(|window| window == [0x10, 0x0a, 0x0b, 0x0a, 0x0b])
+        .map(|offset| opener + offset)
+        .expect("generated wrapped pcurve subtype close");
+    let mut reference = vec![0x0f];
+    t_ident(&mut reference, "ref");
+    t_long(&mut reference, 0);
+    reference.push(0x10);
+    bytes.splice(opener..=close, reference);
+
+    let delta = bytes
+        .windows(b"delta_state".len())
+        .position(|window| window == b"delta_state")
+        .unwrap()
+        - 2;
+    let mut target = Vec::new();
+    t_subident(&mut target, "intcurve");
+    t_ident(&mut target, "curve");
+    t_ref(&mut target, -1);
+    t_long(&mut target, -1);
+    t_ref(&mut target, -1);
+    target.push(0x0f);
+    t_ident(&mut target, "int_int_cur");
+    target.extend_from_slice(&generated_pcurve_block());
+    target.push(0x10);
+    t_end(&mut target);
+    bytes.splice(delta..delta, target);
+    bytes
+}
+
 fn synthetic_geometry_with_inline_pcurve_on_nurbs_surface_smbh() -> Vec<u8> {
     replace_generated_face_with_nurbs_surface(synthetic_geometry_with_pcurve_smbh())
 }
@@ -19603,6 +19640,35 @@ fn inline_pcurve_scope_is_its_exact_carrier_identity() {
             &DecodeOptions::default(),
         )
         .expect("structurally unique inline pcurve decode");
+
+    assert_eq!(result.ir.model.pcurves.len(), 1);
+    assert_eq!(
+        result
+            .ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.pcurve.is_some())
+            .count(),
+        1
+    );
+    assert!(result
+        .report
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("explicit UV pcurve reference")));
+}
+
+#[test]
+fn wrapped_ref_pcurve_resolves_its_subtype_carrier() {
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_smbh(
+                &synthetic_geometry_with_wrapped_ref_pcurve_smbh(),
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("wrapped ref pcurve decode");
 
     assert_eq!(result.ir.model.pcurves.len(), 1);
     assert_eq!(
