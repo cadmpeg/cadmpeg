@@ -991,7 +991,7 @@ impl<'a> ParameterExpressionParser<'a> {
                 return Some(ParameterValue::Real(std::f64::consts::PI));
             }
         }
-        parse_parameter_expression_literal(&token).or_else(|| {
+        parse_parameter_literal(&token).or_else(|| {
             self.aliases
                 .get(&token)
                 .and_then(Clone::clone)
@@ -1001,6 +1001,11 @@ impl<'a> ParameterExpressionParser<'a> {
 
     fn token(&mut self) -> Option<(String, bool)> {
         let rest = &self.input[self.offset..];
+        if rest.starts_with("<MOD-DIAM>") {
+            self.offset += "<MOD-DIAM>".len();
+            let (value, quoted) = self.token()?;
+            return (!quoted).then(|| (format!("<MOD-DIAM>{value}"), false));
+        }
         if rest.starts_with('"') {
             self.offset += 1;
             let mut value = String::new();
@@ -1063,25 +1068,6 @@ impl<'a> ParameterExpressionParser<'a> {
             character
         })
     }
-}
-
-fn parse_parameter_expression_literal(token: &str) -> Option<ParameterValue> {
-    if token.eq_ignore_ascii_case("true") {
-        return Some(ParameterValue::Boolean(true));
-    }
-    if token.eq_ignore_ascii_case("false") {
-        return Some(ParameterValue::Boolean(false));
-    }
-    if let Some(value) = parse_length_mm(token) {
-        return Some(ParameterValue::Length(Length(value)));
-    }
-    if let Some(value) = parse_angle_rad(token) {
-        return Some(ParameterValue::Angle(Angle(value)));
-    }
-    if let Ok(value) = token.trim().parse::<i64>() {
-        return Some(ParameterValue::Integer(value));
-    }
-    token.trim().parse::<f64>().ok().map(ParameterValue::Real)
 }
 
 fn negate_parameter_value(value: &ParameterValue) -> Option<ParameterValue> {
@@ -4476,7 +4462,7 @@ mod literal_tests {
     use super::{
         apply_parameter_function, compare_parameter_values, exact_integer_f64,
         exponentiate_parameter_value, format_f64_literal, parse_length_mm, parse_parameter_literal,
-        rewrite_parameter_expression, ParameterValue,
+        rewrite_parameter_expression, ParameterExpressionParser, ParameterValue,
     };
 
     #[test]
@@ -4519,6 +4505,20 @@ mod literal_tests {
         ] {
             assert_eq!(parse_length_mm(literal), Some(expected), "{literal}");
         }
+    }
+
+    #[test]
+    fn diameter_display_literals_participate_in_expressions() {
+        let aliases = std::collections::HashMap::new();
+        let values = std::collections::HashMap::new();
+        assert_eq!(
+            ParameterExpressionParser::new("<MOD-DIAM>4mm / 2", &aliases, &values).parse(),
+            Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
+        );
+        assert_eq!(
+            ParameterExpressionParser::new("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
+            Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
+        );
     }
 
     #[test]
