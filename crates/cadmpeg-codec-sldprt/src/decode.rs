@@ -1170,6 +1170,11 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
         .feature_input_lanes
         .iter()
         .map(|lane| {
+            let markers_by_id = lane
+                .sketch_entities
+                .iter()
+                .map(|marker| (marker.id.as_str(), marker))
+                .collect();
             let instances = lane
                 .relation_instances
                 .iter()
@@ -1190,7 +1195,10 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             let markers = lane
                 .sketch_entities
                 .iter()
-                .filter(|marker| marker.kind.owns_constraint() && !projected.contains(&marker.id))
+                .filter(|marker| {
+                    crate::resolved_features::marker_owns_constraint(marker, &markers_by_id)
+                        && !projected.contains(&marker.id)
+                })
                 .count();
             instances + bindings + markers
         })
@@ -1205,11 +1213,17 @@ fn multiply_projected_sketch_relation_records(
         .feature_input_lanes
         .iter()
         .flat_map(|lane| {
+            let markers_by_id = lane
+                .sketch_entities
+                .iter()
+                .map(|marker| (marker.id.as_str(), marker))
+                .collect();
             lane.relation_instances
                 .iter()
                 .map(|relation| relation.id.as_str())
-                .chain(lane.sketch_entities.iter().filter_map(|marker| {
-                    marker.kind.owns_constraint().then_some(marker.id.as_str())
+                .chain(lane.sketch_entities.iter().filter_map(move |marker| {
+                    crate::resolved_features::marker_owns_constraint(marker, &markers_by_id)
+                        .then_some(marker.id.as_str())
                 }))
         })
         .collect::<std::collections::HashSet<_>>();
@@ -2649,7 +2663,7 @@ mod design_loss_tests {
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
         FeatureInputLane, FeatureInputName, FeatureInputRelationBinding,
         FeatureInputRelationFamily, FeatureInputRelationInstance, SketchInputEntity,
-        SketchInputKind, SketchRelationKind,
+        SketchInputKind, SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::features::{
         Angle, BodyRetentionMode, BodySelection, BooleanOp, ConfigurationFeatureState,
@@ -3573,6 +3587,15 @@ mod design_loss_tests {
                 scalar_ref: scalar_ref.into(),
                 feature_ref: Some("feature".into()),
             };
+        let mut relation_marker = marker(
+            "relation-marker",
+            0,
+            SketchInputKind::Relation(SketchRelationKind::Horizontal),
+        );
+        relation_marker.links.push(SketchInputLink {
+            local_id: 1,
+            entity_ref: "geometry-marker".into(),
+        });
         let native = SldprtNative {
             feature_input_lanes: vec![FeatureInputLane {
                 id: "lane".into(),
@@ -3591,17 +3614,18 @@ mod design_loss_tests {
                 surface_selections: Vec::new(),
                 references: Vec::new(),
                 sketch_entities: vec![
-                    marker(
-                        "relation-marker",
-                        0,
-                        SketchInputKind::Relation(SketchRelationKind::Horizontal),
-                    ),
+                    relation_marker,
                     marker(
                         "dimension-handle",
                         1,
                         SketchInputKind::Relation(SketchRelationKind::Distance),
                     ),
                     marker("geometry-marker", 2, SketchInputKind::Native(99)),
+                    marker(
+                        "operandless-relation-marker",
+                        3,
+                        SketchInputKind::Relation(SketchRelationKind::Vertical),
+                    ),
                 ],
             }],
             ..SldprtNative::default()
@@ -3643,20 +3667,39 @@ mod design_loss_tests {
                 edge_selections: Vec::new(),
                 surface_selections: Vec::new(),
                 references: Vec::new(),
-                sketch_entities: vec![SketchInputEntity {
-                    id: "relation-marker".into(),
-                    parent: "lane".into(),
-                    feature_ref: Some("feature".into()),
-                    ordinal: 0,
-                    offset: 0,
-                    object_index: None,
-                    local_id: None,
-                    kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
-                    state_value: None,
-                    coordinates_m: None,
-                    links: Vec::new(),
-                    link_selector: None,
-                }],
+                sketch_entities: vec![
+                    SketchInputEntity {
+                        id: "relation-marker".into(),
+                        parent: "lane".into(),
+                        feature_ref: Some("feature".into()),
+                        ordinal: 0,
+                        offset: 0,
+                        object_index: None,
+                        local_id: None,
+                        kind: SketchInputKind::Relation(SketchRelationKind::Horizontal),
+                        state_value: None,
+                        coordinates_m: None,
+                        links: vec![SketchInputLink {
+                            local_id: 1,
+                            entity_ref: "geometry-marker".into(),
+                        }],
+                        link_selector: None,
+                    },
+                    SketchInputEntity {
+                        id: "geometry-marker".into(),
+                        parent: "lane".into(),
+                        feature_ref: Some("feature".into()),
+                        ordinal: 1,
+                        offset: 1,
+                        object_index: None,
+                        local_id: Some(1),
+                        kind: SketchInputKind::Native(99),
+                        state_value: None,
+                        coordinates_m: None,
+                        links: Vec::new(),
+                        link_selector: None,
+                    },
+                ],
             }],
             ..SldprtNative::default()
         };

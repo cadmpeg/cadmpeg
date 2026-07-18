@@ -9345,10 +9345,7 @@ fn typed_marker_relation_definition_in_sketch(
         SketchInputKind::Native(_) => None,
         _ => return None,
     };
-    if marker.links.is_empty()
-        && !loci_by_marker.contains_key(&marker.id)
-        && relation_owner_markers(marker, markers_by_id).is_empty()
-    {
+    if !marker_owns_constraint(marker, markers_by_id) {
         return None;
     }
     let native = || {
@@ -10231,6 +10228,14 @@ fn relation_owner_markers<'a>(
         .collect::<Vec<_>>();
     owners.sort_unstable_by_key(|marker| marker.offset);
     owners
+}
+
+pub(crate) fn marker_owns_constraint(
+    marker: &SketchInputEntity,
+    markers_by_id: &HashMap<&str, &SketchInputEntity>,
+) -> bool {
+    marker.kind.owns_constraint()
+        && (!marker.links.is_empty() || !relation_owner_markers(marker, markers_by_id).is_empty())
 }
 
 fn relation_owner_curve_entities(
@@ -15989,9 +15994,7 @@ mod profile_join_tests {
         markers.insert(coordinate_horizontal.id.as_str(), &coordinate_horizontal);
         assert_eq!(
             typed_marker_relation_definition(&coordinate_horizontal, &markers, &coordinate_loci,),
-            Some(SketchConstraintDefinition::Horizontal {
-                entity: first.clone(),
-            })
+            None
         );
         let relation_point =
             SketchEntityId("sldprt:model:sketch-entity#relation-point:lane:1".into());
