@@ -1943,6 +1943,7 @@ fn standard_catpart_with_catalog() -> Vec<u8> {
         "Pad",
         "GSMLoft",
         "GSMPointBetweenValues",
+        "GSMPlaneAngle",
         "Prism_ThickThin2",
         "Revol_ThickThin1",
     ]);
@@ -5833,8 +5834,9 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
     assert_eq!(native.catalogs[0].entries[5].value, "Pad");
     assert_eq!(native.catalogs[0].entries[6].value, "GSMLoft");
     assert_eq!(native.catalogs[0].entries[7].value, "GSMPointBetweenValues");
-    assert_eq!(native.catalogs[0].entries[8].value, "Prism_ThickThin2");
-    assert_eq!(native.catalogs[0].entries[9].value, "Revol_ThickThin1");
+    assert_eq!(native.catalogs[0].entries[8].value, "GSMPlaneAngle");
+    assert_eq!(native.catalogs[0].entries[9].value, "Prism_ThickThin2");
+    assert_eq!(native.catalogs[0].entries[10].value, "Revol_ThickThin1");
     assert!(decoded.ir.model.features.is_empty());
 }
 
@@ -6041,7 +6043,7 @@ fn decode_projects_pattern_classes_with_unresolved_operands() {
 
 #[test]
 fn decode_projects_exact_gsm_constructions_as_native_operations() {
-    for class in ["GSMLoft", "GSMPointBetweenValues"] {
+    for class in ["GSMLoft", "GSMPointBetweenValues", "GSMPlaneAngle"] {
         let decoded = CatiaCodec
             .decode(
                 &mut Cursor::new(standard_catpart_with_design_class(class)),

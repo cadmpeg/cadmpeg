@@ -355,6 +355,7 @@ fn catia_feature_family(class: &str) -> Option<(&'static str, CatiaFeatureKind)>
             "GSMPointBetweenValues",
             CatiaFeatureKind::Native("GSMPointBetweenValues"),
         )),
+        "GSMPlaneAngle" => Some(("GSMPlaneAngle", CatiaFeatureKind::Native("GSMPlaneAngle"))),
         "Prism_ThickThin2" => Some((
             "Prism_ThickThin2",
             CatiaFeatureKind::Native("Prism_ThickThin2"),
