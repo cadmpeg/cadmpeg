@@ -13,8 +13,8 @@ use crate::records::{
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
     DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-    DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignDimensionRecipeRecord, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
     DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
     DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
@@ -489,6 +489,35 @@ pub fn project_parameter_design(
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
+    project_parameter_design_with_edge_identities(
+        native,
+        owners,
+        scopes,
+        construction_groups,
+        fillet_radius_groups,
+        edge_operands,
+        &[],
+        face_operands,
+        placements,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+/// Project Design parameters and feature scopes, including fixed edge identities.
+pub fn project_parameter_design_with_edge_identities(
+    native: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    scopes: &[DesignParameterScope],
+    construction_groups: &[DesignConstructionOperandGroup],
+    fillet_radius_groups: &[DesignFilletRadiusGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+    face_operands: &[DesignFaceOperand],
+    placements: &[DesignSketchPlacement],
+) -> (
+    Vec<cadmpeg_ir::features::Feature>,
+    Vec<cadmpeg_ir::features::DesignParameter>,
+) {
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection, Feature,
         FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, ProfileRef,
@@ -673,6 +702,7 @@ pub fn project_parameter_design(
                                             group,
                                             construction_groups,
                                             edge_operands,
+                                            edge_identity_operands,
                                             scope.previous_history_state_id,
                                             &neutral_feature_id(scope),
                                             edge_radius,
@@ -707,17 +737,23 @@ pub fn project_parameter_design(
                     }
                 }
             } else if family == Some(DesignFeatureFamily::Chamfer) {
-                project_chamfer(scope, &parameters, construction_groups, edge_operands)
-                    .unwrap_or_else(|| FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: parameters
-                            .iter()
-                            .map(|(_, parameter)| {
-                                (parameter.name.clone(), parameter.expression.clone())
-                            })
-                            .collect(),
-                        properties: native_scope_properties(scope, native_scope),
-                    })
+                project_chamfer(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: parameters
+                        .iter()
+                        .map(|(_, parameter)| {
+                            (parameter.name.clone(), parameter.expression.clone())
+                        })
+                        .collect(),
+                    properties: native_scope_properties(scope, native_scope),
+                })
             } else {
                 FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -1131,6 +1167,7 @@ fn project_chamfer(
     parameters: &[(u32, &DesignParameter)],
     construction_groups: &[DesignConstructionOperandGroup],
     edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{ChamferGroup, ChamferSpec, EdgeSelection, FeatureDefinition};
 
@@ -1238,6 +1275,7 @@ fn project_chamfer(
                         group,
                         construction_groups,
                         edge_operands,
+                        edge_identity_operands,
                         scope.previous_history_state_id,
                         &neutral_feature_id(scope),
                         None,
@@ -1255,6 +1293,7 @@ fn resolved_edge_group(
     group: &DesignConstructionOperandGroup,
     groups: &[DesignConstructionOperandGroup],
     operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
     previous_state_id: Option<i64>,
     feature_id: &cadmpeg_ir::features::FeatureId,
     treatment_radius: Option<f64>,
@@ -1287,6 +1326,66 @@ fn resolved_edge_group(
         }
     };
     let stream = native_stream(&group.id);
+    let identity_matches = group
+        .members
+        .iter()
+        .map(|member| {
+            let mut matches = identity_operands.iter().filter(|operand| {
+                native_stream(&operand.id) == stream
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.record_index == *member
+            });
+            let operand = matches.next()?;
+            matches.next().is_none().then_some(operand)
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(identity_matches) = identity_matches {
+        if identity_matches.is_empty() {
+            return unmatched_selection(previous_state_id);
+        }
+        let Some(previous_state_id) = previous_state_id else {
+            return unmatched_selection(None);
+        };
+        let state = feature_input_topology_id(feature_id, previous_state_id);
+        let members = identity_matches
+            .iter()
+            .map(|operand| {
+                let edge = (operand.historical_entity_kind
+                    == Some(crate::records::AsmHistoricalEntityKind::Edge)
+                    && operand.historical_state_ids.contains(&previous_state_id))
+                .then_some(operand.historical_entity_ref)
+                .flatten();
+                (operand.id.as_str(), edge)
+            })
+            .collect::<Vec<_>>();
+        if members.iter().all(|(_, edge)| edge.is_some()) {
+            let edges = members
+                .into_iter()
+                .filter_map(|(_, edge)| edge)
+                .map(|edge_slot| {
+                    HistoricalEdgeId(format!(
+                        "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
+                        feature_key.len(),
+                        feature_key
+                    ))
+                })
+                .collect();
+            return EdgeSelection::Historical {
+                state,
+                edges,
+                native: group.id.clone(),
+            };
+        }
+        return partial_historical_edge_selection(
+            members,
+            previous_state_id,
+            feature_key,
+            state,
+            &group.id,
+        )
+        .expect("identity members include at least one unresolved edge");
+    }
     let mut matched_operands = Vec::with_capacity(group.members.len());
     let mut member_identities = HashSet::new();
     for member in &group.members {
@@ -8605,6 +8704,80 @@ pub fn decode_edge_operands(
     Ok(out)
 }
 
+/// Decode persistent selection identities named by Fillet and Chamfer groups.
+pub fn decode_edge_identity_operands(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignEdgeIdentityOperand>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(scope) = scopes.iter().find(|scope| {
+            native_stream(&scope.id) == Some(stream)
+                && scope.record_index == group.scope_record_index
+                && matches!(
+                    design_feature_family(&scope.kind),
+                    Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
+                )
+        }) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            let Ok(start) = usize::try_from(header.byte_offset) else {
+                continue;
+            };
+            let Some(parsed) = parse_edge_identity_member(bytes, start) else {
+                continue;
+            };
+            let Ok(group_member_ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            out.push(DesignEdgeIdentityOperand {
+                id: format!(
+                    "f3d:{}:design-edge-identity-operand#{}",
+                    entry.name, header.byte_offset
+                ),
+                scope_record_index: scope.record_index,
+                group_record_index: group.record_index,
+                group_member_ordinal,
+                record_index,
+                byte_offset: header.byte_offset,
+                class_tag: header.class_tag.clone(),
+                local_id: parsed.local_id,
+                local_id_offset: parsed.local_id_offset,
+                asset_id: parsed.asset_id,
+                asset_id_offset: parsed.asset_id_offset,
+                context_id: parsed.context_id,
+                context_id_offset: parsed.context_id_offset,
+                historical_entity_kind: None,
+                historical_entity_ref: None,
+                historical_state_ids: Vec::new(),
+            });
+        }
+    }
+    out.sort_by_key(|operand| operand.id.clone());
+    Ok(out)
+}
+
 /// Decode the face-recipe operand frames named by Extrude face groups.
 pub fn decode_face_operands(
     scan: &ContainerScan,
@@ -9573,6 +9746,39 @@ fn parse_extrude_identity_member(
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
         next_record_index: u32_at(bytes, after_next_tag)?,
         next_byte_offset: u64::try_from(next_at).ok()?,
+    })
+}
+
+struct ParsedEdgeIdentityMember {
+    local_id: u64,
+    local_id_offset: u64,
+    asset_id: String,
+    asset_id_offset: u64,
+    context_id: String,
+    context_id_offset: u64,
+}
+
+fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeIdentityMember> {
+    if bytes.get(start + 11..start + 23)? != [0; 12]
+        || bytes.get(start + 23) != Some(&1)
+        || bytes.get(start + 28..start + 34)? != [0; 6]
+        || u32_at(bytes, start + 34)? != 1
+    {
+        return None;
+    }
+    let local_id = u64::from(u32_at(bytes, start + 24)?);
+    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 38)?;
+    let (context_id, _after_context_id) = lp_utf16(bytes, after_asset_id)?;
+    if !is_guid(&asset_id) || !is_guid(&context_id) {
+        return None;
+    }
+    Some(ParsedEdgeIdentityMember {
+        local_id,
+        local_id_offset: u64::try_from(start + 24).ok()?,
+        asset_id,
+        asset_id_offset: u64::try_from(start + 42).ok()?,
+        context_id,
+        context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
     })
 }
 
@@ -15644,6 +15850,28 @@ mod relation_tests {
         assert_eq!(member.next_byte_offset, 190);
         assert_eq!(member.next_record_index, 201);
 
+        let mut edge_identity_bytes = Vec::new();
+        header(&mut edge_identity_bytes, *b"278", 5887);
+        edge_identity_bytes.extend_from_slice(&[0; 12]);
+        edge_identity_bytes.push(1);
+        edge_identity_bytes.extend_from_slice(&5890u32.to_le_bytes());
+        edge_identity_bytes.extend_from_slice(&[0; 6]);
+        edge_identity_bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(
+            &mut edge_identity_bytes,
+            "ad3001bb-a0fc-44c2-9b7a-c8b8fb70bfc0",
+        );
+        lp_utf16(
+            &mut edge_identity_bytes,
+            "1d8b67fc-c638-4af3-b13d-776dce4f472d",
+        );
+        let edge_identity = super::parse_edge_identity_member(&edge_identity_bytes, 0)
+            .expect("fixed edge-treatment selection identity");
+        assert_eq!(edge_identity.local_id, 5890);
+        assert_eq!(edge_identity.local_id_offset, 24);
+        assert_eq!(edge_identity.asset_id_offset, 42);
+        assert_eq!(edge_identity.context_id_offset, 118);
+
         group.id = "f3d:Design/BulkStream.dat:selection-group#100".into();
         member.id = "f3d:Design/BulkStream.dat:selection-member#200".into();
         let identity = DesignConstructionOperandIdentity {
@@ -15954,6 +16182,7 @@ mod relation_tests {
             &recovered_group,
             std::slice::from_ref(&recovered_group),
             std::slice::from_ref(&proven_operand),
+            &[],
             Some(8),
             &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
             None,
@@ -15991,6 +16220,7 @@ mod relation_tests {
             &terminal_group,
             std::slice::from_ref(&terminal_group),
             &[terminal_resolved, terminal_unresolved],
+            &[],
             None,
             &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
             None,

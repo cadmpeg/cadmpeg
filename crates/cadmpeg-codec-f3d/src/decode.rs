@@ -762,16 +762,18 @@ pub fn decode(
             native.design_configurations = crate::design::decode_configurations(&scan)?;
             ir.model.configurations =
                 crate::design::project_configurations(&native.design_configurations);
-            (ir.model.features, ir.model.parameters) = crate::design::project_parameter_design(
-                &native.design_parameters,
-                &native.design_parameter_owners,
-                &native.design_parameter_scopes,
-                &native.design_construction_operand_groups,
-                &native.design_fillet_radius_groups,
-                &native.design_edge_operands,
-                &native.design_face_operands,
-                &native.design_sketch_placements,
-            );
+            (ir.model.features, ir.model.parameters) =
+                crate::design::project_parameter_design_with_edge_identities(
+                    &native.design_parameters,
+                    &native.design_parameter_owners,
+                    &native.design_parameter_scopes,
+                    &native.design_construction_operand_groups,
+                    &native.design_fillet_radius_groups,
+                    &native.design_edge_operands,
+                    &native.design_edge_identity_operands,
+                    &native.design_face_operands,
+                    &native.design_sketch_placements,
+                );
             crate::design::bind_configuration_parameter_overrides(
                 &mut ir.model.configurations,
                 &ir.model.parameters,
@@ -1031,16 +1033,18 @@ pub fn decode(
     crate::design::bind_body_bounds(&mut native.design_body_bounds, &native.design_body_bindings);
     native.design_configurations = crate::design::decode_configurations(&scan)?;
     ir.model.configurations = crate::design::project_configurations(&native.design_configurations);
-    (ir.model.features, ir.model.parameters) = crate::design::project_parameter_design(
-        &native.design_parameters,
-        &native.design_parameter_owners,
-        &native.design_parameter_scopes,
-        &native.design_construction_operand_groups,
-        &native.design_fillet_radius_groups,
-        &native.design_edge_operands,
-        &native.design_face_operands,
-        &native.design_sketch_placements,
-    );
+    (ir.model.features, ir.model.parameters) =
+        crate::design::project_parameter_design_with_edge_identities(
+            &native.design_parameters,
+            &native.design_parameter_owners,
+            &native.design_parameter_scopes,
+            &native.design_construction_operand_groups,
+            &native.design_fillet_radius_groups,
+            &native.design_edge_operands,
+            &native.design_edge_identity_operands,
+            &native.design_face_operands,
+            &native.design_sketch_placements,
+        );
     crate::design::bind_configuration_parameter_overrides(
         &mut ir.model.configurations,
         &ir.model.parameters,
@@ -1829,6 +1833,16 @@ fn extend_related_design_records(
     );
     crate::history::bind_extrude_selection_history(
         &mut native.design_extrude_selection_members,
+        &native.asm_histories,
+    );
+    native.design_edge_identity_operands = crate::design::decode_edge_identity_operands(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+    )?;
+    crate::history::bind_edge_identity_history(
+        &mut native.design_edge_identity_operands,
         &native.asm_histories,
     );
     native.design_edge_operands = crate::design::decode_edge_operands(

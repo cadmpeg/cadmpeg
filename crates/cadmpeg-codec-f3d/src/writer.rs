@@ -1388,13 +1388,14 @@ fn encode_act_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> 
 
 fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecError> {
     let native = f3d_native(target)?.unwrap_or_default();
-    let (_, projected_parameters) = crate::design::project_parameter_design(
+    let (_, projected_parameters) = crate::design::project_parameter_design_with_edge_identities(
         &native.design_parameters,
         &native.design_parameter_owners,
         &native.design_parameter_scopes,
         &native.design_construction_operand_groups,
         &native.design_fillet_radius_groups,
         &native.design_edge_operands,
+        &native.design_edge_identity_operands,
         &native.design_face_operands,
         &native.design_sketch_placements,
     );

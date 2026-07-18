@@ -12,7 +12,9 @@ use crate::history_records::{
     AsmHistoricalTopology, AsmHistoricalTopologyDelta, AsmHistoricalTransition, AsmHistory,
     AsmHistoryRecord,
 };
-use crate::records::{AsmHistoricalEntityKind, DesignExtrudeSelectionMember};
+use crate::records::{
+    AsmHistoricalEntityKind, DesignEdgeIdentityOperand, DesignExtrudeSelectionMember,
+};
 use cadmpeg_ir::le::int_at;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -1789,6 +1791,24 @@ pub(crate) fn bind_extrude_selection_history(
             member.historical_entity_kind = Some(kind);
             member.historical_entity_ref = Some(entity_ref);
             member.historical_state_ids = states;
+        }
+    }
+}
+
+pub(crate) fn bind_edge_identity_history(
+    operands: &mut [DesignEdgeIdentityOperand],
+    histories: &[AsmHistory],
+) {
+    for operand in operands {
+        operand.historical_entity_kind = None;
+        operand.historical_entity_ref = None;
+        operand.historical_state_ids.clear();
+        if let Some((kind, entity_ref, states)) =
+            historical_selection_identity_kind(histories, operand.local_id)
+        {
+            operand.historical_entity_kind = Some(kind);
+            operand.historical_entity_ref = Some(entity_ref);
+            operand.historical_state_ids = states;
         }
     }
 }

@@ -1101,6 +1101,46 @@ pub enum AsmHistoricalEntityKind {
     Pcurve,
 }
 
+/// Persistent selection identity owned by a Fillet or Chamfer operand group.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEdgeIdentityOperand {
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning parameter-scope record.
+    pub scope_record_index: u32,
+    /// Owning construction-operand group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Indexed-record identity named by the construction group.
+    pub record_index: u32,
+    /// Byte offset of the indexed-record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Local persistent selection identity preceding the two UUID fields.
+    pub local_id: u64,
+    /// Byte offset of `local_id`.
+    pub local_id_offset: u64,
+    /// Asset UUID qualifying the local selection identity.
+    pub asset_id: String,
+    /// Byte offset of the asset UUID's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the local selection-identity context.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Stable ASM history family carrying `local_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub historical_entity_kind: Option<AsmHistoricalEntityKind>,
+    /// Stable ASM entity slot carrying `local_id`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub historical_entity_ref: Option<i64>,
+    /// ASM history states containing the identity, in history arena order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub historical_state_ids: Vec<i64>,
+}
+
 /// Edge-selection operand owned by a Fillet or Chamfer parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignEdgeOperand {
