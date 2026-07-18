@@ -5955,6 +5955,27 @@ fn e5_vertices_reject_multiple_matching_coordinate_runs() {
 }
 
 #[test]
+fn e5_vertices_concatenate_a_complete_split_roster() {
+    let mut stream = Vec::new();
+    for (record_id, coordinates) in [(1, [1.0f32, 2.0]), (2, [3.0, 4.0])] {
+        append_e5_record(&mut stream, 0xfe, record_id, &[]);
+        for coordinate in coordinates {
+            stream.extend_from_slice(&[0x05, 0x08, 0x01]);
+            for value in [coordinate, 0.0, 0.0] {
+                stream.extend_from_slice(&le_f32(value));
+            }
+        }
+    }
+    append_e5_record(&mut stream, 0xfe, 3, &[]);
+
+    let vertices = crate::geometry::e5_vertices(&stream, 4);
+    assert_eq!(
+        vertices.iter().map(|point| point.x).collect::<Vec<_>>(),
+        vec![1.0, 2.0, 3.0, 4.0]
+    );
+}
+
+#[test]
 fn a8_surface_parser_reads_rational_weight_grid() {
     let surfaces = crate::geometry::a8_surfaces(&a8_rational_surface_stream());
     match &surfaces[0].geometry {

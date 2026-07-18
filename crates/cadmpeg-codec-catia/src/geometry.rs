@@ -585,25 +585,35 @@ fn e5_records(data: &[u8]) -> Vec<E5Record> {
     records
 }
 
-/// Read the unique E5 `05 08 01` coordinate run matching the referenced vertex
-/// population. Marker-like bytes inside framed payloads are not vertex rows.
+/// Read the complete ordered E5 `05 08 01` coordinate roster matching the
+/// referenced vertex population. The roster may be split into multiple runs;
+/// marker-like bytes inside framed payloads are not vertex rows.
 #[must_use]
 pub fn e5_vertices(data: &[u8], vertex_count: usize) -> Vec<Point3> {
     if vertex_count == 0 {
         return Vec::new();
     }
     let records = e5_records(data);
-    let mut candidates = Vec::new();
+    let mut runs = Vec::new();
     let mut region_start = 0usize;
     for record in records {
-        candidates.extend(vertex_runs(&data[region_start..record.pos], vertex_count));
+        runs.extend(vertex_runs(&data[region_start..record.pos]));
         region_start = record.end;
     }
-    candidates.extend(vertex_runs(&data[region_start..], vertex_count));
-    <[Vec<Point3>; 1]>::try_from(candidates).map_or_else(|_| Vec::new(), |[vertices]| vertices)
+    runs.extend(vertex_runs(&data[region_start..]));
+    let Some(run_count) = runs
+        .iter()
+        .try_fold(0usize, |count, run| count.checked_add(run.len()))
+    else {
+        return Vec::new();
+    };
+    if run_count != vertex_count {
+        return Vec::new();
+    }
+    runs.into_iter().flatten().collect()
 }
 
-fn vertex_runs(bytes: &[u8], expected_count: usize) -> Vec<Vec<Point3>> {
+fn vertex_runs(bytes: &[u8]) -> Vec<Vec<Point3>> {
     let mut runs = Vec::new();
     let mut position = 0usize;
     while position + 15 <= bytes.len() {
@@ -616,7 +626,7 @@ fn vertex_runs(bytes: &[u8], expected_count: usize) -> Vec<Vec<Point3>> {
             position += 15;
         }
         let vertices = scan_vertex_records(&bytes[start..position]);
-        if vertices.len() == expected_count {
+        if !vertices.is_empty() {
             runs.push(vertices);
         }
     }
@@ -4747,7 +4757,7 @@ fn e5_ref(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     match *bytes.get(at)? {
         0x38 => Some((u32_le_24(bytes, at + 1)?, at + 4)),
         0x18 => Some((u16_le(bytes, at + 1)? as u32, at + 3)),
-        0x10 => Some(((bytes.get(at + 1)? << 8) as u32, at + 2)),
+        0x10 => Some((u32::from(*bytes.get(at + 1)?) << 8, at + 2)),
         0x08 => Some((*bytes.get(at + 1)? as u32, at + 2)),
         byte if byte >= 0x80 => Some(((byte - 0x80) as u32, at + 1)),
         _ => None,
@@ -4913,4 +4923,14 @@ fn finite_in_range(v: f32) -> bool {
 
 fn all_finite(vs: &[f32]) -> bool {
     vs.iter().all(|v| v.is_finite())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::e5_ref;
+
+    #[test]
+    fn e5_width_coded_reference_widens_before_shifting() {
+        assert_eq!(e5_ref(&[0x10, 0xff], 0), Some((0xff00, 2)));
+    }
 }
