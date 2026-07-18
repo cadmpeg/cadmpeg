@@ -128,7 +128,9 @@ fn transfer_complete(
     graph: &B5Graph,
     payload: &UnknownId,
 ) -> bool {
-    if graph.faces.is_empty() {
+    if graph.faces.is_empty()
+        || graph.logical_vertex_refs.len() != graph.logical_vertex_points.len()
+    {
         return false;
     }
 
@@ -461,7 +463,7 @@ fn transfer_complete(
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: Point3::new(coordinates[0], coordinates[1], coordinates[2]),
-            source_object: None,
+            source_object: Some(cgm_source("vertex", graph.logical_vertex_refs[rank])),
         });
         let vertex_id = VertexId(format!("catia:b5:vertex#{index}"));
         annotate(
@@ -2642,6 +2644,21 @@ mod tests {
         ));
         assert_eq!(ir.model.pcurves.len(), 3);
         assert_eq!(ir.model.coedges.len(), 3);
+        assert_eq!(
+            ir.model
+                .points
+                .iter()
+                .map(|point| point
+                    .source_object
+                    .as_ref()
+                    .map(|source| source.object_id.as_str()))
+                .collect::<Vec<_>>(),
+            [
+                Some("cgm-vertex:000032"),
+                Some("cgm-vertex:000033"),
+                Some("cgm-vertex:000034"),
+            ]
+        );
         assert_eq!(
             ir.model
                 .pcurves
