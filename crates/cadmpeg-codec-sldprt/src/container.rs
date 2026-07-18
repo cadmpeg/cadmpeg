@@ -223,6 +223,15 @@ impl<'a> Section<'a> {
         }
     }
 
+    pub(crate) fn native_id(self) -> String {
+        match self {
+            Self::Block(block) => format!("sldprt:file:block#{}", block.offset),
+            Self::Compound(stream) => {
+                format!("sldprt:file:compound-stream#{}", stream.directory_id)
+            }
+        }
+    }
+
     pub(crate) fn payload(self) -> &'a [u8] {
         match self {
             Self::Block(block) => &block.payload,

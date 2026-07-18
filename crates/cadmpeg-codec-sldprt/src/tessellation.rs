@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `DisplayLists` descriptor tables.
 
-use crate::container::{Block, ContainerScan};
+use crate::container::{ContainerScan, Section};
 use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
@@ -115,29 +115,24 @@ fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
     ))
 }
 
-pub fn block_meshes(block: &Block) -> Vec<Mesh> {
+pub fn section_meshes(section: Section<'_>) -> Vec<Mesh> {
     const MARKER: &[u8] = b"uoTempFaceTessData_c";
-    let Some(marker) = block
-        .payload
-        .windows(MARKER.len())
-        .position(|w| w == MARKER)
-    else {
+    let payload = section.payload();
+    let Some(marker) = payload.windows(MARKER.len()).position(|w| w == MARKER) else {
         return Vec::new();
     };
     let end = marker + MARKER.len();
     for relative in [8usize, 40] {
-        if let Some((mesh, mut at)) = parse_table(&block.payload, end + relative) {
+        if let Some((mesh, mut at)) = parse_table(payload, end + relative) {
             if !mesh.vertices.is_empty() {
                 let mut meshes = vec![mesh];
-                while at + 16 <= block.payload.len() {
-                    let Some(relative) = block.payload[at..]
-                        .windows(4)
-                        .position(|w| w == [4, 0, 0, 0])
+                while at + 16 <= payload.len() {
+                    let Some(relative) = payload[at..].windows(4).position(|w| w == [4, 0, 0, 0])
                     else {
                         break;
                     };
                     at += relative;
-                    if let Some((next, end)) = parse_table(&block.payload, at) {
+                    if let Some((next, end)) = parse_table(payload, at) {
                         if !next.vertices.is_empty() {
                             meshes.push(next);
                         }
@@ -153,8 +148,8 @@ pub fn block_meshes(block: &Block) -> Vec<Mesh> {
     Vec::new()
 }
 
-pub fn block_summary(block: &Block) -> Option<Summary> {
-    let meshes = block_meshes(block);
+pub fn section_summary(section: Section<'_>) -> Option<Summary> {
+    let meshes = section_meshes(section);
     (!meshes.is_empty()).then(|| Summary {
         vertices: meshes.iter().map(|mesh| mesh.vertices.len()).sum(),
         triangles: meshes.iter().map(|mesh| mesh.triangles.len()).sum(),
@@ -162,9 +157,8 @@ pub fn block_summary(block: &Block) -> Option<Summary> {
 }
 
 pub fn summary(scan: &ContainerScan) -> Summary {
-    scan.blocks
-        .iter()
-        .filter_map(block_summary)
+    scan.sections()
+        .filter_map(section_summary)
         .fold(Summary::default(), |mut total, next| {
             total.vertices += next.vertices;
             total.triangles += next.triangles;

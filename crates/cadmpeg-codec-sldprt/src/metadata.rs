@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed SW Objects document metadata.
 
-use crate::container::ContainerScan;
+use crate::container::{ContainerScan, Section};
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::ids::AttributeId;
@@ -10,9 +10,9 @@ use cadmpeg_ir::Exactness;
 
 pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<SourceAttribute> {
     let mut out = Vec::new();
-    for block in &scan.blocks {
+    for section in scan.sections() {
         scan_vectors(
-            block,
+            section,
             b"moBBoxCenterData_c",
             "bounding_envelope",
             4,
@@ -22,7 +22,7 @@ pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<So
             annotations,
         );
         scan_vectors(
-            block,
+            section,
             b"moDefaultRefPlnData_c",
             "default_reference_plane",
             9,
@@ -31,23 +31,23 @@ pub fn attributes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<So
             &mut out,
             annotations,
         );
-        scan_part(block, &mut out, annotations);
-        scan_configuration_manager(block, &mut out, annotations);
-        scan_transformed_reference_plane(block, &mut out, annotations);
-        scan_units_xml(block, &mut out, annotations);
-        scan_length_user_units(block, &mut out, annotations);
+        scan_part(section, &mut out, annotations);
+        scan_configuration_manager(section, &mut out, annotations);
+        scan_transformed_reference_plane(section, &mut out, annotations);
+        scan_units_xml(section, &mut out, annotations);
+        scan_length_user_units(section, &mut out, annotations);
     }
     out
 }
 
 fn scan_transformed_reference_plane(
-    block: &crate::container::Block,
+    section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) {
     const TOKEN: &[u8] = b"moTransRefPlaneData_c";
-    for offset in block
-        .payload
+    let payload = section.payload();
+    for offset in payload
         .windows(TOKEN.len())
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
@@ -56,7 +56,7 @@ fn scan_transformed_reference_plane(
         let Some((start, values)) = (0..64).find_map(|skip| {
             let start = body + skip;
             let values = (0..9)
-                .map(|index| f64_le(&block.payload, start + index * 8))
+                .map(|index| f64_le(payload, start + index * 8))
                 .collect::<Option<Vec<_>>>()?;
             (values
                 .iter()
@@ -68,7 +68,7 @@ fn scan_transformed_reference_plane(
             continue;
         };
         out.push(attribute(
-            block,
+            section,
             start,
             "transformed_reference_plane",
             TOKEN,
@@ -84,32 +84,32 @@ fn scan_transformed_reference_plane(
 }
 
 fn scan_length_user_units(
-    block: &crate::container::Block,
+    section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) {
     const TOKEN: &[u8] = b"moLengthUserUnits_c";
     const STRING_MARKER: &[u8] = &[0xff, 0xfe, 0xff];
-    for offset in block
-        .payload
+    let payload = section.payload();
+    for offset in payload
         .windows(TOKEN.len())
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
         let search = offset + TOKEN.len();
-        let limit = search.saturating_add(200).min(block.payload.len());
-        let Some(relative) = block.payload[search..limit]
+        let limit = search.saturating_add(200).min(payload.len());
+        let Some(relative) = payload[search..limit]
             .windows(STRING_MARKER.len())
             .position(|bytes| bytes == STRING_MARKER)
         else {
             continue;
         };
         let marker = search + relative;
-        let Some(length) = block.payload.get(marker + 3).copied().map(usize::from) else {
+        let Some(length) = payload.get(marker + 3).copied().map(usize::from) else {
             continue;
         };
         let start = marker + 4;
-        let Some(bytes) = block.payload.get(start..start.saturating_add(length)) else {
+        let Some(bytes) = payload.get(start..start.saturating_add(length)) else {
             continue;
         };
         if bytes.is_empty() || bytes.len() % 2 != 0 {
@@ -125,7 +125,7 @@ fn scan_length_user_units(
             continue;
         }
         out.push(attribute(
-            block,
+            section,
             offset,
             "source_linear_unit_name",
             TOKEN,
@@ -136,11 +136,11 @@ fn scan_length_user_units(
 }
 
 fn scan_units_xml(
-    block: &crate::container::Block,
+    section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) {
-    let Some(text) = xml_text(&block.payload) else {
+    let Some(text) = xml_text(section.payload()) else {
         return;
     };
     let Ok(document) = roxmltree::Document::parse(&text) else {
@@ -158,7 +158,7 @@ fn scan_units_xml(
             continue;
         };
         out.push(attribute(
-            block,
+            section,
             node.range().start,
             "source_linear_unit_code",
             b"SW_UnitsLinear",
@@ -184,7 +184,7 @@ fn xml_text(bytes: &[u8]) -> Option<String> {
 
 #[allow(clippy::too_many_arguments)]
 fn scan_vectors(
-    block: &crate::container::Block,
+    section: Section<'_>,
     token: &[u8],
     name: &str,
     count: usize,
@@ -193,15 +193,15 @@ fn scan_vectors(
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) {
-    for offset in block
-        .payload
+    let payload = section.payload();
+    for offset in payload
         .windows(token.len())
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == token).then_some(at))
     {
         let start = offset + token.len() + skip;
         let Some(values) = (0..count)
-            .map(|index| f64_le(&block.payload, start + index * 8))
+            .map(|index| f64_le(payload, start + index * 8))
             .collect::<Option<Vec<_>>>()
         else {
             continue;
@@ -219,31 +219,24 @@ fn scan_vectors(
                 AttributeValue::Vector(values[3..].to_vec()),
             ]
         };
-        out.push(attribute(block, offset, name, token, values, annotations));
+        out.push(attribute(section, offset, name, token, values, annotations));
     }
 }
 
-fn scan_part(
-    block: &crate::container::Block,
-    out: &mut Vec<SourceAttribute>,
-    annotations: &mut Annotations,
-) {
+fn scan_part(section: Section<'_>, out: &mut Vec<SourceAttribute>, annotations: &mut Annotations) {
     const TOKEN: &[u8] = b"moPart_c";
-    for offset in block
-        .payload
+    let payload = section.payload();
+    for offset in payload
         .windows(TOKEN.len())
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
         let start = offset + TOKEN.len();
-        let (Some(id), Some(version)) = (
-            u32_le(&block.payload, start),
-            u32_le(&block.payload, start + 8),
-        ) else {
+        let (Some(id), Some(version)) = (u32_le(payload, start), u32_le(payload, start + 8)) else {
             continue;
         };
         out.push(attribute(
-            block,
+            section,
             offset,
             "part_record",
             TOKEN,
@@ -257,22 +250,22 @@ fn scan_part(
 }
 
 fn scan_configuration_manager(
-    block: &crate::container::Block,
+    section: Section<'_>,
     out: &mut Vec<SourceAttribute>,
     annotations: &mut Annotations,
 ) {
     const TOKEN: &[u8] = b"moConfigurationMgr_c";
-    for offset in block
-        .payload
+    let payload = section.payload();
+    for offset in payload
         .windows(TOKEN.len())
         .enumerate()
         .filter_map(|(at, bytes)| (bytes == TOKEN).then_some(at))
     {
         let start = offset + TOKEN.len();
         let (Some(minor), Some(states), Some(filetime)) = (
-            u32_le(&block.payload, start + 66),
-            block.payload.get(start + 107),
-            u64_le(&block.payload, start + 117),
+            u32_le(payload, start + 66),
+            payload.get(start + 107),
+            u64_le(payload, start + 117),
         ) else {
             continue;
         };
@@ -280,7 +273,7 @@ fn scan_configuration_manager(
             continue;
         }
         out.push(attribute(
-            block,
+            section,
             offset,
             "configuration_manager",
             TOKEN,
@@ -295,21 +288,21 @@ fn scan_configuration_manager(
 }
 
 fn attribute(
-    block: &crate::container::Block,
+    section: Section<'_>,
     offset: usize,
     name: &str,
     token: &[u8],
     values: Vec<AttributeValue>,
     annotations: &mut Annotations,
 ) -> SourceAttribute {
-    let id = AttributeId(format!("sldprt:metadata:{name}#{}:{offset}", block.offset));
+    let id = AttributeId(format!(
+        "sldprt:metadata:{name}#{}:{offset}",
+        section.ordinal()
+    ));
     crate::annotations::note(
         annotations,
         id.0.clone(),
-        block
-            .section
-            .clone()
-            .unwrap_or_else(|| format!("block@{}", block.offset)),
+        section.display_name(),
         offset as u64,
         std::str::from_utf8(token).unwrap_or(name),
         Exactness::ByteExact,

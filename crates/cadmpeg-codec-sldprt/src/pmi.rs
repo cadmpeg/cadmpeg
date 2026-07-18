@@ -285,16 +285,17 @@ enum Value {
 pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<PmiDimension> {
     let mut records = Vec::new();
     let mut seen = HashSet::<String>::new();
-    for block in &scan.blocks {
-        let Some(section) = block.section.as_deref() else {
+    for source in scan.sections() {
+        let Some(section) = source.name() else {
             continue;
         };
         if !section.eq_ignore_ascii_case("Contents/PMISemanticDataDB") {
             continue;
         }
-        for offset in map_offsets(&block.payload) {
+        let payload = source.payload();
+        for offset in map_offsets(payload) {
             let mut cursor = offset;
-            let Some(Value::Map(outer)) = parse_value(&block.payload, &mut cursor, 0) else {
+            let Some(Value::Map(outer)) = parse_value(payload, &mut cursor, 0) else {
                 continue;
             };
             let Some(cad_text) = string_field(&outer, "cadText") else {
@@ -309,7 +310,7 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             if string_field(item, "class") != Some("DimSemData") {
                 continue;
             }
-            let Some(guid) = guid_before(&block.payload, offset) else {
+            let Some(guid) = guid_before(payload, offset) else {
                 continue;
             };
             if !seen.insert(guid.clone()) {
@@ -318,32 +319,30 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             let Some(value) = float_field(item, "value") else {
                 continue;
             };
-            let Some(value_marker) = field_marker(&block.payload, offset, cursor, "value") else {
+            let Some(value_marker) = field_marker(payload, offset, cursor, "value") else {
                 continue;
             };
-            if block.payload.get(value_marker) != Some(&0xcb) {
+            if payload.get(value_marker) != Some(&0xcb) {
                 continue;
             }
-            let Some(precision_offset) =
-                field_marker(&block.payload, offset, cursor, "valPrecision")
+            let Some(precision_offset) = field_marker(payload, offset, cursor, "valPrecision")
             else {
                 continue;
             };
-            let Some(basic_offset) = field_marker(&block.payload, offset, cursor, "isBasic") else {
+            let Some(basic_offset) = field_marker(payload, offset, cursor, "isBasic") else {
                 continue;
             };
-            let Some(inspection_offset) =
-                field_marker(&block.payload, offset, cursor, "isInspection")
+            let Some(inspection_offset) = field_marker(payload, offset, cursor, "isInspection")
             else {
                 continue;
             };
             let Some(reference_only_offset) =
-                field_marker(&block.payload, offset, cursor, "isReferenceOnly")
+                field_marker(payload, offset, cursor, "isReferenceOnly")
             else {
                 continue;
             };
-            let display_text_offset = field_marker(&block.payload, offset, cursor, "dimText")
-                .and_then(|marker| string_data_offset(&block.payload, marker));
+            let display_text_offset = field_marker(payload, offset, cursor, "dimText")
+                .and_then(|marker| string_data_offset(payload, marker));
             let id = format!("sldprt:pmi:dimension#{guid}");
             crate::annotations::note(
                 annotations,
@@ -355,7 +354,7 @@ pub(crate) fn dimensions(scan: &ContainerScan, annotations: &mut Annotations) ->
             );
             records.push(PmiDimension {
                 id,
-                parent: format!("sldprt:file:block#{}", block.offset),
+                parent: source.native_id(),
                 offset: offset as u64,
                 guid,
                 cad_text: cad_text.to_string(),

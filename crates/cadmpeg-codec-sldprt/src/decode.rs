@@ -1683,7 +1683,7 @@ fn build_geometry_ir(
     }
     for (index, material) in materials.into_iter().enumerate() {
         let id = AppearanceId(format!("sldprt:appearance:material#{index}"));
-        let material_stream = format!("block@{}", material.block_offset);
+        let material_stream = material.source_name;
         crate::annotations::note(
             &mut ir.annotations,
             id.0.clone(),
@@ -1717,19 +1717,15 @@ fn build_geometry_ir(
         }
     }
     for display in scan
-        .blocks
-        .iter()
-        .filter(|block| crate::tessellation::block_summary(block).is_some())
+        .sections()
+        .filter(|section| crate::tessellation::section_summary(*section).is_some())
     {
-        for (index, mesh) in crate::tessellation::block_meshes(display)
+        for (index, mesh) in crate::tessellation::section_meshes(display)
             .into_iter()
             .enumerate()
         {
-            let id = format!("sldprt:displaylist:record#{}:{index}", display.offset);
-            let display_stream = display
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", display.offset));
+            let id = format!("sldprt:displaylist:record#{}:{index}", display.ordinal());
+            let display_stream = display.display_name();
             crate::annotations::note(
                 &mut ir.annotations,
                 id.clone(),
@@ -1751,24 +1747,21 @@ fn build_geometry_ir(
                     channels: mesh.channels,
                 });
         }
-        let display_id = format!("sldprt:displaylist:record#{}", display.offset);
+        let display_id = format!("sldprt:displaylist:record#{}", display.ordinal());
         crate::annotations::note(
             &mut ir.annotations,
             display_id.clone(),
-            display
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", display.offset)),
+            display.display_name(),
             0,
             "displaylist_tessellation",
             Exactness::Unknown,
         );
         unknowns.push(UnknownRecord {
             id: UnknownId(display_id),
-            offset: display.offset as u64,
-            byte_len: display.uncomp_sz as u64,
-            sha256: sha256_hex(&display.payload),
-            data: Some(display.payload.clone()),
+            offset: 0,
+            byte_len: display.payload().len() as u64,
+            sha256: sha256_hex(display.payload()),
+            data: Some(display.payload().to_vec()),
             links: Vec::new(),
         });
     }
@@ -1929,10 +1922,10 @@ fn source_meta(scan: &ContainerScan, origin: BodyOrigin<'_>, header: &StreamHead
 fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
     let mut png_index = 0;
     let mut bmp_index = 0;
-    for block in &scan.blocks {
-        match block.family {
+    for section in scan.sections() {
+        let payload = section.payload();
+        match container::payload_family(payload) {
             "png-preview" => {
-                let payload = &block.payload;
                 if payload.get(8..16) != Some(&[0, 0, 0, 13, b'I', b'H', b'D', b'R']) {
                     continue;
                 }
@@ -1956,7 +1949,6 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
                 png_index += 1;
             }
             "bmp-thumbnail" => {
-                let payload = &block.payload;
                 let (Some(width), Some(height), Some(image_size)) =
                     (le_i32(payload, 8), le_i32(payload, 12), le_u32(payload, 24))
                 else {
@@ -1986,11 +1978,14 @@ fn add_preview_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, 
 }
 
 fn add_solidworks_xml_metadata(scan: &ContainerScan, attributes: &mut BTreeMap<String, String>) {
-    for block in &scan.blocks {
-        if block.family != "xml" || !block.payload.windows(12).any(|w| w == b"swSolidWorks") {
+    for section in scan.sections() {
+        let payload = section.payload();
+        if container::payload_family(payload) != "xml"
+            || !payload.windows(12).any(|w| w == b"swSolidWorks")
+        {
             continue;
         }
-        let Ok(text) = std::str::from_utf8(&block.payload) else {
+        let Ok(text) = std::str::from_utf8(payload) else {
             continue;
         };
         let Ok(document) = roxmltree::Document::parse(text) else {
