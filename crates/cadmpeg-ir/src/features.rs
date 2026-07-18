@@ -857,8 +857,9 @@ pub enum FeatureDefinition {
     ExtendSurface {
         /// Surface faces whose boundaries are extended.
         faces: FaceSelection,
-        /// Positive extension distance in canonical millimeters.
-        distance: Length,
+        /// Positive extension distance in canonical millimeters, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        distance: Option<Length>,
         /// Geometric continuation law.
         method: SurfaceExtension,
     },
@@ -1449,6 +1450,8 @@ pub enum TrimRegion {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SurfaceExtension {
+    /// Continuation law exists semantically but is not resolved.
+    Unresolved,
     /// Continue the source surface parameterization.
     Natural,
     /// Extend boundary tangents as ruled linear strips.

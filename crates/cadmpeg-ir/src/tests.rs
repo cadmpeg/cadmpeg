@@ -879,6 +879,22 @@ fn unresolved_trim_surface_operands_round_trip_through_json() {
 }
 
 #[test]
+fn unresolved_extend_surface_operands_round_trip_through_json() {
+    use crate::features::{FaceSelection, FeatureDefinition, SurfaceExtension};
+
+    let definition = FeatureDefinition::ExtendSurface {
+        faces: FaceSelection::Unresolved,
+        distance: None,
+        method: SurfaceExtension::Unresolved,
+    };
+    let json = serde_json::to_string(&definition).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FeatureDefinition>(&json).unwrap(),
+        definition
+    );
+}
+
+#[test]
 fn unresolved_block_dimensions_round_trip_through_json() {
     use crate::features::FeatureDefinition;
 
@@ -3123,7 +3139,7 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Unresolved,
-            distance: Length(0.0),
+            distance: Some(Length(0.0)),
             method: crate::features::SurfaceExtension::Natural,
         },
         FeatureDefinition::RuledSurface {

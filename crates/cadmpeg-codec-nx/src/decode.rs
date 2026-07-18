@@ -11288,6 +11288,11 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             tool: PathRef::Unresolved,
             keep: TrimRegion::Unresolved,
         },
+        "EXTEND_SHEET" => FeatureDefinition::ExtendSurface {
+            faces: FaceSelection::Unresolved,
+            distance: None,
+            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+        },
         "SIMPLE HOLE" => FeatureDefinition::Hole {
             profile: None,
             profile_filter: None,

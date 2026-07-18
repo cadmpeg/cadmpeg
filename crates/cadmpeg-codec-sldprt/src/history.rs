@@ -2291,9 +2291,9 @@ fn project_extend_surface(feature: &Feature) -> Option<FeatureDefinition> {
     };
     Some(FeatureDefinition::ExtendSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        distance: Length(parse_positive_length_mm(
+        distance: Some(Length(parse_positive_length_mm(
             feature.parameters.get("Distance")?,
-        )?),
+        )?)),
         method,
     })
 }
@@ -4095,12 +4095,22 @@ pub fn sync_neutral_features(
                 distance,
                 method,
             } => {
-                let faces = face_selection_value(faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no extend-surface input faces",
-                        feature.id
-                    ))
-                })?;
+                let resolved_faces = face_selection_value(faces);
+                if resolved_faces.is_none() {
+                    if matches!(faces, FaceSelection::Unresolved) {
+                        if existing.is_none() {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has unresolved extend-surface input faces",
+                                feature.id
+                            )));
+                        }
+                    } else {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has no extend-surface input faces",
+                            feature.id
+                        )));
+                    }
+                }
                 if existing.as_deref().is_some_and(|record| {
                     !feature_family(record, "ExtendSurface")
                         && !feature_family(record, "SurfaceExtend")
@@ -4110,9 +4120,22 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if !distance.0.is_finite() || distance.0 <= 0.0 {
-                    return Err(CodecError::Malformed(format!(
-                        "SLDPRT feature {} has an invalid surface extension",
+                if let Some(distance) = distance {
+                    if !distance.0.is_finite() || distance.0 <= 0.0 {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has an invalid surface extension",
+                            feature.id
+                        )));
+                    }
+                } else if existing.is_none() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved extension distance",
+                        feature.id
+                    )));
+                }
+                if matches!(method, SurfaceExtension::Unresolved) && existing.is_none() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved extension method",
                         feature.id
                     )));
                 }
@@ -4120,17 +4143,24 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.insert("Distance".into(), format_length_mm(distance.0));
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), faces);
-                properties.insert(
-                    "Method".into(),
-                    match method {
-                        SurfaceExtension::Natural => "Natural",
-                        SurfaceExtension::Linear => "Linear",
-                    }
-                    .into(),
-                );
+                if let Some(distance) = distance {
+                    parameters.insert("Distance".into(), format_length_mm(distance.0));
+                }
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                properties.extend(feature.source_properties.clone());
+                if let Some(faces) = resolved_faces {
+                    properties.insert("Faces".into(), faces);
+                }
+                if let Some(method) = match method {
+                    SurfaceExtension::Unresolved => None,
+                    SurfaceExtension::Natural => Some("Natural"),
+                    SurfaceExtension::Linear => Some("Linear"),
+                } {
+                    properties.insert("Method".into(), method.into());
+                }
                 (
                     existing
                         .as_deref()

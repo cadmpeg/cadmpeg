@@ -2112,7 +2112,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 faces, distance, ..
             } => {
                 face_selections.push(faces);
-                if !positive_feature_length(*distance) {
+                if distance.is_some_and(|distance| !positive_feature_length(distance)) {
                     feature_geometry_error(findings, feature, "surface extension is invalid");
                 }
             }

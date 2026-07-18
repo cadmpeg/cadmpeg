@@ -10581,7 +10581,7 @@ fn semantic_writer_round_trips_extend_surface() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::ExtendSurface {
             faces: FaceSelection::Resolved { faces, native },
-            distance: Length(2.0),
+            distance: Some(Length(2.0)),
             method: SurfaceExtension::Natural,
         } if faces == &[face_id.clone()] && native == &face
     ));
@@ -10595,14 +10595,14 @@ fn semantic_writer_round_trips_extend_surface() {
         panic!("typed extended surface");
     };
     *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *distance = Length(4.5);
+    *distance = Some(Length(4.5));
     *method = SurfaceExtension::Linear;
 
     let mut encoded = Vec::new();
     SldprtCodec
         .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
         .unwrap();
-    let regenerated = SldprtCodec
+    let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
@@ -10613,7 +10613,32 @@ fn semantic_writer_round_trips_extend_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::ExtendSurface {
-            distance: Length(4.5),
+            distance: Some(Length(4.5)),
+            method: SurfaceExtension::Linear,
+            ..
+        }
+    ));
+
+    regenerated.ir.model.features[0].definition = FeatureDefinition::ExtendSurface {
+        faces: FaceSelection::Unresolved,
+        distance: None,
+        method: SurfaceExtension::Unresolved,
+    };
+    let mut preserved = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &regenerated.ir,
+            &regenerated.source_fidelity,
+            &mut preserved,
+        )
+        .unwrap();
+    let replayed = SldprtCodec
+        .decode(&mut Cursor::new(preserved), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        replayed.ir.model.features[0].definition,
+        FeatureDefinition::ExtendSurface {
+            distance: Some(Length(4.5)),
             method: SurfaceExtension::Linear,
             ..
         }

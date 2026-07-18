@@ -3147,6 +3147,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             keep: cadmpeg_ir::features::TrimRegion::Unresolved,
         }
     );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("EXTEND_SHEET", &[], None, None, None),
+        FeatureDefinition::ExtendSurface {
+            faces: FaceSelection::Unresolved,
+            distance: None,
+            method: cadmpeg_ir::features::SurfaceExtension::Unresolved,
+        }
+    );
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
         FeatureDefinition::Chamfer {
