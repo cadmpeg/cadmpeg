@@ -3118,6 +3118,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             radius: RadiusSpec::Unresolved { form: None },
         }
     );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("FACE_BLEND", &[], None, None, None),
+        FeatureDefinition::FaceBlend {
+            first_faces: FaceSelection::Unresolved,
+            second_faces: FaceSelection::Unresolved,
+            radius: RadiusSpec::Unresolved { form: None },
+        }
+    );
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
         FeatureDefinition::Chamfer {

@@ -3008,6 +3008,13 @@ fn feature_operation_geometry_is_validated() {
                 ],
             },
         },
+        FeatureDefinition::FaceBlend {
+            first_faces: FaceSelection::Unresolved,
+            second_faces: FaceSelection::Unresolved,
+            radius: RadiusSpec::Constant {
+                radius: Length(0.0),
+            },
+        },
         FeatureDefinition::Rib {
             construction: RibConstruction {
                 profile: Some(ProfileRef::Native("profile".into())),
@@ -3242,6 +3249,7 @@ fn feature_operation_geometry_is_validated() {
     ];
     let expected = [
         "fillet radius is invalid",
+        "face-blend radius is invalid",
         "rib geometry is invalid",
         "hole geometry is invalid",
         "thicken thickness is invalid",

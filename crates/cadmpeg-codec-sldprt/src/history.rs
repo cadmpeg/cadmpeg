@@ -4937,6 +4937,12 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::FaceBlend { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT writing does not support face-blend feature {}",
+                    feature.id
+                )));
+            }
             FeatureDefinition::Chamfer {
                 edges,
                 spec,
@@ -7340,6 +7346,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",
         FeatureDefinition::Fillet { .. } => "Fillet",
+        FeatureDefinition::FaceBlend { .. } => "FaceBlend",
         FeatureDefinition::Chamfer { .. } => "Chamfer",
         FeatureDefinition::Shell { .. } => "Shell",
         FeatureDefinition::Thicken { .. } => "Thicken",

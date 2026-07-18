@@ -687,6 +687,15 @@ pub enum FeatureDefinition {
         /// Fillet radius assignment along the edges.
         radius: RadiusSpec,
     },
+    /// Blend constructed between two sets of faces.
+    FaceBlend {
+        /// First support-face set.
+        first_faces: FaceSelection,
+        /// Second support-face set.
+        second_faces: FaceSelection,
+        /// Blend radius assignment along the face intersection.
+        radius: RadiusSpec,
+    },
     /// Edge chamfer.
     Chamfer {
         /// Edges the chamfer is applied to.
@@ -2029,7 +2038,7 @@ pub enum PathRef {
     Curves(Vec<CurveId>),
 }
 
-/// Radius assignment along filleted edges.
+/// Radius assignment along an edge fillet or face blend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RadiusSpec {
@@ -2039,12 +2048,12 @@ pub enum RadiusSpec {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         form: Option<RadiusForm>,
     },
-    /// Same radius along the whole edge chain.
+    /// Same radius along the complete blend path.
     Constant {
         /// The fillet radius.
         radius: Length,
     },
-    /// Radius varying along the edge chain per explicit control points.
+    /// Radius varying along the blend path per explicit control points.
     Variable {
         /// Radius samples along the edge chain, in chain-parameter order.
         points: Vec<VariableRadius>,
@@ -2064,7 +2073,7 @@ pub enum RadiusForm {
 /// Radius at a normalized position along a filleted edge chain.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct VariableRadius {
-    /// Position in `[0, 1]` along the edge chain.
+    /// Position in `[0, 1]` along the blend path.
     pub parameter: f64,
     /// Fillet radius at this position.
     pub radius: Length,

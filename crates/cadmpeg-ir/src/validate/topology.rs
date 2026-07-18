@@ -1983,23 +1983,20 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
             FeatureDefinition::Fillet { edges, radius } => {
                 edge_selections.push(edges);
-                let valid = match radius {
-                    RadiusSpec::Unresolved { .. } => true,
-                    RadiusSpec::Constant { radius } => positive_feature_length(*radius),
-                    RadiusSpec::Variable { points } => {
-                        points.len() >= 2
-                            && points.iter().all(|point| {
-                                point.parameter.is_finite()
-                                    && (0.0..=1.0).contains(&point.parameter)
-                                    && positive_feature_length(point.radius)
-                            })
-                            && points
-                                .windows(2)
-                                .all(|pair| pair[0].parameter < pair[1].parameter)
-                    }
-                };
+                let valid = valid_radius_spec(radius);
                 if !valid {
                     feature_geometry_error(findings, feature, "fillet radius is invalid");
+                }
+            }
+            FeatureDefinition::FaceBlend {
+                first_faces,
+                second_faces,
+                radius,
+            } => {
+                face_selections.push(first_faces);
+                face_selections.push(second_faces);
+                if !valid_radius_spec(radius) {
+                    feature_geometry_error(findings, feature, "face-blend radius is invalid");
                 }
             }
             FeatureDefinition::Chamfer { edges, spec, .. } => {
@@ -3047,6 +3044,24 @@ fn hole_kind_valid(kind: &HoleKind) -> bool {
 
 fn positive_feature_length(value: Length) -> bool {
     value.0.is_finite() && value.0 > 0.0
+}
+
+fn valid_radius_spec(radius: &RadiusSpec) -> bool {
+    match radius {
+        RadiusSpec::Unresolved { .. } => true,
+        RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+        RadiusSpec::Variable { points } => {
+            points.len() >= 2
+                && points.iter().all(|point| {
+                    point.parameter.is_finite()
+                        && (0.0..=1.0).contains(&point.parameter)
+                        && positive_feature_length(point.radius)
+                })
+                && points
+                    .windows(2)
+                    .all(|pair| pair[0].parameter < pair[1].parameter)
+        }
+    }
 }
 
 fn finite_feature_point(value: Point3) -> bool {
