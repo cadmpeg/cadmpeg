@@ -1183,8 +1183,9 @@ midpoint lies on the cylinder axis and half either span is the radius. When both
 cap outlines are complete, their radial midpoints and radii agree. One complete
 cap outline is sufficient because the second placed cap plane fixes the sweep
 direction and axial span independently. Both cylinder uses share this carrier.
-The owning feature definition is the native circular profile. The ordered cap
-planes define the neutral extrusion direction and blind extent. A
+The owning feature definition selects the emitted section sketch when that
+sketch has a resolved profile chain and otherwise retains the native circular
+profile reference. The ordered cap planes define the neutral extrusion direction and blind extent. A
 `Protrusion` has join semantics when an earlier modeling feature establishes a
 body and new-body semantics when its evaluated topology forms an independent
 body.

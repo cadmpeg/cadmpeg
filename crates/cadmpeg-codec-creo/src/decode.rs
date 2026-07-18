@@ -11809,6 +11809,23 @@ fn resolved_revolution_axis(
     Some(*axis)
 }
 
+fn section_profile_ref(ir: &CadIr, definition_id: u32, native_ref: String) -> ProfileRef {
+    let sketch_id = SketchId(format!("creo:model:sketch#{definition_id}"));
+    let Some(sketch) = ir
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id == sketch_id)
+    else {
+        return ProfileRef::Native(native_ref);
+    };
+    if sketch.profiles.is_empty() {
+        ProfileRef::Native(native_ref)
+    } else {
+        ProfileRef::Sketch(sketch_id)
+    }
+}
+
 fn feature_edge_selection(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -12227,8 +12244,13 @@ fn schema_feature_definition(
             circular_sweep_geometry(scan, feature_id),
         ) {
             let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
-            return circular_sweep_feature_definition(
+            let profile = section_profile_ref(
+                ir,
                 definition.id,
+                feature_sketch_record_id_in_scan(scan, definition),
+            );
+            return circular_sweep_feature_definition(
+                profile,
                 &sweep,
                 section_sweep_boolean_operation(
                     feature_recipe_effect(scan, feature_id),
@@ -12248,26 +12270,18 @@ fn schema_feature_definition(
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
         let (profile, axis) = if let [transform] = transforms.as_slice() {
-            let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
-            let profile = ir
-                .model
-                .sketches
-                .iter()
-                .find(|sketch| sketch.id == sketch_id)
-                .map(|sketch| {
-                    if sketch.profiles.is_empty() {
-                        ProfileRef::Native(format!(
-                            "creo:featdefs:sketch#{}",
-                            transform.definition_id
-                        ))
-                    } else {
-                        ProfileRef::Sketch(sketch_id)
-                    }
-                });
-            let axis =
-                unique_feature_definition(&scan.feature_definitions, transform.definition_id)
-                    .and_then(|definition| resolved_revolution_axis(definition, transform));
-            (profile, axis)
+            let definition =
+                unique_feature_definition(&scan.feature_definitions, transform.definition_id);
+            (
+                definition.map(|definition| {
+                    section_profile_ref(
+                        ir,
+                        definition.id,
+                        feature_sketch_record_id_in_scan(scan, definition),
+                    )
+                }),
+                definition.and_then(|definition| resolved_revolution_axis(definition, transform)),
+            )
         } else {
             (None, None)
         };
@@ -12300,22 +12314,16 @@ fn schema_feature_definition(
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
         if let [transform] = transforms.as_slice() {
-            let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
-            let profile = ir
-                .model
-                .sketches
-                .iter()
-                .find(|sketch| sketch.id == sketch_id)
-                .map(|sketch| {
-                    if sketch.profiles.is_empty() {
-                        ProfileRef::Native(format!(
-                            "creo:featdefs:sketch#{}",
-                            transform.definition_id
-                        ))
-                    } else {
-                        ProfileRef::Sketch(sketch_id.clone())
-                    }
-                });
+            let profile =
+                unique_feature_definition(&scan.feature_definitions, transform.definition_id).map(
+                    |definition| {
+                        section_profile_ref(
+                            ir,
+                            definition.id,
+                            feature_sketch_record_id_in_scan(scan, definition),
+                        )
+                    },
+                );
             if let Some(profile) = profile {
                 let cap_origins = feature_plane_equations(scan, feature_id);
                 if let Some((extent, direction)) =
@@ -12813,13 +12821,13 @@ fn single_cap_circular_sweep_geometry(
 }
 
 fn circular_sweep_feature_definition(
-    definition_id: u32,
+    profile: ProfileRef,
     sweep: &CircularSweepGeometry,
     op: BooleanOp,
     solid: Option<bool>,
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
-        profile: ProfileRef::Native(format!("creo:featdefs:sketch#{definition_id}")),
+        profile,
         direction: Some(Vector3::new(
             sweep.direction[0],
             sweep.direction[1],
@@ -13880,9 +13888,14 @@ mod resolved_sketch_tests {
         };
 
         assert_eq!(
-            circular_sweep_feature_definition(917, &sweep, BooleanOp::Join, Some(true)),
+            circular_sweep_feature_definition(
+                ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
+                &sweep,
+                BooleanOp::Join,
+                Some(true),
+            ),
             IrFeatureDefinition::Extrude {
-                profile: ProfileRef::Native("creo:featdefs:sketch#917".to_string()),
+                profile: ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string())),
                 direction: Some(Vector3::new(0.0, 0.0, -1.0)),
                 extent: Extent::Blind {
                     length: Length(6.5),
@@ -13899,6 +13912,38 @@ mod resolved_sketch_tests {
                 length_along_profile_normal: None,
                 allow_multi_profile_faces: None,
             }
+        );
+    }
+
+    #[test]
+    fn section_profile_prefers_a_resolved_sketch_chain() {
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.sketches.push(Sketch {
+            id: SketchId("creo:model:sketch#917".to_string()),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: Some("creo:featdefs:sketch#917".to_string()),
+        });
+        assert_eq!(
+            section_profile_ref(&ir, 917, "creo:featdefs:sketch#offset:40".to_string(),),
+            ProfileRef::Native("creo:featdefs:sketch#offset:40".to_string())
+        );
+
+        ir.model.sketches[0].profiles.push(vec![SketchEntityUse {
+            entity: SketchEntityId("creo:featdefs:sketch_entity#917:4".to_string()),
+            reversed: false,
+        }]);
+        assert_eq!(
+            section_profile_ref(&ir, 917, "creo:featdefs:sketch#offset:40".to_string(),),
+            ProfileRef::Sketch(SketchId("creo:model:sketch#917".to_string()))
+        );
+        assert_eq!(
+            section_profile_ref(&ir, 918, "creo:featdefs:sketch#918".to_string(),),
+            ProfileRef::Native("creo:featdefs:sketch#918".to_string())
         );
     }
 
