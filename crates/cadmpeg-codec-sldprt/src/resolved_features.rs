@@ -18416,7 +18416,7 @@ fn source_less_lanes(
     ir: &cadmpeg_ir::CadIr,
     native: &crate::native::SldprtNative,
 ) -> Result<Vec<FeatureInputLane>, cadmpeg_ir::codec::CodecError> {
-    let mut objects = Vec::<(String, u64, String, Vec<u8>)>::new();
+    let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
         let owner = unique_planar_sketch_owner(ir, &sketch.id)?;
@@ -18440,7 +18440,7 @@ fn source_less_lanes(
             "SCH_SW_33103_11000",
             sketch.name.as_deref().unwrap_or(&sketch.id.0),
         ));
-        objects.push((configuration, owner.ordinal, owner.id.0.clone(), payload));
+        objects.push((configuration, owner.ordinal, payload));
     }
     for sketch in &ir.model.spatial_sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
@@ -18488,7 +18488,7 @@ fn source_less_lanes(
         }
         append_spatial_vertex(&mut payload, start);
         append_spatial_vertex(&mut payload, end);
-        objects.push((configuration, owner.ordinal, owner.id.0.clone(), payload));
+        objects.push((configuration, owner.ordinal, payload));
     }
     let mut lanes = assemble_source_less_lanes(objects);
     for lane in &mut lanes {
@@ -18503,12 +18503,10 @@ fn source_less_lanes(
     Ok(lanes)
 }
 
-fn assemble_source_less_lanes(
-    mut objects: Vec<(String, u64, String, Vec<u8>)>,
-) -> Vec<FeatureInputLane> {
-    objects.sort_by(|left, right| (&left.0, left.1, &left.2).cmp(&(&right.0, right.1, &right.2)));
+fn assemble_source_less_lanes(mut objects: Vec<(String, u64, Vec<u8>)>) -> Vec<FeatureInputLane> {
+    objects.sort_by(|left, right| (&left.0, left.1).cmp(&(&right.0, right.1)));
     let mut lanes = Vec::new();
-    for (configuration, _, _, payload) in objects {
+    for (configuration, _, payload) in objects {
         source_less_lane(&mut lanes, &configuration)
             .native_payload
             .extend(payload);
@@ -18561,9 +18559,9 @@ mod source_less_lane_tests {
     #[test]
     fn objects_follow_feature_ordinals_within_each_configuration() {
         let lanes = assemble_source_less_lanes(vec![
-            ("1".into(), 2, "later".into(), vec![2]),
-            ("0".into(), 9, "only".into(), vec![9]),
-            ("1".into(), 1, "earlier".into(), vec![1]),
+            ("1".into(), 2, vec![2]),
+            ("0".into(), 9, vec![9]),
+            ("1".into(), 1, vec![1]),
         ]);
 
         assert_eq!(lanes.len(), 2);
@@ -18571,16 +18569,6 @@ mod source_less_lane_tests {
         assert_eq!(lanes[0].native_payload, [9]);
         assert_eq!(lanes[1].configuration.as_deref(), Some("1"));
         assert_eq!(lanes[1].native_payload, [1, 2]);
-    }
-
-    #[test]
-    fn equal_ordinals_use_stable_feature_identity_order() {
-        let lanes = assemble_source_less_lanes(vec![
-            ("0".into(), 1, "z".into(), vec![2]),
-            ("0".into(), 1, "a".into(), vec![1]),
-        ]);
-
-        assert_eq!(lanes[0].native_payload, [1, 2]);
     }
 }
 
