@@ -1825,6 +1825,99 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     let mut locus_group_indices = HashSet::new();
     let mut locus_group_companions = HashSet::new();
+    let mut annotation_frame_indices = HashSet::new();
+    for frame in &native.design_dimension_annotation_frames {
+        let native_stream = design_stream(&frame.id);
+        let unique_index = annotation_frame_indices.insert((native_stream, frame.record_index));
+        let companion = companions_by_index.get(&(native_stream, frame.companion_record_index));
+        let companion_contains_frame = companion.is_some_and(|companion| {
+            frame.byte_offset >= companion.byte_offset.saturating_add(58)
+                && frame.paired_byte_offset
+                    < companion
+                        .byte_offset
+                        .saturating_add(58)
+                        .saturating_add(companion.payload_byte_length)
+        });
+        let governing_owner = owners_by_index
+            .get(&(native_stream, frame.governing_owner_record_index))
+            .copied();
+        let governing_link_valid = governing_owner.is_some_and(|owner| {
+            owner.companion_record_index == frame.governing_companion_record_index
+                && parameters_by_index
+                    .get(&(native_stream, owner.parameter_record_index))
+                    .is_some_and(|parameter| {
+                        parameter.kind == records::DesignParameterKind::Dimension
+                    })
+        });
+        let operand_start = frame.byte_offset.saturating_add(24);
+        let operands_valid = !frame.operands.is_empty()
+            && frame.operands.iter().enumerate().all(|(ordinal, operand)| {
+                let start = operand_start.saturating_add((ordinal as u64).saturating_mul(15));
+                operand.geometry_reference_offset == start.saturating_add(1)
+                    && operand.role_offset == start.saturating_add(11)
+                    && (operand.geometry_record_index == 0
+                        || sketch_geometry_indices
+                            .contains(&(native_stream, operand.geometry_record_index)))
+            });
+        let returns_start = frame.governing_owner_reference_offset.saturating_add(15);
+        let returns_valid = frame.return_members.len() == frame.return_member_offsets.len()
+            && frame
+                .return_members
+                .iter()
+                .zip(&frame.return_member_offsets)
+                .enumerate()
+                .all(|(ordinal, (record_index, offset))| {
+                    *offset == returns_start.saturating_add((ordinal as u64).saturating_mul(11))
+                        && sketch_geometry_indices.contains(&(native_stream, *record_index))
+                });
+        let mut operand_members = frame
+            .operands
+            .iter()
+            .filter_map(|operand| {
+                (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+            })
+            .collect::<Vec<_>>();
+        let mut return_members = frame.return_members.clone();
+        operand_members.sort_unstable();
+        return_members.sort_unstable();
+        let owner_is_sketch = entities_by_suffix
+            .get(&(native_stream, u64::from(frame.owner_reference)))
+            .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
+        let valid = frame.class_tag.len() == 3
+            && frame.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && frame.paired_class_tag.len() == 3
+            && frame
+                .paired_class_tag
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+            && unique_index
+            && companion_contains_frame
+            && governing_link_valid
+            && operands_valid
+            && frame.annotation_byte_offset
+                == operand_start
+                    .saturating_add((frame.operands.len() as u64).saturating_mul(15))
+                    .saturating_add(57)
+            && frame.governing_owner_reference_offset
+                == frame
+                    .annotation_byte_offset
+                    .saturating_add(frame.annotation_bytes.len() as u64)
+                    .saturating_add(1)
+            && returns_valid
+            && operand_members == return_members
+            && frame.paired_byte_offset == frame.byte_offset.saturating_add(frame.frame_length)
+            && frame.owner_reference_offset == frame.paired_byte_offset.saturating_add(20)
+            && owner_is_sketch;
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design dimension annotation frame has invalid links or offsets"
+                    .into(),
+                entity: Some(frame.id.clone()),
+            });
+        }
+    }
     for group in &native.design_dimension_locus_groups {
         let native_stream = design_stream(&group.id);
         let unique_index = locus_group_indices.insert((native_stream, group.record_index));
@@ -1855,10 +1948,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 && sketch_geometry_indices.contains(&(native_stream, locus.geometry_record_index))
         });
         let owner_start = loci_start.saturating_add((count as u64).saturating_mul(15));
-        let returns_start = group.entity_genesis.map_or_else(
-            || owner_start.saturating_add(24),
-            |_| group.state_offset.saturating_add(12),
-        );
+        let returns_start = owner_start.saturating_add(24);
         let returns_valid = group.return_members.len() == count
             && group.return_member_offsets.len() == count
             && group
@@ -1881,7 +1971,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let mut return_members = group.return_members.clone();
         locus_members.sort_unstable();
         return_members.sort_unstable();
-        let (expected_kinds, expected_unknown) = design::decode_constraint_kinds(group.state);
+        let (expected_kinds, expected_unknown) =
+            design::decode_constraint_kinds(u64::from(group.state));
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(group.owner_reference)))
             .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
@@ -1903,22 +1994,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && dimension_companion
             && (1..=64).contains(&count)
             && loci_offsets_valid
-            && if group.entity_genesis.is_some() {
-                group.owner_reference_offset == owner_start.saturating_add(58)
-                    && group.owner_role.is_none()
-                    && group.owner_role_offset.is_none()
-                    && group.state_offset == group.owner_reference_offset.saturating_add(10)
-            } else {
-                group.owner_reference_offset == owner_start.saturating_add(2)
-                    && group.owner_role_offset == Some(owner_start.saturating_add(12))
-                    && group.owner_role.is_some()
-                    && group.state_offset == owner_start.saturating_add(16)
-            }
+            && group.owner_reference_offset == owner_start.saturating_add(2)
+            && group.owner_role_offset == owner_start.saturating_add(12)
+            && group.state_offset == owner_start.saturating_add(16)
             && owner_is_sketch
             && returns_valid
             && locus_members == return_members
             && group.constraint_kinds == expected_kinds
-            && group.unknown_constraint_bits == expected_unknown
+            && u64::from(group.unknown_constraint_bits) == expected_unknown
             && group.next_byte_offset
                 == returns_start
                     .saturating_add((count as u64).saturating_mul(11))

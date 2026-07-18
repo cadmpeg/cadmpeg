@@ -10,7 +10,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBodyBinding, DesignBodyBounds,
     DesignBodyMember, DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
-    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity, DesignDimensionLocus,
+    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
+    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
     DesignDimensionRecipeRecord, DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent,
     DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
@@ -4241,6 +4242,7 @@ pub fn project_dimension_constraints(
     owners: &[DesignParameterOwner],
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
+    annotation_frames: &[DesignDimensionAnnotationFrame],
     null_pairs: &[DesignDimensionNullLocusPair],
     companions: &[DesignParameterCompanion],
     recipe_records: &[DesignDimensionRecipeRecord],
@@ -4586,6 +4588,12 @@ pub fn project_dimension_constraints(
                 group.companion_record_index,
             ))
         }))
+        .chain(annotation_frames.iter().filter_map(|frame| {
+            Some((
+                native_stream(&frame.id)?.to_owned(),
+                frame.companion_record_index,
+            ))
+        }))
         .chain(null_pairs.iter().filter_map(|pair| {
             Some((
                 native_stream(&pair.id)?.to_owned(),
@@ -4640,7 +4648,7 @@ pub fn project_dimension_constraints(
                         .iter()
                         .map(|locus| ("locus", Some(locus.role), locus.geometry_record_index))
                         .collect::<Vec<_>>();
-                    operands.push(("owner", group.owner_role, group.owner_reference));
+                    operands.push(("owner", Some(group.owner_role), group.owner_reference));
                     operands.extend(
                         group
                             .return_members
@@ -4650,7 +4658,7 @@ pub fn project_dimension_constraints(
                     native_definition(
                         scope,
                         &parameter.source_kind,
-                        Some(group.state),
+                        Some(u64::from(group.state)),
                         &operands,
                         parameter_id,
                     )
@@ -4660,6 +4668,65 @@ pub fn project_dimension_constraints(
                 sketch,
                 definition,
                 native_ref: Some(group.id.clone()),
+            })
+        }))
+        .chain(annotation_frames.iter().filter_map(|frame| {
+            let scope = native_stream(&frame.id)?;
+            let (parameter, parameter_id) =
+                parameter_for(scope, frame.governing_companion_record_index)?;
+            let indices = frame
+                .operands
+                .iter()
+                .filter_map(|operand| {
+                    (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+                })
+                .collect::<Vec<_>>();
+            let sketch = sketches.get(&(scope, frame.owner_reference))?.clone();
+            let constraint_id = neutral_dimension_constraint_id(&parameter_id, "annotation");
+            let definition = exact_definition(scope, parameter, &indices, parameter_id.clone())
+                .unwrap_or_else(|| {
+                    let operands = frame
+                        .operands
+                        .iter()
+                        .map(|operand| {
+                            if operand.geometry_record_index == 0 {
+                                SketchNativeOperand {
+                                    native_kind: "null_locus".into(),
+                                    native_field: Some("locus".into()),
+                                    native_role: Some(operand.role),
+                                    object_index: 0,
+                                    native_ref: None,
+                                }
+                            } else {
+                                native_operand(
+                                    scope,
+                                    "locus",
+                                    Some(operand.role),
+                                    operand.geometry_record_index,
+                                )
+                            }
+                        })
+                        .collect();
+                    Definition::Native {
+                        native_kind: parameter.source_kind.clone(),
+                        native_state: None,
+                        entities: indices
+                            .iter()
+                            .filter_map(|record_index| {
+                                projected
+                                    .get(&(scope, *record_index))
+                                    .map(|entity| entity.id.clone())
+                            })
+                            .collect(),
+                        parameter: Some(parameter_id),
+                        operands,
+                    }
+                });
+            Some(SketchConstraint {
+                id: constraint_id,
+                sketch,
+                definition,
+                native_ref: Some(frame.id.clone()),
             })
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
@@ -4827,6 +4894,12 @@ pub fn project_dimension_constraints(
             Some((
                 native_stream(&group.id)?.to_owned(),
                 group.companion_record_index,
+            ))
+        }))
+        .chain(annotation_frames.iter().filter_map(|frame| {
+            Some((
+                native_stream(&frame.id)?.to_owned(),
+                frame.governing_companion_record_index,
             ))
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
@@ -5061,11 +5134,13 @@ pub fn remove_dimension_frame_relations(
 
 /// Bind geometry referenced only by dimensional companions to the sketch
 /// reached through the parameter scope or the counted frame's explicit owner.
+#[allow(clippy::too_many_arguments)]
 pub fn bind_dimension_loci(
     placements: &[DesignSketchPlacement],
     owners: &[DesignParameterOwner],
     pairs: &[DesignDimensionLocusPair],
     groups: &[DesignDimensionLocusGroup],
+    annotation_frames: &[DesignDimensionAnnotationFrame],
     null_pairs: &[DesignDimensionNullLocusPair],
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
@@ -5126,6 +5201,16 @@ pub fn bind_dimension_loci(
                 locus.geometry_record_index,
                 group.owner_reference,
             )?;
+        }
+    }
+    for frame in annotation_frames {
+        let Some(scope) = native_stream(&frame.id) else {
+            continue;
+        };
+        for record_index in frame.operands.iter().filter_map(|operand| {
+            (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+        }) {
+            insert_dimension_binding(&mut bindings, scope, record_index, frame.owner_reference)?;
         }
     }
     for pair in null_pairs {
@@ -7696,6 +7781,319 @@ fn parse_dimension_null_locus_pair(
     })
 }
 
+/// Decode paired `EntityGenesis` dimensional frames carrying annotation data
+/// and a direct backlink to the governed parameter owner.
+#[allow(clippy::too_many_arguments)]
+pub fn decode_dimension_annotation_frames(
+    scan: &ContainerScan,
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    companions: &[DesignParameterCompanion],
+    scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    entities: &[DesignEntityHeader],
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+) -> Result<Vec<DesignDimensionAnnotationFrame>, CodecError> {
+    let parameters = parameters
+        .iter()
+        .filter_map(|parameter| {
+            Some((
+                (native_stream(&parameter.id)?, parameter.record_index),
+                parameter,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let dimension_companions = owners
+        .iter()
+        .filter(|owner| {
+            let Some(stream) = native_stream(&owner.id) else {
+                return false;
+            };
+            parameters
+                .get(&(stream, owner.parameter_record_index))
+                .is_some_and(|parameter| parameter.kind == DesignParameterKind::Dimension)
+        })
+        .filter_map(|owner| {
+            Some((
+                (
+                    native_stream(&owner.id)?.to_owned(),
+                    owner.companion_record_index,
+                ),
+                owner,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for companion in companions.iter().filter(|companion| {
+        native_stream(&companion.id).is_some_and(|stream| {
+            dimension_companions.contains_key(&(stream.to_owned(), companion.record_index))
+        })
+    }) {
+        let Some(stream) = native_stream(&companion.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && companion.id.starts_with(&format!("f3d:{}:", entry.name))
+        }) else {
+            continue;
+        };
+        let geometry_indices = points
+            .iter()
+            .filter(|point| native_stream(&point.id) == Some(stream))
+            .map(|point| point.record_index)
+            .chain(
+                curves
+                    .iter()
+                    .filter(|curve| native_stream(&curve.id) == Some(stream))
+                    .map(|curve| curve.record_index),
+            )
+            .collect::<HashSet<_>>();
+        let sketch_entities = entities
+            .iter()
+            .filter(|entity| {
+                native_stream(&entity.id) == Some(stream)
+                    && entity.object_kind == Some(DesignObjectKind::Sketch)
+            })
+            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
+            .collect::<HashSet<_>>();
+        let governed_owners = owners
+            .iter()
+            .filter(|owner| {
+                native_stream(&owner.id) == Some(stream)
+                    && dimension_companions
+                        .contains_key(&(stream.to_owned(), owner.companion_record_index))
+            })
+            .map(|owner| (owner.record_index, owner.companion_record_index))
+            .collect::<HashMap<_, _>>();
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some((start, end)) = companion_owned_interval(
+            companion,
+            parameters.values().copied(),
+            owners,
+            scopes,
+            headers,
+            bytes.len(),
+        ) else {
+            continue;
+        };
+        let mut position = start;
+        while position < end {
+            let at = if position == start
+                && lp_ascii(bytes, start).is_some_and(|(_, after)| after == start + 7)
+            {
+                Some(start)
+            } else {
+                next_indexed_record_offset(bytes, position)
+            };
+            let Some(at) = at.filter(|at| *at < end) else {
+                break;
+            };
+            if let Some(mut frame) = parse_dimension_annotation_frame(
+                bytes,
+                at,
+                companion.record_index,
+                &governed_owners,
+                &geometry_indices,
+                &sketch_entities,
+            )
+            .filter(|frame| frame.paired_byte_offset < end as u64)
+            {
+                frame.id = format!(
+                    "f3d:{}:design-dimension-annotation-frame#{}",
+                    entry.name, frame.byte_offset
+                );
+                position = usize::try_from(frame.paired_byte_offset)
+                    .unwrap_or(at)
+                    .saturating_add(1);
+                out.push(frame);
+            } else {
+                position = at.saturating_add(1);
+            }
+        }
+    }
+    out.sort_by_key(|frame| frame.id.clone());
+    Ok(out)
+}
+
+fn parse_dimension_annotation_frame(
+    bytes: &[u8],
+    start: usize,
+    companion_record_index: u32,
+    governed_owners: &HashMap<u32, u32>,
+    geometry_indices: &HashSet<u32>,
+    sketch_entities: &HashSet<u32>,
+) -> Option<DesignDimensionAnnotationFrame> {
+    let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+    if after_tag != start.checked_add(7)?
+        || class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || bytes.get(start + 11..start + 19) != Some(&[0; 8])
+        || bytes.get(start + 19) != Some(&1)
+    {
+        return None;
+    }
+    let record_index = u32_at(bytes, after_tag)?;
+    let count = usize::try_from(u32_at(bytes, start + 20)?).ok()?;
+    if !(1..=64).contains(&count) {
+        return None;
+    }
+    let mut position = start.checked_add(24)?;
+    let mut operands = Vec::with_capacity(count);
+    for _ in 0..count {
+        if bytes.get(position) != Some(&1)
+            || bytes.get(position + 5..position + 11) != Some(&[0; 6])
+        {
+            return None;
+        }
+        let geometry_record_index = u32_at(bytes, position + 1)?;
+        if geometry_record_index != 0 && !geometry_indices.contains(&geometry_record_index) {
+            return None;
+        }
+        operands.push(DesignDimensionAnnotationOperand {
+            geometry_record_index,
+            geometry_reference_offset: (position + 1) as u64,
+            role: u32_at(bytes, position + 11)?,
+            role_offset: (position + 11) as u64,
+        });
+        position = position.checked_add(15)?;
+    }
+    if bytes.get(position) != Some(&1) || u32_at(bytes, position + 1) != Some(1) {
+        return None;
+    }
+    let (key, after_key) = lp_ascii(bytes, position + 5)?;
+    let (meta_type, after_type) = lp_ascii(bytes, after_key)?;
+    if key != "EntityGenesis" || meta_type != "IntrinsicMetaTypeuint64" {
+        return None;
+    }
+    let entity_genesis =
+        u64::from_le_bytes(bytes.get(after_type..after_type + 8)?.try_into().ok()?);
+    let annotation_byte_offset = after_type.checked_add(8)?;
+    let mut paired_search = annotation_byte_offset;
+    let (paired_byte_offset, paired_class_tag) = loop {
+        let at = next_indexed_record_offset(bytes, paired_search)?;
+        let (tag, after) = lp_ascii(bytes, at)?;
+        if u32_at(bytes, after) == Some(record_index) {
+            break (at, tag);
+        }
+        paired_search = at.checked_add(1)?;
+    };
+    let mut tails = Vec::new();
+    for tail in annotation_byte_offset..paired_byte_offset.saturating_sub(15) {
+        if bytes.get(tail) != Some(&1) || bytes.get(tail + 5..tail + 11) != Some(&[0; 6]) {
+            continue;
+        }
+        let Some(governing_owner_record_index) = u32_at(bytes, tail + 1) else {
+            continue;
+        };
+        let Some(governing_companion_record_index) =
+            governed_owners.get(&governing_owner_record_index).copied()
+        else {
+            continue;
+        };
+        let Some(return_count) =
+            u32_at(bytes, tail + 11).and_then(|count| usize::try_from(count).ok())
+        else {
+            continue;
+        };
+        if return_count > 64 {
+            continue;
+        }
+        let mut cursor = tail + 15;
+        let mut return_members = Vec::with_capacity(return_count);
+        let mut return_member_offsets = Vec::with_capacity(return_count);
+        let mut valid = true;
+        for _ in 0..return_count {
+            if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 5..cursor + 11) != Some(&[0; 6])
+            {
+                valid = false;
+                break;
+            }
+            let Some(reference) = u32_at(bytes, cursor + 1) else {
+                valid = false;
+                break;
+            };
+            if !geometry_indices.contains(&reference) {
+                valid = false;
+                break;
+            }
+            return_members.push(reference);
+            return_member_offsets.push((cursor + 1) as u64);
+            cursor += 11;
+        }
+        if !valid
+            || bytes
+                .get(cursor..paired_byte_offset)?
+                .iter()
+                .any(|byte| *byte != 0)
+        {
+            continue;
+        }
+        let mut operand_members = operands
+            .iter()
+            .filter_map(|operand| {
+                (operand.geometry_record_index != 0).then_some(operand.geometry_record_index)
+            })
+            .collect::<Vec<_>>();
+        let mut returned = return_members.clone();
+        operand_members.sort_unstable();
+        returned.sort_unstable();
+        if operand_members != returned {
+            continue;
+        }
+        tails.push((
+            tail,
+            governing_owner_record_index,
+            governing_companion_record_index,
+            return_members,
+            return_member_offsets,
+        ));
+    }
+    let [(
+        tail,
+        governing_owner_record_index,
+        governing_companion_record_index,
+        return_members,
+        return_member_offsets,
+    )] = tails.as_slice()
+    else {
+        return None;
+    };
+    if bytes.get(paired_byte_offset + 11..paired_byte_offset + 19) != Some(&[0; 8])
+        || bytes.get(paired_byte_offset + 19) != Some(&1)
+        || bytes.get(paired_byte_offset + 24..paired_byte_offset + 30) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let owner_reference = u32_at(bytes, paired_byte_offset + 20)?;
+    if !sketch_entities.contains(&owner_reference) {
+        return None;
+    }
+    Some(DesignDimensionAnnotationFrame {
+        id: String::new(),
+        companion_record_index,
+        governing_companion_record_index: *governing_companion_record_index,
+        byte_offset: start as u64,
+        class_tag,
+        record_index,
+        frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
+        operands,
+        entity_genesis,
+        annotation_bytes: bytes.get(annotation_byte_offset..*tail)?.to_vec(),
+        annotation_byte_offset: annotation_byte_offset as u64,
+        governing_owner_record_index: *governing_owner_record_index,
+        governing_owner_reference_offset: (*tail + 1) as u64,
+        return_members: return_members.clone(),
+        return_member_offsets: return_member_offsets.clone(),
+        paired_class_tag,
+        paired_byte_offset: paired_byte_offset as u64,
+        owner_reference,
+        owner_reference_offset: (paired_byte_offset + 20) as u64,
+    })
+}
+
 /// Decode counted typed sketch loci nested immediately after dimensional
 /// parameter-companion prefixes.
 #[allow(clippy::too_many_arguments)]
@@ -7909,31 +8307,6 @@ fn parse_dimension_locus_group(
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusGroup> {
-    parse_fixed_dimension_locus_group(
-        bytes,
-        start,
-        companion_record_index,
-        geometry_indices,
-        sketch_entities,
-    )
-    .or_else(|| {
-        parse_entity_genesis_dimension_locus_group(
-            bytes,
-            start,
-            companion_record_index,
-            geometry_indices,
-            sketch_entities,
-        )
-    })
-}
-
-fn parse_fixed_dimension_locus_group(
-    bytes: &[u8],
-    start: usize,
-    companion_record_index: u32,
-    geometry_indices: &HashSet<u32>,
-    sketch_entities: &HashSet<u32>,
-) -> Option<DesignDimensionLocusGroup> {
     let (class_tag, after_tag) = lp_ascii(bytes, start)?;
     if after_tag != start.checked_add(7)?
         || class_tag.len() != 3
@@ -8027,108 +8400,14 @@ fn parse_fixed_dimension_locus_group(
         loci,
         owner_reference,
         owner_reference_offset,
-        owner_role: Some(owner_role),
-        owner_role_offset: Some(owner_role_offset),
-        entity_genesis: None,
-        state: u64::from(state),
+        owner_role,
+        owner_role_offset,
+        state,
         state_offset,
         constraint_kinds,
-        unknown_constraint_bits,
+        unknown_constraint_bits: unknown_constraint_bits as u32,
         return_members,
         return_member_offsets,
-        next_class_tag,
-        next_record_index: u32_at(bytes, next_after_tag)?,
-        next_byte_offset: next_byte_offset as u64,
-    })
-}
-
-/// Parse the variable-width dimension-locus dialect shared with modern sketch
-/// relations. Dimensional loci use only the ordered member and return runs;
-/// auxiliary-reference payloads belong to pattern and text relations instead.
-fn parse_entity_genesis_dimension_locus_group(
-    bytes: &[u8],
-    start: usize,
-    companion_record_index: u32,
-    geometry_indices: &HashSet<u32>,
-    sketch_entities: &HashSet<u32>,
-) -> Option<DesignDimensionLocusGroup> {
-    let (class_tag, after_tag) = lp_ascii(bytes, start)?;
-    if after_tag != start.checked_add(7)?
-        || class_tag.len() != 3
-        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-    {
-        return None;
-    }
-    let record_index = u32_at(bytes, after_tag)?;
-    let parsed = parse_sketch_relation(bytes.get(start..)?, sketch_entities)?;
-    let entity_genesis = parsed.entity_genesis?;
-    if parsed.members.is_empty()
-        || !parsed.auxiliary_references.is_empty()
-        || parsed.text_glyph_transforms.is_some()
-        || parsed.members.len() != parsed.return_members.len()
-        || parsed
-            .members
-            .iter()
-            .chain(&parsed.return_members)
-            .any(|record_index| !geometry_indices.contains(record_index))
-    {
-        return None;
-    }
-    let mut members = parsed.members.clone();
-    let mut returns = parsed.return_members.clone();
-    members.sort_unstable();
-    returns.sort_unstable();
-    if members != returns {
-        return None;
-    }
-    for (offset, role) in parsed.member_offsets.iter().zip(&parsed.member_roles) {
-        let offset = start.checked_add(*offset)?;
-        if bytes.get(offset + 4..offset + 10) != Some(&[0; 6])
-            || u32_at(bytes, offset + 10) != Some(*role)
-        {
-            return None;
-        }
-    }
-    let parsed_end = start.checked_add(parsed.parsed_end)?;
-    let next_byte_offset = next_indexed_record_offset(bytes, parsed_end)?;
-    let (next_class_tag, next_after_tag) = lp_ascii(bytes, next_byte_offset)?;
-    let loci = parsed
-        .members
-        .iter()
-        .zip(parsed.member_offsets.iter().zip(&parsed.member_roles))
-        .map(
-            |(geometry_record_index, (offset, role))| DesignDimensionLocus {
-                geometry_record_index: *geometry_record_index,
-                geometry_reference_offset: start.saturating_add(*offset) as u64,
-                role: *role,
-                role_offset: start.saturating_add(offset.saturating_add(10)) as u64,
-            },
-        )
-        .collect();
-    let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(parsed.state);
-    Some(DesignDimensionLocusGroup {
-        id: String::new(),
-        companion_record_index,
-        byte_offset: start as u64,
-        class_tag,
-        record_index,
-        frame_length: u64::try_from(next_byte_offset.checked_sub(start)?).ok()?,
-        loci,
-        owner_reference: parsed.owner_reference,
-        owner_reference_offset: start.saturating_add(parsed.owner_reference_offset) as u64,
-        owner_role: None,
-        owner_role_offset: None,
-        entity_genesis: Some(entity_genesis),
-        state: parsed.state,
-        state_offset: start.saturating_add(parsed.state_offset) as u64,
-        constraint_kinds,
-        unknown_constraint_bits,
-        return_members: parsed.return_members,
-        return_member_offsets: parsed
-            .return_member_offsets
-            .into_iter()
-            .map(|offset| start.saturating_add(offset) as u64)
-            .collect(),
         next_class_tag,
         next_record_index: u32_at(bytes, next_after_tag)?,
         next_byte_offset: next_byte_offset as u64,
@@ -12773,17 +13052,17 @@ mod relation_tests {
         neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
         neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
         offset_parameter_factor, parse_construction_operand_group,
-        parse_construction_operand_identity, parse_design_parameter, parse_dimension_locus_group,
-        parse_dimension_locus_pair, parse_dimension_null_locus_pair, parse_edge_operand,
-        parse_extrude_profile, parse_extrude_selection_group, parse_extrude_selection_member,
-        parse_face_operand, parse_genesis_entity_header, parse_parameter_companion,
-        parse_parameter_owner, parse_parameter_scope, parse_settled_entity_header,
-        parse_sketch_placement_candidates, parse_sketch_relation,
-        partial_historical_edge_selection, point_lies_on_sketch_geometry, point_on_sketch_entity,
-        project_configurations, project_dimension_constraints, project_extrude,
-        project_parameter_design, project_sketch_constraints, project_sketch_design,
-        radial_dimension_definition, recipe_record_prefix, region_containing_points,
-        remove_dimension_frame_relations, repeated_linear_dimension,
+        parse_construction_operand_identity, parse_design_parameter,
+        parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_genesis_entity_header, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_settled_entity_header, parse_sketch_placement_candidates,
+        parse_sketch_relation, partial_historical_edge_selection, point_lies_on_sketch_geometry,
+        point_on_sketch_entity, project_configurations, project_dimension_constraints,
+        project_extrude, project_parameter_design, project_sketch_constraints,
+        project_sketch_design, radial_dimension_definition, recipe_record_prefix,
+        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, sketch_entity_endpoints, two_locus_distance_dimension,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
@@ -14547,7 +14826,7 @@ mod relation_tests {
         assert_eq!(group.record_index, 249);
         assert_eq!(group.frame_length, 101);
         assert_eq!(group.owner_reference, 172);
-        assert_eq!(group.owner_role, Some(1));
+        assert_eq!(group.owner_role, 1);
         assert_eq!(group.state, 0);
         assert_eq!(group.loci[0].geometry_record_index, 175);
         assert_eq!(group.loci[0].role, 2);
@@ -14609,6 +14888,61 @@ mod relation_tests {
                 .collect::<Vec<_>>(),
             [249, 250]
         );
+    }
+
+    #[test]
+    fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"298");
+        bytes.extend_from_slice(&388u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.push(1);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        for (reference, role) in [(0u32, 6u32), (354, 2), (376, 3)] {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            bytes.extend_from_slice(&role.to_le_bytes());
+        }
+        push_genesis_block(&mut bytes, 0x202);
+        let annotation_byte_offset = bytes.len();
+        bytes.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
+        push_reference(&mut bytes, 390);
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for reference in [376u32, 354] {
+            push_reference(&mut bytes, reference);
+            bytes.extend_from_slice(&[0; 6]);
+        }
+        bytes.extend_from_slice(&[0; 4]);
+        let paired_byte_offset = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"287");
+        bytes.extend_from_slice(&388u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        push_reference(&mut bytes, 201);
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.resize(paired_byte_offset + 59, 0);
+
+        let frame = parse_dimension_annotation_frame(
+            &bytes,
+            0,
+            383,
+            &HashMap::from([(390, 391)]),
+            &HashSet::from([354, 376]),
+            &HashSet::from([201]),
+        )
+        .expect("annotated dimension frame");
+        assert_eq!(frame.companion_record_index, 383);
+        assert_eq!(frame.governing_companion_record_index, 391);
+        assert_eq!(frame.entity_genesis, 0x202);
+        assert_eq!(frame.annotation_byte_offset, annotation_byte_offset as u64);
+        assert_eq!(frame.annotation_bytes, [0xaa, 0xbb, 0xcc]);
+        assert_eq!(frame.operands[0].geometry_record_index, 0);
+        assert_eq!(frame.return_members, [376, 354]);
+        assert_eq!(frame.paired_byte_offset, paired_byte_offset as u64);
+        assert_eq!(frame.owner_reference, 201);
     }
 
     #[test]
@@ -17597,9 +17931,8 @@ mod relation_tests {
             }],
             owner_reference: 100,
             owner_reference_offset: 185,
-            owner_role: Some(0),
-            owner_role_offset: Some(195),
-            entity_genesis: None,
+            owner_role: 0,
+            owner_role_offset: 195,
             state: 0,
             state_offset: 199,
             constraint_kinds: Vec::new(),
@@ -17647,6 +17980,7 @@ mod relation_tests {
             std::slice::from_ref(&pair),
             std::slice::from_ref(&group),
             &[],
+            &[],
             std::slice::from_ref(&companion),
             &[],
             &points,
@@ -17669,6 +18003,7 @@ mod relation_tests {
             std::slice::from_ref(&zero_parameter),
             std::slice::from_ref(&owner),
             std::slice::from_ref(&duplicate_pair),
+            &[],
             &[],
             &[],
             &[],
@@ -17696,6 +18031,7 @@ mod relation_tests {
             std::slice::from_ref(&group_owner),
             &[],
             std::slice::from_ref(&group),
+            &[],
             &[],
             &[],
             &[],
@@ -17863,6 +18199,7 @@ mod relation_tests {
             &[pair("A"), pair("B")],
             &[],
             &[],
+            &[],
             &mut points,
             &mut [],
         )
@@ -17980,6 +18317,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
             std::slice::from_ref(&companion),
             &[recipe(1, 31), recipe(0, 30)],
             &[],
@@ -18016,6 +18354,7 @@ mod relation_tests {
             &[],
             &[],
             &[],
+            &[],
             std::slice::from_ref(&companion),
             &[recipe(1, 31), recipe(0, 30)],
             &[],
@@ -18034,6 +18373,7 @@ mod relation_tests {
             std::slice::from_ref(&placement),
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&owner),
+            &[],
             &[],
             &[],
             &[],
@@ -18076,6 +18416,7 @@ mod relation_tests {
             std::slice::from_ref(&placement),
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&owner),
+            &[],
             &[],
             &[],
             &[],
@@ -20380,35 +20721,6 @@ mod relation_tests {
         }
         out.extend_from_slice(&[0u8; 4]);
         out
-    }
-
-    #[test]
-    fn entity_genesis_dimension_group_preserves_variable_width_frame() {
-        let mut bytes =
-            genesis_relation_record(&[(354, 2), (376, 0)], 4, &[], 201, 0x10, &[376, 354]);
-        let frame_length = bytes.len();
-        bytes.extend_from_slice(&3u32.to_le_bytes());
-        bytes.extend_from_slice(b"287");
-        bytes.extend_from_slice(&388u32.to_le_bytes());
-
-        let group = parse_dimension_locus_group(
-            &bytes,
-            0,
-            383,
-            &HashSet::from([354, 376]),
-            &HashSet::from([201]),
-        )
-        .expect("EntityGenesis dimension locus frame");
-        assert_eq!(group.frame_length, frame_length as u64);
-        assert_eq!(group.entity_genesis, Some(4));
-        assert_eq!(group.owner_reference, 201);
-        assert_eq!(group.owner_role, None);
-        assert_eq!(group.state, 0x10);
-        assert_eq!(group.loci[0].role, 2);
-        assert_eq!(group.loci[1].role, 0);
-        assert_eq!(group.return_members, [376, 354]);
-        assert_eq!(group.next_class_tag, "287");
-        assert_eq!(group.next_record_index, 388);
     }
 
     #[test]

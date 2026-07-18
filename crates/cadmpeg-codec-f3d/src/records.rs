@@ -582,6 +582,62 @@ pub struct DesignDimensionNullLocusPair {
     pub paired_byte_offset: u64,
 }
 
+/// One nullable typed operand in an annotated dimension frame.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDimensionAnnotationOperand {
+    /// Indexed sketch geometry record, or zero for the null locus.
+    pub geometry_record_index: u32,
+    /// Byte offset of `geometry_record_index`.
+    pub geometry_reference_offset: u64,
+    /// Source dimension-role code.
+    pub role: u32,
+    /// Byte offset of `role`.
+    pub role_offset: u64,
+}
+
+/// Paired `EntityGenesis` dimension frame carrying annotation geometry.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignDimensionAnnotationFrame {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Companion record containing this frame.
+    pub companion_record_index: u32,
+    /// Companion record of the dimension parameter governed by this frame.
+    pub governing_companion_record_index: u32,
+    /// Byte offset of the primary indexed record header.
+    pub byte_offset: u64,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Source indexed-record identity.
+    pub record_index: u32,
+    /// Byte length from the primary through the paired header boundary.
+    pub frame_length: u64,
+    /// Ordered nullable locus operands.
+    pub operands: Vec<DesignDimensionAnnotationOperand>,
+    /// `EntityGenesis` origin bitfield.
+    pub entity_genesis: u64,
+    /// Opaque annotation bytes between the genesis block and governing owner.
+    pub annotation_bytes: Vec<u8>,
+    /// Byte offset of `annotation_bytes`.
+    pub annotation_byte_offset: u64,
+    /// Indexed parameter-owner record selecting the governed dimension.
+    pub governing_owner_record_index: u32,
+    /// Byte offset of `governing_owner_record_index`.
+    pub governing_owner_reference_offset: u64,
+    /// Ordered non-null return geometry records.
+    pub return_members: Vec<u32>,
+    /// Byte offsets parallel to `return_members`.
+    pub return_member_offsets: Vec<u64>,
+    /// Dynamic class tag of the paired indexed record.
+    pub paired_class_tag: String,
+    /// Byte offset of the paired indexed record header.
+    pub paired_byte_offset: u64,
+    /// Numeric design-entity suffix of the owning sketch.
+    pub owner_reference: u32,
+    /// Byte offset of `owner_reference`.
+    pub owner_reference_offset: u64,
+}
+
 /// One typed geometry locus and its dimension-role code.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignDimensionLocus {
@@ -616,21 +672,18 @@ pub struct DesignDimensionLocusGroup {
     pub owner_reference: u32,
     /// Byte offset of `owner_reference`.
     pub owner_reference_offset: u64,
-    /// Source role code following the owner reference. `EntityGenesis` frames do
-    /// not carry an owner role.
-    pub owner_role: Option<u32>,
-    /// Byte offset of `owner_role`, when present.
-    pub owner_role_offset: Option<u64>,
-    /// `EntityGenesis` origin bitfield, when the frame uses that dialect.
-    pub entity_genesis: Option<u64>,
+    /// Source role code following the owner reference.
+    pub owner_role: u32,
+    /// Byte offset of `owner_role`.
+    pub owner_role_offset: u64,
     /// Source constraint-state mask.
-    pub state: u64,
+    pub state: u32,
     /// Byte offset of `state`.
     pub state_offset: u64,
     /// Constraint kinds selected by `state`.
     pub constraint_kinds: Vec<SketchConstraintKind>,
     /// Bits in `state` outside the defined constraint mask.
-    pub unknown_constraint_bits: u64,
+    pub unknown_constraint_bits: u32,
     /// Ordered return geometry records.
     pub return_members: Vec<u32>,
     /// Byte offsets parallel to `return_members`.

@@ -61,6 +61,12 @@ fn unresolved_dimension_companion_count(native: &F3dNative) -> usize {
             pair.governing_companion_record_index,
         ));
     }
+    for frame in &native.design_dimension_annotation_frames {
+        typed.insert((
+            crate::design::native_stream(&frame.id).unwrap_or("f3d:design"),
+            frame.governing_companion_record_index,
+        ));
+    }
     for group in &native.design_dimension_locus_groups {
         typed.insert((
             crate::design::native_stream(&group.id).unwrap_or("f3d:design"),
@@ -689,6 +695,18 @@ pub fn decode(
                 &native.sketch_points,
                 &native.sketch_curve_identities,
             )?;
+            native.design_dimension_annotation_frames =
+                crate::design::decode_dimension_annotation_frames(
+                    &scan,
+                    &native.design_parameters,
+                    &native.design_parameter_owners,
+                    &native.design_parameter_companions,
+                    &native.design_parameter_scopes,
+                    &native.design_record_headers,
+                    &native.design_entity_headers,
+                    &native.sketch_points,
+                    &native.sketch_curve_identities,
+                )?;
             native.design_dimension_locus_groups = crate::design::decode_dimension_locus_groups(
                 &scan,
                 &native.design_parameters,
@@ -724,6 +742,7 @@ pub fn decode(
                 &native.design_parameter_owners,
                 &native.design_dimension_locus_pairs,
                 &native.design_dimension_locus_groups,
+                &native.design_dimension_annotation_frames,
                 &native.design_dimension_null_locus_pairs,
                 &mut native.sketch_points,
                 &mut native.sketch_curve_identities,
@@ -825,6 +844,7 @@ pub fn decode(
                     &native.design_parameter_owners,
                     &native.design_dimension_locus_pairs,
                     &native.design_dimension_locus_groups,
+                    &native.design_dimension_annotation_frames,
                     &native.design_dimension_null_locus_pairs,
                     &native.design_parameter_companions,
                     &native.design_dimension_recipe_records,
@@ -950,6 +970,17 @@ pub fn decode(
         &native.sketch_points,
         &native.sketch_curve_identities,
     )?;
+    native.design_dimension_annotation_frames = crate::design::decode_dimension_annotation_frames(
+        &scan,
+        &native.design_parameters,
+        &native.design_parameter_owners,
+        &native.design_parameter_companions,
+        &native.design_parameter_scopes,
+        &native.design_record_headers,
+        &native.design_entity_headers,
+        &native.sketch_points,
+        &native.sketch_curve_identities,
+    )?;
     native.design_dimension_locus_groups = crate::design::decode_dimension_locus_groups(
         &scan,
         &native.design_parameters,
@@ -984,6 +1015,7 @@ pub fn decode(
         &native.design_parameter_owners,
         &native.design_dimension_locus_pairs,
         &native.design_dimension_locus_groups,
+        &native.design_dimension_annotation_frames,
         &native.design_dimension_null_locus_pairs,
         &mut native.sketch_points,
         &mut native.sketch_curve_identities,
@@ -1081,6 +1113,7 @@ pub fn decode(
             &native.design_parameter_owners,
             &native.design_dimension_locus_pairs,
             &native.design_dimension_locus_groups,
+            &native.design_dimension_annotation_frames,
             &native.design_dimension_null_locus_pairs,
             &native.design_parameter_companions,
             &native.design_dimension_recipe_records,
@@ -1283,6 +1316,17 @@ fn populate_annotations(
         }
         for entity in &native.design_dimension_locus_pairs {
             note(&entity.id, "design_dimension_locus_pair");
+            if let Some(projected) = ir
+                .model
+                .sketch_constraints
+                .iter()
+                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+            {
+                note(&projected.id.0, "sketch_constraint");
+            }
+        }
+        for entity in &native.design_dimension_annotation_frames {
+            note(&entity.id, "design_dimension_annotation_frame");
             if let Some(projected) = ir
                 .model
                 .sketch_constraints

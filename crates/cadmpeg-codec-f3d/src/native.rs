@@ -8,16 +8,17 @@ use crate::history_records::AsmHistory;
 use crate::records::{
     ActEntity, ActGuid, ActRootComponent, BodyNativeKey, BodyVisibility, ConstructionRecipe,
     CreationTimestamp, DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignConfiguration,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
-    DesignEdgeOperand, DesignEntityHeader, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignFaceOperand, DesignFilletRadiusGroup,
-    DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
-    PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
-    SketchCurveLink, SketchPoint, SketchRelation, TolerantCoedgeParameters, TolerantEdgeTail,
-    TolerantVertexTail, TransformHints, VertexOwnership, WireTopology, XrefDesign, XrefReference,
+    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
+    DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeOperand,
+    DesignEntityHeader, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignMaterialAssignment, DesignObject,
+    DesignParameter, DesignParameterCompanion, DesignParameterOwner, DesignParameterScope,
+    DesignRecordHeader, DesignSketchPlacement, EdgeContinuity, EdgeOwnership, FaceSidedness,
+    LostEdgeReference, MeshSurfaceSentinel, PersistentDesignLink, PersistentReference,
+    PersistentSubentityTag, SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation,
+    TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
+    VertexOwnership, WireTopology, XrefDesign, XrefReference,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
@@ -42,6 +43,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_configurations",
     "design_construction_operand_groups",
     "design_construction_operand_identities",
+    "design_dimension_annotation_frames",
     "design_dimension_locus_groups",
     "design_dimension_locus_pairs",
     "design_dimension_null_locus_pairs",
@@ -91,6 +93,7 @@ macro_rules! f3d_arenas {
             body_native_keys: BodyNativeKey;
             body_visibilities: BodyVisibility;
             design_objects: DesignObject;
+            design_dimension_annotation_frames: DesignDimensionAnnotationFrame;
             design_dimension_locus_groups: DesignDimensionLocusGroup;
             design_dimension_locus_pairs: DesignDimensionLocusPair;
             design_dimension_null_locus_pairs: DesignDimensionNullLocusPair;
@@ -207,6 +210,9 @@ pub struct F3dNative {
     /// Design `MetaStream` object-table records.
     #[serde(default)]
     pub design_objects: Vec<DesignObject>,
+    /// Annotated paired dimension frames governing parameter companions.
+    #[serde(default)]
+    pub design_dimension_annotation_frames: Vec<DesignDimensionAnnotationFrame>,
     /// Typed paired loci recovered from dimensional companion graphs.
     #[serde(default)]
     pub design_dimension_locus_pairs: Vec<DesignDimensionLocusPair>,
@@ -359,6 +365,7 @@ impl Default for F3dNative {
             body_native_keys: Vec::new(),
             body_visibilities: Vec::new(),
             design_objects: Vec::new(),
+            design_dimension_annotation_frames: Vec::new(),
             design_dimension_locus_pairs: Vec::new(),
             design_dimension_locus_groups: Vec::new(),
             design_dimension_null_locus_pairs: Vec::new(),

@@ -1404,6 +1404,7 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         ));
     }
     if !native.design_parameter_companions.is_empty()
+        || !native.design_dimension_annotation_frames.is_empty()
         || !native.design_dimension_locus_pairs.is_empty()
         || !native.design_dimension_locus_groups.is_empty()
         || !native.design_dimension_null_locus_pairs.is_empty()
