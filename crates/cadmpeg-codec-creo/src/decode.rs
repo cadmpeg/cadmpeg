@@ -18331,6 +18331,42 @@ mod resolved_sketch_tests {
             solve_carriers(&[cylinder, cap, tangent]),
             Some([2.0, 0.0, 3.0])
         );
+        let x_axis_cylinder = CarrierEquation::Cylinder(CylinderEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [1.0, 0.0, 0.0],
+            ref_direction: [0.0, 1.0, 0.0],
+            radius: 1.0,
+        });
+        let y_axis_cylinder = CarrierEquation::Cylinder(CylinderEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 1.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 1.0,
+        });
+        let tangent_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 1.0],
+            normal: [0.0, 0.0, 1.0],
+        });
+        assert_eq!(
+            solve_carriers(&[x_axis_cylinder, y_axis_cylinder, tangent_plane]),
+            Some([0.0, 0.0, 1.0])
+        );
+        let secant_plane = PlaneEquation {
+            origin: [1.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        };
+        let mut secant_points =
+            intersect_plane_with_two_quadrics(secant_plane, x_axis_cylinder, y_axis_cylinder);
+        secant_points.sort_by(|left, right| left[1].total_cmp(&right[1]));
+        assert_eq!(secant_points, vec![[1.0, -1.0, 0.0], [1.0, 1.0, 0.0]]);
+        assert_eq!(
+            solve_carriers(&[
+                x_axis_cylinder,
+                y_axis_cylinder,
+                CarrierEquation::Plane(secant_plane),
+            ]),
+            None
+        );
 
         let secant = CarrierEquation::Plane(PlaneEquation {
             origin: [0.0, 0.0, 0.0],
@@ -18478,10 +18514,12 @@ mod resolved_sketch_tests {
             origin: [0.0, 5.0_f64.sqrt(), 0.0],
             normal: [0.0, 1.0, 0.0],
         });
-        assert_eq!(
-            solve_carriers(&[first_sphere, second_sphere, sphere_circle_tangent]),
-            Some([2.0, 5.0_f64.sqrt(), 0.0])
-        );
+        let sphere_circle_point =
+            solve_carriers(&[first_sphere, second_sphere, sphere_circle_tangent])
+                .expect("unique sphere-circle tangent point");
+        assert!((sphere_circle_point[0] - 2.0).abs() < 1e-12);
+        assert!((sphere_circle_point[1] - 5.0_f64.sqrt()).abs() < 1e-12);
+        assert!(sphere_circle_point[2].abs() < 1e-12);
         let external_tangent_sphere = CarrierEquation::Sphere(SphereEquation {
             center: [5.0, 0.0, 0.0],
             ref_direction: [0.0, 1.0, 0.0],
@@ -19061,6 +19099,23 @@ enum CarrierEquation {
     Torus(TorusEquation),
 }
 
+#[derive(Clone, Copy)]
+struct QuadricEquation {
+    matrix: [[f64; 3]; 3],
+    linear: [f64; 3],
+    constant: f64,
+}
+
+#[derive(Clone, Copy)]
+struct PlaneConicEquation {
+    uu: f64,
+    uv: f64,
+    vv: f64,
+    u: f64,
+    v: f64,
+    constant: f64,
+}
+
 fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
     [
         left[1].mul_add(right[2], -(left[2] * right[1])),
@@ -19071,6 +19126,101 @@ fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
 
 fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
     left[0].mul_add(right[0], left[1].mul_add(right[1], left[2] * right[2]))
+}
+
+fn matrix_vector(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
+    matrix.map(|row| dot(row, vector))
+}
+
+fn outer_product(left: [f64; 3], right: [f64; 3]) -> [[f64; 3]; 3] {
+    left.map(|left| right.map(|right| left * right))
+}
+
+fn carrier_quadric(carrier: CarrierEquation) -> Option<QuadricEquation> {
+    let identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    match carrier {
+        CarrierEquation::Cylinder(cylinder) => {
+            let axis = normalized(cylinder.axis)?;
+            if !cylinder.radius.is_finite() || cylinder.radius <= 0.0 {
+                return None;
+            }
+            let axis_projection = outer_product(axis, axis);
+            let matrix = std::array::from_fn(|row| {
+                std::array::from_fn(|column| identity[row][column] - axis_projection[row][column])
+            });
+            let matrix_origin = matrix_vector(matrix, cylinder.origin);
+            Some(QuadricEquation {
+                matrix,
+                linear: matrix_origin.map(|value| -2.0 * value),
+                constant: dot(cylinder.origin, matrix_origin) - cylinder.radius * cylinder.radius,
+            })
+        }
+        CarrierEquation::Cone(cone) => {
+            let axis = normalized(cone.axis)?;
+            let x_axis = normalized(cone.ref_direction)?;
+            if dot(axis, x_axis).abs() > 1e-10
+                || !cone.ratio.is_finite()
+                || cone.ratio <= 0.0
+                || !cone.radius.is_finite()
+                || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle)
+            {
+                return None;
+            }
+            let y_axis = cross(axis, x_axis);
+            let slope = cone.half_angle.tan();
+            let x_projection = outer_product(x_axis, x_axis);
+            let y_projection = outer_product(y_axis, y_axis);
+            let axis_projection = outer_product(axis, axis);
+            let ratio_squared = cone.ratio * cone.ratio;
+            let matrix = std::array::from_fn(|row| {
+                std::array::from_fn(|column| {
+                    x_projection[row][column] + y_projection[row][column] / ratio_squared
+                        - slope * slope * axis_projection[row][column]
+                })
+            });
+            let matrix_origin = matrix_vector(matrix, cone.origin);
+            let radius_slope = cone.radius * slope;
+            Some(QuadricEquation {
+                matrix,
+                linear: std::array::from_fn(|index| {
+                    -2.0 * matrix_origin[index] - 2.0 * radius_slope * axis[index]
+                }),
+                constant: dot(cone.origin, matrix_origin)
+                    + 2.0 * radius_slope * dot(axis, cone.origin)
+                    - cone.radius * cone.radius,
+            })
+        }
+        CarrierEquation::Sphere(sphere) => {
+            if !sphere.radius.is_finite() || sphere.radius <= 0.0 {
+                return None;
+            }
+            Some(QuadricEquation {
+                matrix: identity,
+                linear: sphere.center.map(|value| -2.0 * value),
+                constant: dot(sphere.center, sphere.center) - sphere.radius * sphere.radius,
+            })
+        }
+        CarrierEquation::Plane(_) | CarrierEquation::Torus(_) => None,
+    }
+}
+
+fn restrict_quadric_to_plane(
+    quadric: QuadricEquation,
+    origin: [f64; 3],
+    u_axis: [f64; 3],
+    v_axis: [f64; 3],
+) -> PlaneConicEquation {
+    let matrix_origin = matrix_vector(quadric.matrix, origin);
+    let matrix_u = matrix_vector(quadric.matrix, u_axis);
+    let matrix_v = matrix_vector(quadric.matrix, v_axis);
+    PlaneConicEquation {
+        uu: dot(u_axis, matrix_u),
+        uv: 2.0 * dot(u_axis, matrix_v),
+        vv: dot(v_axis, matrix_v),
+        u: 2.0 * dot(u_axis, matrix_origin) + dot(quadric.linear, u_axis),
+        v: 2.0 * dot(v_axis, matrix_origin) + dot(quadric.linear, v_axis),
+        constant: dot(origin, matrix_origin) + dot(quadric.linear, origin) + quadric.constant,
+    }
 }
 
 fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 3]> {
@@ -19362,10 +19512,252 @@ fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
         roots.push(0.5 * (lower + upper));
     }
     roots.sort_by(f64::total_cmp);
-    roots.dedup_by(|left, right| {
-        (*left - *right).abs() <= 1e-8 * left.abs().max(right.abs()).max(1.0)
-    });
     roots
+        .into_iter()
+        .fold(Vec::<f64>::new(), |mut unique, root| {
+            if let Some(previous) = unique.last_mut() {
+                let tolerance = 1e-7 * previous.abs().max(root.abs()).max(1.0);
+                if (*previous - root).abs() <= tolerance {
+                    if polynomial_value(&coefficients, root).abs()
+                        < polynomial_value(&coefficients, *previous).abs()
+                    {
+                        *previous = root;
+                    }
+                    return unique;
+                }
+            }
+            unique.push(root);
+            unique
+        })
+}
+
+fn polynomial_product(first: &[f64], second: &[f64]) -> Vec<f64> {
+    let mut product = vec![0.0; first.len() + second.len() - 1];
+    for (first_power, first_coefficient) in first.iter().enumerate() {
+        for (second_power, second_coefficient) in second.iter().enumerate() {
+            product[first_power + second_power] += first_coefficient * second_coefficient;
+        }
+    }
+    product
+}
+
+const QUARTIC_RESULTANT_PERMUTATIONS: [([usize; 4], f64); 24] = [
+    ([0, 1, 2, 3], 1.0),
+    ([0, 1, 3, 2], -1.0),
+    ([0, 2, 1, 3], -1.0),
+    ([0, 2, 3, 1], 1.0),
+    ([0, 3, 1, 2], 1.0),
+    ([0, 3, 2, 1], -1.0),
+    ([1, 0, 2, 3], -1.0),
+    ([1, 0, 3, 2], 1.0),
+    ([1, 2, 0, 3], 1.0),
+    ([1, 2, 3, 0], -1.0),
+    ([1, 3, 0, 2], -1.0),
+    ([1, 3, 2, 0], 1.0),
+    ([2, 0, 1, 3], 1.0),
+    ([2, 0, 3, 1], -1.0),
+    ([2, 1, 0, 3], -1.0),
+    ([2, 1, 3, 0], 1.0),
+    ([2, 3, 0, 1], 1.0),
+    ([2, 3, 1, 0], -1.0),
+    ([3, 0, 1, 2], -1.0),
+    ([3, 0, 2, 1], 1.0),
+    ([3, 1, 0, 2], 1.0),
+    ([3, 1, 2, 0], -1.0),
+    ([3, 2, 0, 1], -1.0),
+    ([3, 2, 1, 0], 1.0),
+];
+
+fn conic_resultant(first: PlaneConicEquation, second: PlaneConicEquation) -> Vec<f64> {
+    let zero = vec![0.0];
+    let first_y2 = vec![first.vv];
+    let first_y = vec![first.v, first.uv];
+    let first_constant = vec![first.constant, first.u, first.uu];
+    let second_y2 = vec![second.vv];
+    let second_y = vec![second.v, second.uv];
+    let second_constant = vec![second.constant, second.u, second.uu];
+    let matrix = [
+        [
+            first_y2.clone(),
+            first_y.clone(),
+            first_constant.clone(),
+            zero.clone(),
+        ],
+        [zero.clone(), first_y2, first_y, first_constant],
+        [
+            second_y2.clone(),
+            second_y.clone(),
+            second_constant.clone(),
+            zero.clone(),
+        ],
+        [zero, second_y2, second_y, second_constant],
+    ];
+    let mut determinant = vec![0.0; 9];
+    for (permutation, sign) in QUARTIC_RESULTANT_PERMUTATIONS {
+        let term = (0..4).fold(vec![1.0], |term, row| {
+            polynomial_product(&term, &matrix[row][permutation[row]])
+        });
+        for (power, coefficient) in term.into_iter().enumerate() {
+            determinant[power] += sign * coefficient;
+        }
+    }
+    determinant
+}
+
+fn quadratic_real_roots(quadratic: f64, linear: f64, constant: f64) -> Vec<f64> {
+    let scale = quadratic
+        .abs()
+        .max(linear.abs())
+        .max(constant.abs())
+        .max(1.0);
+    if quadratic.abs() <= 1e-14 * scale {
+        return if linear.abs() > 1e-14 * scale {
+            vec![-constant / linear]
+        } else {
+            Vec::new()
+        };
+    }
+    let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
+    if discriminant < -1e-12 * scale * scale {
+        return Vec::new();
+    }
+    let root = if discriminant.abs() <= 1e-12 * scale * scale {
+        0.0
+    } else {
+        discriminant.sqrt()
+    };
+    let mut roots = vec![(-linear - root) / (2.0 * quadratic)];
+    if root > 1e-12 * scale {
+        roots.push((-linear + root) / (2.0 * quadratic));
+    }
+    roots
+}
+
+fn plane_conic_value(conic: PlaneConicEquation, u: f64, v: f64) -> f64 {
+    conic.uu * u * u
+        + conic.uv * u * v
+        + conic.vv * v * v
+        + conic.u * u
+        + conic.v * v
+        + conic.constant
+}
+
+fn refine_plane_conic_intersection(
+    first: PlaneConicEquation,
+    second: PlaneConicEquation,
+    mut u: f64,
+    mut v: f64,
+) -> [f64; 2] {
+    for _ in 0..12 {
+        let first_value = plane_conic_value(first, u, v);
+        let second_value = plane_conic_value(second, u, v);
+        let first_u = 2.0 * first.uu * u + first.uv * v + first.u;
+        let first_v = first.uv * u + 2.0 * first.vv * v + first.v;
+        let second_u = 2.0 * second.uu * u + second.uv * v + second.u;
+        let second_v = second.uv * u + 2.0 * second.vv * v + second.v;
+        let determinant = first_u.mul_add(second_v, -(first_v * second_u));
+        let scale = first_u
+            .abs()
+            .max(first_v.abs())
+            .max(second_u.abs())
+            .max(second_v.abs())
+            .max(1.0);
+        if determinant.abs() <= 1e-14 * scale * scale {
+            break;
+        }
+        let delta_u = (-first_value).mul_add(second_v, first_v * second_value) / determinant;
+        let delta_v = first_value.mul_add(second_u, -(first_u * second_value)) / determinant;
+        u += delta_u;
+        v += delta_v;
+        if delta_u.abs().max(delta_v.abs()) <= 1e-13 * u.abs().max(v.abs()).max(1.0) {
+            break;
+        }
+    }
+    [u, v]
+}
+
+fn intersect_plane_with_two_quadrics(
+    plane: PlaneEquation,
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<[f64; 3]> {
+    let Some(normal) = normalized(plane.normal) else {
+        return Vec::new();
+    };
+    let reference = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        .into_iter()
+        .min_by(|left, right| {
+            dot(normal, *left)
+                .abs()
+                .total_cmp(&dot(normal, *right).abs())
+        })
+        .expect("three reference axes");
+    let Some(u_axis) = normalized(cross(normal, reference)) else {
+        return Vec::new();
+    };
+    let v_axis = cross(normal, u_axis);
+    let Some(first_quadric) = carrier_quadric(first) else {
+        return Vec::new();
+    };
+    let Some(second_quadric) = carrier_quadric(second) else {
+        return Vec::new();
+    };
+    let first_conic = restrict_quadric_to_plane(first_quadric, plane.origin, u_axis, v_axis);
+    let second_conic = restrict_quadric_to_plane(second_quadric, plane.origin, u_axis, v_axis);
+    let resultant = conic_resultant(first_conic, second_conic);
+    let mut parameters = Vec::<[f64; 2]>::new();
+    for u in real_polynomial_roots(&resultant) {
+        let first_v_roots = quadratic_real_roots(
+            first_conic.vv,
+            first_conic.uv.mul_add(u, first_conic.v),
+            first_conic.uu * u * u + first_conic.u * u + first_conic.constant,
+        );
+        let second_v_roots = quadratic_real_roots(
+            second_conic.vv,
+            second_conic.uv.mul_add(u, second_conic.v),
+            second_conic.uu * u * u + second_conic.u * u + second_conic.constant,
+        );
+        for v in first_v_roots.into_iter().chain(second_v_roots) {
+            let candidate = refine_plane_conic_intersection(first_conic, second_conic, u, v);
+            let scale = candidate[0].abs().max(candidate[1].abs()).max(1.0);
+            let coefficient_scale = [
+                first_conic.uu,
+                first_conic.uv,
+                first_conic.vv,
+                first_conic.u,
+                first_conic.v,
+                first_conic.constant,
+                second_conic.uu,
+                second_conic.uv,
+                second_conic.vv,
+                second_conic.u,
+                second_conic.v,
+                second_conic.constant,
+            ]
+            .into_iter()
+            .map(f64::abs)
+            .fold(1.0, f64::max);
+            let tolerance = 1e-8 * coefficient_scale * scale * scale;
+            if plane_conic_value(first_conic, candidate[0], candidate[1]).abs() <= tolerance
+                && plane_conic_value(second_conic, candidate[0], candidate[1]).abs() <= tolerance
+                && !parameters.iter().any(|known| {
+                    (known[0] - candidate[0])
+                        .abs()
+                        .max((known[1] - candidate[1]).abs())
+                        <= 1e-7 * scale
+                })
+            {
+                parameters.push(candidate);
+            }
+        }
+    }
+    parameters
+        .into_iter()
+        .map(|[u, v]| {
+            std::array::from_fn(|index| plane.origin[index] + u * u_axis[index] + v * v_axis[index])
+        })
+        .filter(|point| point_on_carrier(*point, first) && point_on_carrier(*point, second))
+        .collect()
 }
 
 fn intersect_two_planes_with_torus(
@@ -19816,34 +20208,41 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                     if let Some(point) = solve_planes(&planes) {
                         candidates.push(point);
                     }
+                } else if planes.len() == 1
+                    && tori.is_empty()
+                    && cylinders.len() + cones.len() + spheres.len() == 2
+                {
+                    let reduced = if let [first, second] = cones.as_slice() {
+                        intersect_plane_with_carrier_components(
+                            planes[0],
+                            CarrierEquation::Cone(*first),
+                            CarrierEquation::Cone(*second),
+                        )
+                    } else {
+                        Vec::new()
+                    };
+                    if reduced.is_empty() {
+                        let quadrics = cylinders
+                            .iter()
+                            .copied()
+                            .map(CarrierEquation::Cylinder)
+                            .chain(cones.iter().copied().map(CarrierEquation::Cone))
+                            .chain(spheres.iter().copied().map(CarrierEquation::Sphere))
+                            .collect::<Vec<_>>();
+                        candidates.extend(intersect_plane_with_two_quadrics(
+                            planes[0],
+                            quadrics[0],
+                            quadrics[1],
+                        ));
+                    } else {
+                        candidates.extend(reduced);
+                    }
                 } else if let ([first, second], [cylinder]) =
                     (planes.as_slice(), cylinders.as_slice())
                 {
                     candidates.extend(intersect_two_planes_with_cylinder(
                         *first, *second, *cylinder,
                     ));
-                } else if let ([plane], [first, second]) = (planes.as_slice(), cylinders.as_slice())
-                {
-                    let Some((CurveGeometry::Line { origin, direction }, _)) =
-                        carrier_intersection_curve(
-                            CarrierEquation::Cylinder(*first),
-                            CarrierEquation::Cylinder(*second),
-                        )
-                    else {
-                        continue;
-                    };
-                    let line_origin = [origin.x, origin.y, origin.z];
-                    let line_direction = [direction.x, direction.y, direction.z];
-                    let denominator = dot(plane.normal, line_direction);
-                    if denominator.abs() <= 1e-12 {
-                        continue;
-                    }
-                    let parameter = (dot(plane.normal, plane.origin)
-                        - dot(plane.normal, line_origin))
-                        / denominator;
-                    candidates.push(std::array::from_fn(|index| {
-                        line_origin[index] + parameter * line_direction[index]
-                    }));
                 } else if let ([first, second], [], [sphere]) =
                     (planes.as_slice(), cylinders.as_slice(), spheres.as_slice())
                 {
@@ -19854,49 +20253,6 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                 } else if let ([first, second], [cone]) = (planes.as_slice(), cones.as_slice()) {
                     if cylinders.is_empty() && spheres.is_empty() && tori.is_empty() {
                         candidates.extend(intersect_two_planes_with_cone(*first, *second, *cone));
-                    }
-                } else if let ([plane], [first, second]) = (planes.as_slice(), cones.as_slice()) {
-                    if cylinders.is_empty() && spheres.is_empty() && tori.is_empty() {
-                        candidates.extend(intersect_plane_with_carrier_components(
-                            *plane,
-                            CarrierEquation::Cone(*first),
-                            CarrierEquation::Cone(*second),
-                        ));
-                    }
-                } else if let ([plane], [cylinder], [sphere]) =
-                    (planes.as_slice(), cylinders.as_slice(), spheres.as_slice())
-                {
-                    if cones.is_empty() && tori.is_empty() {
-                        candidates.extend(intersect_plane_with_carrier_components(
-                            *plane,
-                            CarrierEquation::Cylinder(*cylinder),
-                            CarrierEquation::Sphere(*sphere),
-                        ));
-                    }
-                } else if let ([plane], [cylinder], [cone]) =
-                    (planes.as_slice(), cylinders.as_slice(), cones.as_slice())
-                {
-                    if spheres.is_empty() && tori.is_empty() {
-                        candidates.extend(intersect_plane_with_carrier_components(
-                            *plane,
-                            CarrierEquation::Cylinder(*cylinder),
-                            CarrierEquation::Cone(*cone),
-                        ));
-                    }
-                } else if let ([plane], [first, second]) = (planes.as_slice(), spheres.as_slice()) {
-                    if cylinders.is_empty() && cones.is_empty() && tori.is_empty() {
-                        if let Some(point) = tangent_sphere_point(*first, *second) {
-                            candidates.push(point);
-                        } else if let Some((geometry, _)) = carrier_intersection_curve(
-                            CarrierEquation::Sphere(*first),
-                            CarrierEquation::Sphere(*second),
-                        ) {
-                            if let Some((center, axis, radius)) = circle_parameters(&geometry) {
-                                candidates.extend(intersect_plane_with_circle(
-                                    *plane, center, axis, radius,
-                                ));
-                            }
-                        }
                     }
                 } else if let ([first, second], [torus]) = (planes.as_slice(), tori.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {

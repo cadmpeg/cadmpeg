@@ -997,6 +997,15 @@ A circular cone and a coaxial torus reduce their intersection to the two signed 
 
 An analytic carrier pair transfers its sole intersection-curve candidate without requiring solved edge endpoints. When the pair produces multiple curve candidates, transfer requires paired solved endpoints contained by exactly one candidate. Solved endpoints must lie on the selected candidate even when the candidate set contains one curve.
 
+A plane with any two cylinder, cone, or sphere carriers restricts both carrier
+quadrics to conics in an orthonormal plane chart. The determinant of their
+quadratic Sylvester matrix is a polynomial of degree at most four in one chart
+coordinate. Every real resultant root is paired with the common real roots in
+the other coordinate and refined against both conic equations. A topology
+vertex is emitted only when exactly one resulting point satisfies every
+incident carrier. Proportional coaxial cones use their exact section reduction
+before this general resultant path.
+
 A plane normal to a circular cone axis intersects it in one circle away from the apex. Substitution of an oblique plane basis into the cone equation yields a diagonal quadratic whose signs distinguish ellipse, parabola, and hyperbola carriers. Completing the square gives the conic center or vertex, in-plane principal direction, radii, and parabola focal distance.
 
 A positive-ratio elliptical cone uses local frame coordinates
