@@ -6214,6 +6214,11 @@ pub(crate) fn project_marker_backed_sketches(
         .collect::<HashMap<_, _>>();
     let plane_frames = sketch_plane_frames(features, histories);
     for lane in lanes {
+        let markers_by_id = lane
+            .sketch_entities
+            .iter()
+            .map(|marker| (marker.id.as_str(), marker))
+            .collect::<HashMap<_, _>>();
         let mut objects = native_features
             .values()
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, *feature)))
@@ -6317,14 +6322,43 @@ pub(crate) fn project_marker_backed_sketches(
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
                             SketchGeometry::Point { position: point }
                         }
-                        SketchInputKind::LineOrCircle | SketchInputKind::Arc => {
-                            SketchGeometry::Native {
-                                native_kind: format!(
-                                    "sldprt:marker-geometry:{}",
-                                    marker.kind.native_code()
-                                ),
+                        SketchInputKind::LineOrCircle => {
+                            let endpoints = line_endpoint_markers(marker, &markers_by_id);
+                            if let [start, end] = endpoints.as_slice() {
+                                let project = |endpoint: &SketchInputEntity| {
+                                    let [u, v] = endpoint.coordinates_m?;
+                                    let point = transform.apply(quantize(
+                                        Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
+                                        QUANTUM,
+                                    ))?;
+                                    Some(Point2::new(
+                                        point.0 as f64 * QUANTUM,
+                                        point.1 as f64 * QUANTUM,
+                                    ))
+                                };
+                                let (Some(start), Some(end)) = (project(start), project(end))
+                                else {
+                                    return None;
+                                };
+                                if start == end {
+                                    return None;
+                                }
+                                SketchGeometry::Line { start, end }
+                            } else {
+                                SketchGeometry::Native {
+                                    native_kind: format!(
+                                        "sldprt:marker-geometry:{}",
+                                        marker.kind.native_code()
+                                    ),
+                                }
                             }
                         }
+                        SketchInputKind::Arc => SketchGeometry::Native {
+                            native_kind: format!(
+                                "sldprt:marker-geometry:{}",
+                                marker.kind.native_code()
+                            ),
+                        },
                         SketchInputKind::Relation(_) | SketchInputKind::Native(_) => return None,
                     };
                     Some(SketchEntity {
@@ -13446,7 +13480,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn marker_backed_sketch_retains_unsolved_curves_and_projects_points() {
+    fn marker_backed_sketch_projects_lines_with_two_endpoint_owners() {
         let native_feature = |id: &str, source_id: &str, name: &str| NativeFeature {
             id: id.into(),
             parent: "history".into(),
@@ -13525,10 +13559,19 @@ mod profile_join_tests {
         payload.extend([0; 32]);
         let mut point = marker("point", Some([0.001, 0.002]));
         point.feature_ref = Some("sketch-native".into());
+        point.links = vec![SketchInputLink {
+            local_id: 2,
+            entity_ref: "curve".into(),
+        }];
         let mut curve = marker("curve", Some([0.003, 0.004]));
         curve.feature_ref = Some("sketch-native".into());
         curve.ordinal = 1;
         curve.kind = SketchInputKind::LineOrCircle;
+        let mut endpoint = marker("endpoint", Some([0.005, 0.006]));
+        endpoint.feature_ref = Some("sketch-native".into());
+        endpoint.ordinal = 2;
+        endpoint.offset = 2;
+        endpoint.links = point.links.clone();
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
@@ -13559,7 +13602,7 @@ mod profile_join_tests {
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
             references: Vec::new(),
-            sketch_entities: vec![point, curve],
+            sketch_entities: vec![point, curve, endpoint],
         };
         let mut sketches = Vec::new();
         let mut entities = Vec::new();
@@ -13574,7 +13617,7 @@ mod profile_join_tests {
         );
 
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 2);
+        assert_eq!(entities.len(), 3);
         assert!(matches!(
             entities[0].geometry,
             SketchGeometry::Point { position }
@@ -13582,7 +13625,9 @@ mod profile_join_tests {
         ));
         assert!(matches!(
             entities[1].geometry,
-            SketchGeometry::Native { .. }
+            SketchGeometry::Line { start, end }
+                if start == Point2::new(-2.0, 1.0)
+                    && end == Point2::new(-6.0, 5.0)
         ));
         assert!(matches!(
             features[1].definition,
@@ -13605,7 +13650,7 @@ mod profile_join_tests {
             &lanes,
         );
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 2);
+        assert_eq!(entities.len(), 3);
         assert!(matches!(
             &configured_features[1].definition,
             FeatureDefinition::Sketch {
