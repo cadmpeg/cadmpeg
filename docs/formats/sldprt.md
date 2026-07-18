@@ -374,6 +374,8 @@ Among classless, parameterless, propertyless history records, `Feature` source I
 
 The `moConstraintMidPlaneRefplaneData_c` class declaration is followed by eight zero bytes, an f64 geometric tolerance, an f64 signed plane distance in metres, and an xyz unit normal as three f64 values. The resulting plane satisfies `normal · position = distance`. The record does not store an independent in-plane axis.
 
+A zero-origin angular reference-plane frame stores redundant normal z and y components as two f64 values, followed by byte `1`, an unaligned xyz unit u-axis, an xyz unit normal, and an xyz unit v-axis. The three vectors begin 17, 41, and 65 bytes after the first redundant component and are pairwise orthogonal. Normal x is zero; the redundant components equal normal z and y. Twenty-four zero bytes and f64 value `1` terminate the 121-byte frame.
+
 Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode the same value. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
 
 ---

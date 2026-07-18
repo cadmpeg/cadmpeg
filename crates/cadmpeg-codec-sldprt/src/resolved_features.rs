@@ -374,10 +374,10 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
 #[cfg(test)]
 mod marker_tests {
     use super::{
-        append_spatial_vertex, arc_angle_relation_kind, compact_body_component_path_at,
-        compact_body_path_at, compact_body_retention_mode, compact_body_selection_at,
-        compact_body_selection_vector, compact_body_state_ids, compact_combine_operation_at,
-        compact_edge_component_path_at, compact_edge_selection_at,
+        angled_reference_plane_frame, append_spatial_vertex, arc_angle_relation_kind,
+        compact_body_component_path_at, compact_body_path_at, compact_body_retention_mode,
+        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
+        compact_combine_operation_at, compact_edge_component_path_at, compact_edge_selection_at,
         compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
@@ -588,6 +588,41 @@ mod marker_tests {
         let normal = payload.len() - 24;
         payload[normal..normal + 8].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(constraint_midplane_frame(&payload), None);
+    }
+
+    #[test]
+    fn angled_reference_plane_requires_its_redundant_normal_and_basis() {
+        let root = 11;
+        let mut payload = vec![0; root + 121];
+        let inverse_sqrt_two = std::f64::consts::FRAC_1_SQRT_2;
+        for (relative, value) in [
+            (0, inverse_sqrt_two),
+            (8, inverse_sqrt_two),
+            (17, 1.0),
+            (25, 0.0),
+            (33, 0.0),
+            (41, 0.0),
+            (49, inverse_sqrt_two),
+            (57, inverse_sqrt_two),
+            (65, 0.0),
+            (73, -inverse_sqrt_two),
+            (81, inverse_sqrt_two),
+            (113, 1.0),
+        ] {
+            payload[root + relative..root + relative + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[root + 16] = 1;
+        assert_eq!(
+            angled_reference_plane_frame(&payload),
+            Some((
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, inverse_sqrt_two, inverse_sqrt_two),
+                Vector3::new(1.0, 0.0, 0.0),
+            ))
+        );
+
+        payload[root + 8..root + 16].copy_from_slice(&(-inverse_sqrt_two).to_le_bytes());
+        assert_eq!(angled_reference_plane_frame(&payload), None);
     }
 
     #[test]
@@ -5396,6 +5431,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .filter_map(fixed_reference_plane_frame)
                 .collect::<Vec<_>>();
             frames.extend(constraint_midplane_frame(bytes));
+            frames.extend(angled_reference_plane_frame(bytes));
             frames.sort_by_key(|(origin, normal, u_axis)| {
                 [
                     origin.x.to_bits(),
@@ -5757,6 +5793,60 @@ fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3
             origin.x.to_bits(),
             origin.y.to_bits(),
             origin.z.to_bits(),
+            normal.x.to_bits(),
+            normal.y.to_bits(),
+            normal.z.to_bits(),
+            u_axis.x.to_bits(),
+            u_axis.y.to_bits(),
+            u_axis.z.to_bits(),
+        ]
+    });
+    frames.dedup();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const RECORD_LEN: usize = 121;
+    let scalar = |bytes: &[u8], relative| {
+        let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let norm =
+        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let mut frames = payload
+        .windows(RECORD_LEN)
+        .filter_map(|bytes| {
+            if bytes.get(16) != Some(&1)
+                || bytes.get(89..113)?.iter().any(|byte| *byte != 0)
+                || scalar(bytes, 113)? != 1.0
+            {
+                return None;
+            }
+            let u_axis = Vector3::new(scalar(bytes, 17)?, scalar(bytes, 25)?, scalar(bytes, 33)?);
+            let normal = Vector3::new(scalar(bytes, 41)?, scalar(bytes, 49)?, scalar(bytes, 57)?);
+            let v_axis = Vector3::new(scalar(bytes, 65)?, scalar(bytes, 73)?, scalar(bytes, 81)?);
+            if normal.x != 0.0
+                || scalar(bytes, 0)?.to_bits() != normal.z.to_bits()
+                || scalar(bytes, 8)?.to_bits() != normal.y.to_bits()
+                || [u_axis, normal, v_axis]
+                    .into_iter()
+                    .any(|vector| (norm(vector) - 1.0).abs() > 1.0e-9)
+                || dot(u_axis, normal).abs() > 1.0e-9
+                || dot(u_axis, v_axis).abs() > 1.0e-9
+                || dot(normal, v_axis).abs() > 1.0e-9
+            {
+                return None;
+            }
+            Some((Point3::new(0.0, 0.0, 0.0), normal, u_axis))
+        })
+        .collect::<Vec<_>>();
+    frames.sort_by_key(|(_, normal, u_axis)| {
+        [
             normal.x.to_bits(),
             normal.y.to_bits(),
             normal.z.to_bits(),
