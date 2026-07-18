@@ -404,6 +404,40 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .all(|entity| entities.insert(entity))
                     })
             }
+            Constraint::CircularPattern {
+                center,
+                angle,
+                count,
+                instances,
+                ..
+            } => {
+                let seed_arity = instances
+                    .first()
+                    .map_or(0, |instance| instance.entities.len());
+                let mut indices = HashSet::new();
+                let mut entities = HashSet::new();
+                *count > 0
+                    && angle.0.is_finite()
+                    && seed_arity > 0
+                    && instances.len() == usize::try_from(*count).unwrap_or(usize::MAX)
+                    && instances
+                        .first()
+                        .is_some_and(|instance| instance.index == 0 && instance.angle.0 == 0.0)
+                    && !instances
+                        .iter()
+                        .flat_map(|instance| &instance.entities)
+                        .any(|entity| entity == center)
+                    && instances.iter().all(|instance| {
+                        instance.index < *count
+                            && instance.angle.0.is_finite()
+                            && instance.entities.len() == seed_arity
+                            && indices.insert(instance.index)
+                            && instance
+                                .entities
+                                .iter()
+                                .all(|entity| entities.insert(entity))
+                    })
+            }
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
             Constraint::RepeatedDistance { measurements, .. } => {

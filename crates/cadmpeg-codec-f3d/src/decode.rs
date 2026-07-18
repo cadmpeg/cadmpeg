@@ -216,6 +216,14 @@ fn constraint_parameters(
             .iter()
             .flat_map(|direction| [&direction.spacing_parameter, &direction.count_parameter])
             .collect(),
+        Definition::CircularPattern {
+            angle_parameter,
+            count_parameter,
+            ..
+        } => [angle_parameter.as_ref(), count_parameter.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect(),
         Definition::Coincident { .. }
         | Definition::Polygon { .. }
         | Definition::SplineGroup { .. }

@@ -350,6 +350,17 @@ pub struct SketchPatternInstance {
     pub entities: Vec<SketchEntityId>,
 }
 
+/// One resolved circular-pattern instance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchCircularPatternInstance {
+    /// Zero-based position in pattern order; zero is the seed instance.
+    pub index: u32,
+    /// Signed rotation from the seed instance in radians.
+    pub angle: Angle,
+    /// Entities in fixed seed-entity order.
+    pub entities: Vec<SketchEntityId>,
+}
+
 /// One independently measured pair within a repeated linear dimension.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -403,6 +414,23 @@ pub enum SketchConstraintDefinition {
         directions: [SketchPatternDirection; 2],
         /// Instances in source order; `[0, 0]` is the seed instance.
         instances: Vec<SketchPatternInstance>,
+    },
+    /// A parameter-driven circular pattern with geometrically resolved instances.
+    CircularPattern {
+        /// Point entity defining the center of rotation.
+        center: SketchEntityId,
+        /// Evaluated angular span stored by the native pattern.
+        angle: Angle,
+        /// Number of instances, including the seed instance.
+        count: u32,
+        /// Driving angular-span parameter, when the source exposes it as a neutral parameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle_parameter: Option<ParameterId>,
+        /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        count_parameter: Option<ParameterId>,
+        /// Instances in source order; index zero is the seed instance.
+        instances: Vec<SketchCircularPatternInstance>,
     },
     /// Two or more explicit entity loci coincide.
     CoincidentLoci {

@@ -1285,6 +1285,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     .collect(),
                 None,
             ),
+            Definition::CircularPattern {
+                center, instances, ..
+            } => (
+                std::iter::once(center.clone())
+                    .chain(
+                        instances
+                            .iter()
+                            .flat_map(|instance| instance.entities.iter().cloned()),
+                    )
+                    .collect(),
+                None,
+            ),
             Definition::Native {
                 entities,
                 parameter: Some(parameter),
@@ -1424,6 +1436,26 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
             }) {
                 if !parameters.contains(parameter) {
                     ref_error(findings, &constraint.id.0, "parameter", parameter);
+                }
+            }
+        }
+        if let Definition::CircularPattern {
+            angle_parameter,
+            count_parameter,
+            ..
+        } = &constraint.definition
+        {
+            for parameter in [angle_parameter.as_ref(), count_parameter.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                if !parameters.contains(parameter.0.as_str()) {
+                    ref_error(
+                        findings,
+                        &constraint.id.0,
+                        "parameter",
+                        parameter.0.as_str(),
+                    );
                 }
             }
         }

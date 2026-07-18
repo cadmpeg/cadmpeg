@@ -7295,6 +7295,15 @@ pub fn project_sketch_constraints(
             None
         })
         .or_else(|| exact_rectangular_pattern(relation, scope, parameters, &return_entities))
+        .or_else(|| {
+            exact_circular_pattern(
+                relation,
+                scope,
+                parameters,
+                &member_entities,
+                &return_entities,
+            )
+        })
         .or_else(|| exact_offset_constraint(relation, scope, &projected))
         .unwrap_or_else(|| Definition::Native {
             native_kind: relation_kind_name(relation),
@@ -7448,6 +7457,261 @@ fn exact_rectangular_pattern(
         directions,
         instances,
     })
+}
+
+fn exact_circular_pattern(
+    relation: &SketchRelation,
+    scope: &str,
+    parameters: &[DesignParameter],
+    members: &[&cadmpeg_ir::sketches::SketchEntity],
+    returned: &[&cadmpeg_ir::sketches::SketchEntity],
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use crate::records::SketchPatternDefinition;
+    use cadmpeg_ir::sketches::{
+        SketchCircularPatternInstance, SketchConstraintDefinition as Definition, SketchGeometry,
+    };
+
+    if relation.unknown_constraint_bits != 0
+        || relation.constraint_kinds != [SketchConstraintKind::CircularPattern]
+        || members.len() != relation.members.len()
+        || returned.len() != relation.return_members.len()
+    {
+        return None;
+    }
+    let SketchPatternDefinition::Circular {
+        angle_parameter,
+        count_parameter,
+        evaluated_angle,
+        evaluated_count,
+    } = relation.pattern.as_ref()?
+    else {
+        return None;
+    };
+    let angle_parameter = parameters.iter().find(|parameter| {
+        native_stream(&parameter.id) == Some(scope)
+            && parameter.owner_record_index == Some(*angle_parameter)
+    });
+    let count_parameter = parameters.iter().find(|parameter| {
+        native_stream(&parameter.id) == Some(scope)
+            && parameter.owner_record_index == Some(*count_parameter)
+    });
+    let angle = cadmpeg_ir::features::Angle(*evaluated_angle);
+    if !evaluated_angle.is_finite()
+        || angle_parameter.is_some_and(|parameter| {
+            design_angle(parameter).is_none_or(|value| !scalar_close(value.0, angle.0))
+        })
+        || count_parameter.is_some_and(|parameter| {
+            !scalar_close(parameter.evaluated_value, f64::from(*evaluated_count))
+        })
+        || *evaluated_count == 0
+    {
+        return None;
+    }
+    let input = members
+        .iter()
+        .zip(&relation.member_roles)
+        .filter_map(|(entity, role)| (*role != 0).then_some(*entity))
+        .collect::<Vec<_>>();
+    let input_ids = input
+        .iter()
+        .map(|entity| &entity.id)
+        .collect::<HashSet<_>>();
+    let generated_ids = members
+        .iter()
+        .zip(&relation.member_roles)
+        .filter_map(|(entity, role)| (*role == 0).then_some(&entity.id))
+        .collect::<HashSet<_>>();
+    let mut candidates = Vec::new();
+    for center in input.iter().copied() {
+        let SketchGeometry::Point {
+            position: center_position,
+        } = center.geometry
+        else {
+            continue;
+        };
+        if !returned.iter().any(|entity| entity.id == center.id) {
+            continue;
+        }
+        let patterned = returned
+            .iter()
+            .copied()
+            .filter(|entity| entity.id != center.id)
+            .collect::<Vec<_>>();
+        let count = usize::try_from(*evaluated_count).ok()?;
+        if patterned.is_empty() || !patterned.len().is_multiple_of(count) {
+            continue;
+        }
+        let arity = patterned.len() / count;
+        let seed = &patterned[..arity];
+        if seed.is_empty()
+            || !seed.iter().all(|entity| input_ids.contains(&entity.id))
+            || patterned[arity..]
+                .iter()
+                .map(|entity| &entity.id)
+                .collect::<HashSet<_>>()
+                != generated_ids
+        {
+            continue;
+        }
+        let mut divisors = vec![f64::from(*evaluated_count)];
+        if *evaluated_count > 1 {
+            divisors.push(f64::from(*evaluated_count - 1));
+        }
+        divisors.dedup_by(|left, right| scalar_close(*left, *right));
+        for divisor in divisors {
+            let instances = patterned
+                .chunks_exact(arity)
+                .enumerate()
+                .map(|(index, instance)| {
+                    let rotation = *evaluated_angle * index as f64 / divisor;
+                    seed.iter()
+                        .zip(instance)
+                        .all(|(source, result)| {
+                            rotated_sketch_geometry_matches(
+                                &source.geometry,
+                                &result.geometry,
+                                center_position,
+                                rotation,
+                            )
+                        })
+                        .then(|| SketchCircularPatternInstance {
+                            index: index as u32,
+                            angle: cadmpeg_ir::features::Angle(rotation),
+                            entities: instance.iter().map(|entity| entity.id.clone()).collect(),
+                        })
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(instances) = instances {
+                candidates.push((center.id.clone(), instances));
+            }
+        }
+    }
+    candidates.dedup();
+    let [(center, instances)] = candidates.as_slice() else {
+        return None;
+    };
+    Some(Definition::CircularPattern {
+        center: center.clone(),
+        angle,
+        count: *evaluated_count,
+        angle_parameter: angle_parameter.map(neutral_parameter_id),
+        count_parameter: count_parameter.map(neutral_parameter_id),
+        instances: instances.clone(),
+    })
+}
+
+fn rotated_sketch_geometry_matches(
+    source: &cadmpeg_ir::sketches::SketchGeometry,
+    result: &cadmpeg_ir::sketches::SketchGeometry,
+    center: Point2,
+    angle: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let rotate = |point: Point2| {
+        let (sin, cos) = angle.sin_cos();
+        let u = point.u - center.u;
+        let v = point.v - center.v;
+        Point2::new(center.u + cos * u - sin * v, center.v + sin * u + cos * v)
+    };
+    let point_matches = |first: Point2, second: Point2| {
+        let first = rotate(first);
+        scalar_close(first.u, second.u) && scalar_close(first.v, second.v)
+    };
+    let angle_matches = |first: f64, second: f64| {
+        let delta = (first + angle - second).rem_euclid(std::f64::consts::TAU);
+        scalar_close(delta, 0.0) || scalar_close(delta, std::f64::consts::TAU)
+    };
+    match (source, result) {
+        (SketchGeometry::Point { position: first }, SketchGeometry::Point { position: second }) => {
+            point_matches(*first, *second)
+        }
+        (SketchGeometry::Line { start: a, end: b }, SketchGeometry::Line { start: c, end: d }) => {
+            point_matches(*a, *c) && point_matches(*b, *d)
+        }
+        (
+            SketchGeometry::Circle {
+                center: a,
+                radius: ar,
+            },
+            SketchGeometry::Circle {
+                center: b,
+                radius: br,
+            },
+        ) => point_matches(*a, *b) && scalar_close(ar.0, br.0),
+        (
+            SketchGeometry::Arc {
+                center: a,
+                radius: ar,
+                start_angle: as_,
+                end_angle: ae,
+            },
+            SketchGeometry::Arc {
+                center: b,
+                radius: br,
+                start_angle: bs,
+                end_angle: be,
+            },
+        ) => {
+            point_matches(*a, *b)
+                && scalar_close(ar.0, br.0)
+                && angle_matches(as_.0, bs.0)
+                && angle_matches(ae.0, be.0)
+        }
+        (
+            SketchGeometry::Ellipse {
+                center: a,
+                major_angle: aa,
+                major_radius: ar,
+                minor_radius: ai,
+                start_angle: as_,
+                end_angle: ae,
+            },
+            SketchGeometry::Ellipse {
+                center: b,
+                major_angle: ba,
+                major_radius: br,
+                minor_radius: bi,
+                start_angle: bs,
+                end_angle: be,
+            },
+        ) => {
+            point_matches(*a, *b)
+                && angle_matches(aa.0, ba.0)
+                && scalar_close(ar.0, br.0)
+                && scalar_close(ai.0, bi.0)
+                && optional_angle_matches(as_.as_ref(), bs.as_ref())
+                && optional_angle_matches(ae.as_ref(), be.as_ref())
+        }
+        (
+            SketchGeometry::Nurbs {
+                degree: ad,
+                knots: ak,
+                control_points: ap,
+                weights: aw,
+                periodic: ax,
+            },
+            SketchGeometry::Nurbs {
+                degree: bd,
+                knots: bk,
+                control_points: bp,
+                weights: bw,
+                periodic: bx,
+            },
+        ) => {
+            ad == bd
+                && ax == bx
+                && equal_scalars(ak, bk)
+                && ap.len() == bp.len()
+                && ap.iter().zip(bp).all(|(a, b)| point_matches(*a, *b))
+                && match (aw, bw) {
+                    (None, None) => true,
+                    (Some(a), Some(b)) => equal_scalars(a, b),
+                    _ => false,
+                }
+        }
+        _ => false,
+    }
 }
 
 fn scalar_close(first: f64, second: f64) -> bool {
@@ -22402,6 +22666,114 @@ mod relation_tests {
             },
             &resized,
             Point2::new(10.0, -3.0),
+        ));
+    }
+
+    #[test]
+    fn circular_pattern_resolves_full_and_partial_instance_distributions() {
+        let entity = |id: &str, geometry| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let center = entity(
+            "generated:point#center",
+            SketchGeometry::Point {
+                position: Point2::new(2.0, -3.0),
+            },
+        );
+        let circle = |id: &str, angle: f64| {
+            entity(
+                id,
+                SketchGeometry::Circle {
+                    center: Point2::new(2.0 + 5.0 * angle.cos(), -3.0 + 5.0 * angle.sin()),
+                    radius: cadmpeg_ir::features::Length(0.75),
+                },
+            )
+        };
+        let seed = circle("generated:circle#seed", 0.0);
+        let middle = circle("generated:circle#middle", std::f64::consts::FRAC_PI_2);
+        let last = circle("generated:circle#last", std::f64::consts::PI);
+        let relation = |angle| SketchRelation {
+            id: "f3d:native:sketch-relation#circular".into(),
+            record_index: 10,
+            class_tag: "300".into(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: "0_1".into(),
+            auxiliary_references: vec![20, 21],
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![1, 2, 3, 4],
+            resolved_members: Vec::new(),
+            member_offsets: Vec::new(),
+            owner_reference_offset: 0,
+            state: 0x1000_0000,
+            constraint_kinds: vec![SketchConstraintKind::CircularPattern],
+            unknown_constraint_bits: 0,
+            member_roles: vec![1, 1, 0, 0],
+            entity_genesis: None,
+            pattern: Some(crate::records::SketchPatternDefinition::Circular {
+                angle_parameter: 20,
+                count_parameter: 21,
+                evaluated_angle: angle,
+                evaluated_count: 3,
+            }),
+            return_members: vec![2, 3, 4, 1],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: Vec::new(),
+            raw_bytes: Vec::new(),
+        };
+        let members = [&center, &seed, &middle, &last];
+        let returned = [&seed, &middle, &last, &center];
+        let Some(SketchConstraintDefinition::CircularPattern {
+            center: actual_center,
+            angle,
+            count,
+            instances,
+            ..
+        }) = super::exact_circular_pattern(
+            &relation(std::f64::consts::PI),
+            "native",
+            &[],
+            &members,
+            &returned,
+        )
+        else {
+            panic!("partial circular pattern did not resolve");
+        };
+        assert_eq!(actual_center, center.id);
+        assert_eq!(angle.0, std::f64::consts::PI);
+        assert_eq!(count, 3);
+        assert_eq!(
+            instances
+                .iter()
+                .map(|instance| instance.angle.0)
+                .collect::<Vec<_>>(),
+            [0.0, std::f64::consts::FRAC_PI_2, std::f64::consts::PI]
+        );
+
+        let full_middle = circle("generated:circle#full-middle", std::f64::consts::TAU / 3.0);
+        let full_last = circle(
+            "generated:circle#full-last",
+            2.0 * std::f64::consts::TAU / 3.0,
+        );
+        let full_members = [&center, &seed, &full_middle, &full_last];
+        let full_returned = [&seed, &full_middle, &full_last, &center];
+        assert!(matches!(
+            super::exact_circular_pattern(
+                &relation(std::f64::consts::TAU),
+                "native",
+                &[],
+                &full_members,
+                &full_returned,
+            ),
+            Some(SketchConstraintDefinition::CircularPattern { ref instances, .. })
+                if super::scalar_close(instances[1].angle.0, std::f64::consts::TAU / 3.0)
         ));
     }
 
