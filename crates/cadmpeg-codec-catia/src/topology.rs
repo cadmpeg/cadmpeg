@@ -2504,61 +2504,59 @@ fn standard_mesh_missing_edge_assignments_impl(
                 if offset == target || can_expand_gap {
                     let value = &self.gaps[gap];
                     let end = (value.start + value.length) % self.cycle_lengths[value.cycle];
-                    if current_port
+                    let port_closes = current_port
                         .zip(
                             self.corner_ports
                                 .get(&(self.face, value.cycle, end))
                                 .copied(),
                         )
-                        .is_some_and(|(actual, expected)| actual != expected)
-                    {
-                        return Some(());
-                    }
+                        .is_none_or(|(actual, expected)| actual == expected);
                     let end_points = self.corner_points.get(&(self.face, value.cycle, end));
-                    if current_points
+                    let points_close = current_points
                         .as_ref()
                         .zip(end_points)
-                        .is_some_and(|(actual, expected)| actual.is_disjoint(expected))
-                    {
-                        return Some(());
-                    }
-                    let next_port = self.gaps.get(gap + 1).and_then(|next| {
-                        self.corner_ports
-                            .get(&(self.face, next.cycle, next.start))
-                            .copied()
-                    });
-                    let next_points = self.gaps.get(gap + 1).and_then(|next| {
-                        self.corner_points
-                            .get(&(self.face, next.cycle, next.start))
-                            .cloned()
-                            .map(Arc::new)
-                    });
-                    let saved = placed[gap_placed_start..].to_vec();
-                    if offset < target {
-                        let slack = target - offset;
-                        let Some(flexible) = placed.get_mut(gap_placed_start) else {
-                            return Some(());
-                        };
-                        flexible.segment_count = flexible.segment_count.checked_add(slack)?;
-                        let mut at = value.start;
-                        for placement in &mut placed[gap_placed_start..] {
-                            placement.start = at % self.cycle_lengths[value.cycle];
-                            at = at.checked_add(placement.segment_count)?;
-                            placement.end = at % self.cycle_lengths[value.cycle];
+                        .is_none_or(|(actual, expected)| !actual.is_disjoint(expected));
+                    if port_closes && points_close {
+                        let next_port = self.gaps.get(gap + 1).and_then(|next| {
+                            self.corner_ports
+                                .get(&(self.face, next.cycle, next.start))
+                                .copied()
+                        });
+                        let next_points = self.gaps.get(gap + 1).and_then(|next| {
+                            self.corner_points
+                                .get(&(self.face, next.cycle, next.start))
+                                .cloned()
+                                .map(Arc::new)
+                        });
+                        let saved = placed[gap_placed_start..].to_vec();
+                        if offset < target {
+                            let slack = target - offset;
+                            let Some(flexible) = placed.get_mut(gap_placed_start) else {
+                                return Some(());
+                            };
+                            flexible.segment_count = flexible.segment_count.checked_add(slack)?;
+                            let mut at = value.start;
+                            for placement in &mut placed[gap_placed_start..] {
+                                placement.start = at % self.cycle_lengths[value.cycle];
+                                at = at.checked_add(placement.segment_count)?;
+                                placement.end = at % self.cycle_lengths[value.cycle];
+                            }
                         }
-                    }
-                    self.walk(
-                        gap + 1,
-                        0,
-                        used,
-                        next_port,
-                        next_points,
-                        placed.len(),
-                        placed,
-                    )?;
-                    placed.truncate(gap_placed_start);
-                    placed.extend(saved);
-                    if offset == target {
+                        self.walk(
+                            gap + 1,
+                            0,
+                            used,
+                            next_port,
+                            next_points,
+                            placed.len(),
+                            placed,
+                        )?;
+                        placed.truncate(gap_placed_start);
+                        placed.extend(saved);
+                        if offset == target {
+                            return Some(());
+                        }
+                    } else if offset == target {
                         return Some(());
                     }
                 }
