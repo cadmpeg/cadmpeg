@@ -24,7 +24,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity, StrictConsequence,
+    DecodeReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -248,7 +248,6 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<Decoded> {
     let summary = container::summarize(scan);
     let report = DecodeReport {
         retention_degraded: false,
-        profile_versions: ProfileVersions::default(),
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -375,7 +374,6 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<Decoded> {
         ir,
         DecodeReport {
             retention_degraded: false,
-            profile_versions: ProfileVersions::default(),
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
@@ -926,7 +924,6 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<Decoded> {
         ir,
         DecodeReport {
             retention_degraded: false,
-            profile_versions: ProfileVersions::default(),
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
@@ -1859,7 +1856,6 @@ fn build_geometry_report(
 
     DecodeReport {
         retention_degraded: false,
-        profile_versions: ProfileVersions::default(),
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1995,7 +1991,6 @@ fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> Dec
 
     DecodeReport {
         retention_degraded: false,
-        profile_versions: ProfileVersions::default(),
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,

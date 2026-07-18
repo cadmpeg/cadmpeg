@@ -13,14 +13,14 @@ use std::collections::BTreeSet;
 
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
 use crate::document::Model;
-use crate::report::{LossCategory, LossCode, LossNote, ProfileVersions, Severity};
+use crate::report::{LossCategory, LossCode, LossNote, Severity};
 
 use super::arena::DecodeArena;
 use super::budget::BudgetCells;
 use super::error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
-use super::policy::{DecodeMode, DecodePolicy, Envelope, ResourceLimits};
+use super::policy::{DecodeMode, DecodePolicy, Envelope};
 use super::retained::{
     RetainedAddr, RetainedBlob, RetainedBlobId, RetainedRange, RetainedStore, Retention,
 };
@@ -802,30 +802,7 @@ impl<'a> DecodeContext<'a> {
                 provenance: None,
             });
         }
-        result.report.profile_versions = self.profile_versions();
         Ok(result)
-    }
-
-    /// Resolves the limits-profile version, acceptance-envelope version, and
-    /// caller ceilings recorded on the decode report.
-    ///
-    /// The desktop profile is the documented `Default`, so a custom policy's
-    /// overrides are its deviations from desktop.
-    fn profile_versions(&self) -> ProfileVersions {
-        let mut overrides = Vec::new();
-        let profile = match self.policy.limits.profile_version() {
-            Some(version) => version.to_owned(),
-            None => {
-                push_limit_overrides(&mut overrides, &self.policy.limits);
-                "custom".to_owned()
-            }
-        };
-        overrides.sort();
-        ProfileVersions {
-            profile,
-            envelope: Envelope::VERSION.to_owned(),
-            overrides,
-        }
     }
 
     // --- test and instrumentation accessors ---------------------------------
@@ -866,49 +843,6 @@ impl<'a> DecodeContext<'a> {
     pub(crate) fn unresolved_tickets(&self) -> usize {
         self.tickets.unresolved()
     }
-}
-
-/// Appends a `dimension=value` override descriptor for each ceiling that
-/// differs from the desktop default.
-///
-/// `limits` is destructured by field on purpose: adding a `ResourceLimits`
-/// dimension fails to compile here until the new field is listed, so a fresh
-/// ceiling cannot silently escape the override record.
-fn push_limit_overrides(out: &mut Vec<String>, limits: &ResourceLimits) {
-    let base = ResourceLimits::desktop();
-    let ResourceLimits {
-        max_input_bytes,
-        max_decompressed_bytes_total,
-        max_decompressed_bytes_per_expand,
-        max_alloc_bytes,
-        max_work,
-        max_depth,
-        max_retained_bytes,
-    } = *limits;
-    let mut push = |name: &str, base_value: u64, value: u64| {
-        if value != base_value {
-            out.push(format!("{name}={value}"));
-        }
-    };
-    push("max_input_bytes", base.max_input_bytes, max_input_bytes);
-    push(
-        "max_decompressed_bytes_total",
-        base.max_decompressed_bytes_total,
-        max_decompressed_bytes_total,
-    );
-    push(
-        "max_decompressed_bytes_per_expand",
-        base.max_decompressed_bytes_per_expand,
-        max_decompressed_bytes_per_expand,
-    );
-    push("max_alloc_bytes", base.max_alloc_bytes, max_alloc_bytes);
-    push("max_work", base.max_work, max_work);
-    push(
-        "max_retained_bytes",
-        base.max_retained_bytes,
-        max_retained_bytes,
-    );
-    push("max_depth", u64::from(base.max_depth), u64::from(max_depth));
 }
 
 /// Builds the root-input resource error before a context exists.

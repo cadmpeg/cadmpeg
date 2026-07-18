@@ -6,9 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
 use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
-};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 
 use crate::chunks::{
@@ -690,7 +688,6 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
         ir,
         DecodeReport {
             retention_degraded: false,
-            profile_versions: ProfileVersions::default(),
             format: "rhino".to_string(),
             container_only: true,
             geometry_transferred: false,

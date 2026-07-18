@@ -28,7 +28,7 @@ use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 use cadmpeg_ir::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
 use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity, StrictConsequence,
+    DecodeReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
 };
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
@@ -959,7 +959,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     }
     DecodeReport {
         retention_degraded: false,
-        profile_versions: ProfileVersions::default(),
         format: "sldprt".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1400,7 +1399,6 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
 
     DecodeReport {
         retention_degraded: false,
-        profile_versions: ProfileVersions::default(),
         format: "sldprt".to_string(),
         container_only,
         geometry_transferred: false,

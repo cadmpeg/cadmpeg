@@ -1421,7 +1421,6 @@ impl Codec for FcstdCodec {
             ir,
             DecodeReport {
                 retention_degraded: false,
-                profile_versions: cadmpeg_ir::ProfileVersions::default(),
                 format: "fcstd".into(),
                 container_only: options.container_only,
                 geometry_transferred,

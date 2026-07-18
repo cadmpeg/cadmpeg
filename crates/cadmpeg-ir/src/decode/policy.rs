@@ -81,28 +81,6 @@ impl ResourceLimits {
             max_retained_bytes: 256 * MIB,
         }
     }
-
-    /// Version tag for the desktop profile's exact ceiling values.
-    pub const DESKTOP_VERSION: &'static str = "desktop-v1";
-
-    /// Version tag for the service profile's exact ceiling values.
-    pub const SERVICE_VERSION: &'static str = "service-v1";
-
-    /// The version tag of the named profile these ceilings match exactly, or
-    /// `None` when the caller supplied ceilings that match no named profile.
-    ///
-    /// Structural equality is the identity test: a caller who reproduces a
-    /// profile's exact ceilings is treated as using that profile; any deviation
-    /// makes the profile `custom` and is recorded against the default baseline.
-    pub fn profile_version(&self) -> Option<&'static str> {
-        if *self == Self::desktop() {
-            Some(Self::DESKTOP_VERSION)
-        } else if *self == Self::service() {
-            Some(Self::SERVICE_VERSION)
-        } else {
-            None
-        }
-    }
 }
 
 impl Default for ResourceLimits {
@@ -195,9 +173,6 @@ impl Envelope {
             retained_bytes: 16,
         },
     };
-
-    /// Version tag for the platform default envelope's exact constants.
-    pub(crate) const VERSION: &'static str = "envelope-v3";
 }
 
 #[cfg(test)]
@@ -205,8 +180,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn desktop_version_pins_its_ceilings() {
-        assert_eq!(ResourceLimits::DESKTOP_VERSION, "desktop-v1");
+    fn desktop_ceilings_are_explicit() {
         let d = ResourceLimits::desktop();
         assert_eq!(d.max_input_bytes, 4 * GIB);
         assert_eq!(d.max_decompressed_bytes_total, 8 * GIB);
@@ -218,8 +192,7 @@ mod tests {
     }
 
     #[test]
-    fn service_version_pins_its_ceilings() {
-        assert_eq!(ResourceLimits::SERVICE_VERSION, "service-v1");
+    fn service_ceilings_are_explicit() {
         let s = ResourceLimits::service();
         assert_eq!(s.max_input_bytes, 256 * MIB);
         assert_eq!(s.max_decompressed_bytes_total, GIB);
@@ -231,8 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn envelope_version_pins_its_constants() {
-        assert_eq!(Envelope::VERSION, "envelope-v3");
+    fn envelope_constants_are_explicit() {
         let e = Envelope::PLATFORM_DEFAULT;
         assert_eq!(e.base.alloc_bytes, 64 * MIB);
         assert_eq!(e.base.decompressed_total, 16 * MIB);

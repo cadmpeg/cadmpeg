@@ -6,15 +6,11 @@ use std::io::Cursor;
 use super::*;
 use crate::codec::{CodecError, DecodeResult};
 use crate::document::CadIr;
-use crate::report::{DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity};
+use crate::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use crate::units::Units;
 
 fn desktop() -> DecodePolicy {
     DecodePolicy::default()
-}
-
-fn service() -> DecodePolicy {
-    DecodePolicy::service()
 }
 
 fn strict() -> DecodePolicy {
@@ -60,7 +56,6 @@ fn result_with_bodies(ids: &[&str]) -> DecodeResult {
         losses: Vec::new(),
         notes: Vec::new(),
         retention_degraded: false,
-        profile_versions: ProfileVersions::default(),
     };
     DecodeResult::new(ir, report)
 }
@@ -901,65 +896,6 @@ fn allowance_is_the_smaller_of_ceiling_and_envelope() {
     let policy = tight(|limits| limits.max_input_bytes = 4096);
     let (ctx2, _root) = DecodeContext::from_root_bytes(bytes, &arena2, &policy).unwrap();
     assert_eq!(ctx2.allowance_of(ResourceDimension::InputBytes), 4096);
-}
-
-#[test]
-fn finish_records_profile_and_envelope_versions_under_both_profiles() {
-    let bytes: &[u8] = &[0u8; 8];
-
-    let arena = DecodeArena::new();
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &desktop()).unwrap();
-    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
-    assert_eq!(report.profile_versions.profile, "desktop-v1");
-    assert_eq!(report.profile_versions.envelope, "envelope-v3");
-    assert!(report.profile_versions.overrides.is_empty());
-
-    let arena = DecodeArena::new();
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &service()).unwrap();
-    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
-    assert_eq!(report.profile_versions.profile, "service-v1");
-    assert_eq!(report.profile_versions.envelope, "envelope-v3");
-    assert!(report.profile_versions.overrides.is_empty());
-}
-
-#[test]
-fn finish_records_custom_ceiling_overrides_against_the_default() {
-    let bytes: &[u8] = &[0u8; 8];
-
-    let arena = DecodeArena::new();
-    let policy = tight(|limits| limits.max_work = 10);
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
-    assert_eq!(report.profile_versions.profile, "custom");
-    assert_eq!(report.profile_versions.envelope, "envelope-v3");
-    assert_eq!(
-        report.profile_versions.overrides,
-        vec!["max_work=10".to_string()]
-    );
-
-    let arena = DecodeArena::new();
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &strict()).unwrap();
-    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
-    assert_eq!(report.profile_versions.profile, "desktop-v1");
-    assert!(report.profile_versions.overrides.is_empty());
-}
-
-#[test]
-fn finish_records_every_deviating_dimension_in_sorted_order() {
-    let bytes: &[u8] = &[0u8; 8];
-
-    let arena = DecodeArena::new();
-    let policy = tight(|limits| {
-        limits.max_work = 10;
-        limits.max_depth = 4;
-    });
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let report = ctx.finish(Ok(dummy_result())).unwrap().report;
-    assert_eq!(report.profile_versions.profile, "custom");
-    assert_eq!(
-        report.profile_versions.overrides,
-        vec!["max_depth=4".to_string(), "max_work=10".to_string()]
-    );
 }
 
 #[test]

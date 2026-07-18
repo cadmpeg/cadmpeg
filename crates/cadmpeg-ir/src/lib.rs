@@ -106,8 +106,8 @@ pub use products::{
 pub use provenance::Provenance as LossProvenance;
 pub use provenance::{Exactness, SourceObjectAssociation};
 pub use report::{
-    Check, DecodeReport, ExportReport, Finding, LossCategory, LossCode, LossNote, ProfileVersions,
-    Severity, StrictConsequence, ValidationReport,
+    Check, DecodeReport, ExportReport, Finding, LossCategory, LossCode, LossNote, Severity,
+    StrictConsequence, ValidationReport,
 };
 pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,

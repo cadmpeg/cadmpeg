@@ -312,52 +312,6 @@ pub struct LossNote {
     pub provenance: Option<Provenance>,
 }
 
-/// Versioned resource-profile identifiers recorded on every decode.
-///
-/// Profiles and the acceptance envelope carry version tags so an input
-/// that begins failing after a constants update keeps a durable explanation
-/// instead of a mystery. The decode session sets these authoritatively at
-/// [`DecodeContext::finish`](crate::decode::DecodeContext::finish); the
-/// [`Default`] value stamps the self-identifying
-/// [`UNSTAMPED`](ProfileVersions::UNSTAMPED) sentinel so a report that never
-/// reached `finish` is distinguishable from a real calibration rather than
-/// masquerading as an all-empty-string match.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct ProfileVersions {
-    /// The active limits profile: `desktop-v1`, `service-v1`, `custom` when the
-    /// caller's ceilings match no named profile, or
-    /// [`UNSTAMPED`](ProfileVersions::UNSTAMPED) before `finish` stamps it.
-    pub profile: String,
-    /// The active acceptance-envelope version, e.g. `envelope-v3`, or
-    /// [`UNSTAMPED`](ProfileVersions::UNSTAMPED) before `finish` stamps it.
-    pub envelope: String,
-    /// Caller ceilings that differ from the default desktop profile, each as
-    /// `dimension=value`, sorted. Empty when the limits match a named profile;
-    /// present only when the profile is `custom`, naming what the caller
-    /// changed.
-    #[serde(default)]
-    pub overrides: Vec<String>,
-}
-
-impl ProfileVersions {
-    /// The version-slot value stamped into a report that never reached
-    /// [`DecodeContext::finish`](crate::decode::DecodeContext::finish). It is a
-    /// self-identifying sentinel: a reader diffing two reports can tell an
-    /// un-stamped placeholder from a genuine `desktop-v1`/`envelope-v3`
-    /// calibration, where an empty string would read as a real match.
-    pub const UNSTAMPED: &'static str = "unstamped";
-}
-
-impl Default for ProfileVersions {
-    fn default() -> Self {
-        ProfileVersions {
-            profile: Self::UNSTAMPED.to_owned(),
-            envelope: Self::UNSTAMPED.to_owned(),
-            overrides: Vec::new(),
-        }
-    }
-}
-
 /// Transfer status and loss details from a successful decode.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DecodeReport {
@@ -376,10 +330,6 @@ pub struct DecodeReport {
     /// the decode session at `finish`; a paired loss note carries the detail.
     #[serde(default)]
     pub retention_degraded: bool,
-    /// Versioned resource-profile identifiers in force for this decode, set
-    /// by the decode session at `finish`.
-    #[serde(default)]
-    pub profile_versions: ProfileVersions,
 }
 
 impl DecodeReport {
@@ -555,18 +505,6 @@ impl ValidationReport {
 mod tests {
     use super::*;
 
-    fn report_with(profile_versions: ProfileVersions) -> DecodeReport {
-        DecodeReport {
-            format: "test".to_string(),
-            container_only: false,
-            geometry_transferred: false,
-            losses: Vec::new(),
-            notes: Vec::new(),
-            retention_degraded: false,
-            profile_versions,
-        }
-    }
-
     #[test]
     fn loss_code_serializes_under_its_stable_identifier() {
         let note = LossNote {
@@ -595,40 +533,5 @@ mod tests {
         assert!(LossCode::PassthroughRecordOmitted.reversible());
         assert!(!LossCode::RetentionDegraded.reversible());
         assert!(!LossCode::UnresolvedRecordDropped.reversible());
-    }
-
-    #[test]
-    fn profile_versions_serialize_under_stable_keys() {
-        let report = report_with(ProfileVersions {
-            profile: "custom".to_string(),
-            envelope: "envelope-v3".to_string(),
-            overrides: vec!["max_work=10".to_string()],
-        });
-        let value: serde_json::Value = serde_json::to_value(&report).unwrap();
-        let versions = &value["profile_versions"];
-        assert_eq!(versions["profile"], "custom");
-        assert_eq!(versions["envelope"], "envelope-v3");
-        assert_eq!(versions["overrides"], serde_json::json!(["max_work=10"]));
-    }
-
-    #[test]
-    fn report_without_profile_versions_deserializes_to_unstamped() {
-        // A serialized report predating the field parses via the
-        // `#[serde(default)]` back-compat path rather than failing, and the
-        // default self-identifies as unstamped — so an old report that carries
-        // no calibration is distinguishable from a genuine one, not mistaken
-        // for an all-empty-string match.
-        let json = r#"{
-            "format": "test",
-            "container_only": false,
-            "geometry_transferred": false,
-            "losses": [],
-            "notes": []
-        }"#;
-        let report: DecodeReport = serde_json::from_str(json).unwrap();
-        assert_eq!(report.profile_versions, ProfileVersions::default());
-        assert_eq!(report.profile_versions.profile, ProfileVersions::UNSTAMPED);
-        assert_eq!(report.profile_versions.envelope, ProfileVersions::UNSTAMPED);
-        assert!(report.profile_versions.overrides.is_empty());
     }
 }

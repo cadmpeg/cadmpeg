@@ -29,7 +29,7 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity, StrictConsequence,
+    DecodeReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
 };
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -1520,7 +1520,6 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
 
     DecodeReport {
         retention_degraded: false,
-        profile_versions: ProfileVersions::default(),
         format: "nx".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1625,7 +1624,6 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
 
     DecodeReport {
         retention_degraded: false,
-        profile_versions: ProfileVersions::default(),
         format: "nx".to_string(),
         container_only,
         geometry_transferred: false,

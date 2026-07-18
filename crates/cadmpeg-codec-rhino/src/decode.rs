@@ -13,9 +13,7 @@ use cadmpeg_ir::geometry::{
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
 use cadmpeg_ir::math::{Point2, Point3};
-use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity,
-};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -1958,7 +1956,6 @@ impl<'a> DecodeContext<'a> {
             self.ir,
             DecodeReport {
                 retention_degraded: false,
-                profile_versions: ProfileVersions::default(),
                 format: "rhino".to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,
