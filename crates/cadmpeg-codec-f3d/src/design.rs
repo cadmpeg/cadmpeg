@@ -11869,7 +11869,7 @@ pub fn decode_sketch_relations(
 /// instance count directly after it. Rectangular patterns store, per direction,
 /// the evaluated u32 count, the count-parameter reference, a three-component
 /// f64 unit direction six zero bytes after that reference, the evaluated f64
-/// extent distance, and the distance-parameter reference. Text-frame relations
+/// adjacent-instance spacing, and the distance-parameter reference. Text-frame relations
 /// repeat the sketch-text member as the single auxiliary reference.
 fn decode_pattern_definition(
     payload: &[u8],

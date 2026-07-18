@@ -2027,7 +2027,7 @@ pub struct SketchPatternDirection {
     pub count_parameter: u32,
     /// Unit direction vector in sketch coordinates.
     pub direction: [f64; 3],
-    /// Evaluated extent distance along this direction, in source units.
+    /// Evaluated adjacent-instance spacing along this direction, in source units.
     pub evaluated_distance: f64,
     /// Record index of the distance parameter value record.
     pub distance_parameter: u32,
