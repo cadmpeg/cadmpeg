@@ -6946,7 +6946,8 @@ fn profile_source(
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
         ProfileRef::SketchProfiles { .. }
         | ProfileRef::SketchRegions { .. }
-        | ProfileRef::SketchSelection { .. } => None,
+        | ProfileRef::SketchSelection { .. }
+        | ProfileRef::HistoricalFaces { .. } => None,
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()

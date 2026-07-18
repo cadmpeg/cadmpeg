@@ -3227,6 +3227,20 @@ fn face_selections_round_trip_through_json() {
 }
 
 #[test]
+fn historical_face_profiles_round_trip_through_json() {
+    use crate::features::ProfileRef;
+    use crate::ids::{FeatureInputTopologyId, HistoricalFaceId};
+
+    let profile = ProfileRef::HistoricalFaces {
+        state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+        faces: vec![HistoricalFaceId("synthetic:history-input:face#0".into())],
+        native: vec!["native:profile-group#0".into()],
+    };
+    let json = serde_json::to_string(&profile).unwrap();
+    assert_eq!(serde_json::from_str::<ProfileRef>(&json).unwrap(), profile);
+}
+
+#[test]
 fn body_selections_round_trip_through_json() {
     use crate::features::BodySelection;
     use crate::ids::{BodyId, FeatureInputTopologyId, HistoricalBodyId};

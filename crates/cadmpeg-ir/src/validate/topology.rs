@@ -2430,14 +2430,50 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             }
         }
         for profile in profiles {
-            if let ProfileRef::Faces(faces) = profile {
-                check_ids(
+            match profile {
+                ProfileRef::Faces(faces) => check_ids(
                     findings,
                     &feature.id.0,
                     "profile face",
                     faces.iter().map(|id| id.0.as_str()),
                     &ids.faces,
-                );
+                ),
+                ProfileRef::HistoricalFaces {
+                    state,
+                    faces,
+                    native,
+                } => {
+                    if native.is_empty()
+                        || native.iter().any(String::is_empty)
+                        || native.iter().collect::<HashSet<_>>().len() != native.len()
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "historical profile source groups are empty or repeated",
+                        );
+                    }
+                    check_historical_selection(
+                        findings,
+                        &feature.id,
+                        (
+                            state,
+                            faces.iter().map(crate::ids::HistoricalFaceId::as_str),
+                            native.first().map_or("", String::as_str),
+                        ),
+                        "profile face",
+                        false,
+                        &input_topologies,
+                        |topology| {
+                            topology
+                                .faces
+                                .iter()
+                                .map(crate::ids::HistoricalFaceId::as_str)
+                                .collect()
+                        },
+                    );
+                }
+                _ => {}
             }
         }
         for path in paths {
@@ -2874,7 +2910,9 @@ fn check_feature_sketch_references(
                 | ProfileRef::SketchProfiles { sketch, .. }
                 | ProfileRef::SketchRegions { sketch, .. }
                 | ProfileRef::SketchSelection { sketch, .. } => sketch,
-                ProfileRef::Native(_) | ProfileRef::Faces(_) => continue,
+                ProfileRef::Native(_)
+                | ProfileRef::HistoricalFaces { .. }
+                | ProfileRef::Faces(_) => continue,
             };
             if !sketches.contains(sketch.0.as_str()) {
                 ref_error(findings, &feature.id.0, "sketch profile", &sketch.0);
@@ -2953,6 +2991,7 @@ fn check_feature_sketch_references(
                 ProfileRef::Native(_)
                 | ProfileRef::Sketch(_)
                 | ProfileRef::SketchSelection { .. }
+                | ProfileRef::HistoricalFaces { .. }
                 | ProfileRef::Faces(_) => {}
             }
         }

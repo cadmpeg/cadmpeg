@@ -1409,6 +1409,15 @@ pub enum ProfileRef {
         /// Full-fidelity native selection records in source order.
         selections: Vec<String>,
     },
+    /// Profile given by faces in the consuming feature's input topology.
+    HistoricalFaces {
+        /// Input topology containing every selected face.
+        state: FeatureInputTopologyId,
+        /// State-local face identities in source selection order.
+        faces: Vec<HistoricalFaceId>,
+        /// Full-fidelity source selection groups in source order.
+        native: Vec<String>,
+    },
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
 }

@@ -2878,7 +2878,9 @@ pub(crate) fn bind_extrude_start_planes(
             | ProfileRef::SketchProfiles { sketch, .. }
             | ProfileRef::SketchRegions { sketch, .. }
             | ProfileRef::SketchSelection { sketch, .. } => sketch,
-            ProfileRef::Native(_) | ProfileRef::Faces(_) => continue,
+            ProfileRef::Native(_) | ProfileRef::HistoricalFaces { .. } | ProfileRef::Faces(_) => {
+                continue
+            }
         };
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
             continue;
@@ -3564,6 +3566,18 @@ pub(crate) fn bind_extrude_profile_selections(
         let FeatureDefinition::Extrude { profile, .. } = &mut feature.definition else {
             continue;
         };
+        if matches!(profile, ProfileRef::Native(_)) {
+            if let Some(selection) = historical_face_profile_selection(
+                &matching_groups,
+                members,
+                resolution.histories,
+                scope.previous_history_state_id,
+                &feature.id,
+            ) {
+                *profile = selection;
+            }
+            continue;
+        }
         let ProfileRef::Sketch(sketch_id) = profile else {
             continue;
         };
@@ -3594,6 +3608,216 @@ pub(crate) fn bind_extrude_profile_selections(
             }
         });
     }
+}
+
+fn historical_face_profile_selection(
+    groups: &[&DesignExtrudeSelectionGroup],
+    members: &[DesignExtrudeSelectionMember],
+    histories: &[crate::history_records::AsmHistory],
+    previous_state_id: Option<i64>,
+    feature_id: &cadmpeg_ir::features::FeatureId,
+) -> Option<cadmpeg_ir::features::ProfileRef> {
+    use cadmpeg_ir::features::ProfileRef;
+    use cadmpeg_ir::ids::HistoricalFaceId;
+
+    let previous_state_id = previous_state_id?;
+    let mut states = histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .filter(|state| state.state_id == previous_state_id);
+    let topology = states.next()?.topology.as_ref()?;
+    if states.next().is_some() {
+        return None;
+    }
+    let stream = groups.first().and_then(|group| native_stream(&group.id))?;
+    let mut selected_faces = Vec::new();
+    for group in groups {
+        if native_stream(&group.id) != Some(stream) {
+            return None;
+        }
+        let mut group_members = members
+            .iter()
+            .filter(|member| {
+                native_stream(&member.id) == Some(stream)
+                    && member.group_record_index == group.record_index
+            })
+            .collect::<Vec<_>>();
+        group_members.sort_by_key(|member| member.group_member_ordinal);
+        if group_members.len() != group.members.len()
+            || group_members
+                .iter()
+                .zip(&group.members)
+                .any(|(member, record_index)| member.record_index != *record_index)
+        {
+            return None;
+        }
+        let mut candidates = None::<HashSet<i64>>;
+        for member in group_members {
+            if !member.historical_state_ids.is_empty()
+                && !member.historical_state_ids.contains(&previous_state_id)
+            {
+                return None;
+            }
+            let entity_ref = member
+                .historical_entity_ref
+                .or_else(|| i64::try_from(member.local_id).ok())?;
+            let member_faces = historical_profile_face_candidates(
+                member.historical_entity_kind,
+                entity_ref,
+                topology,
+            );
+            if member_faces.is_empty() {
+                return None;
+            }
+            candidates = Some(match candidates {
+                None => member_faces,
+                Some(mut candidates) => {
+                    candidates.retain(|face| member_faces.contains(face));
+                    candidates
+                }
+            });
+        }
+        let candidates = candidates?;
+        let mut candidates = candidates.into_iter();
+        let face = candidates.next()?;
+        if candidates.next().is_some() {
+            return None;
+        }
+        if !selected_faces.contains(&face) {
+            selected_faces.push(face);
+        }
+    }
+    if selected_faces.is_empty() {
+        return None;
+    }
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
+    Some(ProfileRef::HistoricalFaces {
+        state: feature_input_topology_id(feature_id, previous_state_id),
+        faces: selected_faces
+            .into_iter()
+            .map(|face| {
+                HistoricalFaceId(format!(
+                    "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
+                    feature_key.len(),
+                    feature_key
+                ))
+            })
+            .collect(),
+        native: groups.iter().map(|group| group.id.clone()).collect(),
+    })
+}
+
+fn historical_profile_face_candidates(
+    kind: Option<crate::records::AsmHistoricalEntityKind>,
+    entity_ref: i64,
+    topology: &crate::history_records::AsmHistoricalTopology,
+) -> HashSet<i64> {
+    use crate::records::AsmHistoricalEntityKind;
+
+    let kinds = match kind {
+        Some(kind) => vec![kind],
+        None => vec![
+            AsmHistoricalEntityKind::Face,
+            AsmHistoricalEntityKind::Loop,
+            AsmHistoricalEntityKind::Coedge,
+            AsmHistoricalEntityKind::Edge,
+            AsmHistoricalEntityKind::Pcurve,
+            AsmHistoricalEntityKind::Curve,
+            AsmHistoricalEntityKind::Vertex,
+            AsmHistoricalEntityKind::Point,
+            AsmHistoricalEntityKind::Surface,
+        ],
+    };
+    let loop_faces = |loop_ref| {
+        topology
+            .face_loops
+            .iter()
+            .filter(|relation| relation.member_refs.contains(&loop_ref))
+            .map(|relation| relation.owner_ref)
+            .collect::<HashSet<_>>()
+    };
+    let coedge_faces = |coedge_ref| {
+        topology
+            .coedge_topology
+            .iter()
+            .filter(|coedge| coedge.coedge == coedge_ref)
+            .flat_map(|coedge| loop_faces(coedge.owner_loop))
+            .collect::<HashSet<_>>()
+    };
+    let edge_faces = |edge_ref| {
+        topology
+            .coedge_topology
+            .iter()
+            .filter(|coedge| coedge.edge == edge_ref)
+            .flat_map(|coedge| loop_faces(coedge.owner_loop))
+            .collect::<HashSet<_>>()
+    };
+    let mut faces = HashSet::new();
+    for kind in kinds {
+        match kind {
+            AsmHistoricalEntityKind::Face => {
+                if topology.faces.contains(&entity_ref) {
+                    faces.insert(entity_ref);
+                }
+            }
+            AsmHistoricalEntityKind::Loop => faces.extend(loop_faces(entity_ref)),
+            AsmHistoricalEntityKind::Coedge => faces.extend(coedge_faces(entity_ref)),
+            AsmHistoricalEntityKind::Edge => faces.extend(edge_faces(entity_ref)),
+            AsmHistoricalEntityKind::Pcurve => faces.extend(
+                topology
+                    .coedge_pcurves
+                    .iter()
+                    .filter(|binding| binding.carrier == Some(entity_ref))
+                    .flat_map(|binding| coedge_faces(binding.entity)),
+            ),
+            AsmHistoricalEntityKind::Curve => faces.extend(
+                topology
+                    .edge_curves
+                    .iter()
+                    .filter(|binding| binding.carrier == Some(entity_ref))
+                    .flat_map(|binding| edge_faces(binding.entity)),
+            ),
+            AsmHistoricalEntityKind::Vertex => faces.extend(
+                topology
+                    .edge_vertices
+                    .iter()
+                    .filter(|edge| edge.start_vertex == entity_ref || edge.end_vertex == entity_ref)
+                    .flat_map(|edge| edge_faces(edge.edge)),
+            ),
+            AsmHistoricalEntityKind::Point => {
+                let vertices = topology
+                    .vertex_points
+                    .iter()
+                    .filter(|binding| binding.carrier == entity_ref)
+                    .map(|binding| binding.entity)
+                    .collect::<HashSet<_>>();
+                faces.extend(
+                    topology
+                        .edge_vertices
+                        .iter()
+                        .filter(|edge| {
+                            vertices.contains(&edge.start_vertex)
+                                || vertices.contains(&edge.end_vertex)
+                        })
+                        .flat_map(|edge| edge_faces(edge.edge)),
+                );
+            }
+            AsmHistoricalEntityKind::Surface => faces.extend(
+                topology
+                    .face_surfaces
+                    .iter()
+                    .filter(|binding| binding.carrier == entity_ref)
+                    .map(|binding| binding.entity),
+            ),
+            AsmHistoricalEntityKind::Body
+            | AsmHistoricalEntityKind::Region
+            | AsmHistoricalEntityKind::Shell => {}
+        }
+    }
+    faces
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -14516,11 +14740,11 @@ mod relation_tests {
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_offset_constraint, expression_identifiers,
         feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
-        find_dimension_null_locus_pair, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
-        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
-        neutral_sketch_point_id, next_indexed_record_offset, null_locus_dimension_definition,
-        offset_parameter_factor, parse_construction_operand_group,
+        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
+        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
+        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
+        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -15333,6 +15557,82 @@ mod relation_tests {
                 &topology,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn historical_profile_members_resolve_through_topology_ownership() {
+        use crate::history_records::{
+            AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalOptionalCarrierBinding,
+            AsmHistoricalRelation, AsmHistoricalTopology,
+        };
+        use crate::records::AsmHistoricalEntityKind;
+
+        let topology = AsmHistoricalTopology {
+            faces: vec![10, 20],
+            loops: vec![11, 21],
+            coedges: vec![12, 22],
+            edges: vec![30],
+            surfaces: vec![40],
+            pcurves: vec![50],
+            face_loops: vec![
+                AsmHistoricalRelation {
+                    owner_ref: 10,
+                    member_refs: vec![11],
+                },
+                AsmHistoricalRelation {
+                    owner_ref: 20,
+                    member_refs: vec![21],
+                },
+            ],
+            coedge_topology: vec![
+                AsmHistoricalCoedge {
+                    coedge: 12,
+                    owner_loop: 11,
+                    edge: 30,
+                    previous: 12,
+                    next: 12,
+                    radial_next: 22,
+                },
+                AsmHistoricalCoedge {
+                    coedge: 22,
+                    owner_loop: 21,
+                    edge: 30,
+                    previous: 22,
+                    next: 22,
+                    radial_next: 12,
+                },
+            ],
+            face_surfaces: vec![AsmHistoricalCarrierBinding {
+                entity: 10,
+                carrier: 40,
+            }],
+            coedge_pcurves: vec![AsmHistoricalOptionalCarrierBinding {
+                entity: 12,
+                carrier: Some(50),
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+
+        assert_eq!(
+            historical_profile_face_candidates(
+                Some(AsmHistoricalEntityKind::Pcurve),
+                50,
+                &topology,
+            ),
+            HashSet::from([10])
+        );
+        assert_eq!(
+            historical_profile_face_candidates(
+                Some(AsmHistoricalEntityKind::Surface),
+                40,
+                &topology,
+            ),
+            HashSet::from([10])
+        );
+        assert_eq!(
+            historical_profile_face_candidates(Some(AsmHistoricalEntityKind::Edge), 30, &topology,),
+            HashSet::from([10, 20])
         );
     }
 
