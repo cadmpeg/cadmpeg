@@ -1425,6 +1425,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Some(
                         design::DesignFeatureFamily::Extrude
                             | design::DesignFeatureFamily::OffsetFaces
+                            | design::DesignFeatureFamily::Thicken
                     )
                 ) && match (operand.group_record_index, operand.group_member_ordinal) {
                     (Some(group_record_index), Some(group_member_ordinal)) => {
@@ -1444,12 +1445,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         })
                     }
                     (None, None) => {
-                        design::design_feature_family(&scope.kind)
-                            == Some(design::DesignFeatureFamily::OffsetFaces)
-                            && usize::try_from(operand.scope_reference_ordinal)
-                                .ok()
-                                .and_then(|ordinal| scope.reference_members.get(ordinal))
-                                == Some(&operand.record_index)
+                        matches!(
+                            design::design_feature_family(&scope.kind),
+                            Some(
+                                design::DesignFeatureFamily::OffsetFaces
+                                    | design::DesignFeatureFamily::Thicken
+                            )
+                        ) && usize::try_from(operand.scope_reference_ordinal)
+                            .ok()
+                            .and_then(|ordinal| scope.reference_members.get(ordinal))
+                            == Some(&operand.record_index)
                     }
                     _ => false,
                 }
@@ -1496,13 +1501,17 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             start.saturating_add(words.saturating_mul(4)) == end
                         })
                 })
-            && operand
-                .recipe_nodes
-                .iter()
-                .flat_map(|node| node.program.iter().copied())
-                .eq(operand.recipe_program.iter().copied().skip(3))
-            && operand.recipe_node_offsets.first()
-                == Some(&operand.recipe_program_offset.saturating_add(12))
+            && (if operand.recipe_nodes.is_empty() {
+                operand.recipe_node_offsets.is_empty()
+            } else {
+                operand
+                    .recipe_nodes
+                    .iter()
+                    .flat_map(|node| node.program.iter().copied())
+                    .eq(operand.recipe_program.iter().copied().skip(3))
+                    && operand.recipe_node_offsets.first()
+                        == Some(&operand.recipe_program_offset.saturating_add(12))
+            })
             && operand.recipe_program_offset
                 == recipe.map_or(u64::MAX, |recipe| {
                     recipe

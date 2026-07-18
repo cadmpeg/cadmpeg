@@ -815,6 +815,30 @@ pub enum DesignSolidPrimitive {
     },
 }
 
+/// Exact fixed-form construction data of a direct-face feature scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "operation")]
+pub enum DesignDirectFaceOperation {
+    /// Signed normal offset applied to selected faces.
+    OffsetFaces {
+        /// Signed distance in source centimetres.
+        distance: f64,
+        /// Referenced scalar record.
+        distance_record_index: u32,
+        /// Byte offset of the scalar.
+        distance_offset: u64,
+    },
+    /// Positive finished thickness added from selected faces.
+    Thicken {
+        /// Finished thickness in source centimetres.
+        thickness: f64,
+        /// Referenced scalar record.
+        thickness_record_index: u32,
+        /// Byte offset of the scalar.
+        thickness_offset: u64,
+    },
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -909,6 +933,9 @@ pub struct DesignParameterScope {
     /// Exact solid-primitive construction carried by this scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub solid_primitive: Option<DesignSolidPrimitive>,
+    /// Exact fixed-form construction carried by a direct-face scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direct_face_operation: Option<DesignDirectFaceOperation>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_transform: Option<[[f64; 4]; 4]>,
