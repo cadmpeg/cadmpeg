@@ -11897,12 +11897,20 @@ fn decode_pattern_definition(
             evaluated_count,
         });
     }
-    if parsed.state == 0x2000_0000 && parsed.auxiliary_references.len() == 5 {
+    if parsed.state == 0x2000_0000 && matches!(parsed.auxiliary_references.len(), 4 | 5) {
         let mut directions = Vec::with_capacity(2);
-        for (count_at, count_ordinal, distance_ordinal) in [
-            (reference_end(0)? + 10, 1, 2),
-            (reference_end(2)? + 6, 3, 4),
-        ] {
+        let clauses = if parsed.auxiliary_references.len() == 5 {
+            [
+                (reference_end(0)? + 10, 1, 2),
+                (reference_end(2)? + 6, 3, 4),
+            ]
+        } else {
+            [
+                (parsed.auxiliary_reference_offsets[0].checked_sub(5)?, 0, 1),
+                (parsed.auxiliary_reference_offsets[2].checked_sub(5)?, 2, 3),
+            ]
+        };
+        for (count_at, count_ordinal, distance_ordinal) in clauses {
             let evaluated_count = u32_at(payload, count_at)?;
             if !(1..=100_000).contains(&evaluated_count) {
                 return None;
@@ -21424,6 +21432,38 @@ mod relation_tests {
         assert_eq!(directions[1].direction, [0.0, 1.0, 0.0]);
         assert_eq!(directions[1].evaluated_distance, 0.5);
         assert_eq!(directions[1].distance_parameter, 473);
+
+        let mut compact_auxiliary = Vec::new();
+        compact_auxiliary.extend_from_slice(&3u32.to_le_bytes());
+        push_reference(&mut compact_auxiliary, 464);
+        compact_auxiliary.extend_from_slice(&[0u8; 6]);
+        for value in [1.0f64, 0.0, 0.0, 3.0] {
+            compact_auxiliary.extend_from_slice(&value.to_le_bytes());
+        }
+        push_reference(&mut compact_auxiliary, 470);
+        compact_auxiliary.extend_from_slice(&[0u8; 6]);
+        compact_auxiliary.extend_from_slice(&1u32.to_le_bytes());
+        push_reference(&mut compact_auxiliary, 467);
+        compact_auxiliary.extend_from_slice(&[0u8; 6]);
+        for value in [0.0f64, 1.0, 0.0, 0.5] {
+            compact_auxiliary.extend_from_slice(&value.to_le_bytes());
+        }
+        push_reference(&mut compact_auxiliary, 473);
+        compact_auxiliary.extend_from_slice(&[0u8; 6]);
+        let compact_record = genesis_relation_record(
+            &[(352, 3), (353, 1), (442, 0), (445, 0)],
+            2,
+            &compact_auxiliary,
+            201,
+            0x2000_0000,
+            &[353, 352, 442, 445],
+        );
+        let compact = parse_sketch_relation(&compact_record, &HashSet::from([201])).unwrap();
+        assert_eq!(compact.auxiliary_references, [464, 470, 467, 473]);
+        assert_eq!(
+            decode_pattern_definition(&compact_record, &compact),
+            decode_pattern_definition(&record, &parsed),
+        );
     }
 
     #[test]
