@@ -75,6 +75,9 @@ impl SpaceDelta {
 /// The interpreted delta between two source-fidelity sidecars.
 #[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize)]
 pub struct FidelityDiff {
+    /// Schema-version transition, when it changed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<(String, String)>,
     /// Ledger-level transition, when it changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub level: Option<(LedgerLevel, LedgerLevel)>,
@@ -98,7 +101,8 @@ pub struct FidelityDiff {
 impl FidelityDiff {
     /// Returns whether the two sidecars are materially identical.
     pub fn is_empty(&self) -> bool {
-        self.level.is_none()
+        self.version.is_none()
+            && self.level.is_none()
             && self.capability.is_none()
             && self.added_spaces.is_empty()
             && self.removed_spaces.is_empty()
@@ -115,6 +119,8 @@ impl FidelityDiff {
 /// produced by [`SourceFidelity::new`]); the result's space lists preserve that
 /// canonical order.
 pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> FidelityDiff {
+    let version =
+        (left.version != right.version).then(|| (left.version.clone(), right.version.clone()));
     let level = (left.level != right.level).then_some((left.level, right.level));
     let capability =
         (left.capability != right.capability).then_some((left.capability, right.capability));
@@ -149,6 +155,7 @@ pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> Fi
     }
 
     FidelityDiff {
+        version,
         level,
         capability,
         added_spaces,
@@ -281,5 +288,16 @@ mod tests {
                 data: Some(vec![0]),
             });
         assert!(diff_source_fidelity(&a, &b).retained_records_changed);
+    }
+
+    #[test]
+    fn changed_schema_version_is_material() {
+        let a = source(vec![span(0, 4, SpanClass::Typed, "aa")], 4);
+        let mut b = a.clone();
+        b.version = "future".to_string();
+        assert_eq!(
+            diff_source_fidelity(&a, &b).version,
+            Some(("2".to_string(), "future".to_string()))
+        );
     }
 }

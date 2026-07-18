@@ -547,6 +547,9 @@ fn print_fidelity_summary(summary: &FidelitySummary) {
         return;
     }
     println!("  source fidelity:");
+    if let Some((before, after)) = &diff.version {
+        println!("    version: {before} → {after}");
+    }
     if let Some((before, after)) = &diff.level {
         println!("    level: {before:?} → {after:?}");
     }
