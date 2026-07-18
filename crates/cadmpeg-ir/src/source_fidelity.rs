@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Serialized multi-space source-fidelity ledger (sidecar schema v2).
+//! Serialized multi-space source-fidelity ledger.
 //!
-//! The runtime space registry (`decode::space`) is the skeleton of this
-//! schema: it names spaces by a registration ordinal that is never serialized.
-//! This module fixes the *serialized* form. Every space carries a stable
+//! Every space carries a stable
 //! [`CanonicalSpaceId`] derived from its origin — `source`, `entry:<path>`,
 //! `stream:<path>#<n>` — so two decodes of the same file produce identical
 //! sidecars regardless of the order in which spaces were registered.
@@ -878,109 +876,6 @@ impl SourceFidelity {
         }
         serde_json::from_value(value)
     }
-
-    /// Parses a sidecar of any supported version, migrating v1 forward.
-    ///
-    /// A v1 sidecar migrates to v2 through [`migrate_v1`], preserving its level.
-    /// V1 carried retained ids but not the retained bytes needed to prove
-    /// recoverability, so migration downgrades that capability to accounted.
-    /// The result is canonical but not validated; call
-    /// [`SourceFidelity::validate`] to enforce the invariant.
-    pub fn from_json_any(s: &str) -> Result<Self, serde_json::Error> {
-        let value: serde_json::Value = serde_json::from_str(s)?;
-        let version = value.get("version").and_then(serde_json::Value::as_str);
-        match version {
-            Some(v) if v == SOURCE_FIDELITY_VERSION => serde_json::from_value(value),
-            Some(v) if v == v1::SOURCE_FIDELITY_VERSION_V1 => {
-                let ledger: v1::ByteLedgerV1 = serde_json::from_value(value)?;
-                Ok(migrate_v1(ledger))
-            }
-            other => Err(<serde_json::Error as serde::de::Error>::custom(format!(
-                "unsupported source-fidelity version: {other:?}"
-            ))),
-        }
-    }
-}
-
-/// Migrates a single-stream v1 ledger to a v2 sidecar.
-///
-/// The v1 stream becomes the `source` space with a [`SerializedOrigin::Root`]
-/// origin. Each v1 span keeps its range, class, and digest; a v1 retained
-/// record id becomes a full-extent [`RetainedRef`], matching the v1
-/// one-record-per-span containment.
-pub fn migrate_v1(ledger: v1::ByteLedgerV1) -> SourceFidelity {
-    let spans = ledger
-        .spans
-        .into_iter()
-        .map(|span| {
-            let retained = span.retained_record.map(|blob| RetainedRef {
-                range: SerializedRange {
-                    start: 0,
-                    end: span.range.len(),
-                },
-                blob,
-            });
-            LedgerSpan {
-                range: span.range,
-                class: span.class,
-                owner: span.owner,
-                meaning: span.meaning,
-                digest: span.digest,
-                retained,
-            }
-        })
-        .collect();
-    let space = AddressSpaceLedger {
-        id: CanonicalSpaceId::source(),
-        length: ledger.source_length,
-        origin: SerializedOrigin::Root,
-        spans,
-    };
-    SourceFidelity::new(LedgerCapability::Accounted, vec![space])
-}
-
-/// The prior single-stream sidecar schema, retained for migration.
-pub mod v1 {
-    use super::{SerializedRange, SpanClass};
-    use schemars::JsonSchema;
-    use serde::{Deserialize, Serialize};
-
-    /// The v1 schema version string.
-    pub const SOURCE_FIDELITY_VERSION_V1: &str = "1";
-
-    /// One span of the single flat `source` stream.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-    pub struct ByteSpanV1 {
-        /// The span's range within the source stream.
-        pub range: SerializedRange,
-        /// The span's byte classification.
-        pub class: SpanClass,
-        /// The producing subsystem or record family.
-        pub owner: String,
-        /// A human-readable meaning for the span.
-        pub meaning: String,
-        /// Lowercase hexadecimal SHA-256 digest of the span's bytes.
-        pub digest: String,
-        /// A retained record id backing an opaque span, if any.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub retained_record: Option<String>,
-    }
-
-    /// The v1 flat-stream ledger.
-    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-    pub struct ByteLedgerV1 {
-        /// The schema version; always [`SOURCE_FIDELITY_VERSION_V1`].
-        #[serde(default = "default_v1_version")]
-        pub version: String,
-        /// The source stream's total length.
-        pub source_length: u64,
-        /// The spans tiling the source stream.
-        pub spans: Vec<ByteSpanV1>,
-    }
-
-    fn default_v1_version() -> String {
-        SOURCE_FIDELITY_VERSION_V1.to_string()
-    }
 }
 
 #[cfg(test)]
@@ -1316,62 +1211,5 @@ mod tests {
         value["version"] = serde_json::Value::String("9".to_string());
         let json = serde_json::to_string(&value).expect("reserialize");
         assert!(SourceFidelity::from_json(&json).is_err());
-    }
-
-    #[test]
-    fn migrates_v1_to_v2() {
-        let v1 = v1::ByteLedgerV1 {
-            version: v1::SOURCE_FIDELITY_VERSION_V1.to_string(),
-            source_length: 8,
-            spans: vec![
-                v1::ByteSpanV1 {
-                    range: SerializedRange { start: 0, end: 4 },
-                    class: SpanClass::Structural,
-                    owner: "framing".to_string(),
-                    meaning: "header".to_string(),
-                    digest: "aa".to_string(),
-                    retained_record: None,
-                },
-                v1::ByteSpanV1 {
-                    range: SerializedRange { start: 4, end: 8 },
-                    class: SpanClass::Opaque,
-                    owner: "body".to_string(),
-                    meaning: "payload".to_string(),
-                    digest: "bb".to_string(),
-                    retained_record: Some("rec#1".to_string()),
-                },
-            ],
-        };
-        let migrated = migrate_v1(v1);
-        assert_eq!(migrated.version, SOURCE_FIDELITY_VERSION);
-        assert_eq!(migrated.spaces.len(), 1);
-        assert_eq!(migrated.capability, LedgerCapability::Accounted);
-        let source = &migrated.spaces[0];
-        assert_eq!(source.id, CanonicalSpaceId::source());
-        assert_eq!(source.length, 8);
-        let retained = source.spans[1].retained.as_ref().expect("retained");
-        assert_eq!(retained.blob, "rec#1");
-        assert_eq!(retained.range, SerializedRange { start: 0, end: 4 });
-        assert_eq!(migrated.validate(), Ok(()));
-    }
-
-    #[test]
-    fn from_json_any_migrates_v1_document() {
-        let v1 = v1::ByteLedgerV1 {
-            version: v1::SOURCE_FIDELITY_VERSION_V1.to_string(),
-            source_length: 4,
-            spans: vec![v1::ByteSpanV1 {
-                range: SerializedRange { start: 0, end: 4 },
-                class: SpanClass::Typed,
-                owner: "o".to_string(),
-                meaning: "m".to_string(),
-                digest: "cc".to_string(),
-                retained_record: None,
-            }],
-        };
-        let json = serde_json::to_string(&v1).expect("serialize v1");
-        let loaded = SourceFidelity::from_json_any(&json).expect("migrate");
-        assert_eq!(loaded.version, SOURCE_FIDELITY_VERSION);
-        assert_eq!(loaded.validate(), Ok(()));
     }
 }
