@@ -1083,6 +1083,15 @@ pub(crate) fn bind_edge_operand_history_candidates(
     scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
+    let mut scope_operand_counts = HashMap::<(String, u32), usize>::new();
+    for operand in operands.iter() {
+        let Some(stream) = crate::design::native_stream(&operand.id) else {
+            continue;
+        };
+        *scope_operand_counts
+            .entry((stream.to_owned(), operand.scope_record_index))
+            .or_default() += 1;
+    }
     let mut states = HashMap::<i64, Option<&AsmDeltaState>>::new();
     for state in histories.iter().flat_map(|history| &history.states) {
         states
@@ -1227,6 +1236,15 @@ pub(crate) fn bind_edge_operand_history_candidates(
             &operand.changed_boundary_edge_contexts,
         );
         operand.resolved_edge_slot = crate::design::resolve_edge_operand_candidates(operand);
+        if operand.resolved_edge_slot.is_none()
+            && stream.is_some_and(|stream| {
+                scope_operand_counts.get(&(stream.to_owned(), operand.scope_record_index))
+                    == Some(&1)
+            })
+            && transition.topology.edges.deleted.len() == 1
+        {
+            operand.resolved_edge_slot = transition.topology.edges.deleted.first().copied();
+        }
     }
 }
 
