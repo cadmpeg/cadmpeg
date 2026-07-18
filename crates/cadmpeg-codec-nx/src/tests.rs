@@ -2922,6 +2922,29 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
         ),
         cadmpeg_ir::features::FeatureDefinition::Hole { extent: None, .. }
     ));
+    for competing in [
+        "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+        "Hole_Unknown",
+    ] {
+        assert!(matches!(
+            crate::decode::non_boolean_feature_definition(
+                "SIMPLE HOLE",
+                &[
+                    "Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer",
+                    competing,
+                ],
+                None,
+                None,
+                None,
+            ),
+            cadmpeg_ir::features::FeatureDefinition::Hole {
+                kind: cadmpeg_ir::features::HoleKind::Simple,
+                exit_kind: None,
+                extent: None,
+                ..
+            }
+        ));
+    }
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("DATUM_PLANE", &[], None, None, None),
         cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved

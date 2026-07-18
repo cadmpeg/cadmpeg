@@ -11091,6 +11091,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
     hole_chamfer: Option<HoleKind>,
     native_parameters: BTreeMap<String, String>,
 ) -> FeatureDefinition {
+    let simple_hole_template = unique_simple_hole_template(payload_strings);
     if let ("BLOCK", Some(dimensions)) = (kind, block_dimensions) {
         return FeatureDefinition::Block {
             dimensions: Some(dimensions.map(Length)),
@@ -11126,10 +11127,34 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             face: None,
             position: None,
             direction: None,
-            kind: hole_chamfer.unwrap_or_else(|| simple_hole_kind(payload_strings)),
-            exit_kind: hole_chamfer.or_else(|| simple_hole_exit_kind(payload_strings)),
+            kind: hole_chamfer.unwrap_or_else(|| {
+                if simple_hole_template.is_some() {
+                    HoleKind::Unresolved {
+                        form: Some(HoleForm::Chamfer),
+                        counterbore_diameter: None,
+                        counterbore_depth: None,
+                        countersink_diameter: None,
+                        countersink_angle: None,
+                    }
+                } else {
+                    HoleKind::Simple
+                }
+            }),
+            exit_kind: hole_chamfer.or_else(|| {
+                simple_hole_template
+                    .is_some()
+                    .then_some(HoleKind::Unresolved {
+                        form: Some(HoleForm::Chamfer),
+                        counterbore_diameter: None,
+                        counterbore_depth: None,
+                        countersink_diameter: None,
+                        countersink_angle: None,
+                    })
+            }),
             diameter: hole_diameter,
-            extent: simple_hole_extent(payload_strings),
+            extent: simple_hole_template
+                .is_some()
+                .then_some(cadmpeg_ir::features::Extent::ThroughAll),
             bottom: None,
             taper_angle: None,
             specification: None,
@@ -11607,41 +11632,24 @@ pub(crate) fn simple_hole_chamfers(
     treatments
 }
 
-fn simple_hole_extent(payload_strings: &[&str]) -> Option<cadmpeg_ir::features::Extent> {
-    payload_strings
+fn unique_simple_hole_template(
+    payload_strings: &[&str],
+) -> Option<(
+    crate::native::SimpleHoleFamily,
+    crate::native::SimpleHoleForm,
+    crate::native::SimpleHoleExtent,
+    crate::native::SimpleHoleEndTreatment,
+    crate::native::SimpleHoleEndTreatment,
+)> {
+    let mut candidates = payload_strings
         .iter()
-        .find_map(|value| crate::native::parse_simple_hole_template(value))
-        .map(|_| cadmpeg_ir::features::Extent::ThroughAll)
-}
-
-fn simple_hole_kind(payload_strings: &[&str]) -> HoleKind {
-    if payload_strings
-        .iter()
-        .any(|value| crate::native::parse_simple_hole_template(value).is_some())
-    {
-        HoleKind::Unresolved {
-            form: Some(HoleForm::Chamfer),
-            counterbore_diameter: None,
-            counterbore_depth: None,
-            countersink_diameter: None,
-            countersink_angle: None,
-        }
-    } else {
-        HoleKind::Simple
+        .copied()
+        .filter(|value| value.starts_with("Hole_"));
+    let candidate = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
     }
-}
-
-fn simple_hole_exit_kind(payload_strings: &[&str]) -> Option<HoleKind> {
-    payload_strings
-        .iter()
-        .any(|value| crate::native::parse_simple_hole_template(value).is_some())
-        .then_some(HoleKind::Unresolved {
-            form: Some(HoleForm::Chamfer),
-            counterbore_diameter: None,
-            counterbore_depth: None,
-            countersink_diameter: None,
-            countersink_angle: None,
-        })
+    crate::native::parse_simple_hole_template(candidate)
 }
 
 pub(crate) fn feature_body_selection(
