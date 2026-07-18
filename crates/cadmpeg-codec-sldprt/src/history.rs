@@ -5124,7 +5124,6 @@ pub(crate) fn project_configuration_design_states(
         );
         crate::resolved_features::bind_extrusion_operations(&mut features, histories, scoped_lanes);
         crate::resolved_features::bind_sweep_operations(&mut features, histories, scoped_lanes);
-        crate::resolved_features::bind_pattern_inputs(&mut features, histories, scoped_lanes);
         crate::resolved_features::bind_sweep_adjacent_profiles(
             &mut features,
             histories,
@@ -5210,6 +5209,7 @@ pub(crate) fn project_configuration_sketch_states(
             &ir.model.sketches,
             histories,
         );
+        crate::resolved_features::bind_pattern_inputs(&mut features, histories, scoped_lanes);
         crate::resolved_features::project_adjacent_extrusion_profiles(
             &mut features,
             histories,
