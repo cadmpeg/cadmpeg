@@ -2270,12 +2270,9 @@ fn project_design_history(
     crate::resolved_features::enrich_history_sweep_paths(&mut semantic_projection, lanes);
     crate::resolved_features::enrich_history_parameters(&mut semantic_projection, lanes, true);
     crate::resolved_features::enrich_history_reference_planes(&mut semantic_projection, lanes);
-    crate::resolved_features::enrich_history_reference_axis_dependencies(
-        &mut semantic_projection,
-        lanes,
-    );
     crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);
     crate::history::apply_evaluated_parameters(&mut semantic_projection);
+    crate::resolved_features::enrich_history_reference_axes(&mut semantic_projection, lanes);
     ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::project_compact_body_selections(&mut ir.model.features, lanes);
     crate::resolved_features::project_compact_combine_paths(

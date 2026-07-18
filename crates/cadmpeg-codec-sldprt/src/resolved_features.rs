@@ -391,11 +391,11 @@ mod marker_tests {
         fixed_reference_plane_frame, marker_coordinates, marker_is_geometry_locus, marker_local_id,
         marker_local_links, marker_object_index, named_scalars,
         native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
-        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_sources,
-        principal_sketch_frame, resolve_operand_marker, resolve_operand_marker_excluding,
-        resolve_scalar_operand_markers, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers, sketch_plane_frames,
+        solved_tangent, spatial_vertex_coordinates, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
         COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
@@ -501,6 +501,31 @@ mod marker_tests {
         assert_eq!(plane_intersection_axis_sources(&payload, &known), None);
         let incomplete = record(17, 0xb6, 3);
         assert_eq!(plane_intersection_axis_sources(&incomplete, &known), None);
+    }
+
+    #[test]
+    fn plane_intersection_axis_uses_the_closest_point_to_the_origin() {
+        let first = (
+            Point3::new(2.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        );
+        let second = (
+            Point3::new(0.0, -3.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        );
+        assert_eq!(
+            plane_intersection_axis_frame(first, second),
+            Some((Point3::new(2.0, -3.0, 0.0), Vector3::new(0.0, 0.0, 1.0),))
+        );
+
+        let parallel = (
+            Point3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        );
+        assert_eq!(plane_intersection_axis_frame(first, parallel), None);
     }
 
     #[test]
@@ -5409,7 +5434,7 @@ pub(crate) fn enrich_history_reference_planes(
 }
 
 /// Add the two serialized construction-plane operands to plane-intersection axes.
-pub(crate) fn enrich_history_reference_axis_dependencies(
+pub(crate) fn enrich_history_reference_axes(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -5459,6 +5484,95 @@ pub(crate) fn enrich_history_reference_axis_dependencies(
                 .insert("Planes".into(), format!("{first},{second}"));
         }
     }
+
+    let projected = crate::history::project_features(histories);
+    let plane_frames = sketch_plane_frames(&projected, histories);
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+            != NativeClassKind::ReferenceAxis
+            || feature.properties.contains_key("Origin")
+            || feature.properties.contains_key("Direction")
+        {
+            continue;
+        }
+        let Some([first, second]) = feature.properties.get("Planes").and_then(|planes| {
+            let mut sources = planes.split(',').map(str::parse::<u32>);
+            let pair = [sources.next()?.ok()?, sources.next()?.ok()?];
+            sources.next().is_none().then_some(pair)
+        }) else {
+            continue;
+        };
+        let Some(frame) = plane_frames
+            .get(&first)
+            .zip(plane_frames.get(&second))
+            .and_then(|(first, second)| plane_intersection_axis_frame(*first, *second))
+        else {
+            continue;
+        };
+        feature.properties.insert(
+            "Origin".into(),
+            format!("{}mm,{}mm,{}mm", frame.0.x, frame.0.y, frame.0.z),
+        );
+        feature.properties.insert(
+            "Direction".into(),
+            format!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
+        );
+    }
+}
+
+fn plane_intersection_axis_frame(
+    first: (Point3, Vector3, Vector3),
+    second: (Point3, Vector3, Vector3),
+) -> Option<(Point3, Vector3)> {
+    let (first_origin, first_normal, _) = first;
+    let (second_origin, second_normal, _) = second;
+    let cross = |left: Vector3, right: Vector3| {
+        Vector3::new(
+            left.y * right.z - left.z * right.y,
+            left.z * right.x - left.x * right.z,
+            left.x * right.y - left.y * right.x,
+        )
+    };
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let direction = cross(first_normal, second_normal);
+    let squared_length = dot(direction, direction);
+    if !squared_length.is_finite() || squared_length <= 1.0e-18 {
+        return None;
+    }
+    let first_distance = first_normal.x * first_origin.x
+        + first_normal.y * first_origin.y
+        + first_normal.z * first_origin.z;
+    let second_distance = second_normal.x * second_origin.x
+        + second_normal.y * second_origin.y
+        + second_normal.z * second_origin.z;
+    let first_term = cross(second_normal, direction);
+    let second_term = cross(direction, first_normal);
+    let origin = Point3::new(
+        (first_distance * first_term.x + second_distance * second_term.x) / squared_length,
+        (first_distance * first_term.y + second_distance * second_term.y) / squared_length,
+        (first_distance * first_term.z + second_distance * second_term.z) / squared_length,
+    );
+    let length = squared_length.sqrt();
+    let direction = Vector3::new(
+        direction.x / length,
+        direction.y / length,
+        direction.z / length,
+    );
+    [
+        origin.x,
+        origin.y,
+        origin.z,
+        direction.x,
+        direction.y,
+        direction.z,
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+    .then_some((origin, direction))
 }
 
 fn plane_intersection_axis_sources(

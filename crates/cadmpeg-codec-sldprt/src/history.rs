@@ -5477,12 +5477,9 @@ pub(crate) fn project_configuration_design_states(
         crate::resolved_features::enrich_history_sweep_paths(&mut projection, scoped_lanes);
         crate::resolved_features::enrich_history_parameters(&mut projection, scoped_lanes, true);
         crate::resolved_features::enrich_history_reference_planes(&mut projection, scoped_lanes);
-        crate::resolved_features::enrich_history_reference_axis_dependencies(
-            &mut projection,
-            scoped_lanes,
-        );
         crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
         apply_evaluated_parameters(&mut projection);
+        crate::resolved_features::enrich_history_reference_axes(&mut projection, scoped_lanes);
         let mut features = project_features(&projection);
         crate::resolved_features::project_compact_body_selections(&mut features, scoped_lanes);
         crate::resolved_features::project_compact_combine_paths(
@@ -6040,12 +6037,12 @@ fn project_features_with_native_inputs(
         &mut histories,
         &native.feature_input_lanes,
     );
-    crate::resolved_features::enrich_history_reference_axis_dependencies(
+    crate::pmi::enrich_history_parameters(&mut histories, &native.pmi_dimensions);
+    apply_evaluated_parameters(&mut histories);
+    crate::resolved_features::enrich_history_reference_axes(
         &mut histories,
         &native.feature_input_lanes,
     );
-    crate::pmi::enrich_history_parameters(&mut histories, &native.pmi_dimensions);
-    apply_evaluated_parameters(&mut histories);
     let mut features = project_features(&histories);
     crate::resolved_features::bind_sweep_operations(
         &mut features,
