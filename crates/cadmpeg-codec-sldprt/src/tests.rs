@@ -16730,7 +16730,7 @@ fn native_store_rejects_missing_sketch_marker_local_link() {
 }
 
 #[test]
-fn native_store_rejects_midpoint_without_point_and_entity_markers() {
+fn native_store_preserves_midpoint_with_two_point_markers() {
     let mut source = sldprt_with_nested_sketch_profile(&triangle_body());
     source.extend(make_block(
         0x42,
@@ -16776,10 +16776,12 @@ fn native_store_rejects_midpoint_without_point_and_entity_markers() {
     }
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    let error = native.store(&mut namespace).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("inconsistent linked marker kinds"));
+    native.store(&mut namespace).unwrap();
+    let stored = crate::native::SldprtNative::load(&namespace).unwrap();
+    assert_eq!(
+        stored.feature_input_lanes[0].sketch_entities[0].links.len(),
+        2
+    );
 }
 
 #[test]
