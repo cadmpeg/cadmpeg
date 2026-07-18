@@ -12156,6 +12156,40 @@ fn semantic_writer_round_trips_principal_reference_planes() {
 }
 
 #[test]
+fn semantic_writer_round_trips_legacy_principal_plane_triplet() {
+    use cadmpeg_ir::features::{FeatureDefinition, PrincipalPlane};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="A" Type="LocalizedPlane" id="2"/><Feature Name="B" Type="LocalizedPlane" id="3"/><Feature Name="C" Type="LocalizedPlane" id="4"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    for (feature, plane) in decoded.ir.model.features.iter().zip([
+        PrincipalPlane::Front,
+        PrincipalPlane::Top,
+        PrincipalPlane::Right,
+    ]) {
+        assert_eq!(
+            feature.definition,
+            FeatureDefinition::DatumPrincipalPlane { plane }
+        );
+    }
+
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved(&decoded.ir, &mut encoded)
+        .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir.model.features, regenerated.ir.model.features);
+}
+
+#[test]
 fn semantic_writer_round_trips_typed_reference_plane() {
     use cadmpeg_ir::features::FeatureDefinition;
     use cadmpeg_ir::math::{Point3, Vector3};

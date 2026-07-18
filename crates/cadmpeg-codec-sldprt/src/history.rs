@@ -1805,6 +1805,29 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn legacy_principal_plane_requires_a_complete_matching_triplet() {
+        let front = feature("front", Some("2"), 0);
+        let top = feature("top", Some("3"), 1);
+        let right = feature("right", Some("4"), 2);
+        let features = [&front, &top, &right]
+            .into_iter()
+            .map(|feature| (feature.source_id.as_deref().unwrap(), feature))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(
+            principal_plane_in_history(&front, &features),
+            Some(cadmpeg_ir::features::PrincipalPlane::Front)
+        );
+
+        let mut mismatched = right.clone();
+        mismatched.kind = "Different".into();
+        let features = [&front, &top, &mismatched]
+            .into_iter()
+            .map(|feature| (feature.source_id.as_deref().unwrap(), feature))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(principal_plane_in_history(&front, &features), None);
+    }
+
+    #[test]
     fn custom_properties_are_document_attributes_not_model_features() {
         let mut property = feature("property", None, 0);
         property.xml_tag = "CustomProperty".into();
@@ -3039,7 +3062,7 @@ fn project_definition(
         return project_offset_plane(feature, by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
-    if let Some(plane) = principal_plane(feature) {
+    if let Some(plane) = principal_plane_in_history(feature, features_by_source) {
         return FeatureDefinition::DatumPrincipalPlane { plane };
     }
     if class == Some(FeatureClass::ReferencePlane) {
@@ -3231,6 +3254,40 @@ fn is_helix(feature: &Feature) -> bool {
 
 fn is_offset_plane(feature: &Feature) -> bool {
     classify(feature) == Some(FeatureClass::ReferencePlane) && feature.parameters.contains_key("D1")
+}
+
+fn principal_plane_in_history(
+    feature: &Feature,
+    features_by_source: &HashMap<&str, &Feature>,
+) -> Option<cadmpeg_ir::features::PrincipalPlane> {
+    use cadmpeg_ir::features::PrincipalPlane;
+
+    if let Some(plane) = principal_plane(feature) {
+        return Some(plane);
+    }
+    let legacy_shape = |record: &Feature| {
+        record.input_class.is_none()
+            && record.xml_tag.eq_ignore_ascii_case("Feature")
+            && record.parameters.is_empty()
+            && record.properties.is_empty()
+            && !record.kind.is_empty()
+    };
+    let [front, top, right] = ["2", "3", "4"].map(|source| features_by_source.get(source).copied());
+    let [Some(front), Some(top), Some(right)] = [front, top, right] else {
+        return None;
+    };
+    if ![front, top, right].into_iter().all(legacy_shape)
+        || front.kind != top.kind
+        || front.kind != right.kind
+    {
+        return None;
+    }
+    match feature.source_id.as_deref()? {
+        "2" => Some(PrincipalPlane::Front),
+        "3" => Some(PrincipalPlane::Top),
+        "4" => Some(PrincipalPlane::Right),
+        _ => None,
+    }
 }
 
 fn project_extrude(
@@ -7359,6 +7416,23 @@ pub fn sync_neutral_features(
             is_custom_property(feature) || desired_record_ids.contains(&feature.id)
         });
     }
+    let principal_planes_by_record = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| {
+            let by_source = history
+                .features
+                .iter()
+                .filter_map(|feature| Some((feature.source_id.as_deref()?, feature)))
+                .collect::<HashMap<_, _>>();
+            history.features.iter().filter_map(move |feature| {
+                Some((
+                    feature.id.clone(),
+                    principal_plane_in_history(feature, &by_source)?,
+                ))
+            })
+        })
+        .collect::<HashMap<_, _>>();
     let record_sources = native
         .feature_histories
         .iter()
@@ -7442,7 +7516,7 @@ pub fn sync_neutral_features(
                         feature.id
                     ))
                 })?;
-                if principal_plane(record) != Some(*plane) {
+                if principal_planes_by_record.get(&record.id) != Some(plane) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes its principal-plane role",
                         feature.id

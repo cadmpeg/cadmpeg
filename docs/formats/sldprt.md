@@ -368,6 +368,8 @@ An `moLPattern_c` feature-input object is immediately preceded by its seed featu
 
 Built-in reference-plane history records have native class `moRefPlane_c` and no dimensions or extra attributes. Within that class, source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes.
 
+Legacy compound histories without feature-input classes identify the same principal planes by a complete triplet of classless, parameterless, propertyless `Feature` records at source IDs `2`, `3`, and `4` with one shared nonempty native type token. An incomplete triplet or differing type tokens has no principal-plane identity.
+
 Among classless, parameterless, propertyless history records, `Feature` source ID `1` is the annotations container and `Sketch` source ID `5` is the model origin. Other source IDs are positions in an optional-node sequence rather than role codes.
 
 `moFixedRefPlnData_c` stores a 97-byte constructed reference-plane frame. Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres. Three f64 values at `+24`, `+32`, and `+40` store the unit normal. Byte `+48` is `1`. Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`. The three basis vectors are pairwise orthogonal. The frame belongs to the immediately preceding feature object and precedes the next feature object.
