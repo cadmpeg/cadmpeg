@@ -4251,15 +4251,11 @@ fn region_containing_points(
                 .iter()
                 .enumerate()
                 .map(|(inner_index, inner)| {
-                    if outer_index == inner_index {
-                        Some(false)
-                    } else {
-                        outer.strictly_contains(inner)
-                    }
+                    outer_index != inner_index && outer.strictly_contains(inner)
                 })
-                .collect::<Option<Vec<_>>>()
+                .collect::<Vec<_>>()
         })
-        .collect::<Option<Vec<_>>>()?;
+        .collect::<Vec<_>>();
     let projected = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
@@ -4359,11 +4355,9 @@ impl ProfileBoundary {
         }
     }
 
-    fn strictly_contains(&self, inner: &Self) -> Option<bool> {
+    fn strictly_contains(&self, inner: &Self) -> bool {
         match (self, inner) {
-            (Self::Polygon(outer), Self::Polygon(inner)) => {
-                Some(polygon_strictly_contains(outer, inner))
-            }
+            (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
             (
                 Self::Circle {
                     center: outer_center,
@@ -4373,30 +4367,42 @@ impl ProfileBoundary {
                     center: inner_center,
                     radius: inner_radius,
                 },
-            ) => Some(point_distance(*outer_center, *inner_center) + inner_radius < *outer_radius),
-            (Self::Polygon(outer), Self::Circle { center, radius }) => Some(
+            ) => point_distance(*outer_center, *inner_center) + inner_radius < *outer_radius,
+            (Self::Polygon(outer), Self::Circle { center, radius }) => {
                 point_in_polygon(*center, outer)
                     && polygon_edges(outer)
-                        .all(|edge| point_segment_distance(*center, edge) > *radius),
-            ),
-            (Self::CircularArcLoop(outer), Self::Circle { center, radius }) => Some(
+                        .all(|edge| point_segment_distance(*center, edge) > *radius)
+            }
+            (Self::CircularArcLoop(outer), Self::Circle { center, radius }) => {
                 point_in_circular_arc_loop(*center, outer)
                     && outer
                         .iter()
-                        .all(|segment| point_boundary_segment_distance(*center, segment) > *radius),
-            ),
-            (Self::Circle { center, radius }, Self::Polygon(inner)) => Some(
-                inner
-                    .iter()
-                    .all(|point| point_distance(*center, *point) < *radius),
-            ),
-            (Self::Circle { center, radius }, Self::CircularArcLoop(inner)) => Some(
-                inner
-                    .iter()
-                    .all(|segment| boundary_segment_max_distance(*center, segment) < *radius),
-            ),
-            (Self::Polygon(_) | Self::CircularArcLoop(_), Self::CircularArcLoop(_))
-            | (Self::CircularArcLoop(_), Self::Polygon(_)) => None,
+                        .all(|segment| point_boundary_segment_distance(*center, segment) > *radius)
+            }
+            (Self::Circle { center, radius }, Self::Polygon(inner)) => inner
+                .iter()
+                .all(|point| point_distance(*center, *point) < *radius),
+            (Self::Circle { center, radius }, Self::CircularArcLoop(inner)) => inner
+                .iter()
+                .all(|segment| boundary_segment_max_distance(*center, segment) < *radius),
+            (Self::Polygon(outer), Self::CircularArcLoop(inner)) => {
+                !polygon_arc_loop_intersects(outer, inner)
+                    && inner.first().is_some_and(|segment| {
+                        point_in_polygon(boundary_segment_endpoints(segment).0, outer)
+                    })
+            }
+            (Self::CircularArcLoop(outer), Self::Polygon(inner)) => {
+                !polygon_arc_loop_intersects(inner, outer)
+                    && inner
+                        .first()
+                        .is_some_and(|point| point_in_circular_arc_loop(*point, outer))
+            }
+            (Self::CircularArcLoop(outer), Self::CircularArcLoop(inner)) => {
+                !arc_loops_intersect(outer, inner)
+                    && inner.first().is_some_and(|segment| {
+                        point_in_circular_arc_loop(boundary_segment_endpoints(segment).0, outer)
+                    })
+            }
         }
     }
 }
@@ -4769,6 +4775,175 @@ fn segments_intersect(left: (Point2, Point2), right: (Point2, Point2)) -> bool {
             && overlaps(left.0.v, left.1.v, right.0.v, right.1.v);
     }
     left_start * left_end <= 0.0 && right_start * right_end <= 0.0
+}
+
+fn polygon_arc_loop_intersects(polygon: &[Point2], arc_loop: &[ProfileBoundarySegment]) -> bool {
+    polygon_edges(polygon).any(|(start, end)| {
+        let line = ProfileBoundarySegment::Line { start, end };
+        arc_loop
+            .iter()
+            .any(|segment| boundary_segments_intersect(&line, segment))
+    })
+}
+
+fn arc_loops_intersect(left: &[ProfileBoundarySegment], right: &[ProfileBoundarySegment]) -> bool {
+    left.iter().any(|left| {
+        right
+            .iter()
+            .any(|right| boundary_segments_intersect(left, right))
+    })
+}
+
+fn boundary_segments_intersect(
+    left: &ProfileBoundarySegment,
+    right: &ProfileBoundarySegment,
+) -> bool {
+    match (left, right) {
+        (
+            ProfileBoundarySegment::Line {
+                start: left_start,
+                end: left_end,
+            },
+            ProfileBoundarySegment::Line {
+                start: right_start,
+                end: right_end,
+            },
+        ) => segments_intersect((*left_start, *left_end), (*right_start, *right_end)),
+        (
+            ProfileBoundarySegment::Line { start, end },
+            ProfileBoundarySegment::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            },
+        )
+        | (
+            ProfileBoundarySegment::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            },
+            ProfileBoundarySegment::Line { start, end },
+        ) => line_arc_intersects((*start, *end), *center, *radius, *start_angle, *end_angle),
+        (
+            ProfileBoundarySegment::Arc {
+                center: left_center,
+                radius: left_radius,
+                start_angle: left_start,
+                end_angle: left_end,
+            },
+            ProfileBoundarySegment::Arc {
+                center: right_center,
+                radius: right_radius,
+                start_angle: right_start,
+                end_angle: right_end,
+            },
+        ) => arcs_intersect(
+            (*left_center, *left_radius, *left_start, *left_end),
+            (*right_center, *right_radius, *right_start, *right_end),
+        ),
+    }
+}
+
+fn line_arc_intersects(
+    (start, end): (Point2, Point2),
+    center: Point2,
+    radius: f64,
+    start_angle: f64,
+    end_angle: f64,
+) -> bool {
+    let direction = Point2::new(end.u - start.u, end.v - start.v);
+    let offset = Point2::new(start.u - center.u, start.v - center.v);
+    let quadratic = direction.u * direction.u + direction.v * direction.v;
+    if quadratic == 0.0 {
+        return point_distance(start, center) == radius
+            && directed_angle_parameter(
+                (start.v - center.v).atan2(start.u - center.u),
+                start_angle,
+                end_angle,
+            )
+            .is_some();
+    }
+    let linear = 2.0 * (offset.u * direction.u + offset.v * direction.v);
+    let constant = offset.u * offset.u + offset.v * offset.v - radius * radius;
+    let discriminant = linear * linear - 4.0 * quadratic * constant;
+    let error =
+        64.0 * f64::EPSILON * (linear * linear + (4.0 * quadratic * constant).abs()).max(1.0);
+    if discriminant < -error {
+        return false;
+    }
+    let root = discriminant.max(0.0).sqrt();
+    [-root, root].into_iter().any(|signed_root| {
+        let parameter = (-linear + signed_root) / (2.0 * quadratic);
+        if !(0.0..=1.0).contains(&parameter) {
+            return false;
+        }
+        let point = Point2::new(
+            start.u + parameter * direction.u,
+            start.v + parameter * direction.v,
+        );
+        directed_angle_parameter(
+            (point.v - center.v).atan2(point.u - center.u),
+            start_angle,
+            end_angle,
+        )
+        .is_some()
+    })
+}
+
+fn arcs_intersect(left: (Point2, f64, f64, f64), right: (Point2, f64, f64, f64)) -> bool {
+    let (left_center, left_radius, left_start, left_end) = left;
+    let (right_center, right_radius, right_start, right_end) = right;
+    let du = right_center.u - left_center.u;
+    let dv = right_center.v - left_center.v;
+    let distance_squared = du * du + dv * dv;
+    if distance_squared == 0.0 && left_radius == right_radius {
+        return [left_start, left_end]
+            .into_iter()
+            .any(|angle| directed_angle_parameter(angle, right_start, right_end).is_some())
+            || [right_start, right_end]
+                .into_iter()
+                .any(|angle| directed_angle_parameter(angle, left_start, left_end).is_some());
+    }
+    if distance_squared == 0.0 {
+        return false;
+    }
+    let distance = distance_squared.sqrt();
+    if distance > left_radius + right_radius || distance < (left_radius - right_radius).abs() {
+        return false;
+    }
+    let along = (left_radius * left_radius - right_radius * right_radius + distance_squared)
+        / (2.0 * distance);
+    let height_squared = left_radius * left_radius - along * along;
+    let error = 64.0 * f64::EPSILON * (left_radius * left_radius + along * along).max(1.0);
+    if height_squared < -error {
+        return false;
+    }
+    let base = Point2::new(
+        left_center.u + along * du / distance,
+        left_center.v + along * dv / distance,
+    );
+    let height = height_squared.max(0.0).sqrt();
+    [height, -height].into_iter().any(|signed_height| {
+        let point = Point2::new(
+            base.u - signed_height * dv / distance,
+            base.v + signed_height * du / distance,
+        );
+        directed_angle_parameter(
+            (point.v - left_center.v).atan2(point.u - left_center.u),
+            left_start,
+            left_end,
+        )
+        .is_some()
+            && directed_angle_parameter(
+                (point.v - right_center.v).atan2(point.u - right_center.u),
+                right_start,
+                right_end,
+            )
+            .is_some()
+    })
 }
 
 fn historical_member_points(
@@ -15903,11 +16078,11 @@ mod relation_tests {
         assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
         assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
         assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
-        assert_eq!(boundary.strictly_contains(&hole), Some(true));
+        assert!(boundary.strictly_contains(&hole));
     }
 
     #[test]
-    fn unsupported_boundary_pair_containment_is_unknown() {
+    fn polygon_and_arc_loop_containment_requires_disjoint_boundaries() {
         let polygon = super::ProfileBoundary::Polygon(vec![
             Point2::new(-2.0, -2.0),
             Point2::new(2.0, -2.0),
@@ -15927,8 +16102,50 @@ mod relation_tests {
             },
         ]);
 
-        assert_eq!(polygon.strictly_contains(&arc_loop), None);
-        assert_eq!(arc_loop.strictly_contains(&polygon), None);
+        assert!(polygon.strictly_contains(&arc_loop));
+        assert!(!arc_loop.strictly_contains(&polygon));
+
+        let crossing = super::ProfileBoundary::CircularArcLoop(vec![
+            super::ProfileBoundarySegment::Line {
+                start: Point2::new(-3.0, 0.0),
+                end: Point2::new(3.0, 0.0),
+            },
+            super::ProfileBoundarySegment::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: 3.0,
+                start_angle: 0.0,
+                end_angle: std::f64::consts::PI,
+            },
+        ]);
+        assert!(!polygon.strictly_contains(&crossing));
+        assert!(!crossing.strictly_contains(&polygon));
+    }
+
+    #[test]
+    fn arc_loop_containment_rejects_crossing_and_touching_segments() {
+        let d_loop = |center_u: f64, radius: f64| {
+            super::ProfileBoundary::CircularArcLoop(vec![
+                super::ProfileBoundarySegment::Line {
+                    start: Point2::new(center_u, -radius),
+                    end: Point2::new(center_u, radius),
+                },
+                super::ProfileBoundarySegment::Arc {
+                    center: Point2::new(center_u, 0.0),
+                    radius,
+                    start_angle: std::f64::consts::FRAC_PI_2,
+                    end_angle: 3.0 * std::f64::consts::FRAC_PI_2,
+                },
+            ])
+        };
+        let outer = d_loop(0.0, 2.0);
+        let inner = d_loop(-0.5, 0.5);
+        let crossing = d_loop(-1.5, 1.0);
+        let touching = d_loop(-1.0, 1.0);
+
+        assert!(outer.strictly_contains(&inner));
+        assert!(!inner.strictly_contains(&outer));
+        assert!(!outer.strictly_contains(&crossing));
+        assert!(!outer.strictly_contains(&touching));
     }
 
     #[test]
