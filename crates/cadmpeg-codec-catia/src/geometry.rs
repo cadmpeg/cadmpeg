@@ -1186,26 +1186,29 @@ pub fn b2_edge_metadata(data: &[u8]) -> Vec<B2EdgeMetadata> {
         .collect()
 }
 
-/// Decode length-closed `b2/b3/b4 03 5e` records containing exactly five
-/// compact references followed by one terminal byte.
+/// Decode length-closed `b2/b3/b4 03 5e` records containing one compact curve
+/// reference, two persistent vertex references, two compact parameter
+/// references, and one terminal byte.
 #[must_use]
 pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
     b_family_frames(data, 0x5e)
         .into_iter()
         .filter_map(|frame| {
             let mut at = frame.payload;
-            let references = (0..5)
-                .map(|_| compact_int(data, &mut at))
-                .collect::<Option<Vec<_>>>()?;
+            let curve_ref = compact_int(data, &mut at)?;
+            let start_vertex_ref = edge_vertex_ref(data, &mut at)?;
+            let end_vertex_ref = edge_vertex_ref(data, &mut at)?;
+            let start_parameter_ref = compact_int(data, &mut at)?;
+            let end_parameter_ref = compact_int(data, &mut at)?;
             let tail = *data.get(at)?;
             (at + 1 == frame.end).then_some(B2EdgeNode {
                 pos: frame.pos,
                 header_token: frame.header_token,
-                curve_ref: references[0],
-                start_vertex_ref: references[1],
-                end_vertex_ref: references[2],
-                start_parameter_ref: references[3],
-                end_parameter_ref: references[4],
+                curve_ref,
+                start_vertex_ref,
+                end_vertex_ref,
+                start_parameter_ref,
+                end_parameter_ref,
                 tail,
             })
         })
@@ -4916,6 +4919,26 @@ fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
         Some(value)
     } else {
         compact_int(bytes, at)
+    }
+}
+
+fn edge_vertex_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
+    match *bytes.get(*at)? {
+        0x06 => {
+            let value = u32::from(*bytes.get(*at + 1)?);
+            *at += 2;
+            Some(value)
+        }
+        0x0a => {
+            let value = u32::from(u16_le(bytes, *at + 1)?);
+            *at += 3;
+            Some(value)
+        }
+        byte if byte != 0 && matches!(byte % 4, 2 | 3) => {
+            *at += 1;
+            Some(u32::from(byte))
+        }
+        _ => compact_int(bytes, at),
     }
 }
 

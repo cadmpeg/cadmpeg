@@ -4195,6 +4195,26 @@ fn b2_edge_node_parser_reads_compact_native_vertex_identities() {
 }
 
 #[test]
+fn b2_edge_node_parser_reads_tagged_and_raw_vertex_identities() {
+    let mut bytes = vec![
+        0xb2, 0x03, 0x5e, 0x09, 0x05, 0x0d, 0x06, 0x8b, 0x0a, 0xc1, 0x01, 0x09, 0x05, 0x01,
+    ];
+    bytes.extend_from_slice(&[
+        0xb2, 0x03, 0x5e, 0x06, 0x05, 0x0d, 0xcf, 0xe7, 0x09, 0x05, 0x01,
+    ]);
+    let nodes = crate::geometry::b2_edge_nodes(&bytes);
+    assert_eq!(nodes.len(), 2);
+    assert_eq!(nodes[0].curve_ref, 3);
+    assert_eq!(nodes[0].start_vertex_ref, 139);
+    assert_eq!(nodes[0].end_vertex_ref, 449);
+    assert_eq!(nodes[0].start_parameter_ref, 2);
+    assert_eq!(nodes[0].end_parameter_ref, 1);
+    assert_eq!(nodes[0].tail, 0x01);
+    assert_eq!(nodes[1].start_vertex_ref, 207);
+    assert_eq!(nodes[1].end_vertex_ref, 231);
+}
+
+#[test]
 fn b2_revolution_parser_reads_axis_profile_bounds_and_exact_scale_relations() {
     for reference_token in [0x08, 0x0a] {
         let mut stream = b2_revolution_stream();
