@@ -7982,8 +7982,6 @@ pub fn parse_standard_mesh_endpoint_candidates(
     edge_faces: &[[usize; 2]],
     edge_candidates: &[Vec<[usize; 2]>],
 ) -> Option<(StandardTopology, Vec<usize>)> {
-    const MAX_SELECTION_WORK: usize = 100_000;
-
     let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
@@ -7996,6 +7994,26 @@ pub fn parse_standard_mesh_endpoint_candidates(
         return None;
     }
     deduplicate_mesh_quotient_assignments(&mut assignments);
+    let port_identities = standard_edge_port_identities(bytes)?;
+    resolve_standard_mesh_endpoint_candidates(
+        &edge_rows,
+        &vertex_points,
+        edge_candidates,
+        assignments,
+        &port_identities,
+    )
+}
+
+fn resolve_standard_mesh_endpoint_candidates(
+    edge_rows: &[EdgeRow],
+    vertex_points: &[[f64; 3]],
+    edge_candidates: &[Vec<[usize; 2]>],
+    mut assignments: Vec<Vec<MeshFaceBoundaryAssignment>>,
+    port_identities: &[[u32; 2]],
+) -> Option<(StandardTopology, Vec<usize>)> {
+    const MAX_SELECTION_WORK: usize = 100_000;
+
+    let face_count = assignments.len();
     let mut edge_candidates = edge_candidates.to_vec();
     if !prune_mesh_endpoint_pair_support(&mut assignments, &mut edge_candidates) {
         return None;
@@ -8021,13 +8039,12 @@ pub fn parse_standard_mesh_endpoint_candidates(
         domains,
         members: (0..edge_rows.len() * 2).map(|node| vec![node]).collect(),
     };
-    let port_identities = standard_edge_port_identities(bytes)?;
     if port_identities.len() != edge_rows.len() {
         return None;
     }
     let mut node_by_identity = HashMap::new();
-    for (edge, ports) in port_identities.into_iter().enumerate() {
-        for (port, identity) in ports.into_iter().enumerate() {
+    for (edge, ports) in port_identities.iter().enumerate() {
+        for (port, identity) in ports.iter().copied().enumerate() {
             let node = edge * 2 + port;
             if let Some(&previous) = node_by_identity.get(&identity) {
                 quotient.merge(previous, node)?;
@@ -8080,8 +8097,8 @@ pub fn parse_standard_mesh_endpoint_candidates(
         possible_face_choices: face_choices,
         face_work,
         edge_candidates: &edge_candidates,
-        edge_rows: &edge_rows,
-        vertex_points: &vertex_points,
+        edge_rows,
+        vertex_points,
         selected: vec![None; face_count],
         states: 0,
         solution: None,
@@ -8130,6 +8147,10 @@ where
         return None;
     }
     deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
+    let port_identities = standard_edge_port_identities(bytes)?;
+    if port_identities.len() != edge_rows.len() {
+        return None;
+    }
     let mut pair_domains = edge_candidates.to_vec();
     if !prune_mesh_endpoint_pair_support(&mut mesh_assignments, &mut pair_domains) {
         return None;
@@ -8143,7 +8164,14 @@ where
             .copied()
             .map(|pair| vec![pair])
             .collect::<Vec<_>>();
-        parse_standard_mesh_endpoint_candidates(bytes, edge_faces, &singleton).is_some()
+        resolve_standard_mesh_endpoint_candidates(
+            &edge_rows,
+            &vertex_points,
+            &singleton,
+            mesh_assignments.clone(),
+            &port_identities,
+        )
+        .is_some()
     };
     let pair_solutions = incidence_endpoint_pair_solutions(
         &edge_rows,
@@ -8157,9 +8185,13 @@ where
     let mut solution = None;
     for pairs in pair_solutions {
         let singleton = pairs.into_iter().map(|pair| vec![pair]).collect::<Vec<_>>();
-        let Some(candidate) =
-            parse_standard_mesh_endpoint_candidates(bytes, edge_faces, &singleton)
-        else {
+        let Some(candidate) = resolve_standard_mesh_endpoint_candidates(
+            &edge_rows,
+            &vertex_points,
+            &singleton,
+            mesh_assignments.clone(),
+            &port_identities,
+        ) else {
             continue;
         };
         match &solution {
