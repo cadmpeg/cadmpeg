@@ -8962,9 +8962,7 @@ pub(crate) fn project_relation_point_geometry(
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
                     ))
                 || entities.iter().any(|entity| {
-                    (entity.native_ref.as_deref() == Some(marker.id.as_str())
-                        && !(qualified_point
-                            && matches!(entity.geometry, SketchGeometry::Native { .. })))
+                    entity.native_ref.as_deref() == Some(marker.id.as_str())
                         || entity
                             .endpoint_refs
                             .iter()
@@ -16923,17 +16921,6 @@ mod profile_join_tests {
                 },
             })
             .collect::<Vec<_>>();
-        entities.push(SketchEntity {
-            id: SketchEntityId("native-qualified-curve".into()),
-            sketch: sketch.clone(),
-            construction: true,
-            native_ref: Some("sldprt:feature-input:sketch-entity#qualified-curve".into()),
-            geometry_ref: None,
-            endpoint_refs: Vec::new(),
-            geometry: SketchGeometry::Native {
-                native_kind: "sldprt:marker-geometry:1".into(),
-            },
-        });
         let mut markers = [[0.0, 0.0], [0.002, 0.001], [0.007, 0.004]]
             .into_iter()
             .enumerate()
