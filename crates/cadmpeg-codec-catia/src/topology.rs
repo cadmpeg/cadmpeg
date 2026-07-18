@@ -2424,7 +2424,9 @@ pub fn standard_mesh_missing_edge_assignments(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
 ) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
-    standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, None, false)
+    standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, None, false)?
+        .into_iter()
+        .collect()
 }
 
 fn standard_mesh_missing_edge_assignments_impl(
@@ -2432,7 +2434,7 @@ fn standard_mesh_missing_edge_assignments_impl(
     edge_faces: &[[usize; 2]],
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
     canonicalize_spans: bool,
-) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
+) -> Option<Vec<Option<Vec<Vec<MeshEdgePlacementCandidate>>>>> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
@@ -3081,10 +3083,10 @@ fn standard_mesh_missing_edge_assignments_impl(
                     });
                 assignments
             })
-            .collect::<Option<Vec<_>>>()?;
+            .collect::<Vec<_>>();
         solutions.push(assignments);
     }
-    <[Vec<Vec<Vec<MeshEdgePlacementCandidate>>>; 1]>::try_from(solutions)
+    <[Vec<Option<Vec<Vec<MeshEdgePlacementCandidate>>>>; 1]>::try_from(solutions)
         .ok()
         .map(|[assignments]| assignments)
 }
@@ -3130,7 +3132,9 @@ fn standard_mesh_boundary_assignments_impl(
     edge_candidates: Option<&[Vec<[usize; 2]>]>,
 ) -> Option<Vec<Vec<MeshFaceBoundaryAssignment>>> {
     let assignments =
-        standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, edge_candidates, true)?;
+        standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, edge_candidates, true)?
+            .into_iter()
+            .collect::<Option<Vec<_>>>()?;
     let runs = standard_mesh_edge_runs(bytes)?;
     let (face_start, face_count, _) = largest_fbb_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
@@ -3481,7 +3485,9 @@ fn standard_mesh_assignment_corner_points(
         return None;
     }
     let runs = standard_mesh_edge_runs(bytes)?;
-    let assignments = standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, None, true)?;
+    let assignments = standard_mesh_missing_edge_assignments_impl(bytes, edge_faces, None, true)?
+        .into_iter()
+        .collect::<Option<Vec<_>>>()?;
     let (face_start, face_count, _) = largest_fbb_run(bytes)?;
     let cycle_solutions = [1, 2, 3]
         .into_iter()
