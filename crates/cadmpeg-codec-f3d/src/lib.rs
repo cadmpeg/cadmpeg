@@ -1857,7 +1857,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let owner_start = loci_start.saturating_add((count as u64).saturating_mul(15));
         let returns_start = group.entity_genesis.map_or_else(
             || owner_start.saturating_add(24),
-            |_| group.state_offset.saturating_add(13),
+            |_| group.state_offset.saturating_add(12),
         );
         let returns_valid = group.return_members.len() == count
             && group.return_member_offsets.len() == count
