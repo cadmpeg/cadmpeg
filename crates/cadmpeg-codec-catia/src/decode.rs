@@ -169,8 +169,18 @@ fn standard_carrier_source(tag: u32) -> SourceObjectAssociation {
     }
 }
 
-fn admit_neutral_model(ir: &mut CadIr, _annotations: &mut AnnotationBuilder) -> bool {
+fn neutral_model_is_admissible(ir: &CadIr, pending_unknowns: &[UnknownRecord]) -> bool {
     let mut candidate = ir.clone();
+    let native_unknowns = pending_unknowns
+        .iter()
+        .map(cadmpeg_ir::NativeUnknownRecord::from)
+        .collect::<Vec<_>>();
+    if candidate
+        .set_native_unknowns("catia", &native_unknowns)
+        .is_err()
+    {
+        return false;
+    }
     candidate.finalize();
     cadmpeg_ir::validate::validate(&candidate, Vec::new()).is_ok()
 }
@@ -203,7 +213,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<ProjectedDecode> {
     let mut topology_annotations = annotations.clone();
     let topology_transferred = topology.as_ref().is_some_and(|topology| {
         transfer_zero_entity_topology(&mut topology_ir, &mut topology_annotations, topology)
-            && admit_neutral_model(&mut topology_ir, &mut topology_annotations)
+            && neutral_model_is_admissible(&topology_ir, &unknowns)
     });
     if topology_transferred {
         ir = topology_ir;
@@ -1004,7 +1014,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<ProjectedDecode> {
             &mut topology_annotations,
             topology,
             &surfaces,
-        ) && admit_neutral_model(&mut topology_ir, &mut topology_annotations)
+        ) && neutral_model_is_admissible(&topology_ir, &unknowns)
     });
     if topology_transferred {
         ir = topology_ir;
@@ -1372,18 +1382,18 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        admit_neutral_model, attach_standard_free_vertices, build_standard_edge_curve,
+        attach_standard_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch,
         circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
         e5_pcurve_on_surface, equivalent_e5_curve_carriers, fit_rank_one_e5_plane_axes,
         include_native_endpoint_pairs, intersection_line_direction, merge_native_endpoint_evidence,
-        ordered_range, parameter_ranges_reversed, point_distance, point_on_known_surface,
-        point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
+        neutral_model_is_admissible, ordered_range, parameter_ranges_reversed, point_distance,
+        point_on_known_surface, point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
         standard_circle_endpoint_candidates, standard_circle_param_range,
         standard_native_edge_references, standard_pcurve_geometry, unique_index_owners,
-        unique_native_identity_points, unresolved_carrier_counts,
+        unique_native_identity_points, unresolved_carrier_counts, UnknownRecord,
     };
     use crate::e5::{E5Edge, E5Face, E5Loop, E5Topology};
     use crate::geometry::{FreeformFaceBounds, StandardCurveGeometry, StandardCurveSupport};
@@ -1406,12 +1416,9 @@ mod chart_tests {
     use std::collections::HashMap;
 
     #[test]
-    fn neutral_model_admission_rejects_invalid_topology() {
-        let mut valid = CadIr::empty(Units::default());
-        assert!(admit_neutral_model(
-            &mut valid,
-            &mut AnnotationBuilder::new()
-        ));
+    fn neutral_model_admissibility_rejects_invalid_topology() {
+        let valid = CadIr::empty(Units::default());
+        assert!(neutral_model_is_admissible(&valid, &[]));
 
         let mut invalid = CadIr::empty(Units::default());
         invalid.model.shells.push(Shell {
@@ -1421,10 +1428,39 @@ mod chart_tests {
             wire_edges: Vec::new(),
             free_vertices: Vec::new(),
         });
-        assert!(!admit_neutral_model(
-            &mut invalid,
-            &mut AnnotationBuilder::new()
-        ));
+        assert!(!neutral_model_is_admissible(&invalid, &[]));
+    }
+
+    #[test]
+    fn neutral_model_admissibility_includes_pending_unknown_records() {
+        let record_id = UnknownId("catia:test:unknown#0".into());
+        let mut ir = CadIr::empty(Units::default());
+        let curve_id = CurveId("catia:test:curve#0".into());
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Unknown {
+                record: Some(record_id.clone()),
+            },
+            source_object: None,
+        });
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: ProceduralCurveId("catia:test:procedural-curve#0".into()),
+            curve: curve_id,
+            definition: ProceduralCurveDefinition::Unknown {
+                record: Some(record_id.clone()),
+            },
+            cache_fit_tolerance: None,
+        });
+        let unknowns = [UnknownRecord {
+            id: record_id,
+            offset: 0,
+            byte_len: 0,
+            sha256: String::new(),
+            data: Some(Vec::new()),
+            links: Vec::new(),
+        }];
+
+        assert!(neutral_model_is_admissible(&ir, &unknowns));
     }
 
     #[test]
@@ -4373,7 +4409,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<ProjectedDecode>
             &mut topology_annotations,
             graph,
             &payload_id,
-        ) && admit_neutral_model(&mut topology_ir, &mut topology_annotations)
+        ) && neutral_model_is_admissible(&topology_ir, &unknowns)
     });
     if topology_transferred {
         ir = topology_ir;
@@ -4941,7 +4977,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         &face_bindings,
         brep,
         &scan.data,
-    ) && admit_neutral_model(&mut topology_ir, &mut topology_annotations);
+    ) && neutral_model_is_admissible(&topology_ir, &unknowns);
     if topology_attached {
         ir = topology_ir;
         annotations = topology_annotations;
