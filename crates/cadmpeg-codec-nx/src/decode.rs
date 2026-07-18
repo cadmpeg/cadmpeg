@@ -7309,8 +7309,6 @@ fn attach_native_object_model(
         crate::native::feature_extrude_payload_headers(&scan.container);
     let feature_extrude_payload_footers =
         crate::native::feature_extrude_payload_footers(&scan.container);
-    let feature_extrude_payload_scalar_triples =
-        crate::native::feature_extrude_payload_scalar_triples(&scan.container);
     let feature_operation_body_scalar_triples =
         crate::native::feature_operation_body_scalar_triples(&scan.container);
     let feature_operation_body_members =
@@ -7537,7 +7535,6 @@ fn attach_native_object_model(
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
         && feature_extrude_payload_footers.is_empty()
-        && feature_extrude_payload_scalar_triples.is_empty()
         && feature_operation_body_scalar_triples.is_empty()
         && feature_operation_body_members.is_empty()
         && feature_operation_body_operands.is_empty()
@@ -8325,7 +8322,6 @@ fn attach_native_object_model(
             extrude_32_constructions: &feature_extrude_32_constructions,
             extrude_payload_headers: &feature_extrude_payload_headers,
             extrude_payload_footers: &feature_extrude_payload_footers,
-            extrude_payload_scalar_triples: &feature_extrude_payload_scalar_triples,
             extrude_payload_32_branches: &feature_extrude_payload_32_branches,
             operation_body_scalar_triples: &feature_operation_body_scalar_triples,
             operation_body_members: &feature_operation_body_members,
@@ -8350,7 +8346,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(145);
+    namespace.version = namespace.version.max(146);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -8733,12 +8729,6 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_extrude_payload_footers",
             &feature_extrude_payload_footers,
-        )?;
-    }
-    if !feature_extrude_payload_scalar_triples.is_empty() {
-        namespace.set_arena(
-            "feature_extrude_payload_scalar_triples",
-            &feature_extrude_payload_scalar_triples,
         )?;
     }
     if !feature_operation_body_scalar_triples.is_empty() {
@@ -9352,7 +9342,6 @@ struct FeatureOperationSources<'a> {
     extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
     extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
     extrude_payload_footers: &'a [crate::native::FeatureExtrudePayloadFooter],
-    extrude_payload_scalar_triples: &'a [crate::native::FeatureExtrudePayloadScalarTriple],
     extrude_payload_32_branches: &'a [crate::native::FeatureExtrudePayload32Branch],
     operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
     operation_body_members: &'a [crate::native::FeatureOperationBodyMember],
@@ -9440,7 +9429,6 @@ fn attach_feature_operations(
         extrude_32_constructions,
         extrude_payload_headers,
         extrude_payload_footers,
-        extrude_payload_scalar_triples,
         extrude_payload_32_branches,
         operation_body_scalar_triples,
         operation_body_members,
@@ -9699,10 +9687,6 @@ fn attach_feature_operations(
         .iter()
         .map(|footer| (footer.operation_label.as_str(), footer))
         .collect::<BTreeMap<_, _>>();
-    let extrude_payload_scalar_triples_by_operation =
-        records_by_operation(extrude_payload_scalar_triples, |triple| {
-            &triple.operation_label
-        });
     let extrude_payload_32_branches_by_operation =
         records_by_operation(extrude_payload_32_branches, |branch| {
             &branch.operation_label
@@ -10109,17 +10093,6 @@ fn attach_feature_operations(
         }
         if let Some(footer) = extrude_payload_footers_by_operation.get(label.id.as_str()) {
             source_properties.insert("extrude_payload_footer".to_string(), footer.id.clone());
-        }
-        for (ordinal, triple) in extrude_payload_scalar_triples_by_operation
-            .get(label.id.as_str())
-            .into_iter()
-            .flatten()
-            .enumerate()
-        {
-            source_properties.insert(
-                format!("extrude_payload_scalar_triple.{ordinal}"),
-                triple.id.clone(),
-            );
         }
         for (ordinal, branch) in extrude_payload_32_branches_by_operation
             .get(label.id.as_str())

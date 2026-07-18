@@ -736,13 +736,6 @@ pub struct PayloadScalar {
     pub encoding: PayloadScalarEncoding,
 }
 
-/// Ordered three-scalar lane following an extrusion body reference.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ExtrudePayloadScalarTriple {
-    /// Three scalar atoms in byte order.
-    pub scalars: [PayloadScalar; 3],
-}
-
 /// One three-scalar clause anchored to an ordered operation body reference.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OperationBodyScalarTriple {
@@ -1464,35 +1457,6 @@ fn shifted_ieee_f64(bytes: &[u8]) -> Option<f64> {
     raw[0] = raw[0].checked_add(0x10)?;
     let value = f64::from_be_bytes(raw);
     value.is_finite().then_some(value)
-}
-
-/// Decode the three self-delimiting scalars following an extrusion body field.
-pub fn extrude_payload_scalar_triple(
-    record: OperationRecord<'_>,
-) -> Option<ExtrudePayloadScalarTriple> {
-    if record.label.value != "EXTRUDE" {
-        return None;
-    }
-    let reference = operation_body_reference(record)?;
-    let token = reference.offset.checked_sub(record.offset)?;
-    let (_, end) = feature_object_index(record.bytes, token)?;
-    if record.bytes.get(end..end + 2) != Some(&[0xff, 0x11]) {
-        return None;
-    }
-    let mut at = end + 2;
-    let mut scalars = Vec::with_capacity(3);
-    for _ in 0..3 {
-        let (value, encoding, width) = payload_scalar(record.bytes.get(at..)?)?;
-        scalars.push(PayloadScalar {
-            offset: record.offset + at,
-            value,
-            encoding,
-        });
-        at += width;
-    }
-    Some(ExtrudePayloadScalarTriple {
-        scalars: scalars.try_into().ok()?,
-    })
 }
 
 /// Decode complete three-scalar clauses following ordered operation body fields.

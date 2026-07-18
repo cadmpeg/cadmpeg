@@ -2655,7 +2655,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 145);
+    assert_eq!(namespace.version, 146);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -6733,49 +6733,6 @@ fn om_extrude_footer_requires_one_complete_terminal_lane() {
 }
 
 #[test]
-fn om_extrude_body_scalar_lane_decodes_zero_binary32_and_binary64() {
-    let label = crate::om::OperationLabel {
-        header_offset: 100,
-        offset: 119,
-        value: "EXTRUDE",
-        object_indices: [None; 4],
-        object_index_offsets: [115, 116, 117, 118],
-    };
-    let payload = b"\x01\x02\x10\x42\xff\x11\x00\x50\x40\x00\x00\xb0\x65\x40\x00\x00\x00\x00\x00";
-    let record = crate::om::OperationRecord {
-        offset: 100,
-        bytes: payload,
-        payload_offset: 100,
-        payload,
-        label,
-    };
-    let triple = crate::om::extrude_payload_scalar_triple(record).unwrap();
-    assert_eq!(
-        triple.scalars.map(|scalar| scalar.value),
-        [0.0, 3.0, -170.0]
-    );
-    assert_eq!(
-        triple.scalars.map(|scalar| scalar.encoding),
-        [
-            crate::om::PayloadScalarEncoding::Zero,
-            crate::om::PayloadScalarEncoding::Binary32,
-            crate::om::PayloadScalarEncoding::Binary64,
-        ]
-    );
-    assert_eq!(triple.scalars.map(|scalar| scalar.offset), [106, 107, 111]);
-
-    let truncated = &payload[..18];
-    assert!(
-        crate::om::extrude_payload_scalar_triple(crate::om::OperationRecord {
-            bytes: truncated,
-            payload: truncated,
-            ..record
-        })
-        .is_none()
-    );
-}
-
-#[test]
 fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
@@ -6801,6 +6758,18 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
         triples[0].scalars.map(|scalar| scalar.value),
         [0.0, 3.0, -170.0]
     );
+    assert_eq!(
+        triples[0].scalars.map(|scalar| scalar.encoding),
+        [
+            crate::om::PayloadScalarEncoding::Zero,
+            crate::om::PayloadScalarEncoding::Binary32,
+            crate::om::PayloadScalarEncoding::Binary64,
+        ]
+    );
+    assert_eq!(
+        triples[0].scalars.map(|scalar| scalar.offset),
+        [106, 107, 111]
+    );
     assert_eq!(triples[1].body_reference_ordinal, 1);
     assert_eq!(triples[1].body_object_index, 67);
     assert_eq!(triples[1].branch, 0x11);
@@ -6808,6 +6777,14 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
         triples[1].scalars.map(|scalar| scalar.value),
         [2.0, 0.0, 0.0]
     );
+    let truncated = &bytes[..bytes.len() - 1];
+    let truncated_triples = crate::om::operation_body_scalar_triples(crate::om::OperationRecord {
+        bytes: truncated,
+        payload: truncated,
+        ..record
+    });
+    assert_eq!(truncated_triples.len(), 1);
+    assert_eq!(truncated_triples[0], triples[0]);
 }
 
 #[test]
@@ -11489,7 +11466,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 145);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 146);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
