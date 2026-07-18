@@ -386,6 +386,13 @@ pub enum FeatureDefinition {
         /// Whether angular travel is clockwise when viewed along the axis.
         clockwise: bool,
     },
+    /// Solid primitive formed by sweeping a generated section along a helix or spiral.
+    Coil {
+        /// Complete geometric and parametric construction definition.
+        construction: CoilConstruction,
+        /// Result-body semantics.
+        result: CoilResult,
+    },
     /// Profile mapped onto a target face.
     Wrap {
         /// Sketch or face profile mapped onto the target.
@@ -1220,6 +1227,132 @@ pub enum BooleanOp {
     Intersect,
     /// Creates an independent new body without combining.
     NewBody,
+}
+
+/// Placement and parameterization of a solid Coil primitive.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CoilConstruction {
+    /// Axis frame and angular origin.
+    pub placement: CoilPlacement,
+    /// Diameter of the reference trajectory at its start.
+    pub diameter: Length,
+    /// Independent driving dimensions retained from the source feature.
+    pub extent: CoilExtent,
+    /// Generated section swept along the trajectory.
+    pub section: CoilSection,
+    /// Radial position of the section relative to the reference trajectory.
+    pub section_placement: CoilSectionPlacement,
+    /// Angular travel direction when viewed from the axis origin along the positive axis.
+    pub clockwise: bool,
+    /// Signed cone half-angle of an axial coil; zero produces a cylindrical helix.
+    pub taper: Angle,
+}
+
+/// Geometric placement of a Coil trajectory.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CoilPlacement {
+    /// Complete right-handed model-space frame.
+    Explicit {
+        /// Center of the trajectory on its base plane.
+        origin: Point3,
+        /// Positive trajectory-axis direction.
+        axis: Vector3,
+        /// Direction from `origin` to angular position zero.
+        radial: Vector3,
+    },
+    /// Complete placement retained in one source-native construction aggregate.
+    Native {
+        /// Native record or scope containing the placement semantics.
+        native_ref: String,
+    },
+}
+
+/// Independent driving dimensions of a Coil trajectory.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CoilExtent {
+    /// Axial coil driven by revolution count and total signed height.
+    RevolutionsHeight {
+        /// Positive angular-turn count.
+        revolutions: f64,
+        /// Signed axial travel.
+        height: Length,
+    },
+    /// Axial coil driven by revolution count and signed pitch per revolution.
+    RevolutionsPitch {
+        /// Positive angular-turn count.
+        revolutions: f64,
+        /// Signed axial travel per revolution.
+        pitch: Length,
+    },
+    /// Axial coil driven by total signed height and signed pitch per revolution.
+    HeightPitch {
+        /// Signed axial travel.
+        height: Length,
+        /// Signed axial travel per revolution.
+        pitch: Length,
+    },
+    /// Planar spiral driven by revolution count and signed radial pitch.
+    Spiral {
+        /// Positive angular-turn count.
+        revolutions: f64,
+        /// Signed radial growth per revolution.
+        radial_pitch: Length,
+    },
+}
+
+/// Generated cross-section of a Coil primitive.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CoilSection {
+    /// Circular section whose size is its diameter.
+    Circular {
+        /// Circle diameter.
+        diameter: Length,
+    },
+    /// Square section whose size is its edge length.
+    Square {
+        /// Edge length.
+        size: Length,
+    },
+    /// Equilateral triangle pointing radially away from the axis.
+    ExternalTriangle {
+        /// Edge length.
+        size: Length,
+    },
+    /// Equilateral triangle pointing radially toward the axis.
+    InternalTriangle {
+        /// Edge length.
+        size: Length,
+    },
+}
+
+/// Radial placement of a generated Coil section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CoilSectionPlacement {
+    /// Section lies inside the reference trajectory.
+    Inside,
+    /// Section centroid lies on the reference trajectory.
+    Center,
+    /// Section lies outside the reference trajectory.
+    Outside,
+}
+
+/// Result semantics of a solid Coil primitive.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CoilResult {
+    /// Create an independent body.
+    NewBody,
+    /// Combine the swept volume with selected existing bodies.
+    Boolean {
+        /// Join, cut, or intersection operation.
+        operation: BooleanOp,
+        /// Existing bodies participating in the operation.
+        targets: BodySelection,
+    },
 }
 
 /// Result semantics of a swept profile.

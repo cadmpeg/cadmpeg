@@ -9,7 +9,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBodyBinding, DesignBodyBounds,
-    DesignBodyMember, DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
+    DesignBodyMember, DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
+    DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
     DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
     DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
     DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
@@ -40,6 +41,7 @@ pub(crate) enum DesignFeatureFamily {
     CircularPattern,
     Mirror,
     OffsetFaces,
+    Coil,
 }
 
 /// Return the canonical operation family while preserving `kind` verbatim on
@@ -53,6 +55,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Circular Pattern" | "Réseau C" => Some(DesignFeatureFamily::CircularPattern),
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
         "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),
+        "SpirePrimitive" => Some(DesignFeatureFamily::Coil),
         _ => None,
     }
 }
@@ -776,6 +779,19 @@ pub fn project_parameter_design_with_edge_identities(
                 }
             } else if family == Some(DesignFeatureFamily::OffsetFaces) {
                 project_offset_faces(scope, &parameters, face_operands).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
+            } else if family == Some(DesignFeatureFamily::Coil) {
+                project_coil(scope, &parameters, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
                         kind: scope.kind.clone(),
                         parameters: parameters
@@ -2599,6 +2615,136 @@ fn project_extrude(
         op,
         draft,
         second_draft,
+    })
+}
+
+fn project_coil(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    construction_groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{
+        BodySelection, BooleanOp, CoilConstruction, CoilExtent, CoilPlacement, CoilResult,
+        CoilSection, CoilSectionPlacement, FeatureDefinition,
+    };
+
+    let unique = |kind: &str| {
+        let mut matches = parameters
+            .iter()
+            .filter_map(|(_, parameter)| (parameter.source_kind == kind).then_some(*parameter));
+        let parameter = matches.next()?;
+        matches.next().is_none().then_some(parameter)
+    };
+    let diameter = design_length(unique("Diameter")?)?;
+    let section_size = design_length(unique("SectionSize")?)?;
+    if diameter.0 <= 0.0 || section_size.0 <= 0.0 {
+        return None;
+    }
+    let dimensionless = |kind: &str| {
+        let parameter = unique(kind)?;
+        (parameter.unit.is_none() && parameter.evaluated_value.is_finite())
+            .then_some(parameter.evaluated_value)
+    };
+    let (extent, taper, expected_parameter_kinds): (_, _, &[&str]) = match scope.coil_extent? {
+        DesignCoilExtent::RevolutionsHeight => (
+            CoilExtent::RevolutionsHeight {
+                revolutions: dimensionless("Revolutions")?,
+                height: design_length(unique("Height")?)?,
+            },
+            design_angle(unique("TaperAngle")?)?,
+            &[
+                "Diameter",
+                "SectionSize",
+                "TaperAngle",
+                "Revolutions",
+                "Height",
+            ],
+        ),
+        DesignCoilExtent::RevolutionsPitch => (
+            CoilExtent::RevolutionsPitch {
+                revolutions: dimensionless("Revolutions")?,
+                pitch: design_length(unique("Pitch")?)?,
+            },
+            design_angle(unique("TaperAngle")?)?,
+            &[
+                "Diameter",
+                "SectionSize",
+                "TaperAngle",
+                "Revolutions",
+                "Pitch",
+            ],
+        ),
+        DesignCoilExtent::HeightPitch => (
+            CoilExtent::HeightPitch {
+                height: design_length(unique("Height")?)?,
+                pitch: design_length(unique("Pitch")?)?,
+            },
+            design_angle(unique("TaperAngle")?)?,
+            &["Diameter", "SectionSize", "TaperAngle", "Height", "Pitch"],
+        ),
+        DesignCoilExtent::Spiral => (
+            CoilExtent::Spiral {
+                revolutions: dimensionless("Revolutions")?,
+                radial_pitch: design_length(unique("Pitch")?)?,
+            },
+            cadmpeg_ir::features::Angle(0.0),
+            &["Diameter", "SectionSize", "Revolutions", "Pitch"],
+        ),
+    };
+    if parameters.len() != expected_parameter_kinds.len()
+        || parameters.iter().any(|(_, parameter)| {
+            !expected_parameter_kinds.contains(&parameter.source_kind.as_str())
+        })
+    {
+        return None;
+    }
+    let section = match scope.coil_section? {
+        DesignCoilSection::Circular => CoilSection::Circular {
+            diameter: section_size,
+        },
+        DesignCoilSection::Square => CoilSection::Square { size: section_size },
+        DesignCoilSection::ExternalTriangle => CoilSection::ExternalTriangle { size: section_size },
+        DesignCoilSection::InternalTriangle => CoilSection::InternalTriangle { size: section_size },
+    };
+    let section_placement = match scope.coil_section_placement? {
+        DesignCoilSectionPlacement::Inside => CoilSectionPlacement::Inside,
+    };
+    let stream = native_stream(&scope.id)?;
+    let mut body_groups = construction_groups.iter().filter(|group| {
+        native_stream(&group.id) == Some(stream)
+            && group.scope_record_index == scope.record_index
+            && group.role == 0x0000_0008_0000_0000
+    });
+    let first_body_group = body_groups.next();
+    if body_groups.next().is_some() {
+        return None;
+    }
+    let result = match (scope.coil_operation?, first_body_group) {
+        (DesignExtrudeOperation::NewBody, None) => CoilResult::NewBody,
+        (operation, Some(group)) => CoilResult::Boolean {
+            operation: match operation {
+                DesignExtrudeOperation::Join => BooleanOp::Join,
+                DesignExtrudeOperation::Cut => BooleanOp::Cut,
+                DesignExtrudeOperation::Intersect => BooleanOp::Intersect,
+                DesignExtrudeOperation::NewBody => return None,
+            },
+            targets: BodySelection::Native(group.id.clone()),
+        },
+        _ => return None,
+    };
+    Some(FeatureDefinition::Coil {
+        construction: CoilConstruction {
+            placement: CoilPlacement::Native {
+                native_ref: scope.id.clone(),
+            },
+            diameter,
+            extent,
+            section,
+            section_placement,
+            clockwise: scope.coil_clockwise?,
+            taper,
+        },
+        result,
     })
 }
 
@@ -10020,6 +10166,7 @@ pub fn decode_construction_operand_groups(
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
         design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Coil)
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
         let scope_group_start = out.len();
@@ -11472,6 +11619,71 @@ fn parse_parameter_scope(
     } else {
         (None, None, None, None, None, None, None, None)
     };
+    let (
+        coil_operation,
+        coil_operation_offset,
+        coil_extent,
+        coil_extent_offset,
+        coil_section,
+        coil_section_offset,
+        coil_section_placement,
+        coil_section_placement_offset,
+        coil_clockwise,
+        coil_clockwise_offset,
+    ) = if family == Some(DesignFeatureFamily::Coil) {
+        let operation_offset = start.checked_add(20)?;
+        let operation = match u32_at(bytes, operation_offset)? {
+            1 => DesignExtrudeOperation::Join,
+            2 => DesignExtrudeOperation::Cut,
+            3 => DesignExtrudeOperation::Intersect,
+            4 => DesignExtrudeOperation::NewBody,
+            _ => return None,
+        };
+        let clockwise_offset = start.checked_add(24)?;
+        let clockwise = match bytes.get(clockwise_offset)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        if u32_at(bytes, start.checked_add(26)?)? != 2 {
+            return None;
+        }
+        let extent_offset = start.checked_add(30)?;
+        let extent = match u32_at(bytes, extent_offset)? {
+            1 => DesignCoilExtent::RevolutionsHeight,
+            2 => DesignCoilExtent::RevolutionsPitch,
+            3 => DesignCoilExtent::HeightPitch,
+            4 => DesignCoilExtent::Spiral,
+            _ => return None,
+        };
+        let section_offset = start.checked_add(92)?;
+        let section = match u32_at(bytes, section_offset)? {
+            0 => DesignCoilSection::Circular,
+            1 => DesignCoilSection::Square,
+            2 => DesignCoilSection::ExternalTriangle,
+            3 => DesignCoilSection::InternalTriangle,
+            _ => return None,
+        };
+        let section_placement_offset = start.checked_add(107)?;
+        let section_placement = match u32_at(bytes, section_placement_offset)? {
+            4 => DesignCoilSectionPlacement::Inside,
+            _ => return None,
+        };
+        (
+            Some(operation),
+            Some(operation_offset as u64),
+            Some(extent),
+            Some(extent_offset as u64),
+            Some(section),
+            Some(section_offset as u64),
+            Some(section_placement),
+            Some(section_placement_offset as u64),
+            Some(clockwise),
+            Some(clockwise_offset as u64),
+        )
+    } else {
+        (None, None, None, None, None, None, None, None, None, None)
+    };
     Some(DesignParameterScope {
         id: String::new(),
         byte_offset: header.byte_offset,
@@ -11488,6 +11700,16 @@ fn parse_parameter_scope(
         extrude_direction_reversed_offset,
         extrude_start,
         extrude_start_offset,
+        coil_operation,
+        coil_operation_offset,
+        coil_extent,
+        coil_extent_offset,
+        coil_section,
+        coil_section_offset,
+        coil_section_placement,
+        coil_section_placement_offset,
+        coil_clockwise,
+        coil_clockwise_offset,
         feature_ordinal,
         feature_ordinal_offset: u64::try_from(kind_end).ok()?,
         history_state_id,
@@ -14319,7 +14541,8 @@ mod relation_tests {
         validate_configuration_payload, DesignFeatureFamily,
     };
     use crate::records::{
-        ConstructionRecipe, ConstructionRecipeKind, DesignConfiguration, DesignConfigurationKind,
+        ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSection,
+        DesignCoilSectionPlacement, DesignConfiguration, DesignConfigurationKind,
         DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
         DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignEntityHeader,
@@ -14372,6 +14595,10 @@ mod relation_tests {
         assert_eq!(
             design_feature_family("DécalerLesFaces"),
             Some(DesignFeatureFamily::OffsetFaces)
+        );
+        assert_eq!(
+            design_feature_family("SpirePrimitive"),
+            Some(DesignFeatureFamily::Coil)
         );
     }
 
@@ -16502,6 +16729,58 @@ mod relation_tests {
     }
 
     #[test]
+    fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"301");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.resize(120, 0);
+        bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
+        bytes[24] = 1;
+        bytes[26..30].copy_from_slice(&2u32.to_le_bytes());
+        bytes[30..34].copy_from_slice(&3u32.to_le_bytes());
+        bytes[92..96].copy_from_slice(&2u32.to_le_bytes());
+        bytes[107..111].copy_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        lp_utf16(&mut bytes, "SpirePrimitive");
+        let mut tail = [0; 78];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"261");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        let header = DesignRecordHeader {
+            id: "generated:scope-header#0".into(),
+            record_index: 12,
+            class_tag: "301".into(),
+            byte_offset: 0,
+        };
+
+        let scope = parse_parameter_scope(&bytes, &header).expect("Coil scope");
+        assert_eq!(scope.coil_operation, Some(DesignExtrudeOperation::Cut));
+        assert_eq!(scope.coil_operation_offset, Some(20));
+        assert_eq!(scope.coil_extent, Some(DesignCoilExtent::HeightPitch));
+        assert_eq!(scope.coil_extent_offset, Some(30));
+        assert_eq!(
+            scope.coil_section,
+            Some(DesignCoilSection::ExternalTriangle)
+        );
+        assert_eq!(scope.coil_section_offset, Some(92));
+        assert_eq!(
+            scope.coil_section_placement,
+            Some(DesignCoilSectionPlacement::Inside)
+        );
+        assert_eq!(scope.coil_section_placement_offset, Some(107));
+        assert_eq!(scope.coil_clockwise, Some(true));
+        assert_eq!(scope.coil_clockwise_offset, Some(24));
+    }
+
+    #[test]
     fn extrude_profile_resolves_its_decimal_sketch_entity_suffix() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -16575,6 +16854,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: None,
             extrude_start: None,
             extrude_start_offset: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -16763,6 +17052,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: None,
             extrude_start: None,
             extrude_start_offset: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -17028,6 +17327,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: None,
             extrude_start: None,
             extrude_start_offset: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -20431,6 +20740,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: Some(140),
             extrude_start: Some(DesignExtrudeStart::ProfilePlane),
             extrude_start_offset: Some(142),
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -20524,6 +20843,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: None,
             extrude_start: None,
             extrude_start_offset: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: record_index,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -20664,6 +20993,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: Some(140),
             extrude_start: Some(DesignExtrudeStart::ProfilePlane),
             extrude_start_offset: Some(142),
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -21146,6 +21485,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: None,
             extrude_start: None,
             extrude_start_offset: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -21776,6 +22125,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: None,
             extrude_start: None,
             extrude_start_offset: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -21958,6 +22317,16 @@ mod relation_tests {
             extrude_direction_reversed_offset: None,
             extrude_start: None,
             extrude_start_offset: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
             feature_ordinal: 1,
             feature_ordinal_offset: 0,
             history_state_id: None,
@@ -22042,6 +22411,16 @@ mod relation_tests {
                 extrude_direction_reversed_offset: None,
                 extrude_start: None,
                 extrude_start_offset: None,
+                coil_operation: None,
+                coil_operation_offset: None,
+                coil_extent: None,
+                coil_extent_offset: None,
+                coil_section: None,
+                coil_section_offset: None,
+                coil_section_placement: None,
+                coil_section_placement_offset: None,
+                coil_clockwise: None,
+                coil_clockwise_offset: None,
                 feature_ordinal: 1,
                 feature_ordinal_offset: 0,
                 history_state_id: current,

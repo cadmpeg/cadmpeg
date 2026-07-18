@@ -598,6 +598,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Some(
                         design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
                     ) => group.extrude_role.is_none() && group.extrude_face_role.is_none(),
+                    Some(design::DesignFeatureFamily::Coil) => {
+                        group.role == 0x0000_0008_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     _ => false,
                 };
                 design::design_feature_family(&scope.kind).is_some()

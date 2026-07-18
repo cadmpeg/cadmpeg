@@ -66,7 +66,8 @@ pub use codec::{
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION};
 pub use features::{
-    BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,
+    BodyRetentionMode, BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult,
+    CoilSection, CoilSectionPlacement, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
     PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
 };

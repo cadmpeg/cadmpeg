@@ -735,6 +735,42 @@ pub enum DesignExtrudeStart {
     FromFace,
 }
 
+/// Driving-dimension mode stored by a Coil parameter scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignCoilExtent {
+    /// Revolution count and total height are independent.
+    RevolutionsHeight,
+    /// Revolution count and pitch are independent.
+    RevolutionsPitch,
+    /// Total height and pitch are independent.
+    HeightPitch,
+    /// Revolution count and radial pitch define a planar spiral.
+    Spiral,
+}
+
+/// Generated section family stored by a Coil parameter scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignCoilSection {
+    /// Circular section.
+    Circular,
+    /// Square section.
+    Square,
+    /// Triangular section pointing away from the axis.
+    ExternalTriangle,
+    /// Triangular section pointing toward the axis.
+    InternalTriangle,
+}
+
+/// Radial section placement stored by a Coil parameter scope.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum DesignCoilSectionPlacement {
+    /// Section inside the reference trajectory.
+    Inside,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -776,6 +812,36 @@ pub struct DesignParameterScope {
     /// Byte offset of the u8 enum selecting the Extrude starting support.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_start_offset: Option<u64>,
+    /// Coil result operation from the fixed scope prologue.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_operation: Option<DesignExtrudeOperation>,
+    /// Byte offset of the Coil operation enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_operation_offset: Option<u64>,
+    /// Coil driving-dimension mode.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_extent: Option<DesignCoilExtent>,
+    /// Byte offset of the Coil mode enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_extent_offset: Option<u64>,
+    /// Generated Coil section family.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_section: Option<DesignCoilSection>,
+    /// Byte offset of the Coil section enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_section_offset: Option<u64>,
+    /// Radial placement of the generated Coil section.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_section_placement: Option<DesignCoilSectionPlacement>,
+    /// Byte offset of the Coil section-placement enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_section_placement_offset: Option<u64>,
+    /// Whether Coil angular travel is clockwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_clockwise: Option<bool>,
+    /// Byte offset of the Coil direction enum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub coil_clockwise_offset: Option<u64>,
     /// One-based ordinal among scopes of the same feature family.
     pub feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.

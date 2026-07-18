@@ -2307,6 +2307,80 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "native-axis helix is invalid");
                 }
             }
+            FeatureDefinition::Coil {
+                construction,
+                result,
+            } => {
+                use crate::features::{CoilExtent, CoilPlacement, CoilResult, CoilSection};
+
+                let placement_valid = match &construction.placement {
+                    CoilPlacement::Explicit {
+                        origin,
+                        axis,
+                        radial,
+                    } => {
+                        let dot = axis.x * radial.x + axis.y * radial.y + axis.z * radial.z;
+                        [origin.x, origin.y, origin.z]
+                            .into_iter()
+                            .all(f64::is_finite)
+                            && (axis.norm() - 1.0).abs() <= 1.0e-9
+                            && (radial.norm() - 1.0).abs() <= 1.0e-9
+                            && dot.abs() <= 1.0e-9
+                    }
+                    CoilPlacement::Native { native_ref } => !native_ref.trim().is_empty(),
+                };
+                let extent_valid = match construction.extent {
+                    CoilExtent::RevolutionsHeight {
+                        revolutions,
+                        height,
+                    } => revolutions.is_finite() && revolutions > 0.0 && height.0.is_finite(),
+                    CoilExtent::RevolutionsPitch { revolutions, pitch } => {
+                        revolutions.is_finite()
+                            && revolutions > 0.0
+                            && pitch.0.is_finite()
+                            && pitch.0 != 0.0
+                    }
+                    CoilExtent::HeightPitch { height, pitch } => {
+                        height.0.is_finite()
+                            && height.0 != 0.0
+                            && pitch.0.is_finite()
+                            && pitch.0 != 0.0
+                    }
+                    CoilExtent::Spiral {
+                        revolutions,
+                        radial_pitch,
+                    } => {
+                        revolutions.is_finite()
+                            && revolutions > 0.0
+                            && radial_pitch.0.is_finite()
+                            && radial_pitch.0 != 0.0
+                    }
+                };
+                let section_size = match construction.section {
+                    CoilSection::Circular { diameter } => diameter,
+                    CoilSection::Square { size }
+                    | CoilSection::ExternalTriangle { size }
+                    | CoilSection::InternalTriangle { size } => size,
+                };
+                if !placement_valid
+                    || !positive_feature_length(construction.diameter)
+                    || !extent_valid
+                    || !positive_feature_length(section_size)
+                    || !construction.taper.0.is_finite()
+                {
+                    feature_geometry_error(findings, feature, "coil geometry is invalid");
+                }
+                if let CoilResult::Boolean { operation, targets } = result {
+                    if matches!(
+                        operation,
+                        crate::features::BooleanOp::Unresolved
+                            | crate::features::BooleanOp::NewBody
+                    ) {
+                        feature_geometry_error(findings, feature, "coil Boolean result is invalid");
+                    }
+                    body_selections.push(targets);
+                }
+            }
             FeatureDefinition::Wrap {
                 profile,
                 face,
