@@ -14,6 +14,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 ## Design records
 
 - The relation from grouped `7C0B` stored values to `7C09` design-object fields is unresolved.
+- The one-, two-, and three-reference forms headed by `02`, `12`, and `52` omit the `01` ownership-role separator. Their reference roles and relation to the adjacent `7C0B` values are unresolved.
 
 ## Standard nested `V5_CFV2`
 

@@ -4713,22 +4713,19 @@ fn outer_object_graph_requires_the_head_separator_for_relations() {
 }
 
 #[test]
-fn outer_object_graph_reads_native_compact_head_roles() {
+fn outer_object_graph_does_not_assign_compact_head_reference_roles() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x02, 0x82], &[0xfe]),
         object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
         object_graph_record(&[0x52, 0x82, 0x83, 0x84], &[0xfe]),
     ]);
-    let graph = crate::object_graph::parse(&bytes).expect("native compact heads");
+    let graph = crate::object_graph::parse(&bytes).expect("compact heads");
 
-    assert_eq!(graph.records[0].owner_ref, Some(2));
-    assert_eq!(graph.records[0].class_ref, None);
-    assert_eq!(graph.records[1].owner_ref, Some(2));
-    assert_eq!(graph.records[1].class_ref, Some(3));
-    assert_eq!(graph.records[1].storage_ref, None);
-    assert_eq!(graph.records[2].owner_ref, Some(2));
-    assert_eq!(graph.records[2].class_ref, Some(3));
-    assert_eq!(graph.records[2].storage_ref, Some(4));
+    for record in graph.records {
+        assert_eq!(record.owner_ref, None);
+        assert_eq!(record.class_ref, None);
+        assert_eq!(record.storage_ref, None);
+    }
 }
 
 #[test]

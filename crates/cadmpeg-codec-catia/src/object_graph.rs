@@ -392,17 +392,7 @@ fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
         let roles = if matches!(head.get(1), Some(HeadToken::Separator)) {
             &head[2..]
         } else {
-            let native_role_count = match lead {
-                0x02 => 1,
-                0x12 => 2,
-                0x52 => 3,
-                _ => 0,
-            };
-            if head.len() == native_role_count + 1 {
-                &head[1..]
-            } else {
-                &[]
-            }
+            &[]
         };
         let owner_ref = match roles.first() {
             Some(HeadToken::Reference(value)) => Some(*value),
