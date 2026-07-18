@@ -6196,22 +6196,27 @@ fn possible_face_equations(faces: &[Vec<MeshFaceBoundaryAssignment>]) -> Vec<Vec
         .collect()
 }
 
-fn possible_face_choices(
+fn possible_face_choices_with_limit(
     faces: &[Vec<MeshFaceBoundaryAssignment>],
     face_equations: &[Vec<[usize; 2]>],
-) -> Vec<Vec<Vec<[usize; 2]>>> {
+    limit: usize,
+) -> Option<Vec<Vec<Vec<[usize; 2]>>>> {
     fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
         use_.edge
             .checked_mul(2)?
             .checked_add(usize::from(if end { !reversed } else { reversed }))
     }
 
-    faces
+    let budget = MeshConstraintBudget::new(limit);
+    let choices = faces
         .iter()
         .zip(face_equations)
         .map(|(assignments, fallback)| {
             let mut choices = HashSet::new();
             for assignment in assignments {
+                if !budget.charge() {
+                    return Vec::new();
+                }
                 let unknown = assignment
                     .boundaries
                     .iter()
@@ -6225,6 +6230,9 @@ fn possible_face_choices(
                     return vec![fallback.clone()];
                 }
                 for mask in 0..combinations {
+                    if !budget.charge() {
+                        return Vec::new();
+                    }
                     let mut variable = 0usize;
                     let directions = assignment
                         .boundaries
@@ -6274,7 +6282,17 @@ fn possible_face_choices(
             choices.sort_unstable();
             choices
         })
-        .collect()
+        .collect();
+    (!budget.exhausted.get()).then_some(choices)
+}
+
+#[cfg(test)]
+fn possible_face_choices(
+    faces: &[Vec<MeshFaceBoundaryAssignment>],
+    face_equations: &[Vec<[usize; 2]>],
+) -> Vec<Vec<Vec<[usize; 2]>>> {
+    possible_face_choices_with_limit(faces, face_equations, usize::MAX)
+        .expect("unbounded test face-choice materialization")
 }
 
 fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssignment>]) {
@@ -7843,10 +7861,11 @@ pub fn parse_standard_mesh_endpoint_candidates(
     let mut search = MeshSelectionSearch {
         assignments: &assignments,
         possible_face_equations: possible_face_equations(&assignments),
-        possible_face_choices: possible_face_choices(
+        possible_face_choices: possible_face_choices_with_limit(
             &assignments,
             &possible_face_equations(&assignments),
-        ),
+            MAX_MESH_CONSTRAINT_OPERATIONS,
+        )?,
         face_work,
         edge_candidates: &edge_candidates,
         edge_rows: &edge_rows,
@@ -8612,15 +8631,16 @@ mod motif_tests {
         mesh_candidates_equivalent, mesh_edge_points_compatible, mesh_face_endpoint_configurations,
         motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
         parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
-        possible_face_choices, possible_face_equations, propagate_edge_port_points,
-        propagate_partial_edge_port_points, prune_edge_candidates_by_port_domains,
-        prune_mesh_endpoint_pair_support, prune_mesh_endpoint_pair_support_with_limit,
-        reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
-        same_unordered_pair, standard_face_count, unique_coordinate_bijection,
-        unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
-        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget,
-        MeshEdgeRun, MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch,
-        StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        possible_face_choices, possible_face_choices_with_limit, possible_face_equations,
+        propagate_edge_port_points, propagate_partial_edge_port_points,
+        prune_edge_candidates_by_port_domains, prune_mesh_endpoint_pair_support,
+        prune_mesh_endpoint_pair_support_with_limit, reconstruct_incidence,
+        reconstruct_incidence_candidates, resolve_edge_faces_from_runs, same_unordered_pair,
+        standard_face_count, unique_coordinate_bijection, unique_duplicate_face_assignment,
+        uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget, MeshEdgeRun,
+        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
+        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -9289,6 +9309,21 @@ mod motif_tests {
             Some(&budget),
         ));
         assert!(budget.exhausted.get());
+    }
+
+    #[test]
+    fn face_choice_materialization_declines_when_its_work_budget_is_exhausted() {
+        let assignments = vec![vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: Some(false),
+            }]],
+        }]];
+        let equations = possible_face_equations(&assignments);
+
+        assert!(possible_face_choices_with_limit(&assignments, &equations, 0).is_none());
     }
 
     #[test]
