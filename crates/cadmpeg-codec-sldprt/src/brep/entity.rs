@@ -483,11 +483,15 @@ fn compact_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
             .copied()
             .filter(|next| next.disc == disc)
     };
-    let Some(disc_1c) = follows(region, 1, 0x001c) else {
-        return Vec::new();
-    };
-    if disc_1c.refs.get(1).is_some_and(|attr| *attr > 1) && follows(disc_1c, 1, 0x001e).is_none() {
-        return Vec::new();
+    if region.refs.get(1).is_some_and(|attr| *attr > 1) {
+        let Some(disc_1c) = follows(region, 1, 0x001c) else {
+            return Vec::new();
+        };
+        if disc_1c.refs.get(1).is_some_and(|attr| *attr > 1)
+            && follows(disc_1c, 1, 0x001e).is_none()
+        {
+            return Vec::new();
+        }
     }
     let Some(disc_18) = follows(region, 2, 0x0018) else {
         return Vec::new();
@@ -501,7 +505,10 @@ fn compact_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let Some(disc_10) = follows(disc_12, 2, 0x0010) else {
         return Vec::new();
     };
-    if follows(disc_10, 2, 0x000e).is_none() {
+    if follows(disc_10, 2, 0x000e).is_none()
+        && !(disc_10.refs.get(2).is_none_or(|attr| *attr <= 1)
+            && by_attr.values().any(|record| record.disc == 0x000e))
+    {
         return Vec::new();
     }
     let mut refs = by_attr.keys().copied().collect::<Vec<_>>();
@@ -822,6 +829,20 @@ mod tests {
             .map(|record| (record.attr, record))
             .collect::<HashMap<_, _>>();
         assert_eq!(compact_root_body(&without_companion).len(), 1);
+
+        let sentinel_upper_and_lower = vec![
+            flo2(30, 0x1a, [3, 1, 31, 1, 1, 1]),
+            flo2(31, 0x18, [3, 30, 32, 1, 1, 1]),
+            flo2(32, 0x14, [3, 31, 33, 1, 1, 1]),
+            flo2(33, 0x12, [3, 32, 34, 1, 1, 1]),
+            flo2(34, 0x10, [3, 33, 1, 1, 1, 1]),
+            record(40, 0x0e, [1; 6]),
+        ];
+        let sentinel_upper_and_lower = sentinel_upper_and_lower
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(compact_root_body(&sentinel_upper_and_lower).len(), 1);
     }
 
     #[test]
