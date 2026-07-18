@@ -213,8 +213,8 @@ pub(crate) fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
         .filter_map(|entry| scan.entry_bytes(&entry.name).ok())
         .filter_map(|bytes| {
             let headers = indexed_records(bytes);
-            let mut matrices = std::collections::HashMap::new();
-            let class_tag = xref_class_tag(bytes, &headers, &roles, &mut matrices)?;
+            let matrices = std::collections::HashMap::new();
+            let class_tag = xref_class_tag(bytes, &headers, &roles)?;
             Some((bytes, headers, class_tag, matrices))
         })
         .collect::<Vec<_>>();
@@ -256,24 +256,12 @@ struct IndexedRecord {
     record_index: u64,
 }
 
-fn xref_class_tag(
-    bytes: &[u8],
-    records: &[IndexedRecord],
-    roles: &[&str],
-    matrices: &mut std::collections::HashMap<u64, Option<[[f64; 4]; 4]>>,
-) -> Option<String> {
+fn xref_class_tag(bytes: &[u8], records: &[IndexedRecord], roles: &[&str]) -> Option<String> {
     let mut by_tag = std::collections::HashMap::<String, std::collections::HashSet<&str>>::new();
     for record in records {
         for role in roles {
             let tails = role_tails(bytes, record, role);
-            if tails.len() == 1
-                && occurrence_tail(bytes, tails[0]).is_some_and(|tail| {
-                    tail.transform.is_some()
-                        || tail.references.iter().any(|reference| {
-                            indexed_transform(bytes, records, *reference, matrices).is_some()
-                        })
-                })
-            {
+            if tails.len() == 1 && occurrence_tail(bytes, tails[0]).is_some() {
                 by_tag
                     .entry(record.class_tag.clone())
                     .or_default()
@@ -573,6 +561,21 @@ mod tests {
     }
 
     #[test]
+    fn identity_occurrence_records_identify_the_xref_class_and_preserve_multiplicity() {
+        let mut bytes = occurrence_record("role", 10, &[], None);
+        bytes.extend_from_slice(&occurrence_record("role", 11, &[], None));
+        let records = super::indexed_records(&bytes);
+        let mut matrices = std::collections::HashMap::new();
+        let class_tag = super::xref_class_tag(&bytes, &records, &["role"]);
+
+        assert_eq!(class_tag.as_deref(), Some("380"));
+        assert_eq!(
+            super::occurrence_transforms(&bytes, &records, "role", "380", &mut matrices),
+            vec![None, None]
+        );
+    }
+
+    #[test]
     fn occurrence_resolves_matrix_from_referenced_indexed_record() {
         let transform = [
             [0.0, 0.0, 1.0, 2.0],
@@ -584,7 +587,7 @@ mod tests {
         bytes.extend_from_slice(&occurrence_record("role", 10, &[42], None));
         let records = super::indexed_records(&bytes);
         let mut matrices = std::collections::HashMap::new();
-        let class_tag = super::xref_class_tag(&bytes, &records, &["role"], &mut matrices);
+        let class_tag = super::xref_class_tag(&bytes, &records, &["role"]);
 
         assert_eq!(class_tag.as_deref(), Some("380"));
         assert_eq!(
