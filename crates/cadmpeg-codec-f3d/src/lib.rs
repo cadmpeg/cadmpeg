@@ -1538,7 +1538,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 == placement.byte_offset.saturating_add(placement.frame_length)
                 && (compact || explicit || genesis_compact || genesis_explicit)
                 && scope.is_some_and(|scope| {
-                    scope.kind == "Sketch"
+                    design::design_feature_family(&scope.kind)
+                        == Some(design::DesignFeatureFamily::Sketch)
                         && scope.entity_id.as_deref() == Some(placement.entity_id.as_str())
                         && scope.entity_suffix == Some(placement.entity_suffix)
                 })

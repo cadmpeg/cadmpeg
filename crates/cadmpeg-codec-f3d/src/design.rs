@@ -8470,7 +8470,7 @@ pub fn decode_parameter_scopes(
             let Some(mut scope) = parse_parameter_scope(bytes, &header) else {
                 continue;
             };
-            if scope.kind == "Sketch" {
+            if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch) {
                 let start = usize::try_from(scope.byte_offset).ok();
                 let end = usize::try_from(scope.paired_byte_offset).ok();
                 let frame = start
@@ -10340,7 +10340,10 @@ pub fn decode_sketch_placements(
     entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "Sketch") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch))
+    {
         let (Some(entity_id), Some(entity_suffix)) =
             (scope.entity_id.as_deref(), scope.entity_suffix)
         else {
