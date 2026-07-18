@@ -1968,7 +1968,7 @@ fn standard_catpart_with_value_block() -> Vec<u8> {
     file
 }
 
-fn standard_catpart_with_revolution_design() -> Vec<u8> {
+fn standard_catpart_with_design_class(class: &str) -> Vec<u8> {
     let mut stream = object_graph_from_records(&[
         object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
         object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
@@ -1980,7 +1980,7 @@ fn standard_catpart_with_revolution_design() -> Vec<u8> {
         "catalogLinks",
         "",
         "CurrentFeature",
-        "Groove",
+        class,
     ]));
     let mut file = standard_catpart();
     file.splice(16..16, stream);
@@ -5875,7 +5875,7 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
 fn decode_projects_groove_class_as_cut_revolution() {
     let decoded = CatiaCodec
         .decode(
-            &mut Cursor::new(standard_catpart_with_revolution_design()),
+            &mut Cursor::new(standard_catpart_with_design_class("Groove")),
             &DecodeOptions::default(),
         )
         .expect("decode generated Groove design");
@@ -5898,7 +5898,36 @@ fn decode_projects_groove_class_as_cut_revolution() {
     ));
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains("1 revolution feature(s) transferred")
+            && loss.message.contains("1 revolution feature(s)")
+            && loss.message.contains("0 sketch feature(s)")
+    }));
+}
+
+#[test]
+fn decode_projects_sketch_class_as_unresolved_sketch_node() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_design_class("Sketch")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated Sketch design");
+
+    assert!(matches!(
+        decoded.ir.model.features.as_slice(),
+        [cadmpeg_ir::features::Feature {
+            name: Some(name),
+            definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
+                sketch: None,
+                ..
+            },
+            native_ref: Some(native_ref),
+            ..
+        }] if name == "Sketch" && native_ref.starts_with("catia:outer:design-object#")
+    ));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.message.contains("0 revolution feature(s)")
+            && loss.message.contains("1 sketch feature(s)")
     }));
 }
 
