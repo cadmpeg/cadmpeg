@@ -4238,10 +4238,10 @@ fn region_containing_points(
 ) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
     use cadmpeg_ir::features::SketchProfileRegion;
 
-    let polygons = sketch
+    let boundaries = sketch
         .profiles
         .iter()
-        .map(|profile| line_profile_vertices(profile, entities, tolerance))
+        .map(|profile| profile_boundary(profile, entities, tolerance))
         .collect::<Vec<_>>();
     let projected = points
         .iter()
@@ -4259,48 +4259,48 @@ fn region_containing_points(
     }) {
         return None;
     }
-    let containing = polygons
+    let containing = boundaries
         .iter()
         .enumerate()
-        .filter_map(|(index, polygon)| Some((index, polygon.as_ref()?)))
-        .filter(|(_, polygon)| {
+        .filter_map(|(index, boundary)| Some((index, boundary.as_ref()?)))
+        .filter(|(_, boundary)| {
             projected
                 .iter()
-                .all(|point| point_in_polygon(*point, polygon))
+                .all(|point| boundary.contains_point(*point))
         })
-        .map(|(index, polygon)| (index, polygon, polygon_area(polygon)))
+        .map(|(index, boundary)| (index, boundary, boundary.area()))
         .collect::<Vec<_>>();
     if containing.iter().enumerate().any(|(left_index, left)| {
-        containing.iter().skip(left_index + 1).any(|right| {
-            !polygon_strictly_contains(left.1, right.1)
-                && !polygon_strictly_contains(right.1, left.1)
-        })
+        containing
+            .iter()
+            .skip(left_index + 1)
+            .any(|right| !left.1.strictly_contains(right.1) && !right.1.strictly_contains(left.1))
     }) {
         return None;
     }
-    let &(outer, outer_polygon, _) = containing
+    let &(outer, outer_boundary, _) = containing
         .iter()
         .min_by(|left, right| left.2.total_cmp(&right.2))?;
     let mut holes = Vec::new();
-    for (candidate, polygon) in polygons
+    for (candidate, boundary) in boundaries
         .iter()
         .enumerate()
-        .filter_map(|(index, polygon)| Some((index, polygon.as_ref()?)))
+        .filter_map(|(index, boundary)| Some((index, boundary.as_ref()?)))
     {
-        if candidate == outer || !polygon_strictly_contains(outer_polygon, polygon) {
+        if candidate == outer || !outer_boundary.strictly_contains(boundary) {
             continue;
         }
-        let candidate_area = polygon_area(polygon);
-        let parent = polygons
+        let candidate_area = boundary.area();
+        let parent = boundaries
             .iter()
             .enumerate()
             .filter_map(|(index, parent)| Some((index, parent.as_ref()?)))
             .filter(|(index, parent)| {
                 *index != candidate
-                    && polygon_area(parent) > candidate_area
-                    && polygon_strictly_contains(parent, polygon)
+                    && parent.area() > candidate_area
+                    && parent.strictly_contains(boundary)
             })
-            .min_by(|left, right| polygon_area(left.1).total_cmp(&polygon_area(right.1)))
+            .min_by(|left, right| left.1.area().total_cmp(&right.1.area()))
             .map(|(index, _)| index);
         if parent == Some(outer) {
             holes.push(u32::try_from(candidate).ok()?);
@@ -4310,6 +4310,70 @@ fn region_containing_points(
         outer: u32::try_from(outer).ok()?,
         holes,
     })
+}
+
+enum ProfileBoundary {
+    Polygon(Vec<Point2>),
+    Circle { center: Point2, radius: f64 },
+}
+
+impl ProfileBoundary {
+    fn area(&self) -> f64 {
+        match self {
+            Self::Polygon(vertices) => polygon_area(vertices),
+            Self::Circle { radius, .. } => std::f64::consts::PI * radius * radius,
+        }
+    }
+
+    fn contains_point(&self, point: Point2) -> bool {
+        match self {
+            Self::Polygon(vertices) => point_in_polygon(point, vertices),
+            Self::Circle { center, radius } => point_distance(*center, point) < *radius,
+        }
+    }
+
+    fn strictly_contains(&self, inner: &Self) -> bool {
+        match (self, inner) {
+            (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
+            (
+                Self::Circle {
+                    center: outer_center,
+                    radius: outer_radius,
+                },
+                Self::Circle {
+                    center: inner_center,
+                    radius: inner_radius,
+                },
+            ) => point_distance(*outer_center, *inner_center) + inner_radius < *outer_radius,
+            (Self::Polygon(outer), Self::Circle { center, radius }) => {
+                point_in_polygon(*center, outer)
+                    && polygon_edges(outer)
+                        .all(|edge| point_segment_distance(*center, edge) > *radius)
+            }
+            (Self::Circle { center, radius }, Self::Polygon(inner)) => inner
+                .iter()
+                .all(|point| point_distance(*center, *point) < *radius),
+        }
+    }
+}
+
+fn profile_boundary(
+    profile: &[cadmpeg_ir::sketches::SketchEntityUse],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> Option<ProfileBoundary> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    if let [use_] = profile {
+        let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+        if let SketchGeometry::Circle { center, radius } = entity.geometry {
+            return Some(ProfileBoundary::Circle {
+                center,
+                radius: radius.0,
+            });
+        }
+    }
+    line_profile_vertices(profile, entities, tolerance).map(ProfileBoundary::Polygon)
 }
 
 fn line_profile_vertices(
@@ -4385,6 +4449,21 @@ fn polygon_edges(vertices: &[Point2]) -> impl Iterator<Item = (Point2, Point2)> 
         .copied()
         .zip(vertices.iter().copied().cycle().skip(1))
         .take(vertices.len())
+}
+
+fn point_segment_distance(point: Point2, (start, end): (Point2, Point2)) -> f64 {
+    let du = end.u - start.u;
+    let dv = end.v - start.v;
+    let length_squared = du * du + dv * dv;
+    if length_squared == 0.0 {
+        return point_distance(point, start);
+    }
+    let parameter =
+        (((point.u - start.u) * du + (point.v - start.v) * dv) / length_squared).clamp(0.0, 1.0);
+    point_distance(
+        point,
+        Point2::new(start.u + parameter * du, start.v + parameter * dv),
+    )
 }
 
 fn segments_intersect(left: (Point2, Point2), right: (Point2, Point2)) -> bool {
@@ -15399,6 +15478,83 @@ mod relation_tests {
             region_containing_points(&sketch, &entities, &[Point3::new(5.0, 5.0, 0.0)], 1.0e-6,),
             Some(SketchProfileRegion {
                 outer: 2,
+                holes: Vec::new(),
+            })
+        );
+    }
+
+    #[test]
+    fn polygon_and_circle_boundaries_resolve_one_atomic_region() {
+        let sketch_id = SketchId("sketch".into());
+        let corners = [
+            Point2::new(-5.0, -5.0),
+            Point2::new(5.0, -5.0),
+            Point2::new(5.0, 5.0),
+            Point2::new(-5.0, 5.0),
+        ];
+        let mut entities = Vec::new();
+        let mut outer = Vec::new();
+        for index in 0..corners.len() {
+            let id = SketchEntityId(format!("line-{index}"));
+            outer.push(SketchEntityUse {
+                entity: id.clone(),
+                reversed: false,
+            });
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: corners[index],
+                    end: corners[(index + 1) % corners.len()],
+                },
+            });
+        }
+        let circle = SketchEntityId("circle".into());
+        entities.push(SketchEntity {
+            id: circle.clone(),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+            },
+        });
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: vec![
+                outer,
+                vec![SketchEntityUse {
+                    entity: circle,
+                    reversed: false,
+                }],
+            ],
+            native_ref: None,
+        };
+        let expected = SketchProfileRegion {
+            outer: 0,
+            holes: vec![1],
+        };
+
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(4.0, 0.0, 0.0)], 1.0e-6,),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(0.0, 0.0, 0.0)], 1.0e-6,),
+            Some(SketchProfileRegion {
+                outer: 1,
                 holes: Vec::new(),
             })
         );
