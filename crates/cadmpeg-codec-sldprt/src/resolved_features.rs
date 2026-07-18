@@ -268,7 +268,8 @@ pub(crate) fn relation_bindings(
                 .iter()
                 .filter(|scalar| scalar.offset > class.offset)
                 .min_by_key(|scalar| scalar.offset)?;
-            (scalar.offset - class.offset <= 128).then_some((class, scalar, family))
+            (scalar.offset - class.offset <= 128 && relation_signature(family, &scalar.operands))
+                .then_some((class, scalar, family))
         })
         .enumerate()
         .map(
@@ -417,6 +418,59 @@ mod marker_tests {
             vec![replacement, second]
         );
         assert_eq!(payload.len(), 138);
+    }
+
+    #[test]
+    fn relation_binding_requires_family_operand_signature() {
+        use super::relation_bindings;
+        use crate::records::{
+            FeatureInputClass, FeatureInputClassRole, FeatureInputScalar, FeatureInputScalarRole,
+        };
+
+        let class = FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 10,
+            name: "sgLLDist".into(),
+            role: FeatureInputClassRole::SketchConstraint,
+        };
+        let operand = |kind, entity_index| FeatureInputOperand {
+            offset: 0,
+            reference_ref: String::new(),
+            kind,
+            entity_index,
+            entity_ref: None,
+        };
+        let scalar = |kind| FeatureInputScalar {
+            id: "scalar".into(),
+            parent: "lane".into(),
+            feature_ref: Some("sketch".into()),
+            ordinal: 0,
+            offset: 20,
+            object_id: 1,
+            name: "name".into(),
+            value: 1.0,
+            role: FeatureInputScalarRole::Driving,
+            entity_indices: vec![0, 1],
+            operands: vec![operand(kind, 0), operand(kind, 1)],
+        };
+
+        assert_eq!(
+            relation_bindings(
+                "lane",
+                std::slice::from_ref(&class),
+                &[scalar(FeatureInputOperandKind::E1)],
+            )
+            .len(),
+            1
+        );
+        assert!(relation_bindings(
+            "lane",
+            &[class],
+            &[scalar(FeatureInputOperandKind::Native(0x8dda))],
+        )
+        .is_empty());
     }
 
     #[test]
