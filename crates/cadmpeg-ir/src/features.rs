@@ -160,6 +160,8 @@ pub struct ParameterPmi {
 pub enum PmiDimensionSubtype {
     /// Linear distance.
     Linear,
+    /// Angular extent in radians.
+    Angle,
     /// Diameter.
     Diameter,
     /// Radius.

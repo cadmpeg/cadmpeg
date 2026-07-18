@@ -90,6 +90,7 @@ pub(crate) fn patch_payload(
         let semantic = parameter.pmi.as_ref().expect("filtered above");
         let subtype = match record.subtype.as_str() {
             "Linear" => PmiDimensionSubtype::Linear,
+            "Angle" => PmiDimensionSubtype::Angle,
             "Diameter" => PmiDimensionSubtype::Diameter,
             "Radial" => PmiDimensionSubtype::Radial,
             other => PmiDimensionSubtype::Native(other.to_string()),
@@ -100,16 +101,25 @@ pub(crate) fn patch_payload(
                 record.id
             )));
         }
-        let Some(ParameterValue::Length(length)) = parameter.value else {
-            return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
-                "SLDPRT PMI record {} requires a length-valued parameter",
-                record.id
-            )));
+        let native_value = match (&subtype, &parameter.value) {
+            (PmiDimensionSubtype::Angle, Some(ParameterValue::Angle(angle))) => angle.0,
+            (
+                PmiDimensionSubtype::Linear
+                | PmiDimensionSubtype::Diameter
+                | PmiDimensionSubtype::Radial,
+                Some(ParameterValue::Length(length)),
+            ) => length.0 / 1000.0,
+            _ => {
+                return Err(cadmpeg_ir::CodecError::NotImplemented(format!(
+                    "SLDPRT PMI record {} has a value incompatible with its dimension subtype",
+                    record.id
+                )));
+            }
         };
         patch_bytes(
             payload,
             record.value_offset,
-            &(length.0 / 1000.0).to_be_bytes(),
+            &native_value.to_be_bytes(),
             &record.id,
         )?;
         let precision = u8::try_from(semantic.precision)
@@ -207,6 +217,7 @@ pub(crate) fn apply_to_parameters(
         };
         let subtype = match record.subtype.as_str() {
             "Linear" => PmiDimensionSubtype::Linear,
+            "Angle" => PmiDimensionSubtype::Angle,
             "Diameter" => PmiDimensionSubtype::Diameter,
             "Radial" => PmiDimensionSubtype::Radial,
             other => PmiDimensionSubtype::Native(other.to_string()),
@@ -217,6 +228,13 @@ pub(crate) fn apply_to_parameters(
                 format!("{millimetres}mm"),
                 None,
                 Some(ParameterValue::Length(Length(millimetres))),
+            ),
+            PmiDimensionSubtype::Angle => (
+                record.value.to_string(),
+                None,
+                Some(ParameterValue::Angle(cadmpeg_ir::features::Angle(
+                    record.value,
+                ))),
             ),
             PmiDimensionSubtype::Diameter => (
                 format!("<MOD-DIAM>{millimetres}mm"),
