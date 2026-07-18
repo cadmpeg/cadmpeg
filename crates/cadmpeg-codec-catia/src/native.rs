@@ -14,12 +14,13 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 53;
+pub const CATIA_NATIVE_VERSION: u32 = 54;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
+    "consolidated_edge_runs",
     "consolidated_pcurves",
     "design_objects",
     "external_references",
@@ -70,6 +71,34 @@ pub struct CatiaConsolidatedPcurve {
     #[serde(with = "cadmpeg_ir::bytes")]
     #[schemars(with = "String")]
     pub tail: Vec<u8>,
+}
+
+/// One complete consolidated historical edge run referencing two retained
+/// pcurve records.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedEdgeRun {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the first pcurve frame.
+    pub byte_offset: u64,
+    /// Retained pcurve identities in serialized side order.
+    pub pcurves: [String; 2],
+    /// Shared native parameter interval.
+    pub parameter_range: [f64; 2],
+    /// Shared geometric tolerance.
+    pub tolerance: f64,
+    /// Counted allocation-reference vectors of the two side uses.
+    pub use_references: [[u32; 2]; 2],
+    /// Terminal side-use sense bytes in serialized order.
+    pub use_senses: [u8; 2],
+    /// Allocation-local curve reference terminating the use chain.
+    pub curve_ref: u32,
+    /// Global native endpoint identities in edge direction.
+    pub vertex_refs: [u32; 2],
+    /// Allocation-local endpoint selectors.
+    pub parameter_selectors: [u32; 2],
+    /// Terminal edge-node layout byte.
+    pub tail: u8,
 }
 
 /// One complete outer FINJPL segment retained with its framing identity.
@@ -460,6 +489,9 @@ pub struct CatiaNative {
     /// Framed source-schema name catalogs.
     #[serde(default)]
     pub catalogs: Vec<CatiaCatalog>,
+    /// Complete consolidated historical edge runs.
+    #[serde(default)]
+    pub consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun>,
     /// Consolidated pcurve jets retained before support resolution.
     #[serde(default)]
     pub consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
@@ -489,6 +521,7 @@ impl Default for CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
+            consolidated_edge_runs: Vec::new(),
             consolidated_pcurves: Vec::new(),
             design_objects: Vec::new(),
             external_references: Vec::new(),
@@ -531,6 +564,65 @@ fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
         .collect()
 }
 
+fn consolidated_edge_runs(
+    bytes: &[u8],
+    pcurves: &[CatiaConsolidatedPcurve],
+) -> Vec<CatiaConsolidatedEdgeRun> {
+    let pcurve_ids = pcurves
+        .iter()
+        .map(|pcurve| (pcurve.byte_offset, pcurve.id.clone()))
+        .collect::<HashMap<_, _>>();
+    geometry::consolidated_topology_edge_runs(bytes)
+        .into_iter()
+        .filter_map(|run| {
+            if !run.edge.co_parametric || !run.identity_chain_consistent {
+                return None;
+            }
+            let use_references = run
+                .uses
+                .iter()
+                .map(|use_| use_.references.as_deref()?.try_into().ok())
+                .collect::<Option<Vec<[u32; 2]>>>()?
+                .try_into()
+                .ok()?;
+            let use_senses = run
+                .uses
+                .each_ref()
+                .map(|use_| match use_.sense? {
+                    geometry::B2UseSense::Sense84 => Some(0x84),
+                    geometry::B2UseSense::Sense88 => Some(0x88),
+                })
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?
+                .try_into()
+                .ok()?;
+            let pcurve_offsets = run.edge.pcurves.each_ref().map(|pcurve| pcurve.pos as u64);
+            Some((run, use_references, use_senses, pcurve_offsets))
+        })
+        .enumerate()
+        .filter_map(
+            |(index, (run, use_references, use_senses, pcurve_offsets))| {
+                Some(CatiaConsolidatedEdgeRun {
+                    id: format!("catia:consolidated:edge-run#{index}"),
+                    byte_offset: pcurve_offsets[0],
+                    pcurves: [
+                        pcurve_ids.get(&pcurve_offsets[0])?.clone(),
+                        pcurve_ids.get(&pcurve_offsets[1])?.clone(),
+                    ],
+                    parameter_range: run.edge.parameters.range,
+                    tolerance: run.edge.parameters.tolerance,
+                    use_references,
+                    use_senses,
+                    curve_ref: run.node.curve_ref,
+                    vertex_refs: [run.node.start_vertex_ref, run.node.end_vertex_ref],
+                    parameter_selectors: [run.node.start_parameter_ref, run.node.end_parameter_ref],
+                    tail: run.node.tail,
+                })
+            },
+        )
+        .collect()
+}
+
 fn validate_consolidated_pcurves(
     pcurves: &[CatiaConsolidatedPcurve],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
@@ -559,6 +651,54 @@ fn validate_consolidated_pcurves(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "consolidated pcurve `{}` is structurally invalid",
                 pcurve.id
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn validate_consolidated_edge_runs(
+    runs: &[CatiaConsolidatedEdgeRun],
+    pcurves: &[CatiaConsolidatedPcurve],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    let pcurves = pcurves
+        .iter()
+        .map(|pcurve| (pcurve.id.as_str(), pcurve))
+        .collect::<HashMap<_, _>>();
+    for (index, run) in runs.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:edge-run#{index}");
+        let pcurve_offsets = run
+            .pcurves
+            .each_ref()
+            .map(|id| pcurves.get(id.as_str()).map(|pcurve| pcurve.byte_offset));
+        let pcurve_ranges = run
+            .pcurves
+            .each_ref()
+            .map(|id| pcurves.get(id.as_str()).map(|pcurve| pcurve.range));
+        let chain = run
+            .curve_ref
+            .checked_sub(2)
+            .zip(run.curve_ref.checked_sub(1));
+        if run.id != expected_id
+            || pcurve_offsets[0] != Some(run.byte_offset)
+            || pcurve_offsets[1].is_none()
+            || pcurve_offsets[0] >= pcurve_offsets[1]
+            || pcurve_ranges != [Some(run.parameter_range), Some(run.parameter_range)]
+            || run.parameter_range[0] >= run.parameter_range[1]
+            || !run.parameter_range.iter().all(|value| value.is_finite())
+            || !run.tolerance.is_finite()
+            || run.tolerance < 0.0
+            || chain.is_none_or(|(first, second)| {
+                run.use_references != [[first, second], [second, run.curve_ref]]
+            })
+            || run.use_senses != [0x88, 0x84]
+            || run.parameter_selectors != [2, 1]
+            || !matches!(run.tail, 0x01 | 0x21)
+            || index > 0 && runs[index - 1].byte_offset >= run.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated edge run `{}` is structurally invalid",
+                run.id
             )));
         }
     }
@@ -980,10 +1120,12 @@ impl CatiaNative {
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
         let consolidated_pcurves = consolidated_pcurves(bytes);
+        let consolidated_edge_runs = consolidated_edge_runs(bytes, &consolidated_pcurves);
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
+            consolidated_edge_runs,
             consolidated_pcurves,
             design_objects,
             external_references,
@@ -1149,6 +1291,10 @@ impl CatiaNative {
             namespace.arena_as("consolidated_pcurves")?;
         consolidated_pcurves.sort_by_key(|pcurve| pcurve.byte_offset);
         validate_consolidated_pcurves(&consolidated_pcurves)?;
+        let mut consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun> =
+            namespace.arena_as("consolidated_edge_runs")?;
+        consolidated_edge_runs.sort_by_key(|run| run.byte_offset);
+        validate_consolidated_edge_runs(&consolidated_edge_runs, &consolidated_pcurves)?;
         validate_native_links(
             &alias_rows,
             &catalogs,
@@ -1160,6 +1306,7 @@ impl CatiaNative {
             version: namespace.version,
             alias_rows,
             catalogs,
+            consolidated_edge_runs,
             consolidated_pcurves,
             design_objects,
             external_references,
@@ -1205,6 +1352,7 @@ impl CatiaNative {
             .flat_map(|graph| graph.records.iter().cloned())
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
         namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
         namespace.set_arena("design_objects", &self.design_objects)?;
         namespace.set_arena("external_references", &self.external_references)?;
@@ -1233,6 +1381,7 @@ impl CatiaNative {
             version: _,
             alias_rows,
             mut catalogs,
+            consolidated_edge_runs,
             consolidated_pcurves,
             design_objects,
             external_references,
@@ -1252,6 +1401,7 @@ impl CatiaNative {
 
         namespace.version = CATIA_NATIVE_VERSION;
         namespace.set_arena_owned("catalogs", catalogs)?;
+        namespace.set_arena_owned("consolidated_edge_runs", consolidated_edge_runs)?;
         namespace.set_arena_owned("consolidated_pcurves", consolidated_pcurves)?;
         namespace.set_arena_owned("design_objects", design_objects)?;
         namespace.set_arena_owned("external_references", external_references)?;

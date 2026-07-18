@@ -376,6 +376,8 @@ A `B:06` side-use payload ending in `0x84` or `0x88` stores `0x80+n`, exactly `n
 
 The start/end references form a global native vertex-identity namespace across complete edge runs. Equal references join incident physical edges independently of endpoint coordinates. Curve-support references are local to each run allocation and repeat across distinct physical edges; serialized run occurrence identifies the graph edge. Connected components of this graph partition disconnected edge populations before face ownership is applied.
 
+Every complete run is retained as a typed native historical edge record referencing the two typed pcurve records by identity. It retains the shared range and tolerance, both use vectors and senses, endpoint identities, local selectors, and terminal node layout byte.
+
 ### 6.4 Consolidated guide and topology metadata
 
 - **`a5 03 39`** stores `K`, degree, repeated `K`, distinct knots, three `K × 6 × f64le` blocks, and a 48-byte tail. Each position-site pair is two triples `(P,Q)` satisfying `|Q−P|=1`; `P` is a guide-curve point and `Q−P` is its unit reference direction. The next two blocks contain first and second derivatives of all six channels. For degree 5, the first three channels of the position and derivative blocks define the exact guide curve. Each knot span becomes one quintic Bézier segment using its two endpoint positions, first derivatives, and second derivatives; adjacent segments join in one non-rational clamped B-spline with multiplicity six at every stored knot.

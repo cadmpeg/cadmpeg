@@ -1726,10 +1726,9 @@ fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
         4 * curve + 1,
         0x84,
     ]);
-    let references = [curve, start, end, 2, 1];
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x5e, 0x06, 0x05]);
-    bytes.extend(references.map(|value| 4 * value + 1));
-    bytes.push(0x21);
+    let mut payload = vec![4 * curve + 1, 0x06, start, 0x06, end, 9, 5, 0x21];
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x5e, u8::try_from(payload.len()).unwrap(), 0x05]);
+    bytes.append(&mut payload);
     bytes
 }
 
@@ -4015,6 +4014,38 @@ fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA pcurve for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_retains_consolidated_historical_edge_runs() {
+    let bytes = a5_native_edge_run_stream(6, 139, 142);
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.consolidated_pcurves.len(), 2);
+    assert_eq!(native.consolidated_edge_runs.len(), 1);
+    let run = &native.consolidated_edge_runs[0];
+    assert_eq!(
+        run.pcurves,
+        ["catia:consolidated:pcurve#0", "catia:consolidated:pcurve#1"]
+    );
+    assert_eq!(run.use_references, [[4, 5], [5, 6]]);
+    assert_eq!(run.use_senses, [0x88, 0x84]);
+    assert_eq!(run.vertex_refs, [139, 142]);
+    assert_eq!(run.parameter_selectors, [2, 1]);
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA edge run");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA edge run"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_edge_runs[0].pcurves[1] = "missing".to_string();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA edge run for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 }
 
