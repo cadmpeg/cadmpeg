@@ -763,6 +763,28 @@ pub fn project_parameter_design_with_edge_identities(
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 })
+            } else if scope.kind == "WorkPlane" {
+                scope.work_plane_transform.map_or_else(
+                    || FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    },
+                    |transform| FeatureDefinition::DatumPlane {
+                        origin: Point3::new(
+                            transform[0][3] * 10.0,
+                            transform[1][3] * 10.0,
+                            transform[2][3] * 10.0,
+                        ),
+                        normal: Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                        u_axis: Vector3::new(transform[0][0], transform[1][0], transform[2][0]),
+                    },
+                )
             } else if matches!(
                 family,
                 Some(DesignFeatureFamily::CircularPattern | DesignFeatureFamily::Mirror)
@@ -12316,6 +12338,16 @@ pub fn decode_parameter_scopes(
                         Some(scope.byte_offset.saturating_add(*relative_offset as u64));
                 }
             }
+            if scope.kind == "WorkPlane" {
+                if let Some(frame) = exact_work_plane_frame(bytes, &scope) {
+                    scope.work_plane_transform = Some(frame.transform);
+                    scope.work_plane_transform_offset = Some(frame.transform_offset);
+                    if let Some((reference, reference_offset)) = frame.reference {
+                        scope.work_plane_reference = Some(reference);
+                        scope.work_plane_reference_offset = Some(reference_offset);
+                    }
+                }
+            }
             scope.id = format!(
                 "f3d:{}:design-parameter-scope#{}",
                 entry.name, scope.byte_offset
@@ -12326,6 +12358,65 @@ pub fn decode_parameter_scopes(
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WorkPlaneFrame {
+    transform: [[f64; 4]; 4],
+    transform_offset: u64,
+    reference: Option<(u32, u64)>,
+}
+
+fn exact_work_plane_frame(bytes: &[u8], scope: &DesignParameterScope) -> Option<WorkPlaneFrame> {
+    let mut candidates = Vec::new();
+    for record_index in &scope.reference_members {
+        let mut headers = Vec::new();
+        let mut position = 0;
+        while let Some(at) = next_indexed_record_offset(bytes, position) {
+            if u32_at(bytes, at + 7) == Some(*record_index) {
+                headers.push(at);
+            }
+            position = at + 1;
+        }
+        for pair in headers.windows(2) {
+            let start = pair[0];
+            let paired = pair[1];
+            let frame_length = paired.checked_sub(start)?;
+            let (matrix_at, reference) = match frame_length {
+                352 if bytes.get(start + 55) == Some(&1)
+                    && bytes.get(start + 56..start + 66) == Some(&[0u8; 10][..]) =>
+                {
+                    (start + 66, None)
+                }
+                362 if bytes.get(start + 55..start + 58) == Some(&[1, 0, 1][..])
+                    && bytes.get(start + 62..start + 76) == Some(&[0u8; 14][..]) =>
+                {
+                    (
+                        start + 76,
+                        Some((u32_at(bytes, start + 58)?, (start + 58) as u64)),
+                    )
+                }
+                _ => continue,
+            };
+            let values = f64s_at(bytes, matrix_at, 16)?;
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.into_iter().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            if !valid_sketch_transform(&transform) {
+                continue;
+            }
+            candidates.push(WorkPlaneFrame {
+                transform,
+                transform_offset: matrix_at as u64,
+                reference,
+            });
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecordHeader> {
@@ -14364,6 +14455,10 @@ fn parse_parameter_scope(
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
         reference_members: reference_members.clone(),
         reference_member_offsets: reference_member_offsets.clone(),
+        work_plane_transform: None,
+        work_plane_transform_offset: None,
+        work_plane_reference: None,
+        work_plane_reference_offset: None,
         extrude_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -17162,14 +17257,14 @@ mod relation_tests {
         contiguous_i32_program, decode_constraint_kinds, decode_fillet_radius_groups,
         decode_pattern_definition, design_feature_family, design_parameter_prefix,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, expression_identifiers,
-        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
-        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        next_indexed_record_offset_with_index, null_locus_dimension_definition,
-        offset_parameter_factor, parse_construction_operand_group,
+        exact_counted_offset, exact_offset_constraint, exact_work_plane_frame,
+        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
+        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        historical_profile_face_candidates, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, next_indexed_record_offset_with_index,
+        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -19728,6 +19823,55 @@ mod relation_tests {
         assert_eq!(generic_scope.kind, "Sketch");
         assert_eq!(generic_scope.reference_members, [55, 56]);
 
+        let work_plane_at = bytes.len();
+        let mut work_plane = vec![0; 362];
+        work_plane[0..4].copy_from_slice(&3u32.to_le_bytes());
+        work_plane[4..7].copy_from_slice(b"293");
+        work_plane[7..11].copy_from_slice(&55u32.to_le_bytes());
+        work_plane[55] = 1;
+        work_plane[57] = 1;
+        work_plane[58..62].copy_from_slice(&99u32.to_le_bytes());
+        let transform: [[f64; 4]; 4] = [
+            [0.0, -1.0, 0.0, 2.0],
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 0.0, 1.0, 4.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = 76 + ordinal * 8;
+            work_plane[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        work_plane.extend_from_slice(&3u32.to_le_bytes());
+        work_plane.extend_from_slice(b"261");
+        work_plane.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&work_plane);
+        let decoded = exact_work_plane_frame(&bytes, &scope).expect("exact WorkPlane frame");
+        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform_offset, (work_plane_at + 76) as u64);
+        assert_eq!(decoded.reference, Some((99, (work_plane_at + 58) as u64)));
+
+        let direct_at = bytes.len();
+        let mut direct = vec![0; 352];
+        direct[0..4].copy_from_slice(&3u32.to_le_bytes());
+        direct[4..7].copy_from_slice(b"293");
+        direct[7..11].copy_from_slice(&56u32.to_le_bytes());
+        direct[55] = 1;
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = 66 + ordinal * 8;
+            direct[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        direct.extend_from_slice(&3u32.to_le_bytes());
+        direct.extend_from_slice(b"261");
+        direct.extend_from_slice(&56u32.to_le_bytes());
+        bytes.extend_from_slice(&direct);
+        let mut direct_scope = scope.clone();
+        direct_scope.reference_members = vec![56];
+        let decoded =
+            exact_work_plane_frame(&bytes, &direct_scope).expect("direct WorkPlane frame");
+        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
+        assert_eq!(decoded.reference, None);
+
         let mut companion = DesignParameterCompanion {
             id: "f3d:native:parameter-companion#11".into(),
             byte_offset: 0,
@@ -20092,6 +20236,10 @@ mod relation_tests {
             reference_count_offset: 1080,
             reference_members: vec![100, 200, 201],
             reference_member_offsets: vec![1085, 1096, 1107],
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -20290,6 +20438,10 @@ mod relation_tests {
             reference_count_offset: 1080,
             reference_members: vec![100],
             reference_member_offsets: vec![1085],
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -20565,6 +20717,10 @@ mod relation_tests {
             reference_count_offset: 1080,
             reference_members: vec![100],
             reference_member_offsets: vec![1085],
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -24183,6 +24339,10 @@ mod relation_tests {
             reference_count_offset: 180,
             reference_members: vec![44, 44],
             reference_member_offsets: vec![185, 196],
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -24286,6 +24446,10 @@ mod relation_tests {
             reference_count_offset: 0,
             reference_members: Vec::new(),
             reference_member_offsets: Vec::new(),
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -24436,6 +24600,10 @@ mod relation_tests {
             reference_count_offset: 180,
             reference_members: vec![100],
             reference_member_offsets: vec![185],
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: Some(DesignExtrudeProfileOperand {
                 scope_reference_ordinal: 0,
                 record_index: 100,
@@ -24928,6 +25096,10 @@ mod relation_tests {
             reference_count_offset: byte_offset + 80,
             reference_members: vec![record_index + 1],
             reference_member_offsets: vec![byte_offset + 85],
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -25568,6 +25740,10 @@ mod relation_tests {
             reference_count_offset: 180,
             reference_members: vec![100, 101],
             reference_member_offsets: vec![185, 196],
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -25760,6 +25936,10 @@ mod relation_tests {
             reference_count_offset: byte_offset + 80,
             reference_members: vec![record_index + 1],
             reference_member_offsets: vec![byte_offset + 85],
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -25854,6 +26034,10 @@ mod relation_tests {
                 reference_count_offset: byte_offset + 80,
                 reference_members: Vec::new(),
                 reference_member_offsets: Vec::new(),
+                work_plane_transform: None,
+                work_plane_transform_offset: None,
+                work_plane_reference: None,
+                work_plane_reference_offset: None,
                 extrude_profile: None,
                 entity_id: None,
                 entity_suffix: None,

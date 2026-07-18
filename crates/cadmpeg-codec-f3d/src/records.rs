@@ -860,6 +860,18 @@ pub struct DesignParameterScope {
     pub reference_members: Vec<u32>,
     /// Byte offsets parallel to `reference_members`.
     pub reference_member_offsets: Vec<u64>,
+    /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_plane_transform: Option<[[f64; 4]; 4]>,
+    /// Byte offset of the `WorkPlane` frame's explicit 16-f64 matrix.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_plane_transform_offset: Option<u64>,
+    /// Construction record referenced by the `WorkPlane` frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_plane_reference: Option<u32>,
+    /// Byte offset of the `WorkPlane` construction reference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_plane_reference_offset: Option<u64>,
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_profile: Option<DesignExtrudeProfileOperand>,
