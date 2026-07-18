@@ -34,12 +34,11 @@ use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
 use cadmpeg_ir::Exactness;
 use cadmpeg_ir::SourceFidelity;
-use cadmpeg_ir::SourceObjectAssociation;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::container::{self, ContainerScan};
 use crate::geometry;
-use crate::native::CatiaNative;
+use crate::native::{cgm_source, CatiaNative};
 use crate::topology;
 use crate::variant::Variant;
 
@@ -155,18 +154,6 @@ fn annotate(
     let stream = annotations.stream(format!("catia:{stream_name}"));
     annotations.note(&id, stream, offset).tag(tag);
     annotations.exactness(id, exactness);
-}
-
-fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
-    SourceObjectAssociation {
-        format: "catia".to_string(),
-        object_id: format!("cgm-{kind}:{tag:06x}"),
-        name: None,
-        color: None,
-        visible: None,
-        layer: None,
-        instance_path: Vec::new(),
-    }
 }
 
 fn neutral_model_is_admissible(ir: &CadIr, pending_unknowns: &[UnknownRecord]) -> bool {
@@ -4848,7 +4835,7 @@ fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuil
         ir.model.surfaces.push(Surface {
             id: surface_id.clone(),
             geometry: SurfaceGeometry::Unknown { record: None },
-            source_object: None,
+            source_object: Some(cgm_source("surface", jet.object_id)),
         });
 
         let procedural_id = ProceduralSurfaceId(format!(

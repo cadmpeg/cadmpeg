@@ -6540,6 +6540,13 @@ fn decode_object_stream_transfers_a8_rolling_ball_jet() {
         .expect("rolling-ball provenance tag");
     assert!(tag.contains("object_id:12345678"));
     assert!(tag.contains("multiplicities:[6, 6]"));
+    assert_eq!(
+        decoded.ir.model.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| (source.format.as_str(), source.object_id.as_str())),
+        Some(("catia", "cgm-surface:12345678"))
+    );
 }
 
 #[test]
@@ -6585,6 +6592,16 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert_eq!(result.ir.model.coedges.len(), 3);
     assert_eq!(result.ir.model.edges.len(), 3);
     assert_eq!(result.ir.model.curves.len(), 3);
+    assert!(result.ir.model.surfaces.iter().all(|surface| {
+        surface.source_object.as_ref().is_some_and(|source| {
+            source.format == "catia" && source.object_id.starts_with("cgm-surface:")
+        })
+    }));
+    assert!(result.ir.model.curves.iter().all(|curve| {
+        curve.source_object.as_ref().is_some_and(|source| {
+            source.format == "catia" && source.object_id.starts_with("cgm-edge:")
+        })
+    }));
     assert_eq!(result.ir.model.procedural_curves.len(), 3);
     assert!(result.ir.model.procedural_curves.iter().all(|curve| {
         matches!(

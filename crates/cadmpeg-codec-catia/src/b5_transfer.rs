@@ -21,6 +21,7 @@ use cadmpeg_ir::topology::{
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::b5::{loop_chain_senses, B5Graph, B5Pcurve, B5Profile, B5Surface};
+use crate::native::cgm_source;
 
 const POINT_TOLERANCE: f64 = 1.5e-3;
 
@@ -502,7 +503,7 @@ fn transfer_complete(
         ir.model.surfaces.push(Surface {
             id: id.clone(),
             geometry: plan.geometry,
-            source_object: None,
+            source_object: Some(cgm_source("surface", object_id)),
         });
         if let Some(revolution) = plan.revolution {
             let directrix_id = CurveId(format!("catia:b5:profile#{object_id}"));
@@ -681,7 +682,7 @@ fn transfer_complete(
         ir.model.curves.push(Curve {
             id: curve_id.clone(),
             geometry,
-            source_object: None,
+            source_object: Some(cgm_source("edge", edge_id)),
         });
         let procedural = helix
             .as_ref()

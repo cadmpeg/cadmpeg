@@ -5,6 +5,8 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+use cadmpeg_ir::SourceObjectAssociation;
+
 use crate::catalog;
 use crate::container;
 use crate::geometry;
@@ -12,6 +14,18 @@ use crate::object_graph::{
     self, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField, PayloadSubtype,
 };
 use crate::value_block;
+
+pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
+    SourceObjectAssociation {
+        format: "catia".to_string(),
+        object_id: format!("cgm-{kind}:{tag:06x}"),
+        name: None,
+        color: None,
+        visible: None,
+        layer: None,
+        instance_path: Vec::new(),
+    }
+}
 
 /// Current schema version for the CATIA native namespace.
 pub const CATIA_NATIVE_VERSION: u32 = 54;
