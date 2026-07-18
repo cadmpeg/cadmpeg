@@ -2795,6 +2795,24 @@ fn decode_standard_builds_surface_bound_topology_graph() {
         .edges
         .iter()
         .all(|edge| edge.curve.is_some()));
+    assert_eq!(
+        decoded
+            .ir
+            .model
+            .curves
+            .iter()
+            .map(|curve| curve
+                .source_object
+                .as_ref()
+                .map(|source| source.object_id.as_str()))
+            .collect::<Vec<_>>(),
+        (1..=6)
+            .map(|tag| format!("cgm-edge-support:{tag:06x}"))
+            .collect::<Vec<_>>()
+            .iter()
+            .map(|object_id| Some(object_id.as_str()))
+            .collect::<Vec<_>>()
+    );
     assert!(!decoded.report.losses.iter().any(|loss| {
         matches!(
             loss.category,
@@ -3768,6 +3786,7 @@ fn standard_line_parser_reads_face_incidence() {
     let bytes = [0x60, 1, 2, 3, 0, 2, 0, 0x33, 0x36, 0, 1];
     let lines = crate::geometry::standard_lines(&bytes, 2);
     assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0].tag, 0x03_0201);
     assert_eq!(lines[0].faces, [0, 1]);
 }
 

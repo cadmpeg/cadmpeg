@@ -3700,6 +3700,8 @@ fn quintic_jet_bspline_nd<const N: usize>(
 pub struct StandardCircle {
     /// Offset of the support row.
     pub pos: usize,
+    /// Native allocation tag of the support row.
+    pub tag: u32,
     /// The two incident standard face ordinals.
     pub faces: [usize; 2],
     /// Circle center in millimetres.
@@ -3713,6 +3715,8 @@ pub struct StandardCircle {
 pub struct StandardLine {
     /// Offset of the support row.
     pub pos: usize,
+    /// Native allocation tag of the support row.
+    pub tag: u32,
     /// The two incident standard face ordinals.
     pub faces: [usize; 2],
 }
@@ -3892,6 +3896,7 @@ pub fn standard_circles(brep: &[u8], face_count: usize) -> Vec<StandardCircle> {
         .filter_map(|row| match row.geometry {
             StandardCurveGeometry::Circle { center, radius } => Some(StandardCircle {
                 pos: row.pos,
+                tag: row.tag,
                 faces: row.faces,
                 center,
                 radius,
@@ -3909,6 +3914,7 @@ pub fn standard_lines(brep: &[u8], face_count: usize) -> Vec<StandardLine> {
         .filter_map(|row| match row.geometry {
             StandardCurveGeometry::Line => Some(StandardLine {
                 pos: row.pos,
+                tag: row.tag,
                 faces: row.faces,
             }),
             StandardCurveGeometry::Circle { .. } | StandardCurveGeometry::Bspline => None,

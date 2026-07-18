@@ -7132,7 +7132,7 @@ fn build_standard_edge_curve(
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
-        source_object: None,
+        source_object: Some(standard_source("edge-support", support.tag)),
     });
     if matches!(&support.geometry, geometry::StandardCurveGeometry::Bspline) {
         let sides = support.faces.map(|face| {
@@ -7429,7 +7429,7 @@ fn attach_standard_circles(
                 ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: circle.radius,
             },
-            source_object: None,
+            source_object: Some(standard_source("edge-support", circle.tag)),
         });
     }
 }
@@ -7676,7 +7676,7 @@ fn attach_standard_lines(
                     direction.z / denom.sqrt(),
                 ),
             },
-            source_object: None,
+            source_object: Some(standard_source("edge-support", line.tag)),
         });
     }
 }
