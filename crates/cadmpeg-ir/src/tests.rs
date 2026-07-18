@@ -559,10 +559,18 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
         },
+        SketchConstraintDefinition::HorizontalLoci {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
+        },
         SketchConstraintDefinition::VerticalDistance {
             first: SketchLocus::Start(entity.clone()),
             second: SketchLocus::End(entity.clone()),
             parameter: parameter.clone(),
+        },
+        SketchConstraintDefinition::VerticalLoci {
+            first: SketchLocus::Start(entity.clone()),
+            second: SketchLocus::End(entity.clone()),
         },
         SketchConstraintDefinition::RepeatedDistance {
             measurements: vec![SketchDistanceMeasurement::Horizontal {

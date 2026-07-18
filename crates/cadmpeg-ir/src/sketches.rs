@@ -492,10 +492,24 @@ pub enum SketchConstraintDefinition {
         /// Constrained entity.
         entity: SketchEntityId,
     },
+    /// Two loci have equal vertical sketch coordinate.
+    HorizontalLoci {
+        /// First constrained locus.
+        first: SketchLocus,
+        /// Second constrained locus.
+        second: SketchLocus,
+    },
     /// Line is vertical in sketch coordinates.
     Vertical {
         /// Constrained entity.
         entity: SketchEntityId,
+    },
+    /// Two loci have equal horizontal sketch coordinate.
+    VerticalLoci {
+        /// First constrained locus.
+        first: SketchLocus,
+        /// Second constrained locus.
+        second: SketchLocus,
     },
     /// Two entities are parallel.
     Parallel {

@@ -1341,6 +1341,11 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ],
                 None,
             ),
+            Definition::HorizontalLoci { first, second }
+            | Definition::VerticalLoci { first, second } => (
+                vec![locus_entity(first).clone(), locus_entity(second).clone()],
+                None,
+            ),
             Definition::DistanceLoci {
                 first,
                 second,
@@ -1404,6 +1409,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     check: Check::Counts,
                     severity: Severity::Error,
                     message: "polygon constraint requires at least three distinct members".into(),
+                    entity: Some(constraint.id.0.clone()),
+                });
+            }
+        }
+        if let Definition::HorizontalLoci { first, second }
+        | Definition::VerticalLoci { first, second } = &constraint.definition
+        {
+            if first == second {
+                findings.push(Finding {
+                    check: Check::Counts,
+                    severity: Severity::Error,
+                    message: "axis-alignment constraint requires two distinct loci".into(),
                     entity: Some(constraint.id.0.clone()),
                 });
             }

@@ -9467,7 +9467,7 @@ fn exact_atomic_constraint(
     entities: &[&cadmpeg_ir::sketches::SketchEntity],
 ) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
     use cadmpeg_ir::sketches::{
-        SketchConstraintDefinition as Definition, SketchGeometry as Geometry,
+        SketchConstraintDefinition as Definition, SketchGeometry as Geometry, SketchLocus,
     };
 
     let lines = || {
@@ -9572,11 +9572,35 @@ fn exact_atomic_constraint(
                 entity: entities[0].id.clone(),
             })
         }
+        SketchConstraintKind::Horizontal
+            if entities.len() == 2
+                && entities[0].id != entities[1].id
+                && entities
+                    .iter()
+                    .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
+        {
+            Some(Definition::HorizontalLoci {
+                first: SketchLocus::Entity(entities[0].id.clone()),
+                second: SketchLocus::Entity(entities[1].id.clone()),
+            })
+        }
         SketchConstraintKind::Vertical
             if entities.len() == 1 && matches!(entities[0].geometry, Geometry::Line { .. }) =>
         {
             Some(Definition::Vertical {
                 entity: entities[0].id.clone(),
+            })
+        }
+        SketchConstraintKind::Vertical
+            if entities.len() == 2
+                && entities[0].id != entities[1].id
+                && entities
+                    .iter()
+                    .all(|entity| matches!(entity.geometry, Geometry::Point { .. })) =>
+        {
+            Some(Definition::VerticalLoci {
+                first: SketchLocus::Entity(entities[0].id.clone()),
+                second: SketchLocus::Entity(entities[1].id.clone()),
             })
         }
         SketchConstraintKind::Tangent => {
@@ -23446,6 +23470,19 @@ mod relation_tests {
             .iter()
             .find(|entity| matches!(entity.geometry, SketchGeometry::Point { .. }))
             .unwrap();
+        let mut other_point = point.clone();
+        other_point.id = SketchEntityId("generated:point#other".into());
+        assert!(matches!(
+            exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, &other_point]),
+            Some(SketchConstraintDefinition::HorizontalLoci { .. })
+        ));
+        assert!(matches!(
+            exact_atomic_constraint(SketchConstraintKind::Vertical, &[point, &other_point]),
+            Some(SketchConstraintDefinition::VerticalLoci { .. })
+        ));
+        assert!(
+            exact_atomic_constraint(SketchConstraintKind::Horizontal, &[point, point]).is_none()
+        );
         assert!(matches!(
             exact_atomic_constraint(SketchConstraintKind::Midpoint, &[line, point]),
             Some(SketchConstraintDefinition::Midpoint { .. })

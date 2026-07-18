@@ -241,7 +241,9 @@ fn constraint_parameters(
         | Definition::Collinear { .. }
         | Definition::Symmetric { .. }
         | Definition::Horizontal { .. }
+        | Definition::HorizontalLoci { .. }
         | Definition::Vertical { .. }
+        | Definition::VerticalLoci { .. }
         | Definition::Parallel { .. }
         | Definition::Perpendicular { .. }
         | Definition::Tangent { .. }
