@@ -4926,7 +4926,7 @@ fn native_scalar_matches_discrete_parameter(
 ) -> bool {
     match crate::history::parse_native_parameter_literal(feature, name, expression) {
         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
-            value.is_finite() && value == expected as f64
+            crate::history::exact_integer_f64(expected) == Some(value)
         }
         Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
             value == if expected { 1.0 } else { 0.0 }
@@ -6508,12 +6508,16 @@ pub(crate) fn bind_parameter_scalars<'a>(
                     .into_iter()
                     .filter(|scalar| match parameter.value.as_ref() {
                         Some(cadmpeg_ir::features::ParameterValue::Integer(expected)) => {
+                            let Some(expected) = crate::history::exact_integer_f64(*expected)
+                            else {
+                                return false;
+                            };
                             if length_scalars.contains(scalar.id.as_str())
                                 || angle_scalars.contains(scalar.id.as_str())
                             {
-                                same_dimension_length(scalar.value * 1000.0, *expected as f64)
+                                same_dimension_length(scalar.value * 1000.0, expected)
                             } else {
-                                scalar.value.is_finite() && scalar.value == *expected as f64
+                                scalar.value == expected
                             }
                         }
                         Some(cadmpeg_ir::features::ParameterValue::Boolean(expected)) => {
@@ -6645,7 +6649,9 @@ pub(crate) fn type_display_relation_parameters(
                 if let Some(cadmpeg_ir::features::ParameterValue::Integer(value)) =
                     parameter.value.as_ref()
                 {
-                    let value = *value as f64;
+                    let Some(value) = crate::history::exact_integer_f64(*value) else {
+                        continue;
+                    };
                     parameter.expression = if family == FeatureInputRelationFamily::CircleDiameter {
                         format!("<MOD-DIAM>{}", crate::history::format_length_mm(value))
                     } else {

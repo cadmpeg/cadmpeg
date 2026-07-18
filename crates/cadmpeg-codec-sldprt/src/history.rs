@@ -1260,6 +1260,12 @@ fn parameter_numeric_value(value: &ParameterValue) -> Option<f64> {
     }
 }
 
+/// Convert a discrete integer to a native scalar without changing its value.
+pub(crate) fn exact_integer_f64(value: i64) -> Option<f64> {
+    let encoded = value as f64;
+    ((encoded as i128) == i128::from(value)).then_some(encoded)
+}
+
 fn parameter_value_is_finite(value: &ParameterValue) -> bool {
     parameter_numeric_value(value).is_none_or(f64::is_finite)
 }
@@ -1398,7 +1404,7 @@ fn equivalent_parameter_values(left: &ParameterValue, right: &ParameterValue) ->
         (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left == right,
         (ParameterValue::Integer(integer), ParameterValue::Real(real))
         | (ParameterValue::Real(real), ParameterValue::Integer(integer)) => {
-            close(*integer as f64, *real)
+            exact_integer_f64(*integer) == Some(*real)
         }
         _ => false,
     }
@@ -4021,8 +4027,8 @@ fn format_f64_literal(value: f64) -> String {
 #[cfg(test)]
 mod literal_tests {
     use super::{
-        apply_parameter_function, format_f64_literal, parse_length_mm, parse_parameter_literal,
-        ParameterValue,
+        apply_parameter_function, exact_integer_f64, format_f64_literal, parse_length_mm,
+        parse_parameter_literal, ParameterValue,
     };
 
     #[test]
@@ -4102,6 +4108,15 @@ mod literal_tests {
             parse_parameter_literal("false"),
             Some(ParameterValue::Boolean(false))
         );
+    }
+
+    #[test]
+    fn native_scalars_accept_only_exact_integer_values() {
+        let largest_consecutive = 1_i64 << 53;
+        assert_eq!(exact_integer_f64(largest_consecutive), Some(2_f64.powi(53)));
+        assert_eq!(exact_integer_f64(largest_consecutive + 1), None);
+        assert_eq!(exact_integer_f64(i64::MIN), Some(i64::MIN as f64));
+        assert_eq!(exact_integer_f64(i64::MAX), None);
     }
 }
 
@@ -5352,7 +5367,12 @@ fn patch_configuration_parameter_scalars(
                 ParameterValue::Length(value) => value.0 / 1000.0,
                 ParameterValue::Angle(value) => value.0,
                 ParameterValue::Real(value) => *value,
-                ParameterValue::Integer(value) => *value as f64,
+                ParameterValue::Integer(value) => exact_integer_f64(*value).ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT configuration parameter {} cannot be represented by a native scalar",
+                        parameter.id.0
+                    ))
+                })?,
                 ParameterValue::Boolean(value) => f64::from(*value),
             };
             let scalar = &mut lane.scalars[*scalar_index];
