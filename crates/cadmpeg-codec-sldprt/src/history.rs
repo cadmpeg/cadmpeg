@@ -4118,7 +4118,7 @@ mod literal_tests {
     use super::{
         apply_parameter_function, compare_parameter_values, exact_integer_f64,
         exponentiate_parameter_value, format_f64_literal, parse_length_mm, parse_parameter_literal,
-        ParameterValue,
+        rewrite_parameter_expression, ParameterValue,
     };
 
     #[test]
@@ -4275,6 +4275,15 @@ mod literal_tests {
                 "<",
             ),
             Some(true)
+        );
+    }
+
+    #[test]
+    fn expression_rewrite_quotes_hyphenated_identifiers() {
+        let aliases = std::collections::HashMap::from([("Width".into(), "Wall-Gauge".into())]);
+        assert_eq!(
+            rewrite_parameter_expression("Width * 2", &aliases).as_deref(),
+            Some("\"Wall-Gauge\" * 2")
         );
     }
 }
@@ -5917,7 +5926,7 @@ fn rewrite_parameter_expression(
 fn unquoted_expression_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.chars().all(|character| {
-            character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.' | '-')
+            character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.')
         })
 }
 
