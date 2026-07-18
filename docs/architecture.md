@@ -25,13 +25,6 @@ CADIR input bypasses codec detection and parses directly into `CadIr`. The parse
 
 The `Codec` trait splits decoding into a provided `decode` wrapper and a required `decode_impl`. The wrapper acquires the root input under `DecodePolicy` limits, records the container-only request, runs the codec, and finalizes a `DecodeContext`, so root-input limiting and the fused-context invariant hold once for every codec rather than per codec. `DecodeContext` owns the decode's monotonic state — budget counters, the depth gauge, the address-space registry, and record tickets — behind interior mutability; a `DecodeArena` owns byte buffers with stable addresses; and a `Copy` `View` carries bounded, space-tagged navigation. `DecodeOptions` carries a `policy` field; the ownership model lives in `cadmpeg_ir::decode`.
 
-The budget's acceptance envelope is versioned. `envelope-v3` fixes the
-`retained_bytes`, `alloc_bytes`, and `work` terms. The
-`max_alloc_bytes`/`max_work`/`max_depth` ceilings belong to the
-`desktop-v1`/`service-v1` profiles instead. Profile tags advance when a ceiling
-value changes, and the `*_version_pins_its_ceilings` tests detect value drift.
-Every decode report stamps the active profile and envelope versions.
-
 ## CLI stream and exit contract
 
 `decode`, `export`, and `convert` reserve stdout for the output artifact; diagnostics use stderr. `--report <path>` writes a machine-readable command report with `schema_version: 3`, including semantic refusal paths. JSON output from `inspect`, `validate`, and `diff` uses the same CLI schema version. This envelope version is independent of `CadIr.ir_version`. Status 0 means success, status 1 means semantic failure or a non-empty diff, and status 2 means operational failure.

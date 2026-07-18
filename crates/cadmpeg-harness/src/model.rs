@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared sweep dimensions: operations, versioned policy profiles, and the
+//! Shared sweep dimensions: operations, decode policies, and the
 //! classified result of one operation.
 //!
 //! The labels are the wire format between the parent driver and child runner.
 
 use cadmpeg_ir::{Confidence, DecodePolicy};
 
-/// One decode-platform entry point exercised by the sweep.
+/// One decode entry point exercised by the sweep.
 ///
 /// The four operations exercise distinct surfaces: detection reads only a
 /// prefix, inspection walks the container directory, container-only decode
@@ -48,24 +48,24 @@ impl Operation {
     }
 }
 
-/// A versioned decode policy profile.
+/// A decode policy exercised by the sweep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PolicyProfile {
-    /// Generous interactive ceilings — the platform default (`desktop-v1`).
-    DesktopV1,
-    /// Tight unattended-service ceilings (`service-v1`).
-    ServiceV1,
+    /// Generous interactive ceilings.
+    Desktop,
+    /// Tight unattended-service ceilings.
+    Service,
 }
 
 impl PolicyProfile {
     /// Every profile, in wire order.
-    pub const ALL: [PolicyProfile; 2] = [PolicyProfile::DesktopV1, PolicyProfile::ServiceV1];
+    pub const ALL: [PolicyProfile; 2] = [PolicyProfile::Desktop, PolicyProfile::Service];
 
     /// The stable wire label.
     pub fn id(self) -> &'static str {
         match self {
-            PolicyProfile::DesktopV1 => "desktop-v1",
-            PolicyProfile::ServiceV1 => "service-v1",
+            PolicyProfile::Desktop => "desktop",
+            PolicyProfile::Service => "service",
         }
     }
 
@@ -77,8 +77,8 @@ impl PolicyProfile {
     /// The concrete policy this profile resolves to.
     pub fn policy(self) -> DecodePolicy {
         match self {
-            PolicyProfile::DesktopV1 => DecodePolicy::desktop(),
-            PolicyProfile::ServiceV1 => DecodePolicy::service(),
+            PolicyProfile::Desktop => DecodePolicy::desktop(),
+            PolicyProfile::Service => DecodePolicy::service(),
         }
     }
 }
