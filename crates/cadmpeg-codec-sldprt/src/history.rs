@@ -5494,9 +5494,6 @@ pub fn prepare_configurations_for_write(
                 .configurations
                 .iter()
                 .any(|configuration| !configuration.parameter_values.is_empty());
-    if feature_states_changed || parameter_values_changed {
-        sync_configuration_design_state(ir, native)?;
-    }
     let neutral_hash = configuration_hash(&ir.model.configurations);
     let native_hash = native
         .as_ref()
@@ -5517,28 +5514,29 @@ pub fn prepare_configurations_for_write(
     };
     if baseline_neutral.is_none() && baseline_native.is_none() {
         sync_neutral_configurations(&ir.model.configurations, native);
-        return Ok(());
-    }
-    match (neutral_changed, native_changed) {
-        (false, _) => Ok(()),
-        (true, true) => {
-            let projected = native
-                .as_ref()
-                .map(|value| project_configurations(&value.feature_histories))
-                .unwrap_or_default();
-            if configuration_hash(&projected) == neutral_hash {
-                Ok(())
-            } else {
-                Err(CodecError::Malformed(
-                    "conflicting neutral and native SLDPRT configuration edits".into(),
-                ))
+    } else {
+        match (neutral_changed, native_changed) {
+            (false, _) => {}
+            (true, true) => {
+                let projected = native
+                    .as_ref()
+                    .map(|value| project_configurations(&value.feature_histories))
+                    .unwrap_or_default();
+                if configuration_hash(&projected) != neutral_hash {
+                    return Err(CodecError::Malformed(
+                        "conflicting neutral and native SLDPRT configuration edits".into(),
+                    ));
+                }
+            }
+            (true, false) => {
+                sync_neutral_configurations(&ir.model.configurations, native);
             }
         }
-        (true, false) => {
-            sync_neutral_configurations(&ir.model.configurations, native);
-            Ok(())
-        }
     }
+    if feature_states_changed || parameter_values_changed {
+        sync_configuration_design_state(ir, native)?;
+    }
+    Ok(())
 }
 
 fn sync_configuration_design_state(
