@@ -2049,9 +2049,7 @@ fn nurbs_carrier_offset(
         offsets.push(distance);
     }
     let first = offsets[0];
-    if offsets.iter().any(|value| (value - first).abs() > 1e-6)
-        || !(first.abs() < 1e-6 || (first.abs() - 2.0).abs() < 1e-6)
-    {
+    if !first.is_finite() || offsets.iter().any(|value| (value - first).abs() > 1e-6) {
         return None;
     }
     Some(if first.abs() < 1e-6 { 0.0 } else { first })

@@ -4781,10 +4781,10 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
     use crate::geometry::ConsolidatedSupportBinding;
 
     let blocks =
-        crate::geometry::resolve_consolidated_edge_blocks(&a5_nurbs_bound_edge_stream(2.0));
+        crate::geometry::resolve_consolidated_edge_blocks(&a5_nurbs_bound_edge_stream(1.25));
     assert!(matches!(
         blocks[0].supports[1],
-        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 2.0).abs() < 1e-6
+        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 1.25).abs() < 1e-6
     ));
     assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
