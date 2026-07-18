@@ -4,10 +4,9 @@
 //!
 //! A `.f3z` holds `Manifest.json` (naming the root `.f3d` member),
 //! `DesignDescription.json`, and one `.f3d` member per document. [`decode`]
-//! decodes the root member, resolves its outgoing XREFs through the root's
-//! `RedirectionsStream.dat`, decodes each referenced member, and merges the
-//! component models into the root document with each occurrence-local Design
-//! placement applied to its target model.
+//! decodes the root member, recursively resolves each member's outgoing XREFs,
+//! and merges the component models into the root document with every
+//! occurrence-local Design placement applied from child to ancestor.
 
 use std::io::Cursor;
 
@@ -78,84 +77,9 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
         return Ok(root);
     }
 
-    let table = root
-        .ir
-        .native
-        .namespace("f3d")
-        .map(F3dNative::load)
-        .transpose()
-        .map_err(|error| CodecError::Malformed(format!("invalid root F3D native data: {error}")))?
-        .map_or_else(XrefTable::default, |native| XrefTable {
-            designs: native.xref_designs,
-            references: native.xref_references,
-        });
-    let mut merged = 0_usize;
-    let mut model_value = serialize_model(&root.ir.model)?;
-    for reference in &table.references {
-        let occurrence = occurrence_key(reference);
-        let label = xref::design_for(&table, reference).map_or_else(
-            || reference.relative_path.clone(),
-            |design| design.display_name.clone(),
-        );
-        let Ok(member_bytes) = scan.entry_bytes(&reference.relative_path) else {
-            root.report.losses.push(LossNote {
-                category: LossCategory::Geometry,
-                severity: Severity::Error,
-                message: format!(
-                    "xref {label}: member {} is not present in the archive; the occurrence was \
-                     not resolved",
-                    reference.relative_path
-                ),
-                provenance: None,
-            });
-            continue;
-        };
-        let mut component = crate::decode::decode(&mut Cursor::new(member_bytes.to_vec()), options)
-            .map_err(|error| {
-                CodecError::Malformed(format!(
-                    "xref member {} failed to decode: {error}",
-                    reference.relative_path
-                ))
-            })?;
-        if component.ir.units != root.ir.units {
-            root.report.losses.push(LossNote {
-                category: LossCategory::Geometry,
-                severity: Severity::Error,
-                message: format!(
-                    "xref {label}: component units differ from the root document; the occurrence \
-                     was not merged"
-                ),
-                provenance: None,
-            });
-            continue;
-        }
-        if let Some(transform) = reference.transform {
-            apply_occurrence_transform(&mut component.ir.model, transform);
-        }
-        let mut component_value = serialize_model(&component.ir.model)?;
-        remap_ids(&mut component_value, &occurrence);
-        extend_arenas(&mut model_value, component_value)?;
-        merged += 1;
-        root.report.geometry_transferred |= component.report.geometry_transferred;
-        for loss in component.report.losses {
-            root.report.losses.push(LossNote {
-                message: format!("xref {label}: {}", loss.message),
-                ..loss
-            });
-        }
-        let placement = if reference.transform.is_some() {
-            "Design occurrence transform"
-        } else {
-            "identity placement"
-        };
-        root.report.notes.push(format!(
-            "xref {label}: merged {} as occurrence {occurrence} ({placement})",
-            reference.relative_path
-        ));
-    }
-    root.ir.model = serde_json::from_value(model_value).map_err(|error| {
-        CodecError::Malformed(format!("merged model round-trip failed: {error}"))
-    })?;
+    let table = xref_table_from_ir(&root.ir)?;
+    let mut stack = vec![manifest.root.clone()];
+    let merged = merge_references(&mut root, scan, *options, &table, &mut stack)?;
     if merged > 0 {
         root.report.losses.push(LossNote {
             category: LossCategory::Metadata,
@@ -168,8 +92,7 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
         });
     }
     root.report.notes.push(format!(
-        "merged {merged} of {} external reference(s) from the f3z archive",
-        table.references.len()
+        "merged {merged} external occurrence(s) from the f3z archive"
     ));
     root.ir.finalize();
     let hash = crate::decode::semantic_hash(&root.ir);
@@ -180,6 +103,114 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
             .insert("f3z_root".into(), manifest.root.clone());
     }
     Ok(DecodeResult::new(root.ir, root.report))
+}
+
+fn xref_table_from_ir(ir: &cadmpeg_ir::CadIr) -> Result<XrefTable, CodecError> {
+    let Some(namespace) = ir.native.namespace("f3d") else {
+        return Ok(XrefTable::default());
+    };
+    let native = F3dNative::load(namespace)
+        .map_err(|error| CodecError::Malformed(format!("invalid F3D native data: {error}")))?;
+    Ok(XrefTable {
+        designs: native.xref_designs,
+        references: native.xref_references,
+    })
+}
+
+fn merge_references(
+    parent: &mut DecodeResult,
+    scan: &ContainerScan,
+    options: DecodeOptions,
+    table: &XrefTable,
+    stack: &mut Vec<String>,
+) -> Result<usize, CodecError> {
+    let mut merged = 0usize;
+    let mut model_value = serialize_model(&parent.ir.model)?;
+    for reference in &table.references {
+        let occurrence = occurrence_key(reference);
+        let label = xref::design_for(table, reference).map_or_else(
+            || reference.relative_path.clone(),
+            |design| design.display_name.clone(),
+        );
+        if stack.contains(&reference.relative_path) {
+            parent.report.losses.push(LossNote {
+                category: LossCategory::Geometry,
+                severity: Severity::Error,
+                message: format!(
+                    "xref {label}: reference cycle through {}; the occurrence was not resolved",
+                    reference.relative_path
+                ),
+                provenance: None,
+            });
+            continue;
+        }
+        let Ok(member_bytes) = scan.entry_bytes(&reference.relative_path) else {
+            parent.report.losses.push(LossNote {
+                category: LossCategory::Geometry,
+                severity: Severity::Error,
+                message: format!(
+                    "xref {label}: member {} is not present in the archive; the occurrence was \
+                     not resolved",
+                    reference.relative_path
+                ),
+                provenance: None,
+            });
+            continue;
+        };
+        let mut component =
+            crate::decode::decode(&mut Cursor::new(member_bytes.to_vec()), &options).map_err(
+                |error| {
+                    CodecError::Malformed(format!(
+                        "xref member {} failed to decode: {error}",
+                        reference.relative_path
+                    ))
+                },
+            )?;
+        if component.ir.units != parent.ir.units {
+            parent.report.losses.push(LossNote {
+                category: LossCategory::Geometry,
+                severity: Severity::Error,
+                message: format!(
+                    "xref {label}: component units differ from the containing document; the \
+                     occurrence was not merged"
+                ),
+                provenance: None,
+            });
+            continue;
+        }
+        let child_table = xref_table_from_ir(&component.ir)?;
+        stack.push(reference.relative_path.clone());
+        let descendants = merge_references(&mut component, scan, options, &child_table, stack)?;
+        stack.pop();
+        if let Some(transform) = reference.transform {
+            apply_occurrence_transform(&mut component.ir.model, transform);
+        }
+        let mut component_value = serialize_model(&component.ir.model)?;
+        remap_ids(&mut component_value, &occurrence);
+        extend_arenas(&mut model_value, component_value)?;
+        merged += descendants + 1;
+        parent.report.geometry_transferred |= component.report.geometry_transferred;
+        for loss in component.report.losses {
+            parent.report.losses.push(LossNote {
+                message: format!("xref {label}: {}", loss.message),
+                ..loss
+            });
+        }
+        let placement = if reference.transform.is_some() {
+            "Design occurrence transform"
+        } else {
+            "identity placement"
+        };
+        parent.report.notes.push(format!(
+            "xref {label}: merged {} as occurrence {occurrence} ({placement}; {descendants} nested \
+             occurrence(s))",
+            reference.relative_path
+        ));
+    }
+    parent.ir.model = serde_json::from_value(model_value).map_err(|error| {
+        CodecError::Malformed(format!("merged model round-trip failed: {error}"))
+    })?;
+    Ok(merged)
 }
 
 fn serialize_model(model: &Model) -> Result<Value, CodecError> {

@@ -20850,7 +20850,7 @@ fn f3z_archive_merges_identity_occurrences() {
         .report
         .notes
         .iter()
-        .any(|note| note.contains("merged 1 of 1")));
+        .any(|note| note.contains("merged 1 external occurrence")));
     assert_eq!(
         decoded.ir.model.bodies.len(),
         component_alone.ir.model.bodies.len()
@@ -20873,6 +20873,73 @@ fn f3z_archive_merges_identity_occurrences() {
             shell_owner.id.0
         );
     }
+}
+
+#[test]
+fn f3z_archive_recursively_merges_nested_occurrences() {
+    const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
+    let component = f3d_with_smbh(&synthetic_geometry_smbh());
+    let component_alone = F3dCodec
+        .decode(
+            &mut Cursor::new(component.clone()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let middle = f3d_without_brep(
+        "assembly-design",
+        "middle.f3d",
+        &[("component.f3d", CHILD_ROLE)],
+    );
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("middle.f3d", middle.as_slice()),
+            ("component.f3d", component.as_slice()),
+        ],
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+
+    assert_eq!(
+        decoded.ir.model.bodies.len(),
+        component_alone.ir.model.bodies.len()
+    );
+    assert!(decoded
+        .report
+        .notes
+        .iter()
+        .any(|note| note.contains("merged 2 external occurrence")));
+    let body_id = &decoded.ir.model.bodies[0].id.0;
+    assert!(body_id.contains(&format!(
+        "xref/{XREF_ROLE}/occurrence-0/xref/{CHILD_ROLE}/occurrence-0/"
+    )));
+}
+
+#[test]
+fn f3z_archive_reports_reference_cycles_without_recursing() {
+    const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("middle.f3d", XREF_ROLE)]);
+    let middle = f3d_without_brep("assembly-design", "middle.f3d", &[("root.f3d", CHILD_ROLE)]);
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", root.as_slice()),
+            ("middle.f3d", middle.as_slice()),
+        ],
+    );
+
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.severity == cadmpeg_ir::report::Severity::Error
+            && loss.message.contains("reference cycle through root.f3d")
+    }));
 }
 
 #[test]
