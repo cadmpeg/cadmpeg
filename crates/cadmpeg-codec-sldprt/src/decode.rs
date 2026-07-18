@@ -32,13 +32,41 @@ use cadmpeg_ir::Exactness;
 use crate::container::configuration_index;
 
 use crate::brep::{self, Brep};
-use crate::container::{self, Block, ContainerScan};
+use crate::container::{self, Block, CompoundStream, ContainerScan};
 use crate::parasolid::StreamHeader;
 
 struct BodyStream<'a> {
-    block: &'a Block,
+    origin: BodyOrigin<'a>,
     payload: &'a [u8],
     header: StreamHeader,
+}
+
+#[derive(Clone, Copy)]
+enum BodyOrigin<'a> {
+    Block(&'a Block),
+    Compound(&'a CompoundStream),
+}
+
+impl BodyOrigin<'_> {
+    fn name(self) -> String {
+        match self {
+            Self::Block(block) => block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", block.offset)),
+            Self::Compound(stream) => stream.path.clone(),
+        }
+    }
+
+    fn unknown_id(self) -> UnknownId {
+        match self {
+            Self::Block(block) => UnknownId(format!("sldprt:file:block#{}", block.offset)),
+            Self::Compound(stream) => UnknownId(format!(
+                "sldprt:file:compound-stream#{}",
+                stream.directory_id
+            )),
+        }
+    }
 }
 
 struct DecodedBrep {
@@ -76,7 +104,7 @@ pub fn decode(
         if let Some((decoded, mut report)) = try_decode_brep(&scan, &streams) {
             let ir = build_geometry_ir(
                 &scan,
-                streams[decoded.selected].block,
+                streams[decoded.selected].origin,
                 &streams[decoded.selected].header,
                 decoded.brep,
                 &decoded.configuration_bodies,
@@ -1258,35 +1286,41 @@ fn multiply_projected_sketch_relation_records(
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
 /// frames but yields no geometry, so the caller falls back to metadata.
 fn active_body_streams(scan: &ContainerScan) -> Vec<BodyStream<'_>> {
-    let mut streams: Vec<_> = scan
-        .blocks
-        .iter()
-        .flat_map(|block| {
-            block.ps_streams.iter().filter_map(move |payload| {
-                let header = crate::parasolid::stream_header(payload)?;
-                let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
-                if crate::parasolid::is_body_stream(&header)
-                    && !section.contains("ghost")
-                    && !section.contains("resolvedfeatures")
-                {
-                    Some(BodyStream {
-                        block,
-                        payload,
-                        header,
-                    })
-                } else {
-                    None
-                }
+    let block_streams = scan.blocks.iter().flat_map(|block| {
+        block.ps_streams.iter().filter_map(move |payload| {
+            let header = crate::parasolid::stream_header(payload)?;
+            let section = block.section.as_deref().unwrap_or("").to_ascii_lowercase();
+            if crate::parasolid::is_body_stream(&header)
+                && !section.contains("ghost")
+                && !section.contains("resolvedfeatures")
+            {
+                Some(BodyStream {
+                    origin: BodyOrigin::Block(block),
+                    payload,
+                    header,
+                })
+            } else {
+                None
+            }
+        })
+    });
+    let compound_streams = scan.compound_streams.iter().flat_map(|stream| {
+        stream.ps_streams.iter().filter_map(move |payload| {
+            let header = crate::parasolid::stream_header(payload)?;
+            let section = stream.path.to_ascii_lowercase();
+            (crate::parasolid::is_body_stream(&header)
+                && !section.contains("ghost")
+                && !section.contains("resolvedfeatures"))
+            .then_some(BodyStream {
+                origin: BodyOrigin::Compound(stream),
+                payload,
+                header,
             })
         })
-        .collect();
+    });
+    let mut streams = block_streams.chain(compound_streams).collect::<Vec<_>>();
     streams.sort_by_key(|stream| {
-        let section = stream
-            .block
-            .section
-            .as_deref()
-            .unwrap_or("")
-            .to_ascii_lowercase();
+        let section = stream.origin.name().to_ascii_lowercase();
         (
             !section.contains("partition"),
             !stream
@@ -1305,16 +1339,15 @@ fn try_decode_brep(
 ) -> Option<(DecodedBrep, DecodeReport)> {
     let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
     for (index, stream) in streams.iter().enumerate() {
-        sites.entry(site_key(stream.block)).or_default().push(index);
+        sites
+            .entry(site_key(&stream.origin.name()))
+            .or_default()
+            .push(index);
     }
     let mut decoded_sites = Vec::new();
     for (site, indices) in &sites {
         let first = indices[0];
-        let name = streams[first]
-            .block
-            .section
-            .clone()
-            .unwrap_or_else(|| format!("block@{}", streams[first].block.offset));
+        let name = streams[first].origin.name();
         let bodies: Vec<_> = indices
             .iter()
             .map(|index| (streams[*index].payload, &streams[*index].header))
@@ -1340,12 +1373,7 @@ fn try_decode_brep(
     }
     let (_, selected, _, mut decoded) = decoded_sites.swap_remove(selected_site);
     let mut configuration_bodies = Vec::new();
-    if let Some(index) = streams[selected]
-        .block
-        .section
-        .as_deref()
-        .and_then(configuration_index)
-    {
+    if let Some(index) = configuration_index(&streams[selected].origin.name()) {
         configuration_bodies.push((
             index,
             decoded.bodies.iter().map(|body| body.id.clone()).collect(),
@@ -1353,12 +1381,7 @@ fn try_decode_brep(
     }
     for (site, first, _, mut alternate) in decoded_sites {
         alternate.qualify_ids(&site);
-        if let Some(index) = streams[first]
-            .block
-            .section
-            .as_deref()
-            .and_then(configuration_index)
-        {
+        if let Some(index) = configuration_index(&streams[first].origin.name()) {
             configuration_bodies.push((
                 index,
                 alternate
@@ -1417,12 +1440,8 @@ fn merge_brep(target: &mut Brep, mut source: Brep) {
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
 }
 
-fn site_key(block: &Block) -> String {
-    let mut key = block
-        .section
-        .clone()
-        .unwrap_or_else(|| format!("block@{}", block.offset))
-        .to_ascii_lowercase();
+fn site_key(name: &str) -> String {
+    let mut key = name.to_ascii_lowercase();
     for suffix in ["partition", "deltas"] {
         if let Some(at) = key.rfind(suffix) {
             key.truncate(at);
@@ -1434,7 +1453,7 @@ fn site_key(block: &Block) -> String {
 
 fn build_geometry_ir(
     scan: &ContainerScan,
-    block: &Block,
+    origin: BodyOrigin<'_>,
     header: &StreamHeader,
     mut brep: Brep,
     configuration_bodies: &[(usize, Vec<cadmpeg_ir::ids::BodyId>)],
@@ -1450,7 +1469,7 @@ fn build_geometry_ir(
             }
         }
     }
-    ir.source = Some(source_meta(scan, block, header));
+    ir.source = Some(source_meta(scan, origin, header));
     ir.annotations = std::mem::take(&mut brep.annotations);
     let mut histories = crate::history::histories(scan, &mut ir.annotations);
     let mut lanes = crate::resolved_features::lanes(scan, &mut ir.annotations);
@@ -1781,7 +1800,26 @@ fn build_geometry_ir(
             links: Vec::new(),
         });
     }
-    let partition_id = UnknownId(format!("sldprt:file:block#{}", block.offset));
+    for source_stream in &scan.compound_streams {
+        let id = format!("sldprt:file:compound-stream#{}", source_stream.directory_id);
+        crate::annotations::note(
+            &mut ir.annotations,
+            id.clone(),
+            source_stream.path.clone(),
+            0,
+            container::payload_family(&source_stream.payload),
+            Exactness::ByteExact,
+        );
+        unknowns.push(UnknownRecord {
+            id: UnknownId(id),
+            offset: 0,
+            byte_len: source_stream.payload.len() as u64,
+            sha256: sha256_hex(&source_stream.payload),
+            data: Some(source_stream.payload.clone()),
+            links: Vec::new(),
+        });
+    }
+    let partition_id = origin.unknown_id();
     let opaque_surfaces = ir
         .model
         .surfaces
@@ -1836,7 +1874,7 @@ fn assign_native_configuration_indices(ir: &CadIr, native: &mut crate::native::S
     }
 }
 
-fn source_meta(scan: &ContainerScan, block: &Block, header: &StreamHeader) -> SourceMeta {
+fn source_meta(scan: &ContainerScan, origin: BodyOrigin<'_>, header: &StreamHeader) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert(
         "outer_version".to_string(),
@@ -1854,14 +1892,27 @@ fn source_meta(scan: &ContainerScan, block: &Block, header: &StreamHeader) -> So
         );
     }
     attributes.insert("block_count".to_string(), scan.blocks.len().to_string());
-    let active_block = container::select_active_parasolid(scan).map_or(block, |(active, _)| active);
     attributes.insert(
-        "active_parasolid_block".to_string(),
-        active_block
-            .section
-            .clone()
-            .unwrap_or_else(|| format!("block@{}", active_block.offset)),
+        "compound_stream_count".to_string(),
+        scan.compound_streams.len().to_string(),
     );
+    let active_name = match origin {
+        BodyOrigin::Block(fallback) => container::select_active_parasolid(scan)
+            .map(|(block, _)| {
+                block
+                    .section
+                    .clone()
+                    .unwrap_or_else(|| format!("block@{}", block.offset))
+            })
+            .unwrap_or_else(|| {
+                fallback
+                    .section
+                    .clone()
+                    .unwrap_or_else(|| format!("block@{}", fallback.offset))
+            }),
+        BodyOrigin::Compound(_) => origin.name(),
+    };
+    attributes.insert("active_parasolid_block".to_string(), active_name);
     attributes.insert("parasolid_schema".to_string(), header.schema.clone());
     attributes.insert(
         "parasolid_description".to_string(),
@@ -2601,11 +2652,17 @@ fn preserve_source_image(scan: &ContainerScan, ir: &mut CadIr, unknowns: &mut Ve
 
 fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeReport {
     let summary = container::summarize(scan);
-    let parasolid_blocks = scan
+    let parasolid_sources = scan
         .blocks
         .iter()
         .filter(|b| b.family == "parasolid")
-        .count();
+        .count()
+        + scan
+            .compound_streams
+            .iter()
+            .filter(|stream| !stream.ps_streams.is_empty())
+            .count();
+    let payload_sources = scan.blocks.len() + scan.compound_streams.len();
 
     let mut losses = vec![
         LossNote {
@@ -2613,10 +2670,9 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
             severity: Severity::Blocking,
             message: format!(
                 "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
-                 into a topology graph. {} block(s) were CRC-validated and enumerated, {} of them \
-                 Parasolid-family.",
-                scan.blocks.len(),
-                parasolid_blocks
+                 into a topology graph. {} payload source(s) were enumerated, {} carrying \
+                 Parasolid streams.",
+                payload_sources, parasolid_sources
             ),
             provenance: None,
         },
@@ -2632,14 +2688,14 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         LossNote {
             category: LossCategory::Material,
             severity: Severity::Warning,
-            message: "Materials/appearances, tessellation, and document/feature metadata were not \
-                      transferred."
+            message: "Body-bound appearances and tessellation were not transferred because no \
+                      body graph exists."
                 .to_string(),
             provenance: None,
         },
     ];
 
-    if container::select_active_parasolid(scan).is_none() {
+    if !container::has_parasolid_body_stream(scan) {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Error,

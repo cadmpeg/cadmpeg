@@ -13,6 +13,7 @@ const NO_STREAM: u32 = 0xffff_ffff;
 #[derive(Debug, Clone)]
 pub(crate) struct Stream {
     pub(crate) path: String,
+    pub(crate) directory_id: u32,
     pub(crate) start_sector: u32,
     pub(crate) bytes: Vec<u8>,
 }
@@ -255,6 +256,7 @@ impl<'a> CompoundFile<'a> {
             };
             streams.push(Stream {
                 path,
+                directory_id: u32::try_from(id).ok()?,
                 start_sector: entry.start_sector,
                 bytes: payload,
             });
@@ -412,6 +414,31 @@ mod tests {
         let mut file = fixture();
         put_u32(sector_mut(&mut file, 11), 2 * 4, 2);
         assert!(streams(&file).is_none());
+    }
+
+    #[test]
+    fn exposes_compound_parasolid_streams_to_the_container_scan() {
+        let mut file = fixture();
+        let mut payload = b"PS\0\0".to_vec();
+        payload.extend_from_slice(&14u16.to_be_bytes());
+        payload.extend_from_slice(b"partition body");
+        payload.extend_from_slice(&[0, 0]);
+        payload.push(18);
+        payload.extend_from_slice(b"SCH_SW_33103_11000");
+        sector_mut(&mut file, 2)[..payload.len()].copy_from_slice(&payload);
+
+        let scan = crate::container::scan_bytes(&file);
+        let partition = scan
+            .compound_streams
+            .iter()
+            .find(|stream| stream.path == "Store/Large")
+            .expect("compound partition stream");
+        assert_eq!(partition.ps_streams.len(), 1);
+        assert!(crate::container::has_parasolid_body_stream(&scan));
+        assert!(crate::container::summarize(&scan)
+            .notes
+            .iter()
+            .any(|note| note.contains("active Parasolid B-rep candidate: Store/Large")));
     }
 
     fn fixture() -> Vec<u8> {

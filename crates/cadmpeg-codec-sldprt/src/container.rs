@@ -162,10 +162,14 @@ pub struct CacheCell {
 pub struct CompoundStream {
     /// Storage-qualified stream path.
     pub path: String,
+    /// Unique directory entry identifier.
+    pub directory_id: u32,
     /// First regular or mini sector identifier.
     pub start_sector: u32,
     /// Exact stream bytes.
     pub payload: Vec<u8>,
+    /// Every Parasolid stream carried by this compound stream.
+    pub ps_streams: Vec<Vec<u8>>,
 }
 
 /// Complete result of an outer-container scan.
@@ -236,10 +240,18 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
         let compound_streams = crate::compound::streams(bytes)
             .unwrap_or_default()
             .into_iter()
-            .map(|stream| CompoundStream {
-                path: stream.path,
-                start_sector: stream.start_sector,
-                payload: stream.bytes,
+            .map(|stream| {
+                let ps_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes)
+                    .into_iter()
+                    .map(|(_, payload)| payload)
+                    .collect();
+                CompoundStream {
+                    path: stream.path,
+                    directory_id: stream.directory_id,
+                    start_sector: stream.start_sector,
+                    payload: stream.bytes,
+                    ps_streams,
+                }
             })
             .collect();
         return ContainerScan {
@@ -533,14 +545,10 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         scan.cache_cells.len(),
         scan.compound_streams.len()
     )];
-    match select_active_parasolid(scan) {
-        Some((b, sch)) => notes.push(format!(
+    match active_parasolid_summary(scan) {
+        Some((name, size, sch)) => notes.push(format!(
             "active Parasolid B-rep candidate: {} ({} bytes, schema {})",
-            b.section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", b.offset)),
-            b.uncomp_sz,
-            sch.schema
+            name, size, sch.schema
         )),
         None => notes.push(
             "no Parasolid partition/deltas stream located; B-rep decode will be container-only"
@@ -548,8 +556,7 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         ),
     }
     notes.push(
-        "container-level enumeration; run `decode` to locate the Parasolid stream and build the \
-         B-rep graph from its typed topology and analytic carriers"
+        "Parasolid body streams supply the typed topology and analytic carriers used by decode"
             .to_string(),
     );
 
@@ -564,6 +571,39 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         entries,
         notes,
     }
+}
+
+fn active_parasolid_summary(
+    scan: &ContainerScan,
+) -> Option<(String, usize, crate::parasolid::StreamHeader)> {
+    if let Some((block, header)) = select_active_parasolid(scan) {
+        return Some((
+            block
+                .section
+                .clone()
+                .unwrap_or_else(|| format!("block@{}", block.offset)),
+            block.ps_stream.as_ref()?.len(),
+            header,
+        ));
+    }
+    scan.compound_streams
+        .iter()
+        .flat_map(|stream| {
+            stream.ps_streams.iter().filter_map(move |payload| {
+                let header = crate::parasolid::stream_header(payload)?;
+                crate::parasolid::is_body_stream(&header).then_some((
+                    stream.path.clone(),
+                    payload.len(),
+                    header,
+                ))
+            })
+        })
+        .max_by_key(|(_, size, _)| *size)
+}
+
+/// Test whether either outer envelope carries a framed Parasolid body stream.
+pub fn has_parasolid_body_stream(scan: &ContainerScan) -> bool {
+    active_parasolid_summary(scan).is_some()
 }
 
 /// Select the highest-ranked Parasolid B-rep block.
