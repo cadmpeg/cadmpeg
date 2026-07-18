@@ -2897,6 +2897,14 @@ fn attach_e5_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) 
     });
 }
 
+struct E5IntersectionSidePlan {
+    surface: SurfaceId,
+    pcurve: PcurveGeometry,
+    pcurve_range: [f64; 2],
+    curve: CurveGeometry,
+    curve_range: [f64; 2],
+}
+
 fn transfer_e5_topology(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -2908,6 +2916,10 @@ fn transfer_e5_topology(
         || topology.vertex_refs.is_empty()
     {
         return false;
+    }
+
+    for curve in ir.model.curves.drain(..) {
+        annotations.remove_entity(&curve.id);
     }
 
     let surface_for_ref: HashMap<u32, (SurfaceId, &geometry::E5Surface)> = decoded_surfaces
@@ -3043,8 +3055,7 @@ fn transfer_e5_topology(
             }
         }
     }
-    let mut intersection_sides =
-        BTreeMap::<u32, BTreeMap<u32, (SurfaceId, PcurveGeometry, CurveGeometry, [f64; 2])>>::new();
+    let mut intersection_sides = BTreeMap::<u32, BTreeMap<u32, E5IntersectionSidePlan>>::new();
     for (&edge_ref, edge) in &topology.edges {
         let Some(support) = topology.curve_supports.get(&edge.support) else {
             return false;
@@ -3103,9 +3114,23 @@ fn transfer_e5_topology(
                 };
                 (curve, curve_range) = reversed_curve;
             }
+            let pcurve = if reversed {
+                let Some(reversed) = reverse_e5_pcurve_geometry(&geometry, range) else {
+                    continue;
+                };
+                reversed
+            } else {
+                geometry
+            };
             intersection_sides.entry(edge_ref).or_default().insert(
                 *pcurve_ref,
-                (surface_id.clone(), geometry, curve, curve_range),
+                E5IntersectionSidePlan {
+                    surface: surface_id.clone(),
+                    pcurve,
+                    pcurve_range: range,
+                    curve,
+                    curve_range,
+                },
             );
         }
     }
@@ -3124,21 +3149,24 @@ fn transfer_e5_topology(
         let (Some(left), Some(right)) = (sides.get(left_ref), sides.get(right_ref)) else {
             continue;
         };
-        if !equivalent_e5_curve_carriers(&left.2, &right.2)
-            || ((left.3[1] - left.3[0]) - (right.3[1] - right.3[0])).abs() > 1e-9
+        if !equivalent_e5_curve_carriers(&left.curve, &right.curve)
+            || ((left.curve_range[1] - left.curve_range[0])
+                - (right.curve_range[1] - right.curve_range[0]))
+                .abs()
+                > 1e-9
         {
             continue;
         }
-        edge_curve_plan.insert(edge_ref, (left.2.clone(), left.3));
+        edge_curve_plan.insert(edge_ref, (left.curve.clone(), left.curve_range));
         intersection_plan.insert(
             edge_ref,
             IntcurveSupportContext {
                 sides: [left, right].map(|side| IntcurveSupportSide {
-                    surface: Some(side.0.clone()),
-                    pcurve: Some(side.1.clone()),
-                    pcurve_parameter_range: None,
+                    surface: Some(side.surface.clone()),
+                    pcurve: Some(side.pcurve.clone()),
+                    pcurve_parameter_range: Some(side.pcurve_range),
                 }),
-                parameter_range: left.3,
+                parameter_range: left.curve_range,
                 discontinuities: std::array::from_fn(|_| Vec::new()),
             },
         );
@@ -3169,6 +3197,36 @@ fn transfer_e5_topology(
         edge_curve_plan
             .entry(edge_ref)
             .or_insert((CurveGeometry::Unknown { record: None }, *range));
+    }
+
+    let used_surfaces = topology
+        .faces
+        .iter()
+        .filter_map(|face| surface_for_ref.get(&face.surface))
+        .map(|(id, _)| id.clone())
+        .chain(
+            intersection_plan
+                .values()
+                .flat_map(|context| context.sides.iter().filter_map(|side| side.surface.clone())),
+        )
+        .chain(
+            surface_curve_plan
+                .values()
+                .map(|(surface, _, _)| surface.clone()),
+        )
+        .collect::<HashSet<_>>();
+    let unused_surfaces = ir
+        .model
+        .surfaces
+        .iter()
+        .filter(|surface| !used_surfaces.contains(&surface.id))
+        .map(|surface| surface.id.clone())
+        .collect::<Vec<_>>();
+    ir.model
+        .surfaces
+        .retain(|surface| used_surfaces.contains(&surface.id));
+    for surface in unused_surfaces {
+        annotations.remove_entity(surface);
     }
 
     let body_faces: Vec<(Option<u32>, Vec<u32>)> = if topology.bodies.is_empty() {
