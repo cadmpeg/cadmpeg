@@ -1628,7 +1628,6 @@ fn build_geometry_ir(
     stamp_feature_baseline(&mut ir);
     assign_configuration_bodies(&mut ir, configuration_bodies);
     mark_active_configuration(&mut ir);
-    crate::history::project_active_configuration_baseline(&mut ir);
     assign_native_configuration_indices(&ir, &mut native);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
@@ -2239,6 +2238,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes);
     stamp_feature_baseline(&mut ir);
+    stamp_configuration_baseline(&mut ir);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -2248,8 +2248,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     native.store(ir.native.namespace_mut("sldprt"))?;
     stamp_sketch_baseline(&mut ir, &native);
     mark_active_configuration(&mut ir);
-    crate::history::project_active_configuration_baseline(&mut ir);
-    stamp_configuration_baseline(&mut ir);
     let mut unknowns = ir.native_unknowns("sldprt")?;
     preserve_source_image(scan, &mut ir, &mut unknowns);
     ir.set_native_unknowns("sldprt", &unknowns)?;

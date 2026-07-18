@@ -2454,48 +2454,6 @@ mod history_reference_tests {
             ParameterValue::Length(Length(7.0))
         );
     }
-
-    #[test]
-    fn active_configuration_without_a_scoped_lane_uses_global_values() {
-        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
-        let parameter_id = ParameterId("test:model:parameter#depth".into());
-        ir.model.parameters.push(DesignParameter {
-            id: parameter_id.clone(),
-            owner: FeatureId("test:model:feature#extrude".into()),
-            ordinal: 0,
-            name: "Depth".into(),
-            expression: "7mm".into(),
-            display: None,
-            value: Some(ParameterValue::Length(Length(7.0))),
-            dependencies: Vec::new(),
-            properties: BTreeMap::new(),
-            pmi: None,
-            native_ref: None,
-        });
-        for (name, active) in [("Default", true), ("Alternate", false)] {
-            ir.model.configurations.push(DesignConfiguration {
-                id: ConfigurationId(format!("test:model:configuration#{name}")),
-                ordinal: ir.model.configurations.len() as u32,
-                active,
-                source_index: None,
-                name: name.into(),
-                material: None,
-                properties: BTreeMap::new(),
-                bodies: Vec::new(),
-                parameter_values: BTreeMap::new(),
-                feature_states: BTreeMap::new(),
-                native_ref: None,
-            });
-        }
-
-        project_active_configuration_baseline(&mut ir);
-
-        assert_eq!(
-            ir.model.configurations[0].parameter_values[&parameter_id],
-            ParameterValue::Length(Length(7.0))
-        );
-        assert!(ir.model.configurations[1].parameter_values.is_empty());
-    }
 }
 
 /// Bind a uniquely identified native sketch history node to solved sketch geometry.
@@ -3166,7 +3124,10 @@ fn directional_light_tree_node_role(feature: &Feature) -> Option<FeatureTreeNode
 }
 
 fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
-    if !feature.parameters.is_empty() || !feature.properties.is_empty() {
+    let builtin_shape = feature.xml_tag.eq_ignore_ascii_case("Feature")
+        || feature.source_id.as_deref() == Some("5")
+            && feature.xml_tag.eq_ignore_ascii_case("Sketch");
+    if !builtin_shape || !feature.parameters.is_empty() || !feature.properties.is_empty() {
         return None;
     }
     match feature.source_id.as_deref()? {
@@ -5434,52 +5395,6 @@ pub(crate) fn project_configuration_design_states(
                 )
             })
             .collect();
-    }
-}
-
-/// Use the global evaluated design state for an active configuration without a scoped lane.
-pub(crate) fn project_active_configuration_baseline(ir: &mut cadmpeg_ir::CadIr) {
-    let baseline_parameters = ir
-        .model
-        .parameters
-        .iter()
-        .filter_map(|parameter| {
-            parameter
-                .value
-                .clone()
-                .map(|value| (parameter.id.clone(), value))
-        })
-        .collect::<BTreeMap<_, _>>();
-    let baseline_features = ir
-        .model
-        .features
-        .iter()
-        .map(|feature| {
-            (
-                feature.id.clone(),
-                cadmpeg_ir::features::ConfigurationFeatureState {
-                    suppressed: feature.suppressed,
-                    dependencies: feature.dependencies.clone(),
-                    outputs: feature.outputs.clone(),
-                    definition: feature.definition.clone(),
-                },
-            )
-        })
-        .collect::<BTreeMap<_, _>>();
-    for configuration in ir
-        .model
-        .configurations
-        .iter_mut()
-        .filter(|configuration| configuration.active)
-    {
-        if configuration.parameter_values.is_empty() {
-            configuration
-                .parameter_values
-                .clone_from(&baseline_parameters);
-        }
-        if configuration.feature_states.is_empty() {
-            configuration.feature_states.clone_from(&baseline_features);
-        }
     }
 }
 
