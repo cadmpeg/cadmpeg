@@ -172,6 +172,10 @@ fn transfer_design_features(
                         "Chamfer" => Some(("Chamfer", CatiaFeatureKind::Chamfer)),
                         "Sketch" => Some(("Sketch", CatiaFeatureKind::Sketch)),
                         "GSMLoft" => Some(("GSMLoft", CatiaFeatureKind::Native("GSMLoft"))),
+                        "GSMPointBetweenValues" => Some((
+                            "GSMPointBetweenValues",
+                            CatiaFeatureKind::Native("GSMPointBetweenValues"),
+                        )),
                         _ => None,
                     });
             let family = families.next()?;

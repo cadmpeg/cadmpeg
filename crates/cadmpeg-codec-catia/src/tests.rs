@@ -1942,6 +1942,7 @@ fn standard_catpart_with_catalog() -> Vec<u8> {
         "Sketch",
         "Pad",
         "GSMLoft",
+        "GSMPointBetweenValues",
     ]);
     let mut file = standard_catpart();
     file.splice(16..16, catalog);
@@ -5801,6 +5802,7 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
     assert_eq!(native.catalogs[0].entries[4].value, "Sketch");
     assert_eq!(native.catalogs[0].entries[5].value, "Pad");
     assert_eq!(native.catalogs[0].entries[6].value, "GSMLoft");
+    assert_eq!(native.catalogs[0].entries[7].value, "GSMPointBetweenValues");
     assert!(decoded.ir.model.features.is_empty());
 }
 
@@ -6006,35 +6008,37 @@ fn decode_projects_pattern_classes_with_unresolved_operands() {
 }
 
 #[test]
-fn decode_projects_gsm_loft_as_native_operation() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_design_class("GSMLoft")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode generated GSMLoft design");
-
-    assert!(matches!(
-        decoded.ir.model.features.as_slice(),
-        [cadmpeg_ir::features::Feature {
-            name: Some(name),
-            definition: cadmpeg_ir::features::FeatureDefinition::Native {
-                kind,
-                parameters,
-                properties,
-            },
-            native_ref: Some(native_ref),
-            ..
-        }] if name == "GSMLoft" && kind == "GSMLoft" && parameters.is_empty()
-            && properties.is_empty()
-            && native_ref.starts_with("catia:outer:design-object#")
-    ));
-    assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 1 native operation feature(s)",
+fn decode_projects_exact_gsm_constructions_as_native_operations() {
+    for class in ["GSMLoft", "GSMPointBetweenValues"] {
+        let decoded = CatiaCodec
+            .decode(
+                &mut Cursor::new(standard_catpart_with_design_class(class)),
+                &DecodeOptions::default(),
             )
-    }));
+            .expect("decode generated GSM construction");
+
+        assert!(matches!(
+            decoded.ir.model.features.as_slice(),
+            [cadmpeg_ir::features::Feature {
+                name: Some(name),
+                definition: cadmpeg_ir::features::FeatureDefinition::Native {
+                    kind,
+                    parameters,
+                    properties,
+                },
+                native_ref: Some(native_ref),
+                ..
+            }] if name == class && kind == class && parameters.is_empty()
+                && properties.is_empty()
+                && native_ref.starts_with("catia:outer:design-object#")
+        ));
+        assert!(decoded.report.losses.iter().any(|loss| {
+            loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+                && loss.message.contains(
+                    "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 1 native operation feature(s)",
+                )
+        }));
+    }
 }
 
 #[test]
