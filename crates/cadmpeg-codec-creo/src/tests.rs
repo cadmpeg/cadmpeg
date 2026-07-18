@@ -5251,7 +5251,7 @@ fn scan_partitions_multiple_depdb_recipe_rows() {
 }
 
 #[test]
-fn decode_retains_conflicting_depdb_recipe_families_as_native_history() {
+fn decode_retains_recipe_history_and_projects_the_final_state() {
     let depdb = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
         \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 2\0\xf6\0protrevolve\0"
         .to_vec();
@@ -5259,6 +5259,11 @@ fn decode_retains_conflicting_depdb_recipe_families_as_native_history() {
     let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.feature_operation_states.len(), 2);
+    assert_eq!(scan.feature_operations.len(), 1);
+    assert_eq!(
+        scan.feature_operations[0].recipe,
+        Some(crate::feature::FeatureRecipe::ProtrudeRevolve)
+    );
     assert_eq!(scan.depdb_recipe_rows.len(), 2);
     assert!(scan
         .depdb_recipe_rows
@@ -5291,8 +5296,11 @@ fn decode_retains_conflicting_depdb_recipe_families_as_native_history() {
             .map(String::as_str),
         Some("917")
     );
-    assert!(!feature.source_properties.contains_key("recipe"));
-    assert_eq!(feature.source_tag, None);
+    assert_eq!(
+        feature.source_properties.get("recipe").map(String::as_str),
+        Some("protrevolve")
+    );
+    assert_eq!(feature.source_tag.as_deref(), Some("protrevolve"));
 }
 
 #[test]

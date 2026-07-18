@@ -1037,7 +1037,10 @@ of the optional prefix; a recipe-only state has no stored operation name.
 The current-state record's root schema class selects the operation definition.
 Feature rows supply a schema class only when the current-state record does not
 carry one and all rows for that feature agree on one class. Row order does not
-override the current-state class.
+override the current-state class. The current state's recipe and parent
+identifier likewise define the neutral operation family, Boolean effect,
+source tag, parent, and dependency. A differing recipe or parent in an earlier
+stored state remains history and does not veto the current projection.
 
 Within one current-state record, `protextrude` identifies an additive linear
 section sweep, `cutextrude` identifies a subtractive linear section sweep,
