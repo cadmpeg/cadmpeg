@@ -349,6 +349,9 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   without a complete position lane or persistent geometry binding remain
   native records.
 - **Design intent: Partial.** Ordered stored feature-operation states and their current-state projection, the configuration driver-table root pointer, dependencies, the implicit `AllFeatur` entity/reference graph and mixed generated-entity tables, placed section sketches and their ordered planar-sketch history nodes, ordered saved lines, arcs, circles, and splines, line-orientation constraints, dimensions, curve-equation programs, and cylindrical native-axis helix semantics transfer as typed or native design records. A resolved base linear section sweep carries its resolved sketch profile, direction, blind, symmetric, or two-sided extent, new-body operation, solid construction state, and evaluated output body. A resolved circular section sweep carries its resolved sketch profile, direction, blind extent, Boolean effect, solid construction state, and evaluated output body. A uniquely placed DEPDB rotational section carries its profile, axis, Boolean effect, solid construction state, native definition reference, full-turn angular extent when its angle choice is present, and evaluated output body. Repeated identical full-turn sequences remain separate native regeneration-state records.
+  Boolean classification treats only actual body outputs and prior new-body
+  sweeps as established material; consuming operations do not fabricate a
+  body when their source history is partial.
 - **Product structure: None.**
 - **Presentation and metadata: Partial.** Container attributes and geometry censuses transfer as source metadata. Materials and display data remain open.
 

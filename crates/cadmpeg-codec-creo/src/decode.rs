@@ -12391,17 +12391,18 @@ fn schema_feature_definition(
 
 fn preceding_features_establish_body(ir: &CadIr) -> bool {
     ir.model.features.iter().any(|feature| {
-        matches!(
-            feature.source_tag.as_deref(),
-            Some("protextrude" | "protrevolve")
-        ) || matches!(
-            feature.definition,
-            IrFeatureDefinition::Extrude { .. }
-                | IrFeatureDefinition::Revolve { .. }
-                | IrFeatureDefinition::Hole { .. }
-                | IrFeatureDefinition::Fillet { .. }
-                | IrFeatureDefinition::Chamfer { .. }
-        )
+        !feature.suppressed
+            && (!feature.outputs.is_empty()
+                || matches!(
+                    feature.definition,
+                    IrFeatureDefinition::Extrude {
+                        op: BooleanOp::NewBody,
+                        ..
+                    } | IrFeatureDefinition::Revolve {
+                        op: BooleanOp::NewBody,
+                        ..
+                    }
+                ))
     })
 }
 
@@ -13869,6 +13870,69 @@ mod resolved_sketch_tests {
             section_sweep_boolean_operation(None, "Körper", false, true),
             BooleanOp::Unresolved
         );
+    }
+
+    #[test]
+    fn only_body_evidence_or_a_new_body_sweep_establishes_prior_material() {
+        let feature = |definition, outputs| Feature {
+            id: IrFeatureId("creo:model:feature#1".to_string()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs,
+            definition,
+            native_ref: None,
+        };
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.features.push(feature(
+            IrFeatureDefinition::Chamfer {
+                edges: EdgeSelection::Unresolved,
+                spec: ChamferSpec::Unresolved { form: None },
+                flip_direction: false,
+            },
+            Vec::new(),
+        ));
+        assert!(!preceding_features_establish_body(&ir));
+
+        ir.model.features[0].outputs = vec![BodyId("creo:model:body#1".to_string())];
+        assert!(preceding_features_establish_body(&ir));
+
+        ir.model.features[0] = feature(
+            IrFeatureDefinition::Extrude {
+                profile: ProfileRef::Native("creo:section#1".to_string()),
+                direction: None,
+                extent: Extent::Blind {
+                    length: Length(1.0),
+                },
+                op: BooleanOp::NewBody,
+                draft: None,
+                reverse_draft: None,
+                direction_source: None,
+                solid: Some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                first_offset: None,
+                second_offset: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            },
+            Vec::new(),
+        );
+        assert!(preceding_features_establish_body(&ir));
+        ir.model.features[0].suppressed = true;
+        assert!(!preceding_features_establish_body(&ir));
+        ir.model.features[0].suppressed = false;
+        let IrFeatureDefinition::Extrude { op, .. } = &mut ir.model.features[0].definition else {
+            unreachable!();
+        };
+        *op = BooleanOp::Join;
+        assert!(!preceding_features_establish_body(&ir));
     }
 
     #[test]

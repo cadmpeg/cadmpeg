@@ -1179,7 +1179,11 @@ The section-sweep recipe determines its Boolean effect independently of the
 localized operation-family display name. A `prot` recipe joins an established
 preceding body and creates a new body when no preceding modeled body exists. A
 `cut` recipe removes material. A sweep whose generated topology already forms
-an independent body has new-body semantics.
+an independent body has new-body semantics. Prior material exists only after
+an unsuppressed feature has a body output or an unsuppressed earlier sweep has
+new-body semantics. A hole,
+round, chamfer, or joining sweep without a body output does not establish a
+body for subsequent Boolean classification.
 
 In a class-916 or class-917 positional feature row, feature form `2` selects a
 rotational section sweep. Its `param_choice_ptr` body begins after
