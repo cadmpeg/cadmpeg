@@ -35,6 +35,7 @@ const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
     "Dependency",
     "Dependencies",
     "ParentFeatures",
+    "Planes",
     "DissectableChildren",
 ];
 
@@ -5476,6 +5477,10 @@ pub(crate) fn project_configuration_design_states(
         crate::resolved_features::enrich_history_sweep_paths(&mut projection, scoped_lanes);
         crate::resolved_features::enrich_history_parameters(&mut projection, scoped_lanes, true);
         crate::resolved_features::enrich_history_reference_planes(&mut projection, scoped_lanes);
+        crate::resolved_features::enrich_history_reference_axis_dependencies(
+            &mut projection,
+            scoped_lanes,
+        );
         crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
         apply_evaluated_parameters(&mut projection);
         let mut features = project_features(&projection);
@@ -6032,6 +6037,10 @@ fn project_features_with_native_inputs(
         true,
     );
     crate::resolved_features::enrich_history_reference_planes(
+        &mut histories,
+        &native.feature_input_lanes,
+    );
+    crate::resolved_features::enrich_history_reference_axis_dependencies(
         &mut histories,
         &native.feature_input_lanes,
     );

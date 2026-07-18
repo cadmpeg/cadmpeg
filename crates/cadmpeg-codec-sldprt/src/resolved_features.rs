@@ -391,10 +391,10 @@ mod marker_tests {
         marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
         named_scalars, native_scalar_matches_discrete_parameter, object_names,
         ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
-        principal_sketch_frame, resolve_operand_marker, resolve_operand_marker_excluding,
-        resolve_scalar_operand_markers, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        plane_intersection_axis_sources, principal_sketch_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers, sketch_plane_frames,
+        solved_tangent, spatial_vertex_coordinates, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
         COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
@@ -474,6 +474,32 @@ mod marker_tests {
             &[scalar(FeatureInputOperandKind::Native(0x8dda))],
         )
         .is_empty());
+    }
+
+    #[test]
+    fn plane_intersection_axis_requires_two_complete_known_references() {
+        let record = |source: u32, object: u8, selector: u8| {
+            let mut bytes = vec![0; 46];
+            bytes[..4].copy_from_slice(&source.to_le_bytes());
+            bytes[4..8].copy_from_slice(&0x6255_5715u32.to_le_bytes());
+            bytes[14..16].copy_from_slice(&[1, 0]);
+            bytes[22] = object;
+            bytes[30] = selector;
+            bytes[38..46].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+            bytes
+        };
+        let mut payload = record(17, 0xb6, 3);
+        payload.extend_from_slice(&record(23, 0x98, 0));
+        let known = [17, 23].into_iter().collect();
+        assert_eq!(
+            plane_intersection_axis_sources(&payload, &known),
+            Some([17, 23])
+        );
+
+        payload.pop();
+        assert_eq!(plane_intersection_axis_sources(&payload, &known), None);
+        let incomplete = record(17, 0xb6, 3);
+        assert_eq!(plane_intersection_axis_sources(&incomplete, &known), None);
     }
 
     #[test]
@@ -5345,6 +5371,89 @@ pub(crate) fn enrich_history_reference_planes(
             format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
         );
     }
+}
+
+/// Add the two serialized construction-plane operands to plane-intersection axes.
+pub(crate) fn enrich_history_reference_axis_dependencies(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let known_sources = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+        .collect::<HashSet<_>>();
+    for lane in lanes {
+        let mut starts =
+            histories
+                .iter()
+                .enumerate()
+                .flat_map(|(history_index, history)| {
+                    history.features.iter().enumerate().filter_map(
+                        move |(feature_index, feature)| {
+                            feature_object_name(feature, lane)
+                                .map(|name| (name.offset, history_index, feature_index))
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+        starts.sort_by_key(|start| start.0);
+        for (index, &(start, history_index, feature_index)) in starts.iter().enumerate() {
+            let feature = &histories[history_index].features[feature_index];
+            if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                != NativeClassKind::ReferenceAxis
+                || feature.properties.contains_key("Planes")
+            {
+                continue;
+            }
+            let end = starts
+                .get(index + 1)
+                .map_or(lane.native_payload.len(), |next| next.0 as usize);
+            let Ok(start) = usize::try_from(start) else {
+                continue;
+            };
+            let Some(bytes) = lane.native_payload.get(start..end) else {
+                continue;
+            };
+            let Some([first, second]) = plane_intersection_axis_sources(bytes, &known_sources)
+            else {
+                continue;
+            };
+            histories[history_index].features[feature_index]
+                .properties
+                .insert("Planes".into(), format!("{first},{second}"));
+        }
+    }
+}
+
+fn plane_intersection_axis_sources(
+    payload: &[u8],
+    known_sources: &HashSet<u32>,
+) -> Option<[u32; 2]> {
+    const RECORD_LEN: usize = 46;
+    const TERMINATOR: &[u8] = &[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    let mut sources = Vec::new();
+    for source in payload.windows(RECORD_LEN).filter_map(|bytes| {
+        let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+        (known_sources.contains(&source)
+            && bytes.get(8..14)?.iter().all(|byte| *byte == 0)
+            && bytes.get(14..16) == Some(&[1, 0])
+            && bytes.get(16..22)?.iter().all(|byte| *byte == 0)
+            && bytes.get(22).is_some_and(|object| *object != 0xff)
+            && bytes.get(23..30)?.iter().all(|byte| *byte == 0)
+            && matches!(bytes.get(30), Some(0 | 3))
+            && bytes.get(31..38)?.iter().all(|byte| *byte == 0)
+            && bytes.get(38..46) == Some(TERMINATOR))
+        .then_some(source)
+    }) {
+        if !sources.contains(&source) {
+            sources.push(source);
+        }
+    }
+    let [first, second] = sources.as_slice() else {
+        return None;
+    };
+    (first != second).then_some([*first, *second])
 }
 
 fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
