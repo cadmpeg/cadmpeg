@@ -409,13 +409,11 @@ pub enum FeatureDefinition {
     },
     /// Linear extrusion of a profile.
     Extrude {
-        /// Profile swept along `direction` (or the profile's own normal, when
-        /// `direction` is `None`).
+        /// Profile swept along `direction`.
         profile: ProfileRef,
-        /// Extrusion direction, when the source recorded one explicit of the
-        /// profile plane; `None` to extrude along the profile's own normal.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
+        /// Direction in which the profile is swept.
+        #[serde(default, skip_serializing_if = "ExtrudeDirection::is_profile_normal")]
+        direction: ExtrudeDirection,
         /// Plane or face from which the extrusion begins.
         #[serde(default)]
         start: ExtrudeStart,
@@ -707,6 +705,26 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// Direction in which an extrusion sweeps its profile.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ExtrudeDirection {
+    /// Sweep along the profile's positive normal.
+    #[default]
+    ProfileNormal,
+    /// Sweep opposite the profile's positive normal.
+    ReversedProfileNormal,
+    /// Sweep along an explicit model-space vector.
+    Explicit(Vector3),
+}
+
+impl ExtrudeDirection {
+    /// Whether this is the default positive profile-normal direction.
+    pub fn is_profile_normal(&self) -> bool {
+        matches!(self, Self::ProfileNormal)
+    }
 }
 
 /// Independently decoded inputs of a profile revolution.

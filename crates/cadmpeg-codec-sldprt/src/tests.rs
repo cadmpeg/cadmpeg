@@ -7,6 +7,7 @@
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::features::ExtrudeDirection;
 
 use crate::container::{self, role, MARKER};
 use crate::SldprtCodec;
@@ -1781,7 +1782,7 @@ fn encoder_writes_source_less_line_sketches() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id),
-            direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            direction: ExtrudeDirection::Explicit(Vector3::new(0.0, 0.0, 1.0)),
             start: cadmpeg_ir::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(12.0),
@@ -5638,7 +5639,7 @@ fn decode_extracts_parametric_history() {
         &neutral.definition,
         cadmpeg_ir::features::FeatureDefinition::Extrude {
             profile: cadmpeg_ir::features::ProfileRef::Native(profile),
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
             extent: cadmpeg_ir::features::Extent::Blind {
                 length: cadmpeg_ir::features::Length(12.5),
             },
@@ -7423,7 +7424,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
         &decoded.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
             profile: ProfileRef::Native(profile),
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
             extent: Extent::Blind { length: Length(2.0) },
             op: BooleanOp::Join,
             draft: None,
@@ -7433,7 +7434,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Extrude {
-            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            direction: ExtrudeDirection::Explicit(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
             extent: Extent::Symmetric { length: Length(4.0) },
             op: BooleanOp::NewBody,
             draft: Some(Angle(value)),
@@ -7454,7 +7455,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir.model.features[4].definition,
         FeatureDefinition::Extrude {
-            direction: Some(Vector3 {
+            direction: ExtrudeDirection::Explicit(Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
@@ -7474,7 +7475,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     else {
         panic!("typed extrusion");
     };
-    *direction = Some(Vector3::new(1.0, 0.0, 0.0));
+    *direction = ExtrudeDirection::Explicit(Vector3::new(1.0, 0.0, 0.0));
     *extent = Extent::TwoSided {
         first: Length(8.0),
         second: Length(9.0),
@@ -7490,7 +7491,7 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     else {
         panic!("typed extrusion");
     };
-    *direction = None;
+    *direction = ExtrudeDirection::ProfileNormal;
     *extent = Extent::ThroughAll;
     *draft = None;
 

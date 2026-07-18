@@ -1711,6 +1711,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         match &feature.definition {
             FeatureDefinition::Extrude {
                 profile,
+                direction,
                 start,
                 extent,
                 draft,
@@ -1719,6 +1720,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 profiles.push(profile);
                 extents.push(extent);
+                if let crate::features::ExtrudeDirection::Explicit(vector) = direction {
+                    if !valid_feature_direction(*vector) {
+                        feature_geometry_error(findings, feature, "extrusion direction is invalid");
+                    }
+                }
                 if draft.is_some_and(|angle| !angle.0.is_finite())
                     || second_draft.is_some_and(|angle| !angle.0.is_finite())
                 {

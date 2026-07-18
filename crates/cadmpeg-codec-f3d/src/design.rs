@@ -2385,7 +2385,8 @@ fn project_extrude(
     placements: &[DesignSketchPlacement],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        BooleanOp, Extent, ExtrudeStart, FaceSelection, FeatureDefinition, Length, ProfileRef,
+        BooleanOp, Extent, ExtrudeDirection, ExtrudeStart, FaceSelection, FeatureDefinition,
+        Length, ProfileRef,
     };
 
     let supported_parameter = |source_kind: &str| {
@@ -2418,7 +2419,7 @@ fn project_extrude(
         .filter(|group| group.extrude_role == Some(DesignExtrudeOperandRole::Profile))
         .copied()
         .collect::<Vec<_>>();
-    let (profile_ref, profile_placement) = match scope.extrude_profile.as_ref() {
+    let profile_ref = match scope.extrude_profile.as_ref() {
         Some(profile) => {
             if !profile_groups.is_empty()
                 && !matches!(
@@ -2432,16 +2433,13 @@ fn project_extrude(
                 native_stream(&placement.id) == native_stream(&scope.id)
                     && placement.entity_id == profile.entity_id
             })?;
-            (
-                ProfileRef::Sketch(neutral_sketch_id(placement)),
-                Some(placement),
-            )
+            ProfileRef::Sketch(neutral_sketch_id(placement))
         }
         None => {
             let [group] = profile_groups.as_slice() else {
                 return None;
             };
-            (ProfileRef::Native(group.id.clone()), None)
+            ProfileRef::Native(group.id.clone())
         }
     };
     let face_groups = scope_groups
@@ -2568,14 +2566,9 @@ fn project_extrude(
         _ => return None,
     };
     let direction = if reverse_direction {
-        let profile_placement = profile_placement?;
-        Some(Vector3::new(
-            -profile_placement.transform[0][2],
-            -profile_placement.transform[1][2],
-            -profile_placement.transform[2][2],
-        ))
+        ExtrudeDirection::ReversedProfileNormal
     } else {
-        None
+        ExtrudeDirection::ProfileNormal
     };
     let draft = match unique("TaperAngle")? {
         Some(parameter) => {
@@ -20376,7 +20369,7 @@ mod relation_tests {
     #[test]
     fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
         use cadmpeg_ir::features::{
-            Angle, BooleanOp, Extent, ExtrudeStart, FaceSelection, ProfileRef,
+            Angle, BooleanOp, Extent, ExtrudeDirection, ExtrudeStart, FaceSelection, ProfileRef,
         };
 
         let parameter = |source_kind: &str, unit: &str, value| {
@@ -20468,7 +20461,7 @@ mod relation_tests {
             blind,
             FeatureDefinition::Extrude {
                 profile: ProfileRef::Sketch(ref profile),
-                direction: None,
+                direction: ExtrudeDirection::ProfileNormal,
                 extent: Extent::Blind { length: Length(5.5) },
                 op: BooleanOp::NewBody,
                 draft: Some(Angle(0.2)),
@@ -20611,11 +20604,33 @@ mod relation_tests {
         assert!(project_extrude(
             &scope,
             &[(0, &along), (1, &taper)],
-            &[body_group.clone(), profile_group],
+            &[body_group.clone(), profile_group.clone()],
             &[],
             std::slice::from_ref(&placement),
         )
         .is_some());
+        let mut native_profile_scope = scope.clone();
+        native_profile_scope.extrude_profile = None;
+        let reversed_native_profile = project_extrude(
+            &native_profile_scope,
+            &[(0, &parameter("AlongDistance", "mm", -0.2)), (1, &taper)],
+            &[body_group.clone(), profile_group.clone()],
+            &[],
+            &[],
+        )
+        .expect("typed reversed Extrude with a native profile");
+        assert!(matches!(
+            reversed_native_profile,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Native(ref native),
+                direction: ExtrudeDirection::ReversedProfileNormal,
+                extent: Extent::Blind {
+                    length: Length(2.0)
+                },
+                op: BooleanOp::Join,
+                ..
+            } if native == &profile_group.id
+        ));
 
         let mut face_group = body_group.clone();
         face_group.id = "f3d:Design/BulkStream.dat:operand-group#102".into();
@@ -20724,11 +20739,7 @@ mod relation_tests {
         assert!(matches!(
             reversed,
             FeatureDefinition::Extrude {
-                direction: Some(Vector3 {
-                    x: 0.0,
-                    y: -1.0,
-                    z: 0.0
-                }),
+                direction: ExtrudeDirection::ReversedProfileNormal,
                 extent: Extent::Blind {
                     length: Length(6.0)
                 },
@@ -20752,11 +20763,7 @@ mod relation_tests {
         assert!(matches!(
             to_face,
             FeatureDefinition::Extrude {
-                direction: Some(Vector3 {
-                    x: 0.0,
-                    y: -1.0,
-                    z: 0.0
-                }),
+                direction: ExtrudeDirection::ReversedProfileNormal,
                 extent: Extent::ToFace {
                     face: FaceSelection::Native(ref id),
                     offset: Some(Length(0.25)),

@@ -6,6 +6,7 @@
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::document::Model;
 use crate::examples::unit_cube;
+use crate::features::ExtrudeDirection;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
     ProceduralSurfaceDefinition, SurfaceGeometry,
@@ -723,7 +724,7 @@ fn neutral_features_resolve_sketch_profile_and_path_operands() {
     let definitions = [
         FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch.clone()),
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(10.0),
@@ -804,7 +805,7 @@ fn feature_history_rejects_dangling_and_forward_dependencies() {
         outputs: vec![BodyId("synthetic:test:body#missing".into())],
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Faces(vec![FaceId("synthetic:test:face#profile-missing".into())]),
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::ToFace {
                 face: FaceSelection::Faces(vec![FaceId(
@@ -2503,7 +2504,7 @@ fn feature_extent_magnitudes_are_validated() {
             outputs: Vec::new(),
             definition: FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("profile".into()),
-                direction: None,
+                direction: ExtrudeDirection::ProfileNormal,
                 start: crate::features::ExtrudeStart::ProfilePlane,
                 extent,
                 op: BooleanOp::NewBody,
@@ -2517,6 +2518,44 @@ fn feature_extent_magnitudes_are_validated() {
             .iter()
             .any(|finding| finding.message == "feature extent magnitude is invalid"));
     }
+}
+
+#[test]
+fn explicit_extrusion_direction_must_be_nonzero() {
+    use crate::features::{
+        BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,
+    };
+
+    let mut ir = unit_cube();
+    ir.model.features.push(Feature {
+        id: FeatureId("synthetic:test:feature#invalid-extrude-direction".into()),
+        ordinal: 0,
+        name: None,
+        suppressed: false,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: std::collections::BTreeMap::new(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Extrude {
+            profile: ProfileRef::Native("profile".into()),
+            direction: ExtrudeDirection::Explicit(Vector3::new(0.0, 0.0, 0.0)),
+            start: crate::features::ExtrudeStart::ProfilePlane,
+            extent: Extent::Blind {
+                length: Length(1.0),
+            },
+            op: BooleanOp::NewBody,
+            draft: None,
+            second_draft: None,
+        },
+        native_ref: None,
+    });
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.message == "extrusion direction is invalid"));
 }
 
 #[test]
@@ -2565,7 +2604,7 @@ fn opposite_side_extrusion_draft_requires_a_valid_two_sided_extent() {
             outputs: Vec::new(),
             definition: FeatureDefinition::Extrude {
                 profile: ProfileRef::Native("profile".into()),
-                direction: None,
+                direction: ExtrudeDirection::ProfileNormal,
                 start: crate::features::ExtrudeStart::ProfilePlane,
                 extent,
                 op: BooleanOp::NewBody,
@@ -2624,7 +2663,7 @@ fn sketch_feature_ownership_and_order_are_validated() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile: ProfileRef::Sketch(sketch_id.clone()),
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(1.0),
@@ -2698,7 +2737,7 @@ fn sketch_profile_subselections_are_bounds_checked() {
         outputs: Vec::new(),
         definition: FeatureDefinition::Extrude {
             profile,
-            direction: None,
+            direction: ExtrudeDirection::ProfileNormal,
             start: crate::features::ExtrudeStart::ProfilePlane,
             extent: Extent::Blind {
                 length: Length(1.0),

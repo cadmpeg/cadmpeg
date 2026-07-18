@@ -9,12 +9,12 @@ use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferGroup,
     ChamferSpec, ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay,
-    EdgeSelection, Extent, ExtrudeStart, FaceMotion, FaceSelection, FeatureDefinition, FeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, FilletGroup, FlexForm, FlexMode, HoleForm, HoleKind,
-    Length, ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm,
-    RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide,
-    RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension,
-    SweepMode, TrimRegion, VariableRadius, WrapMode,
+    EdgeSelection, Extent, ExtrudeDirection, ExtrudeStart, FaceMotion, FaceSelection,
+    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FilletGroup, FlexForm,
+    FlexMode, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
+    PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction,
+    RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace,
+    SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1330,10 +1330,10 @@ fn project_extrude(
         Some(_) => return None,
     };
     let direction = match feature.properties.get("Direction") {
-        Some(value) => Some(parse_vector3(value)?),
-        None => None,
+        Some(value) => ExtrudeDirection::Explicit(parse_vector3(value)?),
+        None => ExtrudeDirection::ProfileNormal,
     };
-    if direction.is_some_and(|value| !valid_direction(value)) {
+    if matches!(&direction, ExtrudeDirection::Explicit(value) if !valid_direction(*value)) {
         return None;
     }
     let draft = match feature.parameters.get("Draft") {
@@ -4687,9 +4687,14 @@ pub fn sync_neutral_features(
                         )));
                     }
                 }
-                if let Some(direction) = direction {
+                if let ExtrudeDirection::Explicit(direction) = direction {
                     require_direction(*direction, &feature.id, "extrusion direction")?;
                     properties.insert("Direction".into(), format_vector3(*direction));
+                } else if *direction == ExtrudeDirection::ReversedProfileNormal {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} reverses its profile-normal extrusion direction",
+                        feature.id
+                    )));
                 }
                 if let Some(draft) = draft {
                     if !draft.0.is_finite() {
