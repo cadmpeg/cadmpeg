@@ -1829,18 +1829,40 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for frame in &native.design_dimension_annotation_frames {
         let native_stream = design_stream(&frame.id);
         let unique_index = annotation_frame_indices.insert((native_stream, frame.record_index));
-        let companion = companions_by_index.get(&(native_stream, frame.companion_record_index));
-        let companion_contains_frame = companion.is_some_and(|companion| {
-            frame.byte_offset >= companion.byte_offset.saturating_add(58)
-                && frame.paired_byte_offset
-                    < companion
-                        .byte_offset
-                        .saturating_add(58)
-                        .saturating_add(companion.payload_byte_length)
-        });
         let governing_owner = owners_by_index
             .get(&(native_stream, frame.governing_owner_record_index))
             .copied();
+        let physical_interval_valid = match frame.companion_record_index {
+            Some(record_index) => companions_by_index
+                .get(&(native_stream, record_index))
+                .is_some_and(|companion| {
+                    frame.byte_offset >= companion.byte_offset.saturating_add(58)
+                        && frame.paired_byte_offset
+                            < companion
+                                .byte_offset
+                                .saturating_add(58)
+                                .saturating_add(companion.payload_byte_length)
+                }),
+            None => governing_owner.is_some_and(|owner| {
+                scopes_by_index
+                    .get(&(native_stream, owner.scope_record_index))
+                    .is_some_and(|scope| frame.byte_offset >= scope.byte_offset)
+                    && native
+                        .design_parameter_owners
+                        .iter()
+                        .filter(|candidate| {
+                            design_stream(&candidate.id) == native_stream
+                                && candidate.scope_record_index == owner.scope_record_index
+                        })
+                        .filter_map(|candidate| {
+                            companions_by_index
+                                .get(&(native_stream, candidate.companion_record_index))
+                                .map(|companion| companion.byte_offset)
+                        })
+                        .min()
+                        .is_some_and(|end| frame.paired_byte_offset < end)
+            }),
+        };
         let governing_link_valid = governing_owner.is_some_and(|owner| {
             owner.companion_record_index == frame.governing_companion_record_index
                 && parameters_by_index
@@ -1891,7 +1913,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && unique_index
-            && companion_contains_frame
+            && physical_interval_valid
             && governing_link_valid
             && operands_valid
             && frame.annotation_byte_offset

@@ -600,8 +600,9 @@ pub struct DesignDimensionAnnotationOperand {
 pub struct DesignDimensionAnnotationFrame {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Companion record containing this frame.
-    pub companion_record_index: u32,
+    /// Companion record containing this frame, absent before the first companion in a scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub companion_record_index: Option<u32>,
     /// Companion record of the dimension parameter governed by this frame.
     pub governing_companion_record_index: u32,
     /// Byte offset of the primary indexed record header.

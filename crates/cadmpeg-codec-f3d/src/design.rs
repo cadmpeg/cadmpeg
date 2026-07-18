@@ -4591,7 +4591,7 @@ pub fn project_dimension_constraints(
         .chain(annotation_frames.iter().filter_map(|frame| {
             Some((
                 native_stream(&frame.id)?.to_owned(),
-                frame.companion_record_index,
+                frame.companion_record_index?,
             ))
         }))
         .chain(null_pairs.iter().filter_map(|pair| {
@@ -7825,17 +7825,16 @@ pub fn decode_dimension_annotation_frames(
         })
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for companion in companions
+    let streams = companions
         .iter()
-        .filter(|companion| companion.payload_byte_length != 0)
-    {
-        let Some(stream) = native_stream(&companion.id) else {
-            continue;
-        };
+        .filter_map(|companion| native_stream(&companion.id))
+        .collect::<HashSet<_>>();
+    let mut decoded_offsets = HashSet::new();
+    for stream in streams {
         let Some(entry) = scan.entries.iter().find(|entry| {
             entry.role == role::BULKSTREAM
                 && entry.name.contains("Design")
-                && companion.id.starts_with(&format!("f3d:{}:", entry.name))
+                && stream == format!("f3d:{}", entry.name)
         }) else {
             continue;
         };
@@ -7868,48 +7867,74 @@ pub fn decode_dimension_annotation_frames(
             .map(|owner| (owner.record_index, owner.companion_record_index))
             .collect::<HashMap<_, _>>();
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some((start, end)) = companion_owned_interval(
-            companion,
-            parameters.values().copied(),
-            owners,
-            scopes,
-            headers,
-            bytes.len(),
-        ) else {
-            continue;
-        };
-        let mut position = start;
-        while position < end {
-            let at = if position == start
-                && lp_ascii(bytes, start).is_some_and(|(_, after)| after == start + 7)
-            {
-                Some(start)
-            } else {
-                next_indexed_record_offset(bytes, position)
-            };
-            let Some(at) = at.filter(|at| *at < end) else {
-                break;
-            };
-            if let Some(mut frame) = parse_dimension_annotation_frame(
-                bytes,
-                at,
-                companion.record_index,
-                &governed_owners,
-                &geometry_indices,
-                &sketch_entities,
-            )
-            .filter(|frame| frame.paired_byte_offset < end as u64)
-            {
-                frame.id = format!(
-                    "f3d:{}:design-dimension-annotation-frame#{}",
-                    entry.name, frame.byte_offset
-                );
-                position = usize::try_from(frame.paired_byte_offset)
-                    .unwrap_or(at)
-                    .saturating_add(1);
-                out.push(frame);
-            } else {
-                position = at.saturating_add(1);
+        let mut intervals = companions
+            .iter()
+            .filter(|companion| native_stream(&companion.id) == Some(stream))
+            .filter_map(|companion| {
+                let (start, end) = companion_owned_interval(
+                    companion,
+                    parameters.values().copied(),
+                    owners,
+                    scopes,
+                    headers,
+                    bytes.len(),
+                )?;
+                Some((start, end, Some(companion.record_index)))
+            })
+            .collect::<Vec<_>>();
+        intervals.extend(scopes.iter().filter_map(|scope| {
+            if native_stream(&scope.id) != Some(stream) {
+                return None;
+            }
+            let end = owners
+                .iter()
+                .filter(|owner| {
+                    native_stream(&owner.id) == Some(stream)
+                        && owner.scope_record_index == scope.record_index
+                })
+                .filter_map(|owner| {
+                    companions
+                        .iter()
+                        .find(|companion| {
+                            native_stream(&companion.id) == Some(stream)
+                                && companion.record_index == owner.companion_record_index
+                        })
+                        .and_then(|companion| usize::try_from(companion.byte_offset).ok())
+                })
+                .min()?;
+            let start = usize::try_from(scope.byte_offset).ok()?;
+            (start < end).then_some((start, end, None))
+        }));
+        for (start, end, containing_companion_record_index) in intervals {
+            let mut position = start;
+            while position < end {
+                let at = next_indexed_record_offset(bytes, position);
+                let Some(at) = at.filter(|at| *at < end) else {
+                    break;
+                };
+                if let Some(mut frame) = parse_dimension_annotation_frame(
+                    bytes,
+                    at,
+                    containing_companion_record_index,
+                    &governed_owners,
+                    &geometry_indices,
+                    &sketch_entities,
+                )
+                .filter(|frame| frame.paired_byte_offset < end as u64)
+                {
+                    frame.id = format!(
+                        "f3d:{}:design-dimension-annotation-frame#{}",
+                        entry.name, frame.byte_offset
+                    );
+                    position = usize::try_from(frame.paired_byte_offset)
+                        .unwrap_or(at)
+                        .saturating_add(1);
+                    if decoded_offsets.insert((stream.to_owned(), frame.byte_offset)) {
+                        out.push(frame);
+                    }
+                } else {
+                    position = at.saturating_add(1);
+                }
             }
         }
     }
@@ -7920,7 +7945,7 @@ pub fn decode_dimension_annotation_frames(
 fn parse_dimension_annotation_frame(
     bytes: &[u8],
     start: usize,
-    companion_record_index: u32,
+    companion_record_index: Option<u32>,
     governed_owners: &HashMap<u32, u32>,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
@@ -14927,13 +14952,13 @@ mod relation_tests {
         let frame = parse_dimension_annotation_frame(
             &bytes,
             0,
-            383,
+            Some(383),
             &HashMap::from([(390, 391)]),
             &HashSet::from([354, 376]),
             &HashSet::from([201]),
         )
         .expect("annotated dimension frame");
-        assert_eq!(frame.companion_record_index, 383);
+        assert_eq!(frame.companion_record_index, Some(383));
         assert_eq!(frame.governing_companion_record_index, 391);
         assert_eq!(frame.entity_genesis, 0x202);
         assert_eq!(frame.annotation_byte_offset, annotation_byte_offset as u64);
@@ -14942,6 +14967,18 @@ mod relation_tests {
         assert_eq!(frame.return_members, [376, 354]);
         assert_eq!(frame.paired_byte_offset, paired_byte_offset as u64);
         assert_eq!(frame.owner_reference, 201);
+
+        let leading = parse_dimension_annotation_frame(
+            &bytes,
+            0,
+            None,
+            &HashMap::from([(390, 391)]),
+            &HashSet::from([354, 376]),
+            &HashSet::from([201]),
+        )
+        .expect("scope-prefix dimension frame");
+        assert_eq!(leading.companion_record_index, None);
+        assert_eq!(leading.governing_owner_record_index, 390);
     }
 
     #[test]
