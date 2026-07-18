@@ -1142,8 +1142,6 @@ fn unbound_feature_input_operation_objects(native: &crate::native::SldprtNative)
 }
 
 fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::SldprtNative) -> usize {
-    use crate::records::SketchInputKind;
-
     let projected = ir
         .model
         .sketch_constraints
@@ -1185,12 +1183,7 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             let markers = lane
                 .sketch_entities
                 .iter()
-                .filter(|marker| {
-                    matches!(
-                        marker.kind,
-                        SketchInputKind::Relation(_) | SketchInputKind::Native(_)
-                    ) && !projected.contains(&marker.id)
-                })
+                .filter(|marker| marker.kind.owns_constraint() && !projected.contains(&marker.id))
                 .count();
             instances + bindings + markers
         })
@@ -1209,12 +1202,7 @@ fn multiply_projected_sketch_relation_records(
                 .iter()
                 .map(|relation| relation.id.as_str())
                 .chain(lane.sketch_entities.iter().filter_map(|marker| {
-                    matches!(
-                        marker.kind,
-                        crate::records::SketchInputKind::Relation(_)
-                            | crate::records::SketchInputKind::Native(_)
-                    )
-                    .then_some(marker.id.as_str())
+                    marker.kind.owns_constraint().then_some(marker.id.as_str())
                 }))
         })
         .collect::<std::collections::HashSet<_>>();
@@ -3587,7 +3575,12 @@ mod design_loss_tests {
                         0,
                         SketchInputKind::Relation(SketchRelationKind::Horizontal),
                     ),
-                    marker("geometry-marker", 1, SketchInputKind::Native(99)),
+                    marker(
+                        "dimension-handle",
+                        1,
+                        SketchInputKind::Relation(SketchRelationKind::Distance),
+                    ),
+                    marker("geometry-marker", 2, SketchInputKind::Native(99)),
                 ],
             }],
             ..SldprtNative::default()

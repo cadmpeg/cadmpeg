@@ -629,6 +629,22 @@ impl SketchInputKind {
             Self::Native(value) => value,
         }
     }
+
+    /// Whether this marker owns constraint semantics that require a neutral
+    /// projection. Dimensional marker handles are operands of scalar-bearing
+    /// relation instances and do not independently encode a constraint.
+    pub fn owns_constraint(self) -> bool {
+        match self {
+            Self::Relation(
+                SketchRelationKind::Distance
+                | SketchRelationKind::Angle
+                | SketchRelationKind::Radius
+                | SketchRelationKind::Diameter,
+            ) => false,
+            Self::Relation(_) | Self::Native(_) => true,
+            Self::Point | Self::LineOrCircle | Self::Arc | Self::ConstrainedPoint => false,
+        }
+    }
 }
 
 /// Relation kind carried by a non-coordinate sketch marker.
@@ -1034,5 +1050,20 @@ mod tests {
             let relation = SketchRelationKind::from_native_code(code).unwrap();
             assert_eq!(relation.native_code(), code);
         }
+    }
+
+    #[test]
+    fn scalar_bearing_instances_own_dimensional_constraints() {
+        for relation in [
+            SketchRelationKind::Distance,
+            SketchRelationKind::Angle,
+            SketchRelationKind::Radius,
+            SketchRelationKind::Diameter,
+        ] {
+            assert!(!SketchInputKind::Relation(relation).owns_constraint());
+        }
+        assert!(SketchInputKind::Relation(SketchRelationKind::Horizontal).owns_constraint());
+        assert!(SketchInputKind::Native(86).owns_constraint());
+        assert!(!SketchInputKind::Point.owns_constraint());
     }
 }
