@@ -2120,29 +2120,30 @@ fn segment_table_body(
     })
 }
 
-fn trim_entity_table(
-    payload: &[u8],
-    start: usize,
-    end: usize,
-    segments: Option<&FeatureSegmentTable>,
-) -> Option<FeatureTrimEntityTable> {
+fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureTrimEntityTable> {
     let table = find_bytes(payload, b"ent_tab\0", start, end)?;
     let header = trim_table_header(payload, b"ent_tab\0", start, end);
     let prototype = find_bytes(payload, b"entry_ptr(entity_entry)", table, end)?;
-    let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], prototype, end)?;
-    let (_, mut cursor) = psb::compact_int(payload, close + 2);
+    let mut cursor = header
+        .and_then(|(_, table_class, _)| {
+            (prototype..end).find_map(|offset| {
+                (payload.get(offset..offset + 3) == Some(&[0xf4, 0x04, psb::token::ENTITY_REF]))
+                    .then_some(())?;
+                let (class, after_reference) = psb::reference_id(payload, offset + 3).ok()?;
+                (class == table_class && payload.get(after_reference) == Some(&0xe2))
+                    .then_some(after_reference + 1)
+            })
+        })
+        .or_else(|| {
+            let close = find_bytes(payload, &[0xf2, psb::token::ENTITY_REF], prototype, end)?;
+            let (_, after_reference) = psb::reference_id(payload, close + 2).ok()?;
+            Some(after_reference)
+        })?;
     if payload.get(cursor) == Some(&0xe3) {
         cursor += 1;
     }
     let first_row = cursor;
     let region_end = find_bytes(payload, b"vert_tab", cursor, end).unwrap_or(end);
-    let valid_ids = segments.map(|table| {
-        table
-            .rows
-            .iter()
-            .map(|row| row.external_id)
-            .collect::<BTreeSet<_>>()
-    });
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
     while cursor < region_end {
@@ -2160,13 +2161,7 @@ fn trim_entity_table(
         if let (Some(external_id), Some(start_vertex), Some(end_vertex)) =
             (external_id, start_vertex, end_vertex)
         {
-            if external_id != 0
-                && payload.get(p) == Some(&0)
-                && valid_ids
-                    .as_ref()
-                    .is_none_or(|ids| ids.contains(&external_id))
-                && seen.insert(external_id)
-            {
+            if external_id != 0 && payload.get(p) == Some(&0) && seen.insert(external_id) {
                 rows.push(FeatureTrimEntity {
                     external_id,
                     mode,
@@ -2276,17 +2271,9 @@ fn positional_trim_entity_table(
     table_class: u32,
     entry_class: u32,
     next_table_class: Option<u32>,
-    segments: Option<&FeatureSegmentTable>,
 ) -> Option<FeatureTrimEntityTable> {
     let (table, declared_count, rows_start, region_end) =
         positional_table_region(payload, start, end, table_class, next_table_class)?;
-    let valid_ids = segments.map(|table| {
-        table
-            .rows
-            .iter()
-            .map(|row| row.external_id)
-            .collect::<BTreeSet<_>>()
-    });
     let mut rows = Vec::new();
     let mut seen = BTreeSet::new();
     let has_entry_class = (rows_start..region_end).any(|offset| {
@@ -2318,13 +2305,7 @@ fn positional_trim_entity_table(
         if let (Some(external_id), Some(start_vertex), Some(end_vertex)) =
             (external_id, start_vertex, end_vertex)
         {
-            if external_id != 0
-                && payload.get(p) == Some(&0)
-                && valid_ids
-                    .as_ref()
-                    .is_none_or(|ids| ids.contains(&external_id))
-                && seen.insert(external_id)
-            {
+            if external_id != 0 && payload.get(p) == Some(&0) && seen.insert(external_id) {
                 rows.push(FeatureTrimEntity {
                     external_id,
                     mode,
@@ -5347,23 +5328,21 @@ fn definitions_in_ranges(
                 .then(|| positional_segment_table(payload, start, end))
                 .flatten()
         });
-        let trim_entities =
-            trim_entity_table(payload, start, end, segments.as_ref()).or_else(|| {
-                if positional {
-                    let (table_class, entry_class) = replay_trim_entity_classes?;
-                    positional_trim_entity_table(
-                        payload,
-                        start,
-                        end,
-                        table_class,
-                        entry_class,
-                        replay_trim_vertex_classes.map(|(class, _)| class),
-                        segments.as_ref(),
-                    )
-                } else {
-                    None
-                }
-            });
+        let trim_entities = trim_entity_table(payload, start, end).or_else(|| {
+            if positional {
+                let (table_class, entry_class) = replay_trim_entity_classes?;
+                positional_trim_entity_table(
+                    payload,
+                    start,
+                    end,
+                    table_class,
+                    entry_class,
+                    replay_trim_vertex_classes.map(|(class, _)| class),
+                )
+            } else {
+                None
+            }
+        });
         if !positional {
             replay_trim_entity_classes = trim_table_classes(payload, b"ent_tab\0", start, end);
         }
@@ -7009,38 +6988,12 @@ mod tests {
     }
 
     #[test]
-    fn positional_trim_entity_table_uses_inherited_entry_class() {
+    fn positional_trim_entity_table_decodes_without_segments() {
         let payload = b"prefix\xf8\x07\xf7\x42\xfb\xe2\xf7\x43\x00\xe3\
             \x09\x00\x03\x04\xf6\x00\
             \xf4\x04\xf7\x42\xe2\x01\xf8\x13\xf7\x44\xfb\xe2";
-        let segments = FeatureSegmentTable {
-            declared_count: 1,
-            entity_ref: None,
-            rows: vec![FeatureSegment {
-                kind: FeatureSegmentKind::Line,
-                directions: [None; 3],
-                point_ids: [1, 2],
-                center_id: None,
-                arc_orientation: None,
-                vertical_horizontal: None,
-                radius_ref: None,
-                radius2_ref: None,
-                external_id: 9,
-                offset: 0,
-            }],
-            offset: 0,
-        };
-
-        let entities = positional_trim_entity_table(
-            payload,
-            0,
-            payload.len(),
-            66,
-            67,
-            Some(68),
-            Some(&segments),
-        )
-        .expect("positional ent_tab");
+        let entities = positional_trim_entity_table(payload, 0, payload.len(), 66, 67, Some(68))
+            .expect("positional ent_tab");
 
         assert_eq!(entities.declared_count, Some(7));
         assert_eq!(entities.entity_ref, Some(66));
@@ -7055,9 +7008,8 @@ mod tests {
         let payload = b"prefix\xf8\x00\xf7\x42\xfb\xe2\
             \xf8\x01\xf7\x44\xfb\xe2";
 
-        let entities =
-            positional_trim_entity_table(payload, 0, payload.len(), 66, 67, Some(68), None)
-                .expect("empty positional ent_tab");
+        let entities = positional_trim_entity_table(payload, 0, payload.len(), 66, 67, Some(68))
+            .expect("empty positional ent_tab");
 
         assert_eq!(entities.declared_count, Some(0));
         assert_eq!(entities.entity_ref, Some(66));
@@ -7071,7 +7023,7 @@ mod tests {
         let payload = b"prefix\xf8\x01\xf7\x42\xfb\xe2\
             \x00\xe3\x09\x00\x03\x04\xf6\x00";
 
-        let entities = positional_trim_entity_table(payload, 0, payload.len(), 66, 67, None, None)
+        let entities = positional_trim_entity_table(payload, 0, payload.len(), 66, 67, None)
             .expect("positional ent_tab header");
 
         assert_eq!(entities.declared_count, Some(1));

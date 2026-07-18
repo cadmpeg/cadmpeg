@@ -660,6 +660,9 @@ whose bodies decode.
 The `ent_tab` and `vert_tab` headers likewise retain their declared counts,
 table-class references, and row-class references independently of validated
 trim rows.
+Complete native `ent_tab` rows are retained independently of whether `segtab`
+is present, complete, or contains the same external identifiers. Cross-table
+agreement is required only when deriving solved section topology.
 The `dimtab_ptr` header retains its declared count and table-class reference
 when no dimension row body validates.
 Dimension rows form an ordinal parameter table only when the number of decoded
