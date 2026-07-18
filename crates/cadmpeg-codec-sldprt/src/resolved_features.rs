@@ -17547,46 +17547,12 @@ fn validate_source_less_constraints(
                 constraint.id.0
             )));
         }
-        let sketch = ir
-            .model
-            .sketches
-            .iter()
-            .find(|sketch| sketch.id == constraint.sketch)
-            .ok_or_else(|| {
-                cadmpeg_ir::codec::CodecError::Malformed(format!(
-                    "sketch constraint {} references missing sketch {}",
-                    constraint.id.0, constraint.sketch.0
-                ))
-            })?;
-        let v_axis = cross(sketch.normal, sketch.u_axis);
         let mut expected = None;
         for locus in loci {
-            let (entity_id, start) = match locus {
-                SketchLocus::Start(entity) => (entity, true),
-                SketchLocus::End(entity) => (entity, false),
-                _ => {
-                    return Err(cadmpeg_ir::codec::CodecError::NotImplemented(
-                        "source-less SLDPRT sketch constraints support only solved endpoint coincidences"
-                            .into(),
-                    ));
-                }
-            };
-            let entity = ir
-                .model
-                .sketch_entities
-                .iter()
-                .find(|entity| entity.id == *entity_id && entity.sketch == sketch.id)
-                .ok_or_else(|| {
-                    cadmpeg_ir::codec::CodecError::Malformed(format!(
-                        "sketch constraint {} references entity {} outside sketch {}",
-                        constraint.id.0, entity_id.0, sketch.id.0
-                    ))
-                })?;
-            let curve = generated_sketch_curve(&entity.geometry, sketch, v_axis)?;
-            let point = if start { curve.start } else { curve.end };
+            let point = constraint_locus_point(ir, constraint, locus)?;
             if expected.is_some_and(|expected| !same_sketch_point(expected, point)) {
                 return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
-                    "source-less SLDPRT sketch constraint {} has unsolved endpoint coordinates",
+                    "source-less SLDPRT sketch constraint {} has noncoincident locus coordinates",
                     constraint.id.0
                 )));
             }
@@ -18560,7 +18526,12 @@ fn append_spatial_vertex(payload: &mut Vec<u8>, point: Point3) {
 
 #[cfg(test)]
 mod source_less_lane_tests {
-    use super::assemble_source_less_lanes;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchLocus};
+
+    use super::{
+        append_coordinate_marker, append_reference_marker, assemble_source_less_lanes,
+        generated_marker_relations, marker_local_links, GeneratedMarkerRelation,
+    };
 
     #[test]
     fn objects_follow_feature_ordinals_within_each_configuration() {
@@ -18576,6 +18547,73 @@ mod source_less_lane_tests {
         assert_eq!(lanes[1].configuration.as_deref(), Some("1"));
         assert_eq!(lanes[1].native_payload, [1, 2]);
     }
+
+    #[test]
+    fn non_endpoint_coincidences_form_pairwise_native_relations() {
+        let point = SketchLocus::Entity(SketchEntityId("point".into()));
+        let center = SketchLocus::Center(SketchEntityId("circle".into()));
+        let endpoint = SketchLocus::Start(SketchEntityId("line".into()));
+        let definition = SketchConstraintDefinition::CoincidentLoci {
+            loci: vec![point.clone(), center.clone(), endpoint.clone()],
+        };
+
+        let relations = generated_marker_relations(&definition);
+
+        assert_eq!(relations.len(), 2);
+        assert!(matches!(
+            relations[0],
+            GeneratedMarkerRelation::Loci(
+                crate::records::SketchRelationKind::Coincident,
+                first,
+                second,
+            ) if first == &point && second == &center
+        ));
+        assert!(matches!(
+            relations[1],
+            GeneratedMarkerRelation::Loci(
+                crate::records::SketchRelationKind::Coincident,
+                first,
+                second,
+            ) if first == &point && second == &endpoint
+        ));
+    }
+
+    #[test]
+    fn endpoint_only_coincidences_remain_topology_derived() {
+        let definition = SketchConstraintDefinition::CoincidentLoci {
+            loci: vec![
+                SketchLocus::End(SketchEntityId("first".into())),
+                SketchLocus::Start(SketchEntityId("second".into())),
+            ],
+        };
+
+        assert!(generated_marker_relations(&definition).is_empty());
+    }
+
+    #[test]
+    fn generated_coincident_relation_uses_parseable_local_links() {
+        let mut payload = Vec::new();
+        append_coordinate_marker(
+            &mut payload,
+            crate::records::SketchInputKind::Point,
+            [0.0, 0.0],
+            1,
+        );
+        append_coordinate_marker(
+            &mut payload,
+            crate::records::SketchInputKind::Point,
+            [0.0, 0.0],
+            2,
+        );
+        append_reference_marker(
+            &mut payload,
+            crate::records::SketchRelationKind::Coincident,
+            [1, 2],
+            3,
+        );
+
+        assert_eq!(marker_local_links(&payload, 284), Some(([1, 2], 0)));
+    }
 }
 
 enum GeneratedMarkerRelation<'a> {
@@ -18583,6 +18621,73 @@ enum GeneratedMarkerRelation<'a> {
     Binary(SketchRelationKind, &'a SketchEntityId, &'a SketchEntityId),
     Loci(SketchRelationKind, &'a SketchLocus, &'a SketchLocus),
     Midpoint(&'a SketchLocus, &'a SketchEntityId),
+}
+
+fn generated_marker_relations(
+    definition: &SketchConstraintDefinition,
+) -> Vec<GeneratedMarkerRelation<'_>> {
+    match definition {
+        SketchConstraintDefinition::Horizontal { entity } => vec![GeneratedMarkerRelation::Unary(
+            SketchRelationKind::Horizontal,
+            entity,
+        )],
+        SketchConstraintDefinition::Vertical { entity } => vec![GeneratedMarkerRelation::Unary(
+            SketchRelationKind::Vertical,
+            entity,
+        )],
+        SketchConstraintDefinition::Fixed { entity } => vec![GeneratedMarkerRelation::Unary(
+            SketchRelationKind::Fixed,
+            entity,
+        )],
+        SketchConstraintDefinition::ArcAngle { entity, angle } => arc_angle_relation_kind(angle.0)
+            .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
+            .unwrap_or_default(),
+        SketchConstraintDefinition::EllipseAngle { entity, angle } => {
+            ellipse_angle_relation_kind(angle.0)
+                .map(|kind| vec![GeneratedMarkerRelation::Unary(kind, entity)])
+                .unwrap_or_default()
+        }
+        SketchConstraintDefinition::HorizontalPoints { first, second } => {
+            vec![GeneratedMarkerRelation::Loci(
+                SketchRelationKind::HorizontalPoints,
+                first,
+                second,
+            )]
+        }
+        SketchConstraintDefinition::VerticalPoints { first, second } => {
+            vec![GeneratedMarkerRelation::Loci(
+                SketchRelationKind::VerticalPoints,
+                first,
+                second,
+            )]
+        }
+        SketchConstraintDefinition::Midpoint { point, entity } => {
+            vec![GeneratedMarkerRelation::Midpoint(point, entity)]
+        }
+        SketchConstraintDefinition::CoincidentLoci { loci }
+            if !loci
+                .iter()
+                .all(|locus| matches!(locus, SketchLocus::Start(_) | SketchLocus::End(_))) =>
+        {
+            loci.first()
+                .map(|first| {
+                    loci.iter()
+                        .skip(1)
+                        .map(|locus| {
+                            GeneratedMarkerRelation::Loci(
+                                SketchRelationKind::Coincident,
+                                first,
+                                locus,
+                            )
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        }
+        definition => binary_marker_relation(definition)
+            .map(|(kind, first, second)| vec![GeneratedMarkerRelation::Binary(kind, first, second)])
+            .unwrap_or_default(),
+    }
 }
 
 enum GeneratedDimension<'a> {
@@ -18629,35 +18734,7 @@ fn append_generated_sketch_markers(
         .sketch_constraints
         .iter()
         .filter(|constraint| constraint.sketch == sketch.id)
-        .filter_map(|constraint| match &constraint.definition {
-            SketchConstraintDefinition::Horizontal { entity } => Some(
-                GeneratedMarkerRelation::Unary(SketchRelationKind::Horizontal, entity),
-            ),
-            SketchConstraintDefinition::Vertical { entity } => Some(
-                GeneratedMarkerRelation::Unary(SketchRelationKind::Vertical, entity),
-            ),
-            SketchConstraintDefinition::Fixed { entity } => Some(GeneratedMarkerRelation::Unary(
-                SketchRelationKind::Fixed,
-                entity,
-            )),
-            SketchConstraintDefinition::ArcAngle { entity, angle } => Some(
-                GeneratedMarkerRelation::Unary(arc_angle_relation_kind(angle.0)?, entity),
-            ),
-            SketchConstraintDefinition::EllipseAngle { entity, angle } => Some(
-                GeneratedMarkerRelation::Unary(ellipse_angle_relation_kind(angle.0)?, entity),
-            ),
-            SketchConstraintDefinition::HorizontalPoints { first, second } => Some(
-                GeneratedMarkerRelation::Loci(SketchRelationKind::HorizontalPoints, first, second),
-            ),
-            SketchConstraintDefinition::VerticalPoints { first, second } => Some(
-                GeneratedMarkerRelation::Loci(SketchRelationKind::VerticalPoints, first, second),
-            ),
-            SketchConstraintDefinition::Midpoint { point, entity } => {
-                Some(GeneratedMarkerRelation::Midpoint(point, entity))
-            }
-            definition => binary_marker_relation(definition)
-                .map(|(kind, first, second)| GeneratedMarkerRelation::Binary(kind, first, second)),
-        })
+        .flat_map(|constraint| generated_marker_relations(&constraint.definition))
         .collect::<Vec<_>>();
     let dimensions = ir
         .model
