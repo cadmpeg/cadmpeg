@@ -453,13 +453,16 @@ fn shifted_disc16_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRe
     let Some(shell) = follows(disc_1a, 0x0018) else {
         return Vec::new();
     };
-    let Some(disc_12) = follows(shell, 0x0012) else {
-        return Vec::new();
+    let lower_complete = if let Some(disc_12) = follows(shell, 0x0012) {
+        follows(disc_12, 0x0010).is_some_and(|disc_10| follows(disc_10, 0x000e).is_some())
+    } else if let Some(disc_14) = follows(shell, 0x0014) {
+        follows(disc_14, 0x0010).is_some_and(|disc_10| {
+            follows(disc_10, 0x000e).is_some_and(|disc_0e| follows(disc_0e, 0x0004).is_some())
+        })
+    } else {
+        false
     };
-    let Some(disc_10) = follows(disc_12, 0x0010) else {
-        return Vec::new();
-    };
-    if follows(disc_10, 0x000e).is_none()
+    if !lower_complete
         || !by_attr
             .values()
             .any(|record| record.disc == 0x0016 && record.flo() == 1)
@@ -1219,6 +1222,32 @@ mod tests {
             panic!("one shifted-disc16-root body");
         };
         assert_eq!(body.attr, 10);
+        assert_eq!(body.regions[0].shells[0].attr, 12);
+        assert!(body.refs.contains(&20) && body.refs.contains(&21));
+    }
+
+    #[test]
+    fn shifted_disc16_root_accepts_the_disc14_lower_branch() {
+        let records = vec![
+            flo2(10, 0x1c, [3, 1, 11, 1, 1, 1]),
+            flo2(11, 0x1a, [3, 10, 12, 1, 1, 1]),
+            flo2(12, 0x18, [3, 11, 13, 1, 1, 1]),
+            flo2(13, 0x14, [3, 12, 14, 1, 1, 1]),
+            flo2(14, 0x10, [3, 13, 15, 1, 1, 1]),
+            flo2(15, 0x0e, [3, 14, 16, 1, 1, 1]),
+            record(16, 0x04, [3, 15, 1, 1, 1, 1]),
+            record(20, 0x16, [1; 6]),
+            record(21, 0x16, [1; 6]),
+        ];
+        let by_attr = records
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+
+        let bodies = shifted_disc16_root_body(&by_attr);
+        let [body] = bodies.as_slice() else {
+            panic!("one shifted-disc16-root body");
+        };
         assert_eq!(body.regions[0].shells[0].attr, 12);
         assert!(body.refs.contains(&20) && body.refs.contains(&21));
     }
