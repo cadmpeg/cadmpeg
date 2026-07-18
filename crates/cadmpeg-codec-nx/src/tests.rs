@@ -3080,6 +3080,13 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         );
     }
 
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("EXTRACT_BODY", &[], None, None, None),
+        FeatureDefinition::ExtractBody {
+            source: BodySelection::Unresolved,
+        }
+    );
+
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),
         FeatureDefinition::Hole {

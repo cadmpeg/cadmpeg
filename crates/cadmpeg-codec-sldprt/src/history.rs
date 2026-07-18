@@ -769,6 +769,9 @@ pub fn bind_topology_selections(
             }
         }
         match &mut feature.definition {
+            FeatureDefinition::ExtractBody { source } => {
+                resolve_body_selection(source, &body_ids);
+            }
             FeatureDefinition::Extrude {
                 profile, extent, ..
             } => {
@@ -3860,6 +3863,12 @@ pub fn sync_neutral_features(
                     .unwrap_or_default(),
                 feature.source_properties.clone(),
             ),
+            FeatureDefinition::ExtractBody { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses unsupported body-extraction semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DerivedGeometry { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported copied-geometry semantics",
@@ -7414,6 +7423,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
         FeatureDefinition::StoredGeometry => "Feature",
+        FeatureDefinition::ExtractBody { .. } => "Feature",
         FeatureDefinition::DerivedGeometry { .. } => "Feature",
         FeatureDefinition::ImportedGeometry { .. } => "Feature",
         FeatureDefinition::Primitive { .. } => "Primitive",

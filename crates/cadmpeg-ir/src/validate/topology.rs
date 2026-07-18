@@ -2047,6 +2047,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 body_selections.push(first);
                 body_selections.push(second);
             }
+            FeatureDefinition::ExtractBody { source } => body_selections.push(source),
             FeatureDefinition::MirrorShape {
                 source,
                 plane_origin,

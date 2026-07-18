@@ -11277,6 +11277,9 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             space: SketchSpace::Unresolved,
             sketch: None,
         },
+        "EXTRACT_BODY" => FeatureDefinition::ExtractBody {
+            source: BodySelection::Unresolved,
+        },
         "CPROJ" | "CPROJ_CMB" => FeatureDefinition::ProjectedCurve {
             source: PathRef::Unresolved,
             target_faces: FaceSelection::Unresolved,
