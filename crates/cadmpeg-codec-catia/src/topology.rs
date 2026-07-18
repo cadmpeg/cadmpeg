@@ -652,7 +652,6 @@ struct TrimRecord {
     strip_lengths: Vec<usize>,
     fan_lengths: Vec<usize>,
     kind: u8,
-    end: usize,
 }
 
 /// Primitive partition of one selected positional standard trim packet.
@@ -8089,13 +8088,10 @@ fn parse_trim_chain(
     }
 
     let prefix = bytes.get(..end)?;
-    let mut predecessors = HashMap::<usize, Vec<(usize, TrimRecord)>>::new();
+    let mut predecessors = HashMap::<usize, Vec<usize>>::new();
     for start in 0..prefix.len() {
-        if let Some(record) = parse_trim_record(prefix, start, width) {
-            predecessors
-                .entry(record.end)
-                .or_default()
-                .push((start, record));
+        if let Some(layout) = parse_trim_record_layout(prefix, start, width) {
+            predecessors.entry(layout.end).or_default().push(start);
         }
     }
 
@@ -8118,12 +8114,15 @@ fn parse_trim_chain(
         let predecessor = predecessors
             .get(&frames[frame].end)
             .and_then(|records| records.get(frames[frame].next_predecessor))
-            .cloned();
-        let Some((start, record)) = predecessor else {
+            .copied();
+        let Some(start) = predecessor else {
             backtrack(&mut frames, &mut reversed);
             continue;
         };
         frames[frame].next_predecessor += 1;
+        let Some(record) = parse_trim_record(prefix, start, width) else {
+            continue;
+        };
         let remaining = frames[frame].remaining - 1;
         reversed.push(record);
         frames.push(Frame {
@@ -8137,7 +8136,20 @@ fn parse_trim_chain(
         .map(|[records]| records)
 }
 
-fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
+struct TrimRecordLayout {
+    kind: u8,
+    independent_count: usize,
+    strip_count: usize,
+    lengths: Vec<usize>,
+    frame_vector: Option<[f64; 3]>,
+    handle_offset: usize,
+    handle_count: usize,
+    stored_count: usize,
+    legacy_42: bool,
+    end: usize,
+}
+
+fn parse_trim_record_layout(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecordLayout> {
     if bytes.get(start) != Some(&0x01) {
         return None;
     }
@@ -8209,8 +8221,29 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
         }
     }
     let stored_count = handle_count + usize::from(legacy_42);
-    let mut handles = Vec::with_capacity(stored_count);
-    for _ in 0..stored_count {
+    let handle_offset = position;
+    let byte_count = stored_count.checked_mul(width)?;
+    let end = handle_offset.checked_add(byte_count)?;
+    bytes.get(handle_offset..end)?;
+    Some(TrimRecordLayout {
+        kind,
+        independent_count: a,
+        strip_count: b,
+        lengths,
+        frame_vector,
+        handle_offset,
+        handle_count,
+        stored_count,
+        legacy_42,
+        end,
+    })
+}
+
+fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRecord> {
+    let layout = parse_trim_record_layout(bytes, start, width)?;
+    let mut position = layout.handle_offset;
+    let mut handles = Vec::with_capacity(layout.stored_count);
+    for _ in 0..layout.stored_count {
         let handle = match width {
             1 => u32::from(*bytes.get(position)?),
             2 => u32::from(u16::from_be_bytes(
@@ -8227,25 +8260,31 @@ fn parse_trim_record(bytes: &[u8], start: usize, width: usize) -> Option<TrimRec
         handles.push(handle);
         position += width;
     }
-    if legacy_42 {
+    let mut lengths = layout.lengths;
+    if layout.legacy_42 {
         let packed = *handles.first()?;
         lengths = vec![(packed >> 8) as usize, (packed & 0xff) as usize];
         handles.remove(0);
-        if lengths.iter().sum::<usize>() != handle_count {
+        if lengths.iter().sum::<usize>() != layout.handle_count {
             return None;
         }
     }
 
-    let triangles = packet_triangles(a, b, c, &lengths, &handles)?;
+    let triangles = packet_triangles(
+        layout.independent_count,
+        layout.strip_count,
+        lengths.len().checked_sub(layout.strip_count)?,
+        &lengths,
+        &handles,
+    )?;
     Some(TrimRecord {
         triangles,
-        frame_vector,
+        frame_vector: layout.frame_vector,
         handles,
-        independent_count: a,
-        strip_lengths: lengths[..b].to_vec(),
-        fan_lengths: lengths[b..].to_vec(),
-        kind,
-        end: position,
+        independent_count: layout.independent_count,
+        strip_lengths: lengths[..layout.strip_count].to_vec(),
+        fan_lengths: lengths[layout.strip_count..].to_vec(),
+        kind: layout.kind,
     })
 }
 
@@ -8477,15 +8516,16 @@ mod motif_tests {
         mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable,
         mesh_candidates_equivalent, mesh_edge_points_compatible, mesh_face_endpoint_configurations,
         motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
-        parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, possible_face_choices,
-        possible_face_equations, propagate_edge_port_points, propagate_partial_edge_port_points,
-        prune_edge_candidates_by_port_domains, prune_mesh_endpoint_pair_support,
-        reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
-        same_unordered_pair, standard_face_count, unique_coordinate_bijection,
-        unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
-        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun,
-        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
+        possible_face_choices, possible_face_equations, propagate_edge_port_points,
+        propagate_partial_edge_port_points, prune_edge_candidates_by_port_domains,
+        prune_mesh_endpoint_pair_support, reconstruct_incidence, reconstruct_incidence_candidates,
+        resolve_edge_faces_from_runs, same_unordered_pair, standard_face_count,
+        unique_coordinate_bijection, unique_duplicate_face_assignment,
+        uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun, MeshFaceBoundaryAssignment,
+        MeshQuotient, MeshSelectionSearch, StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER,
+        MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -8513,6 +8553,18 @@ mod motif_tests {
         assert!(records[0].strip_lengths.is_empty());
         assert!(records[0].fan_lengths.is_empty());
         assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    }
+
+    #[test]
+    fn trim_record_layout_indexes_extent_without_materializing_triangles() {
+        let bytes = triangle_packet([10, 11, 12]);
+        let layout = parse_trim_record_layout(&bytes, 0, 2).expect("trim packet layout");
+        assert_eq!(layout.handle_offset, 8);
+        assert_eq!(layout.stored_count, 3);
+        assert_eq!(layout.end, bytes.len());
+
+        let record = parse_trim_record(&bytes, 0, 2).expect("materialized trim packet");
+        assert_eq!(record.triangles, [[10, 11, 12]]);
     }
 
     #[test]
@@ -8682,7 +8734,6 @@ mod motif_tests {
             strip_lengths: vec![handles.len()],
             fan_lengths: Vec::new(),
             kind,
-            end: 0,
         }
     }
 
