@@ -1178,6 +1178,25 @@ fn exponentiate_parameter_value(
     base: &ParameterValue,
     exponent: &ParameterValue,
 ) -> Option<ParameterValue> {
+    if let (ParameterValue::Integer(base), ParameterValue::Integer(exponent)) = (base, exponent) {
+        if let Ok(exponent) = u32::try_from(*exponent) {
+            return base.checked_pow(exponent).map(ParameterValue::Integer);
+        }
+        if *exponent >= 0 {
+            return match base {
+                0 => Some(ParameterValue::Integer(0)),
+                1 => Some(ParameterValue::Integer(1)),
+                -1 => Some(ParameterValue::Integer(if exponent % 2 == 0 {
+                    1
+                } else {
+                    -1
+                })),
+                _ => None,
+            };
+        }
+        return Some(ParameterValue::Real(integer_power_real(*base, *exponent)));
+    }
+
     let exponent = real_parameter_value(exponent)?;
     Some(match base {
         ParameterValue::Length(value) if exponent == 1.0 => ParameterValue::Length(*value),
@@ -1197,6 +1216,20 @@ fn exponentiate_parameter_value(
             return None;
         }
     })
+}
+
+fn integer_power_real(base: i64, exponent: i64) -> f64 {
+    let mut exponent = exponent.unsigned_abs();
+    let mut factor = base as f64;
+    let mut value = 1.0;
+    while exponent != 0 {
+        if exponent & 1 != 0 {
+            value *= factor;
+        }
+        exponent >>= 1;
+        factor *= factor;
+    }
+    value.recip()
 }
 
 fn apply_parameter_function(name: &str, argument: &ParameterValue) -> Option<ParameterValue> {
@@ -1238,13 +1271,19 @@ fn apply_parameter_function(name: &str, argument: &ParameterValue) -> Option<Par
         "exp" => ParameterValue::Real(real_parameter_value(argument)?.exp()),
         "log" => ParameterValue::Real(real_parameter_value(argument)?.ln()),
         "sqr" => ParameterValue::Real(real_parameter_value(argument)?.sqrt()),
-        "int" => {
-            let value = real_parameter_value(argument)?.trunc();
-            if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+        "int" => match argument {
+            ParameterValue::Integer(value) => ParameterValue::Integer(*value),
+            ParameterValue::Real(value) => {
+                let value = value.trunc();
+                if value < i64::MIN as f64 || value >= -(i64::MIN as f64) {
+                    return None;
+                }
+                ParameterValue::Integer(value as i64)
+            }
+            ParameterValue::Length(_) | ParameterValue::Angle(_) | ParameterValue::Boolean(_) => {
                 return None;
             }
-            ParameterValue::Integer(value as i64)
-        }
+        },
         "sgn" => {
             let value = parameter_numeric_value(argument)?;
             if !value.is_finite() {
@@ -4045,8 +4084,9 @@ fn format_f64_literal(value: f64) -> String {
 #[cfg(test)]
 mod literal_tests {
     use super::{
-        apply_parameter_function, compare_parameter_values, exact_integer_f64, format_f64_literal,
-        parse_length_mm, parse_parameter_literal, ParameterValue,
+        apply_parameter_function, compare_parameter_values, exact_integer_f64,
+        exponentiate_parameter_value, format_f64_literal, parse_length_mm, parse_parameter_literal,
+        ParameterValue,
     };
 
     #[test]
@@ -4099,6 +4139,40 @@ mod literal_tests {
                 Some(ParameterValue::Integer(expected))
             );
         }
+    }
+
+    #[test]
+    fn integer_function_preserves_discrete_integer_values() {
+        for value in [i64::MIN, -(1_i64 << 53) - 1, (1_i64 << 53) + 1, i64::MAX] {
+            assert_eq!(
+                apply_parameter_function("int", &ParameterValue::Integer(value)),
+                Some(ParameterValue::Integer(value))
+            );
+        }
+        assert_eq!(
+            apply_parameter_function("int", &ParameterValue::Real(-3.75)),
+            Some(ParameterValue::Integer(-3))
+        );
+    }
+
+    #[test]
+    fn integer_powers_preserve_exact_exponent_parity() {
+        let odd = ParameterValue::Integer((1_i64 << 53) + 1);
+        assert_eq!(
+            exponentiate_parameter_value(&ParameterValue::Integer(-1), &odd),
+            Some(ParameterValue::Integer(-1))
+        );
+        assert_eq!(
+            exponentiate_parameter_value(
+                &ParameterValue::Integer(-1),
+                &ParameterValue::Integer(-((1_i64 << 53) + 1)),
+            ),
+            Some(ParameterValue::Real(-1.0))
+        );
+        assert_eq!(
+            exponentiate_parameter_value(&ParameterValue::Integer(2), &ParameterValue::Integer(-3),),
+            Some(ParameterValue::Real(0.125))
+        );
     }
 
     #[test]
