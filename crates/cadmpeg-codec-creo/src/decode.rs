@@ -18402,6 +18402,17 @@ mod resolved_sketch_tests {
                     && (direction.x + inverse_sqrt_two).abs() < 1e-12
                     && (direction.z - inverse_sqrt_two).abs() < 1e-12
         ));
+        let (elliptical_tangent_geometry, elliptical_tangent_tag) =
+            carrier_intersection_curve(cone_tangent_plane, elliptical_cone)
+                .expect("elliptical cone tangent generator");
+        assert_eq!(elliptical_tangent_tag, "plane_cone_tangent_line");
+        for parameter in [-1.0, 0.0, 1.0] {
+            let point = cadmpeg_ir::eval::curve_point(&elliptical_tangent_geometry, parameter)
+                .expect("elliptical tangent point");
+            let point = [point.x, point.y, point.z];
+            assert!(point_on_carrier(point, cone_tangent_plane));
+            assert!(point_on_carrier(point, elliptical_cone));
+        }
         let cone_ellipse_plane = CarrierEquation::Plane(PlaneEquation {
             origin: [0.0, 0.0, 2.0],
             normal: [-0.2, 0.0, 1.0],
@@ -18478,6 +18489,22 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Line { origin, .. }, "plane_cone_secant_generator"))
                 if (origin.z + 2.0).abs() < 1e-12
         ));
+        let elliptical_generators =
+            apex_plane_cone_generator_candidates(cone_degenerate_plane, elliptical_cone);
+        assert_eq!(elliptical_generators.len(), 2);
+        let (elliptical_generator, tag) = select_unique_curve_candidate(
+            elliptical_generators,
+            [[0.0, 1.0, 0.0], [0.0, 2.0, 2.0]],
+        )
+        .expect("selected elliptical cone generator");
+        assert_eq!(tag, "plane_cone_secant_generator");
+        for parameter in [-1.0, 0.0, 1.0] {
+            let point = cadmpeg_ir::eval::curve_point(&elliptical_generator, parameter)
+                .expect("elliptical generator point");
+            let point = [point.x, point.y, point.z];
+            assert!(point_on_carrier(point, cone_degenerate_plane));
+            assert!(point_on_carrier(point, elliptical_cone));
+        }
         assert_eq!(solve_carriers(&[cone, cap, tangent]), None);
         let cone_tangent = CarrierEquation::Plane(PlaneEquation {
             origin: [5.0, 0.0, 0.0],
@@ -23610,6 +23637,13 @@ fn carrier_intersection_curve(
                     ));
                 }
             }
+            let apex_generators = apex_plane_cone_generator_candidates(
+                CarrierEquation::Plane(plane),
+                CarrierEquation::Cone(cone),
+            );
+            if apex_generators.len() == 1 {
+                return apex_generators.into_iter().next();
+            }
             if (alignment.abs() - 1.0).abs() <= 1e-10 {
                 let axial = dot(
                     axis,
@@ -24291,17 +24325,23 @@ fn apex_plane_cone_generator_candidates(
     else {
         return Vec::new();
     };
-    if !circular_cone(cone) {
-        return Vec::new();
-    }
     let Some(normal) = normalized(plane.normal) else {
         return Vec::new();
     };
     let Some(axis) = normalized(cone.axis) else {
         return Vec::new();
     };
+    let Some(x_axis) = normalized(cone.ref_direction) else {
+        return Vec::new();
+    };
     let slope = cone.half_angle.tan();
-    if slope <= 1e-12 || cone.radius < 0.0 {
+    if slope <= 1e-12
+        || !slope.is_finite()
+        || cone.radius < 0.0
+        || cone.ratio <= 0.0
+        || !cone.ratio.is_finite()
+        || dot(axis, x_axis).abs() > 1e-10
+    {
         return Vec::new();
     }
     let apex: [f64; 3] =
@@ -24314,34 +24354,90 @@ fn apex_plane_cone_generator_candidates(
     if plane_distance.abs() > 1e-9 * scale {
         return Vec::new();
     }
-    let axial_normal = dot(axis, normal);
-    let projected_length_squared = 1.0 - axial_normal * axial_normal;
-    let cosine = cone.half_angle.cos();
-    if projected_length_squared <= cosine * cosine + 1e-12 {
+    let reference = cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
+        normal[0], normal[1], normal[2],
+    ));
+    let plane_u = [reference.x, reference.y, reference.z];
+    let plane_v = cross(normal, plane_u);
+    let y_axis = cross(axis, x_axis);
+    let cone_coordinates = |direction: [f64; 3]| {
+        [
+            dot(direction, x_axis),
+            dot(direction, y_axis) / cone.ratio,
+            dot(direction, axis),
+        ]
+    };
+    let quadratic = |first: [f64; 3], second: [f64; 3]| {
+        first[0].mul_add(
+            second[0],
+            first[1] * second[1] - slope * slope * first[2] * second[2],
+        )
+    };
+    let u_coordinates = cone_coordinates(plane_u);
+    let v_coordinates = cone_coordinates(plane_v);
+    let quadratic_uu = quadratic(u_coordinates, u_coordinates);
+    let quadratic_uv = quadratic(u_coordinates, v_coordinates);
+    let quadratic_vv = quadratic(v_coordinates, v_coordinates);
+    let coefficient_scale = quadratic_uu
+        .abs()
+        .max(quadratic_uv.abs())
+        .max(quadratic_vv.abs())
+        .max(1.0);
+    let determinant = quadratic_uu.mul_add(quadratic_vv, -quadratic_uv * quadratic_uv);
+    let determinant_tolerance = 1e-12 * coefficient_scale * coefficient_scale;
+    if determinant > determinant_tolerance {
         return Vec::new();
     }
-    let Some(projected_axis) = normalized(std::array::from_fn(|index| {
-        axis[index] - axial_normal * normal[index]
-    })) else {
-        return Vec::new();
+    let angle = 0.5 * (2.0 * quadratic_uv).atan2(quadratic_uu - quadratic_vv);
+    let (sine, cosine) = angle.sin_cos();
+    let first_direction: [f64; 3] =
+        std::array::from_fn(|index| cosine * plane_u[index] + sine * plane_v[index]);
+    let second_direction: [f64; 3] =
+        std::array::from_fn(|index| -sine * plane_u[index] + cosine * plane_v[index]);
+    let first_value = quadratic_uu * cosine * cosine
+        + 2.0 * quadratic_uv * cosine * sine
+        + quadratic_vv * sine * sine;
+    let second_value = quadratic_uu * sine * sine - 2.0 * quadratic_uv * cosine * sine
+        + quadratic_vv * cosine * cosine;
+    let directions = if determinant.abs() <= determinant_tolerance {
+        if first_value.abs() <= second_value.abs() {
+            vec![first_direction]
+        } else {
+            vec![second_direction]
+        }
+    } else {
+        let (negative_value, negative_direction, positive_value, positive_direction) =
+            if first_value < 0.0 {
+                (first_value, first_direction, second_value, second_direction)
+            } else {
+                (second_value, second_direction, first_value, first_direction)
+            };
+        let negative_weight = positive_value.sqrt();
+        let positive_weight = (-negative_value).sqrt();
+        [-1.0, 1.0]
+            .into_iter()
+            .filter_map(|sense| {
+                normalized(std::array::from_fn(|index| {
+                    negative_weight * negative_direction[index]
+                        + sense * positive_weight * positive_direction[index]
+                }))
+            })
+            .collect()
     };
-    let Some(transverse) = normalized(cross(normal, projected_axis)) else {
-        return Vec::new();
+    let tag = if directions.len() == 1 {
+        "plane_cone_tangent_line"
+    } else {
+        "plane_cone_secant_generator"
     };
-    let along = cosine / projected_length_squared.sqrt();
-    let across = (1.0 - along * along).sqrt();
-    [-1.0, 1.0]
+    directions
         .into_iter()
-        .map(|sense| {
-            let direction: [f64; 3] = std::array::from_fn(|index| {
-                along * projected_axis[index] + sense * across * transverse[index]
-            });
+        .map(|direction| {
             (
                 CurveGeometry::Line {
                     origin: Point3::new(apex[0], apex[1], apex[2]),
                     direction: Vector3::new(direction[0], direction[1], direction[2]),
                 },
-                "plane_cone_secant_generator",
+                tag,
             )
         })
         .collect()

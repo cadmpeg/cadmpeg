@@ -294,6 +294,8 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   Analytic carrier pairs with one derived curve component transfer without
   solved endpoints; present endpoints must agree with that component. Multiple
   components require endpoints that select exactly one candidate.
+  Positive-ratio elliptical cones transfer tangent apex generators and
+  endpoint-selected two-generator apex sections.
   A cylinder through a sphere center transfers its equatorial tangent circle
   or one endpoint-selected secant circle.
   Third-plane intersections resolve vertices across every transferred

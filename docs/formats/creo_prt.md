@@ -992,7 +992,7 @@ A circular cone and a coaxial torus reduce their intersection to the two signed 
 
 An analytic carrier pair transfers its sole intersection-curve candidate without requiring solved edge endpoints. When the pair produces multiple curve candidates, transfer requires paired solved endpoints contained by exactly one candidate. Solved endpoints must lie on the selected candidate even when the candidate set contains one curve.
 
-A plane through a circular cone's apex is tangent to the cone when the absolute dot product of their unit normal and axis equals the sine of the cone half-angle. Their intersection is the single generator through the apex in the projection of the cone axis onto the plane. A plane normal to the cone axis intersects it in one circle away from the apex. Substitution of an oblique plane basis into the cone equation yields a diagonal quadratic whose signs distinguish ellipse, parabola, and hyperbola carriers. Completing the square gives the conic center or vertex, in-plane principal direction, radii, and parabola focal distance. A plane through the apex that cuts the cone strictly inside its tangent angle produces two generators. The edge's paired solved endpoint orbits select a generator when exactly one line contains both endpoints.
+A plane normal to a circular cone axis intersects it in one circle away from the apex. Substitution of an oblique plane basis into the cone equation yields a diagonal quadratic whose signs distinguish ellipse, parabola, and hyperbola carriers. Completing the square gives the conic center or vertex, in-plane principal direction, radii, and parabola focal distance.
 
 A positive-ratio elliptical cone uses local frame coordinates
 `x² + (y / ratio)² = (radius + axial * tan(half_angle))²`. A plane normal to
@@ -1005,8 +1005,12 @@ selector. Substituting an arbitrary plane chart into the cone equation produces
 a symmetric two-variable quadratic. Orthogonal diagonalization gives its
 principal directions; the eigenvalue signs and completed-square constant
 define an ellipse, parabola, or hyperbola with exact model-space frame and
-radii or focal distance. Circular-cone tangent, apex-generator,
-coaxial-surface, and surface-of-revolution reductions require `ratio = 1`.
+radii or focal distance. For a plane through the cone apex, the constant and
+linear terms vanish. The determinant of the remaining homogeneous quadratic
+distinguishes no generator, one tangent generator, and two secant generators.
+The edge's paired solved endpoint orbits select a generator when exactly one
+of two lines contains both endpoints. Coaxial-surface and
+surface-of-revolution reductions require `ratio = 1`.
 
 ## 6. Features and datums
 
