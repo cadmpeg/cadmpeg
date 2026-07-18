@@ -3075,6 +3075,18 @@ fn feature_operation_geometry_is_validated() {
             start_angle: crate::features::Angle(f64::NAN),
             clockwise: false,
         },
+        FeatureDefinition::Sphere {
+            center: Point3::new(0.0, f64::NAN, 0.0),
+            radius: Length(0.0),
+            op: BooleanOp::NewBody,
+        },
+        FeatureDefinition::Torus {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 0.0),
+            major_radius: Length(10.0),
+            minor_radius: Length(-1.0),
+            op: BooleanOp::NewBody,
+        },
         FeatureDefinition::Wrap {
             profile: ProfileRef::Native("profile".into()),
             face: FaceSelection::Unresolved,
@@ -3134,6 +3146,8 @@ fn feature_operation_geometry_is_validated() {
         "projection direction is invalid",
         "composite curve is empty",
         "helix geometry is invalid",
+        "sphere primitive is invalid",
+        "torus primitive is invalid",
         "wrap depth is invalid",
         "body motion is invalid",
         "pattern geometry is invalid",

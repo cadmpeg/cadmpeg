@@ -769,6 +769,52 @@ pub enum DesignCoilSectionPlacement {
     Inside,
 }
 
+/// Exact fixed-form construction data of a solid primitive scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "primitive")]
+pub enum DesignSolidPrimitive {
+    /// Sphere defined by a placement frame and diameter.
+    Sphere {
+        /// Row-major local-to-model placement frame.
+        transform: [[f64; 4]; 4],
+        /// Byte offset of the placement matrix.
+        transform_offset: u64,
+        /// Sphere diameter in source centimetres.
+        diameter: f64,
+        /// Referenced diameter record.
+        diameter_record_index: u32,
+        /// Byte offset of the diameter scalar.
+        diameter_offset: u64,
+        /// Result Boolean operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation enum.
+        operation_offset: u64,
+    },
+    /// Torus defined by a placement frame and two diameters.
+    Torus {
+        /// Row-major local-to-model placement frame.
+        transform: [[f64; 4]; 4],
+        /// Byte offset of the placement matrix.
+        transform_offset: u64,
+        /// Major diameter in source centimetres.
+        major_diameter: f64,
+        /// Referenced major-diameter record.
+        major_diameter_record_index: u32,
+        /// Byte offset of the major-diameter scalar.
+        major_diameter_offset: u64,
+        /// Tube diameter in source centimetres.
+        minor_diameter: f64,
+        /// Referenced minor-diameter record.
+        minor_diameter_record_index: u32,
+        /// Byte offset of the minor-diameter scalar.
+        minor_diameter_offset: u64,
+        /// Result Boolean operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation enum.
+        operation_offset: u64,
+    },
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -860,6 +906,9 @@ pub struct DesignParameterScope {
     pub reference_members: Vec<u32>,
     /// Byte offsets parallel to `reference_members`.
     pub reference_member_offsets: Vec<u64>,
+    /// Exact solid-primitive construction carried by this scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub solid_primitive: Option<DesignSolidPrimitive>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_transform: Option<[[f64; 4]; 4]>,

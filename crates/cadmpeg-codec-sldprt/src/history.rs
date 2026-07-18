@@ -3782,9 +3782,11 @@ pub fn sync_neutral_features(
             .flat_map(|history| &mut history.features)
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
         let (kind, parameters, mut properties) = match &feature.definition {
-            FeatureDefinition::Coil { .. } => {
+            FeatureDefinition::Coil { .. }
+            | FeatureDefinition::Sphere { .. }
+            | FeatureDefinition::Torus { .. } => {
                 return Err(CodecError::NotImplemented(format!(
-                    "SLDPRT feature {} cannot encode a neutral Coil",
+                    "SLDPRT feature {} cannot encode this neutral solid primitive",
                     feature.id
                 )));
             }
@@ -7104,6 +7106,8 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         } => "Mirror",
         FeatureDefinition::Pattern { .. } => "Pattern",
         FeatureDefinition::Coil { .. } => "Coil",
+        FeatureDefinition::Sphere { .. } => "Sphere",
+        FeatureDefinition::Torus { .. } => "Torus",
         FeatureDefinition::Native { kind, .. } if extrude_op(kind).is_some() => "Extrusion",
         FeatureDefinition::Native { kind, .. } if valid_xml_name(kind) => kind,
         FeatureDefinition::Native { .. } => "Feature",

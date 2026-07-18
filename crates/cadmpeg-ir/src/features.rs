@@ -393,6 +393,28 @@ pub enum FeatureDefinition {
         /// Result-body semantics.
         result: CoilResult,
     },
+    /// Solid sphere primitive.
+    Sphere {
+        /// Sphere center in model space.
+        center: Point3,
+        /// Positive sphere radius.
+        radius: Length,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+    },
+    /// Solid torus primitive.
+    Torus {
+        /// Torus center in model space.
+        center: Point3,
+        /// Unit normal of the torus center plane.
+        axis: Vector3,
+        /// Positive distance from the center to the tube centerline.
+        major_radius: Length,
+        /// Positive tube radius.
+        minor_radius: Length,
+        /// Boolean combination with existing bodies.
+        op: BooleanOp,
+    },
     /// Profile mapped onto a target face.
     Wrap {
         /// Sketch or face profile mapped onto the target.

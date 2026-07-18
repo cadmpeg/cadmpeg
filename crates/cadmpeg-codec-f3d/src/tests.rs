@@ -9196,6 +9196,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         reference_count_offset: 180,
         reference_members: vec![20, 30],
         reference_member_offsets: vec![184, 195],
+        solid_primitive: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,

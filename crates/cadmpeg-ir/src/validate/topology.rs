@@ -2438,6 +2438,32 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "wrap depth is invalid");
                 }
             }
+            FeatureDefinition::Sphere { center, radius, .. } => {
+                if ![center.x, center.y, center.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    || !positive_feature_length(*radius)
+                {
+                    feature_geometry_error(findings, feature, "sphere primitive is invalid");
+                }
+            }
+            FeatureDefinition::Torus {
+                center,
+                axis,
+                major_radius,
+                minor_radius,
+                ..
+            } => {
+                if ![center.x, center.y, center.z]
+                    .into_iter()
+                    .all(f64::is_finite)
+                    || !valid_feature_direction(*axis)
+                    || !positive_feature_length(*major_radius)
+                    || !positive_feature_length(*minor_radius)
+                {
+                    feature_geometry_error(findings, feature, "torus primitive is invalid");
+                }
+            }
             FeatureDefinition::TreeNode { .. }
             | FeatureDefinition::DatumPrincipalPlane { .. }
             | FeatureDefinition::DatumPlane { .. }

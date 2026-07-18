@@ -19,10 +19,11 @@ use crate::records::{
     DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
     DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind,
     DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignParameterScope, DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
+    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, PersistentSubentityTag,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -763,6 +764,46 @@ pub fn project_parameter_design_with_edge_identities(
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 })
+            } else if let Some(primitive) = scope.solid_primitive.as_ref() {
+                let operation = |operation| match operation {
+                    DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
+                    DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
+                    DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
+                    DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
+                };
+                match primitive {
+                    DesignSolidPrimitive::Sphere {
+                        transform,
+                        diameter,
+                        operation: result,
+                        ..
+                    } => FeatureDefinition::Sphere {
+                        center: Point3::new(
+                            transform[0][3] * 10.0,
+                            transform[1][3] * 10.0,
+                            transform[2][3] * 10.0,
+                        ),
+                        radius: Length(*diameter * 5.0),
+                        op: operation(*result),
+                    },
+                    DesignSolidPrimitive::Torus {
+                        transform,
+                        major_diameter,
+                        minor_diameter,
+                        operation: result,
+                        ..
+                    } => FeatureDefinition::Torus {
+                        center: Point3::new(
+                            transform[0][3] * 10.0,
+                            transform[1][3] * 10.0,
+                            transform[2][3] * 10.0,
+                        ),
+                        axis: Vector3::new(transform[0][2], transform[1][2], transform[2][2]),
+                        major_radius: Length(*major_diameter * 5.0),
+                        minor_radius: Length(*minor_diameter * 5.0),
+                        op: operation(*result),
+                    },
+                }
             } else if scope.kind == "WorkPlane" {
                 scope.work_plane_transform.map_or_else(
                     || FeatureDefinition::Native {
@@ -12348,6 +12389,7 @@ pub fn decode_parameter_scopes(
                     }
                 }
             }
+            scope.solid_primitive = exact_solid_primitive(bytes, &scope);
             scope.id = format!(
                 "f3d:{}:design-parameter-scope#{}",
                 entry.name, scope.byte_offset
@@ -12358,6 +12400,112 @@ pub fn decode_parameter_scopes(
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+fn exact_solid_primitive(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignSolidPrimitive> {
+    if !matches!(scope.kind.as_str(), "SpherePrimitive" | "TorusPrimitive") {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    let operation_offset = start.checked_add(25)?;
+    let operation = match u32_at(bytes, operation_offset)? {
+        1 => DesignExtrudeOperation::Join,
+        2 => DesignExtrudeOperation::Cut,
+        3 => DesignExtrudeOperation::Intersect,
+        4 => DesignExtrudeOperation::NewBody,
+        _ => return None,
+    };
+    let matrix = |relative_offset: usize| {
+        let matrix_at = start.checked_add(relative_offset)?;
+        let values = f64s_at(bytes, matrix_at, 16)?;
+        let mut transform = [[0.0; 4]; 4];
+        for (ordinal, value) in values.into_iter().enumerate() {
+            transform[ordinal / 4][ordinal % 4] = value;
+        }
+        valid_sketch_transform(&transform).then_some((transform, matrix_at as u64))
+    };
+    match scope.kind.as_str() {
+        "SpherePrimitive"
+            if scope.frame_length == 462
+                && bytes.get(start + 29) == Some(&1)
+                && bytes.get(start + 30) == Some(&1)
+                && bytes.get(start + 41) == Some(&1)
+                && bytes.get(start + 52) == Some(&1) =>
+        {
+            let diameter_record_index = u32_at(bytes, start + 42)?;
+            let (diameter, diameter_offset) =
+                exact_primitive_diameter(bytes, diameter_record_index)?;
+            let (transform, transform_offset) = matrix(64)?;
+            Some(DesignSolidPrimitive::Sphere {
+                transform,
+                transform_offset,
+                diameter,
+                diameter_record_index,
+                diameter_offset,
+                operation,
+                operation_offset: operation_offset as u64,
+            })
+        }
+        "TorusPrimitive"
+            if scope.frame_length == 486
+                && bytes.get(start + 29) == Some(&1)
+                && bytes.get(start + 30) == Some(&1)
+                && bytes.get(start + 41) == Some(&1)
+                && bytes.get(start + 52) == Some(&1)
+                && bytes.get(start + 63) == Some(&1) =>
+        {
+            let major_diameter_record_index = u32_at(bytes, start + 31)?;
+            let minor_diameter_record_index = u32_at(bytes, start + 53)?;
+            if major_diameter_record_index == minor_diameter_record_index {
+                return None;
+            }
+            let (major_diameter, major_diameter_offset) =
+                exact_primitive_diameter(bytes, major_diameter_record_index)?;
+            let (minor_diameter, minor_diameter_offset) =
+                exact_primitive_diameter(bytes, minor_diameter_record_index)?;
+            let (transform, transform_offset) = matrix(75)?;
+            Some(DesignSolidPrimitive::Torus {
+                transform,
+                transform_offset,
+                major_diameter,
+                major_diameter_record_index,
+                major_diameter_offset,
+                minor_diameter,
+                minor_diameter_record_index,
+                minor_diameter_offset,
+                operation,
+                operation_offset: operation_offset as u64,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn exact_primitive_diameter(bytes: &[u8], record_index: u32) -> Option<(f64, u64)> {
+    let mut headers = Vec::new();
+    let mut position = 0;
+    while let Some(at) = next_indexed_record_offset(bytes, position) {
+        if u32_at(bytes, at + 7) == Some(record_index) {
+            headers.push(at);
+        }
+        position = at + 1;
+    }
+    let candidates = headers
+        .windows(2)
+        .filter_map(|pair| {
+            let start = pair[0];
+            (pair[1].checked_sub(start)? == 104).then_some(())?;
+            let diameter = f64_at(bytes, start + 40)?;
+            (diameter.is_finite() && diameter > 0.0).then_some((diameter, (start + 40) as u64))
+        })
+        .collect::<Vec<_>>();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -14455,6 +14603,7 @@ fn parse_parameter_scope(
         reference_count_offset: u64::try_from(*reference_count_at).ok()?,
         reference_members: reference_members.clone(),
         reference_member_offsets: reference_member_offsets.clone(),
+        solid_primitive: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
@@ -17257,9 +17406,9 @@ mod relation_tests {
         contiguous_i32_program, decode_constraint_kinds, decode_fillet_radius_groups,
         decode_pattern_definition, design_feature_family, design_parameter_prefix,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_offset_constraint, exact_work_plane_frame,
-        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
-        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        exact_counted_offset, exact_offset_constraint, exact_solid_primitive,
+        exact_work_plane_frame, expression_identifiers, feature_input_topology_id,
+        find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
         historical_profile_face_candidates, identity_matrix, indexed_record_containing,
         indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
         neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
@@ -17294,8 +17443,9 @@ mod relation_tests {
         DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart, DesignObjectKind,
         DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
         DesignParameterScope, DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement,
-        LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignSolidPrimitive, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
+        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+        SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -19872,6 +20022,88 @@ mod relation_tests {
         assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
         assert_eq!(decoded.reference, None);
 
+        let sphere_at = bytes.len();
+        let mut sphere = vec![0; 462];
+        sphere[0..4].copy_from_slice(&3u32.to_le_bytes());
+        sphere[4..7].copy_from_slice(b"302");
+        sphere[7..11].copy_from_slice(&80u32.to_le_bytes());
+        sphere[25..29].copy_from_slice(&4u32.to_le_bytes());
+        sphere[29] = 1;
+        sphere[30] = 1;
+        sphere[41] = 1;
+        sphere[42..46].copy_from_slice(&70u32.to_le_bytes());
+        sphere[52] = 1;
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = 64 + ordinal * 8;
+            sphere[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&sphere);
+        let mut diameter = vec![0; 104];
+        diameter[0..4].copy_from_slice(&3u32.to_le_bytes());
+        diameter[4..7].copy_from_slice(b"277");
+        diameter[7..11].copy_from_slice(&70u32.to_le_bytes());
+        diameter[40..48].copy_from_slice(&8.0f64.to_le_bytes());
+        diameter.extend_from_slice(&3u32.to_le_bytes());
+        diameter.extend_from_slice(b"261");
+        diameter.extend_from_slice(&70u32.to_le_bytes());
+        bytes.extend_from_slice(&diameter);
+        let mut sphere_scope = scope.clone();
+        sphere_scope.byte_offset = sphere_at as u64;
+        sphere_scope.kind = "SpherePrimitive".into();
+        sphere_scope.frame_length = 462;
+        assert!(matches!(
+            exact_solid_primitive(&bytes, &sphere_scope),
+            Some(DesignSolidPrimitive::Sphere {
+                diameter: 8.0,
+                diameter_record_index: 70,
+                operation: DesignExtrudeOperation::NewBody,
+                ..
+            })
+        ));
+
+        let torus_at = bytes.len();
+        let mut torus = vec![0; 486];
+        torus[0..4].copy_from_slice(&3u32.to_le_bytes());
+        torus[4..7].copy_from_slice(b"305");
+        torus[7..11].copy_from_slice(&81u32.to_le_bytes());
+        torus[25..29].copy_from_slice(&4u32.to_le_bytes());
+        torus[29] = 1;
+        torus[30] = 1;
+        torus[31..35].copy_from_slice(&71u32.to_le_bytes());
+        torus[41] = 1;
+        torus[52] = 1;
+        torus[53..57].copy_from_slice(&72u32.to_le_bytes());
+        torus[63] = 1;
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = 75 + ordinal * 8;
+            torus[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&torus);
+        for (record_index, value) in [(71u32, 15.0f64), (72, 4.0)] {
+            let mut diameter = vec![0; 104];
+            diameter[0..4].copy_from_slice(&3u32.to_le_bytes());
+            diameter[4..7].copy_from_slice(b"277");
+            diameter[7..11].copy_from_slice(&record_index.to_le_bytes());
+            diameter[40..48].copy_from_slice(&value.to_le_bytes());
+            diameter.extend_from_slice(&3u32.to_le_bytes());
+            diameter.extend_from_slice(b"261");
+            diameter.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&diameter);
+        }
+        let mut torus_scope = scope.clone();
+        torus_scope.byte_offset = torus_at as u64;
+        torus_scope.kind = "TorusPrimitive".into();
+        torus_scope.frame_length = 486;
+        assert!(matches!(
+            exact_solid_primitive(&bytes, &torus_scope),
+            Some(DesignSolidPrimitive::Torus {
+                major_diameter: 15.0,
+                minor_diameter: 4.0,
+                operation: DesignExtrudeOperation::NewBody,
+                ..
+            })
+        ));
+
         let mut companion = DesignParameterCompanion {
             id: "f3d:native:parameter-companion#11".into(),
             byte_offset: 0,
@@ -20236,6 +20468,7 @@ mod relation_tests {
             reference_count_offset: 1080,
             reference_members: vec![100, 200, 201],
             reference_member_offsets: vec![1085, 1096, 1107],
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -20438,6 +20671,7 @@ mod relation_tests {
             reference_count_offset: 1080,
             reference_members: vec![100],
             reference_member_offsets: vec![1085],
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -20717,6 +20951,7 @@ mod relation_tests {
             reference_count_offset: 1080,
             reference_members: vec![100],
             reference_member_offsets: vec![1085],
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -24339,6 +24574,7 @@ mod relation_tests {
             reference_count_offset: 180,
             reference_members: vec![44, 44],
             reference_member_offsets: vec![185, 196],
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -24446,6 +24682,7 @@ mod relation_tests {
             reference_count_offset: 0,
             reference_members: Vec::new(),
             reference_member_offsets: Vec::new(),
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -24600,6 +24837,7 @@ mod relation_tests {
             reference_count_offset: 180,
             reference_members: vec![100],
             reference_member_offsets: vec![185],
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25096,6 +25334,7 @@ mod relation_tests {
             reference_count_offset: byte_offset + 80,
             reference_members: vec![record_index + 1],
             reference_member_offsets: vec![byte_offset + 85],
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25740,6 +25979,7 @@ mod relation_tests {
             reference_count_offset: 180,
             reference_members: vec![100, 101],
             reference_member_offsets: vec![185, 196],
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25936,6 +26176,7 @@ mod relation_tests {
             reference_count_offset: byte_offset + 80,
             reference_members: vec![record_index + 1],
             reference_member_offsets: vec![byte_offset + 85],
+            solid_primitive: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26034,6 +26275,7 @@ mod relation_tests {
                 reference_count_offset: byte_offset + 80,
                 reference_members: Vec::new(),
                 reference_member_offsets: Vec::new(),
+                solid_primitive: None,
                 work_plane_transform: None,
                 work_plane_transform_offset: None,
                 work_plane_reference: None,
