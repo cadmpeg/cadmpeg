@@ -2291,6 +2291,16 @@ mod chart_tests {
     }
 
     #[test]
+    fn complete_vertex_roster_supersedes_partial_graph_coordinates() {
+        let graph = [Some([4, 5]), None];
+        let roster = [Some([0, 1]), Some([2, 3])];
+        assert_eq!(
+            merge_native_endpoint_evidence(Some(&graph), Some(&roster)),
+            Ok(Some(roster.to_vec()))
+        );
+    }
+
+    #[test]
     fn standard_native_edges_include_width_coded_nodes_and_reject_conflicts() {
         let record = vec![
             0xb2, 0x03, 0x5e, 0x0d, 0x05, 0x04, 0xd8, 0x08, 0x79, 0x03, 0x08, 0x7f, 0x03, 0x04,
@@ -6329,6 +6339,12 @@ fn merge_native_endpoint_evidence(
         (Some(graph), Some(roster)) => {
             if graph.len() != roster.len() {
                 return Err("native endpoint evidence length mismatch");
+            }
+            // The roster is the standard BREP's serialized identity-to-point
+            // relation. Graph coordinates are reconstructed from independent
+            // object records and only supply identities absent from the roster.
+            if roster.iter().all(Option::is_some) {
+                return Ok(Some(roster.to_vec()));
             }
             graph
                 .iter()
