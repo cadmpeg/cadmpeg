@@ -5180,6 +5180,15 @@ pub struct FeatureOperationBodyOperand {
     pub source_offset: u64,
 }
 
+impl FeatureOperationBodyOperand {
+    pub(crate) fn source_property_key(&self) -> String {
+        format!(
+            "operation_body_operand.{}.{}",
+            self.body_reference_ordinal, self.ordinal
+        )
+    }
+}
+
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureOperationBody11Continuation {

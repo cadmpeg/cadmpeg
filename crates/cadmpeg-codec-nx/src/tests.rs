@@ -7090,6 +7090,17 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
     );
     assert!(operands[0].segment_body_bindings.is_empty());
     assert_eq!(operands[1].segment_body_bindings, ["binding"]);
+
+    let mut second_clause = operands[0].clone();
+    second_clause.body_reference_ordinal = 1;
+    assert_eq!(
+        operands[0].source_property_key(),
+        "operation_body_operand.0.0"
+    );
+    assert_eq!(
+        second_clause.source_property_key(),
+        "operation_body_operand.1.0"
+    );
 }
 
 #[test]

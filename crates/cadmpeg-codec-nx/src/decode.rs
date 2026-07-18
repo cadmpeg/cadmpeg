@@ -10149,7 +10149,7 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert(
-                format!("operation_body_operand.{}", operand.ordinal),
+                operand.source_property_key(),
                 operand.operand_object_index.to_string(),
             );
         }
