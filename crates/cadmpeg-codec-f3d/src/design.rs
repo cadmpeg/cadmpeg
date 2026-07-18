@@ -12312,8 +12312,8 @@ pub fn bind_face_operand_candidates(
         }
         let Some(design_reference) = recipes
             .get(operand.recipe_id.as_str())
-            .and_then(|recipe| recipe.design_id.as_deref())
-            .and_then(|value| value.parse::<i64>().ok())
+            .map(|recipe| i64::from(recipe.record_index))
+            .filter(|value| *value >= 0)
         else {
             continue;
         };
@@ -16543,7 +16543,6 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
                 kind,
                 design_id,
                 design_id_offset: design_id_field.as_ref().map(|field| field.1 as u64),
-                design_id_binary_u32: design_id_field.is_some_and(|field| field.2),
                 recipe_index,
                 record_index,
             });
@@ -16552,29 +16551,18 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
     out.sort_by_key(|recipe| recipe.record_index);
 }
 
-fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String, usize, bool)> {
+fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String, usize)> {
     let pre = offset.checked_sub(27)?;
     if let Some((id, value_offset)) = ascii_id_at(bytes, pre) {
-        return Some((id, value_offset, false));
+        return Some((id, value_offset));
     }
     if offset >= 23 {
         let candidate = bytes.get(offset - 23..offset - 20)?;
         if candidate.iter().all(u8::is_ascii_digit) {
-            return Some((
-                String::from_utf8_lossy(candidate).into_owned(),
-                offset - 23,
-                false,
-            ));
+            return Some((String::from_utf8_lossy(candidate).into_owned(), offset - 23));
         }
     }
-    if name == b"bounded_face_recipe_data" && offset >= 16 {
-        let id = u32::from_le_bytes(bytes[offset - 16..offset - 12].try_into().ok()?);
-        let zeros = bytes.get(offset - 12..offset - 4)?;
-        if (100..100_000).contains(&id) && zeros.iter().all(|byte| *byte == 0) {
-            return Some((id.to_string(), offset - 16, true));
-        }
-    }
-    ascii_id_at(bytes, offset + name.len() + 8).map(|(id, value_offset)| (id, value_offset, false))
+    ascii_id_at(bytes, offset + name.len() + 8)
 }
 
 fn ascii_id_at(bytes: &[u8], length_offset: usize) -> Option<(String, usize)> {
@@ -19462,7 +19450,6 @@ mod relation_tests {
             kind: ConstructionRecipeKind::Edge,
             design_id: None,
             design_id_offset: None,
-            design_id_binary_u32: false,
             recipe_index: 0,
             record_index: 303,
         };
@@ -20242,7 +20229,6 @@ mod relation_tests {
             kind: ConstructionRecipeKind::Edge,
             design_id: None,
             design_id_offset: None,
-            design_id_binary_u32: false,
             recipe_index: 7,
             record_index: 303,
         };
@@ -20810,6 +20796,26 @@ mod relation_tests {
             &mut ambiguous,
             &FaceId("f3d:brep:entity#50".into()),
         ));
+    }
+
+    #[test]
+    fn bounded_face_record_identity_is_not_a_second_design_id() {
+        let mut bytes = Vec::new();
+        for _ in 0..2 {
+            let mut prefix = [0u8; 27];
+            prefix[11..15].copy_from_slice(&309i32.to_le_bytes());
+            prefix[23..27].copy_from_slice(&24u32.to_le_bytes());
+            bytes.extend_from_slice(&prefix);
+            bytes.extend_from_slice(b"bounded_face_recipe_data");
+            bytes.extend_from_slice(&(-1i64).to_le_bytes());
+        }
+        let mut recipes = Vec::new();
+        super::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes);
+        assert_eq!(recipes.len(), 2);
+        assert!(recipes.iter().all(|recipe| recipe.record_index == 309));
+        assert!(recipes.iter().all(|recipe| recipe.design_id.is_none()));
+        assert_eq!(recipes[0].recipe_index, 0);
+        assert_eq!(recipes[1].recipe_index, 1);
     }
 
     #[test]

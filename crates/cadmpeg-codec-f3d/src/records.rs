@@ -304,9 +304,6 @@ pub struct ConstructionRecipe {
     /// Byte offset of `design_id` in the Design `BulkStream`, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub design_id_offset: Option<u64>,
-    /// Whether `design_id` is stored as a binary little-endian u32 rather than ASCII.
-    #[serde(default)]
-    pub design_id_binary_u32: bool,
     /// Position of this recipe in the `BulkStream` recipe sequence, in source order.
     pub recipe_index: u32,
     /// Source `BulkStream` record index this recipe was decoded from.

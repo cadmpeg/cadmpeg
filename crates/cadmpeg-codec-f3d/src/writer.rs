@@ -357,15 +357,8 @@ fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
             "F3D construction recipes must be ordered by record index".into(),
         ));
     }
-    let mut record_indices = BTreeSet::new();
     let mut group_counts = HashMap::new();
     for recipe in &native.construction_recipes {
-        if !record_indices.insert(recipe.record_index) {
-            return Err(CodecError::Malformed(format!(
-                "multiple F3D construction recipes use record index {}",
-                recipe.record_index
-            )));
-        }
         let expected = group_counts
             .entry((recipe.kind, recipe.design_id.as_deref()))
             .or_insert(0u32);
@@ -376,21 +369,6 @@ fn validate_source_less_recipes(native: &F3dNative) -> Result<(), CodecError> {
             )));
         }
         *expected += 1;
-        if recipe.design_id_binary_u32 {
-            let binary_id = recipe
-                .design_id
-                .as_deref()
-                .and_then(|id| id.parse::<u32>().ok());
-            if recipe.kind != ConstructionRecipeKind::BoundedFace
-                || binary_id.is_none_or(|id| !(100..100_000).contains(&id))
-                || binary_id.and_then(|id| i32::try_from(id).ok()) != Some(recipe.record_index)
-            {
-                return Err(CodecError::Malformed(format!(
-                    "F3D binary bounded-face recipe {} requires design id == record index in [100, 100000)",
-                    recipe.id
-                )));
-            }
-        }
     }
     Ok(())
 }
@@ -1516,16 +1494,13 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         let name = construction_recipe_name(recipe.kind);
         let mut prefix = [0u8; 27];
         if let Some(design_id) = &recipe.design_id {
-            if recipe.design_id_binary_u32 {
-                // The binary bounded-face layout aliases the record-index slot.
-            } else if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
+            if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
                 return Err(CodecError::Malformed(format!(
                     "source-less Design recipe id must be three ASCII digits: {design_id}"
                 )));
-            } else {
-                prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
-                prefix[4..7].copy_from_slice(design_id.as_bytes());
             }
+            prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
+            prefix[4..7].copy_from_slice(design_id.as_bytes());
         }
         prefix[11..15].copy_from_slice(&recipe.record_index.to_le_bytes());
         prefix[23..27].copy_from_slice(
@@ -14190,26 +14165,14 @@ fn validate_construction_recipe_edits(
                     "F3D construction recipe {id} has no writable design-id carrier"
                 ))
             })?;
-            let encoded = if after.design_id_binary_u32 {
-                after_value
-                    .parse::<u32>()
-                    .map_err(|_| {
-                        CodecError::Malformed(format!(
-                            "binary F3D recipe design id is not a u32: {after_value}"
-                        ))
-                    })?
-                    .to_le_bytes()
-                    .to_vec()
-            } else {
-                if after_value.len() != before_value.len()
-                    || !after_value.bytes().all(|byte| byte.is_ascii_alphanumeric())
-                {
-                    return Err(CodecError::NotImplemented(format!(
-                        "ASCII F3D recipe design id {id} must retain its encoded length"
-                    )));
-                }
-                after_value.as_bytes().to_vec()
-            };
+            if after_value.len() != before_value.len()
+                || !after_value.bytes().all(|byte| byte.is_ascii_alphanumeric())
+            {
+                return Err(CodecError::NotImplemented(format!(
+                    "ASCII F3D recipe design id {id} must retain its encoded length"
+                )));
+            }
+            let encoded = after_value.as_bytes().to_vec();
             Some((offset, encoded))
         };
         let stream = id
