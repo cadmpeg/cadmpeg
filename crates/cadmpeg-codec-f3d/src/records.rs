@@ -1482,9 +1482,9 @@ pub struct DesignFaceRecipeStructure {
 pub struct DesignSketchPlacement {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Parameter-scope record that references this placement; absent for the
-    /// member-run head form of a feature-owned sketch, which no Sketch
-    /// parameter scope references.
+    /// Owning parameter-scope record; absent when the sketch has no parameter
+    /// scope. A localized Sketch scope can own a member-run head placement
+    /// through record interval order without directly referencing it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
@@ -1508,9 +1508,9 @@ pub struct DesignSketchPlacement {
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
-    /// Whether this placement is the member-run head record of a
-    /// feature-owned sketch (the transform-carrying record heading the
-    /// sketch's paired member run) rather than a parameter-scope frame.
+    /// Whether this placement is the transform-carrying member-run head
+    /// record named by the sketch entity's paired record rather than a
+    /// parameter-scope placement frame.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub member_run_head: bool,
 }

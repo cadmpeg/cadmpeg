@@ -1525,7 +1525,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let frame_valid = if placement.member_run_head {
             // The paired member-run record precedes the head record; the
             // frame length covers the head record alone.
-            member_run_head && placement.scope_record_index.is_none()
+            member_run_head
+                && scope.is_none_or(|scope| {
+                    design::design_feature_family(&scope.kind)
+                        == Some(design::DesignFeatureFamily::Sketch)
+                })
         } else {
             placement.paired_byte_offset
                 == placement.byte_offset.saturating_add(placement.frame_length)

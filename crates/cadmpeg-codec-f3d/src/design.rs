@@ -9873,8 +9873,10 @@ fn parse_parameter_scope(
 }
 
 /// Decode the unique local-to-model placement frame referenced by every
-/// parameter-owning sketch scope, and the member-run head placement of every
-/// feature-owned sketch that no Sketch parameter scope references.
+/// parameter-owning sketch scope, and every member-run head placement. A
+/// localized Sketch scope follows its entity container within the same
+/// stream interval even though its generic reference table does not repeat
+/// the entity suffix.
 pub fn decode_sketch_placements(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
@@ -9934,9 +9936,11 @@ pub fn decode_sketch_placements(
             out.push(placement);
         }
     }
-    // Feature-owned sketches have no Sketch parameter scope. Their entity
-    // header pairs with a same-index member-run record whose leading marked
-    // reference names a head record carrying the row-major 4×4 placement.
+    // A sketch entity header pairs with a same-index member-run record whose
+    // leading marked reference names a head record carrying the row-major
+    // 4×4 placement. A localized Sketch scope belongs to the preceding sketch
+    // entity interval: it follows that entity and precedes the next sketch
+    // entity in the same stream. Some member-run sketches have no scope.
     let placed = out
         .iter()
         .filter_map(|placement| {
@@ -9963,6 +9967,27 @@ pub fn decode_sketch_placements(
         let Some(mut placement) = parse_member_run_head_placement(bytes, entity) else {
             continue;
         };
+        let next_entity_offset = entities
+            .iter()
+            .filter(|candidate| {
+                candidate.object_kind == Some(DesignObjectKind::Sketch)
+                    && native_stream(&candidate.id) == Some(stream)
+                    && candidate.byte_offset > entity.byte_offset
+            })
+            .map(|candidate| candidate.byte_offset)
+            .min();
+        let matching_scopes = scopes
+            .iter()
+            .filter(|scope| {
+                design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sketch)
+                    && native_stream(&scope.id) == Some(stream)
+                    && scope.byte_offset > entity.byte_offset
+                    && next_entity_offset.is_none_or(|end| scope.byte_offset < end)
+            })
+            .collect::<Vec<_>>();
+        if let [scope] = matching_scopes.as_slice() {
+            placement.scope_record_index = Some(scope.record_index);
+        }
         placement.id = format!(
             "f3d:{entry_name}:design-sketch-placement#{}",
             placement.byte_offset
@@ -9978,8 +10003,8 @@ pub fn decode_sketch_placements(
 /// marked tail.
 const MEMBER_RUN_HEAD_FRAME: usize = 162;
 
-/// Parse the member-run head placement of a feature-owned sketch: the paired
-/// same-index record after the sketch's entity header opens with a marked
+/// Parse a member-run head placement: the paired same-index record after the
+/// sketch's entity header opens with a marked
 /// reference naming a head record that stores eleven zero bytes and the
 /// row-major 4×4 local-to-model transform at offset 22.
 fn parse_member_run_head_placement(
