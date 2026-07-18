@@ -7348,27 +7348,32 @@ impl MeshSelectionSearch<'_> {
     }
 
     fn search(&mut self, quotient: &MeshQuotient) {
-        self.search_from(quotient, None);
+        self.search_with_limit(quotient, MAX_MESH_CONSTRAINT_OPERATIONS);
     }
 
-    fn search_from(&mut self, quotient: &MeshQuotient, changed_edges: Option<&HashSet<usize>>) {
-        self.search_from_state(quotient, changed_edges, false);
+    fn search_with_limit(&mut self, quotient: &MeshQuotient, limit: usize) {
+        let budget = MeshConstraintBudget::new(limit);
+        self.search_from_state(quotient, false, &budget);
     }
 
     fn search_from_state(
         &mut self,
         quotient: &MeshQuotient,
-        changed_edges: Option<&HashSet<usize>>,
         prepared: bool,
+        budget: &MeshConstraintBudget,
     ) {
         const MAX_SELECTION_STATES: usize = 512;
 
         if self.should_stop() {
             return;
         }
+        if !budget.charge() {
+            self.exhausted = true;
+            return;
+        }
         let mut measured = quotient.clone();
         if !prepared {
-            if !self.propagate_forced_face_equations_from(&mut measured, changed_edges) {
+            if !self.propagate_forced_face_equations_from(&mut measured, None) {
                 return;
             }
             if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
@@ -7417,6 +7422,9 @@ impl MeshSelectionSearch<'_> {
             .enumerate()
             .filter(|(_, selected)| selected.is_none())
             .filter_map(|(face, _)| {
+                if !budget.charge() {
+                    return None;
+                }
                 self.face_work[face]?;
                 let assignments = &self.assignments[face];
                 if assignments.is_empty() {
@@ -7465,6 +7473,10 @@ impl MeshSelectionSearch<'_> {
                 ))
             })
             .min();
+        if budget.exhausted.get() {
+            self.exhausted = true;
+            return;
+        }
         let Some((_, supported, _, _, _, face)) = next else {
             let mut quotient = measured.clone();
             let Some(root_points) =
@@ -7565,6 +7577,10 @@ impl MeshSelectionSearch<'_> {
         }
         let mut options = Vec::new();
         for assignment_index in 0..self.assignments[face].len() {
+            if !budget.charge() {
+                self.exhausted = true;
+                return;
+            }
             let remaining = MAX_SELECTION_STATES
                 .saturating_sub(self.states)
                 .saturating_add(1)
@@ -7618,7 +7634,7 @@ impl MeshSelectionSearch<'_> {
                     }
                     // `prepare_selected_branch` has already applied the recursive
                     // entry preflight to this quotient.
-                    self.search_from_state(&next_quotient, None, true);
+                    self.search_from_state(&next_quotient, true, budget);
                 }
             }
             self.selected[face] = None;
@@ -10044,6 +10060,36 @@ mod motif_tests {
         };
 
         assert!(search.should_stop());
+    }
+
+    #[test]
+    fn mesh_selection_declines_when_its_work_budget_is_exhausted() {
+        let mut search = MeshSelectionSearch {
+            assignments: &[],
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: Vec::new(),
+            edge_candidates: &[],
+            edge_rows: &[],
+            vertex_points: &[],
+            selected: Vec::new(),
+            states: 0,
+            solution: None,
+            stop_after_first_solution: false,
+            ambiguous: false,
+            exhausted: false,
+            face_equation_cache: RefCell::default(),
+        };
+        let quotient = MeshQuotient {
+            union: UnionFind::new(0),
+            domains: Vec::new(),
+            members: Vec::new(),
+        };
+
+        search.search_with_limit(&quotient, 0);
+
+        assert!(search.exhausted);
+        assert!(search.solution.is_none());
     }
 
     #[test]
