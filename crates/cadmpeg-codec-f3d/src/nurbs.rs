@@ -6369,7 +6369,7 @@ fn decode_cacheless_procedural_curve_recursive(
     seen: &mut Vec<usize>,
     int_width: usize,
 ) -> Option<(String, cadmpeg_ir::geometry::ProceduralCurveDefinition)> {
-    if let Some(definition) = decode_helix_definition(bytes) {
+    if let Some(definition) = decode_helix_definition(bytes, int_width) {
         return Some(("helix_int_cur".into(), definition));
     }
     let table = tables.for_width(int_width);
@@ -6427,7 +6427,8 @@ fn decode_procedural_curve_recursive(
         let definition = if native_kind == "exact_int_cur" {
             Some(cadmpeg_ir::geometry::ProceduralCurveDefinition::Exact)
         } else {
-            decode_helix_definition(bytes).or_else(|| decode_two_sided_offset(bytes, int_width))
+            decode_helix_definition(bytes, int_width)
+                .or_else(|| decode_two_sided_offset(bytes, int_width))
         };
         let embedded_intersection =
             decode_embedded_intersection(bytes, int_width, &decoded.curve, active_bytes, tables);
@@ -6850,6 +6851,7 @@ pub(crate) fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<Helix
     })?;
     subtype_span(bytes, marker, int_width)?;
     let mut position = marker + name.len() + 3;
+    let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
     let take_range_payload = |position: &mut usize| {
         if matches!(bytes.get(*position), Some(0x0a | 0x0b)) {
             *position += 1;
@@ -6861,9 +6863,14 @@ pub(crate) fn helix_patch_layout(bytes: &[u8], int_width: usize) -> Option<Helix
         take_range_payload(&mut position)?,
     ];
     let mut frame_vectors = [0usize; 4];
-    for offset in &mut frame_vectors {
+    let frame_tags = if current_layout {
+        [0x13, 0x14, 0x14, 0x14]
+    } else {
+        [0x13; 4]
+    };
+    for (offset, tag) in frame_vectors.iter_mut().zip(frame_tags) {
         *offset = position + 1;
-        take_native_vec3(bytes, &mut position, 0x13)?;
+        take_native_vec3(bytes, &mut position, tag)?;
     }
     let apex_factor = take_double_payload(bytes, &mut position)?;
     let axis = position + 1;
@@ -8578,6 +8585,7 @@ fn take_native_string(bytes: &[u8], position: &mut usize) -> Option<String> {
 
 fn decode_helix_definition(
     bytes: &[u8],
+    int_width: usize,
 ) -> Option<cadmpeg_ir::geometry::ProceduralCurveDefinition> {
     let name = b"helix_int_cur";
     let marker = bytes.windows(name.len() + 3).position(|window| {
@@ -8587,12 +8595,14 @@ fn decode_helix_definition(
             && &window[3..] == name
     })?;
     let mut position = marker + name.len() + 3;
+    let current_layout = take_optional_helix_revision(bytes, &mut position, int_width)?;
     let lower = take_range_value(bytes, &mut position)?;
     let upper = take_range_value(bytes, &mut position)?;
     let center = take_native_vec3(bytes, &mut position, 0x13)?;
-    let major = take_native_vec3(bytes, &mut position, 0x13)?;
-    let minor = take_native_vec3(bytes, &mut position, 0x13)?;
-    let pitch = take_native_vec3(bytes, &mut position, 0x13)?;
+    let vector_tag = if current_layout { 0x14 } else { 0x13 };
+    let major = take_native_vec3(bytes, &mut position, vector_tag)?;
+    let minor = take_native_vec3(bytes, &mut position, vector_tag)?;
+    let pitch = take_native_vec3(bytes, &mut position, vector_tag)?;
     if bytes.get(position) != Some(&0x06) {
         return None;
     }
@@ -8624,6 +8634,20 @@ fn decode_helix_definition(
         apex_factor,
         axis: Vector3::new(axis[0], axis[1], axis[2]),
     })
+}
+
+/// Consume the current helix subtype's ASM release word when present. The
+/// earlier form begins directly with an optional range-bound flag or double.
+fn take_optional_helix_revision(
+    bytes: &[u8],
+    position: &mut usize,
+    int_width: usize,
+) -> Option<bool> {
+    if bytes.get(*position) != Some(&0x04) {
+        return Some(false);
+    }
+    let revision = take_tagged_int(bytes, position, 0x04, int_width)?;
+    (20_000..=99_999).contains(&revision).then_some(true)
 }
 
 fn take_range_value(bytes: &[u8], position: &mut usize) -> Option<f64> {
@@ -9718,22 +9742,20 @@ mod width_tests {
             push_vector(&mut bytes, [93.0, 94.0, 95.0]);
             bytes.push(0x0f);
             push_ident(&mut bytes, "helix_int_cur");
+            push_int(&mut bytes, 0x04, 23_100, int_width);
             bytes.push(0x0b);
             push_f64(&mut bytes, -1.0);
             push_f64(&mut bytes, 2.0);
-            for values in [
-                [3.0, 4.0, 5.0],
-                [6.0, 7.0, 8.0],
-                [9.0, 10.0, 11.0],
-                [12.0, 13.0, 14.0],
-            ] {
-                push_position(&mut bytes, values);
-            }
+            push_position(&mut bytes, [3.0, 4.0, 5.0]);
+            push_vector(&mut bytes, [6.0, 7.0, 8.0]);
+            push_vector(&mut bytes, [9.0, 10.0, 11.0]);
+            push_vector(&mut bytes, [12.0, 13.0, 14.0]);
             push_f64(&mut bytes, 15.0);
             push_vector(&mut bytes, [16.0, 17.0, 18.0]);
             bytes.extend_from_slice(&curve_block(int_width));
             bytes.push(0x10);
 
+            assert!(super::decode_helix_definition(&bytes, int_width).is_some());
             let layout = helix_patch_layout(&bytes, int_width)
                 .unwrap_or_else(|| panic!("helix layout at width {int_width}"));
             let range = layout
@@ -9761,6 +9783,33 @@ mod width_tests {
                 16.0
             );
         }
+    }
+
+    #[test]
+    fn decodes_current_cacheless_helix_record() {
+        let hex = "0e08696e7463757276650d0563757276650cffffffff04ffffffff0cffffffff0b0f0d0d68656c69785f696e745f637572043c5a00000a067701e4b803dd04400a0605738860695607401338aee5545e6a7e3cbfab714dc0c45b3c13b8e608728f9dbf14930e205da081e83ffbd1d341709ad73f000000000000000014fbd1d341709ad73f930e205da081e8bf00000000000000001400000000000000000000000000000000cdccccccccccf43f0600000000000000001400000000000000000000000000000000000000000000f03f0d0c6e756c6c5f737572666163650d0c6e756c6c5f737572666163650d066e756c6c62730d066e756c6c6273100b0b11";
+        let bytes = hex
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|digits| u8::from_str_radix(std::str::from_utf8(digits).unwrap(), 16).unwrap())
+            .collect::<Vec<_>>();
+
+        let definition =
+            super::decode_helix_definition(&bytes, 4).expect("current cache-less helix definition");
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Helix {
+            angle_range,
+            pitch,
+            apex_factor,
+            axis,
+            ..
+        } = definition
+        else {
+            panic!("expected helix definition")
+        };
+        assert!(angle_range[0] < angle_range[1]);
+        assert_eq!(pitch, Vector3::new(0.0, 0.0, 13.0));
+        assert_eq!(apex_factor, 0.0);
+        assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
     }
 
     #[test]
