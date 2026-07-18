@@ -11351,6 +11351,10 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             spec: ChamferSpec::Unresolved { form: None },
             flip_direction: None,
         },
+        "BLEND" => FeatureDefinition::Fillet {
+            edges: EdgeSelection::Unresolved,
+            radius: RadiusSpec::Unresolved { form: None },
+        },
         "SEW" => FeatureDefinition::SewBodies {
             bodies: BodySelection::Unresolved,
             gap_tolerance: None,

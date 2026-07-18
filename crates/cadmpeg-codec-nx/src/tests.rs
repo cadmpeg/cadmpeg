@@ -3062,7 +3062,7 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
         BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,
-        FeatureDefinition, HoleKind, PatternKind, RibDraft,
+        FeatureDefinition, HoleKind, PatternKind, RadiusSpec, RibDraft,
     };
 
     for (kind, op) in [
@@ -3111,6 +3111,13 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             op: BooleanOp::Unresolved,
         }
     ));
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("BLEND", &[], None, None, None),
+        FeatureDefinition::Fillet {
+            edges: EdgeSelection::Unresolved,
+            radius: RadiusSpec::Unresolved { form: None },
+        }
+    );
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
         FeatureDefinition::Chamfer {
