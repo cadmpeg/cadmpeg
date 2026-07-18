@@ -2404,7 +2404,6 @@ fn standard_mesh_missing_edge_assignments_impl(
     canonicalize_spans: bool,
 ) -> Option<Vec<Vec<Vec<MeshEdgePlacementCandidate>>>> {
     const MAX_ASSIGNMENTS_PER_FACE: usize = 65_536;
-    const MAX_EXHAUSTIVE_GAPS: usize = 9;
     type PlacementConstraints<'a> = (
         Option<&'a [[u32; 2]]>,
         &'a HashMap<MeshCorner, u32>,
@@ -2674,9 +2673,12 @@ fn standard_mesh_missing_edge_assignments_impl(
             edge_points,
             point_transitions,
             corner_points,
-            canonical_spans: canonicalize_spans
-                && (gaps.len() == 1 || gaps.len() > MAX_EXHAUSTIVE_GAPS),
-            canonical_gap_partitions: canonicalize_spans && gaps.len() > MAX_EXHAUSTIVE_GAPS,
+            // Mesh span allocation does not change the ordered edge uses or
+            // their endpoint quotient. Keep one allocation for each edge
+            // order and gap partition in topology searches; the public
+            // placement API above still enumerates every span allocation.
+            canonical_spans: canonicalize_spans,
+            canonical_gap_partitions: canonicalize_spans,
             dead_states: HashSet::new(),
             assignments: 0,
             complete: Vec::new(),
