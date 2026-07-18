@@ -9568,6 +9568,7 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
         br#"<Keywords>
             <Sketch Name="Profile" Type="Sketch" id="8"/>
             <Extrusion Name="Boss" Type="Extrusion" id="9"/>
+            <Sketch Name="Following" Type="Sketch" id="10"/>
         </Keywords>"#,
     ));
     source.extend(make_block(
@@ -9576,6 +9577,7 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
         &resolved_feature_classes_with_ids(&[
             ("moProfileFeature_c", "Profile", 8),
             ("moExtrusion_c", "Boss", 9),
+            ("moProfileFeature_c", "Following", 10),
         ]),
     ));
 
@@ -9599,9 +9601,9 @@ fn decode_binds_adjacent_profile_feature_to_extrusion() {
     assert!(matches!(
         &extrusion.definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(native),
+            profile: ProfileRef::Feature(feature),
             ..
-        } if native == profile.native_ref.as_deref().unwrap()
+        } if feature == &profile.id
     ));
     assert_eq!(extrusion.dependencies, vec![profile.id.clone()]);
 }
@@ -9670,16 +9672,16 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
     assert!(matches!(
         &state_a.definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(profile),
+            profile: ProfileRef::Feature(profile),
             ..
-        } if Some(profile.as_str()) == profile_a.native_ref.as_deref()
+        } if profile == &profile_a.id
     ));
     assert!(matches!(
         &state_b.definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(profile),
+            profile: ProfileRef::Feature(profile),
             ..
-        } if Some(profile.as_str()) == profile_b.native_ref.as_deref()
+        } if profile == &profile_b.id
     ));
     assert_eq!(state_a.dependencies, vec![profile_a.id.clone()]);
     assert_eq!(state_b.dependencies, vec![profile_b.id.clone()]);
@@ -9727,9 +9729,9 @@ fn decode_binds_following_dissected_profile_to_compact_extrusion() {
     assert!(matches!(
         &extrusion.definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(native),
+            profile: ProfileRef::Feature(feature),
             ..
-        } if native == profile.native_ref.as_deref().unwrap()
+        } if feature == &profile.id
     ));
     assert_eq!(extrusion.dependencies, vec![profile.id.clone()]);
 }
@@ -9784,10 +9786,10 @@ fn decode_binds_profile_to_inline_extrusion_with_ambiguous_class_token() {
     assert!(matches!(
         &extrusion.definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(native),
+            profile: ProfileRef::Feature(feature),
             op: BooleanOp::Cut,
             ..
-        } if native == profile.native_ref.as_deref().unwrap()
+        } if feature == &profile.id
     ));
 }
 

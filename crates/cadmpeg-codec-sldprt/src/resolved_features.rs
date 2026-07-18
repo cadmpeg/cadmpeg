@@ -8502,10 +8502,12 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                 kind
             }
         };
+        let is_dissectable = |feature: &crate::records::Feature| {
+            feature.properties.contains_key("DissectableChildren")
+                || feature.properties.get("Dissectable").map(String::as_str) == Some("true")
+        };
         for (name, feature) in &objects {
-            if object_kind(name, feature) == NativeClassKind::Extrusion
-                && !feature.properties.contains_key("DissectableChildren")
-            {
+            if object_kind(name, feature) == NativeClassKind::Extrusion {
                 profiles
                     .entry(feature.id.clone())
                     .or_default()
@@ -8519,13 +8521,18 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             let first_kind = object_kind(first_name, first);
             let second_kind = object_kind(second_name, second);
             let (profile, extrusion) = match (first_kind, second_kind) {
-                (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion) => (*first, *second),
-                (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature) => (*second, *first),
+                (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion)
+                    if !is_dissectable(second) =>
+                {
+                    (*first, *second)
+                }
+                (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature)
+                    if is_dissectable(first) =>
+                {
+                    (*second, *first)
+                }
                 _ => continue,
             };
-            if extrusion.properties.contains_key("DissectableChildren") {
-                continue;
-            }
             let Some(vote) = profiles
                 .get_mut(&extrusion.id)
                 .and_then(|votes| votes.last_mut())
@@ -8565,9 +8572,9 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         {
             continue;
         }
-        *neutral_profile = cadmpeg_ir::features::ProfileRef::Native(profile.clone());
         if let Some(&profile_index) = neutral_indices.get(profile) {
             let dependency = features[profile_index].id.clone();
+            *neutral_profile = cadmpeg_ir::features::ProfileRef::Feature(dependency.clone());
             if !features[index].dependencies.contains(&dependency) {
                 features[index].dependencies.push(dependency);
             }
