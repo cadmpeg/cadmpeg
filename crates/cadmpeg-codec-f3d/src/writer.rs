@@ -7401,8 +7401,11 @@ fn native_cacheless_procedural_surface_definition(
         }
         match construction.profile {
             HelixSurfaceProfile::Circle { radius, .. } => native_f64(bytes, radius / 10.0),
-            HelixSurfaceProfile::Line { origin } => {
-                native_point(bytes, [origin.x / 10.0, origin.y / 10.0, origin.z / 10.0]);
+            HelixSurfaceProfile::Line { direction } => {
+                native_point(
+                    bytes,
+                    [direction.x / 10.0, direction.y / 10.0, direction.z / 10.0],
+                );
             }
         }
         bytes.push(0x10);

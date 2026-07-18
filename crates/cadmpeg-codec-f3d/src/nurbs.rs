@@ -4507,6 +4507,7 @@ fn decode_helix_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     })?;
     let span = subtype_span(record_bytes, start, int_width)?;
     let mut position = name_len + 3;
+    let current_layout = take_optional_helix_revision(span, &mut position, int_width)?;
     let angle_range = [
         take_range_value(span, &mut position)?,
         take_range_value(span, &mut position)?,
@@ -4524,9 +4525,10 @@ fn decode_helix_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
         take_range_value(span, &mut position)?,
     ];
     let center = take_native_vec3(span, &mut position, 0x13)?;
-    let major = take_native_vec3(span, &mut position, 0x13)?;
-    let minor = take_native_vec3(span, &mut position, 0x13)?;
-    let pitch = take_native_vec3(span, &mut position, 0x13)?;
+    let vector_tag = if current_layout { 0x14 } else { 0x13 };
+    let major = take_native_vec3(span, &mut position, vector_tag)?;
+    let minor = take_native_vec3(span, &mut position, vector_tag)?;
+    let pitch = take_native_vec3(span, &mut position, vector_tag)?;
     let apex_factor = take_f64(span, &mut position)?;
     let axis = normalized(take_native_vec3(span, &mut position, 0x14)?)?;
     for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
@@ -4565,12 +4567,16 @@ fn decode_helix_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
             radius: take_f64(span, &mut position)? * LEN_TO_MM,
         }
     } else {
-        let origin = take_native_vec3(span, &mut position, 0x13)?;
+        let direction = take_native_vec3(
+            span,
+            &mut position,
+            if current_layout { 0x14 } else { 0x13 },
+        )?;
         HelixSurfaceProfile::Line {
-            origin: Point3::new(
-                origin[0] * LEN_TO_MM,
-                origin[1] * LEN_TO_MM,
-                origin[2] * LEN_TO_MM,
+            direction: Vector3::new(
+                direction[0] * LEN_TO_MM,
+                direction[1] * LEN_TO_MM,
+                direction[2] * LEN_TO_MM,
             ),
         }
     };
@@ -9810,6 +9816,43 @@ mod width_tests {
         assert_eq!(pitch, Vector3::new(0.0, 0.0, 13.0));
         assert_eq!(apex_factor, 0.0);
         assert_eq!(axis, Vector3::new(0.0, 0.0, 1.0));
+    }
+
+    #[test]
+    fn decodes_current_cacheless_helix_surface_at_both_widths() {
+        for int_width in [4usize, 8] {
+            let mut bytes = vec![0x0f];
+            push_ident(&mut bytes, "helix_spl_line");
+            push_int(&mut bytes, 0x04, 23_100, int_width);
+            for value in [-0.5, 0.5, -2.0, 3.0, 0.0, std::f64::consts::TAU] {
+                bytes.push(0x0a);
+                push_f64(&mut bytes, value);
+            }
+            push_position(&mut bytes, [1.0, 2.0, 3.0]);
+            push_vector(&mut bytes, [2.0, 0.0, 0.0]);
+            push_vector(&mut bytes, [0.0, 2.0, 0.0]);
+            push_vector(&mut bytes, [0.0, 0.0, 4.0]);
+            push_f64(&mut bytes, 0.25);
+            push_vector(&mut bytes, [0.0, 0.0, 1.0]);
+            for sentinel in ["null_surface", "null_surface", "nullbs", "nullbs"] {
+                push_ident(&mut bytes, sentinel);
+            }
+            push_vector(&mut bytes, [5.0, 6.0, 7.0]);
+            bytes.push(0x10);
+
+            let decoded = decode_helix_spl_sur(&bytes, int_width)
+                .unwrap_or_else(|| panic!("current helix surface at width {int_width}"));
+            let DecodedProceduralSurfaceDefinition::Helix(construction) = decoded.definition else {
+                panic!("expected helix surface definition")
+            };
+            assert_eq!(construction.path.pitch, Vector3::new(0.0, 0.0, 40.0));
+            assert_eq!(
+                construction.profile,
+                cadmpeg_ir::geometry::HelixSurfaceProfile::Line {
+                    direction: Vector3::new(50.0, 60.0, 70.0),
+                }
+            );
+        }
     }
 
     #[test]

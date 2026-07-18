@@ -690,10 +690,10 @@ pub enum HelixSurfaceProfile {
         /// Circular profile radius.
         radius: f64,
     },
-    /// Linear profile anchored at an origin.
+    /// Linear profile swept along a direction.
     Line {
-        /// Native model-space profile origin.
-        origin: Point3,
+        /// Native model-space profile direction.
+        direction: Vector3,
     },
 }
 

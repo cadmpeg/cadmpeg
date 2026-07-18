@@ -1189,8 +1189,14 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::geometry::HelixSurfaceProfile::Circle { length, radius } => {
                     length.is_finite() && radius.is_finite() && radius != 0.0
                 }
-                crate::geometry::HelixSurfaceProfile::Line { origin } => {
-                    origin.x.is_finite() && origin.y.is_finite() && origin.z.is_finite()
+                crate::geometry::HelixSurfaceProfile::Line { direction } => {
+                    direction.x.is_finite()
+                        && direction.y.is_finite()
+                        && direction.z.is_finite()
+                        && direction.x * direction.x
+                            + direction.y * direction.y
+                            + direction.z * direction.z
+                            > 0.0
                 }
             };
             if !finite || !circular_path || !profile_valid {
