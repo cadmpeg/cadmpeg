@@ -7825,11 +7825,10 @@ pub fn decode_dimension_annotation_frames(
         })
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for companion in companions.iter().filter(|companion| {
-        native_stream(&companion.id).is_some_and(|stream| {
-            dimension_companions.contains_key(&(stream.to_owned(), companion.record_index))
-        })
-    }) {
+    for companion in companions
+        .iter()
+        .filter(|companion| companion.payload_byte_length != 0)
+    {
         let Some(stream) = native_stream(&companion.id) else {
             continue;
         };
