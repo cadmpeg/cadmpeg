@@ -1,5 +1,3 @@
-# Generated from crates/cadmpeg-codec-catia/src/b5_record_class.rs.
-# Do not edit by hand; run `cargo test -p cadmpeg-codec-catia`.
 # CATIA b5 03 record-class codes, for structure-aware fuzzing.
 "\x0e"
 "\x0f"

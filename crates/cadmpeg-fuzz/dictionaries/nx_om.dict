@@ -1,5 +1,3 @@
-# Generated from crates/cadmpeg-codec-nx/src/om_tokens.rs.
-# Do not edit by hand; run `cargo test -p cadmpeg-codec-nx`.
 # NX object-model serialization tokens, for structure-aware fuzzing.
 "\x04\x01\x0eNX "
 "hostglobalvariables"
