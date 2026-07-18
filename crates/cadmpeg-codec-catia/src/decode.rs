@@ -120,7 +120,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} hole, {} pattern, {} shell, {} fillet, {} chamfer, and {} sketch feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} hole, {} pattern, {} shell, {} fillet, {} chamfer, {} sketch, and {} native operation feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len(),
                 transferred.revolutions,
@@ -131,6 +131,7 @@ fn finish_decode(
                 transferred.fillets,
                 transferred.chamfers,
                 transferred.sketches,
+                transferred.native_operations,
             ),
             provenance: None,
         });
@@ -170,6 +171,7 @@ fn transfer_design_features(
                         "EdgeFillet" => Some(("EdgeFillet", CatiaFeatureKind::Fillet)),
                         "Chamfer" => Some(("Chamfer", CatiaFeatureKind::Chamfer)),
                         "Sketch" => Some(("Sketch", CatiaFeatureKind::Sketch)),
+                        "GSMLoft" => Some(("GSMLoft", CatiaFeatureKind::Native("GSMLoft"))),
                         _ => None,
                     });
             let family = families.next()?;
@@ -313,6 +315,14 @@ fn transfer_design_features(
                         sketch: None,
                     }
                 }
+                CatiaFeatureKind::Native(kind) => {
+                    counts.native_operations += 1;
+                    FeatureDefinition::Native {
+                        kind: kind.to_string(),
+                        parameters: BTreeMap::new(),
+                        properties: BTreeMap::new(),
+                    }
+                }
             },
             native_ref: Some(object.id.clone()),
         });
@@ -349,6 +359,7 @@ enum CatiaFeatureKind {
     Fillet,
     Chamfer,
     Sketch,
+    Native(&'static str),
 }
 
 #[derive(Default)]
@@ -361,6 +372,7 @@ struct TransferredDesignCounts {
     fillets: usize,
     chamfers: usize,
     sketches: usize,
+    native_operations: usize,
 }
 
 fn decode_result(

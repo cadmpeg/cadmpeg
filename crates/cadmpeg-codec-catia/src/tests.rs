@@ -1941,6 +1941,7 @@ fn standard_catpart_with_catalog() -> Vec<u8> {
         "",
         "Sketch",
         "Pad",
+        "GSMLoft",
     ]);
     let mut file = standard_catpart();
     file.splice(16..16, catalog);
@@ -5799,6 +5800,7 @@ fn decode_retains_catalog_schema_names_without_promoting_features() {
     assert_eq!(native.catalogs.len(), 1);
     assert_eq!(native.catalogs[0].entries[4].value, "Sketch");
     assert_eq!(native.catalogs[0].entries[5].value, "Pad");
+    assert_eq!(native.catalogs[0].entries[6].value, "GSMLoft");
     assert!(decoded.ir.model.features.is_empty());
 }
 
@@ -5899,7 +5901,7 @@ fn decode_projects_groove_class_as_cut_revolution() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "1 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                "1 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
             )
     }));
 }
@@ -5928,7 +5930,7 @@ fn decode_projects_sketch_class_as_unresolved_sketch_node() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, and 1 sketch feature(s)",
+                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 1 sketch, and 0 native operation feature(s)",
             )
     }));
 }
@@ -5961,7 +5963,7 @@ fn decode_projects_hole_class_with_unresolved_operands() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 1 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                "0 revolution, 0 sweep, 1 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
             )
     }));
 }
@@ -5997,10 +5999,42 @@ fn decode_projects_pattern_classes_with_unresolved_operands() {
         assert!(decoded.report.losses.iter().any(|loss| {
             loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
                 && loss.message.contains(
-                    "0 revolution, 0 sweep, 0 hole, 1 pattern, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                    "0 revolution, 0 sweep, 0 hole, 1 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
                 )
         }));
     }
+}
+
+#[test]
+fn decode_projects_gsm_loft_as_native_operation() {
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_with_design_class("GSMLoft")),
+            &DecodeOptions::default(),
+        )
+        .expect("decode generated GSMLoft design");
+
+    assert!(matches!(
+        decoded.ir.model.features.as_slice(),
+        [cadmpeg_ir::features::Feature {
+            name: Some(name),
+            definition: cadmpeg_ir::features::FeatureDefinition::Native {
+                kind,
+                parameters,
+                properties,
+            },
+            native_ref: Some(native_ref),
+            ..
+        }] if name == "GSMLoft" && kind == "GSMLoft" && parameters.is_empty()
+            && properties.is_empty()
+            && native_ref.starts_with("catia:outer:design-object#")
+    ));
+    assert!(decoded.report.losses.iter().any(|loss| {
+        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
+            && loss.message.contains(
+                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 1 native operation feature(s)",
+            )
+    }));
 }
 
 #[test]
@@ -6032,7 +6066,7 @@ fn decode_projects_rib_and_slot_classes_as_solid_sweeps() {
         assert!(decoded.report.losses.iter().any(|loss| {
             loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
                 && loss.message.contains(
-                    "0 revolution, 1 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                    "0 revolution, 1 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
                 )
         }));
     }
@@ -6062,7 +6096,7 @@ fn decode_projects_shell_class_with_unresolved_operands() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 1 shell, 0 fillet, 0 chamfer, and 0 sketch feature(s)",
+                "0 revolution, 0 sweep, 0 hole, 0 pattern, 1 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
             )
     }));
 }
@@ -6090,7 +6124,7 @@ fn decode_projects_edge_fillet_class_with_unresolved_operands() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 1 fillet, 0 chamfer, and 0 sketch feature(s)",
+                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 1 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
             )
     }));
 }
@@ -6119,7 +6153,7 @@ fn decode_projects_chamfer_class_with_unresolved_operands() {
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
             && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 1 chamfer, and 0 sketch feature(s)",
+                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 1 chamfer, 0 sketch, and 0 native operation feature(s)",
             )
     }));
 }
