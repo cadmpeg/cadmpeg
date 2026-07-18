@@ -4891,18 +4891,36 @@ impl MeshQuotient {
         root: usize,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> bool {
+        self.propagate_component_edge_domains_with_budget(root, edge_candidates, None)
+    }
+
+    fn propagate_component_edge_domains_with_budget(
+        &mut self,
+        root: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
+    ) -> bool {
         let edges = self.members[root]
             .iter()
             .map(|node| node / 2)
             .filter(|edge| !edge_candidates[*edge].is_empty())
             .collect::<HashSet<_>>();
-        self.propagate_edge_domains(edges, edge_candidates)
+        self.propagate_edge_domains_with_budget(edges, edge_candidates, budget)
     }
 
     fn propagate_edge_domains(
         &mut self,
         edges: impl IntoIterator<Item = usize>,
         edge_candidates: &[Vec<[usize; 2]>],
+    ) -> bool {
+        self.propagate_edge_domains_with_budget(edges, edge_candidates, None)
+    }
+
+    fn propagate_edge_domains_with_budget(
+        &mut self,
+        edges: impl IntoIterator<Item = usize>,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
     ) -> bool {
         fn enqueue_component_edges(
             root: usize,
@@ -4928,6 +4946,9 @@ impl MeshQuotient {
         while let Some(edge) = queue.pop_front() {
             queued.remove(&edge);
             let candidates = &edge_candidates[edge];
+            if budget.is_some_and(|budget| !budget.charge_by(candidates.len().max(1))) {
+                return false;
+            }
             if candidates.is_empty() {
                 continue;
             }
@@ -5623,6 +5644,7 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         oriented_edges: &HashSet<usize>,
         limit: usize,
+        budget: Option<&MeshConstraintBudget>,
     ) -> Vec<(Vec<Vec<bool>>, Self)> {
         fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
             use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
@@ -5647,8 +5669,12 @@ impl MeshQuotient {
             seen: &mut HashSet<MeshOrientationSignature>,
             oriented_edges: &HashSet<usize>,
             limit: usize,
+            budget: Option<&MeshConstraintBudget>,
         ) {
             if output.len() >= limit {
+                return;
+            }
+            if budget.is_some_and(|budget| !budget.charge()) {
                 return;
             }
             if boundary_index == boundaries.len() {
@@ -5686,7 +5712,11 @@ impl MeshQuotient {
                 let Some(root) = quotient.merge(last_end, first_start) else {
                     return;
                 };
-                if !quotient.propagate_component_edge_domains(root, edge_candidates) {
+                if !quotient.propagate_component_edge_domains_with_budget(
+                    root,
+                    edge_candidates,
+                    budget,
+                ) {
                     return;
                 }
                 directions.push(std::mem::take(boundary_directions));
@@ -5702,6 +5732,7 @@ impl MeshQuotient {
                     seen,
                     oriented_edges,
                     limit,
+                    budget,
                 );
                 *boundary_directions = directions.pop().unwrap_or_default();
                 return;
@@ -5719,7 +5750,11 @@ impl MeshQuotient {
                     let Some(root) = quotient.merge(previous_end, current_start) else {
                         return;
                     };
-                    if !quotient.propagate_component_edge_domains(root, edge_candidates) {
+                    if !quotient.propagate_component_edge_domains_with_budget(
+                        root,
+                        edge_candidates,
+                        budget,
+                    ) {
                         return;
                     }
                 }
@@ -5736,6 +5771,7 @@ impl MeshQuotient {
                     seen,
                     oriented_edges,
                     limit,
+                    budget,
                 );
                 boundary_directions.pop();
             };
@@ -5764,8 +5800,17 @@ impl MeshQuotient {
             let mut output = Vec::new();
             let mut seen = HashSet::new();
             let combinations = 1usize << unknown;
+            let orientation_work = assignment
+                .boundaries
+                .iter()
+                .map(Vec::len)
+                .sum::<usize>()
+                .max(1);
             for mask in 0..combinations {
                 if output.len() >= limit {
+                    break;
+                }
+                if budget.is_some_and(|budget| !budget.charge_by(orientation_work)) {
                     break;
                 }
                 let mut variable = 0usize;
@@ -5813,7 +5858,11 @@ impl MeshQuotient {
                                 let Some(root) = quotient.merge(left_end, right_start) else {
                                     return false;
                                 };
-                                quotient.propagate_component_edge_domains(root, edge_candidates)
+                                quotient.propagate_component_edge_domains_with_budget(
+                                    root,
+                                    edge_candidates,
+                                    budget,
+                                )
                             })
                         });
                 if !viable {
@@ -5850,6 +5899,7 @@ impl MeshQuotient {
             &mut seen,
             oriented_edges,
             limit,
+            budget,
         );
         output
     }
@@ -7042,7 +7092,11 @@ impl MeshSelectionSearch<'_> {
                                 let Some(root) = option.merge(left, right) else {
                                     return false;
                                 };
-                                option.propagate_component_edge_domains(root, edge_candidates)
+                                option.propagate_component_edge_domains_with_budget(
+                                    root,
+                                    edge_candidates,
+                                    Some(budget),
+                                )
                             })
                         });
                 if !viable {
@@ -7643,14 +7697,19 @@ impl MeshSelectionSearch<'_> {
                 break;
             }
             let assignment = &self.assignments[face][assignment_index];
+            let assignment_options = measured.assignment_options_limited(
+                assignment,
+                self.edge_candidates,
+                &selected_edges,
+                remaining,
+                Some(budget),
+            );
+            if budget.exhausted.get() {
+                self.exhausted = true;
+                return;
+            }
             options.extend(
-                measured
-                    .assignment_options_limited(
-                        assignment,
-                        self.edge_candidates,
-                        &selected_edges,
-                        remaining,
-                    )
+                assignment_options
                     .into_iter()
                     .map(|(directions, next_quotient)| {
                         (assignment_index, directions, next_quotient)
@@ -9495,15 +9554,54 @@ mod motif_tests {
             .any(|(directions, _)| directions == &[vec![false, false, false]]));
         let unrestricted = [Vec::new(), Vec::new(), Vec::new()];
         let options = quotient.assignment_options(&assignment, &unrestricted);
-        let limited =
-            quotient.assignment_options_limited(&assignment, &unrestricted, &HashSet::new(), 1);
+        let limited = quotient.assignment_options_limited(
+            &assignment,
+            &unrestricted,
+            &HashSet::new(),
+            1,
+            None,
+        );
         assert_eq!(limited.len(), 1);
         assert_eq!(limited[0].0, options[0].0);
-        let unique =
-            quotient.assignment_options_limited(&assignment, &unrestricted, &HashSet::new(), 4_096);
+        let unique = quotient.assignment_options_limited(
+            &assignment,
+            &unrestricted,
+            &HashSet::new(),
+            4_096,
+            None,
+        );
         assert!(unique
             .iter()
             .all(|option| options.iter().any(|candidate| candidate.0 == option.0)));
+    }
+
+    #[test]
+    fn quotient_options_decline_when_their_work_budget_is_exhausted() {
+        let quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![Arc::new(HashSet::from([0])); 2],
+            members: (0..2).map(|node| vec![node]).collect(),
+        };
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            }]],
+        };
+        let budget = MeshConstraintBudget::new(0);
+
+        let options = quotient.assignment_options_limited(
+            &assignment,
+            &[vec![[0, 0]]],
+            &HashSet::new(),
+            1,
+            Some(&budget),
+        );
+
+        assert!(options.is_empty());
+        assert!(budget.exhausted.get());
     }
 
     #[test]
