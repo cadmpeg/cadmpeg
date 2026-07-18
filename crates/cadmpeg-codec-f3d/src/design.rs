@@ -2846,7 +2846,8 @@ pub fn project_sketch_design(
                 start, end, normal, ..
             } if planar_point(start)
                 && planar_point(end)
-                && sketch_normal_sign(normal).is_some() =>
+                && normal.z.is_finite()
+                && normal.z != 0.0 =>
             {
                 SketchGeometry::Line {
                     start: Point2::new(start.x, start.y),
@@ -11618,7 +11619,7 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     }
     let displacement = Vector3::new(values[3], values[4], values[5]);
     let direction = Vector3::new(values[6], values[7], values[8]);
-    let normal = Vector3::new(values[9], values[10], values[11]);
+    let stored_normal = Vector3::new(values[9], values[10], values[11]);
     let length = displacement.norm();
     if length <= 0.0 {
         return None;
@@ -11629,14 +11630,33 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
         displacement.z / length - direction.z,
     )
     .norm();
-    let dot = direction.x * normal.x + direction.y * normal.y + direction.z * normal.z;
     if (direction.norm() - 1.0).abs() > 1.0e-9
-        || (normal.norm() - 1.0).abs() > 1.0e-9
+        || (stored_normal.norm() - 1.0).abs() > 1.0e-9
         || parallel_error > 1.0e-9
-        || dot.abs() > 1.0e-9
     {
         return None;
     }
+    // The stored line normal is an auxiliary orientation vector. Imported
+    // legacy sketches can retain a small component along the line direction;
+    // remove that component so the typed carrier maintains its orthonormal
+    // invariant without changing the line's endpoints or orientation side.
+    let dot = direction.x * stored_normal.x
+        + direction.y * stored_normal.y
+        + direction.z * stored_normal.z;
+    let normal = Vector3::new(
+        stored_normal.x - dot * direction.x,
+        stored_normal.y - dot * direction.y,
+        stored_normal.z - dot * direction.z,
+    );
+    let normal_length = normal.norm();
+    if !normal_length.is_finite() || normal_length <= 1.0e-12 {
+        return None;
+    }
+    let normal = Vector3::new(
+        normal.x / normal_length,
+        normal.y / normal_length,
+        normal.z / normal_length,
+    );
     let start = Point3::new(values[0] * 10.0, values[1] * 10.0, values[2] * 10.0);
     Some(SketchCurveGeometry::Line {
         start,
@@ -16174,6 +16194,41 @@ mod relation_tests {
             .expect("legacy sketch member run");
         assert_eq!(members, [300, 301]);
         assert_eq!(offsets, [(paired_at + 46) as u64, (paired_at + 57) as u64]);
+    }
+
+    #[test]
+    fn legacy_line_orthogonalizes_its_auxiliary_normal() {
+        let mut bytes = vec![0u8; 133];
+        let values: [f64; 12] = [
+            0.5,
+            0.875,
+            0.0,
+            0.0,
+            -1.75,
+            0.0,
+            0.0,
+            -1.0,
+            0.0,
+            -0.000_037,
+            0.000_184,
+            0.999_999_982,
+        ];
+        for value in values {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        let SketchCurveGeometry::Line {
+            direction, normal, ..
+        } = super::decode_line(&bytes).expect("legacy line")
+        else {
+            panic!("expected line");
+        };
+        assert!((direction.norm() - 1.0).abs() <= 1.0e-12);
+        assert!((normal.norm() - 1.0).abs() <= 1.0e-12);
+        assert!(
+            (direction.x * normal.x + direction.y * normal.y + direction.z * normal.z).abs()
+                <= 1.0e-12
+        );
+        assert!(normal.z > 0.0);
     }
 
     #[test]
