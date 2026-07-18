@@ -11,8 +11,12 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
+use cadmpeg_ir::annotations::{ExactnessNote, Provenance};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
+use cadmpeg_ir::features::{
+    BooleanOp, Feature, FeatureDefinition, FeatureId, RevolutionConstruction,
+};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
     PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -95,10 +99,11 @@ fn finish_decode(
     scan: &ContainerScan,
     mut ir: CadIr,
     mut report: DecodeReport,
-    annotations: cadmpeg_ir::Annotations,
+    mut annotations: cadmpeg_ir::Annotations,
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
+    let transferred_design_features = transfer_design_features(&mut ir, &native, &mut annotations);
     let object_record_count = native
         .object_graphs
         .iter()
@@ -114,7 +119,7 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s), but no neutral features, parameters, sketches, or history dependencies were transferred.",
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {transferred_design_features} revolution feature(s) transferred, while other neutral features, parameters, sketches, and history dependencies remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len()
             ),
@@ -123,6 +128,118 @@ fn finish_decode(
     }
     native.store_owned(ir.native.namespace_mut("catia"))?;
     decode_result(ir, report, annotations, unknowns)
+}
+
+fn transfer_design_features(
+    ir: &mut CadIr,
+    native: &CatiaNative,
+    annotations: &mut cadmpeg_ir::Annotations,
+) -> usize {
+    let recognized = native
+        .design_objects
+        .iter()
+        .filter_map(|object| {
+            let mut families =
+                object
+                    .field_classes
+                    .iter()
+                    .filter_map(|class| match class.as_str() {
+                        "Groove" => Some(("Groove", BooleanOp::Cut)),
+                        "Shaft" => Some(("Shaft", BooleanOp::Join)),
+                        _ => None,
+                    });
+            let family = families.next()?;
+            families.next().is_none().then_some((object, family))
+        })
+        .collect::<Vec<_>>();
+    if recognized.is_empty() {
+        return 0;
+    }
+    let feature_ids = recognized
+        .iter()
+        .map(|(object, _)| {
+            let key = object
+                .id
+                .strip_prefix("catia:outer:design-object#")
+                .expect("CATIA design object identity");
+            (
+                object.id.as_str(),
+                FeatureId(format!("catia:outer:feature#{key}")),
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    let stream = annotations
+        .streams
+        .iter()
+        .position(|stream| stream == "catia:outer-object-graph")
+        .unwrap_or_else(|| {
+            annotations
+                .streams
+                .push("catia:outer-object-graph".to_string());
+            annotations.streams.len() - 1
+        }) as u32;
+    let record_offsets = native
+        .object_graphs
+        .iter()
+        .flat_map(|graph| &graph.records)
+        .map(|record| (record.id.as_str(), record.byte_offset))
+        .collect::<HashMap<_, _>>();
+
+    for (ordinal, (object, (family, op))) in recognized.into_iter().enumerate() {
+        let id = feature_ids[object.id.as_str()].clone();
+        let dependencies = object
+            .dependencies
+            .iter()
+            .filter_map(|dependency| feature_ids.get(dependency.as_str()).cloned())
+            .collect();
+        ir.model.features.push(Feature {
+            id: id.clone(),
+            ordinal: ordinal as u64,
+            name: Some(family.to_string()),
+            suppressed: false,
+            parent: None,
+            dependencies,
+            source_properties: BTreeMap::new(),
+            source_tag: Some(family.to_string()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Revolve {
+                construction: RevolutionConstruction {
+                    profile: None,
+                    axis: None,
+                    extent: None,
+                    axis_reference: None,
+                    solid: None,
+                    face_maker_class: None,
+                    fuse_order: None,
+                    allow_multi_profile_faces: None,
+                },
+                op,
+            },
+            native_ref: Some(object.id.clone()),
+        });
+        annotations.provenance.insert(
+            id.0.clone(),
+            Provenance {
+                stream,
+                offset: object
+                    .owner_record
+                    .as_deref()
+                    .and_then(|record| record_offsets.get(record).copied())
+                    .unwrap_or(0),
+                tag: Some(family.to_string()),
+            },
+        );
+        annotations.exactness.insert(
+            id.0,
+            ExactnessNote {
+                entity: Exactness::Derived,
+                fields: BTreeMap::new(),
+            },
+        );
+    }
+    feature_ids.len()
 }
 
 fn decode_result(
