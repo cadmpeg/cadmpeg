@@ -690,7 +690,9 @@ integer fields extend the compact-integer lattice with `c0..df XX YY`, equal
 to `((head-c0)<<16)|(XX<<8)|YY`.
 
 For a two-item type-zero incidence, sense `2` selects the native first endpoint
-and sense `3` selects the native second endpoint; the selected loci coincide.
+and sense `3` selects the native second endpoint. Sense `4` selects an arc or
+circle center. The two selected point loci coincide and map to a neutral
+coincident-loci constraint.
 When exactly one `segtab` row owns each referenced external identifier, this
 incidence equates the corresponding stored `pointid` coordinates. A solved
 coordinate on either endpoint therefore supplies the missing coordinate on the

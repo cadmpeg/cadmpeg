@@ -3751,8 +3751,8 @@ pub(crate) fn resolved_section_points(
             };
             let pair = match skamp.kind {
                 0 => Some([
-                    section_skamp_endpoint_point(definition, first)?,
-                    section_skamp_endpoint_point(definition, second)?,
+                    section_skamp_selected_point(definition, first)?,
+                    section_skamp_selected_point(definition, second)?,
                 ]),
                 3 => {
                     let first_point = section_skamp_point_entity_id(definition, first);
@@ -4284,20 +4284,6 @@ fn saved_line_fixed_coordinate_value(
 enum SectionPointSource {
     Point(u32),
     Value([f64; 2]),
-}
-
-fn section_skamp_endpoint_point(
-    definition: &crate::feature::FeatureDefinition,
-    item: &crate::feature::FeatureSkampItem,
-) -> Option<SectionPointSource> {
-    if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
-        return match item.sense {
-            2 => Some(SectionPointSource::Point(segment.point_ids[0])),
-            3 => Some(SectionPointSource::Point(segment.point_ids[1])),
-            _ => None,
-        };
-    }
-    saved_section_point(definition, item).map(SectionPointSource::Value)
 }
 
 fn unique_section_skamp_segment(
@@ -9044,13 +9030,13 @@ fn section_skamp_constraints(
             let constraint_definition = if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
                     (0, [first, second])
-                        if section_skamp_endpoint(definition, first).is_some()
-                            && section_skamp_endpoint(definition, second).is_some() =>
+                        if section_skamp_point_locus(definition, first).is_some()
+                            && section_skamp_point_locus(definition, second).is_some() =>
                     {
                         SketchConstraintDefinition::CoincidentLoci {
                             loci: vec![
-                                section_skamp_endpoint(definition, first)?,
-                                section_skamp_endpoint(definition, second)?,
+                                section_skamp_point_locus(definition, first)?,
+                                section_skamp_point_locus(definition, second)?,
                             ],
                         }
                     }
@@ -16365,6 +16351,52 @@ mod resolved_sketch_tests {
                 ..
             } if native_kind == "creo:skamp:0"
         ));
+        let mut center_coincidence = definition.clone();
+        let center_items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 4,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 2,
+            },
+        ];
+        center_coincidence
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[4]
+            .items = center_items;
+        assert_eq!(
+            section_skamp_constraints(&center_coincidence, &SketchId("sketch".into()))[4]
+                .0
+                .definition,
+            SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::Center(SketchEntityId(
+                        "creo:featdefs:sketch_entity#917:13".to_string()
+                    )),
+                    SketchLocus::Start(SketchEntityId(
+                        "creo:featdefs:sketch_entity#917:12".to_string()
+                    )),
+                ],
+            }
+        );
+        let variables = center_coincidence.variables.as_mut().expect("variables");
+        let first_point = variables
+            .points
+            .iter_mut()
+            .find(|point| point.point_id == 1)
+            .expect("line start");
+        first_point.u = None;
+        first_point.v = None;
+        variables.points.push(crate::feature::FeatureSectionPoint {
+            point_id: 4,
+            u: Some(8.0),
+            v: Some(9.0),
+        });
+        assert_eq!(resolved_section_points(&center_coincidence)[&1], [8.0, 9.0]);
         assert_eq!(
             constraints[5].0.definition,
             SketchConstraintDefinition::TangentLoci {
