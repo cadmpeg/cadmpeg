@@ -1351,11 +1351,7 @@ fn resolved_edge_group(
         let members = identity_matches
             .iter()
             .map(|operand| {
-                let edge = (operand.historical_entity_kind
-                    == Some(crate::records::AsmHistoricalEntityKind::Edge)
-                    && operand.historical_state_ids.contains(&previous_state_id))
-                .then_some(operand.historical_entity_ref)
-                .flatten();
+                let edge = operand.resolved_edge_slot;
                 (operand.id.as_str(), edge)
             })
             .collect::<Vec<_>>();
@@ -8771,6 +8767,8 @@ pub fn decode_edge_identity_operands(
                 historical_entity_kind: None,
                 historical_entity_ref: None,
                 historical_state_ids: Vec::new(),
+                resolved_edge_slot: None,
+                resolution_identity_id: None,
             });
         }
     }

@@ -1843,6 +1843,8 @@ fn extend_related_design_records(
     )?;
     crate::history::bind_edge_identity_history(
         &mut native.design_edge_identity_operands,
+        &native.design_construction_operand_identities,
+        &native.design_parameter_scopes,
         &native.asm_histories,
     );
     native.design_edge_operands = crate::design::decode_edge_operands(

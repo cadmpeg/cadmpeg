@@ -1797,12 +1797,16 @@ pub(crate) fn bind_extrude_selection_history(
 
 pub(crate) fn bind_edge_identity_history(
     operands: &mut [DesignEdgeIdentityOperand],
+    identities: &[crate::records::DesignConstructionOperandIdentity],
+    scopes: &[crate::records::DesignParameterScope],
     histories: &[AsmHistory],
 ) {
     for operand in operands {
         operand.historical_entity_kind = None;
         operand.historical_entity_ref = None;
         operand.historical_state_ids.clear();
+        operand.resolved_edge_slot = None;
+        operand.resolution_identity_id = None;
         if let Some((kind, entity_ref, states)) =
             historical_selection_identity_kind(histories, operand.local_id)
         {
@@ -1810,7 +1814,140 @@ pub(crate) fn bind_edge_identity_history(
             operand.historical_entity_ref = Some(entity_ref);
             operand.historical_state_ids = states;
         }
+        let Some(stream) = crate::design::native_stream(&operand.id) else {
+            continue;
+        };
+        let Some(previous_state_id) = scopes
+            .iter()
+            .find(|scope| {
+                crate::design::native_stream(&scope.id) == Some(stream)
+                    && scope.record_index == operand.scope_record_index
+            })
+            .and_then(|scope| scope.previous_history_state_id)
+        else {
+            continue;
+        };
+        let mut topologies = histories
+            .iter()
+            .flat_map(|history| &history.states)
+            .filter(|state| state.state_id == previous_state_id)
+            .filter_map(|state| state.topology.as_ref());
+        let Some(topology) = topologies.next() else {
+            continue;
+        };
+        if topologies.next().is_some() {
+            continue;
+        }
+        let direct = operand
+            .historical_entity_kind
+            .zip(operand.historical_entity_ref)
+            .filter(|_| operand.historical_state_ids.contains(&previous_state_id))
+            .and_then(|(kind, entity_ref)| historical_identity_edge(kind, entity_ref, topology));
+        if let Some(edge) = direct {
+            operand.resolved_edge_slot = Some(edge);
+            operand.resolution_identity_id = Some(operand.id.clone());
+            continue;
+        }
+        let mut resolved = identities.iter().filter_map(|identity| {
+            (crate::design::native_stream(&identity.id) == Some(stream)
+                && identity.group_record_index == operand.group_record_index)
+                .then_some(identity)?;
+            let persistent = identity.persistent_identity.as_ref()?;
+            let (kind, entity_ref, states) =
+                historical_selection_identity_kind(histories, persistent.local_id)?;
+            states.contains(&previous_state_id).then_some(())?;
+            Some((
+                historical_identity_edge(kind, entity_ref, topology)?,
+                identity.id.as_str(),
+            ))
+        });
+        let Some((edge, identity_id)) = resolved.next() else {
+            continue;
+        };
+        if resolved.any(|candidate| candidate.0 != edge) {
+            continue;
+        }
+        operand.resolved_edge_slot = Some(edge);
+        operand.resolution_identity_id = Some(identity_id.to_owned());
     }
+}
+
+fn historical_identity_edge(
+    kind: AsmHistoricalEntityKind,
+    entity_ref: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<i64> {
+    let mut candidates = HashSet::new();
+    match kind {
+        AsmHistoricalEntityKind::Edge => {
+            if topology.edges.contains(&entity_ref) {
+                candidates.insert(entity_ref);
+            }
+        }
+        AsmHistoricalEntityKind::Coedge => {
+            candidates.extend(
+                topology
+                    .coedge_topology
+                    .iter()
+                    .filter(|coedge| coedge.coedge == entity_ref)
+                    .map(|coedge| coedge.edge),
+            );
+        }
+        AsmHistoricalEntityKind::Pcurve => {
+            let coedges = topology
+                .coedge_pcurves
+                .iter()
+                .filter(|binding| binding.carrier == Some(entity_ref))
+                .map(|binding| binding.entity)
+                .collect::<HashSet<_>>();
+            candidates.extend(
+                topology
+                    .coedge_topology
+                    .iter()
+                    .filter(|coedge| coedges.contains(&coedge.coedge))
+                    .map(|coedge| coedge.edge),
+            );
+        }
+        AsmHistoricalEntityKind::Curve => {
+            candidates.extend(
+                topology
+                    .edge_curves
+                    .iter()
+                    .filter(|binding| binding.carrier == Some(entity_ref))
+                    .map(|binding| binding.entity),
+            );
+        }
+        AsmHistoricalEntityKind::Vertex | AsmHistoricalEntityKind::Point => {
+            let vertices = if kind == AsmHistoricalEntityKind::Vertex {
+                HashSet::from([entity_ref])
+            } else {
+                topology
+                    .vertex_points
+                    .iter()
+                    .filter(|binding| binding.carrier == entity_ref)
+                    .map(|binding| binding.entity)
+                    .collect()
+            };
+            candidates.extend(
+                topology
+                    .edge_vertices
+                    .iter()
+                    .filter(|edge| {
+                        vertices.contains(&edge.start_vertex) || vertices.contains(&edge.end_vertex)
+                    })
+                    .map(|edge| edge.edge),
+            );
+        }
+        AsmHistoricalEntityKind::Body
+        | AsmHistoricalEntityKind::Region
+        | AsmHistoricalEntityKind::Shell
+        | AsmHistoricalEntityKind::Face
+        | AsmHistoricalEntityKind::Loop
+        | AsmHistoricalEntityKind::Surface => {}
+    }
+    let mut candidates = candidates.into_iter();
+    let edge = candidates.next()?;
+    candidates.next().is_none().then_some(edge)
 }
 
 fn affected_body_refs(
@@ -2397,6 +2534,69 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 mod tests {
     use super::*;
     use crate::history_records::AsmHistoricalSurfaceRadius;
+
+    #[test]
+    fn historical_identity_edge_requires_unique_incidence() {
+        let mut topology = AsmHistoricalTopology {
+            edges: vec![7, 8],
+            coedges: vec![17, 18],
+            curves: vec![27],
+            pcurves: vec![37],
+            coedge_topology: vec![
+                crate::history_records::AsmHistoricalCoedge {
+                    coedge: 17,
+                    owner_loop: 0,
+                    edge: 7,
+                    next: 18,
+                    previous: 18,
+                    radial_next: 17,
+                },
+                crate::history_records::AsmHistoricalCoedge {
+                    coedge: 18,
+                    owner_loop: 0,
+                    edge: 8,
+                    next: 17,
+                    previous: 17,
+                    radial_next: 18,
+                },
+            ],
+            edge_curves: vec![
+                crate::history_records::AsmHistoricalOptionalCarrierBinding {
+                    entity: 7,
+                    carrier: Some(27),
+                },
+            ],
+            coedge_pcurves: vec![
+                crate::history_records::AsmHistoricalOptionalCarrierBinding {
+                    entity: 17,
+                    carrier: Some(37),
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            historical_identity_edge(AsmHistoricalEntityKind::Coedge, 17, &topology),
+            Some(7)
+        );
+        assert_eq!(
+            historical_identity_edge(AsmHistoricalEntityKind::Curve, 27, &topology),
+            Some(7)
+        );
+        assert_eq!(
+            historical_identity_edge(AsmHistoricalEntityKind::Pcurve, 37, &topology),
+            Some(7)
+        );
+        topology.edge_curves.push(
+            crate::history_records::AsmHistoricalOptionalCarrierBinding {
+                entity: 8,
+                carrier: Some(27),
+            },
+        );
+        assert_eq!(
+            historical_identity_edge(AsmHistoricalEntityKind::Curve, 27, &topology),
+            None
+        );
+    }
 
     #[test]
     fn terminal_edge_recipe_faces_use_exact_then_alternate_references() {
