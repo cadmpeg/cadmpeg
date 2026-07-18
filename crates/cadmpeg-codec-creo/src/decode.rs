@@ -11257,9 +11257,13 @@ fn evaluated_sweep_output_bodies(ir: &CadIr, feature_id: u32) -> Vec<BodyId> {
         .collect()
 }
 
-fn has_evaluated_sweep_body(ir: &CadIr, family: &str, feature_id: u32) -> bool {
+fn evaluated_sweep_body_kind(ir: &CadIr, family: &str, feature_id: u32) -> Option<BodyKind> {
     let id = BodyId(format!("creo:feature:{family}#{feature_id}:body"));
-    ir.model.bodies.iter().any(|body| body.id == id)
+    ir.model
+        .bodies
+        .iter()
+        .find(|body| body.id == id)
+        .map(|body| body.kind)
 }
 
 fn feature_field_text(value: &crate::feature::FeatureFieldValue) -> Option<String> {
@@ -12222,15 +12226,17 @@ fn schema_feature_definition(
             definitions.as_slice(),
             circular_sweep_geometry(scan, feature_id),
         ) {
+            let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
             return circular_sweep_feature_definition(
                 definition.id,
                 &sweep,
                 section_sweep_boolean_operation(
                     feature_recipe_effect(scan, feature_id),
                     kind,
-                    false,
+                    output_kind.is_some(),
                     preceding_features_establish_body(ir),
                 ),
+                (output_kind == Some(BodyKind::Solid)).then_some(true),
             );
         }
     }
@@ -12266,13 +12272,14 @@ fn schema_feature_definition(
             (None, None)
         };
         if profile.is_some() || axis.is_some() || extent.is_some() {
+            let output_kind = evaluated_sweep_body_kind(ir, "revolution", feature_id);
             return IrFeatureDefinition::Revolve {
                 construction: RevolutionConstruction {
                     profile,
                     axis,
                     extent,
                     axis_reference: None,
-                    solid: None,
+                    solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
                     face_maker_class: None,
                     fuse_order: None,
                     allow_multi_profile_faces: None,
@@ -12280,7 +12287,7 @@ fn schema_feature_definition(
                 op: section_sweep_boolean_operation(
                     feature_recipe_effect(scan, feature_id),
                     kind,
-                    has_evaluated_sweep_body(ir, "revolution", feature_id),
+                    output_kind.is_some(),
                     preceding_features_establish_body(ir),
                 ),
             };
@@ -12314,6 +12321,7 @@ fn schema_feature_definition(
                 if let Some((extent, direction)) =
                     extrusion_extent_and_direction(transform.origin, transform.normal, cap_origins)
                 {
+                    let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
                     return IrFeatureDefinition::Extrude {
                         profile,
                         direction: Some(Vector3::new(direction[0], direction[1], direction[2])),
@@ -12321,13 +12329,13 @@ fn schema_feature_definition(
                         op: section_sweep_boolean_operation(
                             feature_recipe_effect(scan, feature_id),
                             kind,
-                            has_evaluated_sweep_body(ir, "extrusion", feature_id),
+                            output_kind.is_some(),
                             preceding_features_establish_body(ir),
                         ),
                         draft: None,
                         reverse_draft: None,
                         direction_source: None,
-                        solid: None,
+                        solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
                         face_maker: None,
                         inner_wire_taper: None,
                         first_offset: None,
@@ -12808,6 +12816,7 @@ fn circular_sweep_feature_definition(
     definition_id: u32,
     sweep: &CircularSweepGeometry,
     op: BooleanOp,
+    solid: Option<bool>,
 ) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
         profile: ProfileRef::Native(format!("creo:featdefs:sketch#{definition_id}")),
@@ -12821,7 +12830,7 @@ fn circular_sweep_feature_definition(
         draft: None,
         reverse_draft: None,
         direction_source: None,
-        solid: None,
+        solid,
         face_maker: None,
         inner_wire_taper: None,
         first_offset: None,
@@ -13871,7 +13880,7 @@ mod resolved_sketch_tests {
         };
 
         assert_eq!(
-            circular_sweep_feature_definition(917, &sweep, BooleanOp::Join),
+            circular_sweep_feature_definition(917, &sweep, BooleanOp::Join, Some(true)),
             IrFeatureDefinition::Extrude {
                 profile: ProfileRef::Native("creo:featdefs:sketch#917".to_string()),
                 direction: Some(Vector3::new(0.0, 0.0, -1.0)),
@@ -13882,7 +13891,7 @@ mod resolved_sketch_tests {
                 draft: None,
                 reverse_draft: None,
                 direction_source: None,
-                solid: None,
+                solid: Some(true),
                 face_maker: None,
                 inner_wire_taper: None,
                 first_offset: None,
@@ -15542,6 +15551,15 @@ mod resolved_sketch_tests {
                 visible: None,
             });
         }
+        ir.model.bodies.push(Body {
+            id: BodyId("creo:feature:extrusion#43:body".to_string()),
+            kind: BodyKind::Sheet,
+            regions: Vec::new(),
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
         assert_eq!(
             evaluated_sweep_output_bodies(&ir, 40),
             vec![
@@ -15549,9 +15567,19 @@ mod resolved_sketch_tests {
                 BodyId("creo:feature:revolution#40:body".to_string()),
             ]
         );
-        assert!(has_evaluated_sweep_body(&ir, "extrusion", 40));
-        assert!(has_evaluated_sweep_body(&ir, "revolution", 40));
-        assert!(!has_evaluated_sweep_body(&ir, "revolution", 42));
+        assert_eq!(
+            evaluated_sweep_body_kind(&ir, "extrusion", 40),
+            Some(BodyKind::Solid)
+        );
+        assert_eq!(
+            evaluated_sweep_body_kind(&ir, "revolution", 40),
+            Some(BodyKind::Solid)
+        );
+        assert_eq!(
+            evaluated_sweep_body_kind(&ir, "extrusion", 43),
+            Some(BodyKind::Sheet)
+        );
+        assert_eq!(evaluated_sweep_body_kind(&ir, "revolution", 42), None);
     }
 
     #[test]
