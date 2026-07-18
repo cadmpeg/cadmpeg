@@ -12,7 +12,7 @@ use cadmpeg_ir::topology::BodyKind;
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
-const MAX_MESH_SUPPORT_OPERATIONS: usize = 1_000_000;
+const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
@@ -5313,10 +5313,11 @@ impl MeshQuotient {
         self.point_assignment(point_count, edge_candidates)
     }
 
-    fn assignment_has_option(
+    fn assignment_has_option_with_budget(
         &self,
         assignment: &MeshFaceBoundaryAssignment,
         edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
     ) -> bool {
         fn edge_start(use_: MeshBoundaryEdgeCandidate, reversed: bool) -> Option<usize> {
             use_.edge.checked_mul(2)?.checked_add(usize::from(reversed))
@@ -5367,6 +5368,9 @@ impl MeshQuotient {
         }];
         while let Some(mut state) = states.pop() {
             loop {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return false;
+                }
                 if state.boundary_index == assignment.boundaries.len() {
                     return true;
                 }
@@ -5401,6 +5405,9 @@ impl MeshQuotient {
                     continue;
                 }
                 for reversed in [true, false] {
+                    if budget.is_some_and(|budget| !budget.charge()) {
+                        return false;
+                    }
                     let mut next = state.clone();
                     if advance(&mut next, boundary, reversed)
                         && next.quotient.edge_domains_viable(edge_candidates)
@@ -5412,6 +5419,15 @@ impl MeshQuotient {
             }
         }
         false
+    }
+
+    #[cfg(test)]
+    fn assignment_has_option(
+        &self,
+        assignment: &MeshFaceBoundaryAssignment,
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> bool {
+        self.assignment_has_option_with_budget(assignment, edge_candidates, None)
     }
 
     #[cfg(test)]
@@ -6308,7 +6324,7 @@ fn deduplicate_mesh_quotient_assignments(faces: &mut [Vec<MeshFaceBoundaryAssign
 fn mesh_assignment_endpoint_cycles_viable_where(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
-    budget: Option<&MeshSupportBudget>,
+    budget: Option<&MeshConstraintBudget>,
     allowed: impl Fn(usize, [usize; 2]) -> bool + Copy,
 ) -> Option<bool> {
     const MAX_LOCAL_ENDPOINT_STATES: usize = 65_536;
@@ -6374,7 +6390,7 @@ fn mesh_assignment_endpoint_cycles_viable_with(
     assignment: &MeshFaceBoundaryAssignment,
     edge_candidates: &[Vec<[usize; 2]>],
     required: Option<(usize, [usize; 2])>,
-    budget: Option<&MeshSupportBudget>,
+    budget: Option<&MeshConstraintBudget>,
 ) -> Option<bool> {
     mesh_assignment_endpoint_cycles_viable_where(
         assignment,
@@ -6397,12 +6413,12 @@ fn mesh_assignment_endpoint_cycles_viable(
         .unwrap_or(true)
 }
 
-struct MeshSupportBudget {
+struct MeshConstraintBudget {
     remaining: Cell<usize>,
     exhausted: Cell<bool>,
 }
 
-impl MeshSupportBudget {
+impl MeshConstraintBudget {
     fn new(limit: usize) -> Self {
         Self {
             remaining: Cell::new(limit),
@@ -6565,7 +6581,7 @@ fn prune_mesh_endpoint_pair_support(
     prune_mesh_endpoint_pair_support_with_limit(
         assignments,
         edge_candidates,
-        MAX_MESH_SUPPORT_OPERATIONS,
+        MAX_MESH_CONSTRAINT_OPERATIONS,
     )
 }
 
@@ -6574,7 +6590,7 @@ fn prune_mesh_endpoint_pair_support_with_limit(
     edge_candidates: &mut [Vec<[usize; 2]>],
     limit: usize,
 ) -> bool {
-    let budget = MeshSupportBudget::new(limit);
+    let budget = MeshConstraintBudget::new(limit);
     'fixpoint: loop {
         let mut changed = false;
         for face in assignments.iter_mut() {
@@ -7795,8 +7811,18 @@ pub fn parse_standard_mesh_endpoint_candidates(
     if !quotient.edge_domains_viable(&edge_candidates) {
         return None;
     }
+    let option_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     for face in &mut assignments {
-        face.retain(|assignment| quotient.assignment_has_option(assignment, &edge_candidates));
+        face.retain(|assignment| {
+            quotient.assignment_has_option_with_budget(
+                assignment,
+                &edge_candidates,
+                Some(&option_budget),
+            )
+        });
+        if option_budget.exhausted.get() {
+            return None;
+        }
         if face.is_empty() {
             return None;
         }
@@ -8592,9 +8618,9 @@ mod motif_tests {
         reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
         same_unordered_pair, standard_face_count, unique_coordinate_bijection,
         unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
-        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshEdgeRun,
-        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget,
+        MeshEdgeRun, MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch,
+        StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
     };
 
     fn triangle_packet(handles: [u16; 3]) -> Vec<u8> {
@@ -9238,6 +9264,31 @@ mod motif_tests {
         assert!(!quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
         Arc::make_mut(&mut quotient.domains[3]).insert(0);
         assert!(quotient.assignment_has_option(&assignment, &[vec![], vec![]]));
+    }
+
+    #[test]
+    fn quotient_assignment_declines_when_its_work_budget_is_exhausted() {
+        let quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![Arc::new(HashSet::from([0])); 2],
+            members: (0..2).map(|node| vec![node]).collect(),
+        };
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![MeshBoundaryEdgeCandidate {
+                edge: 0,
+                start: 0,
+                end: 0,
+                reversed: None,
+            }]],
+        };
+        let budget = MeshConstraintBudget::new(0);
+
+        assert!(!quotient.assignment_has_option_with_budget(
+            &assignment,
+            &[vec![[0, 0]]],
+            Some(&budget),
+        ));
+        assert!(budget.exhausted.get());
     }
 
     #[test]
