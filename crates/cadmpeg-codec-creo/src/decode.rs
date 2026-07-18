@@ -19940,7 +19940,7 @@ fn point_pair_alignments(mapped: [[f64; 3]; 2], target: [[f64; 3]; 2]) -> [bool;
     ]
 }
 
-fn full_nurbs_edge_parameter_range(
+fn nonperiodic_nurbs_edge_parameter_range(
     geometry: &CurveGeometry,
     points: [[f64; 3]; 2],
 ) -> Option<[f64; 2]> {
@@ -19964,6 +19964,43 @@ fn full_nurbs_edge_parameter_range(
         *nurbs.knots.get(nurbs.control_points.len())?,
     ];
     (range[0].is_finite() && range[1].is_finite() && range[0] < range[1]).then_some(())?;
+
+    if degree == 1 {
+        nurbs
+            .weights
+            .as_ref()
+            .is_none_or(|weights| {
+                weights
+                    .iter()
+                    .all(|weight| weight.is_finite() && *weight > 0.0)
+            })
+            .then_some(())?;
+        let bounds = nurbs.control_points.iter().fold(
+            [[f64::INFINITY; 3], [f64::NEG_INFINITY; 3]],
+            |mut bounds, point| {
+                for (index, coordinate) in [point.x, point.y, point.z].into_iter().enumerate() {
+                    bounds[0][index] = bounds[0][index].min(coordinate);
+                    bounds[1][index] = bounds[1][index].max(coordinate);
+                }
+                bounds
+            },
+        );
+        let scale = (0..3)
+            .map(|index| bounds[1][index] - bounds[0][index])
+            .fold(1.0, f64::max);
+        let tolerance = 1e-9 * scale;
+        let first = degree_one_nurbs_point_parameter(geometry, nurbs, points[0], range, tolerance)?;
+        let second =
+            degree_one_nurbs_point_parameter(geometry, nurbs, points[1], range, tolerance)?;
+        let parameters = if first <= second {
+            [first, second]
+        } else {
+            [second, first]
+        };
+        return (parameters[1] - parameters[0] > 1e-12 * (range[1] - range[0]).max(1.0))
+            .then_some(parameters);
+    }
+
     let mapped = range.map(|parameter| {
         cadmpeg_ir::eval::curve_point(geometry, parameter).map(|point| [point.x, point.y, point.z])
     });
@@ -19974,6 +20011,82 @@ fn full_nurbs_edge_parameter_range(
         [true, false] | [false, true] => Some(range),
         _ => None,
     }
+}
+
+fn degree_one_nurbs_point_parameter(
+    geometry: &CurveGeometry,
+    nurbs: &NurbsCurve,
+    point: [f64; 3],
+    range: [f64; 2],
+    tolerance: f64,
+) -> Option<f64> {
+    let parameter_tolerance = 1e-9 * (range[1] - range[0]).max(1.0);
+    let mut candidates = Vec::<f64>::new();
+    for span in 1..nurbs.control_points.len() {
+        let lower = nurbs.knots[span];
+        let upper = nurbs.knots[span + 1];
+        if !lower.is_finite() || !upper.is_finite() || upper <= lower {
+            continue;
+        }
+        let first = nurbs.control_points[span - 1];
+        let second = nurbs.control_points[span];
+        let delta = [second.x - first.x, second.y - first.y, second.z - first.z];
+        let denominator = dot(delta, delta);
+        if !denominator.is_finite() {
+            continue;
+        }
+        let relative = [point[0] - first.x, point[1] - first.y, point[2] - first.z];
+        if denominator <= tolerance * tolerance {
+            if dot(relative, relative).sqrt() <= tolerance {
+                return None;
+            }
+            continue;
+        }
+        let fraction = dot(relative, delta) / denominator;
+        if !(-1e-9..=1.0 + 1e-9).contains(&fraction) {
+            continue;
+        }
+        let fraction = fraction.clamp(0.0, 1.0);
+        let projected = [
+            first.x + fraction * delta[0],
+            first.y + fraction * delta[1],
+            first.z + fraction * delta[2],
+        ];
+        let mismatch: [f64; 3] = std::array::from_fn(|index| projected[index] - point[index]);
+        if dot(mismatch, mismatch).sqrt() > tolerance {
+            continue;
+        }
+        let first_weight = nurbs
+            .weights
+            .as_ref()
+            .map_or(1.0, |weights| weights[span - 1]);
+        let second_weight = nurbs.weights.as_ref().map_or(1.0, |weights| weights[span]);
+        let rational_denominator = second_weight * (1.0 - fraction) + fraction * first_weight;
+        if rational_denominator <= 0.0 || !rational_denominator.is_finite() {
+            continue;
+        }
+        let local = fraction * first_weight / rational_denominator;
+        let parameter = lower + local * (upper - lower);
+        let Some(mapped) = cadmpeg_ir::eval::curve_point(geometry, parameter) else {
+            continue;
+        };
+        let mismatch = [
+            mapped.x - point[0],
+            mapped.y - point[1],
+            mapped.z - point[2],
+        ];
+        if dot(mismatch, mismatch).sqrt() <= tolerance
+            && !candidates
+                .iter()
+                .any(|known| (parameter - known).abs() <= parameter_tolerance)
+        {
+            candidates.push(parameter);
+        }
+    }
+    let [parameter] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*parameter)
 }
 
 #[derive(Clone, Copy)]
@@ -20297,11 +20410,91 @@ mod native_edge_parameter_tests {
             periodic: false,
         });
         assert_eq!(
-            full_nurbs_edge_parameter_range(&nurbs, [[9.0, 8.0, 3.0], [1.0, 2.0, 3.0]],),
+            nonperiodic_nurbs_edge_parameter_range(&nurbs, [[9.0, 8.0, 3.0], [1.0, 2.0, 3.0]],),
             Some([2.0, 5.0])
         );
         assert_eq!(
-            full_nurbs_edge_parameter_range(&nurbs, [[9.0, 8.0, 3.0], [1.0, 2.1, 3.0]],),
+            nonperiodic_nurbs_edge_parameter_range(&nurbs, [[9.0, 8.0, 3.0], [1.0, 2.1, 3.0]],),
+            None
+        );
+    }
+
+    #[test]
+    fn degree_one_nurbs_recovers_unique_bounded_parameters() {
+        let nurbs = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![2.0, 2.0, 5.0, 9.0, 9.0],
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(3.0, 0.0, 0.0),
+                Point3::new(3.0, 4.0, 0.0),
+            ],
+            weights: Some(vec![2.0, 1.0, 3.0]),
+            periodic: false,
+        });
+        assert_eq!(
+            nonperiodic_nurbs_edge_parameter_range(&nurbs, [[3.0, 3.0, 0.0], [1.0, 0.0, 0.0]],),
+            Some([3.5, 7.0])
+        );
+        assert_eq!(
+            nonperiodic_nurbs_edge_parameter_range(&nurbs, [[3.0, 3.0, 0.0], [1.0, 0.1, 0.0]],),
+            None
+        );
+
+        let translated = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                Point3::new(100_000_000.0, 0.0, 0.0),
+                Point3::new(100_000_004.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        });
+        assert_eq!(
+            nonperiodic_nurbs_edge_parameter_range(
+                &translated,
+                [[100_000_001.0, 0.01, 0.0], [100_000_003.0, 0.0, 0.0]],
+            ),
+            None
+        );
+
+        let self_intersecting = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        });
+        assert_eq!(
+            nonperiodic_nurbs_edge_parameter_range(
+                &self_intersecting,
+                [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            ),
+            None
+        );
+
+        let constant_span = CurveGeometry::Nurbs(cadmpeg_ir::geometry::NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0, 2.0, 3.0, 3.0],
+            control_points: vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(2.0, 0.0, 0.0),
+            ],
+            weights: None,
+            periodic: false,
+        });
+        assert_eq!(
+            nonperiodic_nurbs_edge_parameter_range(
+                &constant_span,
+                [[1.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+            ),
             None
         );
     }
@@ -20316,7 +20509,7 @@ mod native_edge_parameter_tests {
             periodic: true,
         });
         assert_eq!(
-            full_nurbs_edge_parameter_range(&nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],),
+            nonperiodic_nurbs_edge_parameter_range(&nurbs, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],),
             None
         );
     }
@@ -20812,19 +21005,21 @@ fn transfer_plane_brep(
                 .find(|candidate| candidate.id == curve)
                 .and_then(|candidate| {
                     exact_line_edge_parameter_range(&candidate.geometry, points).or_else(|| {
-                        full_nurbs_edge_parameter_range(&candidate.geometry, points).or_else(|| {
-                            nonperiodic_conic_edge_parameter_range(&candidate.geometry, points)
-                                .or_else(|| {
-                                    pcurve_backed_periodic_conic_parameter_range(
-                                        &candidate.geometry,
-                                        *curve_id,
-                                        *curve_faces.get(curve_id)?,
-                                        &native_pcurves,
-                                        &ir.model.surfaces,
-                                        points,
-                                    )
-                                })
-                        })
+                        nonperiodic_nurbs_edge_parameter_range(&candidate.geometry, points).or_else(
+                            || {
+                                nonperiodic_conic_edge_parameter_range(&candidate.geometry, points)
+                                    .or_else(|| {
+                                        pcurve_backed_periodic_conic_parameter_range(
+                                            &candidate.geometry,
+                                            *curve_id,
+                                            *curve_faces.get(curve_id)?,
+                                            &native_pcurves,
+                                            &ir.model.surfaces,
+                                            points,
+                                        )
+                                    })
+                            },
+                        )
                     })
                 })
         };

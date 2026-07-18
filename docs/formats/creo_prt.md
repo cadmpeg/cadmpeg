@@ -1274,10 +1274,17 @@ pair that matches neither endpoint order or both orders, do not define a
 pcurve.
 
 A nonperiodic NURBS curve has intrinsic domain
-`[knots[degree], knots[control_point_count]]`. A native edge uses that complete
-domain when its two solved vertices uniquely match the curve evaluations at
-the two domain bounds. A periodic carrier or a nonmatching endpoint pair does
-not establish an edge interval by this rule.
+`[knots[degree], knots[control_point_count]]`. A native edge on a higher-degree
+curve uses that complete domain when its two solved vertices uniquely match the
+curve evaluations at the two domain bounds. Each nonzero knot span of a
+degree-one NURBS with positive weights is a rational line segment. For geometric segment fraction
+`a`, endpoint weights `w0` and `w1`, and local knot fraction `l`, inversion is
+`l = a w0 / (w1(1 - a) + a w0)`. A solved vertex defines a bounded degree-one
+edge parameter only when this inversion and curve reevaluation produce exactly
+one parameter across all spans. A matching constant span or repeated model
+point is ambiguous. The two unique endpoint parameters define the increasing
+edge interval. A periodic carrier or a nonmatching endpoint pair does not
+establish an edge interval by these rules.
 
 Evaluating one closed linear-sweep profile produces one side face per oriented profile entity. A line produces a planar side face and an arc produces a cylindrical side face. Each profile vertex produces an edge parallel to the sweep direction. The exact signed area is the sum of line chord terms and circular-arc sector terms. Its sign selects the cap and side face senses. The two cap loops use the profile edges in opposite directions, and every cap or longitudinal edge has exactly two face uses. Cap-face pcurves are the section entities in the cap plane's `(u,v)` frame: lines remain lines and arcs become exact rational quadratic arcs. A planar side face uses profile distance and sweep offset as its parameters. A cylindrical side face uses profile angle and sweep offset. Its cap-edge pcurves hold the sweep offset constant and its longitudinal-edge pcurves hold the profile parameter constant. A multi-profile solid sweep has one outer profile that strictly contains every hole profile. Hole profiles are pairwise disjoint, unnested, and oriented opposite the outer profile.
 
