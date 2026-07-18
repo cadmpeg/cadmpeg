@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 49;
+pub const CATIA_NATIVE_VERSION: u32 = 50;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -503,12 +503,39 @@ fn preview_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaPreviewImage> {
         .collect()
 }
 
+fn external_reference_views(segments: &[CatiaFinjplSegment]) -> Vec<CatiaExternalReference> {
+    segments
+        .iter()
+        .flat_map(|segment| {
+            container::external_references(&segment.data)
+                .into_iter()
+                .filter_map(move |reference| {
+                    Some((
+                        segment
+                            .byte_offset
+                            .checked_add(u64::try_from(reference.offset).ok()?)?,
+                        reference,
+                        segment,
+                    ))
+                })
+        })
+        .enumerate()
+        .map(
+            |(index, (byte_offset, reference, segment))| CatiaExternalReference {
+                id: format!("catia:outer:external-reference#{index}"),
+                byte_offset,
+                target: reference.target,
+                segment: segment.id.clone(),
+            },
+        )
+        .collect()
+}
+
 fn validate_native_links(
     aliases: &[CatiaAliasRow],
     catalogs: &[CatiaCatalog],
     graphs: &[CatiaObjectGraph],
     segments: &[CatiaFinjplSegment],
-    external_references: &[CatiaExternalReference],
     value_blocks: &[CatiaValueBlock],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     for (index, segment) in segments.iter().enumerate() {
@@ -571,30 +598,6 @@ fn validate_native_links(
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` has an invalid adjacent graph link",
                 block.id
-            )));
-        }
-    }
-    for reference in external_references {
-        let Some(segment) = segments
-            .iter()
-            .find(|segment| segment.id == reference.segment)
-        else {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "external reference `{}` names missing segment `{}`",
-                reference.id, reference.segment
-            )));
-        };
-        if segment.family != "project-flags"
-            || !extents_overlap(
-                reference.byte_offset,
-                1,
-                segment.byte_offset,
-                segment.byte_len,
-            )
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "external reference `{}` lies outside project-flags segment `{}`",
-                reference.id, reference.segment
             )));
         }
     }
@@ -731,24 +734,7 @@ impl CatiaNative {
             })
             .collect::<Vec<_>>();
         let preview_images = preview_views(&finjpl_segments);
-        let external_references = container::external_references(bytes)
-            .into_iter()
-            .enumerate()
-            .filter_map(|(index, reference)| {
-                let offset = reference.offset as u64;
-                let segment = finjpl_segments.iter().find(|segment| {
-                    offset >= segment.byte_offset
-                        && offset < segment.byte_offset + segment.byte_len
-                        && segment.family == "project-flags"
-                })?;
-                Some(CatiaExternalReference {
-                    id: format!("catia:outer:external-reference#{index}"),
-                    byte_offset: offset,
-                    target: reference.target,
-                    segment: segment.id.clone(),
-                })
-            })
-            .collect();
+        let external_references = external_reference_views(&finjpl_segments);
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
@@ -890,6 +876,14 @@ impl CatiaNative {
                 Vec::new()
             };
         external_references.sort_by_key(|reference| reference.byte_offset);
+        let expected_external_references = external_reference_views(&finjpl_segments);
+        if external_references != expected_external_references {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+                "stored CATIA external references disagree with their project-flags segments"
+                    .to_string(),
+            ));
+        }
+        let external_references = expected_external_references;
         let mut preview_images: Vec<CatiaPreviewImage> =
             if namespace.arenas.contains_key("preview_images") {
                 namespace.arena_as("preview_images")?
@@ -910,7 +904,6 @@ impl CatiaNative {
             &catalogs,
             &graphs,
             &finjpl_segments,
-            &external_references,
             &value_blocks,
         )?;
         Ok(Self {
