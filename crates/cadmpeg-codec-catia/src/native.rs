@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 46;
+pub const CATIA_NATIVE_VERSION: u32 = 47;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -485,6 +485,17 @@ fn validate_native_links(
                 block.id, block.catalog
             )));
         }
+        let payload_len = u64::try_from(block.payload.len()).ok();
+        if block.declared_len.checked_add(1) != Some(block.byte_len)
+            || payload_len.and_then(|len| len.checked_add(6)) != Some(block.declared_len)
+            || value_block::tokenize(&block.payload) != block.fields
+            || value_schema_selections(&block.fields, catalog) != block.schema_selections
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` has an invalid derived view",
+                block.id
+            )));
+        }
         let mut adjacent_graphs = graphs.iter().filter(|graph| {
             graph.byte_offset.checked_add(graph.byte_len) == Some(block.byte_offset)
         });
@@ -953,55 +964,58 @@ impl CatiaNative {
     }
 }
 
+fn value_schema_selections(
+    fields: &[value_block::ValueField],
+    catalog: &CatiaCatalog,
+) -> Vec<CatiaValueSchemaSelection> {
+    let selector_indices = fields
+        .iter()
+        .enumerate()
+        .filter_map(|(index, field)| {
+            matches!(field, value_block::ValueField::SchemaSelector { .. }).then_some(index)
+        })
+        .collect::<Vec<_>>();
+    selector_indices
+        .iter()
+        .enumerate()
+        .filter_map(|(selector_rank, index)| match &fields[*index] {
+            value_block::ValueField::SchemaSelector { ordinal, offset } => {
+                let ordinal_index = usize::try_from(*ordinal).ok()?;
+                if ordinal_index > catalog.entries.len() {
+                    return None;
+                }
+                let entry = catalog
+                    .entries
+                    .get(ordinal_index)
+                    .map(|entry| entry.id.clone());
+                let value_end = selector_indices
+                    .get(selector_rank + 1)
+                    .copied()
+                    .unwrap_or(fields.len());
+                Some(CatiaValueSchemaSelection {
+                    offset: *offset as u64,
+                    ordinal: *ordinal,
+                    value: entry.as_ref().and_then(|_| fields.get(index + 1)).cloned(),
+                    encoded_value: if entry.is_some() {
+                        fields[index + 1..value_end].to_vec()
+                    } else {
+                        Vec::new()
+                    },
+                    entry,
+                })
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 impl CatiaValueBlock {
     fn from_parts(
         block: value_block::ValueBlock,
         catalog: &CatiaCatalog,
         object_graph: Option<&CatiaObjectGraph>,
     ) -> Self {
-        let selector_indices = block
-            .fields
-            .iter()
-            .enumerate()
-            .filter_map(|(index, field)| {
-                matches!(field, value_block::ValueField::SchemaSelector { .. }).then_some(index)
-            })
-            .collect::<Vec<_>>();
-        let schema_selections = selector_indices
-            .iter()
-            .enumerate()
-            .filter_map(|(selector_rank, index)| match &block.fields[*index] {
-                value_block::ValueField::SchemaSelector { ordinal, offset } => {
-                    let ordinal_index = usize::try_from(*ordinal).ok()?;
-                    if ordinal_index > catalog.entries.len() {
-                        return None;
-                    }
-                    let entry = catalog
-                        .entries
-                        .get(ordinal_index)
-                        .map(|entry| entry.id.clone());
-                    let value_end = selector_indices
-                        .get(selector_rank + 1)
-                        .copied()
-                        .unwrap_or(block.fields.len());
-                    Some(CatiaValueSchemaSelection {
-                        offset: *offset as u64,
-                        ordinal: *ordinal,
-                        value: entry
-                            .as_ref()
-                            .and_then(|_| block.fields.get(index + 1))
-                            .cloned(),
-                        encoded_value: if entry.is_some() {
-                            block.fields[index + 1..value_end].to_vec()
-                        } else {
-                            Vec::new()
-                        },
-                        entry,
-                    })
-                }
-                _ => None,
-            })
-            .collect();
+        let schema_selections = value_schema_selections(&block.fields, catalog);
         Self {
             id: format!("catia:outer:value-block#{:010}", block.pos),
             byte_offset: block.pos as u64,

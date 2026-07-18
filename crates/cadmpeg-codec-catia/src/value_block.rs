@@ -115,7 +115,7 @@ fn parse_candidate(bytes: &[u8], pos: usize) -> Option<ValueBlock> {
     })
 }
 
-fn tokenize(payload: &[u8]) -> Vec<ValueField> {
+pub(crate) fn tokenize(payload: &[u8]) -> Vec<ValueField> {
     let mut fields = Vec::new();
     let mut at = 0;
     while at < payload.len() {

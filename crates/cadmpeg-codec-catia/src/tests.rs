@@ -5479,6 +5479,40 @@ fn native_load_rejects_noncanonical_catalog_and_record_views() {
 }
 
 #[test]
+fn native_load_rejects_noncanonical_value_block_views() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
+    let assert_rejected = |malformed: crate::native::CatiaNative| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed
+            .store(&mut namespace)
+            .expect("store malformed value-block view");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+    };
+
+    let mut invalid_length = native.clone();
+    invalid_length.value_blocks[0].declared_len += 1;
+    assert_rejected(invalid_length);
+
+    let mut invalid_payload = native.clone();
+    invalid_payload.value_blocks[0].payload.push(0x80);
+    assert_rejected(invalid_payload);
+
+    let mut invalid_fields = native.clone();
+    invalid_fields.value_blocks[0].fields.clear();
+    assert_rejected(invalid_fields);
+
+    let mut invalid_selections = native;
+    assert!(!invalid_selections.value_blocks[0]
+        .schema_selections
+        .is_empty());
+    invalid_selections.value_blocks[0].schema_selections.clear();
+    assert_rejected(invalid_selections);
+}
+
+#[test]
 fn decode_retains_catalog_schema_names_without_promoting_features() {
     let decoded = CatiaCodec
         .decode(
