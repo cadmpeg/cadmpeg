@@ -4625,6 +4625,7 @@ pub fn project_dimension_constraints(
             }
             if point_line_separation(entities[0], entities[1], evaluated_mm)
                 || parallel_line_separation(entities[0], entities[1], evaluated_mm)
+                || concentric_circle_separation(entities[0], entities[1], evaluated_mm)
             {
                 return Some(Definition::Distance {
                     entities: entities.iter().map(|entity| entity.id.clone()).collect(),
@@ -6014,6 +6015,46 @@ fn parallel_line_separation(
         (offset.u * first_direction.v - offset.v * first_direction.u).abs() / first_length;
     let expected = evaluated_mm.abs();
     (separation - expected).abs() <= 1.0e-9 * (1.0 + expected)
+}
+
+fn concentric_circle_separation(
+    first: &cadmpeg_ir::sketches::SketchEntity,
+    second: &cadmpeg_ir::sketches::SketchEntity,
+    evaluated_mm: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let (
+        SketchGeometry::Circle {
+            center: first_center,
+            radius: first_radius,
+        },
+        SketchGeometry::Circle {
+            center: second_center,
+            radius: second_radius,
+        },
+    ) = (&first.geometry, &second.geometry)
+    else {
+        return false;
+    };
+    if !evaluated_mm.is_finite() {
+        return false;
+    }
+    let coordinate_scale = 1.0
+        + first_center
+            .u
+            .abs()
+            .max(first_center.v.abs())
+            .max(second_center.u.abs())
+            .max(second_center.v.abs());
+    let center_separation =
+        (first_center.u - second_center.u).hypot(first_center.v - second_center.v);
+    if center_separation > 1.0e-9 * coordinate_scale {
+        return false;
+    }
+    let measured = (first_radius.0 - second_radius.0).abs();
+    let expected = evaluated_mm.abs();
+    measured > 0.0 && (measured - expected).abs() <= 1.0e-9 * (1.0 + measured.max(expected))
 }
 
 fn point_line_separation(
@@ -18128,6 +18169,43 @@ mod relation_tests {
         );
         assert!(super::point_line_separation(&offset_point, &vertical, 2.0));
         assert!(!super::point_line_separation(&vertical, &offset_point, 3.0));
+
+        let inner_circle = entity(
+            "generated:circle#inner",
+            SketchGeometry::Circle {
+                center: Point2::new(3.0, -2.0),
+                radius: cadmpeg_ir::features::Length(4.0),
+            },
+        );
+        let outer_circle = entity(
+            "generated:circle#outer",
+            SketchGeometry::Circle {
+                center: Point2::new(3.0, -2.0),
+                radius: cadmpeg_ir::features::Length(4.25),
+            },
+        );
+        assert!(super::concentric_circle_separation(
+            &inner_circle,
+            &outer_circle,
+            0.25,
+        ));
+        assert!(!super::concentric_circle_separation(
+            &inner_circle,
+            &outer_circle,
+            0.5,
+        ));
+        let displaced_circle = entity(
+            "generated:circle#displaced",
+            SketchGeometry::Circle {
+                center: Point2::new(3.001, -2.0),
+                radius: cadmpeg_ir::features::Length(4.25),
+            },
+        );
+        assert!(!super::concentric_circle_separation(
+            &inner_circle,
+            &displaced_circle,
+            0.25,
+        ));
     }
 
     #[test]
