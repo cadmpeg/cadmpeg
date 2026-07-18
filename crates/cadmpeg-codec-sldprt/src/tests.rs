@@ -9688,7 +9688,7 @@ fn decode_does_not_globalize_configuration_local_adjacent_profile() {
 }
 
 #[test]
-fn decode_binds_following_dissected_profile_to_compact_extrusion() {
+fn decode_binds_following_profile_marked_as_dissected_child() {
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -9696,8 +9696,8 @@ fn decode_binds_following_dissected_profile_to_compact_extrusion() {
         0x42,
         "Contents/Keywords",
         br#"<Keywords>
-            <Extrusion Name="Boss" Type="Extrusion" id="9" Dissectable="true" DissectableRoot="true"/>
-            <Sketch Name="Profile&lt;3&gt;" Type="Sketch" id="8"/>
+            <Extrusion Name="Boss" Type="Extrusion" id="9"/>
+            <Sketch Name="Profile&lt;3&gt;" Type="Sketch" id="8" Description="Profile&lt;3&gt;"/>
         </Keywords>"#,
     ));
     source.extend(make_block(

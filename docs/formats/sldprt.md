@@ -103,7 +103,9 @@ Termination code `4` is to-face. Token +22 is a Boolean reference-side flag, tok
 
 An extrusion object without an `EndCondition` attribute, without an owned `Depth` or `D1` scalar, and without a decoded compact end-spec termination has an unresolved extent. The class, profile reference, direction, draft, and Boolean operation remain independently meaningful.
 
-An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile. A nested profile stream owned by that extrusion resolves the profile to its transferred sketch.
+An extrusion object without `Profile` or `DissectableChildren` has an unresolved profile unless it has the following dissected-child signature. A nested profile stream owned by an extrusion resolves the profile to its transferred sketch.
+
+An extrusion immediately followed by an `moProfileFeature_c` object whose `Description` equals its name and whose name ends in `<n>` for decimal `n` uses that following feature as its dissected profile. This child signature applies when the extrusion omits its `Dissectable` property. An ordinary following profile without the child signature is not an extrusion operand.
 
 A planar Parasolid profile stream is enclosed by the feature object whose bound feature-name record precedes the stream offset and whose next bound feature-name record follows it. A sweep object with exactly one enclosed planar profile stream uses the transferred sketch as its cross-section profile. Zero or multiple enclosed profile streams leave the sweep profile unresolved.
 

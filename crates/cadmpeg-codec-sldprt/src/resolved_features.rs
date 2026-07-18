@@ -8506,6 +8506,16 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             feature.properties.contains_key("DissectableChildren")
                 || feature.properties.get("Dissectable").map(String::as_str) == Some("true")
         };
+        let is_dissected_profile = |feature: &crate::records::Feature| {
+            feature.properties.get("Description") == Some(&feature.name)
+                && feature
+                    .name
+                    .rsplit_once('<')
+                    .and_then(|(_, suffix)| suffix.strip_suffix('>'))
+                    .is_some_and(|ordinal| {
+                        !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+                    })
+        };
         for (name, feature) in &objects {
             if object_kind(name, feature) == NativeClassKind::Extrusion {
                 profiles
@@ -8527,7 +8537,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     (*first, *second)
                 }
                 (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature)
-                    if is_dissectable(first) =>
+                    if is_dissectable(first) || is_dissected_profile(second) =>
                 {
                     (*second, *first)
                 }
