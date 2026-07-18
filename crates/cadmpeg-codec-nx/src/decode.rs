@@ -8296,6 +8296,7 @@ fn attach_native_object_model(
             input_blocks: &feature_input_blocks,
             input_block_identity_groups: &feature_input_block_identity_groups,
             datum_csys_constructions: &feature_datum_csys_constructions,
+            datum_csys_payloads: &feature_datum_csys_payloads,
             datum_csys_block_uses: &feature_datum_csys_block_uses,
             datum_plane_headers: &feature_datum_plane_headers,
             datum_plane_block_uses: &feature_datum_plane_block_uses,
@@ -8311,16 +8312,21 @@ fn attach_native_object_model(
             extrude_construction_profiles: &feature_extrude_construction_profiles,
             operation_body_operands: &feature_operation_body_operands,
             sketch_construction_inputs: &feature_sketch_construction_inputs,
+            sketch_records: &feature_sketch_records,
+            sketch_construction_payloads: &feature_sketch_construction_payloads,
             sketch_coordinate_pairs: &feature_sketch_payload_coordinate_pairs,
             sketch_fixed_pairs: &feature_sketch_payload_fixed_pairs,
             sketch_fixed_points: &feature_sketch_fixed_points,
             block_constructions: &feature_block_constructions,
+            block_construction_payloads: &feature_block_construction_payloads,
             block_dimensions: &feature_block_dimensions,
             block_payload_points: &feature_block_payload_points,
             block_payload_point_groups: &feature_block_payload_point_groups,
             extrude_32_constructions: &feature_extrude_32_constructions,
             extrude_payload_headers: &feature_extrude_payload_headers,
             extrude_payload_footers: &feature_extrude_payload_footers,
+            extrude_payload_scalar_triples: &feature_extrude_payload_scalar_triples,
+            extrude_payload_32_branches: &feature_extrude_payload_32_branches,
             operation_body_scalar_triples: &feature_operation_body_scalar_triples,
             operation_body_members: &feature_operation_body_members,
             operation_body_11_continuations: &feature_operation_body_11_continuations,
@@ -9317,6 +9323,7 @@ struct FeatureOperationSources<'a> {
     input_blocks: &'a [crate::native::FeatureInputBlock],
     input_block_identity_groups: &'a [crate::native::FeatureInputBlockIdentityGroup],
     datum_csys_constructions: &'a [crate::native::FeatureDatumCsysConstruction],
+    datum_csys_payloads: &'a [crate::native::FeatureDatumCsysPayload],
     datum_csys_block_uses: &'a [crate::native::FeatureDatumCsysBlockUse],
     datum_plane_headers: &'a [crate::native::FeatureDatumPlaneHeader],
     datum_plane_block_uses: &'a [crate::native::FeatureDatumPlaneBlockUse],
@@ -9332,16 +9339,21 @@ struct FeatureOperationSources<'a> {
     extrude_construction_profiles: &'a [crate::native::FeatureExtrudeConstructionProfile],
     operation_body_operands: &'a [crate::native::FeatureOperationBodyOperand],
     sketch_construction_inputs: &'a [crate::native::FeatureSketchConstructionInputs],
+    sketch_records: &'a [crate::native::FeatureSketchRecord],
+    sketch_construction_payloads: &'a [crate::native::FeatureSketchConstructionPayload],
     sketch_coordinate_pairs: &'a [crate::native::FeatureSketchPayloadCoordinatePair],
     sketch_fixed_pairs: &'a [crate::native::FeatureSketchPayloadFixedPair],
     sketch_fixed_points: &'a [crate::native::FeatureSketchFixedPoint],
     block_constructions: &'a [crate::native::FeatureBlockConstruction],
+    block_construction_payloads: &'a [crate::native::FeatureBlockConstructionPayload],
     block_dimensions: &'a [crate::native::FeatureBlockDimensions],
     block_payload_points: &'a [crate::native::FeatureBlockPayloadPoint],
     block_payload_point_groups: &'a [crate::native::FeatureBlockPayloadPointGroup],
     extrude_32_constructions: &'a [crate::native::FeatureExtrude32Construction],
     extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
     extrude_payload_footers: &'a [crate::native::FeatureExtrudePayloadFooter],
+    extrude_payload_scalar_triples: &'a [crate::native::FeatureExtrudePayloadScalarTriple],
+    extrude_payload_32_branches: &'a [crate::native::FeatureExtrudePayload32Branch],
     operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
     operation_body_members: &'a [crate::native::FeatureOperationBodyMember],
     operation_body_11_continuations: &'a [crate::native::FeatureOperationBody11Continuation],
@@ -9372,6 +9384,20 @@ pub(crate) fn preceding_operation_dependency(
     feature_ids.get(operation).cloned()
 }
 
+fn records_by_operation<'a, T>(
+    records: &'a [T],
+    operation_label: impl Fn(&'a T) -> &'a str,
+) -> BTreeMap<&'a str, Vec<&'a T>> {
+    let mut grouped = BTreeMap::new();
+    for record in records {
+        grouped
+            .entry(operation_label(record))
+            .or_insert_with(Vec::new)
+            .push(record);
+    }
+    grouped
+}
+
 fn attach_feature_operations(
     ir: &mut CadIr,
     sources: &FeatureOperationSources<'_>,
@@ -9385,6 +9411,7 @@ fn attach_feature_operations(
         input_blocks,
         input_block_identity_groups,
         datum_csys_constructions,
+        datum_csys_payloads,
         datum_csys_block_uses,
         datum_plane_headers,
         datum_plane_block_uses,
@@ -9400,16 +9427,21 @@ fn attach_feature_operations(
         extrude_construction_profiles,
         operation_body_operands,
         sketch_construction_inputs,
+        sketch_records,
+        sketch_construction_payloads,
         sketch_coordinate_pairs,
         sketch_fixed_pairs,
         sketch_fixed_points,
         block_constructions,
+        block_construction_payloads,
         block_dimensions,
         block_payload_points,
         block_payload_point_groups,
         extrude_32_constructions,
         extrude_payload_headers,
         extrude_payload_footers,
+        extrude_payload_scalar_triples,
+        extrude_payload_32_branches,
         operation_body_scalar_triples,
         operation_body_members,
         operation_body_11_continuations,
@@ -9473,6 +9505,8 @@ fn attach_feature_operations(
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
         .collect::<BTreeMap<_, _>>();
+    let datum_csys_payloads_by_operation =
+        records_by_operation(datum_csys_payloads, |payload| &payload.operation_label);
     let mut datum_csys_uses_by_input_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureDatumCsysBlockUse>>::new();
     for block_use in datum_csys_block_uses {
@@ -9595,6 +9629,12 @@ fn attach_feature_operations(
         .iter()
         .map(|inputs| (inputs.operation_label.as_str(), inputs))
         .collect::<BTreeMap<_, _>>();
+    let sketch_records_by_operation =
+        records_by_operation(sketch_records, |record| &record.operation_label);
+    let sketch_construction_payloads_by_operation =
+        records_by_operation(sketch_construction_payloads, |payload| {
+            &payload.operation_label
+        });
     let mut sketch_coordinate_pairs_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchPayloadCoordinatePair>>::new();
     for pair in sketch_coordinate_pairs {
@@ -9623,6 +9663,10 @@ fn attach_feature_operations(
         .iter()
         .map(|construction| (construction.operation_label.as_str(), construction))
         .collect::<BTreeMap<_, _>>();
+    let block_construction_payloads_by_operation =
+        records_by_operation(block_construction_payloads, |payload| {
+            &payload.operation_label
+        });
     let block_dimensions_by_operation = block_dimensions
         .iter()
         .map(|dimensions| (dimensions.operation_label.as_str(), dimensions))
@@ -9655,6 +9699,14 @@ fn attach_feature_operations(
         .iter()
         .map(|footer| (footer.operation_label.as_str(), footer))
         .collect::<BTreeMap<_, _>>();
+    let extrude_payload_scalar_triples_by_operation =
+        records_by_operation(extrude_payload_scalar_triples, |triple| {
+            &triple.operation_label
+        });
+    let extrude_payload_32_branches_by_operation =
+        records_by_operation(extrude_payload_32_branches, |branch| {
+            &branch.operation_label
+        });
     let mut operation_body_scalar_triples_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyScalarTriple>>::new();
     for triple in operation_body_scalar_triples {
@@ -9948,6 +10000,25 @@ fn attach_feature_operations(
         if let Some(inputs) = sketch_construction_inputs_by_operation.get(label.id.as_str()) {
             source_properties.insert("sketch_construction_inputs".to_string(), inputs.id.clone());
         }
+        for (ordinal, record) in sketch_records_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(format!("sketch_record.{ordinal}"), record.id.clone());
+        }
+        for (ordinal, payload) in sketch_construction_payloads_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("sketch_construction_payload.{ordinal}"),
+                payload.id.clone(),
+            );
+        }
         for pair in sketch_coordinate_pairs_by_operation
             .get(label.id.as_str())
             .into_iter()
@@ -9978,6 +10049,17 @@ fn attach_feature_operations(
         }
         if let Some(construction) = block_constructions_by_operation.get(label.id.as_str()) {
             source_properties.insert("block_construction".to_string(), construction.id.clone());
+        }
+        for (ordinal, payload) in block_construction_payloads_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("block_construction_payload.{ordinal}"),
+                payload.id.clone(),
+            );
         }
         if let Some(dimensions) = block_dimensions_by_operation.get(label.id.as_str()) {
             source_properties.insert("block_dimensions".to_string(), dimensions.id.clone());
@@ -10027,6 +10109,28 @@ fn attach_feature_operations(
         }
         if let Some(footer) = extrude_payload_footers_by_operation.get(label.id.as_str()) {
             source_properties.insert("extrude_payload_footer".to_string(), footer.id.clone());
+        }
+        for (ordinal, triple) in extrude_payload_scalar_triples_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("extrude_payload_scalar_triple.{ordinal}"),
+                triple.id.clone(),
+            );
+        }
+        for (ordinal, branch) in extrude_payload_32_branches_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(
+                format!("extrude_payload_32_branch.{ordinal}"),
+                branch.id.clone(),
+            );
         }
         for triple in operation_body_scalar_triples_by_operation
             .get(label.id.as_str())
@@ -10085,6 +10189,14 @@ fn attach_feature_operations(
                 "datum_csys_construction".to_string(),
                 construction.id.clone(),
             );
+        }
+        for (ordinal, payload) in datum_csys_payloads_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+            .enumerate()
+        {
+            source_properties.insert(format!("datum_csys_payload.{ordinal}"), payload.id.clone());
         }
         if let Some(header) = datum_plane_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("datum_plane_header".to_string(), header.id.clone());
