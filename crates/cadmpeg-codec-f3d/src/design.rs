@@ -4243,6 +4243,23 @@ fn region_containing_points(
         .iter()
         .map(|profile| profile_boundary(profile, entities, tolerance))
         .collect::<Option<Vec<_>>>()?;
+    let containment = boundaries
+        .iter()
+        .enumerate()
+        .map(|(outer_index, outer)| {
+            boundaries
+                .iter()
+                .enumerate()
+                .map(|(inner_index, inner)| {
+                    if outer_index == inner_index {
+                        Some(false)
+                    } else {
+                        outer.strictly_contains(inner)
+                    }
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .collect::<Option<Vec<_>>>()?;
     let projected = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
@@ -4273,16 +4290,16 @@ fn region_containing_points(
         containing
             .iter()
             .skip(left_index + 1)
-            .any(|right| !left.1.strictly_contains(right.1) && !right.1.strictly_contains(left.1))
+            .any(|right| !containment[left.0][right.0] && !containment[right.0][left.0])
     }) {
         return None;
     }
-    let &(outer, outer_boundary, _) = containing
+    let &(outer, _, _) = containing
         .iter()
         .min_by(|left, right| left.2.total_cmp(&right.2))?;
     let mut holes = Vec::new();
     for (candidate, boundary) in boundaries.iter().enumerate() {
-        if candidate == outer || !outer_boundary.strictly_contains(boundary) {
+        if candidate == outer || !containment[outer][candidate] {
             continue;
         }
         let candidate_area = boundary.area();
@@ -4292,7 +4309,7 @@ fn region_containing_points(
             .filter(|(index, parent)| {
                 *index != candidate
                     && parent.area() > candidate_area
-                    && parent.strictly_contains(boundary)
+                    && containment[*index][candidate]
             })
             .min_by(|left, right| left.1.area().total_cmp(&right.1.area()))
             .map(|(index, _)| index);
@@ -4342,9 +4359,11 @@ impl ProfileBoundary {
         }
     }
 
-    fn strictly_contains(&self, inner: &Self) -> bool {
+    fn strictly_contains(&self, inner: &Self) -> Option<bool> {
         match (self, inner) {
-            (Self::Polygon(outer), Self::Polygon(inner)) => polygon_strictly_contains(outer, inner),
+            (Self::Polygon(outer), Self::Polygon(inner)) => {
+                Some(polygon_strictly_contains(outer, inner))
+            }
             (
                 Self::Circle {
                     center: outer_center,
@@ -4354,26 +4373,30 @@ impl ProfileBoundary {
                     center: inner_center,
                     radius: inner_radius,
                 },
-            ) => point_distance(*outer_center, *inner_center) + inner_radius < *outer_radius,
-            (Self::Polygon(outer), Self::Circle { center, radius }) => {
+            ) => Some(point_distance(*outer_center, *inner_center) + inner_radius < *outer_radius),
+            (Self::Polygon(outer), Self::Circle { center, radius }) => Some(
                 point_in_polygon(*center, outer)
                     && polygon_edges(outer)
-                        .all(|edge| point_segment_distance(*center, edge) > *radius)
-            }
-            (Self::CircularArcLoop(outer), Self::Circle { center, radius }) => {
+                        .all(|edge| point_segment_distance(*center, edge) > *radius),
+            ),
+            (Self::CircularArcLoop(outer), Self::Circle { center, radius }) => Some(
                 point_in_circular_arc_loop(*center, outer)
                     && outer
                         .iter()
-                        .all(|segment| point_boundary_segment_distance(*center, segment) > *radius)
-            }
-            (Self::Circle { center, radius }, Self::Polygon(inner)) => inner
-                .iter()
-                .all(|point| point_distance(*center, *point) < *radius),
-            (Self::Circle { center, radius }, Self::CircularArcLoop(inner)) => inner
-                .iter()
-                .all(|segment| boundary_segment_max_distance(*center, segment) < *radius),
+                        .all(|segment| point_boundary_segment_distance(*center, segment) > *radius),
+            ),
+            (Self::Circle { center, radius }, Self::Polygon(inner)) => Some(
+                inner
+                    .iter()
+                    .all(|point| point_distance(*center, *point) < *radius),
+            ),
+            (Self::Circle { center, radius }, Self::CircularArcLoop(inner)) => Some(
+                inner
+                    .iter()
+                    .all(|segment| boundary_segment_max_distance(*center, segment) < *radius),
+            ),
             (Self::Polygon(_) | Self::CircularArcLoop(_), Self::CircularArcLoop(_))
-            | (Self::CircularArcLoop(_), Self::Polygon(_)) => false,
+            | (Self::CircularArcLoop(_), Self::Polygon(_)) => None,
         }
     }
 }
@@ -15880,7 +15903,32 @@ mod relation_tests {
         assert!(!boundary.contains_point(Point2::new(1.0, 0.0)));
         assert!(!boundary.contains_point(Point2::new(-1.0, -2.0)));
         assert!(!boundary.contains_point(Point2::new(-1.0, 2.0)));
-        assert!(boundary.strictly_contains(&hole));
+        assert_eq!(boundary.strictly_contains(&hole), Some(true));
+    }
+
+    #[test]
+    fn unsupported_boundary_pair_containment_is_unknown() {
+        let polygon = super::ProfileBoundary::Polygon(vec![
+            Point2::new(-2.0, -2.0),
+            Point2::new(2.0, -2.0),
+            Point2::new(2.0, 2.0),
+            Point2::new(-2.0, 2.0),
+        ]);
+        let arc_loop = super::ProfileBoundary::CircularArcLoop(vec![
+            super::ProfileBoundarySegment::Line {
+                start: Point2::new(-1.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+            super::ProfileBoundarySegment::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: 1.0,
+                start_angle: 0.0,
+                end_angle: std::f64::consts::PI,
+            },
+        ]);
+
+        assert_eq!(polygon.strictly_contains(&arc_loop), None);
+        assert_eq!(arc_loop.strictly_contains(&polygon), None);
     }
 
     #[test]
