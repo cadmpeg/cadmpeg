@@ -2589,6 +2589,42 @@ fn standard_decode_retains_native_surface_carrier_tags() {
 }
 
 #[test]
+fn standard_decode_retains_vertex_allocation_tags() {
+    let mut surf = surf_stream();
+    for identity in [0x01_0203u32, 0x01_0206, 0x01_0209] {
+        surf.push(0x54);
+        surf.extend_from_slice(&identity.to_le_bytes()[..3]);
+        surf.extend_from_slice(&[0, 0, 0]);
+    }
+    let decoded = CatiaCodec
+        .decode(
+            &mut Cursor::new(standard_catpart_from_streams(&main_stream(), &surf)),
+            &DecodeOptions::default(),
+        )
+        .expect("standard decode");
+    let identities = decoded
+        .ir
+        .model
+        .points
+        .iter()
+        .map(|point| {
+            point
+                .source_object
+                .as_ref()
+                .map(|source| (source.format.as_str(), source.object_id.as_str()))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        identities,
+        [
+            Some(("catia", "cgm-vertex:010203")),
+            Some(("catia", "cgm-vertex:010206")),
+            Some(("catia", "cgm-vertex:010209")),
+        ]
+    );
+}
+
+#[test]
 fn scan_parses_outer_directory_with_absolute_extents() {
     let bytes = outer_directory_catpart();
     let scan = crate::container::scan_bytes(bytes.clone());

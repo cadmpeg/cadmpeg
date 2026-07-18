@@ -41,8 +41,8 @@
 //! relations resolve to one graph. Other recognized layouts expose supported
 //! analytic or NURBS carriers and selected bindings. The codec does not write
 //! `CATPart` files or decode assemblies, design history, tessellation,
-//! appearances, materials, persistent tags, or general document metadata beyond
-//! the embedded JPEG preview.
+//! appearances, materials, complete persistent identity, or general document
+//! metadata beyond the embedded JPEG preview.
 //!
 //! The low-level [`geometry`], [`topology`], [`b5`], [`e5`], and
 //! [`zero_entity`] modules expose record decoders for applications that need

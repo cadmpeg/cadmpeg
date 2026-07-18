@@ -157,10 +157,10 @@ fn annotate(
     annotations.exactness(id, exactness);
 }
 
-fn standard_carrier_source(tag: u32) -> SourceObjectAssociation {
+fn standard_source(kind: &str, tag: u32) -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: "catia".to_string(),
-        object_id: format!("cgm-carrier:{tag:06x}"),
+        object_id: format!("cgm-{kind}:{tag:06x}"),
         name: None,
         color: None,
         visible: None,
@@ -4899,6 +4899,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         .into_iter()
         .map(|[x, y, z]| Point3::new(x, y, z))
         .collect::<Vec<_>>();
+    let vertex_roster = geometry::standard_vertex_roster(&scan.data, points.len());
     let face_count = topology::standard_face_count(brep).unwrap_or_default();
     let records = geometry::standard_surface_records(brep, face_count).unwrap_or_else(|| {
         geometry::surface_prefixes(brep)
@@ -4989,7 +4990,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
             surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Unknown { record: None },
-                source_object: Some(standard_carrier_source(*tag)),
+                source_object: Some(standard_source("carrier", *tag)),
             });
             continue;
         };
@@ -5025,7 +5026,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                 surfaces.push(Surface {
                     id,
                     geometry: geom,
-                    source_object: Some(standard_carrier_source(prefix.target)),
+                    source_object: Some(standard_source("carrier", prefix.target)),
                 });
             }
             None => {
@@ -5047,7 +5048,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                     geometry: SurfaceGeometry::Unknown {
                         record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
                     },
-                    source_object: Some(standard_carrier_source(prefix.target)),
+                    source_object: Some(standard_source("carrier", prefix.target)),
                 });
             }
         }
@@ -5081,7 +5082,9 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         ir.model.points.push(Point {
             id: point_id.clone(),
             position: *p,
-            source_object: None,
+            source_object: vertex_roster
+                .as_ref()
+                .map(|roster| standard_source("vertex", roster[i])),
         });
         let vertex_id = VertexId(format!("catia:standard:v#{i}"));
         annotate(
@@ -7894,7 +7897,7 @@ fn build_geometry_report(
         message: "Standard circles with an exact adjacent-carrier section normal and plane-plane \
                   lines are transferred as curves. Standard spline edges retain exact \
                   two-surface intersection constructions, but their serialized NURBS caches, \
-                  persistent object tags, materials, and document metadata are not yet \
+                  persistent cache bindings, materials, and document metadata are not yet \
                   transferred."
             .to_string(),
         provenance: None,
