@@ -1430,12 +1430,19 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         if let Definition::RectangularPattern { directions, .. } = &constraint.definition {
             for parameter in directions.iter().flat_map(|direction| {
                 [
-                    direction.spacing_parameter.0.as_str(),
-                    direction.count_parameter.0.as_str(),
+                    direction.span_parameter.as_ref(),
+                    direction.count_parameter.as_ref(),
                 ]
+                .into_iter()
+                .flatten()
             }) {
-                if !parameters.contains(parameter) {
-                    ref_error(findings, &constraint.id.0, "parameter", parameter);
+                if !parameters.contains(parameter.0.as_str()) {
+                    ref_error(
+                        findings,
+                        &constraint.id.0,
+                        "parameter",
+                        parameter.0.as_str(),
+                    );
                 }
             }
         }

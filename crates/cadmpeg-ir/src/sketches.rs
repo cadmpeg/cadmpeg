@@ -326,7 +326,7 @@ pub struct SketchOffsetPair {
     pub source_reversed: bool,
 }
 
-/// One axis of a parameter-driven rectangular sketch pattern.
+/// One axis of a rectangular sketch pattern.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchPatternDirection {
     /// Unit direction in sketch coordinates.
@@ -335,10 +335,16 @@ pub struct SketchPatternDirection {
     pub spacing: Length,
     /// Number of instances along this axis, including the seed instance.
     pub count: u32,
-    /// Driving spacing parameter.
-    pub spacing_parameter: ParameterId,
-    /// Driving instance-count parameter.
-    pub count_parameter: ParameterId,
+    /// Driving total-span parameter, when the source exposes it as a neutral parameter.
+    #[serde(
+        default,
+        alias = "spacing_parameter",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub span_parameter: Option<ParameterId>,
+    /// Driving instance-count parameter, when the source exposes it as a neutral parameter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub count_parameter: Option<ParameterId>,
 }
 
 /// One resolved rectangular-pattern instance.

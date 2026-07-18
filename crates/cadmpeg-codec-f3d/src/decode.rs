@@ -214,7 +214,14 @@ fn constraint_parameters(
         | Definition::Diameter { parameter, .. } => vec![parameter],
         Definition::RectangularPattern { directions, .. } => directions
             .iter()
-            .flat_map(|direction| [&direction.spacing_parameter, &direction.count_parameter])
+            .flat_map(|direction| {
+                [
+                    direction.span_parameter.as_ref(),
+                    direction.count_parameter.as_ref(),
+                ]
+                .into_iter()
+                .flatten()
+            })
             .collect(),
         Definition::CircularPattern {
             angle_parameter,

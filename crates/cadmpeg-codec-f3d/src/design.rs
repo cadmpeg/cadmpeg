@@ -7369,25 +7369,36 @@ fn exact_rectangular_pattern(
             let count_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
                     && parameter.owner_record_index == Some(direction.count_parameter)
-            })?;
-            let spacing_parameter = parameters.iter().find(|parameter| {
+            });
+            let span_parameter = parameters.iter().find(|parameter| {
                 native_stream(&parameter.id) == Some(scope)
                     && parameter.owner_record_index == Some(direction.distance_parameter)
-            })?;
+            });
             let count = direction.evaluated_count;
-            if !scalar_close(count_parameter.evaluated_value, f64::from(count)) {
+            if count_parameter
+                .is_some_and(|parameter| !scalar_close(parameter.evaluated_value, f64::from(count)))
+            {
                 return None;
             }
-            let spacing = design_length(spacing_parameter)?;
-            if !scalar_close(spacing.0, direction.evaluated_distance * 10.0) {
+            let span = cadmpeg_ir::features::Length(direction.evaluated_distance * 10.0);
+            if !span.0.is_finite()
+                || span_parameter.is_some_and(|parameter| {
+                    design_length(parameter).is_none_or(|value| !scalar_close(value.0, span.0))
+                })
+            {
                 return None;
             }
+            let spacing = cadmpeg_ir::features::Length(if count > 1 {
+                span.0 / f64::from(count - 1)
+            } else {
+                0.0
+            });
             Some(SketchPatternDirection {
                 direction: [direction.direction[0], direction.direction[1]],
                 spacing,
                 count,
-                spacing_parameter: neutral_parameter_id(spacing_parameter),
-                count_parameter: neutral_parameter_id(count_parameter),
+                span_parameter: span_parameter.map(neutral_parameter_id),
+                count_parameter: count_parameter.map(neutral_parameter_id),
             })
         })
         .collect::<Option<Vec<_>>>()?;
@@ -22667,6 +22678,84 @@ mod relation_tests {
             &resized,
             Point2::new(10.0, -3.0),
         ));
+    }
+
+    #[test]
+    fn rectangular_pattern_derives_spacing_from_internal_span_scalars() {
+        let entity = |id: &str, u| cadmpeg_ir::sketches::SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("generated:sketch#0".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(u, 4.0),
+            },
+        };
+        let seed = entity("generated:point#seed", 2.0);
+        let second = entity("generated:point#second", 17.0);
+        let third = entity("generated:point#third", 32.0);
+        let relation = SketchRelation {
+            id: "f3d:native:sketch-relation#rectangular".into(),
+            record_index: 10,
+            class_tag: "300".into(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: "0_1".into(),
+            auxiliary_references: vec![20, 21, 22, 23],
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![1, 2, 3],
+            resolved_members: Vec::new(),
+            member_offsets: Vec::new(),
+            owner_reference_offset: 0,
+            state: 0x2000_0000,
+            constraint_kinds: vec![SketchConstraintKind::RectangularPattern],
+            unknown_constraint_bits: 0,
+            member_roles: vec![1, 0, 0],
+            entity_genesis: None,
+            pattern: Some(crate::records::SketchPatternDefinition::Rectangular {
+                directions: [
+                    crate::records::SketchPatternDirection {
+                        count_parameter: 20,
+                        distance_parameter: 21,
+                        evaluated_count: 3,
+                        direction: [1.0, 0.0, 0.0],
+                        evaluated_distance: 3.0,
+                    },
+                    crate::records::SketchPatternDirection {
+                        count_parameter: 22,
+                        distance_parameter: 23,
+                        evaluated_count: 1,
+                        direction: [0.0, 1.0, 0.0],
+                        evaluated_distance: 0.0,
+                    },
+                ],
+            }),
+            return_members: vec![1, 2, 3],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: Vec::new(),
+            raw_bytes: Vec::new(),
+        };
+        let Some(SketchConstraintDefinition::RectangularPattern {
+            directions,
+            instances,
+        }) = super::exact_rectangular_pattern(&relation, "native", &[], &[&seed, &second, &third])
+        else {
+            panic!("rectangular pattern did not resolve");
+        };
+        assert_eq!(directions[0].spacing.0, 15.0);
+        assert_eq!(directions[1].spacing.0, 0.0);
+        assert_eq!(directions[0].span_parameter, None);
+        assert_eq!(directions[0].count_parameter, None);
+        assert_eq!(
+            instances
+                .iter()
+                .map(|instance| instance.indices)
+                .collect::<Vec<_>>(),
+            [[0, 0], [1, 0], [2, 0]]
+        );
     }
 
     #[test]
