@@ -11146,6 +11146,15 @@ pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>,
     (kinds, state & !SKETCH_CONSTRAINT_MASK)
 }
 
+fn trailing_sketch_owner_reference(bytes: &[u8], from: usize) -> Option<u32> {
+    let record_end = next_indexed_record_offset(bytes, from).unwrap_or(bytes.len());
+    let tail = record_end.checked_sub(11)?;
+    if bytes.get(tail) != Some(&1) || bytes.get(tail + 5..tail + 11) != Some(&[0u8; 6][..]) {
+        return None;
+    }
+    u32_at(bytes, tail + 1)
+}
+
 /// Decode every sketch-point record ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata), `pt_tag`) from each design
 /// `BulkStream` entry in `scan`: the persistent point id, a paired record
 /// reference, and the sketch `(u, v)` coordinates, converted centimetre→
@@ -11187,11 +11196,12 @@ pub fn decode_sketch_points(
                 at += 1;
                 continue;
             }
+            let owner_reference = trailing_sketch_owner_reference(bytes, at + 112 + shift);
             if emitted.insert(record_index) {
                 out.push(SketchPoint {
                     id: format!("f3d:{}:sketch-point#{at}", entry.name),
                     record_index,
-                    owner_reference: None,
+                    owner_reference,
                     class_tag,
                     byte_offset: at as u64,
                     coordinate_offset: (89 + shift) as u32,
@@ -11360,6 +11370,30 @@ pub(crate) fn bind_sketch_graph(
         )
         .collect::<std::collections::HashSet<_>>();
     let mut owners = std::collections::HashMap::new();
+    let direct_owners = points
+        .iter()
+        .map(|point| (&point.id, point.record_index, point.owner_reference))
+        .chain(
+            curves
+                .iter()
+                .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
+        )
+        .filter_map(|(id, record_index, owner_reference)| {
+            Some((
+                native_stream(id)?.to_owned(),
+                record_index,
+                owner_reference?,
+            ))
+        })
+        .collect::<Vec<_>>();
+    for (scope, record_index, owner_reference) in direct_owners {
+        if let Some((owner_scope, _)) = sketch_owners
+            .keys()
+            .find(|(owner_scope, owner)| *owner_scope == scope && *owner == owner_reference)
+        {
+            owners.insert((*owner_scope, record_index), owner_reference);
+        }
+    }
     for relation in relations.iter() {
         let scope = native_stream(&relation.id).expect("relation stream checked above");
         for record_index in relation.members.iter().chain(&relation.return_members) {
@@ -16229,6 +16263,24 @@ mod relation_tests {
                 <= 1.0e-12
         );
         assert!(normal.z > 0.0);
+    }
+
+    #[test]
+    fn sketch_point_tail_names_its_owner_container() {
+        let mut bytes = vec![0u8; 112];
+        bytes.push(1);
+        bytes.extend_from_slice(&201u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"301");
+        bytes.extend_from_slice(&400u32.to_le_bytes());
+        assert_eq!(
+            super::trailing_sketch_owner_reference(&bytes, 112),
+            Some(201)
+        );
+
+        bytes[117] = 1;
+        assert_eq!(super::trailing_sketch_owner_reference(&bytes, 112), None);
     }
 
     #[test]

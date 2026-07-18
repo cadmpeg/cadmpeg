@@ -2229,6 +2229,25 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }))
         .collect::<std::collections::HashMap<_, _>>();
     let mut relation_owners = std::collections::HashMap::new();
+    for (id, record_index, owner_reference) in native
+        .sketch_points
+        .iter()
+        .map(|point| (&point.id, point.record_index, point.owner_reference))
+        .chain(
+            native
+                .sketch_curve_identities
+                .iter()
+                .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
+        )
+    {
+        let Some(owner_reference) = owner_reference else {
+            continue;
+        };
+        let native_stream = design_stream(id);
+        if sketch_owners.contains(&(native_stream, owner_reference)) {
+            relation_owners.insert((native_stream, record_index), owner_reference);
+        }
+    }
     for relation in &native.sketch_relations {
         let native_stream = design_stream(&relation.id);
         let resolve = |indices: &[u32]| {
