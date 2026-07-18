@@ -1664,8 +1664,37 @@ fn a5_edge_block_stream() -> Vec<u8> {
     bytes
 }
 
+fn b2_edge_block_stream() -> Vec<u8> {
+    fn b_family_pcurve() -> Vec<u8> {
+        let a_family = a5_pcurve_stream();
+        let payload = &a_family[8..];
+        let mut record = vec![
+            0xb2,
+            0x03,
+            0x20,
+            u8::try_from(payload.len()).unwrap(),
+            a_family[7],
+        ];
+        record.extend_from_slice(payload);
+        record
+    }
+
+    let mut bytes = b_family_pcurve();
+    bytes.extend_from_slice(&b_family_pcurve());
+    bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    bytes
+}
+
 fn a5_topology_edge_run_stream() -> Vec<u8> {
     let mut bytes = a5_edge_block_stream();
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 5, 9, 0x84]);
+    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 9, 13, 0x88]);
+    bytes.extend_from_slice(&b2_edge_node_stream());
+    bytes
+}
+
+fn b2_topology_edge_run_stream() -> Vec<u8> {
+    let mut bytes = b2_edge_block_stream();
     bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 5, 9, 0x84]);
     bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 9, 13, 0x88]);
     bytes.extend_from_slice(&b2_edge_node_stream());
@@ -4366,7 +4395,7 @@ fn b2_edge_parameter_parser_validates_repeated_range_packet() {
 
 #[test]
 fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
-    let blocks = crate::geometry::a5_edge_blocks(&a5_edge_block_stream());
+    let blocks = crate::geometry::consolidated_edge_blocks(&a5_edge_block_stream());
     assert_eq!(blocks.len(), 1);
     assert!(blocks[0].co_parametric);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
@@ -4375,10 +4404,19 @@ fn a5_edge_block_parser_groups_two_coparametric_pcurves_and_packet() {
 }
 
 #[test]
+fn consolidated_edge_block_groups_b_family_pcurves() {
+    let blocks = crate::geometry::consolidated_edge_blocks(&b2_edge_block_stream());
+    assert_eq!(blocks.len(), 1);
+    assert!(blocks[0].co_parametric);
+    assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
+    assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
+}
+
+#[test]
 fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
     use crate::geometry::B2UseSense;
 
-    let runs = crate::geometry::a5_topology_edge_runs(&a5_topology_edge_run_stream());
+    let runs = crate::geometry::consolidated_topology_edge_runs(&a5_topology_edge_run_stream());
     assert_eq!(runs.len(), 1);
     assert!(runs[0].edge.co_parametric);
     assert_eq!(runs[0].uses[0].sense, Some(B2UseSense::Sense84));
@@ -4391,12 +4429,21 @@ fn a5_topology_edge_run_preserves_uses_and_native_endpoint_identities() {
 }
 
 #[test]
-fn a5_native_edge_graph_uses_persistent_endpoint_incidence() {
+fn consolidated_topology_edge_run_accepts_b_family_pcurves() {
+    let runs = crate::geometry::consolidated_topology_edge_runs(&b2_topology_edge_run_stream());
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].edge.pcurves[0].support_id, 0x1234);
+    assert_eq!(runs[0].node.start_vertex_ref, 889);
+    assert_eq!(runs[0].node.end_vertex_ref, 895);
+}
+
+#[test]
+fn consolidated_native_edge_graph_uses_persistent_endpoint_incidence() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&a5_native_edge_run_stream(1, 10, 11));
     bytes.extend_from_slice(&a5_native_edge_run_stream(2, 11, 12));
     bytes.extend_from_slice(&a5_native_edge_run_stream(3, 12, 10));
-    let graph = crate::geometry::a5_native_edge_graph(&bytes).expect("native edge graph");
+    let graph = crate::geometry::consolidated_native_edge_graph(&bytes).expect("native edge graph");
     assert_eq!(graph.vertex_identities, [10, 11, 12]);
     assert_eq!(
         graph
@@ -4414,10 +4461,10 @@ fn a5_native_edge_graph_uses_persistent_endpoint_incidence() {
 }
 
 #[test]
-fn a5_native_edge_graph_rejects_duplicate_curve_identities() {
+fn consolidated_native_edge_graph_rejects_duplicate_curve_identities() {
     let mut bytes = a5_native_edge_run_stream(1, 10, 11);
     bytes.extend_from_slice(&a5_native_edge_run_stream(1, 20, 21));
-    assert!(crate::geometry::a5_native_edge_graph(&bytes).is_none());
+    assert!(crate::geometry::consolidated_native_edge_graph(&bytes).is_none());
 }
 
 #[test]
@@ -4426,38 +4473,40 @@ fn a5_edge_block_does_not_cross_an_intervening_framed_record() {
     bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x01, 0x05, 0x84]);
     bytes.extend_from_slice(&a5_pcurve_stream());
     bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
-    assert!(crate::geometry::a5_edge_blocks(&bytes).is_empty());
+    assert!(crate::geometry::consolidated_edge_blocks(&bytes).is_empty());
 }
 
 #[test]
 fn a5_edge_binding_resolves_cylinder_by_endpoint_lifts() {
-    use crate::geometry::A5SupportBinding;
+    use crate::geometry::ConsolidatedSupportBinding;
 
-    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_cylinder_bound_edge_stream());
+    let blocks =
+        crate::geometry::resolve_consolidated_edge_blocks(&a5_cylinder_bound_edge_stream());
     assert_eq!(blocks.len(), 1);
     assert!(matches!(
         blocks[0].supports[0],
-        Some(A5SupportBinding::Cylinder { .. })
+        Some(ConsolidatedSupportBinding::Cylinder { .. })
     ));
     assert!(matches!(
         blocks[0].supports[1],
-        Some(A5SupportBinding::Cylinder { .. })
+        Some(ConsolidatedSupportBinding::Cylinder { .. })
     ));
     assert!(blocks[0].endpoint_loci.is_some());
 }
 
 #[test]
 fn a5_edge_binding_resolves_partner_nurbs_carrier() {
-    use crate::geometry::A5SupportBinding;
+    use crate::geometry::ConsolidatedSupportBinding;
 
-    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_nurbs_bound_edge_stream(0.0));
+    let blocks =
+        crate::geometry::resolve_consolidated_edge_blocks(&a5_nurbs_bound_edge_stream(0.0));
     assert!(matches!(
         blocks[0].supports[0],
-        Some(A5SupportBinding::Cylinder { .. })
+        Some(ConsolidatedSupportBinding::Cylinder { .. })
     ));
     assert!(matches!(
         blocks[0].supports[1],
-        Some(A5SupportBinding::NurbsCarrier { offset, .. }) if offset == 0.0
+        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if offset == 0.0
     ));
     assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
@@ -4465,12 +4514,13 @@ fn a5_edge_binding_resolves_partner_nurbs_carrier() {
 
 #[test]
 fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
-    use crate::geometry::A5SupportBinding;
+    use crate::geometry::ConsolidatedSupportBinding;
 
-    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_nurbs_bound_edge_stream(2.0));
+    let blocks =
+        crate::geometry::resolve_consolidated_edge_blocks(&a5_nurbs_bound_edge_stream(2.0));
     assert!(matches!(
         blocks[0].supports[1],
-        Some(A5SupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 2.0).abs() < 1e-6
+        Some(ConsolidatedSupportBinding::NurbsCarrier { offset, .. }) if (offset.abs() - 2.0).abs() < 1e-6
     ));
     assert_eq!(blocks[0].shared_loci.as_ref().map(Vec::len), Some(2));
     assert!(blocks[0].endpoint_loci.is_some());
@@ -4478,23 +4528,23 @@ fn a5_edge_binding_resolves_constant_normal_offset_carrier() {
 
 #[test]
 fn a5_edge_binding_resolves_circle_by_constant_v_and_arc_range() {
-    use crate::geometry::A5SupportBinding;
+    use crate::geometry::ConsolidatedSupportBinding;
 
-    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_circle_bound_edge_stream());
+    let blocks = crate::geometry::resolve_consolidated_edge_blocks(&a5_circle_bound_edge_stream());
     assert!(matches!(
         blocks[0].supports[0],
-        Some(A5SupportBinding::Circle { .. })
+        Some(ConsolidatedSupportBinding::Circle { .. })
     ));
 }
 
 #[test]
 fn a5_edge_binding_resolves_cone_by_endpoint_lifts() {
-    use crate::geometry::A5SupportBinding;
+    use crate::geometry::ConsolidatedSupportBinding;
 
-    let blocks = crate::geometry::resolve_a5_edge_blocks(&a5_cone_bound_edge_stream());
+    let blocks = crate::geometry::resolve_consolidated_edge_blocks(&a5_cone_bound_edge_stream());
     assert!(matches!(
         blocks[0].supports[0],
-        Some(A5SupportBinding::Cone { .. })
+        Some(ConsolidatedSupportBinding::Cone { .. })
     ));
     assert!(blocks[0].endpoint_loci.is_some());
 }

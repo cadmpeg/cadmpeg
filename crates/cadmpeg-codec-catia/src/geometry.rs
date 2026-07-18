@@ -883,9 +883,9 @@ pub struct A8Pcurve {
     pub range: [f64; 2],
 }
 
-/// Degree-5 UV jet stored in an `a5 03 20` consolidated record.
+/// Degree-5 UV jet stored in an A- or B-family class-`0x20` consolidated record.
 #[derive(Debug, Clone)]
-pub struct A5Pcurve {
+pub struct ConsolidatedPcurve {
     /// Record byte offset.
     pub pos: usize,
     /// Referenced support-surface identifier.
@@ -1559,9 +1559,9 @@ pub struct B2EdgeParameters {
 
 /// Serialized consolidated edge block formed by two pcurves and one range packet.
 #[derive(Debug, Clone)]
-pub struct A5EdgeBlock {
+pub struct ConsolidatedEdgeBlock {
     /// The two face-side UV definitions in serialization order.
-    pub pcurves: [A5Pcurve; 2],
+    pub pcurves: [ConsolidatedPcurve; 2],
     /// Shared parameter range and tolerance packet.
     pub parameters: B2EdgeParameters,
     /// Both pcurves and the edge packet store the same native range and site count.
@@ -1571,9 +1571,9 @@ pub struct A5EdgeBlock {
 /// Complete consolidated edge run serialized as two side pcurves, their shared
 /// parameter packet, two oriented uses, and one native edge node.
 #[derive(Debug, Clone)]
-pub struct A5TopologyEdgeRun {
+pub struct ConsolidatedTopologyEdgeRun {
     /// Co-parametric side definitions and shared range packet.
-    pub edge: A5EdgeBlock,
+    pub edge: ConsolidatedEdgeBlock,
     /// The two serialized edge uses, in side order.
     pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
@@ -1585,28 +1585,28 @@ pub struct A5TopologyEdgeRun {
 
 /// Native endpoint-incidence graph of complete consolidated edge runs.
 #[derive(Debug, Clone)]
-pub struct A5NativeEdgeGraph {
+pub struct ConsolidatedNativeEdgeGraph {
     /// Persistent native vertex identities in first-incidence order.
     pub vertex_identities: Vec<u32>,
     /// Edge runs in serialization order, with endpoints indexing
     /// `vertex_identities`.
-    pub edges: Vec<A5NativeGraphEdge>,
+    pub edges: Vec<ConsolidatedNativeGraphEdge>,
     /// Connected edge components, expressed as edge ordinals.
     pub components: Vec<Vec<usize>>,
 }
 
 /// One edge in a consolidated native endpoint-incidence graph.
 #[derive(Debug, Clone)]
-pub struct A5NativeGraphEdge {
+pub struct ConsolidatedNativeGraphEdge {
     /// Complete serialized edge run.
-    pub run: A5TopologyEdgeRun,
-    /// Compact endpoint indices into [`A5NativeEdgeGraph::vertex_identities`].
+    pub run: ConsolidatedTopologyEdgeRun,
+    /// Compact endpoint indices into [`ConsolidatedNativeEdgeGraph::vertex_identities`].
     pub vertices: [usize; 2],
 }
 
 /// Uniquely resolved carrier for one side of a consolidated edge block.
 #[derive(Debug, Clone, PartialEq)]
-pub enum A5SupportBinding {
+pub enum ConsolidatedSupportBinding {
     /// Standalone `b2 03 28` cylinder record.
     Cylinder {
         /// Carrier record byte offset.
@@ -1640,11 +1640,11 @@ pub enum A5SupportBinding {
 
 /// Consolidated edge block with uniquely resolved side carriers.
 #[derive(Debug, Clone)]
-pub struct ResolvedA5EdgeBlock {
+pub struct ResolvedConsolidatedEdgeBlock {
     /// Parsed pcurve pair and shared edge packet.
-    pub block: A5EdgeBlock,
+    pub block: ConsolidatedEdgeBlock,
     /// Carrier binding for each pcurve side.
-    pub supports: [Option<A5SupportBinding>; 2],
+    pub supports: [Option<ConsolidatedSupportBinding>; 2],
     /// Shared lifted 3D definition sites when every liftable side agrees
     /// pointwise in the common edge parameterization.
     pub shared_loci: Option<Vec<Point3>>,
@@ -1653,11 +1653,13 @@ pub struct ResolvedA5EdgeBlock {
     pub endpoint_loci: Option<[Point3; 2]>,
 }
 
-/// Group ordered `(a5 03 20, a5 03 20, b2 03 23)` consolidated edge blocks.
+/// Group ordered pairs of same-family class-`0x20` pcurves followed by one
+/// B-family class-`0x23` range packet.
 #[must_use]
-pub fn a5_edge_blocks(data: &[u8]) -> Vec<A5EdgeBlock> {
+pub fn consolidated_edge_blocks(data: &[u8]) -> Vec<ConsolidatedEdgeBlock> {
     let pcurves = a5_pcurves(data)
         .into_iter()
+        .chain(b2_pcurves(data))
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
     let parameters = b2_edge_parameters(data)
@@ -1670,10 +1672,9 @@ pub fn a5_edge_blocks(data: &[u8]) -> Vec<A5EdgeBlock> {
             let [first_record, second_record, parameter_record] = window else {
                 return None;
             };
-            if first_record.family == ConsolidatedFamily::A
-                && first_record.class == 0x20
-                && second_record.family == ConsolidatedFamily::A
+            if first_record.class == 0x20
                 && second_record.class == 0x20
+                && first_record.family == second_record.family
                 && parameter_record.family == ConsolidatedFamily::B
                 && parameter_record.class == 0x23
             {
@@ -1683,7 +1684,7 @@ pub fn a5_edge_blocks(data: &[u8]) -> Vec<A5EdgeBlock> {
                 let co_parametric = first.points.len() == second.points.len()
                     && first.range == second.range
                     && first.range == parameters.range;
-                Some(A5EdgeBlock {
+                Some(ConsolidatedEdgeBlock {
                     pcurves: [first.clone(), second.clone()],
                     parameters: parameters.clone(),
                     co_parametric,
@@ -1698,8 +1699,8 @@ pub fn a5_edge_blocks(data: &[u8]) -> Vec<A5EdgeBlock> {
 /// Decode complete six-record consolidated edge runs. Records separated by any
 /// other framed record do not form a run.
 #[must_use]
-pub fn a5_topology_edge_runs(data: &[u8]) -> Vec<A5TopologyEdgeRun> {
-    let edges = a5_edge_blocks(data)
+pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyEdgeRun> {
+    let edges = consolidated_edge_blocks(data)
         .into_iter()
         .map(|edge| (edge.pcurves[0].pos, edge))
         .collect::<BTreeMap<_, _>>();
@@ -1717,10 +1718,9 @@ pub fn a5_topology_edge_runs(data: &[u8]) -> Vec<A5TopologyEdgeRun> {
             let [pcurve0, pcurve1, parameters, use0, use1, node] = window else {
                 return None;
             };
-            if pcurve0.family == ConsolidatedFamily::A
-                && pcurve0.class == 0x20
-                && pcurve1.family == ConsolidatedFamily::A
+            if pcurve0.class == 0x20
                 && pcurve1.class == 0x20
+                && pcurve0.family == pcurve1.family
                 && parameters.family == ConsolidatedFamily::B
                 && parameters.class == 0x23
                 && use0.family == ConsolidatedFamily::B
@@ -1739,7 +1739,7 @@ pub fn a5_topology_edge_runs(data: &[u8]) -> Vec<A5TopologyEdgeRun> {
                     == Some(&[node.end_parameter_ref, node.start_parameter_ref])
                     && uses[1].references.as_deref()
                         == Some(&[node.start_parameter_ref, node.curve_ref]);
-                Some(A5TopologyEdgeRun {
+                Some(ConsolidatedTopologyEdgeRun {
                     edge: edges.get(&pcurve0.range.start)?.clone(),
                     uses,
                     node,
@@ -1756,8 +1756,8 @@ pub fn a5_topology_edge_runs(data: &[u8]) -> Vec<A5TopologyEdgeRun> {
 /// edge runs. A broken use/edge identity chain or duplicate curve identity
 /// invalidates the graph rather than silently accepting contradictory runs.
 #[must_use]
-pub fn a5_native_edge_graph(data: &[u8]) -> Option<A5NativeEdgeGraph> {
-    let runs = a5_topology_edge_runs(data);
+pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeGraph> {
+    let runs = consolidated_topology_edge_runs(data);
     if runs.is_empty() {
         return None;
     }
@@ -1776,7 +1776,7 @@ pub fn a5_native_edge_graph(data: &[u8]) -> Option<A5NativeEdgeGraph> {
                 index
             })
         });
-        edges.push(A5NativeGraphEdge { run, vertices });
+        edges.push(ConsolidatedNativeGraphEdge { run, vertices });
     }
     let mut vertex_edges = vec![Vec::new(); vertex_identities.len()];
     for (edge, value) in edges.iter().enumerate() {
@@ -1803,26 +1803,27 @@ pub fn a5_native_edge_graph(data: &[u8]) -> Option<A5NativeEdgeGraph> {
         component.sort_unstable();
         components.push(component);
     }
-    Some(A5NativeEdgeGraph {
+    Some(ConsolidatedNativeEdgeGraph {
         vertex_identities,
         edges,
         components,
     })
 }
 
-/// Resolve consolidated edge sides against B2 cylinder charts by endpoint lifts.
+/// Resolve consolidated edge sides against typed cylinder, circle, cone, and
+/// NURBS carriers.
 ///
 /// A carrier wins only when it is the sole chart whose two lifted pcurve endpoints
 /// coincide with serialized `05 08 01` vertices at single-precision tolerance.
 #[must_use]
-pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
+pub fn resolve_consolidated_edge_blocks(data: &[u8]) -> Vec<ResolvedConsolidatedEdgeBlock> {
     let points = object_stream_vertices(data);
     let standalone = b2_cylinders(data);
     let embedded = b2_embedded_cylinders(data);
     let circles = b2_circles(data);
     let cones = b2_cones(data);
     let surfaces = a5_surfaces(data);
-    a5_edge_blocks(data)
+    consolidated_edge_blocks(data)
         .into_iter()
         .map(|block| {
             let mut supports = std::array::from_fn(|side| {
@@ -1832,12 +1833,12 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
                     if cylinder.geometry.is_some()
                         && pcurve_endpoints_match_vertices(pcurve, cylinder, &points)
                     {
-                        winners.push(A5SupportBinding::Cylinder { pos: cylinder.pos });
+                        winners.push(ConsolidatedSupportBinding::Cylinder { pos: cylinder.pos });
                     }
                 }
                 for value in &embedded {
                     if pcurve_endpoints_match_vertices(pcurve, &value.cylinder, &points) {
-                        winners.push(A5SupportBinding::EmbeddedCylinder {
+                        winners.push(ConsolidatedSupportBinding::EmbeddedCylinder {
                             pos: value.pos,
                             wrapper_pos: value.wrapper_pos,
                         });
@@ -1847,7 +1848,7 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
                     let mut circle_winners: Vec<_> = circles
                         .iter()
                         .filter(|circle| pcurve_matches_circle(pcurve, circle))
-                        .map(|circle| A5SupportBinding::Circle { pos: circle.pos })
+                        .map(|circle| ConsolidatedSupportBinding::Circle { pos: circle.pos })
                         .collect();
                     if circle_winners.len() == 1 {
                         winners.append(&mut circle_winners);
@@ -1857,7 +1858,7 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
                     let mut cone_winners: Vec<_> = cones
                         .iter()
                         .filter(|cone| pcurve_endpoints_match_cone(pcurve, cone, &points))
-                        .map(|cone| A5SupportBinding::Cone { pos: cone.pos })
+                        .map(|cone| ConsolidatedSupportBinding::Cone { pos: cone.pos })
                         .collect();
                     if cone_winners.len() == 1 {
                         winners.append(&mut cone_winners);
@@ -1890,9 +1891,11 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
                             &block.pcurves[partner].points,
                             &anchor_points,
                         )
-                        .map(|offset| A5SupportBinding::NurbsCarrier {
-                            pos: surface.pos,
-                            offset,
+                        .map(|offset| {
+                            ConsolidatedSupportBinding::NurbsCarrier {
+                                pos: surface.pos,
+                                offset,
+                            }
                         })
                     })
                     .collect();
@@ -1905,7 +1908,7 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
             let endpoint_loci = shared_loci
                 .as_ref()
                 .and_then(|points| Some([*points.first()?, *points.last()?]));
-            ResolvedA5EdgeBlock {
+            ResolvedConsolidatedEdgeBlock {
                 block,
                 supports,
                 shared_loci,
@@ -1916,8 +1919,8 @@ pub fn resolve_a5_edge_blocks(data: &[u8]) -> Vec<ResolvedA5EdgeBlock> {
 }
 
 fn resolved_support_loci(
-    block: &A5EdgeBlock,
-    supports: &[Option<A5SupportBinding>; 2],
+    block: &ConsolidatedEdgeBlock,
+    supports: &[Option<ConsolidatedSupportBinding>; 2],
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
@@ -1952,15 +1955,15 @@ fn resolved_support_loci(
 }
 
 fn support_points(
-    binding: &A5SupportBinding,
-    pcurve: &A5Pcurve,
+    binding: &ConsolidatedSupportBinding,
+    pcurve: &ConsolidatedPcurve,
     cylinders: &[B2Cylinder],
     embedded: &[B2EmbeddedCylinder],
     cones: &[B2Cone],
     surfaces: &[A8Surface],
 ) -> Option<Vec<Point3>> {
     match binding {
-        A5SupportBinding::Cylinder { pos } => {
+        ConsolidatedSupportBinding::Cylinder { pos } => {
             let carrier = cylinders.iter().find(|value| value.pos == *pos)?;
             pcurve
                 .points
@@ -1968,7 +1971,7 @@ fn support_points(
                 .map(|uv| b2_cylinder_point(carrier, *uv))
                 .collect()
         }
-        A5SupportBinding::EmbeddedCylinder { pos, .. } => {
+        ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. } => {
             let carrier = &embedded.iter().find(|value| value.pos == *pos)?.cylinder;
             pcurve
                 .points
@@ -1976,7 +1979,7 @@ fn support_points(
                 .map(|uv| b2_cylinder_point(carrier, *uv))
                 .collect()
         }
-        A5SupportBinding::Cone { pos } => {
+        ConsolidatedSupportBinding::Cone { pos } => {
             let carrier = cones.iter().find(|value| value.pos == *pos)?;
             pcurve
                 .points
@@ -1984,7 +1987,7 @@ fn support_points(
                 .map(|uv| b2_cone_point(carrier, *uv))
                 .collect()
         }
-        A5SupportBinding::NurbsCarrier { pos, offset } => {
+        ConsolidatedSupportBinding::NurbsCarrier { pos, offset } => {
             let SurfaceGeometry::Nurbs(surface) = &surfaces
                 .iter()
                 .find(|surface| surface.pos == *pos)?
@@ -2006,7 +2009,7 @@ fn support_points(
                 })
                 .collect()
         }
-        A5SupportBinding::Circle { .. } => None,
+        ConsolidatedSupportBinding::Circle { .. } => None,
     }
 }
 
@@ -2048,7 +2051,7 @@ fn nurbs_carrier_offset(
     Some(if first.abs() < 1e-6 { 0.0 } else { first })
 }
 
-fn pcurve_matches_circle(pcurve: &A5Pcurve, circle: &B2Circle) -> bool {
+fn pcurve_matches_circle(pcurve: &ConsolidatedPcurve, circle: &B2Circle) -> bool {
     let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
         return false;
     };
@@ -2057,7 +2060,11 @@ fn pcurve_matches_circle(pcurve: &A5Pcurve, circle: &B2Circle) -> bool {
         && (first[0].max(last[0]) - circle.range[1]).abs() < 1e-9
 }
 
-fn pcurve_endpoints_match_cone(pcurve: &A5Pcurve, cone: &B2Cone, vertices: &[Point3]) -> bool {
+fn pcurve_endpoints_match_cone(
+    pcurve: &ConsolidatedPcurve,
+    cone: &B2Cone,
+    vertices: &[Point3],
+) -> bool {
     let (Some(first), Some(last)) = (pcurve.points.first(), pcurve.points.last()) else {
         return false;
     };
@@ -2090,7 +2097,7 @@ fn b2_cone_point(cone: &B2Cone, uv: [f64; 2]) -> Option<Point3> {
 }
 
 fn pcurve_endpoints_match_vertices(
-    pcurve: &A5Pcurve,
+    pcurve: &ConsolidatedPcurve,
     cylinder: &B2Cylinder,
     vertices: &[Point3],
 ) -> bool {
@@ -2862,23 +2869,28 @@ pub fn offset_support_carriers(
 
 /// Decode framed `a5 03 20` consolidated UV jets.
 #[must_use]
-pub fn a5_pcurves(data: &[u8]) -> Vec<A5Pcurve> {
+pub fn a5_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     a_family_frames(data, 0x20)
         .into_iter()
-        .filter_map(|frame| parse_a5_pcurve(data, frame.pos, frame.payload, frame.end))
+        .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
         .collect()
 }
 
 /// Decode width-coded `b2/b3/b4 03 20` consolidated UV jets.
 #[must_use]
-pub fn b2_pcurves(data: &[u8]) -> Vec<A5Pcurve> {
+pub fn b2_pcurves(data: &[u8]) -> Vec<ConsolidatedPcurve> {
     b_family_frames(data, 0x20)
         .into_iter()
-        .filter_map(|frame| parse_a5_pcurve(data, frame.pos, frame.payload, frame.end))
+        .filter_map(|frame| parse_consolidated_pcurve(data, frame.pos, frame.payload, frame.end))
         .collect()
 }
 
-fn parse_a5_pcurve(data: &[u8], pos: usize, payload: usize, end: usize) -> Option<A5Pcurve> {
+fn parse_consolidated_pcurve(
+    data: &[u8],
+    pos: usize,
+    payload: usize,
+    end: usize,
+) -> Option<ConsolidatedPcurve> {
     let mut at = payload;
     let support_id = compact_int(data, &mut at)?;
     let degree = compact_int(data, &mut at)?;
@@ -2944,7 +2956,7 @@ fn parse_a5_pcurve(data: &[u8], pos: usize, payload: usize, end: usize) -> Optio
     {
         return None;
     }
-    Some(A5Pcurve {
+    Some(ConsolidatedPcurve {
         pos,
         support_id,
         degree,
