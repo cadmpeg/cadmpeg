@@ -839,6 +839,23 @@ pub enum DesignDirectFaceOperation {
     },
 }
 
+/// Exact fixed scalar lanes carried by an Extrude scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignFixedExtrudeParameters {
+    /// Signed one-sided distance in source centimetres.
+    pub along_distance: f64,
+    /// Referenced distance scalar record.
+    pub along_distance_record_index: u32,
+    /// Byte offset of the distance scalar.
+    pub along_distance_offset: u64,
+    /// Taper angle in radians.
+    pub taper_angle: f64,
+    /// Referenced taper-angle scalar record.
+    pub taper_angle_record_index: u32,
+    /// Byte offset of the taper-angle scalar.
+    pub taper_angle_offset: u64,
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -936,6 +953,9 @@ pub struct DesignParameterScope {
     /// Exact fixed-form construction carried by a direct-face scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direct_face_operation: Option<DesignDirectFaceOperation>,
+    /// Exact fixed scalar lanes carried by an Extrude scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_transform: Option<[[f64; 4]; 4]>,

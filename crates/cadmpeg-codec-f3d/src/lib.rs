@@ -747,18 +747,25 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             let against_count = parameter_kind_count("AgainstDistance");
             let profile_offset_count = parameter_kind_count("ProfileOffset");
             let side_one_offset_count = parameter_kind_count("Side1Offset");
+            let has_fixed_extrude_parameters = scope.fixed_extrude_parameters.is_some();
+            let has_one_along_carrier =
+                along_count <= 1 && (along_count == 1 || has_fixed_extrude_parameters);
             let extent_matches_operands = match scope.extrude_extent {
                 Some(records::DesignExtrudeExtent::OneSidedDistance) => {
-                    along_count == 1
+                    has_one_along_carrier
                         && against_count == 0
                         && side_one_offset_count == 0
                         && scope.extrude_direction_reversed == Some(false)
                 }
                 Some(records::DesignExtrudeExtent::OneSidedToFace) => {
-                    along_count == 0 && against_count == 0 && side_one_offset_count == 1
+                    along_count == 0
+                        && !has_fixed_extrude_parameters
+                        && against_count == 0
+                        && side_one_offset_count == 1
                 }
                 Some(records::DesignExtrudeExtent::TwoSidedDistance) => {
                     along_count == 1
+                        && !has_fixed_extrude_parameters
                         && against_count == 1
                         && side_one_offset_count == 0
                         && scope.extrude_direction_reversed == Some(false)

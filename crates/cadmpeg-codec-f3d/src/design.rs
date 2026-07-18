@@ -18,12 +18,13 @@ use crate::records::{
     DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
     DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignObject, DesignObjectKind, DesignParameter,
-    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedExtrudeParameters, DesignObject,
+    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
+    DesignSolidPrimitive, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -2515,7 +2516,7 @@ fn project_extrude(
     placements: &[DesignSketchPlacement],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        BooleanOp, Extent, ExtrudeDirection, ExtrudeStart, FaceSelection, FeatureDefinition,
+        Angle, BooleanOp, Extent, ExtrudeDirection, ExtrudeStart, FaceSelection, FeatureDefinition,
         Length, ProfileRef,
     };
 
@@ -2586,9 +2587,21 @@ fn project_extrude(
             .collect::<Vec<_>>();
         (matches.len() <= 1).then(|| matches.first().copied())
     };
-    let along = match unique("AlongDistance")? {
+    let parameter_along = match unique("AlongDistance")? {
         Some(parameter) => Some(design_length(parameter)?),
         None => None,
+    };
+    let fixed_along = scope
+        .fixed_extrude_parameters
+        .as_ref()
+        .map(|fixed| Length(fixed.along_distance * 10.0));
+    let along = match (parameter_along, fixed_along) {
+        (Some(parameter), Some(fixed)) if (parameter.0 - fixed.0).abs() <= 1.0e-9 => {
+            Some(parameter)
+        }
+        (Some(distance), None) | (None, Some(distance)) => Some(distance),
+        (None, None) => None,
+        _ => return None,
     };
     let against = match unique("AgainstDistance")? {
         Some(parameter) => Some(design_length(parameter)?),
@@ -2701,13 +2714,26 @@ fn project_extrude(
     } else {
         ExtrudeDirection::ProfileNormal
     };
-    let draft = match unique("TaperAngle")? {
+    let parameter_draft = match unique("TaperAngle")? {
         Some(parameter) => {
             let angle = design_angle(parameter)?;
-            (angle.0 != 0.0).then_some(angle)
+            Some(angle)
         }
         None => None,
     };
+    let fixed_draft = scope
+        .fixed_extrude_parameters
+        .as_ref()
+        .map(|fixed| Angle(fixed.taper_angle));
+    let draft = match (parameter_draft, fixed_draft) {
+        (Some(parameter), Some(fixed)) if (parameter.0 - fixed.0).abs() <= 1.0e-12 => {
+            Some(parameter)
+        }
+        (Some(angle), None) | (None, Some(angle)) => Some(angle),
+        (None, None) => None,
+        _ => return None,
+    }
+    .filter(|angle| angle.0 != 0.0);
     let second_draft = side_two_draft.filter(|angle| angle.0 != 0.0);
     if second_draft.is_some() && !matches!(extent, Extent::TwoSided { .. }) {
         return None;
@@ -12442,6 +12468,7 @@ pub fn decode_parameter_scopes(
             }
             scope.solid_primitive = exact_solid_primitive(bytes, &scope);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &scope);
+            scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(bytes, &scope);
             scope.id = format!(
                 "f3d:{}:design-parameter-scope#{}",
                 entry.name, scope.byte_offset
@@ -12537,11 +12564,19 @@ fn exact_solid_primitive(
 }
 
 fn exact_primitive_diameter(bytes: &[u8], record_index: u32) -> Option<(f64, u64)> {
-    let (diameter, offset) = exact_fixed_scalar(bytes, record_index)?;
-    (diameter > 0.0).then_some((diameter, offset))
+    let scalar = exact_fixed_scalar(bytes, record_index)?;
+    (scalar.value > 0.0).then_some((scalar.value, scalar.value_offset))
 }
 
-fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<(f64, u64)> {
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FixedScalarFrame {
+    owner_record_index: Option<u32>,
+    ordinal: u8,
+    value: f64,
+    value_offset: u64,
+}
+
+fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFrame> {
     let mut headers = Vec::new();
     let mut position = 0;
     while let Some(at) = next_indexed_record_offset(bytes, position) {
@@ -12556,9 +12591,14 @@ fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<(f64, u64)> {
             let start = pair[0];
             (pair[1].checked_sub(start)? == 104).then_some(())?;
             let value = f64_at(bytes, start + 40)?;
-            value
-                .is_finite()
-                .then_some((value, u64::try_from(start + 40).ok()?))
+            value.is_finite().then_some(FixedScalarFrame {
+                owner_record_index: (bytes.get(start + 24) == Some(&1))
+                    .then(|| u32_at(bytes, start + 25))
+                    .flatten(),
+                ordinal: *bytes.get(start + 35)?,
+                value,
+                value_offset: u64::try_from(start + 40).ok()?,
+            })
         })
         .collect::<Vec<_>>();
     let [candidate] = candidates.as_slice() else {
@@ -12582,11 +12622,11 @@ fn exact_direct_face_operation(
             if scope.reference_members.last() != Some(&distance_record_index) {
                 return None;
             }
-            let (distance, distance_offset) = exact_fixed_scalar(bytes, distance_record_index)?;
+            let scalar = exact_fixed_scalar(bytes, distance_record_index)?;
             Some(DesignDirectFaceOperation::OffsetFaces {
-                distance,
+                distance: scalar.value,
                 distance_record_index,
-                distance_offset,
+                distance_offset: scalar.value_offset,
             })
         }
         DesignFeatureFamily::Thicken
@@ -12598,18 +12638,54 @@ fn exact_direct_face_operation(
             if scope.reference_members.last() != Some(&thickness_record_index) {
                 return None;
             }
-            let (thickness, thickness_offset) = exact_fixed_scalar(bytes, thickness_record_index)?;
-            if thickness <= 0.0 {
+            let scalar = exact_fixed_scalar(bytes, thickness_record_index)?;
+            if scalar.value <= 0.0 {
                 return None;
             }
             Some(DesignDirectFaceOperation::Thicken {
-                thickness,
+                thickness: scalar.value,
                 thickness_record_index,
-                thickness_offset,
+                thickness_offset: scalar.value_offset,
             })
         }
         _ => None,
     }
+}
+
+fn exact_fixed_extrude_parameters(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignFixedExtrudeParameters> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Extrude)
+        || scope.extrude_extent != Some(DesignExtrudeExtent::OneSidedDistance)
+    {
+        return None;
+    }
+    let lanes = scope
+        .reference_members
+        .iter()
+        .filter_map(|record_index| {
+            let scalar = exact_fixed_scalar(bytes, *record_index)?;
+            (scalar.owner_record_index == Some(scope.record_index))
+                .then_some((*record_index, scalar))
+        })
+        .collect::<Vec<_>>();
+    let [(along_distance_record_index, along), (taper_angle_record_index, taper)] =
+        lanes.as_slice()
+    else {
+        return None;
+    };
+    if along.ordinal != 0 || taper.ordinal != 1 || along.value == 0.0 {
+        return None;
+    }
+    Some(DesignFixedExtrudeParameters {
+        along_distance: along.value,
+        along_distance_record_index: *along_distance_record_index,
+        along_distance_offset: along.value_offset,
+        taper_angle: taper.value,
+        taper_angle_record_index: *taper_angle_record_index,
+        taper_angle_offset: taper.value_offset,
+    })
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -14712,6 +14788,7 @@ fn parse_parameter_scope(
         reference_member_offsets: reference_member_offsets.clone(),
         solid_primitive: None,
         direct_face_operation: None,
+        fixed_extrude_parameters: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
@@ -17514,15 +17591,15 @@ mod relation_tests {
         contiguous_i32_program, decode_constraint_kinds, decode_fillet_radius_groups,
         decode_pattern_definition, design_feature_family, design_parameter_prefix,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_direct_face_operation, exact_offset_constraint,
-        exact_solid_primitive, exact_work_plane_frame, expression_identifiers,
-        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
-        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        next_indexed_record_offset_with_index, null_locus_dimension_definition,
-        offset_parameter_factor, parse_construction_operand_group,
+        exact_counted_offset, exact_direct_face_operation, exact_fixed_extrude_parameters,
+        exact_offset_constraint, exact_solid_primitive, exact_work_plane_frame,
+        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
+        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        historical_profile_face_candidates, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, next_indexed_record_offset_with_index,
+        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -17549,12 +17626,12 @@ mod relation_tests {
         DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
         DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
-        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart, DesignObjectKind,
-        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement,
-        DesignSolidPrimitive, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-        SketchRelationOperand,
+        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart,
+        DesignFixedExtrudeParameters, DesignObjectKind, DesignParameter, DesignParameterCompanion,
+        DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignRecipeReference,
+        DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference,
+        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+        SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -20271,6 +20348,38 @@ mod relation_tests {
         bytes[thicken_at + 47] = 0;
         assert_eq!(exact_direct_face_operation(&bytes, &thicken_scope), None);
 
+        for (record_index, ordinal, value) in [(75u32, 0u8, -2.0f64), (76, 1, 0.0)] {
+            let mut scalar = vec![0; 104];
+            scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+            scalar[4..7].copy_from_slice(b"277");
+            scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+            scalar[24] = 1;
+            scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+            scalar[35] = ordinal;
+            scalar[40..48].copy_from_slice(&value.to_le_bytes());
+            scalar.extend_from_slice(&3u32.to_le_bytes());
+            scalar.extend_from_slice(b"261");
+            scalar.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&scalar);
+        }
+        let mut extrude_scope = scope.clone();
+        extrude_scope.kind = "Extrude".into();
+        extrude_scope.extrude_extent = Some(DesignExtrudeExtent::OneSidedDistance);
+        extrude_scope.reference_members = vec![50, 75, 76, 51];
+        assert_eq!(
+            exact_fixed_extrude_parameters(&bytes, &extrude_scope),
+            Some(DesignFixedExtrudeParameters {
+                along_distance: -2.0,
+                along_distance_record_index: 75,
+                along_distance_offset: (bytes.len() - 2 * 115 + 40) as u64,
+                taper_angle: 0.0,
+                taper_angle_record_index: 76,
+                taper_angle_offset: (bytes.len() - 115 + 40) as u64,
+            })
+        );
+        extrude_scope.reference_members.push(75);
+        assert_eq!(exact_fixed_extrude_parameters(&bytes, &extrude_scope), None);
+
         let mut companion = DesignParameterCompanion {
             id: "f3d:native:parameter-companion#11".into(),
             byte_offset: 0,
@@ -20637,6 +20746,7 @@ mod relation_tests {
             reference_member_offsets: vec![1085, 1096, 1107],
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -20841,6 +20951,7 @@ mod relation_tests {
             reference_member_offsets: vec![1085],
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -21122,6 +21233,7 @@ mod relation_tests {
             reference_member_offsets: vec![1085],
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -24775,6 +24887,7 @@ mod relation_tests {
             reference_member_offsets: vec![185, 196],
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -24884,6 +24997,7 @@ mod relation_tests {
             reference_member_offsets: Vec::new(),
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25040,6 +25154,7 @@ mod relation_tests {
             reference_member_offsets: vec![185],
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25538,6 +25653,7 @@ mod relation_tests {
             reference_member_offsets: vec![byte_offset + 85],
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26184,6 +26300,7 @@ mod relation_tests {
             reference_member_offsets: vec![185, 196],
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26382,6 +26499,7 @@ mod relation_tests {
             reference_member_offsets: vec![byte_offset + 85],
             solid_primitive: None,
             direct_face_operation: None,
+            fixed_extrude_parameters: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26482,6 +26600,7 @@ mod relation_tests {
                 reference_member_offsets: Vec::new(),
                 solid_primitive: None,
                 direct_face_operation: None,
+                fixed_extrude_parameters: None,
                 work_plane_transform: None,
                 work_plane_transform_offset: None,
                 work_plane_reference: None,
