@@ -57,12 +57,16 @@ pub(crate) enum NativeClassKind {
     OriginProfileFeature,
     ProfileFeature,
     ReferencePlane,
+    ReferenceAxis,
     Thicken,
     Sweep,
     SweepReferenceSurface,
     Helix,
+    HoleWizard,
+    Revolution,
     LinearPattern,
     CurvePattern,
+    MirrorPattern,
     Combine,
     DeleteBody,
     TreeNode(FeatureTreeNodeRole),
@@ -128,6 +132,12 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::ReferencePlane),
             None,
         ),
+        "moRefAxis_c" => (
+            NativeClassKind::ReferenceAxis,
+            Reference,
+            Some(FeatureClass::ReferenceAxis),
+            None,
+        ),
         "moThicken_c" => (
             NativeClassKind::Thicken,
             Feature,
@@ -152,6 +162,18 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             Some(FeatureClass::Helix),
             None,
         ),
+        "moHoleWzd_c" => (
+            NativeClassKind::HoleWizard,
+            Feature,
+            Some(FeatureClass::Hole),
+            None,
+        ),
+        "moRevolution_c" | "moRevCut_c" => (
+            NativeClassKind::Revolution,
+            Feature,
+            Some(FeatureClass::Revolve),
+            None,
+        ),
         "moLPattern_c" => (
             NativeClassKind::LinearPattern,
             Feature,
@@ -160,6 +182,12 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         ),
         "moCurvePattern_c" => (
             NativeClassKind::CurvePattern,
+            Feature,
+            Some(FeatureClass::Pattern),
+            None,
+        ),
+        "moMirrorPattern_c" => (
+            NativeClassKind::MirrorPattern,
             Feature,
             Some(FeatureClass::Pattern),
             None,
@@ -427,6 +455,23 @@ mod tests {
             classify(&feature("Extrusion", "arbitrary", "Custom", None)),
             Some(FeatureClass::Extrude)
         );
+    }
+
+    #[test]
+    fn operation_classes_classify_without_localized_type_tokens() {
+        for (class, expected) in [
+            ("moHoleWzd_c", FeatureClass::Hole),
+            ("moRevolution_c", FeatureClass::Revolve),
+            ("moRevCut_c", FeatureClass::Revolve),
+            ("moRefAxis_c", FeatureClass::ReferenceAxis),
+            ("moMirrorPattern_c", FeatureClass::Pattern),
+        ] {
+            assert_eq!(
+                classify(&feature("Feature", "localized", "localized", Some(class))),
+                Some(expected),
+                "{class}"
+            );
+        }
     }
 
     #[test]
