@@ -376,6 +376,8 @@ The `moConstraintMidPlaneRefplaneData_c` class declaration is followed by eight 
 
 A zero-origin angular reference-plane frame stores redundant normal z and y components as two f64 values, followed by byte `1`, an unaligned xyz unit u-axis, an xyz unit normal, and an xyz unit v-axis. The three vectors begin 17, 41, and 65 bytes after the first redundant component and are pairwise orthogonal. Normal x is zero; the redundant components equal normal z and y. Twenty-four zero bytes and f64 value `1` terminate the 121-byte frame.
 
+A compact reference-plane frame stores xyz origin coordinates in metres at offsets `+0`, `+8`, and `+16`, normal x and y at `+24` and `+32`, and the complete xyz unit u-axis at `+40`, `+48`, and `+56`. Byte `+64` is zero. V-axis x and y are unaligned f64 values at `+65` and `+73`, and byte `+81` is zero. The omitted v-axis z and normal z are the unique values that make u and v unit and orthogonal and make `normal = u × v` while preserving the stored normal components.
+
 Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode the same value. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
 
 ---

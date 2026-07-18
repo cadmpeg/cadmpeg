@@ -383,10 +383,10 @@ mod marker_tests {
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
         compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
         compact_line_chain_addresses, compact_line_region_addresses, compact_offset_plane_source,
-        compact_profile_reference_plane_source, compact_reference_plane_source,
-        compact_single_face_reference_path_at, compact_surface_selection_at,
-        complete_ordered_compact_line_profile, component_path_features,
-        component_path_terminal_feature, component_profile_source_at,
+        compact_profile_reference_plane_source, compact_reference_plane_frame,
+        compact_reference_plane_source, compact_single_face_reference_path_at,
+        compact_surface_selection_at, complete_ordered_compact_line_profile,
+        component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, constraint_midplane_frame,
         coordinate_marker_local_links, fixed_reference_plane_frame, marker_coordinates,
         marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
@@ -623,6 +623,39 @@ mod marker_tests {
 
         payload[root + 8..root + 16].copy_from_slice(&(-inverse_sqrt_two).to_le_bytes());
         assert_eq!(angled_reference_plane_frame(&payload), None);
+    }
+
+    #[test]
+    fn compact_reference_plane_solves_omitted_basis_components() {
+        let root = 7;
+        let mut payload = vec![0xaa; root + 82];
+        for (relative, value) in [
+            (0, 0.001_f64),
+            (8, -0.002),
+            (16, 0.003),
+            (24, 0.0),
+            (32, 0.0),
+            (40, 1.0),
+            (48, 0.0),
+            (56, 0.0),
+            (65, 0.0),
+            (73, 1.0),
+        ] {
+            payload[root + relative..root + relative + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[root + 64] = 0;
+        payload[root + 81] = 0;
+        assert_eq!(
+            compact_reference_plane_frame(&payload),
+            Some((
+                Point3::new(1.0, -2.0, 3.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ))
+        );
+
+        payload[root + 73..root + 81].copy_from_slice(&0.5f64.to_le_bytes());
+        assert_eq!(compact_reference_plane_frame(&payload), None);
     }
 
     #[test]
@@ -5432,6 +5465,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .collect::<Vec<_>>();
             frames.extend(constraint_midplane_frame(bytes));
             frames.extend(angled_reference_plane_frame(bytes));
+            frames.extend(compact_reference_plane_frame(bytes));
             frames.sort_by_key(|(origin, normal, u_axis)| {
                 [
                     origin.x.to_bits(),
@@ -5847,6 +5881,92 @@ fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vect
         .collect::<Vec<_>>();
     frames.sort_by_key(|(_, normal, u_axis)| {
         [
+            normal.x.to_bits(),
+            normal.y.to_bits(),
+            normal.z.to_bits(),
+            u_axis.x.to_bits(),
+            u_axis.y.to_bits(),
+            u_axis.z.to_bits(),
+        ]
+    });
+    frames.dedup();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const RECORD_LEN: usize = 82;
+    const NATIVE_TO_IR: f64 = 1000.0;
+    let scalar = |bytes: &[u8], relative| {
+        let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let cross = |left: Vector3, right: Vector3| {
+        Vector3::new(
+            left.y * right.z - left.z * right.y,
+            left.z * right.x - left.x * right.z,
+            left.x * right.y - left.y * right.x,
+        )
+    };
+    let mut frames = payload
+        .windows(RECORD_LEN)
+        .filter(|bytes| bytes[64] == 0 && bytes[81] == 0)
+        .flat_map(|bytes| {
+            let Some(origin) = (|| {
+                Some(Point3::new(
+                    scalar(bytes, 0)? * NATIVE_TO_IR,
+                    scalar(bytes, 8)? * NATIVE_TO_IR,
+                    scalar(bytes, 16)? * NATIVE_TO_IR,
+                ))
+            })() else {
+                return Vec::new();
+            };
+            let Some(normal_xy) = scalar(bytes, 24).zip(scalar(bytes, 32)) else {
+                return Vec::new();
+            };
+            let Some(u_axis) = (|| {
+                Some(Vector3::new(
+                    scalar(bytes, 40)?,
+                    scalar(bytes, 48)?,
+                    scalar(bytes, 56)?,
+                ))
+            })() else {
+                return Vec::new();
+            };
+            let Some(v_xy) = scalar(bytes, 65).zip(scalar(bytes, 73)) else {
+                return Vec::new();
+            };
+            if (dot(u_axis, u_axis) - 1.0).abs() > 1.0e-9 {
+                return Vec::new();
+            }
+            let remaining = 1.0 - v_xy.0 * v_xy.0 - v_xy.1 * v_xy.1;
+            if remaining < -1.0e-9 {
+                return Vec::new();
+            }
+            let omitted = remaining.max(0.0).sqrt();
+            [omitted, -omitted]
+                .into_iter()
+                .filter_map(|v_z| {
+                    let v_axis = Vector3::new(v_xy.0, v_xy.1, v_z);
+                    let normal = cross(u_axis, v_axis);
+                    (dot(u_axis, v_axis).abs() <= 1.0e-9
+                        && (dot(normal, normal) - 1.0).abs() <= 1.0e-9
+                        && (normal.x - normal_xy.0).abs() <= 1.0e-9
+                        && (normal.y - normal_xy.1).abs() <= 1.0e-9)
+                        .then_some((origin, normal, u_axis))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    frames.sort_by_key(|(origin, normal, u_axis)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
             normal.x.to_bits(),
             normal.y.to_bits(),
             normal.z.to_bits(),
