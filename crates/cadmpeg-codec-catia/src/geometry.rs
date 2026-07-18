@@ -975,6 +975,19 @@ pub struct B2OwnerPacket {
     pub numeric_tail: [u8; 62],
 }
 
+/// Count-framed class-`0x62` owner record with a class-specific tail.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B2CountedOwner {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Persistent identities selected by the leading `0x80+n` count.
+    pub references: Vec<u32>,
+    /// Nonempty class-specific bytes after the reference lane.
+    pub tail: Vec<u8>,
+}
+
 /// Reference dialect used by a nine-reference class-`0x62` owner packet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum B2OwnerReferenceEncoding {
@@ -1034,6 +1047,16 @@ pub struct B2LinkedOwner {
     pub link: B2Link5f,
     /// Nine-reference owner packet.
     pub owner: B2OwnerPacket,
+}
+
+/// Adjacent class-`0x5f` link and count-framed class-`0x62` owner joined by
+/// the owner's allocation-successor identity.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct B2LinkedCountedOwner {
+    /// Fixed link immediately preceding the owner packet.
+    pub link: B2Link5f,
+    /// Count-framed owner packet.
+    pub owner: B2CountedOwner,
 }
 
 /// Cone-face chart descriptor stored in a `b2/b3/b4 03 3b` record.
@@ -1247,6 +1270,31 @@ pub fn b2_reference_lists(data: &[u8]) -> Vec<B2ReferenceList> {
         .collect()
 }
 
+/// Decode class-`0x62` owner packets whose leading count fixes the persistent
+/// reference lane and leaves a nonempty class-specific tail.
+#[must_use]
+pub fn b2_counted_owners(data: &[u8]) -> Vec<B2CountedOwner> {
+    b_family_frames(data, 0x62)
+        .into_iter()
+        .filter_map(|frame| {
+            let count = usize::from(data.get(frame.payload)?.checked_sub(0x80)?);
+            if count == 0 {
+                return None;
+            }
+            let mut at = frame.payload + 1;
+            let references = (0..count)
+                .map(|_| persistent_ref(data, &mut at))
+                .collect::<Option<Vec<_>>>()?;
+            (at < frame.end).then(|| B2CountedOwner {
+                pos: frame.pos,
+                header_token: frame.header_token,
+                references,
+                tail: data[at..frame.end].to_vec(),
+            })
+        })
+        .collect()
+}
+
 /// Decode width-coded class-`0x62` owner packets whose counted references and
 /// fixed numeric tail consume the complete frame.
 #[must_use]
@@ -1421,6 +1469,36 @@ pub fn b2_linked_owners(data: &[u8]) -> Vec<B2LinkedOwner> {
             (link.target.checked_add(1) == Some(owner.references[8])).then(|| B2LinkedOwner {
                 link: *link,
                 owner: owner.clone(),
+            })
+        })
+        .collect()
+}
+
+/// Bind immediately adjacent `5f,62` records when the count-framed owner's
+/// final identity is the checked successor of the link target.
+#[must_use]
+pub fn b2_linked_counted_owners(data: &[u8]) -> Vec<B2LinkedCountedOwner> {
+    let links = b2_links_5f(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let owners = b2_counted_owners(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    consolidated_records(data)
+        .windows(2)
+        .filter_map(|window| {
+            let [link_record, owner_record] = window else {
+                return None;
+            };
+            let link = links.get(&link_record.range.start)?;
+            let owner = owners.get(&owner_record.range.start)?;
+            (link.target.checked_add(1) == owner.references.last().copied()).then(|| {
+                B2LinkedCountedOwner {
+                    link: *link,
+                    owner: owner.clone(),
+                }
             })
         })
         .collect()

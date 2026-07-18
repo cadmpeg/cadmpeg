@@ -1496,6 +1496,14 @@ fn b2_linked_owner_stream() -> Vec<u8> {
     bytes
 }
 
+fn b2_linked_counted_owner_stream() -> Vec<u8> {
+    vec![
+        0xb2, 0x03, 0x5f, 0x06, 0x11, 0x82, 0x08, 0x94, 0x03, 0x03, 0x05, 0xb2, 0x03, 0x62, 0x19,
+        0x05, 0x87, 0x08, 0x8f, 0x03, 0x1d, 0x08, 0x07, 0x01, 0x08, 0x02, 0x01, 0x08, 0x19, 0x01,
+        0x08, 0x14, 0x01, 0x08, 0x95, 0x03, 0x83, 0x41, 0x92, 0x00, 0x01,
+    ]
+}
+
 fn b2_cone_face_stream() -> Vec<u8> {
     let mut record = vec![0xb2, 0x03, 0x3b, 0x20, 0x05];
     for value in 0u8..16 {
@@ -4083,6 +4091,24 @@ fn b2_linked_owner_requires_adjacency_and_successor_identity() {
     separated.extend_from_slice(&[0xb2, 0x03, 0x2e, 0x01, 0x05, 0x05]);
     separated.extend_from_slice(&b2_owner_packet_stream());
     assert!(crate::geometry::b2_linked_owners(&separated).is_empty());
+}
+
+#[test]
+fn b2_counted_owner_closes_variable_reference_lane_and_successor_link() {
+    let bytes = b2_linked_counted_owner_stream();
+    let owners = crate::geometry::b2_counted_owners(&bytes);
+    assert_eq!(owners.len(), 1);
+    assert_eq!(owners[0].references, [911, 7, 263, 258, 281, 276, 917]);
+    assert_eq!(owners[0].tail, [0x83, 0x41, 0x92, 0x00, 0x01]);
+
+    let linked = crate::geometry::b2_linked_counted_owners(&bytes);
+    assert_eq!(linked.len(), 1);
+    assert_eq!(linked[0].link.target, 916);
+    assert_eq!(linked[0].owner.references.last(), Some(&917));
+
+    let mut wrong_successor = bytes;
+    wrong_successor[35] = 0x99;
+    assert!(crate::geometry::b2_linked_counted_owners(&wrong_successor).is_empty());
 }
 
 #[test]
