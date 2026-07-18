@@ -406,13 +406,13 @@ fn bodies(entities: &[EntityRecord]) -> Vec<BodyRecord> {
         out.extend(schema_36001_extended_root_body(&by_attr));
     }
     if out.is_empty() {
-        out.extend(schema_36001_compact_root_body(&by_attr));
+        out.extend(compact_root_body(&by_attr));
     }
     out.sort_by_key(|record| record.attr);
     out
 }
 
-fn schema_36001_compact_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
+fn compact_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<BodyRecord> {
     let regions = by_attr
         .values()
         .copied()
@@ -432,7 +432,7 @@ fn schema_36001_compact_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<
     let Some(disc_1c) = follows(region, 1, 0x001c) else {
         return Vec::new();
     };
-    if follows(disc_1c, 1, 0x001e).is_none() {
+    if disc_1c.refs.get(1).is_some_and(|attr| *attr > 1) && follows(disc_1c, 1, 0x001e).is_none() {
         return Vec::new();
     }
     let Some(disc_18) = follows(region, 2, 0x0018) else {
@@ -712,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_36001_compact_root_lattice_owns_the_site() {
+    fn compact_root_lattice_owns_the_site_with_or_without_companion_branch() {
         let records = vec![
             record(10, 0x1a, [1, 11, 12, 1, 1, 1]),
             record(11, 0x1c, [1, 13, 10, 1, 1, 1]),
@@ -736,7 +736,7 @@ mod tests {
             .map(|record| (record.attr, record))
             .collect::<HashMap<_, _>>();
 
-        let bodies = schema_36001_compact_root_body(&by_attr);
+        let bodies = compact_root_body(&by_attr);
         let [body] = bodies.as_slice() else {
             panic!("one schema-36001 body");
         };
@@ -750,7 +750,24 @@ mod tests {
             .filter(|record| record.attr != 13)
             .map(|record| (record.attr, record))
             .collect::<HashMap<_, _>>();
-        assert!(schema_36001_compact_root_body(&incomplete).is_empty());
+        assert!(compact_root_body(&incomplete).is_empty());
+
+        let without_companion = records
+            .iter()
+            .filter(|record| record.attr != 13)
+            .cloned()
+            .map(|mut record| {
+                if record.attr == 11 {
+                    record.refs[1] = 1;
+                }
+                record
+            })
+            .collect::<Vec<_>>();
+        let without_companion = without_companion
+            .iter()
+            .map(|record| (record.attr, record))
+            .collect::<HashMap<_, _>>();
+        assert_eq!(compact_root_body(&without_companion).len(), 1);
     }
 
     fn flo2(attr: u16, disc: u16, refs: [u16; 6]) -> EntityRecord {

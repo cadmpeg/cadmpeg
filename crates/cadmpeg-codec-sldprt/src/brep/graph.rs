@@ -678,9 +678,9 @@ fn decode_graph(
     let (mut bridge_group, mut bridge_shell) = bind_bridges(&body_records, &faces);
     // Primary body records that own no face are superseded by cluster-key
     // chain bodies; a sole chain owns every canonical face in the site.
-    if !body_records.is_empty() && bridge_group.is_empty() && !cluster_bodies.is_empty() {
+    if (body_records.is_empty() || bridge_group.is_empty()) && !cluster_bodies.is_empty() {
         let (cluster_group, cluster_shell) = bind_bridges(&cluster_bodies, &faces);
-        if !cluster_group.is_empty() {
+        if !cluster_group.is_empty() || cluster_bodies.len() == 1 {
             body_records = cluster_bodies;
             bridge_group = cluster_group;
             bridge_shell = cluster_shell;
