@@ -873,6 +873,33 @@ pub struct DesignFixedFilletParameters {
     pub radius_offsets: Vec<u64>,
 }
 
+/// Exact fixed construction carried by a Loft or Sweep scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignPathFeatureConstruction {
+    /// Loft result operation.
+    Loft {
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation u32.
+        operation_offset: u64,
+    },
+    /// Sweep result operation and fixed dimension lanes.
+    Sweep {
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation u32.
+        operation_offset: u64,
+        /// Six scalar values in `AlongDistance`, `AgainstDistance`,
+        /// `AlongRailDistance`, `AgainstRailDistance`, `TwistAngle`, and `TaperAngle` order.
+        values: [f64; 6],
+        /// Referenced scalar records in lane order.
+        record_indexes: [u32; 6],
+        /// Byte offsets of the scalar values in lane order.
+        value_offsets: [u64; 6],
+    },
+}
+
 /// Indexed sketch or construction-operation record that scopes parameters.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignParameterScope {
@@ -976,6 +1003,9 @@ pub struct DesignParameterScope {
     /// Exact fixed scalar lanes carried by a Fillet scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_fillet_parameters: Option<DesignFixedFilletParameters>,
+    /// Exact fixed construction carried by a Loft or Sweep scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path_feature_construction: Option<DesignPathFeatureConstruction>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_transform: Option<[[f64; 4]; 4]>,

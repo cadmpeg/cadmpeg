@@ -21,10 +21,11 @@ use crate::records::{
     DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedExtrudeParameters,
     DesignFixedFilletParameters, DesignObject, DesignObjectKind, DesignParameter,
     DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-    DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignPathFeatureConstruction, DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
+    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, PersistentSubentityTag,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -789,6 +790,22 @@ pub fn project_parameter_design_with_edge_identities(
                         })
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
+                })
+            } else if family == Some(DesignFeatureFamily::Loft) {
+                project_fixed_loft(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
+            } else if family == Some(DesignFeatureFamily::Sweep) {
+                project_fixed_sweep(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
                 })
             } else if let Some(primitive) = scope.solid_primitive.as_ref() {
                 let operation = |operation| match operation {
@@ -2592,6 +2609,104 @@ fn project_fixed_fillet(
             radius,
             tangency_weight: Some(fixed.tangency_weight),
         }],
+    })
+}
+
+fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::features::BooleanOp {
+    match operation {
+        DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
+        DesignExtrudeOperation::Cut => cadmpeg_ir::features::BooleanOp::Cut,
+        DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
+        DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
+    }
+}
+
+fn project_fixed_loft(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    let DesignPathFeatureConstruction::Loft { operation, .. } =
+        scope.path_feature_construction.as_ref()?
+    else {
+        return None;
+    };
+    let stream = native_stream(&scope.id)?;
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let body_count = groups
+        .iter()
+        .filter(|group| group.role == 0x4_0000_0000)
+        .count();
+    let section_role = match operation {
+        DesignExtrudeOperation::Join if body_count == 1 => 0x41_0000_0000,
+        DesignExtrudeOperation::NewBody if body_count == 0 => 0x5_0000_0000,
+        _ => return None,
+    };
+    let profiles = groups
+        .iter()
+        .filter(|group| group.role == section_role)
+        .map(|group| ProfileRef::Native(group.id.clone()))
+        .collect::<Vec<_>>();
+    if profiles.len() != 2 || profiles.len() + body_count != groups.len() {
+        return None;
+    }
+    Some(FeatureDefinition::Loft {
+        profiles,
+        guides: Vec::new(),
+        op: fixed_boolean_operation(*operation),
+        closed: false,
+    })
+}
+
+fn project_fixed_sweep(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{Angle, FeatureDefinition, PathRef, ProfileRef, SweepMode};
+
+    let DesignPathFeatureConstruction::Sweep {
+        operation, values, ..
+    } = scope.path_feature_construction.as_ref()?
+    else {
+        return None;
+    };
+    let stream = native_stream(&scope.id)?;
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let profile = groups
+        .iter()
+        .filter(|group| group.role == 0x41_0000_0000)
+        .collect::<Vec<_>>();
+    let path = groups
+        .iter()
+        .filter(|group| group.role == 0x5_0000_0000)
+        .collect::<Vec<_>>();
+    let ([profile], [path]) = (profile.as_slice(), path.as_slice()) else {
+        return None;
+    };
+    if groups.len() != 2 || values[5] != 0.0 {
+        return None;
+    }
+    Some(FeatureDefinition::Sweep {
+        profile: Some(ProfileRef::Native(profile.id.clone())),
+        path: Some(PathRef::Native(path.id.clone())),
+        mode: SweepMode::Solid {
+            op: fixed_boolean_operation(*operation),
+        },
+        twist: (values[4] != 0.0).then_some(Angle(values[4])),
+        scale: None,
     })
 }
 
@@ -12557,6 +12672,7 @@ pub fn decode_parameter_scopes(
             scope.direct_face_operation = exact_direct_face_operation(bytes, &scope);
             scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(bytes, &scope);
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
+            scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
             scope.id = format!(
                 "f3d:{}:design-parameter-scope#{}",
                 entry.name, scope.byte_offset
@@ -12825,6 +12941,57 @@ fn exact_fixed_fillet_parameters(
             .map(|(_, scalar)| scalar.value_offset)
             .collect(),
     })
+}
+
+fn exact_path_feature_construction(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignPathFeatureConstruction> {
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    let operation = |offset| {
+        Some(match u32_at(bytes, offset)? {
+            1 => DesignExtrudeOperation::Join,
+            2 => DesignExtrudeOperation::Cut,
+            3 => DesignExtrudeOperation::Intersect,
+            4 => DesignExtrudeOperation::NewBody,
+            _ => return None,
+        })
+    };
+    match design_feature_family(&scope.kind)? {
+        DesignFeatureFamily::Loft if scope.class_tag.len() == 3 && scope.frame_length >= 376 => {
+            Some(DesignPathFeatureConstruction::Loft {
+                operation: operation(start + 29)?,
+                operation_offset: u64::try_from(start + 29).ok()?,
+            })
+        }
+        DesignFeatureFamily::Sweep if scope.frame_length == 499 => {
+            let lanes = scope
+                .reference_members
+                .iter()
+                .filter_map(|record_index| {
+                    let scalar = exact_fixed_scalar(bytes, *record_index)?;
+                    (scalar.owner_record_index == Some(scope.record_index))
+                        .then_some((*record_index, scalar))
+                })
+                .collect::<Vec<_>>();
+            let lanes: [(u32, FixedScalarFrame); 6] = lanes.try_into().ok()?;
+            if lanes
+                .iter()
+                .enumerate()
+                .any(|(ordinal, (_, scalar))| usize::from(scalar.ordinal) != ordinal)
+            {
+                return None;
+            }
+            Some(DesignPathFeatureConstruction::Sweep {
+                operation: operation(start + 25)?,
+                operation_offset: u64::try_from(start + 25).ok()?,
+                values: lanes.map(|(_, scalar)| scalar.value),
+                record_indexes: lanes.map(|(record_index, _)| record_index),
+                value_offsets: lanes.map(|(_, scalar)| scalar.value_offset),
+            })
+        }
+        _ => None,
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -14931,6 +15098,7 @@ fn parse_parameter_scope(
         direct_face_operation: None,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
+        path_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
@@ -17734,14 +17902,15 @@ mod relation_tests {
         decode_pattern_definition, design_feature_family, design_parameter_prefix,
         directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
         exact_counted_offset, exact_direct_face_operation, exact_fixed_extrude_parameters,
-        exact_fixed_fillet_parameters, exact_offset_constraint, exact_solid_primitive,
-        exact_work_plane_frame, expression_identifiers, feature_input_topology_id,
-        find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
-        historical_profile_face_candidates, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
-        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
-        neutral_sketch_point_id, next_indexed_record_offset, next_indexed_record_offset_with_index,
-        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
+        exact_fixed_fillet_parameters, exact_offset_constraint, exact_path_feature_construction,
+        exact_solid_primitive, exact_work_plane_frame, expression_identifiers,
+        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
+        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
+        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
+        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
+        next_indexed_record_offset_with_index, null_locus_dimension_definition,
+        offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -17771,10 +17940,10 @@ mod relation_tests {
         DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart,
         DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind,
         DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement,
-        DesignSolidPrimitive, LostEdgeReference, PersistentSubentityTag, SketchConstraintKind,
-        SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-        SketchRelationOperand,
+        DesignParameterScope, DesignPathFeatureConstruction, DesignRecipeReference,
+        DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference,
+        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+        SketchPoint, SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -20564,6 +20733,61 @@ mod relation_tests {
             })
         );
 
+        let loft_start = bytes.len();
+        let mut loft = vec![0; 376];
+        loft[29..33].copy_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&loft);
+        let mut loft_scope = scope.clone();
+        loft_scope.byte_offset = loft_start as u64;
+        loft_scope.kind = "Loft".into();
+        loft_scope.frame_length = 376;
+        assert_eq!(
+            exact_path_feature_construction(&bytes, &loft_scope),
+            Some(DesignPathFeatureConstruction::Loft {
+                operation: DesignExtrudeOperation::Join,
+                operation_offset: (loft_start + 29) as u64,
+            })
+        );
+
+        let sweep_start = bytes.len();
+        let mut sweep = vec![0; 499];
+        sweep[25..29].copy_from_slice(&4u32.to_le_bytes());
+        bytes.extend_from_slice(&sweep);
+        let sweep_values: [f64; 6] = [0.8, 0.0, 1.0, 1.0, 6.632251157578453, 0.0];
+        let sweep_scalar_start = bytes.len();
+        for (ordinal, value) in sweep_values.into_iter().enumerate() {
+            let record_index = 80 + ordinal as u32;
+            let mut scalar = vec![0; 104];
+            scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+            scalar[4..7].copy_from_slice(b"277");
+            scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+            scalar[24] = 1;
+            scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+            scalar[35] = ordinal as u8;
+            scalar[40..48].copy_from_slice(&value.to_le_bytes());
+            scalar.extend_from_slice(&3u32.to_le_bytes());
+            scalar.extend_from_slice(b"261");
+            scalar.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&scalar);
+        }
+        let mut sweep_scope = scope.clone();
+        sweep_scope.byte_offset = sweep_start as u64;
+        sweep_scope.kind = "Sweep".into();
+        sweep_scope.frame_length = 499;
+        sweep_scope.reference_members = (80..86).collect();
+        assert_eq!(
+            exact_path_feature_construction(&bytes, &sweep_scope),
+            Some(DesignPathFeatureConstruction::Sweep {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (sweep_start + 25) as u64,
+                values: sweep_values,
+                record_indexes: [80, 81, 82, 83, 84, 85],
+                value_offsets: std::array::from_fn(|ordinal| {
+                    (sweep_scalar_start + ordinal * 115 + 40) as u64
+                }),
+            })
+        );
+
         let mut companion = DesignParameterCompanion {
             id: "f3d:native:parameter-companion#11".into(),
             byte_offset: 0,
@@ -20932,6 +21156,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -21138,6 +21363,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -21421,6 +21647,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25076,6 +25303,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25187,6 +25415,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25345,6 +25574,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25845,6 +26075,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26493,6 +26724,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26693,6 +26925,7 @@ mod relation_tests {
             direct_face_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
+            path_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26795,6 +27028,7 @@ mod relation_tests {
                 direct_face_operation: None,
                 fixed_extrude_parameters: None,
                 fixed_fillet_parameters: None,
+                path_feature_construction: None,
                 work_plane_transform: None,
                 work_plane_transform_offset: None,
                 work_plane_reference: None,

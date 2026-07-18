@@ -604,6 +604,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::Loft) => {
+                        (scope.path_feature_construction.is_none()
+                            || matches!(
+                                group.role,
+                                0x0000_0004_0000_0000
+                                    | 0x0000_0005_0000_0000
+                                    | 0x0000_0041_0000_0000
+                            ))
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::Sweep) => {
+                        (scope.path_feature_construction.is_none()
+                            || matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0041_0000_0000))
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     _ => false,
                 };
                 design::design_feature_family(&scope.kind).is_some()
@@ -652,6 +669,52 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 message: "Fusion Design construction operand group has an invalid counted frame"
                     .into(),
                 entity: Some(group.id.clone()),
+            });
+        }
+    }
+    for scope in native.design_parameter_scopes.iter().filter(|scope| {
+        matches!(
+            design::design_feature_family(&scope.kind),
+            Some(design::DesignFeatureFamily::Loft | design::DesignFeatureFamily::Sweep)
+        ) && scope.path_feature_construction.is_some()
+    }) {
+        let native_stream = design_stream(&scope.id);
+        let groups = native
+            .design_construction_operand_groups
+            .iter()
+            .filter(|group| {
+                design_stream(&group.id) == native_stream
+                    && group.scope_record_index == scope.record_index
+            })
+            .collect::<Vec<_>>();
+        let role_count = |role| groups.iter().filter(|group| group.role == role).count();
+        let valid = match scope.path_feature_construction.as_ref() {
+            Some(records::DesignPathFeatureConstruction::Loft { operation, .. }) => match operation
+            {
+                records::DesignExtrudeOperation::Join => {
+                    groups.len() == 3
+                        && role_count(0x0000_0004_0000_0000) == 1
+                        && role_count(0x0000_0041_0000_0000) == 2
+                }
+                records::DesignExtrudeOperation::NewBody => {
+                    groups.len() == 2 && role_count(0x0000_0005_0000_0000) == 2
+                }
+                _ => false,
+            },
+            Some(records::DesignPathFeatureConstruction::Sweep { .. }) => {
+                groups.len() == 2
+                    && role_count(0x0000_0041_0000_0000) == 1
+                    && role_count(0x0000_0005_0000_0000) == 1
+            }
+            None => false,
+        };
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design Loft or Sweep operand roles conflict with its construction"
+                    .into(),
+                entity: Some(scope.id.clone()),
             });
         }
     }
