@@ -4023,10 +4023,57 @@ fn transition_profile_selection(
     let topology = state.topology.as_ref()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
     let tolerance = linear_tolerance.max(1.0e-7);
-    unique_resolved_selection(inserted_faces.iter().map(|face| {
+    let inserted = unique_resolved_selection(inserted_faces.iter().map(|face| {
         let points = historical_face_points(*face, topology)?;
         selection_containing_points(sketch, entities, &points, tolerance)
+    }));
+    if inserted.is_some() {
+        return inserted;
+    }
+    let mut previous_states = histories
+        .iter()
+        .flat_map(|history| &history.states)
+        .filter(|state| state.state_id == previous_state_id);
+    let previous = previous_states.next()?;
+    if previous_states.next().is_some() {
+        return None;
+    }
+    let previous_topology = previous.topology.as_ref()?;
+    let deleted = &state.transition.as_ref()?.topology.faces.deleted;
+    let faces = unique_multi_face_deleted_carrier_family(deleted, previous_topology)?;
+    ordered_unique_profile_selections(faces.into_iter().map(|face| {
+        let points = historical_face_points(face, previous_topology)?;
+        selection_containing_points(sketch, entities, &points, tolerance)
     }))
+}
+
+fn unique_multi_face_deleted_carrier_family(
+    deleted_faces: &[i64],
+    topology: &crate::history_records::AsmHistoricalTopology,
+) -> Option<Vec<i64>> {
+    let mut seen = HashSet::new();
+    let mut families = HashMap::<i64, Vec<i64>>::new();
+    for face in deleted_faces.iter().copied() {
+        if !seen.insert(face) {
+            return None;
+        }
+        let mut bindings = topology
+            .face_surfaces
+            .iter()
+            .filter(|binding| binding.entity == face);
+        let carrier = bindings.next()?.carrier;
+        if bindings.next().is_some() {
+            return None;
+        }
+        families.entry(carrier).or_default().push(face);
+    }
+    let mut candidates = families.into_values().filter(|faces| faces.len() > 1);
+    let mut faces = candidates.next()?;
+    if candidates.next().is_some() {
+        return None;
+    }
+    faces.sort_unstable();
+    Some(faces)
 }
 
 fn unique_resolved_selection<T: PartialEq>(
@@ -18278,6 +18325,62 @@ mod relation_tests {
 
         topology.point_positions.pop();
         assert_eq!(super::historical_face_points(10, &topology), None);
+    }
+
+    #[test]
+    fn deleted_profile_family_requires_one_complete_multi_face_carrier() {
+        use crate::history_records::{AsmHistoricalCarrierBinding, AsmHistoricalTopology};
+
+        let topology = AsmHistoricalTopology {
+            face_surfaces: vec![
+                AsmHistoricalCarrierBinding {
+                    entity: 10,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 11,
+                    carrier: 100,
+                },
+                AsmHistoricalCarrierBinding {
+                    entity: 20,
+                    carrier: 200,
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            super::unique_multi_face_deleted_carrier_family(&[20, 11, 10], &topology),
+            Some(vec![10, 11])
+        );
+        assert_eq!(
+            super::unique_multi_face_deleted_carrier_family(&[10, 10], &topology),
+            None
+        );
+
+        let mut ambiguous = topology.clone();
+        ambiguous.face_surfaces.extend([
+            AsmHistoricalCarrierBinding {
+                entity: 30,
+                carrier: 300,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 31,
+                carrier: 300,
+            },
+        ]);
+        assert_eq!(
+            super::unique_multi_face_deleted_carrier_family(&[10, 11, 30, 31], &ambiguous),
+            None
+        );
+
+        let mut incomplete = topology;
+        incomplete
+            .face_surfaces
+            .retain(|binding| binding.entity != 20);
+        assert_eq!(
+            super::unique_multi_face_deleted_carrier_family(&[10, 11, 20], &incomplete),
+            None
+        );
     }
 
     #[test]
