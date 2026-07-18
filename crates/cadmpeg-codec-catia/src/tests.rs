@@ -1704,6 +1704,13 @@ fn b2_topology_edge_run_stream() -> Vec<u8> {
 fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
     assert!(curve >= 3);
     let mut bytes = a5_edge_block_stream();
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(curve, start, end));
+    bytes
+}
+
+fn a5_native_edge_identity_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
+    assert!(curve >= 3);
+    let mut bytes = Vec::new();
     bytes.extend_from_slice(&[
         0xb2,
         0x03,
@@ -4183,6 +4190,53 @@ fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
     let end = cadmpeg_ir::eval::pcurve_uv(pcurve, 1.0).expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
     assert_eq!([end.u, end.v], [0.5, 1.0]);
+}
+
+#[test]
+fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
+    let u = [0.0f64, 1.0];
+    let v = [2.0f64, 3.0];
+    let mut records = a5_pcurve_stream_with_uv(u, v);
+    records.extend_from_slice(&a5_pcurve_stream_with_uv(u, v));
+    records.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    records.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    records.extend_from_slice(&b2_cone_stream());
+    for (u, v) in u.into_iter().zip(v) {
+        let phi = u / 3.0;
+        let point = [
+            1.0 + v * 0.25f64.sin() * phi.cos(),
+            2.0 + v * 0.25f64.sin() * phi.sin(),
+            3.0 + v * 0.25f64.cos(),
+        ];
+        records.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            records.extend_from_slice(&(value as f32).to_le_bytes());
+        }
+    }
+    let mut file = standard_catpart();
+    file.splice(16..16, records);
+    let file_len = u32::try_from(file.len()).expect("consolidated fixture length");
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode resolved consolidated cone edge");
+    let procedural = decoded
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+        .expect("resolved consolidated construction");
+    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        panic!("two resolved support sides form an intersection");
+    };
+    assert!(context.sides.iter().all(|side| side.surface.is_some()));
+    let pcurve = context.sides[0].pcurve.as_ref().expect("cone pcurve");
+    let start = cadmpeg_ir::eval::pcurve_uv(pcurve, 0.0).expect("pcurve start");
+    let end = cadmpeg_ir::eval::pcurve_uv(pcurve, 1.0).expect("pcurve end");
+    assert_eq!([start.u, start.v], [0.0, 0.0]);
+    assert_eq!([end.u, end.v], [1.0 / 3.0, 0.25f64.cos()]);
 }
 
 #[test]

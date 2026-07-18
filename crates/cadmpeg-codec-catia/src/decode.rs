@@ -4799,6 +4799,37 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
     append_resolved_consolidated_surface_curves(ir, annotations, data);
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum ConsolidatedCarrierKey {
+    Cylinder(usize),
+    EmbeddedCylinder(usize),
+    Cone(usize),
+}
+
+enum ConsolidatedCarrierChart<'a> {
+    Cylinder { radius: f64 },
+    Cone { cone: &'a geometry::B2Cone },
+}
+
+impl ConsolidatedCarrierChart<'_> {
+    fn point(&self, [u, v]: [f64; 2]) -> [f64; 2] {
+        match self {
+            Self::Cylinder { radius } => [u / radius, v],
+            Self::Cone { cone } => [
+                u / cone.angular_scale,
+                (v - cone.slant_range[0]) * cone.half_angle.cos(),
+            ],
+        }
+    }
+
+    fn derivative(&self, [u, v]: [f64; 2]) -> [f64; 2] {
+        match self {
+            Self::Cylinder { radius } => [u / radius, v],
+            Self::Cone { cone } => [u / cone.angular_scale, v * cone.half_angle.cos()],
+        }
+    }
+}
+
 fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -4812,12 +4843,17 @@ fn append_resolved_consolidated_surface_curves(
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<HashMap<_, _>>();
+    let cones = geometry::b2_cones(data)
+        .into_iter()
+        .map(|cone| (cone.pos, cone))
+        .collect::<HashMap<_, _>>();
     let complete_runs = geometry::consolidated_topology_edge_runs(data)
         .into_iter()
         .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
         .map(|run| (run.edge.pcurves[0].pos, run))
         .collect::<HashMap<_, _>>();
-    let mut surface_ids = HashMap::<(bool, usize), SurfaceId>::new();
+
+    let mut surface_ids = HashMap::<ConsolidatedCarrierKey, SurfaceId>::new();
 
     for resolved in geometry::resolve_consolidated_edge_blocks(data) {
         let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
@@ -4829,88 +4865,122 @@ fn append_resolved_consolidated_surface_curves(
             pcurve_parameter_range: None,
         });
         for (side, binding) in resolved.supports.iter().enumerate() {
-            let (embedded_carrier, carrier_pos, source_object, cylinder) = match binding {
+            let (key, carrier, source_object, chart, annotation_kind, id_kind) = match binding {
                 Some(geometry::ConsolidatedSupportBinding::Cylinder { pos }) => {
-                    (false, *pos, None, standalone.get(pos))
+                    let Some(cylinder) = standalone.get(pos) else {
+                        continue;
+                    };
+                    let Some(carrier) = cylinder.geometry.clone() else {
+                        continue;
+                    };
+                    let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
+                        continue;
+                    };
+                    if radius <= 0.0 || !radius.is_finite() {
+                        continue;
+                    }
+                    (
+                        ConsolidatedCarrierKey::Cylinder(*pos),
+                        carrier,
+                        None,
+                        ConsolidatedCarrierChart::Cylinder { radius },
+                        "consolidated_b2_03_28_cylinder",
+                        "cylinder",
+                    )
                 }
                 Some(geometry::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
-                    let value = embedded.get(pos);
+                    let Some(value) = embedded.get(pos) else {
+                        continue;
+                    };
+                    let Some(carrier) = value.cylinder.geometry.clone() else {
+                        continue;
+                    };
+                    let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
+                        continue;
+                    };
+                    if radius <= 0.0 || !radius.is_finite() {
+                        continue;
+                    }
                     (
-                        true,
-                        *pos,
-                        value.map(|value| cgm_source("surface", value.object_id)),
-                        value.map(|value| &value.cylinder),
+                        ConsolidatedCarrierKey::EmbeddedCylinder(*pos),
+                        carrier,
+                        Some(cgm_source("surface", value.object_id)),
+                        ConsolidatedCarrierChart::Cylinder { radius },
+                        "consolidated_b2_03_60_cylinder",
+                        "cylinder",
+                    )
+                }
+                Some(geometry::ConsolidatedSupportBinding::Cone { pos }) => {
+                    let Some(cone) = cones.get(pos) else {
+                        continue;
+                    };
+                    if cone.angular_scale <= 0.0
+                        || !cone.angular_scale.is_finite()
+                        || !cone.half_angle.is_finite()
+                    {
+                        continue;
+                    }
+                    (
+                        ConsolidatedCarrierKey::Cone(*pos),
+                        geometry::b2_cone_geometry(cone),
+                        None,
+                        ConsolidatedCarrierChart::Cone { cone },
+                        "consolidated_b2_03_29_cone",
+                        "cone",
                     )
                 }
                 Some(
                     geometry::ConsolidatedSupportBinding::Circle { .. }
-                    | geometry::ConsolidatedSupportBinding::Cone { .. }
                     | geometry::ConsolidatedSupportBinding::NurbsCarrier { .. },
                 )
                 | None => continue,
             };
-            let Some(cylinder) = cylinder else {
-                continue;
-            };
-            let Some(carrier) = cylinder.geometry.clone() else {
-                continue;
-            };
-            let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
-                continue;
-            };
-            if radius <= 0.0 || !radius.is_finite() {
-                continue;
-            }
-            let surface = if let Some(id) = surface_ids.get(&(embedded_carrier, carrier_pos)) {
+            let surface = if let Some(id) = surface_ids.get(&key) {
                 id.clone()
             } else {
                 let id = SurfaceId(format!(
-                    "catia:consolidated:cylinder#{}",
+                    "catia:consolidated:{id_kind}#{}",
                     ir.model.surfaces.len()
                 ));
                 annotate(
                     annotations,
                     &id,
-                    if embedded_carrier {
-                        "consolidated_b2_03_60_cylinder"
-                    } else {
-                        "consolidated_b2_03_28_cylinder"
+                    annotation_kind,
+                    match key {
+                        ConsolidatedCarrierKey::Cylinder(pos)
+                        | ConsolidatedCarrierKey::EmbeddedCylinder(pos)
+                        | ConsolidatedCarrierKey::Cone(pos) => pos as u64,
                     },
-                    carrier_pos as u64,
                     "resolved_pcurve_support",
                     Exactness::ByteExact,
                 );
                 ir.model.surfaces.push(Surface {
                     id: id.clone(),
-                    geometry: cylinder
-                        .geometry
-                        .clone()
-                        .expect("resolved cylinder carrier"),
+                    geometry: carrier,
                     source_object,
                 });
-                surface_ids.insert((embedded_carrier, carrier_pos), id.clone());
+                surface_ids.insert(key, id.clone());
                 id
             };
 
             let pcurve = &resolved.block.pcurves[side];
-            let normalize = |value: [f64; 2]| [value[0] / radius, value[1]];
             let points = pcurve
                 .points
                 .iter()
                 .copied()
-                .map(normalize)
+                .map(|point| chart.point(point))
                 .collect::<Vec<_>>();
             let first = pcurve
                 .first_derivatives
                 .iter()
                 .copied()
-                .map(normalize)
+                .map(|derivative| chart.derivative(derivative))
                 .collect::<Vec<_>>();
             let second = pcurve
                 .second_derivatives
                 .iter()
                 .copied()
-                .map(normalize)
+                .map(|derivative| chart.derivative(derivative))
                 .collect::<Vec<_>>();
             let Some(geometry) =
                 quintic_jet_pcurve(pcurve.degree, &pcurve.knots, &points, &first, &second)
