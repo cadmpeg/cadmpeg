@@ -3214,7 +3214,7 @@ pub(crate) fn bind_extrude_profile_selections(
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum ResolvedProfileSelection {
     Loops(Vec<u32>),
     Regions(Vec<cadmpeg_ir::features::SketchProfileRegion>),
@@ -3432,18 +3432,127 @@ fn historical_selection_regions(
 ) -> Option<ResolvedProfileSelection> {
     let member_points = members
         .iter()
-        .map(|member| historical_member_points(member, histories))
+        .map(|member| {
+            historical_member_points(member, histories)
+                .or_else(|| resolved_selection_member_points(member, sketch, entities))
+        })
         .collect::<Option<Vec<_>>>()?;
     let tolerance = linear_tolerance.max(1.0e-7);
     let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
     if let Some(selection) = selection_containing_points(sketch, entities, &all_points, tolerance) {
         return Some(selection);
     }
-    ordered_unique_profile_selections(
-        member_points
-            .iter()
-            .map(|points| selection_containing_points(sketch, entities, points, tolerance)),
-    )
+    let selections = member_points
+        .iter()
+        .map(|points| selection_containing_points(sketch, entities, points, tolerance))
+        .collect::<Vec<_>>();
+    ordered_unique_profile_selections(selections.iter().cloned())
+        .or_else(|| region_with_boundary_selection_members(members, sketch, &selections))
+}
+
+fn region_with_boundary_selection_members(
+    members: &[&DesignExtrudeSelectionMember],
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    selections: &[Option<ResolvedProfileSelection>],
+) -> Option<ResolvedProfileSelection> {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    let regions = selections
+        .iter()
+        .filter_map(|selection| match selection {
+            Some(ResolvedProfileSelection::Regions(regions)) => Some(regions.as_slice()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [region] = regions.first()? else {
+        return None;
+    };
+    if regions
+        .iter()
+        .any(|candidate| *candidate != std::slice::from_ref(region))
+    {
+        return None;
+    }
+    let boundary = std::iter::once(region.outer)
+        .chain(region.holes.iter().copied())
+        .collect::<HashSet<_>>();
+    let member_matches = |member: &DesignExtrudeSelectionMember,
+                          selection: &Option<ResolvedProfileSelection>| {
+        match selection {
+            Some(ResolvedProfileSelection::Regions(candidate)) => {
+                candidate == std::slice::from_ref(region)
+            }
+            Some(ResolvedProfileSelection::Loops(loops)) => {
+                !loops.is_empty() && loops.iter().all(|profile| boundary.contains(profile))
+            }
+            None => resolved_selection_member_profiles(member, sketch).is_some_and(|profiles| {
+                !profiles.is_empty() && profiles.iter().all(|profile| boundary.contains(profile))
+            }),
+        }
+    };
+    members
+        .iter()
+        .zip(selections)
+        .all(|(member, selection)| member_matches(member, selection))
+        .then(|| {
+            ResolvedProfileSelection::Regions(vec![SketchProfileRegion {
+                outer: region.outer,
+                holes: region.holes.clone(),
+            }])
+        })
+}
+
+fn resolved_selection_member_profiles(
+    member: &DesignExtrudeSelectionMember,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+) -> Option<Vec<u32>> {
+    let SketchRelationOperand::Curve {
+        primary_id,
+        secondary_id,
+        ..
+    } = member.resolved_geometry.as_ref()?
+    else {
+        return None;
+    };
+    let entity = neutral_sketch_curve_id(&member.id, *primary_id, *secondary_id);
+    sketch
+        .profiles
+        .iter()
+        .enumerate()
+        .filter(|(_, profile)| profile.iter().any(|use_| use_.entity == entity))
+        .map(|(index, _)| u32::try_from(index).ok())
+        .collect::<Option<Vec<_>>>()
+}
+
+fn resolved_selection_member_points(
+    member: &DesignExtrudeSelectionMember,
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Option<Vec<Point3>> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let SketchRelationOperand::Point { persistent_id, .. } = member.resolved_geometry.as_ref()?
+    else {
+        return None;
+    };
+    let entity_id = neutral_sketch_point_id(&member.id, *persistent_id);
+    let SketchGeometry::Point { position } = &entities
+        .iter()
+        .find(|entity| entity.id == entity_id && entity.sketch == sketch.id)?
+        .geometry
+    else {
+        return None;
+    };
+    let v_axis = Vector3::new(
+        sketch.normal.y * sketch.u_axis.z - sketch.normal.z * sketch.u_axis.y,
+        sketch.normal.z * sketch.u_axis.x - sketch.normal.x * sketch.u_axis.z,
+        sketch.normal.x * sketch.u_axis.y - sketch.normal.y * sketch.u_axis.x,
+    );
+    Some(vec![Point3::new(
+        sketch.origin.x + position.u * sketch.u_axis.x + position.v * v_axis.x,
+        sketch.origin.y + position.u * sketch.u_axis.y + position.v * v_axis.y,
+        sketch.origin.z + position.u * sketch.u_axis.z + position.v * v_axis.z,
+    )])
 }
 
 fn ordered_unique_profile_selections(
@@ -3695,7 +3804,16 @@ fn historical_member_points(
     member: &DesignExtrudeSelectionMember,
     histories: &[crate::history_records::AsmHistory],
 ) -> Option<Vec<Point3>> {
-    let kind = member.historical_entity_kind?;
+    use crate::records::AsmHistoricalEntityKind;
+
+    let kind =
+        member
+            .historical_entity_kind
+            .or_else(|| match member.resolved_geometry.as_ref()? {
+                SketchRelationOperand::Point { .. } => Some(AsmHistoricalEntityKind::Point),
+                SketchRelationOperand::Curve { .. } => Some(AsmHistoricalEntityKind::Curve),
+                SketchRelationOperand::Record { .. } => None,
+            })?;
     let entity_ref = member
         .historical_entity_ref
         .or_else(|| i64::try_from(member.local_id).ok())?;
@@ -3774,6 +3892,25 @@ fn historical_entity_positions(
                     .filter(|point| point.point == local_id)
                     .map(|point| point.position),
             );
+            Vec::new()
+        }
+        AsmHistoricalEntityKind::Face => {
+            positions.extend(historical_face_points(local_id, topology)?);
+            Vec::new()
+        }
+        AsmHistoricalEntityKind::Surface => {
+            let faces = topology
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.carrier == local_id)
+                .map(|binding| binding.entity)
+                .collect::<Vec<_>>();
+            if faces.is_empty() {
+                return None;
+            }
+            for face in faces {
+                positions.extend(historical_face_points(face, topology)?);
+            }
             Vec::new()
         }
         _ => return None,
