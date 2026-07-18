@@ -8142,22 +8142,18 @@ where
         return None;
     }
     let mut mesh_assignments =
-        standard_mesh_boundary_assignments_impl(bytes, edge_faces, Some(edge_candidates));
-    if let Some(assignments) = &mut mesh_assignments {
-        if assignments.len() != face_count {
-            return None;
-        }
-        deduplicate_mesh_quotient_assignments(assignments);
+        standard_mesh_boundary_assignments_impl(bytes, edge_faces, Some(edge_candidates))?;
+    if mesh_assignments.len() != face_count {
+        return None;
     }
+    deduplicate_mesh_quotient_assignments(&mut mesh_assignments);
     let port_identities = standard_edge_port_identities(bytes)?;
     if port_identities.len() != edge_rows.len() {
         return None;
     }
     let mut pair_domains = edge_candidates.to_vec();
-    if let Some(assignments) = &mut mesh_assignments {
-        if !prune_mesh_endpoint_pair_support(assignments, &mut pair_domains) {
-            return None;
-        }
+    if !prune_mesh_endpoint_pair_support(&mut mesh_assignments, &mut pair_domains) {
+        return None;
     }
     let complete_solution_valid = |pairs: &[[usize; 2]]| {
         if !pair_solution_valid(pairs) {
@@ -8168,19 +8164,14 @@ where
             .copied()
             .map(|pair| vec![pair])
             .collect::<Vec<_>>();
-        mesh_assignments.as_ref().map_or_else(
-            || parse_standard_mesh_endpoint_candidates(bytes, edge_faces, &singleton).is_some(),
-            |assignments| {
-                resolve_standard_mesh_endpoint_candidates(
-                    &edge_rows,
-                    &vertex_points,
-                    &singleton,
-                    assignments.clone(),
-                    &port_identities,
-                )
-                .is_some()
-            },
+        resolve_standard_mesh_endpoint_candidates(
+            &edge_rows,
+            &vertex_points,
+            &singleton,
+            mesh_assignments.clone(),
+            &port_identities,
         )
+        .is_some()
     };
     let pair_solutions = incidence_endpoint_pair_solutions(
         &edge_rows,
@@ -8188,25 +8179,19 @@ where
         edge_faces,
         &pair_domains,
         face_count,
-        mesh_assignments.as_deref(),
+        Some(&mesh_assignments),
         &complete_solution_valid,
     )?;
     let mut solution = None;
     for pairs in pair_solutions {
         let singleton = pairs.into_iter().map(|pair| vec![pair]).collect::<Vec<_>>();
-        let candidate = mesh_assignments.as_ref().map_or_else(
-            || parse_standard_mesh_endpoint_candidates(bytes, edge_faces, &singleton),
-            |assignments| {
-                resolve_standard_mesh_endpoint_candidates(
-                    &edge_rows,
-                    &vertex_points,
-                    &singleton,
-                    assignments.clone(),
-                    &port_identities,
-                )
-            },
-        );
-        let Some(candidate) = candidate else {
+        let Some(candidate) = resolve_standard_mesh_endpoint_candidates(
+            &edge_rows,
+            &vertex_points,
+            &singleton,
+            mesh_assignments.clone(),
+            &port_identities,
+        ) else {
             continue;
         };
         match &solution {
