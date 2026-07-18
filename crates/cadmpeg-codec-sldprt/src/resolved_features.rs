@@ -388,9 +388,9 @@ mod marker_tests {
         compact_surface_selection_at, complete_ordered_compact_line_profile,
         component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, constraint_midplane_frame,
-        coordinate_marker_local_links, fixed_reference_plane_frame, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
-        named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        coordinate_marker_local_links, fixed_reference_plane_frame, legacy_reference_axis_triads,
+        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
+        marker_object_index, named_scalars, native_scalar_matches_discrete_parameter, object_names,
         ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
         plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
@@ -502,6 +502,39 @@ mod marker_tests {
         assert_eq!(plane_intersection_axis_sources(&payload, &known), None);
         let incomplete = record(17, 0xb6, 3);
         assert_eq!(plane_intersection_axis_sources(&incomplete, &known), None);
+    }
+
+    #[test]
+    fn legacy_reference_axis_triad_requires_consecutive_native_records() {
+        let feature = |ordinal: u32, source: u32, class: &str| Feature {
+            id: format!("feature-{ordinal}"),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(source.to_string()),
+            parent_source_id: None,
+            ordinal,
+            name: String::new(),
+            kind: String::new(),
+            input_class: Some(class.into()),
+            suppressed: false,
+            parameters: Default::default(),
+            dimension_properties: Default::default(),
+            properties: Default::default(),
+            text: None,
+            content: Vec::new(),
+        };
+        let mut features = (0..3)
+            .map(|index| feature(10 + index, 40 + index, "moRefPlane_c"))
+            .chain((0..3).map(|index| feature(13 + index, 43 + index, "moRefAxis_c")))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            legacy_reference_axis_triads(&features),
+            vec![(0, [[40, 41], [40, 42], [42, 41]])]
+        );
+
+        features[4].source_id = Some("99".into());
+        assert!(legacy_reference_axis_triads(&features).is_empty());
     }
 
     #[test]
@@ -5585,6 +5618,16 @@ pub(crate) fn enrich_history_reference_axes(
         }
     }
 
+    for history in histories.iter_mut() {
+        for (start, pairs) in legacy_reference_axis_triads(&history.features) {
+            for (axis, planes) in history.features[start + 3..start + 6].iter_mut().zip(pairs) {
+                axis.properties
+                    .entry("Planes".into())
+                    .or_insert_with(|| format!("{},{}", planes[0], planes[1]));
+            }
+        }
+    }
+
     let projected = crate::history::project_features(histories);
     let plane_frames = sketch_plane_frames(&projected, histories);
     for feature in histories
@@ -5621,6 +5664,53 @@ pub(crate) fn enrich_history_reference_axes(
             format!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
         );
     }
+}
+
+fn legacy_reference_axis_triads(
+    features: &[crate::records::Feature],
+) -> Vec<(usize, [[u32; 2]; 3])> {
+    features
+        .windows(6)
+        .enumerate()
+        .filter_map(|(start, records)| {
+            let classes = records
+                .iter()
+                .map(|feature| {
+                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                })
+                .collect::<Vec<_>>();
+            if classes[..3]
+                .iter()
+                .any(|class| *class != NativeClassKind::ReferencePlane)
+                || classes[3..]
+                    .iter()
+                    .any(|class| *class != NativeClassKind::ReferenceAxis)
+                || records
+                    .windows(2)
+                    .any(|pair| pair[1].ordinal != pair[0].ordinal + 1)
+            {
+                return None;
+            }
+            let sources = records
+                .iter()
+                .map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .collect::<Option<Vec<_>>>()?;
+            if sources
+                .windows(2)
+                .any(|pair| pair[1] != pair[0].saturating_add(1))
+            {
+                return None;
+            }
+            Some((
+                start,
+                [
+                    [sources[0], sources[1]],
+                    [sources[0], sources[2]],
+                    [sources[2], sources[1]],
+                ],
+            ))
+        })
+        .collect()
 }
 
 fn plane_intersection_axis_frame(

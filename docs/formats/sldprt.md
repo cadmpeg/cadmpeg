@@ -380,6 +380,8 @@ A zero-origin angular reference-plane frame stores redundant normal z and y comp
 
 A compact reference-plane frame stores xyz origin coordinates in metres at offsets `+0`, `+8`, and `+16`, normal x and y at `+24` and `+32`, and the complete xyz unit u-axis at `+40`, `+48`, and `+56`. Byte `+64` is zero. V-axis x and y are unaligned f64 values at `+65` and `+73`, and byte `+81` is zero. The omitted v-axis z and normal z are the unique values that make u and v unit and orthogonal and make `normal = u × v` while preserving the stored normal components.
 
+Legacy coordinate-frame groups without serialized plane-reference wrappers contain three consecutive `moRefPlane_c` history records followed by three consecutive `moRefAxis_c` records. All six history ordinals and source IDs are consecutive. The axes use ordered plane pairs `(0,1)`, `(0,2)`, and `(2,1)` in axis-record order.
+
 Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode the same value. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
 
 ---
