@@ -11,13 +11,8 @@
 //! Partial paths preserve the reconstructed B-rep stream or complete file as an
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
-use cadmpeg_ir::annotations::{ExactnessNote, Provenance};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
-use cadmpeg_ir::features::{
-    BooleanOp, ChamferSpec, EdgeSelection, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    HoleKind, PatternForm, PatternKind, RadiusSpec, RevolutionConstruction, SketchSpace, SweepMode,
-};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, IntcurveSupportContext, IntcurveSupportSide, NurbsCurve, Pcurve,
     PcurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
@@ -100,11 +95,10 @@ fn finish_decode(
     scan: &ContainerScan,
     mut ir: CadIr,
     mut report: DecodeReport,
-    mut annotations: cadmpeg_ir::Annotations,
+    annotations: cadmpeg_ir::Annotations,
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     let native = CatiaNative::decode(&scan.data);
-    let transferred = transfer_design_features(&mut ir, &native, &mut annotations);
     let object_record_count = native
         .object_graphs
         .iter()
@@ -120,267 +114,15 @@ fn finish_decode(
             category: LossCategory::DesignIntent,
             severity: Severity::Blocking,
             message: format!(
-                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); {} revolution, {} sweep, {} hole, {} pattern, {} shell, {} fillet, {} chamfer, {} sketch, and {} native operation feature(s) transferred, while other neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
+                "CATIA native data retains {} design object(s), {object_record_count} object-graph field record(s), {} value block(s), and {value_selection_count} schema-selected value(s); neutral features, parameters, sketch geometry, and history dependencies remain unresolved.",
                 native.design_objects.len(),
                 native.value_blocks.len(),
-                transferred.revolutions,
-                transferred.sweeps,
-                transferred.holes,
-                transferred.patterns,
-                transferred.shells,
-                transferred.fillets,
-                transferred.chamfers,
-                transferred.sketches,
-                transferred.native_operations,
             ),
             provenance: None,
         });
     }
     native.store_owned(ir.native.namespace_mut("catia"))?;
     decode_result(ir, report, annotations, unknowns)
-}
-
-fn transfer_design_features(
-    ir: &mut CadIr,
-    native: &CatiaNative,
-    annotations: &mut cadmpeg_ir::Annotations,
-) -> TransferredDesignCounts {
-    let recognized = native
-        .design_objects
-        .iter()
-        .filter_map(|object| {
-            let mut families = object
-                .field_classes
-                .iter()
-                .filter_map(|class| catia_feature_family(class));
-            let family = families.next()?;
-            families.next().is_none().then_some((object, family))
-        })
-        .collect::<Vec<_>>();
-    if recognized.is_empty() {
-        return TransferredDesignCounts::default();
-    }
-    let stream = annotations
-        .streams
-        .iter()
-        .position(|stream| stream == "catia:outer-object-graph")
-        .unwrap_or_else(|| {
-            annotations
-                .streams
-                .push("catia:outer-object-graph".to_string());
-            annotations.streams.len() - 1
-        }) as u32;
-    let record_offsets = native
-        .object_graphs
-        .iter()
-        .flat_map(|graph| &graph.records)
-        .map(|record| (record.id.as_str(), record.byte_offset))
-        .collect::<HashMap<_, _>>();
-
-    let mut counts = TransferredDesignCounts::default();
-    for (ordinal, (object, (family, kind))) in recognized.into_iter().enumerate() {
-        let key = object
-            .id
-            .strip_prefix("catia:outer:design-object#")
-            .expect("CATIA design object identity");
-        let id = FeatureId(format!("catia:outer:feature#{key}"));
-        ir.model.features.push(Feature {
-            id: id.clone(),
-            ordinal: ordinal as u64,
-            name: Some(family.to_string()),
-            suppressed: false,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some(family.to_string()),
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: match kind {
-                CatiaFeatureKind::Revolve(op) => {
-                    counts.revolutions += 1;
-                    FeatureDefinition::Revolve {
-                        construction: RevolutionConstruction {
-                            profile: None,
-                            axis: None,
-                            extent: None,
-                            axis_reference: None,
-                            solid: None,
-                            face_maker_class: None,
-                            fuse_order: None,
-                            allow_multi_profile_faces: None,
-                        },
-                        op,
-                    }
-                }
-                CatiaFeatureKind::Sweep(op) => {
-                    counts.sweeps += 1;
-                    FeatureDefinition::Sweep {
-                        profile: None,
-                        sections: Vec::new(),
-                        path: None,
-                        mode: SweepMode::Solid { op },
-                        orientation: None,
-                        transition: None,
-                        transformation: None,
-                        path_tangent: false,
-                        linearize: false,
-                        twist: None,
-                        scale: None,
-                        allow_multi_profile_faces: None,
-                    }
-                }
-                CatiaFeatureKind::Hole => {
-                    counts.holes += 1;
-                    FeatureDefinition::Hole {
-                        profile: None,
-                        profile_filter: None,
-                        face: None,
-                        position: None,
-                        direction: None,
-                        kind: HoleKind::Unresolved {
-                            form: None,
-                            counterbore_diameter: None,
-                            counterbore_depth: None,
-                            countersink_diameter: None,
-                            countersink_angle: None,
-                        },
-                        diameter: None,
-                        extent: None,
-                        bottom: None,
-                        taper_angle: None,
-                        specification: None,
-                        allow_multi_profile_faces: None,
-                    }
-                }
-                CatiaFeatureKind::Pattern(form) => {
-                    counts.patterns += 1;
-                    FeatureDefinition::Pattern {
-                        seeds: Vec::new(),
-                        pattern: PatternKind::Unresolved { form: Some(form) },
-                    }
-                }
-                CatiaFeatureKind::Shell => {
-                    counts.shells += 1;
-                    FeatureDefinition::Shell {
-                        removed_faces: FaceSelection::Unresolved,
-                        thickness: None,
-                        outward: None,
-                        mode: None,
-                        join: None,
-                        resolve_intersections: None,
-                        allow_self_intersections: None,
-                    }
-                }
-                CatiaFeatureKind::Fillet => {
-                    counts.fillets += 1;
-                    FeatureDefinition::Fillet {
-                        edges: EdgeSelection::Unresolved,
-                        radius: RadiusSpec::Unresolved { form: None },
-                    }
-                }
-                CatiaFeatureKind::Chamfer => {
-                    counts.chamfers += 1;
-                    FeatureDefinition::Chamfer {
-                        edges: EdgeSelection::Unresolved,
-                        spec: ChamferSpec::Unresolved { form: None },
-                        flip_direction: false,
-                    }
-                }
-                CatiaFeatureKind::Sketch => {
-                    counts.sketches += 1;
-                    FeatureDefinition::Sketch {
-                        space: SketchSpace::default(),
-                        sketch: None,
-                    }
-                }
-                CatiaFeatureKind::Native(kind) => {
-                    counts.native_operations += 1;
-                    FeatureDefinition::Native {
-                        kind: kind.to_string(),
-                        parameters: BTreeMap::new(),
-                        properties: BTreeMap::new(),
-                    }
-                }
-            },
-            native_ref: Some(object.id.clone()),
-        });
-        annotations.provenance.insert(
-            id.0.clone(),
-            Provenance {
-                stream,
-                offset: object
-                    .owner_record
-                    .as_deref()
-                    .and_then(|record| record_offsets.get(record).copied())
-                    .unwrap_or(0),
-                tag: Some(family.to_string()),
-            },
-        );
-        annotations.exactness.insert(
-            id.0,
-            ExactnessNote {
-                entity: Exactness::Derived,
-                fields: BTreeMap::new(),
-            },
-        );
-    }
-    counts
-}
-
-fn catia_feature_family(class: &str) -> Option<(&'static str, CatiaFeatureKind)> {
-    match class {
-        "Groove" => Some(("Groove", CatiaFeatureKind::Revolve(BooleanOp::Cut))),
-        "Shaft" => Some(("Shaft", CatiaFeatureKind::Revolve(BooleanOp::Join))),
-        "Rib" => Some(("Rib", CatiaFeatureKind::Sweep(BooleanOp::Join))),
-        "Slot" => Some(("Slot", CatiaFeatureKind::Sweep(BooleanOp::Cut))),
-        "Hole" => Some(("Hole", CatiaFeatureKind::Hole)),
-        "RectPattern" => Some((
-            "RectPattern",
-            CatiaFeatureKind::Pattern(PatternForm::Linear),
-        )),
-        "CircPattern" => Some((
-            "CircPattern",
-            CatiaFeatureKind::Pattern(PatternForm::Circular),
-        )),
-        "Shell" => Some(("Shell", CatiaFeatureKind::Shell)),
-        "EdgeFillet" => Some(("EdgeFillet", CatiaFeatureKind::Fillet)),
-        "Chamfer" => Some(("Chamfer", CatiaFeatureKind::Chamfer)),
-        "Sketch" => Some(("Sketch", CatiaFeatureKind::Sketch)),
-        "GSMLoft" => Some(("GSMLoft", CatiaFeatureKind::Native("GSMLoft"))),
-        "GSMPointBetweenValues" => Some((
-            "GSMPointBetweenValues",
-            CatiaFeatureKind::Native("GSMPointBetweenValues"),
-        )),
-        "GSMPlaneAngle" => Some(("GSMPlaneAngle", CatiaFeatureKind::Native("GSMPlaneAngle"))),
-        _ => None,
-    }
-}
-
-#[derive(Clone, Copy)]
-enum CatiaFeatureKind {
-    Revolve(BooleanOp),
-    Sweep(BooleanOp),
-    Hole,
-    Pattern(PatternForm),
-    Shell,
-    Fillet,
-    Chamfer,
-    Sketch,
-    Native(&'static str),
-}
-
-#[derive(Default)]
-struct TransferredDesignCounts {
-    revolutions: usize,
-    sweeps: usize,
-    holes: usize,
-    patterns: usize,
-    shells: usize,
-    fillets: usize,
-    chamfers: usize,
-    sketches: usize,
-    native_operations: usize,
 }
 
 fn decode_result(

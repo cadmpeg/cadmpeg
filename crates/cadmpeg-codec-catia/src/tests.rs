@@ -5878,289 +5878,30 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
 }
 
 #[test]
-fn decode_projects_groove_class_as_cut_revolution() {
+fn decode_does_not_promote_field_class_names_to_features() {
     let decoded = CatiaCodec
         .decode(
             &mut Cursor::new(standard_catpart_with_design_class("Groove")),
             &DecodeOptions::default(),
         )
-        .expect("decode generated Groove design");
+        .expect("decode field-class vocabulary");
 
-    assert!(matches!(
-        decoded.ir.model.features.as_slice(),
-        [cadmpeg_ir::features::Feature {
-            name: Some(name),
-            definition: cadmpeg_ir::features::FeatureDefinition::Revolve {
-                construction,
-                op: cadmpeg_ir::features::BooleanOp::Cut,
-            },
-            native_ref: Some(native_ref),
-            ..
-        }] if name == "Groove"
-            && construction.profile.is_none()
-            && construction.axis.is_none()
-            && construction.extent.is_none()
-            && native_ref.starts_with("catia:outer:design-object#")
-    ));
+    assert!(decoded.ir.model.features.is_empty());
+    let native = crate::native::CatiaNative::load(
+        decoded
+            .ir
+            .native
+            .namespace("catia")
+            .expect("CATIA native namespace"),
+    )
+    .expect("load retained field-class vocabulary");
+    assert_eq!(
+        native.design_objects[0].field_classes,
+        ["CurrentFeature", "Groove"]
+    );
     assert!(decoded.report.losses.iter().any(|loss| {
         loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains(
-                "1 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
-            )
-    }));
-}
-
-#[test]
-fn decode_projects_sketch_class_as_unresolved_sketch_node() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_design_class("Sketch")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode generated Sketch design");
-
-    assert!(matches!(
-        decoded.ir.model.features.as_slice(),
-        [cadmpeg_ir::features::Feature {
-            name: Some(name),
-            definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
-                sketch: None,
-                ..
-            },
-            native_ref: Some(native_ref),
-            ..
-        }] if name == "Sketch" && native_ref.starts_with("catia:outer:design-object#")
-    ));
-    assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 1 sketch, and 0 native operation feature(s)",
-            )
-    }));
-}
-
-#[test]
-fn decode_projects_hole_class_with_unresolved_operands() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_design_class("Hole")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode generated Hole design");
-
-    assert!(matches!(
-        decoded.ir.model.features.as_slice(),
-        [cadmpeg_ir::features::Feature {
-            name: Some(name),
-            definition: cadmpeg_ir::features::FeatureDefinition::Hole {
-                profile: None,
-                face: None,
-                diameter: None,
-                extent: None,
-                kind: cadmpeg_ir::features::HoleKind::Unresolved { form: None, .. },
-                ..
-            },
-            native_ref: Some(native_ref),
-            ..
-        }] if name == "Hole" && native_ref.starts_with("catia:outer:design-object#")
-    ));
-    assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains(
-                "0 revolution, 0 sweep, 1 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
-            )
-    }));
-}
-
-#[test]
-fn decode_projects_pattern_classes_with_unresolved_operands() {
-    for (class, form) in [
-        ("RectPattern", cadmpeg_ir::features::PatternForm::Linear),
-        ("CircPattern", cadmpeg_ir::features::PatternForm::Circular),
-    ] {
-        let decoded = CatiaCodec
-            .decode(
-                &mut Cursor::new(standard_catpart_with_design_class(class)),
-                &DecodeOptions::default(),
-            )
-            .expect("decode generated pattern design");
-
-        assert!(matches!(
-            decoded.ir.model.features.as_slice(),
-            [cadmpeg_ir::features::Feature {
-                name: Some(name),
-                definition: cadmpeg_ir::features::FeatureDefinition::Pattern {
-                    seeds,
-                    pattern: cadmpeg_ir::features::PatternKind::Unresolved {
-                        form: Some(stored_form),
-                    },
-                },
-                native_ref: Some(native_ref),
-                ..
-            }] if name == class && seeds.is_empty() && *stored_form == form
-                && native_ref.starts_with("catia:outer:design-object#")
-        ));
-        assert!(decoded.report.losses.iter().any(|loss| {
-            loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-                && loss.message.contains(
-                    "0 revolution, 0 sweep, 0 hole, 1 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
-                )
-        }));
-    }
-}
-
-#[test]
-fn decode_projects_exact_gsm_constructions_as_native_operations() {
-    for class in ["GSMLoft", "GSMPointBetweenValues", "GSMPlaneAngle"] {
-        let decoded = CatiaCodec
-            .decode(
-                &mut Cursor::new(standard_catpart_with_design_class(class)),
-                &DecodeOptions::default(),
-            )
-            .expect("decode generated GSM construction");
-
-        assert!(matches!(
-            decoded.ir.model.features.as_slice(),
-            [cadmpeg_ir::features::Feature {
-                name: Some(name),
-                definition: cadmpeg_ir::features::FeatureDefinition::Native {
-                    kind,
-                    parameters,
-                    properties,
-                },
-                native_ref: Some(native_ref),
-                ..
-            }] if name == class && kind == class && parameters.is_empty()
-                && properties.is_empty()
-                && native_ref.starts_with("catia:outer:design-object#")
-        ));
-        assert!(decoded.report.losses.iter().any(|loss| {
-            loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-                && loss.message.contains(
-                    "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 1 native operation feature(s)",
-                )
-        }));
-    }
-}
-
-#[test]
-fn decode_projects_rib_and_slot_classes_as_solid_sweeps() {
-    for (class, expected_op) in [
-        ("Rib", cadmpeg_ir::features::BooleanOp::Join),
-        ("Slot", cadmpeg_ir::features::BooleanOp::Cut),
-    ] {
-        let decoded = CatiaCodec
-            .decode(
-                &mut Cursor::new(standard_catpart_with_design_class(class)),
-                &DecodeOptions::default(),
-            )
-            .expect("decode generated sweep design");
-
-        assert!(matches!(
-            decoded.ir.model.features.as_slice(),
-            [cadmpeg_ir::features::Feature {
-                name: Some(name),
-                definition: cadmpeg_ir::features::FeatureDefinition::Sweep {
-                    profile: None,
-                    path: None,
-                    mode: cadmpeg_ir::features::SweepMode::Solid { op },
-                    ..
-                },
-                ..
-            }] if name == class && *op == expected_op
-        ));
-        assert!(decoded.report.losses.iter().any(|loss| {
-            loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-                && loss.message.contains(
-                    "0 revolution, 1 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
-                )
-        }));
-    }
-}
-
-#[test]
-fn decode_projects_shell_class_with_unresolved_operands() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_design_class("Shell")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode generated Shell design");
-
-    assert!(matches!(
-        decoded.ir.model.features.as_slice(),
-        [cadmpeg_ir::features::Feature {
-            name: Some(name),
-            definition: cadmpeg_ir::features::FeatureDefinition::Shell {
-                removed_faces: cadmpeg_ir::features::FaceSelection::Unresolved,
-                thickness: None,
-                ..
-            },
-            ..
-        }] if name == "Shell"
-    ));
-    assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 1 shell, 0 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
-            )
-    }));
-}
-
-#[test]
-fn decode_projects_edge_fillet_class_with_unresolved_operands() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_design_class("EdgeFillet")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode generated EdgeFillet design");
-
-    assert!(matches!(
-        decoded.ir.model.features.as_slice(),
-        [cadmpeg_ir::features::Feature {
-            name: Some(name),
-            definition: cadmpeg_ir::features::FeatureDefinition::Fillet {
-                edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
-            },
-            ..
-        }] if name == "EdgeFillet"
-    ));
-    assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 1 fillet, 0 chamfer, 0 sketch, and 0 native operation feature(s)",
-            )
-    }));
-}
-
-#[test]
-fn decode_projects_chamfer_class_with_unresolved_operands() {
-    let decoded = CatiaCodec
-        .decode(
-            &mut Cursor::new(standard_catpart_with_design_class("Chamfer")),
-            &DecodeOptions::default(),
-        )
-        .expect("decode generated Chamfer design");
-
-    assert!(matches!(
-        decoded.ir.model.features.as_slice(),
-        [cadmpeg_ir::features::Feature {
-            name: Some(name),
-            definition: cadmpeg_ir::features::FeatureDefinition::Chamfer {
-                edges: cadmpeg_ir::features::EdgeSelection::Unresolved,
-                spec: cadmpeg_ir::features::ChamferSpec::Unresolved { form: None },
-                flip_direction: false,
-            },
-            ..
-        }] if name == "Chamfer"
-    ));
-    assert!(decoded.report.losses.iter().any(|loss| {
-        loss.category == cadmpeg_ir::report::LossCategory::DesignIntent
-            && loss.message.contains(
-                "0 revolution, 0 sweep, 0 hole, 0 pattern, 0 shell, 0 fillet, 1 chamfer, 0 sketch, and 0 native operation feature(s)",
-            )
+            && loss.message.contains("neutral features")
     }));
 }
 
