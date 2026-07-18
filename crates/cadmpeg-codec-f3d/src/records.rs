@@ -2455,6 +2455,10 @@ pub struct XrefReference {
     pub id: String,
     /// Position of this reference in the source `references` array.
     pub ordinal: u32,
+    /// Zero-based occurrence position among Design records carrying this
+    /// container reference's occurrence role.
+    #[serde(default)]
+    pub occurrence_ordinal: u32,
     /// The referencing document's own file name.
     pub from: String,
     /// The target design entry's `target_file_name`.
@@ -2465,4 +2469,8 @@ pub struct XrefReference {
     /// The `neutronData` property GUID; carries the same GUID as
     /// `neutron_role`.
     pub neutron_data: String,
+    /// Source Design occurrence transform in centimetres. `None` is the
+    /// serialized identity-placement form.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transform: Option<[[f64; 4]; 4]>,
 }

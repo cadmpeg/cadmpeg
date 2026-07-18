@@ -44,10 +44,8 @@ This document records F3D semantics that the format specification does not yet d
 
 ## External references
 
-- The serialized encoding of a non-identity XRef occurrence transform is unlocated. Identity placements serialize no transform record; the per-entity ACT `Transform` channel is a candidate carrier, but its payload is decoded only as change-version GUIDs.
 - The semantics of `neutronData` when its GUID differs from `neutronRole` are unresolved.
 - The grammar of a non-empty `ComponentReferenceData.json` is unresolved.
-- The representation of multiple occurrences of a single target document — whether one `DcXRefPCIFeature` record exists per occurrence or per target — is unresolved.
 - The role of the `0x01`-tagged eight-byte value preceding the owning-design GUID in a `DcXRefPCIFeature` record is unresolved.
 
 ## Material assets

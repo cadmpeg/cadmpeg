@@ -6,8 +6,8 @@
 //! `DesignDescription.json`, and one `.f3d` member per document. [`decode`]
 //! decodes the root member, resolves its outgoing XREFs through the root's
 //! `RedirectionsStream.dat`, decodes each referenced member, and merges the
-//! component models into the root document with one identity-transform
-//! occurrence per XREF.
+//! component models into the root document with each occurrence-local Design
+//! placement applied to its target model.
 
 use std::io::Cursor;
 
@@ -19,6 +19,7 @@ use cadmpeg_ir::document::Model;
 use cadmpeg_ir::report::{LossCategory, LossNote, Severity};
 
 use crate::container::ContainerScan;
+use crate::native::F3dNative;
 use crate::records::XrefReference;
 use crate::xref::{self, XrefTable};
 
@@ -77,7 +78,17 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
         return Ok(root);
     }
 
-    let table = root_xref_table(root_bytes)?.unwrap_or_default();
+    let table = root
+        .ir
+        .native
+        .namespace("f3d")
+        .map(F3dNative::load)
+        .transpose()
+        .map_err(|error| CodecError::Malformed(format!("invalid root F3D native data: {error}")))?
+        .map_or_else(XrefTable::default, |native| XrefTable {
+            designs: native.xref_designs,
+            references: native.xref_references,
+        });
     let mut merged = 0_usize;
     let mut model_value = serialize_model(&root.ir.model)?;
     for reference in &table.references {
@@ -99,7 +110,7 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
             });
             continue;
         };
-        let component = crate::decode::decode(&mut Cursor::new(member_bytes.to_vec()), options)
+        let mut component = crate::decode::decode(&mut Cursor::new(member_bytes.to_vec()), options)
             .map_err(|error| {
                 CodecError::Malformed(format!(
                     "xref member {} failed to decode: {error}",
@@ -118,6 +129,9 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
             });
             continue;
         }
+        if let Some(transform) = reference.transform {
+            apply_occurrence_transform(&mut component.ir.model, transform);
+        }
         let mut component_value = serialize_model(&component.ir.model)?;
         remap_ids(&mut component_value, &occurrence);
         extend_arenas(&mut model_value, component_value)?;
@@ -129,8 +143,13 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
                 ..loss
             });
         }
+        let placement = if reference.transform.is_some() {
+            "Design occurrence transform"
+        } else {
+            "identity placement"
+        };
         root.report.notes.push(format!(
-            "xref {label}: merged {} as occurrence {occurrence} (identity placement)",
+            "xref {label}: merged {} as occurrence {occurrence} ({placement})",
             reference.relative_path
         ));
     }
@@ -168,28 +187,43 @@ fn serialize_model(model: &Model) -> Result<Value, CodecError> {
         .map_err(|error| CodecError::Malformed(format!("model serialization failed: {error}")))
 }
 
-/// Read the root member's `RedirectionsStream.dat` without a full rescan.
-fn root_xref_table(root_bytes: &[u8]) -> Result<Option<XrefTable>, CodecError> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(root_bytes)).map_err(|error| {
-        CodecError::Malformed(format!("f3z root is not a readable ZIP: {error}"))
-    })?;
-    let Ok(mut entry) = archive.by_name(xref::REDIRECTIONS_ENTRY) else {
-        return Ok(None);
-    };
-    let declared = entry.size();
-    let bytes =
-        crate::container::read_entry_bounded(&mut entry, declared, xref::REDIRECTIONS_ENTRY)?;
-    xref::parse(&bytes).map(Some)
-}
-
-/// The id-prefix key for one occurrence: its role GUID, or its ordinal when
+/// The id-prefix key for one occurrence: its role string, or its ordinal when
 /// the role is absent.
 fn occurrence_key(reference: &XrefReference) -> String {
-    if reference.neutron_role.is_empty() {
+    let role = if reference.neutron_role.is_empty() {
         format!("ordinal-{}", reference.ordinal)
     } else {
         reference.neutron_role.clone()
+    };
+    format!("{role}/occurrence-{}", reference.occurrence_ordinal)
+}
+
+fn apply_occurrence_transform(model: &mut Model, source_rows: [[f64; 4]; 4]) {
+    let mut occurrence = cadmpeg_ir::transform::Transform { rows: source_rows };
+    for row in 0..3 {
+        occurrence.rows[row][3] *= 10.0;
     }
+    for body in &mut model.bodies {
+        body.transform = Some(match body.transform {
+            Some(local) => compose_transforms(occurrence, local),
+            None => occurrence,
+        });
+    }
+}
+
+fn compose_transforms(
+    outer: cadmpeg_ir::transform::Transform,
+    inner: cadmpeg_ir::transform::Transform,
+) -> cadmpeg_ir::transform::Transform {
+    let mut rows = [[0.0; 4]; 4];
+    for (row, values) in rows.iter_mut().enumerate() {
+        for (column, value) in values.iter_mut().enumerate() {
+            *value = (0..4)
+                .map(|index| outer.rows[row][index] * inner.rows[index][column])
+                .sum();
+        }
+    }
+    cadmpeg_ir::transform::Transform { rows }
 }
 
 /// Rewrite every `f3d:`-namespaced id string in a serialized [`Model`] to the
@@ -238,4 +272,39 @@ fn extend_arenas(root: &mut Value, component: Value) -> Result<(), CodecError> {
         target.extend(source.iter().cloned());
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::transform::Transform;
+
+    #[test]
+    fn occurrence_transform_composes_outside_existing_body_transform() {
+        let outer = Transform {
+            rows: [
+                [0.0, -1.0, 0.0, 20.0],
+                [1.0, 0.0, 0.0, 30.0],
+                [0.0, 0.0, 1.0, 40.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        };
+        let inner = Transform {
+            rows: [
+                [1.0, 0.0, 0.0, 5.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+        };
+
+        assert_eq!(
+            super::compose_transforms(outer, inner).rows,
+            [
+                [0.0, -1.0, 0.0, 20.0],
+                [1.0, 0.0, 0.0, 35.0],
+                [0.0, 0.0, 1.0, 40.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        );
+    }
 }
