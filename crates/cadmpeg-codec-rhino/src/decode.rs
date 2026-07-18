@@ -18,7 +18,6 @@ use cadmpeg_ir::tessellation::Tessellation;
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Color, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::transfer::{Builder, Transfer};
 use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::{NativeUnknownRecord, UnknownRecord};
@@ -402,10 +401,6 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn ir_mut(&mut self) -> &mut CadIr {
         &mut self.ir
-    }
-
-    fn builder(&mut self) -> Builder<'_, Vec<LossNote>> {
-        Builder::new(&mut self.typed_losses)
     }
 
     #[cfg(test)]
@@ -1878,10 +1873,7 @@ impl<'a> DecodeContext<'a> {
                 });
             }
         }
-        for note in omissions {
-            let omitted: Option<()> = self.builder().take(Transfer::omitted(note));
-            debug_assert!(omitted.is_none());
-        }
+        self.typed_losses.extend(omissions);
         if let Some(first) = self.scan.definitions.diagnostics.first() {
             losses.push(LossNote {
                 code: LossCode::DecodeDiagnostic,
@@ -2707,17 +2699,13 @@ impl<'a> DecodeContext<'a> {
                 if validation.is_ok() {
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
-                            let carriers: Option<()> = self.builder().take(Transfer::fallback(
-                                (),
-                                LossNote {
-                                    code: LossCode::TopologyNotTransferred,
-                                    category: LossCategory::Topology,
-                                    severity: Severity::Warning,
-                                    message: format!("Brep topology fallback: {cause}"),
-                                    provenance: None,
-                                },
-                            ));
-                            debug_assert!(carriers.is_some());
+                            self.typed_losses.push(LossNote {
+                                code: LossCode::TopologyNotTransferred,
+                                category: LossCategory::Topology,
+                                severity: Severity::Warning,
+                                message: format!("Brep topology fallback: {cause}"),
+                                provenance: None,
+                            });
                         } else {
                             self.scan_warning(source_order, &warning);
                         }

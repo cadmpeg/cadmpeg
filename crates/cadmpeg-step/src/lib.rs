@@ -66,7 +66,6 @@ use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severit
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, LoopBoundaryRole, Point, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::transfer::{LossSink, Transfer};
 use cadmpeg_ir::CadIr;
 
 use writer::{real, refs, string, Emitter, Ref};
@@ -359,12 +358,6 @@ struct Builder<'a> {
     geometry_emission_depth: usize,
 }
 
-impl LossSink for Builder<'_> {
-    fn record_loss(&mut self, note: LossNote) {
-        self.losses.push(note);
-    }
-}
-
 impl<'a> Builder<'a> {
     fn new(ir: &'a CadIr, schema: StepSchema) -> Self {
         let loop_surfaces = ir
@@ -511,7 +504,7 @@ impl<'a> Builder<'a> {
         severity: Severity,
         message: String,
     ) {
-        self.record_loss(LossNote {
+        self.losses.push(LossNote {
             code,
             category,
             severity,
@@ -527,15 +520,13 @@ impl<'a> Builder<'a> {
         severity: Severity,
         message: String,
     ) {
-        let dropped: Option<()> = Transfer::omitted(LossNote {
+        self.losses.push(LossNote {
             code,
             category,
             severity,
             message,
             provenance: None,
-        })
-        .resolve(&mut self.losses);
-        debug_assert!(dropped.is_none());
+        });
     }
 
     fn build(&mut self) {
@@ -546,8 +537,8 @@ impl<'a> Builder<'a> {
         let has_standalone_geometry = !standalone_items.is_empty();
         let mut emitted_items = shape_items;
         emitted_items.extend(standalone_items.iter().copied());
-        let emitted_items = if emitted_items.is_empty() && !self.ir.model.bodies.is_empty() {
-            Transfer::omitted(LossNote {
+        if emitted_items.is_empty() && !self.ir.model.bodies.is_empty() {
+            self.losses.push(LossNote {
                 code: LossCode::NoExportableSolids,
                 category: LossCategory::Topology,
                 severity: Severity::Warning,
@@ -555,11 +546,10 @@ impl<'a> Builder<'a> {
                           geometry, so the STEP representation is empty"
                     .to_string(),
                 provenance: None,
-            })
-        } else {
-            Transfer::exact(emitted_items)
-        };
-        let mut items = emitted_items.resolve(&mut self.losses).unwrap_or_default();
+            });
+            emitted_items.clear();
+        }
+        let mut items = emitted_items;
         let origin = geometry::placement(
             &mut self.emitter,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),

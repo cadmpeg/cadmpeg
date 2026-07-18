@@ -16,7 +16,6 @@ use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
-use cadmpeg_ir::transfer::{Builder, Transfer};
 use cadmpeg_ir::{AnnotationBuilder, Exactness};
 
 use crate::b5::{B5Graph, B5Loop, B5Surface};
@@ -70,15 +69,12 @@ pub(crate) fn transfer(
     // false` leaves the caller's `losses` untouched; the sink drains into
     // `losses` only once the graph commits.
     let mut surface_losses: Vec<LossNote> = Vec::new();
-    let mut surface_builder = Builder::new(&mut surface_losses);
     for surface_id in referenced_surfaces {
         let Some(surface) = graph.surfaces.get(&surface_id) else {
             return false;
         };
-        let Some(geometry) = surface_builder.take(neutral_surface(surface, payload, surface_id))
-        else {
-            return false;
-        };
+        let (geometry, loss) = neutral_surface(surface, payload, surface_id);
+        surface_losses.extend(loss);
         surface_plan.insert(surface_id, geometry);
     }
 
@@ -422,9 +418,8 @@ pub(crate) fn transfer(
     true
 }
 
-/// Resolve one B5 carrier. A readable analytic carrier is
-/// [`Exact`](Transfer::Exact); a plane whose stored axes are
-/// not orthonormal, or a revolution the transfer cannot express, substitutes an
+/// Resolve one B5 carrier. A readable analytic carrier has no loss; a plane
+/// whose stored axes are not orthonormal, or a revolution the transfer cannot express, substitutes an
 /// opaque `Unknown` carrier. That substitution drops the face's mandatory
 /// surface geometry irreversibly, so it carries the
 /// [`GeometryNotTransferred`](LossCode::GeometryNotTransferred) code strict mode
@@ -433,26 +428,26 @@ fn neutral_surface(
     surface: &B5Surface,
     payload: &UnknownId,
     surface_id: u32,
-) -> Transfer<SurfaceGeometry> {
+) -> (SurfaceGeometry, Option<LossNote>) {
     match surface {
         B5Surface::Plane {
             origin,
             direction_u,
             direction_v,
         } => match orthonormal_plane(*origin, *direction_u, *direction_v) {
-            Some(plane) => Transfer::exact(plane),
-            None => Transfer::fallback(
+            Some(plane) => (plane, None),
+            None => (
                 SurfaceGeometry::Unknown {
                     record: Some(payload.clone()),
                 },
-                carrier_loss(
+                Some(carrier_loss(
                     LossCode::GeometryNotTransferred,
                     format!(
                         "B5 plane carrier #{surface_id} stores non-orthonormal axes; its analytic \
                          surface definition was not transferred and the face carries an opaque \
                          carrier."
                     ),
-                ),
+                )),
             ),
         },
         B5Surface::Cylinder {
@@ -460,24 +455,27 @@ fn neutral_surface(
             reference_x,
             axis,
             radius,
-        } => Transfer::exact(SurfaceGeometry::Cylinder {
-            origin: point(*origin),
-            axis: vector(*axis),
-            ref_direction: vector(*reference_x),
-            radius: *radius,
-        }),
-        B5Surface::Nurbs(surface) => Transfer::exact(SurfaceGeometry::Nurbs(surface.clone())),
-        B5Surface::Revolution { .. } => Transfer::fallback(
+        } => (
+            SurfaceGeometry::Cylinder {
+                origin: point(*origin),
+                axis: vector(*axis),
+                ref_direction: vector(*reference_x),
+                radius: *radius,
+            },
+            None,
+        ),
+        B5Surface::Nurbs(surface) => (SurfaceGeometry::Nurbs(surface.clone()), None),
+        B5Surface::Revolution { .. } => (
             SurfaceGeometry::Unknown {
                 record: Some(payload.clone()),
             },
-            carrier_loss(
+            Some(carrier_loss(
                 LossCode::GeometryNotTransferred,
                 format!(
                     "B5 revolution carrier #{surface_id} was replaced by an opaque carrier; its \
                      procedural surface definition was not transferred."
                 ),
-            ),
+            )),
         ),
     }
 }
@@ -626,63 +624,59 @@ mod tests {
 
     #[test]
     fn orthonormal_plane_resolves_exact_without_loss() {
-        let mut sink: Vec<LossNote> = Vec::new();
         let surface = B5Surface::Plane {
             origin: [0.0, 0.0, 0.0],
             direction_u: [1.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
         };
-        let value = neutral_surface(&surface, &payload(), 7).resolve(&mut sink);
-        assert!(matches!(value, Some(SurfaceGeometry::Plane { .. })));
-        assert!(sink.is_empty());
+        let (value, loss) = neutral_surface(&surface, &payload(), 7);
+        assert!(matches!(value, SurfaceGeometry::Plane { .. }));
+        assert!(loss.is_none());
     }
 
     #[test]
     fn non_orthonormal_plane_falls_back_and_rejects_in_strict() {
         use cadmpeg_ir::report::StrictConsequence;
-        let mut sink: Vec<LossNote> = Vec::new();
         let surface = B5Surface::Plane {
             origin: [0.0, 0.0, 0.0],
             direction_u: [2.0, 0.0, 0.0],
             direction_v: [0.0, 1.0, 0.0],
         };
-        let value = neutral_surface(&surface, &payload(), 7).resolve(&mut sink);
-        assert!(matches!(value, Some(SurfaceGeometry::Unknown { .. })));
-        assert_eq!(sink.len(), 1);
-        assert_eq!(sink[0].code, LossCode::GeometryNotTransferred);
+        let (value, loss) = neutral_surface(&surface, &payload(), 7);
+        assert!(matches!(value, SurfaceGeometry::Unknown { .. }));
+        let loss = loss.expect("non-orthonormal plane loss");
+        assert_eq!(loss.code, LossCode::GeometryNotTransferred);
         // The opaque substitution is an irreversible geometry drop strict mode
         // refuses, not a tolerable reduction.
-        assert_eq!(sink[0].code.strict_consequence(), StrictConsequence::Reject);
+        assert_eq!(loss.code.strict_consequence(), StrictConsequence::Reject);
     }
 
     #[test]
     fn revolution_falls_back_and_rejects_in_strict() {
         use cadmpeg_ir::report::StrictConsequence;
-        let mut sink: Vec<LossNote> = Vec::new();
         let surface = B5Surface::Revolution {
             profile_curve: 3,
             axis_origin: [0.0, 0.0, 0.0],
             axis_direction: [0.0, 0.0, 1.0],
             gauge_radius: 1.0,
         };
-        let value = neutral_surface(&surface, &payload(), 9).resolve(&mut sink);
-        assert!(matches!(value, Some(SurfaceGeometry::Unknown { .. })));
-        assert_eq!(sink.len(), 1);
-        assert_eq!(sink[0].code, LossCode::GeometryNotTransferred);
-        assert_eq!(sink[0].code.strict_consequence(), StrictConsequence::Reject);
+        let (value, loss) = neutral_surface(&surface, &payload(), 9);
+        assert!(matches!(value, SurfaceGeometry::Unknown { .. }));
+        let loss = loss.expect("revolution loss");
+        assert_eq!(loss.code, LossCode::GeometryNotTransferred);
+        assert_eq!(loss.code.strict_consequence(), StrictConsequence::Reject);
     }
 
     #[test]
     fn cylinder_resolves_exact_without_loss() {
-        let mut sink: Vec<LossNote> = Vec::new();
         let surface = B5Surface::Cylinder {
             origin: [0.0, 0.0, 0.0],
             reference_x: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
             radius: 2.0,
         };
-        let value = neutral_surface(&surface, &payload(), 1).resolve(&mut sink);
-        assert!(matches!(value, Some(SurfaceGeometry::Cylinder { radius, .. }) if radius == 2.0));
-        assert!(sink.is_empty());
+        let (value, loss) = neutral_surface(&surface, &payload(), 1);
+        assert!(matches!(value, SurfaceGeometry::Cylinder { radius, .. } if radius == 2.0));
+        assert!(loss.is_none());
     }
 }

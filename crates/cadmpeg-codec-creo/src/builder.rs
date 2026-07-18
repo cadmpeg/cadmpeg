@@ -4,7 +4,6 @@
 use cadmpeg_ir::geometry::derive_reference_direction;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
-use cadmpeg_ir::transfer::{Builder, Transfer};
 
 /// Derive the missing in-plane axis of an `ActDatums` plane and record the
 /// substitution.
@@ -14,12 +13,8 @@ pub(crate) fn datum_u_axis(
     plane_id: u32,
     offset: u64,
 ) -> Vector3 {
-    Builder::new(sink)
-        .take(Transfer::fallback(
-            derive_reference_direction(normal),
-            inferred_u_axis_note(plane_id, offset),
-        ))
-        .expect("Transfer::fallback always yields its value")
+    sink.push(inferred_u_axis_note(plane_id, offset));
+    derive_reference_direction(normal)
 }
 
 /// The note for a datum plane's conventionally derived in-plane u-axis.
