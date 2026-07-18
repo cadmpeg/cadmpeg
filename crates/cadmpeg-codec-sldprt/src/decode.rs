@@ -366,6 +366,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 .map(|name| (feature.id.clone(), name.clone()))
         })
         .collect();
+    let global_parameter_owners = crate::history::global_parameter_owners(&ir.model.features);
     let incomplete_parameters = ir
         .model
         .parameters
@@ -378,11 +379,15 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                     }))
         })
         .count();
-    let unresolved_parameter_references =
-        crate::history::parameters_with_unresolved_references(&ir.model.parameters, &feature_names);
+    let unresolved_parameter_references = crate::history::parameters_with_unresolved_references(
+        &ir.model.parameters,
+        &feature_names,
+        &global_parameter_owners,
+    );
     let unevaluable_parameter_expressions = crate::history::parameters_with_unevaluable_expressions(
         &ir.model.parameters,
         &feature_names,
+        &global_parameter_owners,
         &ir.model.configurations,
     );
     let feature_ordinals = ir
@@ -421,10 +426,12 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
     let incoherent_parameter_dependencies = crate::history::parameters_with_incoherent_dependencies(
         &ir.model.parameters,
         &feature_names,
+        &global_parameter_owners,
     );
     let incoherent_parameter_values = crate::history::parameters_with_incoherent_evaluated_values(
         &ir.model.parameters,
         &feature_names,
+        &global_parameter_owners,
         &ir.model.configurations,
     );
     if incomplete_parameters > 0

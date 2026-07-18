@@ -519,6 +519,12 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
         .filter(|feature| !feature.name.is_empty())
         .map(|feature| (neutral_feature_id(&feature.id), feature.name.clone()))
         .collect::<HashMap<_, _>>();
+    let global_owners = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| feature.kind.eq_ignore_ascii_case("EquationDriven"))
+        .map(|feature| neutral_feature_id(&feature.id))
+        .collect::<HashSet<_>>();
     let mut parameters = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -561,10 +567,26 @@ pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> 
                 })
         })
         .collect::<Vec<_>>();
-    populate_parameter_dependencies(&mut parameters, &feature_names);
+    populate_parameter_dependencies(&mut parameters, &feature_names, &global_owners);
     order_parameters_by_dependencies(&mut parameters);
-    evaluate_parameter_expressions(&mut parameters, &feature_names);
+    evaluate_parameter_expressions(&mut parameters, &feature_names, &global_owners);
     parameters
+}
+
+pub(crate) fn global_parameter_owners(
+    features: &[cadmpeg_ir::features::Feature],
+) -> HashSet<FeatureId> {
+    features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                &feature.definition,
+                FeatureDefinition::Native { kind, .. }
+                    if kind.eq_ignore_ascii_case("EquationDriven")
+            )
+        })
+        .map(|feature| feature.id.clone())
+        .collect()
 }
 
 /// Replace evaluable expressions with canonical literals in a temporary history projection.
@@ -665,9 +687,11 @@ pub(crate) fn format_native_scalar(
 fn populate_parameter_dependencies(
     parameters: &mut [DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
 ) {
-    let aliases = parameter_aliases(parameters, feature_names);
+    let aliases = parameter_aliases_by_owner(parameters, feature_names, global_owners);
     for parameter in parameters.iter_mut() {
+        let aliases = &aliases[&parameter.owner];
         let mut seen = std::collections::HashSet::new();
         parameter.dependencies = expression_identifiers(&parameter.expression)
             .filter_map(|identifier| aliases.get(&identifier).and_then(Clone::clone))
@@ -721,43 +745,94 @@ fn order_parameters_by_dependencies(parameters: &mut [DesignParameter]) {
 fn parameter_aliases(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
+    expression_owner: &FeatureId,
 ) -> HashMap<String, Option<ParameterId>> {
-    let mut aliases = HashMap::<String, Option<ParameterId>>::new();
+    fn insert(
+        aliases: &mut HashMap<String, Option<ParameterId>>,
+        alias: String,
+        parameter: &ParameterId,
+    ) {
+        aliases
+            .entry(alias)
+            .and_modify(|candidate| {
+                if candidate
+                    .as_ref()
+                    .is_some_and(|existing| existing != parameter)
+                {
+                    *candidate = None;
+                }
+            })
+            .or_insert_with(|| Some(parameter.clone()));
+    }
+
+    let mut global = HashMap::new();
+    let mut local = HashMap::new();
+    let mut exact = HashMap::new();
     for parameter in parameters {
-        let mut names = vec![parameter.id.0.clone(), parameter.name.clone()];
-        if let Some(equation_id) = parameter.properties.get("EquationId") {
-            names.push(equation_id.clone());
+        insert(&mut exact, parameter.id.0.clone(), &parameter.id);
+        let mut unqualified = vec![parameter.name.clone()];
+        if let Some(equation_id) = parameter
+            .properties
+            .get("EquationId")
+            .filter(|equation_id| !equation_id.contains('@'))
+        {
+            unqualified.push(equation_id.clone());
         }
         if let Some(owner_name) = feature_names.get(&parameter.owner) {
-            names.push(format!("{}@{owner_name}", parameter.name));
+            insert(
+                &mut exact,
+                format!("{}@{owner_name}", parameter.name),
+                &parameter.id,
+            );
             if let Some(equation_id) = parameter.properties.get("EquationId") {
-                if !equation_id.contains('@') {
-                    names.push(format!("{equation_id}@{owner_name}"));
-                }
+                let qualified = if equation_id.contains('@') {
+                    equation_id.clone()
+                } else {
+                    format!("{equation_id}@{owner_name}")
+                };
+                insert(&mut exact, qualified, &parameter.id);
             }
         }
-        for alias in names {
-            aliases
-                .entry(alias)
-                .and_modify(|candidate| {
-                    if candidate
-                        .as_ref()
-                        .is_some_and(|existing| existing != &parameter.id)
-                    {
-                        *candidate = None;
-                    }
-                })
-                .or_insert_with(|| Some(parameter.id.clone()));
+        if global_owners.contains(&parameter.owner) {
+            for alias in &unqualified {
+                insert(&mut global, alias.clone(), &parameter.id);
+            }
+        }
+        if parameter.owner == *expression_owner {
+            for alias in unqualified {
+                insert(&mut local, alias, &parameter.id);
+            }
         }
     }
-    aliases
+    global.extend(local);
+    global.extend(exact);
+    global
+}
+
+fn parameter_aliases_by_owner(
+    parameters: &[DesignParameter],
+    feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
+) -> HashMap<FeatureId, HashMap<String, Option<ParameterId>>> {
+    parameters
+        .iter()
+        .map(|parameter| parameter.owner.clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .map(|owner| {
+            let aliases = parameter_aliases(parameters, feature_names, global_owners, &owner);
+            (owner, aliases)
+        })
+        .collect()
 }
 
 fn evaluate_parameter_expressions(
     parameters: &mut [DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
 ) {
-    let aliases = parameter_aliases(parameters, feature_names);
+    let aliases = parameter_aliases_by_owner(parameters, feature_names, global_owners);
     let mut values = parameters
         .iter()
         .filter_map(|parameter| {
@@ -773,8 +848,9 @@ fn evaluate_parameter_expressions(
             .iter_mut()
             .filter(|parameter| parameter.value.is_none())
         {
+            let aliases = &aliases[&parameter.owner];
             let Some(value) =
-                ParameterExpressionParser::new(&parameter.expression, &aliases, &values).parse()
+                ParameterExpressionParser::new(&parameter.expression, aliases, &values).parse()
             else {
                 continue;
             };
@@ -1330,11 +1406,13 @@ fn parameter_value_is_finite(value: &ParameterValue) -> bool {
 pub(crate) fn parameters_with_unresolved_references(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
 ) -> usize {
-    let aliases = parameter_aliases(parameters, feature_names);
+    let aliases = parameter_aliases_by_owner(parameters, feature_names, global_owners);
     parameters
         .iter()
         .filter(|parameter| {
+            let aliases = &aliases[&parameter.owner];
             let parsed = expression_identifier_tokens(&parameter.expression);
             parsed.unclosed_quote
                 || parsed
@@ -1357,17 +1435,19 @@ pub(crate) fn parameters_with_unresolved_references(
 pub(crate) fn parameters_with_unevaluable_expressions(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> usize {
-    let aliases = parameter_aliases(parameters, feature_names);
+    let aliases = parameter_aliases_by_owner(parameters, feature_names, global_owners);
     let mut states = parameter_value_states(parameters, configurations, false);
     parameters
         .iter()
         .filter(|parameter| {
+            let aliases = &aliases[&parameter.owner];
             states.iter_mut().any(|values| {
                 let own = values.remove(&parameter.id);
                 let evaluated =
-                    ParameterExpressionParser::new(&parameter.expression, &aliases, values)
+                    ParameterExpressionParser::new(&parameter.expression, aliases, values)
                         .parse()
                         .filter(parameter_value_is_finite);
                 if let Some(value) = own {
@@ -1382,9 +1462,10 @@ pub(crate) fn parameters_with_unevaluable_expressions(
 pub(crate) fn parameters_with_incoherent_dependencies(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
 ) -> usize {
     let mut projected = parameters.to_vec();
-    populate_parameter_dependencies(&mut projected, feature_names);
+    populate_parameter_dependencies(&mut projected, feature_names, global_owners);
     parameters
         .iter()
         .zip(projected)
@@ -1395,18 +1476,20 @@ pub(crate) fn parameters_with_incoherent_dependencies(
 pub(crate) fn parameters_with_incoherent_evaluated_values(
     parameters: &[DesignParameter],
     feature_names: &HashMap<FeatureId, String>,
+    global_owners: &HashSet<FeatureId>,
     configurations: &[cadmpeg_ir::features::DesignConfiguration],
 ) -> usize {
-    let aliases = parameter_aliases(parameters, feature_names);
+    let aliases = parameter_aliases_by_owner(parameters, feature_names, global_owners);
     let mut states = parameter_value_states(parameters, configurations, true);
     parameters
         .iter()
         .filter(|parameter| !parameter.dependencies.is_empty())
         .filter(|parameter| {
+            let aliases = &aliases[&parameter.owner];
             states.iter_mut().any(|values| {
                 let actual = values.remove(&parameter.id);
                 let evaluated =
-                    ParameterExpressionParser::new(&parameter.expression, &aliases, values)
+                    ParameterExpressionParser::new(&parameter.expression, aliases, values)
                         .parse()
                         .filter(parameter_value_is_finite);
                 if let Some(value) = actual.clone() {
@@ -1712,7 +1795,12 @@ mod history_reference_tests {
             features: vec![owner],
         }]);
 
-        let aliases = parameter_aliases(&parameters, &HashMap::new());
+        let aliases = parameter_aliases(
+            &parameters,
+            &HashMap::new(),
+            &HashSet::new(),
+            &parameters[0].owner,
+        );
 
         assert_eq!(aliases.get("Width"), Some(&Some(parameters[0].id.clone())));
     }
@@ -1750,7 +1838,7 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn aliases_shared_by_distinct_parameters_are_ambiguous() {
+    fn unqualified_aliases_are_local_to_the_expression_owner() {
         let mut first = feature("first", Some("1"), 0);
         first.parameters.insert("Width".into(), "4mm".into());
         let mut second = feature("second", Some("2"), 1);
@@ -1764,9 +1852,109 @@ mod history_reference_tests {
             features: vec![first, second],
         }]);
 
-        let aliases = parameter_aliases(&parameters, &HashMap::new());
+        let first_aliases = parameter_aliases(
+            &parameters,
+            &HashMap::new(),
+            &HashSet::new(),
+            &parameters[0].owner,
+        );
+        let second_aliases = parameter_aliases(
+            &parameters,
+            &HashMap::new(),
+            &HashSet::new(),
+            &parameters[1].owner,
+        );
+        let unrelated_aliases = parameter_aliases(
+            &parameters,
+            &HashMap::new(),
+            &HashSet::new(),
+            &FeatureId("unrelated".into()),
+        );
 
-        assert_eq!(aliases.get("Width"), Some(&None));
+        assert_eq!(
+            first_aliases.get("Width"),
+            Some(&Some(parameters[0].id.clone()))
+        );
+        assert_eq!(
+            second_aliases.get("Width"),
+            Some(&Some(parameters[1].id.clone()))
+        );
+        assert_eq!(unrelated_aliases.get("Width"), None);
+    }
+
+    #[test]
+    fn equation_driven_parameters_are_global() {
+        let mut equations = feature("equations", Some("1"), 0);
+        equations.kind = "EquationDriven".into();
+        equations.parameters.insert("Width".into(), "4mm".into());
+        let mut consumer = feature("consumer", Some("2"), 1);
+        consumer
+            .parameters
+            .insert("Result".into(), "Width * 2".into());
+
+        let parameters = project_parameters(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![equations, consumer],
+        }]);
+
+        assert_eq!(parameters[1].dependencies, [parameters[0].id.clone()]);
+        assert_eq!(
+            parameters[1].value,
+            Some(ParameterValue::Length(Length(8.0)))
+        );
+    }
+
+    #[test]
+    fn ordinary_feature_parameters_do_not_leak_globally() {
+        let mut source = feature("source", Some("1"), 0);
+        source.parameters.insert("Width".into(), "4mm".into());
+        let mut consumer = feature("consumer", Some("2"), 1);
+        consumer
+            .parameters
+            .insert("Result".into(), "Width * 2".into());
+
+        let parameters = project_parameters(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![source, consumer],
+        }]);
+
+        assert!(parameters[1].dependencies.is_empty());
+        assert_eq!(parameters[1].value, None);
+    }
+
+    #[test]
+    fn local_parameter_precedes_same_named_global() {
+        let mut equations = feature("equations", Some("1"), 0);
+        equations.kind = "EquationDriven".into();
+        equations.parameters.insert("Width".into(), "4mm".into());
+        let mut consumer = feature("consumer", Some("2"), 1);
+        consumer.parameters = BTreeMap::from([
+            ("Width".into(), "5mm".into()),
+            ("Result".into(), "Width * 2".into()),
+        ]);
+
+        let parameters = project_parameters(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![equations, consumer],
+        }]);
+
+        assert_eq!(parameters[1].dependencies, [parameters[2].id.clone()]);
+        assert_eq!(
+            parameters[1].value,
+            Some(ParameterValue::Length(Length(10.0)))
+        );
     }
 
     #[test]
@@ -5554,9 +5742,11 @@ fn sync_configuration_design_state(
                 .map(|name| (feature.id.clone(), name.clone()))
         })
         .collect::<HashMap<_, _>>();
+    let global_owners = global_parameter_owners(&ir.model.features);
     if parameters_with_incoherent_evaluated_values(
         &ir.model.parameters,
         &feature_names,
+        &global_owners,
         &ir.model.configurations,
     ) > 0
     {
@@ -5808,6 +5998,7 @@ fn sync_neutral_parameters(
                 .map(|name| (feature.id.clone(), name.clone()))
         })
         .collect::<HashMap<_, _>>();
+    let global_owners = global_parameter_owners(&ir.model.features);
     if let Some(native) = native.as_ref() {
         let original = project_parameters(&native.feature_histories);
         let original_feature_names = native
@@ -5823,7 +6014,7 @@ fn sync_neutral_parameters(
             &feature_names,
         );
     }
-    if parameters_with_incoherent_dependencies(&parameters, &feature_names) > 0 {
+    if parameters_with_incoherent_dependencies(&parameters, &feature_names, &global_owners) > 0 {
         return Err(CodecError::Malformed(
             "SLDPRT parameter dependencies are inconsistent with their expressions".into(),
         ));
