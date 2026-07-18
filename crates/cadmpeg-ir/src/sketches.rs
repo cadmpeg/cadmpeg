@@ -218,6 +218,9 @@ pub struct SketchOffsetPair {
     pub source: SketchEntityId,
     /// Entity produced at the shared signed offset distance.
     pub result: SketchEntityId,
+    /// Reverse the source's stored traversal before selecting its left normal.
+    #[serde(default)]
+    pub source_reversed: bool,
 }
 
 /// One axis of a parameter-driven rectangular sketch pattern.
@@ -314,12 +317,13 @@ pub enum SketchConstraintDefinition {
     Offset {
         /// Ordered progenitor/result pairs.
         pairs: Vec<SketchOffsetPair>,
-        /// Distance along each source entity's stored left normal.
-        signed_distance: Length,
+        /// Strictly positive common offset magnitude, measured along each
+        /// oriented source entity's left normal.
+        distance: Length,
         /// Driving offset-distance parameter, when the source relation is dimensional.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter: Option<ParameterId>,
-        /// Multiplier from the driving parameter value to `signed_distance`.
+        /// Multiplier from the driving parameter value to `distance`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parameter_factor: Option<f64>,
     },

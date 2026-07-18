@@ -517,8 +517,9 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
             pairs: vec![SketchOffsetPair {
                 source: entity.clone(),
                 result: entity.clone(),
+                source_reversed: false,
             }],
-            signed_distance: Length(-2.0),
+            distance: Length(2.0),
             parameter: Some(parameter.clone()),
             parameter_factor: Some(-1.0),
         },

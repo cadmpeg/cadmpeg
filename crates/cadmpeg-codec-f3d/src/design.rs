@@ -5001,7 +5001,7 @@ pub fn project_dimension_constraints(
                 let mut definition =
                     exact_counted_offset(&loci, &group.return_members, &entities_by_record)?;
                 let Definition::Offset {
-                    signed_distance,
+                    distance,
                     parameter: driving_parameter,
                     parameter_factor,
                     ..
@@ -5010,7 +5010,7 @@ pub fn project_dimension_constraints(
                     unreachable!("exact_counted_offset always returns an offset")
                 };
                 if let Some(factor) =
-                    offset_parameter_factor(signed_distance.0, parameter.evaluated_value * 10.0)
+                    offset_parameter_factor(distance.0, parameter.evaluated_value * 10.0)
                 {
                     *driving_parameter = Some(parameter_id);
                     *parameter_factor = Some(factor);
@@ -6564,7 +6564,7 @@ fn exact_counted_offset(
     }
     let mut used_members = HashSet::new();
     let mut pairs = Vec::with_capacity(source_count);
-    let mut signed_distance: Option<f64> = None;
+    let mut canonical_distance: Option<f64> = None;
     for members in return_members.chunks_exact(2) {
         let [source_record_index, result_record_index] = members else {
             unreachable!("chunks_exact(2) always yields pairs")
@@ -6582,17 +6582,11 @@ fn exact_counted_offset(
         if distance.abs() <= 1.0e-9 {
             return None;
         }
-        if let Some(expected) = signed_distance {
-            let scale = 1.0 + distance.abs().max(expected.abs());
-            if (distance - expected).abs() > scale * 1.0e-9 {
-                return None;
-            }
-        } else {
-            signed_distance = Some(distance);
-        }
+        let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
         pairs.push(SketchOffsetPair {
             source: source.id.clone(),
             result: result.id.clone(),
+            source_reversed,
         });
     }
     if used_members.len() != loci.len() {
@@ -6600,19 +6594,19 @@ fn exact_counted_offset(
     }
     Some(Definition::Offset {
         pairs,
-        signed_distance: Length(signed_distance?),
+        distance: Length(canonical_distance?),
         parameter: None,
         parameter_factor: None,
     })
 }
 
-fn offset_parameter_factor(signed_distance: f64, parameter_value: f64) -> Option<f64> {
-    let scale = 1.0 + signed_distance.abs().max(parameter_value.abs());
-    (signed_distance.is_finite()
+fn offset_parameter_factor(distance: f64, parameter_value: f64) -> Option<f64> {
+    let scale = 1.0 + distance.abs().max(parameter_value.abs());
+    (distance.is_finite()
         && parameter_value.is_finite()
-        && (signed_distance.abs() - parameter_value.abs()).abs() <= scale * 1.0e-9)
+        && (distance - parameter_value.abs()).abs() <= scale * 1.0e-9)
         .then(|| {
-            if signed_distance.signum() == parameter_value.signum() {
+            if parameter_value.is_sign_positive() {
                 1.0
             } else {
                 -1.0
@@ -6665,29 +6659,78 @@ fn exact_offset_constraint(
     use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchOffsetPair};
 
     if relation.unknown_constraint_bits != 0
-        || relation.constraint_kinds != [SketchConstraintKind::Perpendicular]
+        || !matches!(
+            relation.constraint_kinds.as_slice(),
+            [SketchConstraintKind::Perpendicular | SketchConstraintKind::Offset]
+        )
         || relation.return_members.len() < 4
         || !relation.return_members.len().is_multiple_of(2)
+        || relation.return_members.len() != relation.members.len()
         || relation.resolved_return_members.len() != relation.return_members.len()
     {
         return None;
     }
+    let offset_members = if relation.constraint_kinds == [SketchConstraintKind::Offset] {
+        let source_count = relation.members.len() / 2;
+        if !relation.members.len().is_multiple_of(2)
+            || relation.member_roles.len() != relation.members.len()
+            || source_count == 0
+            || relation.member_roles[..source_count].contains(&1)
+            || relation.member_roles[source_count..]
+                .iter()
+                .any(|role| *role != 1)
+        {
+            return None;
+        }
+        let sources = relation.members[..source_count]
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
+        let results = relation.members[source_count..]
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
+        if sources.len() != source_count || results.len() != source_count {
+            return None;
+        }
+        Some((sources, results))
+    } else {
+        None
+    };
     let mut pairs = Vec::new();
     let mut used_entities = HashSet::new();
-    let mut signed_distance: Option<f64> = None;
+    let mut canonical_distance: Option<f64> = None;
     for operands in relation.resolved_return_members.chunks_exact(2) {
-        let (source_record_index, result_record_index) = match operands {
-            [SketchRelationOperand::Curve {
-                record_index: source_record_index,
-                secondary_id: 0,
-                ..
-            }, SketchRelationOperand::Curve {
-                record_index: result_record_index,
-                secondary_id,
-                ..
-            }] if *secondary_id != 0 => (*source_record_index, *result_record_index),
-            _ => return None,
-        };
+        let (first_record_index, first_secondary_id, second_record_index, second_secondary_id) =
+            match operands {
+                [SketchRelationOperand::Curve {
+                    record_index: first_record_index,
+                    secondary_id: first_secondary_id,
+                    ..
+                }, SketchRelationOperand::Curve {
+                    record_index: second_record_index,
+                    secondary_id: second_secondary_id,
+                    ..
+                }] => (
+                    *first_record_index,
+                    *first_secondary_id,
+                    *second_record_index,
+                    *second_secondary_id,
+                ),
+                _ => return None,
+            };
+        let (source_record_index, result_record_index) =
+            if let Some((sources, results)) = &offset_members {
+                if sources.contains(&first_record_index) && results.contains(&second_record_index) {
+                    (first_record_index, second_record_index)
+                } else {
+                    return None;
+                }
+            } else if first_secondary_id == 0 && second_secondary_id != 0 {
+                (first_record_index, second_record_index)
+            } else {
+                return None;
+            };
         let source = projected.get(&(scope, source_record_index))?;
         let result = projected.get(&(scope, result_record_index))?;
         if !used_entities.insert(source.id.clone()) || !used_entities.insert(result.id.clone()) {
@@ -6697,25 +6740,32 @@ fn exact_offset_constraint(
         if distance.abs() <= 1.0e-9 {
             return None;
         }
-        if let Some(expected) = signed_distance {
-            let scale = 1.0 + distance.abs().max(expected.abs());
-            if (distance - expected).abs() > scale * 1.0e-9 {
-                return None;
-            }
-        } else {
-            signed_distance = Some(distance);
-        }
+        let source_reversed = offset_source_reversed(distance, &mut canonical_distance)?;
         pairs.push(SketchOffsetPair {
             source: source.id.clone(),
             result: result.id.clone(),
+            source_reversed,
         });
     }
     Some(Definition::Offset {
         pairs,
-        signed_distance: Length(signed_distance?),
+        distance: Length(canonical_distance?),
         parameter: None,
         parameter_factor: None,
     })
+}
+
+fn offset_source_reversed(distance: f64, canonical: &mut Option<f64>) -> Option<bool> {
+    let magnitude = distance.abs();
+    let Some(expected) = *canonical else {
+        *canonical = Some(magnitude);
+        return Some(distance.is_sign_negative());
+    };
+    let scale = 1.0 + magnitude.max(expected);
+    if (magnitude - expected).abs() > scale * 1.0e-9 {
+        return None;
+    }
+    Some(distance.is_sign_negative())
 }
 
 fn parallel_line_offset(
@@ -6897,6 +6947,7 @@ fn relation_kind_name(relation: &SketchRelation) -> String {
             SketchConstraintKind::Equal => "equal",
             SketchConstraintKind::Midpoint => "midpoint",
             SketchConstraintKind::Polygon => "polygon",
+            SketchConstraintKind::Offset => "offset",
             SketchConstraintKind::SplineGroup => "spline_group",
             SketchConstraintKind::CircularPattern => "circular_pattern",
             SketchConstraintKind::RectangularPattern => "rectangular_pattern",
@@ -12226,7 +12277,7 @@ fn decode_pattern_definition(
     None
 }
 
-pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = 0x0300_b000_3fff;
+pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = 0x0320_b000_3fff;
 
 pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>, u64) {
     let definitions = [
@@ -12247,6 +12298,7 @@ pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>,
         (0x1000_0000, SketchConstraintKind::CircularPattern),
         (0x2000_0000, SketchConstraintKind::RectangularPattern),
         (0x8000_0000, SketchConstraintKind::SplineGroup),
+        (0x20_0000_0000, SketchConstraintKind::Offset),
         (0x100_0000_0000, SketchConstraintKind::TextFrame),
         (0x200_0000_0000, SketchConstraintKind::TextPath),
     ];
@@ -18171,7 +18223,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn aggregate_offset_relation_projects_ordered_pairs_and_signed_distance() {
+    fn aggregate_offset_relation_projects_ordered_oriented_pairs() {
         let entity = |id: &str, geometry: SketchGeometry| cadmpeg_ir::sketches::SketchEntity {
             id: SketchEntityId(id.into()),
             sketch: SketchId("generated:sketch#0".into()),
@@ -18198,8 +18250,8 @@ mod relation_tests {
         let source_vertical = entity(
             "generated:line#source-vertical",
             SketchGeometry::Line {
-                start: Point2::new(0.0, 0.0),
-                end: Point2::new(0.0, 10.0),
+                start: Point2::new(0.0, 10.0),
+                end: Point2::new(0.0, 0.0),
             },
         );
         let result_vertical = entity(
@@ -18228,14 +18280,14 @@ mod relation_tests {
             resolved_members: Vec::new(),
             member_offsets: vec![25, 40, 55, 70],
             owner_reference_offset: 90,
-            state: 0x20,
-            constraint_kinds: vec![SketchConstraintKind::Perpendicular],
+            state: 0x20_0000_0000,
+            constraint_kinds: vec![SketchConstraintKind::Offset],
             unknown_constraint_bits: 0,
-            member_roles: Vec::new(),
+            member_roles: vec![3, 5, 1, 1],
             entity_genesis: None,
             pattern: None,
             return_members: vec![1, 3, 2, 4],
-            resolved_return_members: vec![curve(1, 0), curve(3, 30), curve(2, 0), curve(4, 40)],
+            resolved_return_members: vec![curve(1, 10), curve(3, 30), curve(2, 20), curve(4, 40)],
             return_member_offsets: vec![120, 131, 142, 153],
             raw_bytes: Vec::new(),
         };
@@ -18249,7 +18301,7 @@ mod relation_tests {
         let definition = exact_offset_constraint(&relation, "native", &projected).unwrap();
         let SketchConstraintDefinition::Offset {
             pairs,
-            signed_distance,
+            distance,
             parameter,
             parameter_factor,
         } = definition
@@ -18261,7 +18313,9 @@ mod relation_tests {
         assert_eq!(pairs[0].result, result_horizontal.id);
         assert_eq!(pairs[1].source, source_vertical.id);
         assert_eq!(pairs[1].result, result_vertical.id);
-        assert!((signed_distance.0 + 2.0).abs() <= 1.0e-9);
+        assert!((distance.0 - 2.0).abs() <= 1.0e-9);
+        assert!(pairs[0].source_reversed);
+        assert!(!pairs[1].source_reversed);
         assert_eq!(parameter, None);
         assert_eq!(parameter_factor, None);
 
@@ -18269,7 +18323,7 @@ mod relation_tests {
         repeated_pair.return_members.extend([1, 3]);
         repeated_pair
             .resolved_return_members
-            .extend([curve(1, 0), curve(3, 30)]);
+            .extend([curve(1, 10), curve(3, 30)]);
         assert!(exact_offset_constraint(&repeated_pair, "native", &projected).is_none());
     }
 
@@ -18941,7 +18995,7 @@ mod relation_tests {
                 .expect("counted offset graph");
         let SketchConstraintDefinition::Offset {
             pairs,
-            signed_distance,
+            distance,
             parameter,
             parameter_factor,
         } = definition
@@ -18952,7 +19006,8 @@ mod relation_tests {
         assert_eq!(pairs[0].result, inset_bottom.id);
         assert_eq!(pairs[1].source, top.id);
         assert_eq!(pairs[1].result, inset_top.id);
-        assert!((signed_distance.0 + 2.0).abs() <= 1.0e-9);
+        assert!((distance.0 - 2.0).abs() <= 1.0e-9);
+        assert!(pairs.iter().all(|pair| pair.source_reversed));
         assert_eq!(parameter, None);
         assert_eq!(parameter_factor, None);
     }
@@ -18961,7 +19016,7 @@ mod relation_tests {
     fn offset_parameter_factor_preserves_curve_direction() {
         assert_eq!(offset_parameter_factor(2.0, 2.0), Some(1.0));
         assert_eq!(offset_parameter_factor(2.0, -2.0), Some(-1.0));
-        assert_eq!(offset_parameter_factor(-2.0, 2.0), Some(-1.0));
+        assert_eq!(offset_parameter_factor(-2.0, 2.0), None);
         assert_eq!(offset_parameter_factor(2.0, 3.0), None);
         assert_eq!(offset_parameter_factor(f64::NAN, 2.0), None);
     }

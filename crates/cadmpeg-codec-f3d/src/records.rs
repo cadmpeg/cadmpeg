@@ -1971,6 +1971,8 @@ pub enum SketchConstraintKind {
     Midpoint,
     /// Entities participate in a polygon relation.
     Polygon,
+    /// Result entities are offset from oriented source entities by one magnitude.
+    Offset,
     /// A spline's defining entities grouped under the owning sketch.
     SplineGroup,
     /// Entities participate in a circular pattern.

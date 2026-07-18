@@ -19,6 +19,42 @@ fn finite2(point: crate::math::Point2) -> bool {
     point.u.is_finite() && point.v.is_finite()
 }
 
+fn line_offset_matches(source: &SketchGeometry, result: &SketchGeometry, expected: f64) -> bool {
+    let (
+        SketchGeometry::Line {
+            start: source_start,
+            end: source_end,
+        },
+        SketchGeometry::Line {
+            start: result_start,
+            end: result_end,
+        },
+    ) = (source, result)
+    else {
+        return false;
+    };
+    let source_du = source_end.u - source_start.u;
+    let source_dv = source_end.v - source_start.v;
+    let result_du = result_end.u - result_start.u;
+    let result_dv = result_end.v - result_start.v;
+    let source_length = source_du.hypot(source_dv);
+    let result_length = result_du.hypot(result_dv);
+    if source_length <= 1.0e-12 || result_length <= 1.0e-12 {
+        return false;
+    }
+    let scale = 1.0 + expected.abs();
+    let parallel = (source_du * result_dv - source_dv * result_du).abs()
+        <= 1.0e-9 * source_length * result_length;
+    let normal_u = -source_dv / source_length;
+    let normal_v = source_du / source_length;
+    let distance_at = |point: &crate::math::Point2| {
+        (point.u - source_start.u) * normal_u + (point.v - source_start.v) * normal_v
+    };
+    parallel
+        && (distance_at(result_start) - expected).abs() <= 1.0e-9 * scale
+        && (distance_at(result_end) - expected).abs() <= 1.0e-9 * scale
+}
+
 pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     let entity_geometry = ir
         .model
@@ -261,18 +297,25 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
             Constraint::Offset {
                 pairs,
-                signed_distance,
+                distance,
                 parameter,
                 parameter_factor,
             } => {
+                let mut sources = HashSet::new();
+                let mut results = HashSet::new();
                 let valid_parameter = match (parameter, parameter_factor) {
                     (None, None) => true,
                     (Some(_), Some(factor)) => factor.abs() == 1.0,
                     _ => false,
                 };
                 !pairs.is_empty()
-                    && signed_distance.0.is_finite()
-                    && signed_distance.0.abs() > 0.0
+                    && pairs.iter().all(|pair| {
+                        pair.source != pair.result
+                            && sources.insert(&pair.source)
+                            && results.insert(&pair.result)
+                    })
+                    && distance.0.is_finite()
+                    && distance.0 > 0.0
                     && valid_parameter
             }
             Constraint::Native {
@@ -328,21 +371,28 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let Constraint::Offset { pairs, .. } = &constraint.definition {
+        if let Constraint::Offset {
+            pairs, distance, ..
+        } = &constraint.definition
+        {
             for pair in pairs {
                 let valid = entity_geometry
                     .get(&pair.source)
                     .zip(entity_geometry.get(&pair.result))
                     .is_none_or(|(source, result)| {
-                        matches!(source, SketchGeometry::Line { .. })
-                            && matches!(result, SketchGeometry::Line { .. })
+                        let expected = if pair.source_reversed {
+                            -distance.0
+                        } else {
+                            distance.0
+                        };
+                        line_offset_matches(source, result, expected)
                     });
                 if !valid {
                     finding(
                         findings,
                         Check::GeometricConsistency,
                         &constraint.id.0,
-                        "sketch offset pair requires two line entities",
+                        "sketch offset pair does not match its oriented distance",
                     );
                 }
             }
