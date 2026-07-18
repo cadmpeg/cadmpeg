@@ -165,8 +165,7 @@ pub struct BrepFacts {
 /// BREP facts. Shared by `inspect` and `decode`.
 ///
 /// The `'a` lifetime is the session's root address space: stored entries are
-/// [`SpaceOrigin::Slice`](cadmpeg_ir::decode::SpaceOrigin) views borrowing the
-/// root without copying, and compressed entries are arena-backed views the
+/// views borrowing the root without copying, and compressed entries are arena-backed views the
 /// platform expander produced, so both live for the decode's duration.
 pub struct ContainerScan<'a> {
     /// Complete source archive retained for byte-exact native replay.

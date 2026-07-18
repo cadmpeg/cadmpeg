@@ -77,15 +77,14 @@ const INFLATE_CHUNK: usize = 8192;
 
 /// Locate, inflate, and classify zlib streams in `/Root/UG_PART/UG_PART`.
 ///
-/// Registers the canonical part payload as a [`SpaceOrigin::Slice`] span in the
-/// runtime space graph, then inflates each embedded zlib stream through
+/// Registers the canonical part payload as a borrowed address space, then
+/// inflates each embedded zlib stream through
 /// [`DecodeContext::begin_expand`] so every decompressed byte is charged and
-/// bounded by the per-expand and cumulative ceilings, and each stream registers
-/// as a decompression `Transform` space only on successful finalize. Returns an
+/// bounded by the per-expand and cumulative ceilings. Each stream registers an
+/// address space only on successful finalize. Returns an
 /// empty vector when the canonical part entry is absent, so
 /// an assembly `.prt` with no inline geometry decodes without error.
 ///
-/// [`SpaceOrigin::Slice`]: cadmpeg_ir::decode::SpaceOrigin::Slice
 pub fn extract_streams<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -185,7 +184,6 @@ fn inflate_stream<'a>(
         return Ok(None);
     }
     let consumed = decoder.total_in();
-    writer.set_consumed(consumed);
     writer.finalize()?;
     Ok(Some((inflated, consumed)))
 }

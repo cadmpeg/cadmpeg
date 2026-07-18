@@ -7,9 +7,6 @@ use super::*;
 use crate::codec::{CodecError, DecodeResult};
 use crate::document::CadIr;
 use crate::report::{DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity};
-use crate::source_fidelity::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
-};
 use crate::units::Units;
 
 fn desktop() -> DecodePolicy {
@@ -324,20 +321,10 @@ fn derived_space_concats_multiple_extents_and_charges_alloc() {
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 8);
 
     assert_eq!(ctx.input_basis(), basis_before);
-
-    match ctx.space_origin(space).unwrap() {
-        SpaceOrigin::Concat { segments } => {
-            assert_eq!(segments.len(), 2);
-            assert_eq!(segments[0].space, SpaceId::ROOT);
-            assert_eq!(segments[0].range, ByteRange { start: 0, end: 4 });
-            assert_eq!(segments[1].range, ByteRange { start: 6, end: 10 });
-        }
-        other => panic!("expected Concat origin, got {other:?}"),
-    }
 }
 
 #[test]
-fn derived_space_records_a_multi_input_transform() {
+fn derived_space_charges_a_multi_input_transform() {
     let bytes: &[u8] = &[0xAA, 0xBB, 0xCC, 0xDD, 0x01, 0x02, 0x03, 0x04];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -348,27 +335,15 @@ fn derived_space_records_a_multi_input_transform() {
     let basis_before = ctx.input_basis();
 
     let mut writer = ctx
-        .begin_derived_space(
-            &[dictionary, data],
-            DerivedKind::Transform(TransformKind::Decompress),
-        )
+        .begin_derived_space(&[dictionary, data], DerivedKind::Transform)
         .unwrap();
     writer.write(&[1, 2, 3, 4, 5, 6]).unwrap();
-    let (space, view) = writer.finalize().unwrap();
+    let (_space, view) = writer.finalize().unwrap();
 
     assert_eq!(view.window(), &[1, 2, 3, 4, 5, 6]);
     assert_eq!(ctx.charged(ResourceDimension::DecompressedBytes), 6);
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 0);
     assert_eq!(ctx.input_basis(), basis_before + 6);
-    match ctx.space_origin(space).unwrap() {
-        SpaceOrigin::Transform { inputs, kind } => {
-            assert_eq!(kind, TransformKind::Decompress);
-            assert_eq!(inputs.len(), 2);
-            assert_eq!(inputs[0].range, ByteRange { start: 0, end: 4 });
-            assert_eq!(inputs[1].range, ByteRange { start: 4, end: 8 });
-        }
-        other => panic!("expected Transform origin, got {other:?}"),
-    }
 }
 
 #[test]
@@ -419,13 +394,6 @@ fn register_slice_aliases_a_stored_entry_without_copying() {
     assert_eq!(view.start(), 0);
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 0);
     assert_eq!(ctx.input_basis(), basis_before);
-    match ctx.space_origin(space).unwrap() {
-        SpaceOrigin::Slice { parent, range } => {
-            assert_eq!(parent, SpaceId::ROOT);
-            assert_eq!(range, ByteRange { start: 2, end: 6 });
-        }
-        other => panic!("expected Slice origin, got {other:?}"),
-    }
 }
 
 #[test]
@@ -457,15 +425,8 @@ fn derived_concat_refuses_transform_writes() {
         Err(CodecError::Malformed(_)) => {}
         other => panic!("expected Malformed refusal, got {other:?}"),
     }
-    let (space, view) = writer.finalize().unwrap();
+    let (_space, view) = writer.finalize().unwrap();
     assert_eq!(view.window(), &[1, 2, 3, 4]);
-    match ctx.space_origin(space).unwrap() {
-        SpaceOrigin::Concat { segments } => {
-            assert_eq!(segments.len(), 1);
-            assert_eq!(segments[0].range, ByteRange { start: 0, end: 4 });
-        }
-        other => panic!("expected Concat origin, got {other:?}"),
-    }
 }
 
 #[test]
@@ -613,180 +574,6 @@ fn transfer_accounting_accepts_consistent_dispositions() {
     ctx.resolve(structural, RecordDisposition::Structural);
 
     assert!(ctx.finish(Ok(result_with_bodies(&["body/0"]))).is_ok());
-}
-
-fn source_ledger(length: u64, class: crate::source_fidelity::SpanClass) -> DecodeResult {
-    use crate::source_fidelity::{
-        AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
-        SerializedOrigin, SerializedRange, SourceFidelity,
-    };
-
-    let mut result = dummy_result();
-    result.source_fidelity = SourceFidelity::new(
-        LedgerLevel::L1,
-        LedgerCapability::Accounted,
-        vec![AddressSpaceLedger {
-            id: CanonicalSpaceId::source(),
-            length,
-            origin: SerializedOrigin::Root,
-            spans: vec![LedgerSpan {
-                range: SerializedRange {
-                    start: 0,
-                    end: length,
-                },
-                class,
-                owner: "test".to_string(),
-                meaning: "test".to_string(),
-                digest: String::new(),
-                retained: None,
-            }],
-        }],
-    );
-    result
-}
-
-#[test]
-fn transfer_accounting_accepts_disposition_tiled_by_the_ledger() {
-    let bytes: &[u8] = &[0u8; 16];
-    let arena = DecodeArena::new();
-    let policy = strict();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let typed = ctx.commit_record(root.location(), RecordKind("body"));
-    ctx.resolve(
-        typed,
-        RecordDisposition::Typed {
-            outputs: vec!["body/0".to_owned()],
-        },
-    );
-
-    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
-    result.ir = result_with_bodies(&["body/0"]).ir;
-    assert!(ctx.finish(Ok(result)).is_ok());
-}
-
-#[test]
-fn transfer_accounting_requires_every_derived_ticket_space_in_the_ledger() {
-    let bytes: &[u8] = &[0u8; 16];
-    let arena = DecodeArena::new();
-    let policy = strict();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let (_space, derived) = ctx
-        .register_slice(root, ByteRange { start: 4, end: 8 })
-        .unwrap();
-    let ticket = ctx.commit_record(derived.location(), RecordKind("body"));
-    ctx.resolve(
-        ticket,
-        RecordDisposition::Typed {
-            outputs: vec!["body/0".to_owned()],
-        },
-    );
-
-    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
-    result.ir = result_with_bodies(&["body/0"]).ir;
-    let error = ctx.finish(Ok(result)).expect_err("derived space is absent");
-    assert!(error
-        .to_string()
-        .contains("runtime address space is absent"));
-}
-
-#[test]
-fn transfer_accounting_matches_derived_space_by_origin() {
-    let bytes: &[u8] = &[0u8; 16];
-    let arena = DecodeArena::new();
-    let policy = strict();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let (_space, derived) = ctx
-        .register_slice(root, ByteRange { start: 4, end: 8 })
-        .unwrap();
-    let ticket = ctx.commit_record(derived.location(), RecordKind("body"));
-    ctx.resolve(
-        ticket,
-        RecordDisposition::Typed {
-            outputs: vec!["body/0".to_owned()],
-        },
-    );
-
-    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
-    result.source_fidelity.spaces.push(AddressSpaceLedger {
-        id: CanonicalSpaceId::entry("part"),
-        length: 4,
-        origin: SerializedOrigin::Slice {
-            parent: CanonicalSpaceId::source(),
-            range: SerializedRange { start: 4, end: 8 },
-        },
-        spans: vec![LedgerSpan {
-            range: SerializedRange { start: 0, end: 4 },
-            class: crate::source_fidelity::SpanClass::Opaque,
-            owner: "test".to_string(),
-            meaning: "test".to_string(),
-            digest: String::new(),
-            retained: None,
-        }],
-    });
-    result.ir = result_with_bodies(&["body/0"]).ir;
-    assert!(ctx.finish(Ok(result)).is_ok());
-}
-
-#[test]
-fn transfer_accounting_rejects_disposition_absent_from_the_ledger_in_strict() {
-    let bytes: &[u8] = &[0u8; 64];
-    let arena = DecodeArena::new();
-    let policy = strict();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let ticket = ctx.commit_record(
-        root.child(32, 33)
-            .map_or_else(|| root.location(), View::location),
-        RecordKind("body"),
-    );
-    ctx.resolve(
-        ticket,
-        RecordDisposition::Typed {
-            outputs: vec!["body/0".to_owned()],
-        },
-    );
-
-    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
-    result.ir = result_with_bodies(&["body/0"]).ir;
-    match ctx.finish(Ok(result)) {
-        Err(CodecError::Malformed(message)) => {
-            assert!(
-                message.contains("absent from the serialized ledger"),
-                "{message}"
-            );
-        }
-        other => panic!("expected strict ledger-reconciliation error, got {other:?}"),
-    }
-}
-
-#[test]
-fn transfer_accounting_ledger_violation_degrades_to_loss_in_salvage() {
-    let bytes: &[u8] = &[0u8; 64];
-    let arena = DecodeArena::new();
-    let policy = desktop();
-    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-    let ticket = ctx.commit_record(
-        root.child(32, 33)
-            .map_or_else(|| root.location(), View::location),
-        RecordKind("body"),
-    );
-    ctx.resolve(
-        ticket,
-        RecordDisposition::Typed {
-            outputs: vec!["body/0".to_owned()],
-        },
-    );
-
-    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
-    result.ir = result_with_bodies(&["body/0"]).ir;
-    let finished = ctx.finish(Ok(result)).unwrap();
-    assert!(
-        finished
-            .report
-            .losses
-            .iter()
-            .any(|loss| loss.message.contains("absent from the serialized ledger")),
-        "expected a ledger-reconciliation loss note"
-    );
 }
 
 fn result_with_unknown(id: &str) -> DecodeResult {

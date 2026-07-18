@@ -11,9 +11,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{
-    ByteRange, DecodeContext, DerivedKind, ExpandSpec, Retention, TransformKind, View,
-};
+use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, ExpandSpec, Retention, View};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 
@@ -540,9 +538,7 @@ fn inflate_wrapped_stream(
     let Some(source) = block.child(offset, block.end()) else {
         return Ok(None);
     };
-    let mut writer = match ctx
-        .begin_derived_space(&[source], DerivedKind::Transform(TransformKind::Decompress))
-    {
+    let mut writer = match ctx.begin_derived_space(&[source], DerivedKind::Transform) {
         Ok(writer) => writer,
         Err(e) => return probe_or_propagate(e),
     };

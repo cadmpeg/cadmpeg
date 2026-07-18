@@ -14,10 +14,6 @@ use std::collections::BTreeSet;
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
 use crate::document::Model;
 use crate::report::{LossCategory, LossCode, LossNote, ProfileVersions, Severity};
-use crate::source_fidelity::{
-    CanonicalSpaceId, SerializedOrigin, SerializedRange, SerializedTransformKind, SourceFidelity,
-    SpaceExtent,
-};
 
 use super::arena::DecodeArena;
 use super::budget::BudgetCells;
@@ -28,7 +24,7 @@ use super::policy::{DecodeMode, DecodePolicy, Envelope, ResourceLimits};
 use super::retained::{
     RetainedAddr, RetainedBlob, RetainedBlobId, RetainedRange, RetainedStore, Retention,
 };
-use super::space::{ByteRange, SourceSpan, SpaceId, SpaceOrigin, SpaceRegistry, TransformKind};
+use super::space::{ByteRange, SpaceId, SpaceRegistry};
 use super::view::{BoundedCount, View};
 
 /// Initial per-expand reservation clamp: an attacker's declared size cannot
@@ -39,84 +35,6 @@ const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
 /// hostile count of zero-sized elements still pays.
 fn element_charge<T>() -> u64 {
     std::mem::size_of::<T>().max(1) as u64
-}
-
-impl SpaceRegistry {
-    /// Match runtime spaces to the ledger's canonical ids by length and complete
-    /// derivation origin. Registration order remains runtime-only.
-    fn canonical_ids(&self, ledger: &SourceFidelity) -> Vec<Option<CanonicalSpaceId>> {
-        let records = self.records();
-        let mut ids = vec![None; records.len()];
-        for record in &records {
-            let matches = ledger.spaces.iter().filter(|candidate| {
-                candidate.length == record.length
-                    && origin_matches(&record.origin, &candidate.origin, &ids)
-            });
-            let mut matches = matches.map(|candidate| candidate.id.clone());
-            let Some(first) = matches.next() else {
-                continue;
-            };
-            if matches.next().is_none() {
-                ids[record.id.index() as usize] = Some(first);
-            }
-        }
-        ids
-    }
-}
-
-fn origin_matches(
-    runtime: &SpaceOrigin,
-    serialized: &SerializedOrigin,
-    ids: &[Option<CanonicalSpaceId>],
-) -> bool {
-    match (runtime, serialized) {
-        (SpaceOrigin::Root, SerializedOrigin::Root) => true,
-        (
-            SpaceOrigin::Slice { parent, range },
-            SerializedOrigin::Slice {
-                parent: serialized_parent,
-                range: serialized_range,
-            },
-        ) => {
-            runtime_space_id(*parent, ids) == Some(serialized_parent)
-                && ranges_match(*range, *serialized_range)
-        }
-        (SpaceOrigin::Concat { segments }, SerializedOrigin::Concat { segments: extents }) => {
-            extents_match(segments, extents, ids)
-        }
-        (
-            SpaceOrigin::Transform { inputs, kind },
-            SerializedOrigin::Transform {
-                inputs: extents,
-                transform,
-            },
-        ) => {
-            *kind == TransformKind::Decompress
-                && *transform == SerializedTransformKind::Decompress
-                && extents_match(inputs, extents, ids)
-        }
-        _ => false,
-    }
-}
-
-fn extents_match(
-    runtime: &[SourceSpan],
-    serialized: &[SpaceExtent],
-    ids: &[Option<CanonicalSpaceId>],
-) -> bool {
-    runtime.len() == serialized.len()
-        && runtime.iter().zip(serialized).all(|(span, extent)| {
-            runtime_space_id(span.space, ids) == Some(&extent.space)
-                && ranges_match(span.range, extent.range)
-        })
-}
-
-fn runtime_space_id(space: SpaceId, ids: &[Option<CanonicalSpaceId>]) -> Option<&CanonicalSpaceId> {
-    ids.get(space.index() as usize).and_then(Option::as_ref)
-}
-
-fn ranges_match(runtime: ByteRange, serialized: SerializedRange) -> bool {
-    runtime.start == serialized.start && runtime.end == serialized.end
 }
 
 /// Shared monotonic decode state.
@@ -199,7 +117,7 @@ impl<'a> DecodeContext<'a> {
         budget.set_input_basis(length);
         budget.set_counter(ResourceDimension::InputBytes, length);
         let spaces = SpaceRegistry::default();
-        let root_space = spaces.register_root(length);
+        let root_space = spaces.register_root();
         let ctx = DecodeContext {
             arena,
             policy: *policy,
@@ -593,13 +511,6 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        let input = SourceSpan {
-            space: source.space(),
-            range: ByteRange {
-                start: source.start() as u64,
-                end: source.end() as u64,
-            },
-        };
         let mut buffer: Vec<u8> = Vec::new();
         let reserve = match spec {
             ExpandSpec::Exact(size) | ExpandSpec::AtMost(size) => size.min(RESERVE_CLAMP),
@@ -621,7 +532,6 @@ impl<'a> DecodeContext<'a> {
         Ok(ExpandWriter {
             ctx: self,
             spec,
-            input,
             location: source.location(),
             buffer,
             written: 0,
@@ -630,14 +540,13 @@ impl<'a> DecodeContext<'a> {
 
     /// Begins assembling a derived space from several input extents.
     ///
-    /// The multi-input sibling of [`DecodeContext::begin_expand`]; each origin
-    /// carries its own charging semantics:
+    /// The multi-input sibling of [`DecodeContext::begin_expand`]. Each kind
+    /// has distinct charging semantics:
     ///
     /// - [`DerivedKind::Concat`] reassembles the input extents into one logical
     ///   stream (catia extents, iges parameter cards, OLE sectors). The output
-    ///   is copied from the inputs here, at construction, so the recorded
-    ///   [`SpaceOrigin::Concat`] segments cannot diverge from the bytes the
-    ///   space holds. Each extent is charged to `alloc_bytes` — a fresh heap
+    ///   is copied from the inputs here, at construction. Each extent is
+    ///   charged to `alloc_bytes` — a fresh heap
     ///   copy of already-accounted bytes, so the input basis does not grow and
     ///   the source extents are not double-counted. The returned writer only
     ///   needs [`DerivedWriter::finalize`].
@@ -650,8 +559,7 @@ impl<'a> DecodeContext<'a> {
     ///   [`ExpandWriter::finalize`], because the output is genuine decompressed
     ///   content the decompression-bomb ceilings must bound.
     ///
-    /// `begin_expand` is the single-source [`SpaceOrigin::Transform`] special
-    /// case. The output space registers only on successful
+    /// The output space registers only on successful
     /// [`DerivedWriter::finalize`] — an incomplete space never escapes, and a
     /// Concat assembly that exceeds `alloc_bytes` fuses here before any writer
     /// escapes.
@@ -663,21 +571,10 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        let segments = inputs
-            .iter()
-            .map(|view| SourceSpan {
-                space: view.space(),
-                range: ByteRange {
-                    start: view.start() as u64,
-                    end: view.end() as u64,
-                },
-            })
-            .collect();
         let location = inputs.first().map(|view| view.location());
         let mut writer = DerivedWriter {
             ctx: self,
             kind,
-            segments,
             location,
             buffer: Vec::new(),
             written: 0,
@@ -694,8 +591,8 @@ impl<'a> DecodeContext<'a> {
         Ok(writer)
     }
 
-    /// Registers a stored (uncompressed) child range as a [`SpaceOrigin::Slice`]
-    /// space that borrows the parent bytes without copying, returning the new
+    /// Registers a stored (uncompressed) child range as a space that borrows
+    /// the parent bytes without copying, returning the new
     /// space id and a view whose coordinates are absolute within it.
     ///
     /// `range` is expressed in the parent view's own space coordinates and must
@@ -729,14 +626,7 @@ impl<'a> DecodeContext<'a> {
                     parent.space().index()
                 ))
             })?;
-        let length = range.end - range.start;
-        let space = self.spaces.register(
-            length,
-            SpaceOrigin::Slice {
-                parent: parent.space(),
-                range,
-            },
-        );
+        let space = self.spaces.register();
         Ok((space, View::over_space(child.window(), space)))
     }
 
@@ -805,18 +695,15 @@ impl<'a> DecodeContext<'a> {
     /// and its [`LossNote`] is appended to the result's report, so the
     /// omission stays an accountable outcome.
     ///
-    /// `Check::TransferAccounting` then validates the resolved
-    /// disposition table against the ledger: a [`RecordDisposition::Typed`]
+    /// Transfer accounting then validates the resolved disposition table: a
+    /// [`RecordDisposition::Typed`]
     /// must name at least one output entity, a [`RecordDisposition::Retained`]
     /// must name at least one retained record and every named record must
     /// resolve in the retained store, a [`RecordDisposition::Preserved`] must
     /// name at least one unknown record and every named record must resolve in
     /// the document's native unknowns, and a [`RecordDisposition::Dropped`]'s
-    /// loss note must be reflected in the report's losses. When the report
-    /// carries a ledger, every resolved ticket in a canonically-named space
-    /// must additionally land inside a span the ledger tiles, so a disposition
-    /// and the serialized ledger cannot claim disjoint byte accounts. A codec
-    /// that issues no tickets has an empty table and passes trivially. A violation is a
+    /// loss note must be reflected in the report's losses. A codec that issues
+    /// no tickets has an empty table and passes trivially. A violation is a
     /// codec contract error in strict mode (`Malformed`); in salvage mode each
     /// violation is appended as an accountable [`LossNote`] and never fails the
     /// decode, matching the mode's degrade-not-fail discipline.
@@ -870,18 +757,11 @@ impl<'a> DecodeContext<'a> {
                 BTreeSet::new()
             }
         };
-        let ledger = (result.source_fidelity.level != crate::source_fidelity::LedgerLevel::L0)
-            .then_some(&result.source_fidelity);
-        let canonical_spaces = ledger
-            .map(|ledger| self.spaces.canonical_ids(ledger))
-            .unwrap_or_default();
         let violations = self.tickets.transfer_accounting(
             &result.ir.model,
             &self.retained,
             &unknown_ids,
             &result.report.losses,
-            ledger,
-            &canonical_spaces,
         );
         if !violations.is_empty() {
             match self.policy.mode {
@@ -979,12 +859,6 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn spaces_len(&self) -> usize {
         self.spaces.len()
-    }
-
-    /// Returns a registered space's derivation origin.
-    #[cfg(test)]
-    pub(crate) fn space_origin(&self, id: SpaceId) -> Option<SpaceOrigin> {
-        self.spaces.origin(id)
     }
 
     /// Returns how many committed tickets remain unresolved.
@@ -1175,17 +1049,13 @@ pub enum ExpandSpec {
 
 /// How a multi-input derived space assembles its output bytes.
 ///
-/// The [`DecodeContext::begin_derived_space`] counterpart to
-/// [`ExpandSpec`]'s size contract: it names the origin the finalized space
-/// records, not a size bound.
+/// Selects the charging and construction behavior for a derived space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DerivedKind {
-    /// The output is the ordered concatenation of the input extents, recorded
-    /// as [`SpaceOrigin::Concat`].
+    /// The output is the ordered concatenation of the input extents.
     Concat,
-    /// The output is a transform of the named input extents, recorded as
-    /// [`SpaceOrigin::Transform`] with the given kind.
-    Transform(TransformKind),
+    /// The output is decompressed from the named input extents.
+    Transform,
 }
 
 /// Writes decompressed output under incremental charging.
@@ -1193,7 +1063,6 @@ pub enum DerivedKind {
 pub struct ExpandWriter<'ctx, 'a> {
     ctx: &'ctx DecodeContext<'a>,
     spec: ExpandSpec,
-    input: SourceSpan,
     location: SourceLocation,
     buffer: Vec<u8>,
     written: u64,
@@ -1266,13 +1135,7 @@ impl<'a> ExpandWriter<'_, 'a> {
         }
         let length = self.written;
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
-        let space = self.ctx.spaces.register(
-            length,
-            SpaceOrigin::Transform {
-                inputs: vec![self.input],
-                kind: TransformKind::Decompress,
-            },
-        );
+        let space = self.ctx.spaces.register();
         self.ctx.budget.grow_input_basis(length);
         Ok((space, View::over_space(bytes, space)))
     }
@@ -1280,24 +1143,6 @@ impl<'a> ExpandWriter<'_, 'a> {
     /// Returns how many bytes have been written so far.
     pub fn written(&self) -> u64 {
         self.written
-    }
-
-    /// Narrows the recorded compressed-input extent to the `consumed` bytes the
-    /// expander actually read from the source, for packed streams whose member
-    /// length is only known after inflation.
-    ///
-    /// [`begin_expand`](DecodeContext::begin_expand) frames the source as a view
-    /// that may reach past the member — a codec walking packed zlib members
-    /// cannot know a member's compressed length before decoding it. Recording
-    /// that whole tail as the input span would make every member but the last
-    /// overlap all later members, corrupting the per-space provenance the
-    /// [`SpaceOrigin::Transform`] ledger must keep disjoint. Call this with the
-    /// decoder's consumed-input count before [`finalize`](Self::finalize) so the
-    /// registered span covers only the member. The end never grows past the
-    /// original source extent.
-    pub fn set_consumed(&mut self, consumed: u64) {
-        let end = self.input.range.start.saturating_add(consumed);
-        self.input.range.end = end.min(self.input.range.end);
     }
 }
 
@@ -1307,14 +1152,13 @@ impl<'a> ExpandWriter<'_, 'a> {
 /// construction, each charged to `alloc_bytes`; a [`DerivedKind::Transform`]
 /// writer takes streamed output through [`DerivedWriter::write`], charged to
 /// `decompressed_bytes` under the decompression ceilings. [`DerivedWriter::finalize`]
-/// stores the buffer in the arena and registers the space with the
-/// [`DerivedKind`]'s origin; a Transform additionally grows the input basis.
+/// stores the buffer in the arena and registers the space; a Transform
+/// additionally grows the input basis.
 /// Dropping the writer without finalizing registers nothing.
 #[derive(Debug)]
 pub struct DerivedWriter<'ctx, 'a> {
     ctx: &'ctx DecodeContext<'a>,
     kind: DerivedKind,
-    segments: Vec<SourceSpan>,
     location: Option<SourceLocation>,
     buffer: Vec<u8>,
     written: u64,
@@ -1323,7 +1167,7 @@ pub struct DerivedWriter<'ctx, 'a> {
 impl<'a> DerivedWriter<'_, 'a> {
     /// Copies one Concat input extent into the buffer, charging `alloc_bytes`
     /// before the bytes are retained. Called during construction so the
-    /// recorded segments are exactly the bytes assembled here.
+    /// bytes are retained.
     fn append_extent(&mut self, data: &[u8]) -> Result<(), CodecError> {
         let len = data.len() as u64;
         self.ctx.charge(
@@ -1354,10 +1198,9 @@ impl<'a> DerivedWriter<'_, 'a> {
     /// Valid only for a [`DerivedKind::Transform`] space, whose output is new
     /// decompressed content that the decompression-bomb ceilings
     /// must bound. A [`DerivedKind::Concat`] space assembles from its declared
-    /// inputs at construction and holds no caller-written bytes; writing to one
-    /// is refused so its provenance ledger cannot be contradicted.
+    /// inputs at construction and holds no caller-written bytes.
     pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
-        if !matches!(self.kind, DerivedKind::Transform(_)) {
+        if !matches!(self.kind, DerivedKind::Transform) {
             return Err(CodecError::Malformed(
                 "a derived Concat space assembles from its declared inputs; \
                  write is only for Transform output"
@@ -1403,7 +1246,7 @@ impl<'a> DerivedWriter<'_, 'a> {
     }
 
     /// Finalizes the assembly: stores the output in the arena and registers the
-    /// derived space with its `Concat` or `Transform` origin.
+    /// derived space.
     ///
     /// A Transform's output is new decompressed content, so it grows the input
     /// basis like [`ExpandWriter::finalize`]; a Concat reassembles
@@ -1411,22 +1254,11 @@ impl<'a> DerivedWriter<'_, 'a> {
     pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
         let length = self.written;
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
-        let (origin, grows_basis) = match self.kind {
-            DerivedKind::Concat => (
-                SpaceOrigin::Concat {
-                    segments: self.segments,
-                },
-                false,
-            ),
-            DerivedKind::Transform(kind) => (
-                SpaceOrigin::Transform {
-                    inputs: self.segments,
-                    kind,
-                },
-                true,
-            ),
+        let grows_basis = match self.kind {
+            DerivedKind::Concat => false,
+            DerivedKind::Transform => true,
         };
-        let space = self.ctx.spaces.register(length, origin);
+        let space = self.ctx.spaces.register();
         if grows_basis {
             self.ctx.budget.grow_input_basis(length);
         }
@@ -1519,9 +1351,8 @@ impl TicketTable {
             .count()
     }
 
-    /// Validates the resolved disposition table against the retained ledger, the
-    /// serialized ledger, and the report's losses, returning one message per violation
-    /// in ticket order.
+    /// Validates the resolved disposition table against retained records, model
+    /// output, native unknowns, and report losses.
     ///
     /// The checks: a [`RecordDisposition::Typed`] names at least one output
     /// entity and every named entity resolves in `model`; a
@@ -1533,19 +1364,7 @@ impl TicketTable {
     /// `losses`. An unresolved ticket is not re-reported here —
     /// [`finish`](DecodeContext::finish) handles resolution before this runs.
     /// [`RecordDisposition::Structural`] carries no semantic content and is
-    /// unconstrained by the retained ledger and the model.
-    ///
-    /// When `ledger` is present, every ticket's runtime space is matched to a
-    /// canonical ledger space by its full derivation origin, then its byte
-    /// location must fall inside a span the ledger tiles. This
-    /// is the cross-artifact conservation check: a disposition
-    /// whose bytes the ledger does not tile (a span absent from the ledger, or a
-    /// location in a tiling gap) is a violation, closing the gap between the
-    /// disposition table and the serialized ledger that would otherwise let both
-    /// validate independently. Class coherence is not asserted: at L1 a coarse
-    /// `Opaque` span legitimately backs a `Typed` disposition, so only span
-    /// existence — not span class — is the conserved property at ledger
-    /// granularity below L2.
+    /// unconstrained by retained records and the model.
     ///
     /// Dropped reflection consumes one report loss per disposition: each
     /// `Dropped` claims a distinct un-consumed `LossNote` matching its key, so
@@ -1558,8 +1377,6 @@ impl TicketTable {
         retained: &RetainedStore,
         unknown_ids: &BTreeSet<String>,
         losses: &[LossNote],
-        ledger: Option<&SourceFidelity>,
-        canonical_spaces: &[Option<CanonicalSpaceId>],
     ) -> Vec<String> {
         let mut violations = Vec::new();
         let mut consumed = vec![false; losses.len()];
@@ -1571,31 +1388,6 @@ impl TicketTable {
                 location.space.index(),
                 location.offset
             );
-            // When the codec serialized a ledger, the bytes this disposition
-            // accounts for must be tiled by it. A resolved
-            // ticket whose runtime space is absent from the ledger, or whose
-            // offset lands in a tiling gap, is a disposition the ledger does not
-            // corroborate. Failure to establish a unique canonical mapping is
-            // itself an accounting violation.
-            if let Some(ledger) = ledger.filter(|_| state.disposition.is_some()) {
-                let space = canonical_spaces
-                    .get(location.space.index() as usize)
-                    .and_then(Option::as_ref);
-                if let Some(space) = space {
-                    if ledger.class_at(space, location.offset).is_none() {
-                        violations.push(format!(
-                            "{at} resolved a disposition but its bytes are absent from the \
-                             serialized ledger space `{}`",
-                            space.as_str()
-                        ));
-                    }
-                } else {
-                    violations.push(format!(
-                        "{at} resolved a disposition but its runtime address space is absent \
-                         from the serialized ledger"
-                    ));
-                }
-            }
             match &state.disposition {
                 Some(RecordDisposition::Typed { outputs }) => {
                     if outputs.is_empty() {

@@ -28,7 +28,7 @@ use crate::wire::Uuid;
 /// [`DecodeContext::begin_expand`]: decompressed output is
 /// charged to `decompressed_bytes` incrementally, bounded by the per-expand,
 /// cumulative, and per-entry decompression ceilings, and registered as a
-/// [`cadmpeg_ir::decode::SpaceOrigin::Transform`] address space only on
+/// derived address space only on
 /// successful finalize. No mesh decompressor writes bytes outside the returned
 /// `ExpandWriter`, and no incomplete space escapes.
 ///
@@ -707,9 +707,8 @@ fn read_buffer<'a>(
                 ));
             }
             // The compressed body is a window into the session input; take the
-            // decompression source from the root address space (not a detached
-            // buffer) so `begin_expand` records a `Transform` origin whose input
-            // span is a real, registered parent extent.
+            // decompression source from the root address space rather than a
+            // detached buffer so errors retain source-relative locations.
             let source = expand
                 .root
                 .child(chunk.body.start, chunk.body.end)
