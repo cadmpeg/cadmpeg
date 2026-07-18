@@ -7,6 +7,9 @@ use super::*;
 use crate::codec::{CodecError, DecodeResult};
 use crate::document::CadIr;
 use crate::report::{DecodeReport, LossCategory, LossCode, LossNote, ProfileVersions, Severity};
+use crate::source_fidelity::{
+    AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
+};
 use crate::units::Units;
 
 fn desktop() -> DecodePolicy {
@@ -657,6 +660,69 @@ fn transfer_accounting_accepts_disposition_tiled_by_the_ledger() {
     );
 
     let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
+    result.ir = result_with_bodies(&["body/0"]).ir;
+    assert!(ctx.finish(Ok(result)).is_ok());
+}
+
+#[test]
+fn transfer_accounting_requires_every_derived_ticket_space_in_the_ledger() {
+    let bytes: &[u8] = &[0u8; 16];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let (_space, derived) = ctx
+        .register_slice(root, ByteRange { start: 4, end: 8 })
+        .unwrap();
+    let ticket = ctx.commit_record(derived.location(), RecordKind("body"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Typed {
+            outputs: vec!["body/0".to_owned()],
+        },
+    );
+
+    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
+    result.ir = result_with_bodies(&["body/0"]).ir;
+    let error = ctx.finish(Ok(result)).expect_err("derived space is absent");
+    assert!(error
+        .to_string()
+        .contains("runtime address space is absent"));
+}
+
+#[test]
+fn transfer_accounting_matches_derived_space_by_origin() {
+    let bytes: &[u8] = &[0u8; 16];
+    let arena = DecodeArena::new();
+    let policy = strict();
+    let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let (_space, derived) = ctx
+        .register_slice(root, ByteRange { start: 4, end: 8 })
+        .unwrap();
+    let ticket = ctx.commit_record(derived.location(), RecordKind("body"));
+    ctx.resolve(
+        ticket,
+        RecordDisposition::Typed {
+            outputs: vec!["body/0".to_owned()],
+        },
+    );
+
+    let mut result = source_ledger(16, crate::source_fidelity::SpanClass::Opaque);
+    result.source_fidelity.spaces.push(AddressSpaceLedger {
+        id: CanonicalSpaceId::entry("part"),
+        length: 4,
+        origin: SerializedOrigin::Slice {
+            parent: CanonicalSpaceId::source(),
+            range: SerializedRange { start: 4, end: 8 },
+        },
+        spans: vec![LedgerSpan {
+            range: SerializedRange { start: 0, end: 4 },
+            class: crate::source_fidelity::SpanClass::Opaque,
+            owner: "test".to_string(),
+            meaning: "test".to_string(),
+            digest: String::new(),
+            retained: None,
+        }],
+    });
     result.ir = result_with_bodies(&["body/0"]).ir;
     assert!(ctx.finish(Ok(result)).is_ok());
 }

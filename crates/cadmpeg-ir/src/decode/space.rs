@@ -118,6 +118,11 @@ impl SpaceRegistry {
         id
     }
 
+    /// Returns the registered spaces in derivation order.
+    pub(crate) fn records(&self) -> Vec<SpaceRecord> {
+        self.records.borrow().clone()
+    }
+
     /// Returns how many spaces are registered.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {

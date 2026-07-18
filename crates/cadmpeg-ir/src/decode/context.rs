@@ -14,7 +14,10 @@ use std::collections::BTreeSet;
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
 use crate::document::Model;
 use crate::report::{LossCategory, LossCode, LossNote, ProfileVersions, Severity};
-use crate::source_fidelity::{CanonicalSpaceId, SourceFidelity};
+use crate::source_fidelity::{
+    CanonicalSpaceId, SerializedOrigin, SerializedRange, SerializedTransformKind, SourceFidelity,
+    SpaceExtent,
+};
 
 use super::arena::DecodeArena;
 use super::budget::BudgetCells;
@@ -32,21 +35,88 @@ use super::view::{BoundedCount, View};
 /// force a large up-front reservation before any output is produced.
 const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
 
-/// Resolves a runtime [`SpaceId`] to the canonical ledger id it serializes as,
-/// when that mapping is fixed.
-///
-/// The root space is always serialized as `source`, so a ticket committed in it
-/// reconciles against the ledger's `source` space. Derived spaces receive
-/// canonical ids during registry serialization; a ticket in a derived space
-/// therefore returns `None` here and its ledger coverage is not asserted.
-fn canonical_space(space: SpaceId) -> Option<CanonicalSpaceId> {
-    (space == SpaceId::ROOT).then(CanonicalSpaceId::source)
-}
-
 /// The in-memory charge for one element of type `T`, floored at one byte so a
 /// hostile count of zero-sized elements still pays.
 fn element_charge<T>() -> u64 {
     std::mem::size_of::<T>().max(1) as u64
+}
+
+impl SpaceRegistry {
+    /// Match runtime spaces to the ledger's canonical ids by length and complete
+    /// derivation origin. Registration order remains runtime-only.
+    fn canonical_ids(&self, ledger: &SourceFidelity) -> Vec<Option<CanonicalSpaceId>> {
+        let records = self.records();
+        let mut ids = vec![None; records.len()];
+        for record in &records {
+            let matches = ledger.spaces.iter().filter(|candidate| {
+                candidate.length == record.length
+                    && origin_matches(&record.origin, &candidate.origin, &ids)
+            });
+            let mut matches = matches.map(|candidate| candidate.id.clone());
+            let Some(first) = matches.next() else {
+                continue;
+            };
+            if matches.next().is_none() {
+                ids[record.id.index() as usize] = Some(first);
+            }
+        }
+        ids
+    }
+}
+
+fn origin_matches(
+    runtime: &SpaceOrigin,
+    serialized: &SerializedOrigin,
+    ids: &[Option<CanonicalSpaceId>],
+) -> bool {
+    match (runtime, serialized) {
+        (SpaceOrigin::Root, SerializedOrigin::Root) => true,
+        (
+            SpaceOrigin::Slice { parent, range },
+            SerializedOrigin::Slice {
+                parent: serialized_parent,
+                range: serialized_range,
+            },
+        ) => {
+            runtime_space_id(*parent, ids) == Some(serialized_parent)
+                && ranges_match(*range, *serialized_range)
+        }
+        (SpaceOrigin::Concat { segments }, SerializedOrigin::Concat { segments: extents }) => {
+            extents_match(segments, extents, ids)
+        }
+        (
+            SpaceOrigin::Transform { inputs, kind },
+            SerializedOrigin::Transform {
+                inputs: extents,
+                transform,
+            },
+        ) => {
+            *kind == TransformKind::Decompress
+                && *transform == SerializedTransformKind::Decompress
+                && extents_match(inputs, extents, ids)
+        }
+        _ => false,
+    }
+}
+
+fn extents_match(
+    runtime: &[SourceSpan],
+    serialized: &[SpaceExtent],
+    ids: &[Option<CanonicalSpaceId>],
+) -> bool {
+    runtime.len() == serialized.len()
+        && runtime.iter().zip(serialized).all(|(span, extent)| {
+            runtime_space_id(span.space, ids) == Some(&extent.space)
+                && ranges_match(span.range, extent.range)
+        })
+}
+
+fn runtime_space_id(space: SpaceId, ids: &[Option<CanonicalSpaceId>]) -> Option<&CanonicalSpaceId> {
+    ids.get(space.index() as usize).and_then(Option::as_ref)
+}
+
+fn ranges_match(runtime: ByteRange, serialized: SerializedRange) -> bool {
+    runtime.start == serialized.start && runtime.end == serialized.end
 }
 
 /// Shared monotonic decode state.
@@ -800,12 +870,18 @@ impl<'a> DecodeContext<'a> {
                 BTreeSet::new()
             }
         };
+        let ledger = (result.source_fidelity.level != crate::source_fidelity::LedgerLevel::L0)
+            .then_some(&result.source_fidelity);
+        let canonical_spaces = ledger
+            .map(|ledger| self.spaces.canonical_ids(ledger))
+            .unwrap_or_default();
         let violations = self.tickets.transfer_accounting(
             &result.ir.model,
             &self.retained,
             &unknown_ids,
             &result.report.losses,
-            Some(&result.source_fidelity),
+            ledger,
+            &canonical_spaces,
         );
         if !violations.is_empty() {
             match self.policy.mode {
@@ -1459,9 +1535,9 @@ impl TicketTable {
     /// [`RecordDisposition::Structural`] carries no semantic content and is
     /// unconstrained by the retained ledger and the model.
     ///
-    /// When `ledger` is present, every ticket whose space maps to a canonical
-    /// id (see [`canonical_space`]) is additionally reconciled against the
-    /// ledger: its byte location must fall inside a span the ledger tiles. This
+    /// When `ledger` is present, every ticket's runtime space is matched to a
+    /// canonical ledger space by its full derivation origin, then its byte
+    /// location must fall inside a span the ledger tiles. This
     /// is the cross-artifact conservation check: a disposition
     /// whose bytes the ledger does not tile (a span absent from the ledger, or a
     /// location in a tiling gap) is a violation, closing the gap between the
@@ -1483,6 +1559,7 @@ impl TicketTable {
         unknown_ids: &BTreeSet<String>,
         losses: &[LossNote],
         ledger: Option<&SourceFidelity>,
+        canonical_spaces: &[Option<CanonicalSpaceId>],
     ) -> Vec<String> {
         let mut violations = Vec::new();
         let mut consumed = vec![false; losses.len()];
@@ -1496,17 +1573,26 @@ impl TicketTable {
             );
             // When the codec serialized a ledger, the bytes this disposition
             // accounts for must be tiled by it. A resolved
-            // ticket whose canonical space is absent from the ledger, or whose
+            // ticket whose runtime space is absent from the ledger, or whose
             // offset lands in a tiling gap, is a disposition the ledger does not
-            // corroborate. Derived spaces without a canonical id carry no
-            // ledger assertion.
-            if let (Some(ledger), Some(space)) = (ledger, canonical_space(location.space)) {
-                if state.disposition.is_some() && ledger.class_at(&space, location.offset).is_none()
-                {
+            // corroborate. Failure to establish a unique canonical mapping is
+            // itself an accounting violation.
+            if let Some(ledger) = ledger.filter(|_| state.disposition.is_some()) {
+                let space = canonical_spaces
+                    .get(location.space.index() as usize)
+                    .and_then(Option::as_ref);
+                if let Some(space) = space {
+                    if ledger.class_at(space, location.offset).is_none() {
+                        violations.push(format!(
+                            "{at} resolved a disposition but its bytes are absent from the \
+                             serialized ledger space `{}`",
+                            space.as_str()
+                        ));
+                    }
+                } else {
                     violations.push(format!(
-                        "{at} resolved a disposition but its bytes are absent from the \
-                         serialized ledger space `{}`",
-                        space.as_str()
+                        "{at} resolved a disposition but its runtime address space is absent \
+                         from the serialized ledger"
                     ));
                 }
             }
