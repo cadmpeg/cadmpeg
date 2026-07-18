@@ -11675,20 +11675,36 @@ pub fn expressions(container: &Container) -> Vec<Expression> {
     expressions
 }
 
+fn expression_scope(expression: &Expression) -> &str {
+    if expression.source_table.is_empty() {
+        &expression.source_entry
+    } else {
+        &expression.source_table
+    }
+}
+
 pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
-    let mut values = BTreeMap::<(String, String), (ExpressionUnit, f64)>::new();
     let mut name_counts = BTreeMap::<(String, String), usize>::new();
     for expression in expressions.iter() {
-        let scope = if expression.source_table.is_empty() {
-            expression.source_entry.clone()
-        } else {
-            expression.source_table.clone()
-        };
         *name_counts
-            .entry((scope.clone(), expression.name.clone()))
+            .entry((
+                expression_scope(expression).to_string(),
+                expression.name.clone(),
+            ))
             .or_default() += 1;
+    }
+    let mut values = BTreeMap::<(String, String), (ExpressionUnit, f64)>::new();
+    for expression in expressions.iter_mut() {
+        let key = (
+            expression_scope(expression).to_string(),
+            expression.name.clone(),
+        );
+        if name_counts.get(&key) != Some(&1) {
+            expression.value = None;
+            continue;
+        }
         if let Some(value) = expression.value {
-            values.insert((scope, expression.name.clone()), (expression.unit, value));
+            values.insert(key, (expression.unit, value));
         }
     }
 
@@ -11698,6 +11714,13 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             .iter_mut()
             .filter(|expression| expression.value.is_none())
         {
+            let expression_key = (
+                expression_scope(expression).to_string(),
+                expression.name.clone(),
+            );
+            if name_counts.get(&expression_key) != Some(&1) {
+                continue;
+            }
             let mut substituted = String::with_capacity(expression.expression.len());
             let bytes = expression.expression.as_bytes();
             let mut at = 0usize;
@@ -11707,12 +11730,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
                     let start = at;
                     at = end;
                     let name = &expression.expression[start..at];
-                    let scope = if expression.source_table.is_empty() {
-                        expression.source_entry.clone()
-                    } else {
-                        expression.source_table.clone()
-                    };
-                    let key = (scope, name.to_string());
+                    let key = (expression_scope(expression).to_string(), name.to_string());
                     let Some((unit, value)) = values.get(&key).copied() else {
                         complete = false;
                         break;
@@ -11732,17 +11750,7 @@ pub(crate) fn evaluate_expression_graphs(expressions: &mut [Expression]) {
             if complete {
                 if let Some(value) = crate::om::evaluate_constant_expression(&substituted) {
                     expression.value = Some(value);
-                    values.insert(
-                        (
-                            if expression.source_table.is_empty() {
-                                expression.source_entry.clone()
-                            } else {
-                                expression.source_table.clone()
-                            },
-                            expression.name.clone(),
-                        ),
-                        (expression.unit, value),
-                    );
+                    values.insert(expression_key.clone(), (expression.unit, value));
                     changed = true;
                 }
             }

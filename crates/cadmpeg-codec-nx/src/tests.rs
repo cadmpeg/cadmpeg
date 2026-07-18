@@ -1759,6 +1759,41 @@ fn nx_expression_graph_scopes_names_to_their_expression_table() {
 }
 
 #[test]
+fn nx_expression_graph_rejects_every_duplicate_name_in_one_table() {
+    let expression =
+        |id: &str, table: &str, name: &str, formula: &str, value| crate::native::Expression {
+            id: id.into(),
+            object_id: None,
+            record: None,
+            declaration: None,
+            name: name.into(),
+            parameter_index: None,
+            qualifier: None,
+            unit: crate::native::ExpressionUnit::Millimeter,
+            expression: formula.into(),
+            value,
+            source_entry: "part".into(),
+            source_table: table.into(),
+            source_offset: 0,
+        };
+    let mut expressions = vec![
+        expression("a-p1-first", "table-a", "p1", "3", Some(3.0)),
+        expression("a-p1-second", "table-a", "p1", "5", Some(5.0)),
+        expression("a-p2", "table-a", "p2", "p1 * 2", None),
+        expression("b-p1", "table-b", "p1", "7", Some(7.0)),
+        expression("b-p2", "table-b", "p2", "p1 * 2", None),
+    ];
+
+    crate::native::evaluate_expression_graphs(&mut expressions);
+
+    assert_eq!(expressions[0].value, None);
+    assert_eq!(expressions[1].value, None);
+    assert_eq!(expressions[2].value, None);
+    assert_eq!(expressions[3].value, Some(7.0));
+    assert_eq!(expressions[4].value, Some(14.0));
+}
+
+#[test]
 fn nx_formula_dependencies_resolve_to_section_parameters() {
     let expression = |key: u32,
                       name: &str,
