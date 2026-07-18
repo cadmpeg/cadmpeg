@@ -3139,6 +3139,14 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             }
         );
     }
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("TRIMMED_SH", &[], None, None, None),
+        FeatureDefinition::TrimSurface {
+            faces: FaceSelection::Unresolved,
+            tool: cadmpeg_ir::features::PathRef::Unresolved,
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+        }
+    );
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
         FeatureDefinition::Chamfer {

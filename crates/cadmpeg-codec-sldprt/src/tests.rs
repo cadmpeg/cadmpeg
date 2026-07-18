@@ -10515,7 +10515,7 @@ fn semantic_writer_round_trips_trim_surface() {
     SldprtCodec
         .write_preserved_with_source_fidelity(&decoded.ir, &decoded.source_fidelity, &mut encoded)
         .unwrap();
-    let regenerated = SldprtCodec
+    let mut regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
     let native = &sldprt_native(&regenerated.ir).feature_histories[0].features[0];
@@ -10525,6 +10525,30 @@ fn semantic_writer_round_trips_trim_surface() {
     assert_eq!(native.properties["Split"], "false");
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
+        FeatureDefinition::TrimSurface {
+            keep: TrimRegion::Outside,
+            ..
+        }
+    ));
+
+    regenerated.ir.model.features[0].definition = FeatureDefinition::TrimSurface {
+        faces: FaceSelection::Unresolved,
+        tool: PathRef::Unresolved,
+        keep: TrimRegion::Unresolved,
+    };
+    let mut encoded = Vec::new();
+    SldprtCodec
+        .write_preserved_with_source_fidelity(
+            &regenerated.ir,
+            &regenerated.source_fidelity,
+            &mut encoded,
+        )
+        .unwrap();
+    let replayed = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        replayed.ir.model.features[0].definition,
         FeatureDefinition::TrimSurface {
             keep: TrimRegion::Outside,
             ..

@@ -1437,6 +1437,8 @@ pub enum SurfaceContinuity {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum TrimRegion {
+    /// Retained region exists semantically but is not resolved.
+    Unresolved,
     /// Retain the region enclosed by the trimming path.
     Inside,
     /// Retain the region outside the trimming path.

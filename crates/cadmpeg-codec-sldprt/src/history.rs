@@ -4015,19 +4015,44 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::TrimSurface { faces, tool, keep } => {
-                let faces = face_selection_value(faces).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no trim-surface input faces",
-                        feature.id
-                    ))
-                })?;
-                let tool =
-                    path_source(tool, &record_sources, &sketch_sources).ok_or_else(|| {
-                        CodecError::Malformed(format!(
+                let resolved_faces = face_selection_value(faces);
+                if resolved_faces.is_none() {
+                    if matches!(faces, FaceSelection::Unresolved) {
+                        if existing.is_none() {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has unresolved trim-surface input faces",
+                                feature.id
+                            )));
+                        }
+                    } else {
+                        return Err(CodecError::Malformed(format!(
+                            "SLDPRT feature {} has no trim-surface input faces",
+                            feature.id
+                        )));
+                    }
+                }
+                let resolved_tool = path_source(tool, &record_sources, &sketch_sources);
+                if resolved_tool.is_none() {
+                    if matches!(tool, PathRef::Unresolved) {
+                        if existing.is_none() {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has an unresolved trim path",
+                                feature.id
+                            )));
+                        }
+                    } else {
+                        return Err(CodecError::Malformed(format!(
                             "SLDPRT feature {} references a missing trim path",
                             feature.id
-                        ))
-                    })?;
+                        )));
+                    }
+                }
+                if matches!(keep, TrimRegion::Unresolved) && existing.is_none() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved retained trim region",
+                        feature.id
+                    )));
+                }
                 if existing.as_deref().is_some_and(|record| {
                     !feature_family(record, "TrimSurface") && !feature_family(record, "SurfaceTrim")
                 }) {
@@ -4036,17 +4061,24 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let mut properties = feature.source_properties.clone();
-                properties.insert("Faces".into(), faces);
-                properties.insert("Tool".into(), tool);
-                properties.insert(
-                    "Keep".into(),
-                    match keep {
-                        TrimRegion::Inside => "Inside",
-                        TrimRegion::Outside => "Outside",
-                    }
-                    .into(),
-                );
+                let mut properties = existing
+                    .as_deref()
+                    .map(|record| record.properties.clone())
+                    .unwrap_or_default();
+                properties.extend(feature.source_properties.clone());
+                if let Some(faces) = resolved_faces {
+                    properties.insert("Faces".into(), faces);
+                }
+                if let Some(tool) = resolved_tool {
+                    properties.insert("Tool".into(), tool);
+                }
+                if let Some(keep) = match keep {
+                    TrimRegion::Unresolved => None,
+                    TrimRegion::Inside => Some("Inside"),
+                    TrimRegion::Outside => Some("Outside"),
+                } {
+                    properties.insert("Keep".into(), keep.into());
+                }
                 (
                     existing
                         .as_deref()

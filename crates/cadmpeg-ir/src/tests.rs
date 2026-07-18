@@ -863,6 +863,22 @@ fn unresolved_projected_curve_operands_round_trip_through_json() {
 }
 
 #[test]
+fn unresolved_trim_surface_operands_round_trip_through_json() {
+    use crate::features::{FaceSelection, FeatureDefinition, PathRef, TrimRegion};
+
+    let definition = FeatureDefinition::TrimSurface {
+        faces: FaceSelection::Unresolved,
+        tool: PathRef::Unresolved,
+        keep: TrimRegion::Unresolved,
+    };
+    let json = serde_json::to_string(&definition).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FeatureDefinition>(&json).unwrap(),
+        definition
+    );
+}
+
+#[test]
 fn unresolved_block_dimensions_round_trip_through_json() {
     use crate::features::FeatureDefinition;
 
