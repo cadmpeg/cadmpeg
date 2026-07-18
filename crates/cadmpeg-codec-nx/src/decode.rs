@@ -1392,6 +1392,7 @@ fn try_decode_geometry(
     retain_live_annotations(&ir, &unknowns, &mut annotations);
     let report = build_geometry_report(
         scan,
+        &ir,
         &counts,
         !ir.model.faces.is_empty(),
         ir.model.bodies.len() > 1 && !active_body_selection,
@@ -6922,6 +6923,7 @@ pub(crate) fn jpeg_dimensions(payload: &[u8]) -> Option<(u16, u16, u8, u8)> {
 
 fn build_geometry_report(
     scan: &Scan,
+    ir: &CadIr,
     counts: &Counts,
     has_topology: bool,
     has_unresolved_sub_bodies: bool,
@@ -7032,11 +7034,12 @@ fn build_geometry_report(
         });
     }
 
+    append_design_intent_losses(ir, &mut losses);
+
     losses.push(LossNote {
         category: LossCategory::Attribute,
         severity: Severity::Warning,
-        message: "Material and appearance assignment, class-specific entity attribute fields, \
-                  unresolved feature-parameter roles, sketch geometry and constraints, and \
+        message: "Material and appearance assignment, class-specific entity attribute fields, and \
                   assembly occurrence placements were not transferred: their remaining NX \
                   object-model and Parasolid field serialization is not decoded."
             .to_string(),
@@ -7049,6 +7052,44 @@ fn build_geometry_report(
         geometry_transferred: true,
         losses,
         notes: summary_notes(scan),
+    }
+}
+
+pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {
+    let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
+    for feature in &ir.model.features {
+        if let FeatureDefinition::Native { kind, .. } = &feature.definition {
+            *native_feature_kinds.entry(kind.as_str()).or_default() += 1;
+        }
+    }
+    if !native_feature_kinds.is_empty() {
+        let kinds = native_feature_kinds
+            .into_iter()
+            .map(|(kind, count)| format!("{kind} ({count})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "NX feature-history operation(s) remain native-only because their complete neutral \
+                 operation semantics are not decoded: {kinds}."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !ir.model.sketches.is_empty() && ir.model.sketch_constraints.is_empty() {
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "Decoded {} NX sketch record(s), but no sketch constraints were transferred because \
+                 their object-model field serialization and operand roles are unresolved.",
+                ir.model.sketches.len()
+            ),
+            provenance: None,
+        });
     }
 }
 

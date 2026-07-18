@@ -16195,6 +16195,43 @@ fn inspect_enumerates_streams_and_names_schema() {
 }
 
 #[test]
+fn design_intent_losses_count_native_feature_families() {
+    use cadmpeg_ir::document::CadIr;
+    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+
+    let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
+    for (ordinal, kind) in ["DELETE", "DELETE", "Container"].into_iter().enumerate() {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("test:feature#{ordinal}")),
+            ordinal: ordinal as u64,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Native {
+                kind: kind.to_string(),
+                parameters: Default::default(),
+                properties: Default::default(),
+            },
+            native_ref: None,
+        });
+    }
+
+    let mut losses = Vec::new();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].category, LossCategory::Feature);
+    assert!(losses[0].message.contains("Container (1)"));
+    assert!(losses[0].message.contains("DELETE (2)"));
+}
+
+#[test]
 fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     let part = zlib_compress_at_level(&partition_stream(), 6);
     assert_eq!(&part[..2], b"\x78\x9c");
