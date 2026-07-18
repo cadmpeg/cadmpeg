@@ -338,6 +338,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                         &by_source,
                         &native_by_source,
                         &features_by_source,
+                        &history.features,
                     ),
                     native_ref: Some(feature.id.clone()),
                 })
@@ -1814,7 +1815,7 @@ mod history_reference_tests {
             .map(|feature| (feature.source_id.as_deref().unwrap(), feature))
             .collect::<HashMap<_, _>>();
         assert_eq!(
-            principal_plane_in_history(&front, &features),
+            principal_plane_in_history(&front, &features, &[]),
             Some(cadmpeg_ir::features::PrincipalPlane::Front)
         );
 
@@ -1824,7 +1825,29 @@ mod history_reference_tests {
             .into_iter()
             .map(|feature| (feature.source_id.as_deref().unwrap(), feature))
             .collect::<HashMap<_, _>>();
-        assert_eq!(principal_plane_in_history(&front, &features), None);
+        assert_eq!(principal_plane_in_history(&front, &features, &[]), None);
+    }
+
+    #[test]
+    fn idless_legacy_principal_planes_require_an_exact_bounded_triplet() {
+        let front = feature("front", None, 10);
+        let top = feature("top", None, 11);
+        let right = feature("right", None, 12);
+        let mut successor = feature("origin", None, 13);
+        successor.kind = "Other".into();
+        let records = [front.clone(), top, right, successor];
+
+        assert_eq!(
+            principal_plane_in_history(&front, &HashMap::new(), &records),
+            Some(cadmpeg_ir::features::PrincipalPlane::Front)
+        );
+
+        let mut unbounded = records.clone();
+        unbounded[3].kind = unbounded[0].kind.clone();
+        assert_eq!(
+            principal_plane_in_history(&front, &HashMap::new(), &unbounded),
+            None
+        );
     }
 
     #[test]
@@ -3043,6 +3066,7 @@ fn project_definition(
     by_source: &HashMap<&str, FeatureId>,
     native_by_source: &HashMap<&str, &str>,
     features_by_source: &HashMap<&str, &Feature>,
+    history_features: &[Feature],
 ) -> FeatureDefinition {
     if let Some(role) = feature_tree_node_role(feature) {
         return FeatureDefinition::TreeNode { role };
@@ -3062,7 +3086,7 @@ fn project_definition(
         return project_offset_plane(feature, by_source)
             .unwrap_or_else(|| native_definition(feature));
     }
-    if let Some(plane) = principal_plane_in_history(feature, features_by_source) {
+    if let Some(plane) = principal_plane_in_history(feature, features_by_source, history_features) {
         return FeatureDefinition::DatumPrincipalPlane { plane };
     }
     if class == Some(FeatureClass::ReferencePlane) {
@@ -3259,6 +3283,7 @@ fn is_offset_plane(feature: &Feature) -> bool {
 fn principal_plane_in_history(
     feature: &Feature,
     features_by_source: &HashMap<&str, &Feature>,
+    history_features: &[Feature],
 ) -> Option<cadmpeg_ir::features::PrincipalPlane> {
     use cadmpeg_ir::features::PrincipalPlane;
 
@@ -3272,22 +3297,51 @@ fn principal_plane_in_history(
             && record.properties.is_empty()
             && !record.kind.is_empty()
     };
-    let [front, top, right] = ["2", "3", "4"].map(|source| features_by_source.get(source).copied());
-    let [Some(front), Some(top), Some(right)] = [front, top, right] else {
-        return None;
-    };
-    if ![front, top, right].into_iter().all(legacy_shape)
-        || front.kind != top.kind
-        || front.kind != right.kind
-    {
-        return None;
+    let source_triplet = ["2", "3", "4"].map(|source| features_by_source.get(source).copied());
+    if let [Some(front), Some(top), Some(right)] = source_triplet {
+        if [front, top, right].into_iter().all(legacy_shape)
+            && front.kind == top.kind
+            && front.kind == right.kind
+        {
+            return match feature.source_id.as_deref() {
+                Some("2") => Some(PrincipalPlane::Front),
+                Some("3") => Some(PrincipalPlane::Top),
+                Some("4") => Some(PrincipalPlane::Right),
+                _ => None,
+            };
+        }
     }
-    match feature.source_id.as_deref()? {
-        "2" => Some(PrincipalPlane::Front),
-        "3" => Some(PrincipalPlane::Top),
-        "4" => Some(PrincipalPlane::Right),
-        _ => None,
-    }
+
+    history_features.windows(4).find_map(|records| {
+        let [front, top, right, successor] = records else {
+            return None;
+        };
+        let triplet = [front, top, right];
+        if !triplet.into_iter().all(|record| {
+            legacy_shape(record)
+                && record.source_id.is_none()
+                && record.tree_parent.is_none()
+                && record.parent_source_id.is_none()
+        }) || front.kind != top.kind
+            || front.kind != right.kind
+            || top.ordinal != front.ordinal + 1
+            || right.ordinal != top.ordinal + 1
+            || !legacy_shape(successor)
+            || successor.source_id.is_some()
+            || successor.tree_parent.is_some()
+            || successor.parent_source_id.is_some()
+            || successor.ordinal != right.ordinal + 1
+            || successor.kind == front.kind
+        {
+            return None;
+        }
+        match feature.id.as_str() {
+            id if id == front.id => Some(PrincipalPlane::Front),
+            id if id == top.id => Some(PrincipalPlane::Top),
+            id if id == right.id => Some(PrincipalPlane::Right),
+            _ => None,
+        }
+    })
 }
 
 fn project_extrude(
@@ -7428,7 +7482,7 @@ pub fn sync_neutral_features(
             history.features.iter().filter_map(move |feature| {
                 Some((
                     feature.id.clone(),
-                    principal_plane_in_history(feature, &by_source)?,
+                    principal_plane_in_history(feature, &by_source, &history.features)?,
                 ))
             })
         })
