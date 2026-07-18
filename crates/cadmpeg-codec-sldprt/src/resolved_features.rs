@@ -9604,30 +9604,10 @@ fn typed_marker_relation_definition_in_sketch(
             let Some(second_point) = profile_locus_point(second, sketch_entities) else {
                 return Some(native());
             };
-            let Some(SketchEntity {
-                geometry: SketchGeometry::Line { start, end },
-                ..
-            }) = sketch_entities.iter().find(|entity| entity.id == axis)
-            else {
+            let Some(axis_entity) = sketch_entities.iter().find(|entity| entity.id == axis) else {
                 return Some(native());
             };
-            let du = end.u - start.u;
-            let dv = end.v - start.v;
-            let length = du.hypot(dv);
-            if length <= SKETCH_POINT_TOLERANCE {
-                return Some(native());
-            }
-            let axis_coordinate = |point: Point2| {
-                (
-                    ((point.u - start.u) * du + (point.v - start.v) * dv) / length,
-                    ((point.u - start.u) * dv - (point.v - start.v) * du) / length,
-                )
-            };
-            let (first_along, first_across) = axis_coordinate(first_point);
-            let (second_along, second_across) = axis_coordinate(second_point);
-            if !same_dimension_length(first_along, second_along)
-                || !same_dimension_length(first_across, -second_across)
-            {
+            if symmetric_loci_match_axis(first_point, second_point, axis_entity) != Some(true) {
                 return Some(native());
             }
             SketchConstraintDefinition::Symmetric {
@@ -9769,6 +9749,30 @@ fn sketch_entity_contains_point(entity: &SketchEntity, point: Point2) -> bool {
         | SketchGeometry::Nurbs { .. }
         | SketchGeometry::Native { .. } => false,
     }
+}
+
+fn symmetric_loci_match_axis(first: Point2, second: Point2, axis: &SketchEntity) -> Option<bool> {
+    let SketchGeometry::Line { start, end } = axis.geometry else {
+        return None;
+    };
+    let du = end.u - start.u;
+    let dv = end.v - start.v;
+    let length = du.hypot(dv);
+    if length <= SKETCH_POINT_TOLERANCE {
+        return None;
+    }
+    let coordinates = |point: Point2| {
+        (
+            ((point.u - start.u) * du + (point.v - start.v) * dv) / length,
+            ((point.u - start.u) * dv - (point.v - start.v) * du) / length,
+        )
+    };
+    let (first_along, first_across) = coordinates(first);
+    let (second_along, second_across) = coordinates(second);
+    Some(
+        same_dimension_length(first_along, second_along)
+            && same_dimension_length(first_across, -second_across),
+    )
 }
 
 fn binary_relation_matches_evaluated_geometry(
@@ -17621,6 +17625,57 @@ fn validate_generated_marker_constraint(
             }
             return Ok(());
         }
+        SketchConstraintDefinition::AtIntersection {
+            point,
+            first,
+            second,
+        } => {
+            if first == second {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT at-intersection constraint {} repeats one entity",
+                    constraint.id.0
+                )));
+            }
+            let point = constraint_locus_point(ir, constraint, point)?;
+            for entity in [first, second] {
+                let entity = sketch_constraint_entity(ir, constraint, entity)?;
+                if !sketch_entity_contains_point(entity, point) {
+                    return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                        "source-less SLDPRT at-intersection constraint {} is not satisfied by its entity geometry",
+                        constraint.id.0
+                    )));
+                }
+            }
+            return Ok(());
+        }
+        SketchConstraintDefinition::Symmetric {
+            first,
+            second,
+            axis,
+        } => {
+            if first == second {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT symmetric constraint {} repeats one locus",
+                    constraint.id.0
+                )));
+            }
+            let first = constraint_locus_point(ir, constraint, first)?;
+            let second = constraint_locus_point(ir, constraint, second)?;
+            let axis = sketch_constraint_entity(ir, constraint, axis)?;
+            let Some(solved) = symmetric_loci_match_axis(first, second, axis) else {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT symmetric constraint {} requires a nondegenerate line axis",
+                    constraint.id.0
+                )));
+            };
+            if !solved {
+                return Err(cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT symmetric constraint {} is not satisfied by its locus coordinates",
+                    constraint.id.0
+                )));
+            }
+            return Ok(());
+        }
         _ => {}
     }
     let dimension_parameter = match &constraint.definition {
@@ -18526,12 +18581,64 @@ fn append_spatial_vertex(payload: &mut Vec<u8>, point: Point3) {
 
 #[cfg(test)]
 mod source_less_lane_tests {
-    use cadmpeg_ir::sketches::{SketchConstraintDefinition, SketchEntityId, SketchLocus};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
+        SketchEntityId, SketchGeometry, SketchId, SketchLocus,
+    };
 
     use super::{
-        append_coordinate_marker, append_reference_marker, assemble_source_less_lanes,
-        generated_marker_relations, marker_local_links, GeneratedMarkerRelation,
+        append_coordinate_marker, append_coordinate_marker_link, append_generated_sketch_markers,
+        append_reference_marker, assemble_source_less_lanes, coordinate_marker_local_links,
+        generated_marker_relations, marker_local_links, validate_source_less_constraints,
+        GeneratedMarkerRelation,
     };
+
+    fn generated_sketch() -> Sketch {
+        Sketch {
+            id: SketchId("sketch".into()),
+            name: Some("Sketch".into()),
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        }
+    }
+
+    fn generated_entity(id: &str, geometry: SketchGeometry) -> SketchEntity {
+        SketchEntity {
+            id: SketchEntityId(id.into()),
+            sketch: SketchId("sketch".into()),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        }
+    }
+
+    fn add_sketch_owner(ir: &mut cadmpeg_ir::CadIr, sketch: &Sketch) {
+        ir.model.features.push(cadmpeg_ir::features::Feature {
+            id: cadmpeg_ir::features::FeatureId("sketch-feature".into()),
+            ordinal: 0,
+            name: Some("Sketch".into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: cadmpeg_ir::features::FeatureDefinition::Sketch {
+                space: Default::default(),
+                sketch: Some(sketch.id.clone()),
+            },
+            native_ref: None,
+        });
+    }
 
     #[test]
     fn objects_follow_feature_ordinals_within_each_configuration() {
@@ -18614,6 +18721,168 @@ mod source_less_lane_tests {
 
         assert_eq!(marker_local_links(&payload, 284), Some(([1, 2], 0)));
     }
+
+    #[test]
+    fn generated_coordinate_marker_carries_two_reverse_relations() {
+        let mut payload = Vec::new();
+        append_coordinate_marker(
+            &mut payload,
+            crate::records::SketchInputKind::Point,
+            [0.0, 0.0],
+            1,
+        );
+
+        append_coordinate_marker_link(&mut payload, 1, 2).unwrap();
+        append_coordinate_marker_link(&mut payload, 1, 3).unwrap();
+
+        assert_eq!(
+            coordinate_marker_local_links(&payload, 0),
+            Some((vec![2, 3], 0x8386))
+        );
+        assert!(append_coordinate_marker_link(&mut payload, 1, 4)
+            .unwrap_err()
+            .to_string()
+            .contains("exceeds two reverse relations"));
+    }
+
+    #[test]
+    fn ternary_relations_retain_their_reverse_owner() {
+        let point = SketchLocus::Entity(SketchEntityId("point".into()));
+        let first = SketchEntityId("first".into());
+        let second = SketchEntityId("second".into());
+        let axis = SketchEntityId("axis".into());
+
+        let at_intersection_definition = SketchConstraintDefinition::AtIntersection {
+            point: point.clone(),
+            first: first.clone(),
+            second: second.clone(),
+        };
+        let at_intersection = generated_marker_relations(&at_intersection_definition);
+        assert!(matches!(
+            at_intersection.as_slice(),
+            [GeneratedMarkerRelation::AtIntersection(owner, left, right)]
+                if *owner == &point && *left == &first && *right == &second
+        ));
+
+        let symmetric_definition = SketchConstraintDefinition::Symmetric {
+            first: point.clone(),
+            second: SketchLocus::Center(second.clone()),
+            axis: axis.clone(),
+        };
+        let symmetric = generated_marker_relations(&symmetric_definition);
+        assert!(matches!(
+            symmetric.as_slice(),
+            [GeneratedMarkerRelation::Symmetric(left, _, owner)]
+                if *left == &point && *owner == &axis
+        ));
+    }
+
+    #[test]
+    fn generated_at_intersection_carries_point_reverse_incidence() {
+        let sketch = generated_sketch();
+        let mut ir = cadmpeg_ir::CadIr::empty(Default::default());
+        add_sketch_owner(&mut ir, &sketch);
+        ir.model.sketch_entities = vec![
+            generated_entity(
+                "point",
+                SketchGeometry::Point {
+                    position: Point2::new(0.0, 0.0),
+                },
+            ),
+            generated_entity(
+                "horizontal",
+                SketchGeometry::Line {
+                    start: Point2::new(-1.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            ),
+            generated_entity(
+                "vertical",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, -1.0),
+                    end: Point2::new(0.0, 1.0),
+                },
+            ),
+        ];
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId("intersection".into()),
+            sketch: sketch.id.clone(),
+            definition: SketchConstraintDefinition::AtIntersection {
+                point: SketchLocus::Entity(SketchEntityId("point".into())),
+                first: SketchEntityId("horizontal".into()),
+                second: SketchEntityId("vertical".into()),
+            },
+            native_ref: None,
+        });
+        let mut payload = Vec::new();
+
+        validate_source_less_constraints(&ir).unwrap();
+        append_generated_sketch_markers(&ir, &sketch, &mut payload).unwrap();
+
+        assert_eq!(
+            coordinate_marker_local_links(&payload, 0),
+            Some((vec![6], 0x8386))
+        );
+        assert_eq!(marker_local_links(&payload, 710), Some(([2, 4], 0)));
+    }
+
+    #[test]
+    fn generated_symmetry_carries_axis_reverse_incidence() {
+        let sketch = generated_sketch();
+        let mut ir = cadmpeg_ir::CadIr::empty(Default::default());
+        add_sketch_owner(&mut ir, &sketch);
+        ir.model.sketch_entities = vec![
+            generated_entity(
+                "first",
+                SketchGeometry::Point {
+                    position: Point2::new(-1.0, 0.0),
+                },
+            ),
+            generated_entity(
+                "second",
+                SketchGeometry::Point {
+                    position: Point2::new(1.0, 0.0),
+                },
+            ),
+            generated_entity(
+                "axis",
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, -1.0),
+                    end: Point2::new(0.0, 1.0),
+                },
+            ),
+        ];
+        ir.model.sketch_constraints.push(SketchConstraint {
+            id: SketchConstraintId("symmetric".into()),
+            sketch: sketch.id.clone(),
+            definition: SketchConstraintDefinition::Symmetric {
+                first: SketchLocus::Entity(SketchEntityId("first".into())),
+                second: SketchLocus::Entity(SketchEntityId("second".into())),
+                axis: SketchEntityId("axis".into()),
+            },
+            native_ref: None,
+        });
+        let mut payload = Vec::new();
+
+        validate_source_less_constraints(&ir).unwrap();
+        append_generated_sketch_markers(&ir, &sketch, &mut payload).unwrap();
+
+        assert_eq!(
+            coordinate_marker_local_links(&payload, 284),
+            Some((vec![5], 0x8386))
+        );
+        assert_eq!(marker_local_links(&payload, 568), Some(([1, 2], 0)));
+
+        ir.model.sketch_constraints[0].definition = SketchConstraintDefinition::Symmetric {
+            first: SketchLocus::Entity(SketchEntityId("first".into())),
+            second: SketchLocus::Entity(SketchEntityId("first".into())),
+            axis: SketchEntityId("axis".into()),
+        };
+        assert!(validate_source_less_constraints(&ir)
+            .unwrap_err()
+            .to_string()
+            .contains("repeats one locus"));
+    }
 }
 
 enum GeneratedMarkerRelation<'a> {
@@ -18621,6 +18890,8 @@ enum GeneratedMarkerRelation<'a> {
     Binary(SketchRelationKind, &'a SketchEntityId, &'a SketchEntityId),
     Loci(SketchRelationKind, &'a SketchLocus, &'a SketchLocus),
     Midpoint(&'a SketchLocus, &'a SketchEntityId),
+    AtIntersection(&'a SketchLocus, &'a SketchEntityId, &'a SketchEntityId),
+    Symmetric(&'a SketchLocus, &'a SketchLocus, &'a SketchEntityId),
 }
 
 fn generated_marker_relations(
@@ -18664,6 +18935,18 @@ fn generated_marker_relations(
         SketchConstraintDefinition::Midpoint { point, entity } => {
             vec![GeneratedMarkerRelation::Midpoint(point, entity)]
         }
+        SketchConstraintDefinition::AtIntersection {
+            point,
+            first,
+            second,
+        } => vec![GeneratedMarkerRelation::AtIntersection(
+            point, first, second,
+        )],
+        SketchConstraintDefinition::Symmetric {
+            first,
+            second,
+            axis,
+        } => vec![GeneratedMarkerRelation::Symmetric(first, second, axis)],
         SketchConstraintDefinition::CoincidentLoci { loci }
             if !loci
                 .iter()
@@ -18783,6 +19066,16 @@ fn append_generated_sketch_markers(
         }
     }
     for relation in relations {
+        let reverse_owner =
+            match &relation {
+                GeneratedMarkerRelation::AtIntersection(point, ..) => Some(
+                    unique_generated_locus_marker(ir, sketch, &marker_loci, point)?,
+                ),
+                GeneratedMarkerRelation::Symmetric(_, _, axis) => Some(
+                    unique_generated_entity_marker(ir, sketch, &marker_loci, axis)?,
+                ),
+                _ => None,
+            };
         let (kind, links) = match relation {
             GeneratedMarkerRelation::Unary(kind, entity) => {
                 let ids = marker_ids.get(entity).ok_or_else(|| {
@@ -18822,7 +19115,30 @@ fn append_generated_sketch_markers(
                     unique_generated_entity_marker(ir, sketch, &marker_loci, entity)?,
                 ],
             ),
+            GeneratedMarkerRelation::AtIntersection(_, first, second) => (
+                SketchRelationKind::AtIntersection,
+                [
+                    unique_generated_entity_marker(ir, sketch, &marker_loci, first)?,
+                    unique_generated_entity_marker(ir, sketch, &marker_loci, second)?,
+                ],
+            ),
+            GeneratedMarkerRelation::Symmetric(first, second, _) => (
+                SketchRelationKind::Symmetric,
+                [
+                    unique_generated_locus_marker(ir, sketch, &marker_loci, first)?,
+                    unique_generated_locus_marker(ir, sketch, &marker_loci, second)?,
+                ],
+            ),
         };
+        if let Some(owner) = reverse_owner {
+            let relation_id = u16::try_from(next_id).map_err(|_| {
+                cadmpeg_ir::codec::CodecError::Malformed(format!(
+                    "source-less SLDPRT sketch {} exceeds the marker-local id space",
+                    sketch.id.0
+                ))
+            })?;
+            append_coordinate_marker_link(payload, owner, relation_id)?;
+        }
         append_reference_marker(payload, kind, links, next_id);
         next_id = next_id.checked_add(1).ok_or_else(|| {
             cadmpeg_ir::codec::CodecError::Malformed(
@@ -19294,6 +19610,66 @@ fn append_coordinate_marker(
     payload[start + 66..start + 74].copy_from_slice(&coordinates_m[0].to_le_bytes());
     payload[start + 74..start + 82].copy_from_slice(&coordinates_m[1].to_le_bytes());
     payload[start + 138..start + 142].copy_from_slice(&local_id.to_le_bytes());
+}
+
+fn append_coordinate_marker_link(
+    payload: &mut [u8],
+    owner_local_id: u16,
+    relation_local_id: u16,
+) -> Result<(), cadmpeg_ir::codec::CodecError> {
+    const SELECTOR: u16 = 0x8386;
+    let offsets = payload
+        .windows(SKETCH_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, bytes)| (bytes == SKETCH_MARKER).then_some(offset))
+        .filter(|offset| marker_coordinates(payload, *offset).is_some())
+        .filter(|offset| {
+            payload
+                .get(*offset + 138..*offset + 142)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                == Some(u32::from(owner_local_id))
+        })
+        .collect::<Vec<_>>();
+    let [offset] = offsets.as_slice() else {
+        return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT reverse relation cannot identify coordinate marker {owner_local_id}"
+        )));
+    };
+    let count = usize::from(u16::from_le_bytes(
+        payload
+            .get(*offset + 84..*offset + 86)
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or_else(|| {
+                cadmpeg_ir::codec::CodecError::Malformed(
+                    "source-less SLDPRT coordinate marker is truncated".into(),
+                )
+            })?,
+    ));
+    if count >= 2 {
+        return Err(cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT coordinate marker {owner_local_id} exceeds two reverse relations"
+        )));
+    }
+    if count > 0 && payload.get(*offset + 86..*offset + 88) != Some(&SELECTOR.to_le_bytes()) {
+        return Err(cadmpeg_ir::codec::CodecError::Malformed(
+            "source-less SLDPRT coordinate marker changed reverse-relation selector".into(),
+        ));
+    }
+    let cell = offset + 86 + count * 12;
+    let end = cell + 18;
+    let bytes = payload.get_mut(cell..end).ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::Malformed(
+            "source-less SLDPRT coordinate marker reverse relation is truncated".into(),
+        )
+    })?;
+    bytes.fill(0);
+    bytes[0..2].copy_from_slice(&SELECTOR.to_le_bytes());
+    bytes[2..4].copy_from_slice(&relation_local_id.to_le_bytes());
+    bytes[4..8].fill(0xff);
+    bytes[14..18].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+    payload[*offset + 84..*offset + 86].copy_from_slice(&((count + 1) as u16).to_le_bytes());
+    Ok(())
 }
 
 fn append_reference_marker(
