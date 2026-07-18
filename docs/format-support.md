@@ -308,6 +308,8 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   with the solved coedge traversal. Their mapped midpoints select minor, major,
   or full-turn parameter intervals on circular and elliptical native edges;
   adjacent face paths must agree.
+  A periodic conic used only by one-edge closed native loops uses one full
+  period from its seam vertex when no native pcurve candidate is present.
   Parabolic edges recover endpoint parameters from their focal frame.
   Hyperbolic edges recover endpoint parameters after paired vertices select
   exactly one of the two analytic branches.

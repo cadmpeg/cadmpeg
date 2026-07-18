@@ -20324,6 +20324,25 @@ fn periodic_conic_edge_parameter_range(
     (selected[1] - selected[0] > 1e-12).then_some(selected)
 }
 
+fn full_periodic_conic_edge_parameter_range(
+    geometry: &CurveGeometry,
+    point: [f64; 3],
+) -> Option<[f64; 2]> {
+    curve_contains_points(geometry, [point, point]).then_some(())?;
+    let PeriodicConicFrame {
+        center,
+        x_axis,
+        y_axis,
+        radii,
+        ..
+    } = periodic_conic_frame(geometry)?;
+    let relative = std::array::from_fn(|index| point[index] - center[index]);
+    let start = (dot(relative, y_axis) / radii[1])
+        .atan2(dot(relative, x_axis) / radii[0])
+        .rem_euclid(std::f64::consts::TAU);
+    Some([start, start + std::f64::consts::TAU])
+}
+
 fn native_pcurve_midpoint(
     surface: &SurfaceGeometry,
     endpoints: [[f64; 2]; 2],
@@ -20603,6 +20622,31 @@ mod native_edge_parameter_tests {
         assert_eq!(
             periodic_conic_edge_parameter_range(&ellipse, [points[0], points[0]], [-4.0, 0.0, 0.0],),
             Some([0.0, std::f64::consts::TAU])
+        );
+    }
+
+    #[test]
+    fn closed_periodic_conic_uses_one_full_period_from_its_seam() {
+        let circle = circle();
+        let range = full_periodic_conic_edge_parameter_range(&circle, [0.0, 2.0, 0.0])
+            .expect("full circle range");
+        assert!((range[0] - std::f64::consts::FRAC_PI_2).abs() < 1e-12);
+        assert!((range[1] - (std::f64::consts::FRAC_PI_2 + std::f64::consts::TAU)).abs() < 1e-12);
+
+        let ellipse = CurveGeometry::Ellipse {
+            center: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            major_direction: Vector3::new(1.0, 0.0, 0.0),
+            major_radius: 4.0,
+            minor_radius: 2.0,
+        };
+        assert_eq!(
+            full_periodic_conic_edge_parameter_range(&ellipse, [4.0, 0.0, 0.0]),
+            Some([0.0, std::f64::consts::TAU])
+        );
+        assert_eq!(
+            full_periodic_conic_edge_parameter_range(&ellipse, [4.0, 0.1, 0.0]),
+            None
         );
     }
 
@@ -20975,6 +21019,21 @@ fn transfer_plane_brep(
         .iter()
         .map(|half_edge| half_edge.curve_id)
         .collect::<BTreeSet<_>>();
+    let closed_single_edge_curves = emitted_curves
+        .iter()
+        .filter(|curve_id| {
+            let uses = eligible_loops
+                .iter()
+                .filter(|lp| {
+                    lp.half_edges
+                        .iter()
+                        .any(|half_edge| half_edge.curve_id == **curve_id)
+                })
+                .collect::<Vec<_>>();
+            !uses.is_empty() && uses.iter().all(|lp| lp.half_edges.len() == 1)
+        })
+        .copied()
+        .collect::<BTreeSet<_>>();
     let used_vertices = emitted_curves
         .iter()
         .filter_map(|curve| edge_vertices.get(curve))
@@ -21057,6 +21116,22 @@ fn transfer_plane_brep(
                                             &native_pcurves,
                                             &ir.model.surfaces,
                                             points,
+                                        )
+                                    })
+                                    .or_else(|| {
+                                        (start == end
+                                            && closed_single_edge_curves.contains(curve_id)
+                                            && !curve_faces.get(curve_id)?.iter().any(|face_id| {
+                                                native_pcurves.contains_key(&(*curve_id, *face_id))
+                                            }))
+                                        .then_some(())
+                                        .and_then(
+                                            |()| {
+                                                full_periodic_conic_edge_parameter_range(
+                                                    &candidate.geometry,
+                                                    points[0],
+                                                )
+                                            },
                                         )
                                     })
                             },

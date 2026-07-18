@@ -943,6 +943,12 @@ major and minor radii before applying `atan2`. The selected arc supplies the
 ordered angular interval. Coincident endpoints select a full-turn interval
 when the mapped midpoint is antipodal to the endpoint. Every endpoint-matching
 pcurve on an evaluable adjacent face must select the same interval.
+When every transferred use of a periodic conic edge is a one-half-edge closed
+native loop, its half-edge orbit binds the same solved vertex at both ends, and
+no native pcurve candidate is present, the loop defines one full carrier
+period. The seam vertex parameter `t` defines the increasing interval
+`[t, t + 2π]`. A multi-edge loop or any native pcurve candidate requires the
+independent arc-selection rule above.
 
 For a parabola with vertex `O`, focal distance `f`, major direction `X`, and
 transverse direction `Y = axis × X`, the native parameter of point `P` is
