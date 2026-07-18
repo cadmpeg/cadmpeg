@@ -19,6 +19,11 @@ macro_rules! string_id {
 
 string_id!(SketchId, "Identifies a neutral planar sketch.");
 string_id!(SketchEntityId, "Identifies solved geometry in a sketch.");
+string_id!(SpatialSketchId, "Identifies a neutral spatial sketch.");
+string_id!(
+    SpatialSketchEntityId,
+    "Identifies solved geometry in a spatial sketch."
+);
 string_id!(
     SketchConstraintId,
     "Identifies a geometric sketch constraint."
@@ -159,6 +164,104 @@ pub enum SketchGeometry {
         periodic: bool,
     },
     /// Source-native geometry not yet reduced to a neutral family.
+    Native {
+        /// Source geometry family.
+        native_kind: String,
+    },
+}
+
+/// A sketch whose solved geometry is expressed directly in model space.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketch {
+    /// Globally unique spatial-sketch id.
+    pub id: SpatialSketchId,
+    /// Source display name, when recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Source configuration key, when scoped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration: Option<String>,
+    /// Identifier of the full-fidelity native input lane.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Solved model-space geometry belonging to one spatial sketch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchEntity {
+    /// Globally unique spatial entity id.
+    pub id: SpatialSketchEntityId,
+    /// Owning spatial sketch.
+    pub sketch: SpatialSketchId,
+    /// Whether the entity is construction geometry.
+    #[serde(default)]
+    pub construction: bool,
+    /// Source-native geometry record represented by this entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+    /// Source-native curve carrier represented by this entity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub geometry_ref: Option<String>,
+    /// Source-native endpoint records in stored entity direction.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub endpoint_refs: Vec<String>,
+    /// Solved model-space geometry.
+    pub geometry: SpatialSketchGeometry,
+}
+
+/// Solved geometry in model coordinates.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SpatialSketchGeometry {
+    /// Bounded model-space line segment.
+    Line {
+        /// Segment start in model coordinates.
+        start: Point3,
+        /// Segment end in model coordinates.
+        end: Point3,
+    },
+    /// Oriented full model-space circle.
+    Circle {
+        /// Circle center in model coordinates.
+        center: Point3,
+        /// Unit normal defining positive angular travel.
+        normal: Vector3,
+        /// Unit radial direction at parameter zero.
+        reference_direction: Vector3,
+        /// Circle radius.
+        radius: Length,
+    },
+    /// Oriented bounded model-space circular arc.
+    Arc {
+        /// Arc center in model coordinates.
+        center: Point3,
+        /// Unit normal defining positive angular travel.
+        normal: Vector3,
+        /// Unit radial direction at parameter zero.
+        reference_direction: Vector3,
+        /// Arc radius.
+        radius: Length,
+        /// Inclusive start parameter in radians.
+        start_angle: Angle,
+        /// Inclusive end parameter in radians.
+        end_angle: Angle,
+    },
+    /// Model-space NURBS curve.
+    Nurbs {
+        /// Curve degree.
+        degree: u32,
+        /// Full knot vector.
+        knots: Vec<f64>,
+        /// Control points in parameter order.
+        control_points: Vec<Point3>,
+        /// Per-pole weights; absent for non-rational curves.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        weights: Option<Vec<f64>>,
+        /// Whether the curve is periodic.
+        #[serde(default)]
+        periodic: bool,
+    },
+    /// Source-native spatial geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.
         native_kind: String,

@@ -2986,6 +2986,29 @@ pub(crate) fn neutral_sketch_curve_id(
     ))
 }
 
+fn neutral_spatial_sketch_id(
+    placement: &DesignSketchPlacement,
+) -> cadmpeg_ir::sketches::SpatialSketchId {
+    let stream = identity_key_component(native_stream(&placement.id).unwrap_or("f3d:design"));
+    cadmpeg_ir::sketches::SpatialSketchId(format!(
+        "f3d:model:spatial-sketch#{}@{}",
+        stream, placement.entity_suffix
+    ))
+}
+
+fn neutral_spatial_sketch_curve_id(
+    native_ref: &str,
+    primary_id: u64,
+    secondary_id: u64,
+) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
+    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
+        "f3d:model:spatial-sketch-entity#{}:{}c{primary_id}:{secondary_id}",
+        stream.len(),
+        stream,
+    ))
+}
+
 pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record_index: u32,
@@ -3193,6 +3216,164 @@ pub fn project_sketch_design(
     for sketch in &mut sketches {
         sketch.profiles = closed_sketch_profiles(&sketch.id, &entities, linear_tolerance);
     }
+    (sketches, entities)
+}
+
+/// Project non-planar Design sketch curves into model-space spatial sketches.
+pub fn project_spatial_sketch_design(
+    placements: &[DesignSketchPlacement],
+    curves: &[SketchCurveIdentity],
+) -> (
+    Vec<cadmpeg_ir::sketches::SpatialSketch>,
+    Vec<cadmpeg_ir::sketches::SpatialSketchEntity>,
+) {
+    use cadmpeg_ir::features::{Angle, Length};
+    use cadmpeg_ir::sketches::{SpatialSketch, SpatialSketchEntity, SpatialSketchGeometry};
+
+    let placements_by_suffix = placements
+        .iter()
+        .filter_map(|placement| {
+            Some((
+                (
+                    native_stream(&placement.id)?,
+                    u32::try_from(placement.entity_suffix).ok()?,
+                ),
+                placement,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let transform_point = |placement: &DesignSketchPlacement, point: &Point3| {
+        let origin_scale = placement_origin_scale(placement);
+        Point3::new(
+            placement.transform[0][0] * point.x
+                + placement.transform[0][1] * point.y
+                + placement.transform[0][2] * point.z
+                + placement.transform[0][3] * origin_scale,
+            placement.transform[1][0] * point.x
+                + placement.transform[1][1] * point.y
+                + placement.transform[1][2] * point.z
+                + placement.transform[1][3] * origin_scale,
+            placement.transform[2][0] * point.x
+                + placement.transform[2][1] * point.y
+                + placement.transform[2][2] * point.z
+                + placement.transform[2][3] * origin_scale,
+        )
+    };
+    let transform_vector = |placement: &DesignSketchPlacement, vector: &Vector3| {
+        Vector3::new(
+            placement.transform[0][0] * vector.x
+                + placement.transform[0][1] * vector.y
+                + placement.transform[0][2] * vector.z,
+            placement.transform[1][0] * vector.x
+                + placement.transform[1][1] * vector.y
+                + placement.transform[1][2] * vector.z,
+            placement.transform[2][0] * vector.x
+                + placement.transform[2][1] * vector.y
+                + placement.transform[2][2] * vector.z,
+        )
+    };
+
+    let mut entities = curves
+        .iter()
+        .filter_map(|curve| {
+            let placement =
+                placements_by_suffix.get(&(native_stream(&curve.id)?, curve.owner_reference?))?;
+            let geometry = match curve.geometry.as_ref()? {
+                SketchCurveGeometry::Line { start, end, .. }
+                    if !(planar_point(start) && planar_point(end)) =>
+                {
+                    SpatialSketchGeometry::Line {
+                        start: transform_point(placement, start),
+                        end: transform_point(placement, end),
+                    }
+                }
+                SketchCurveGeometry::Arc {
+                    center,
+                    normal,
+                    reference_direction,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } if !(planar_point(center) && reference_direction.z.abs() <= 1.0e-9)
+                    && *radius > 0.0 =>
+                {
+                    let center = transform_point(placement, center);
+                    let normal = transform_vector(placement, normal);
+                    let reference_direction = transform_vector(placement, reference_direction);
+                    if (end_angle - start_angle).abs() >= std::f64::consts::TAU - 1.0e-9 {
+                        SpatialSketchGeometry::Circle {
+                            center,
+                            normal,
+                            reference_direction,
+                            radius: Length(*radius),
+                        }
+                    } else {
+                        SpatialSketchGeometry::Arc {
+                            center,
+                            normal,
+                            reference_direction,
+                            radius: Length(*radius),
+                            start_angle: Angle(*start_angle),
+                            end_angle: Angle(*end_angle),
+                        }
+                    }
+                }
+                SketchCurveGeometry::Nurbs {
+                    degree,
+                    knots,
+                    weights,
+                    control_points,
+                    ..
+                } if *degree != 0
+                    && usize::try_from(*degree).is_ok_and(|degree| {
+                        control_points.len() > degree
+                            && control_points.iter().any(|point| !planar_point(point))
+                    }) =>
+                {
+                    SpatialSketchGeometry::Nurbs {
+                        degree: *degree,
+                        knots: knots.clone(),
+                        control_points: control_points
+                            .iter()
+                            .map(|point| transform_point(placement, point))
+                            .collect(),
+                        weights: (!weights.is_empty()).then(|| weights.clone()),
+                        periodic: false,
+                    }
+                }
+                _ => return None,
+            };
+            Some(SpatialSketchEntity {
+                id: neutral_spatial_sketch_curve_id(
+                    &curve.id,
+                    curve.primary_id,
+                    curve.secondary_id,
+                ),
+                sketch: neutral_spatial_sketch_id(placement),
+                construction: false,
+                native_ref: Some(curve.id.clone()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry,
+            })
+        })
+        .collect::<Vec<_>>();
+    entities.sort_by_key(|entity| entity.id.clone());
+    let spatial_ids = entities
+        .iter()
+        .map(|entity| entity.sketch.clone())
+        .collect::<HashSet<_>>();
+    let mut sketches = placements
+        .iter()
+        .filter(|placement| spatial_ids.contains(&neutral_spatial_sketch_id(placement)))
+        .map(|placement| SpatialSketch {
+            id: neutral_spatial_sketch_id(placement),
+            name: Some(placement.entity_id.clone()),
+            configuration: None,
+            native_ref: Some(placement.id.clone()),
+        })
+        .collect::<Vec<_>>();
+    sketches.sort_by_key(|sketch| sketch.id.clone());
     (sketches, entities)
 }
 
@@ -14127,12 +14308,13 @@ mod relation_tests {
         parse_sketch_relation, partial_historical_edge_selection, point_lies_on_sketch_geometry,
         point_on_sketch_entity, project_configurations, project_dimension_constraints,
         project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, radial_dimension_definition, recipe_record_prefix,
-        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
-        resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
-        resolved_face_group, sketch_entity_endpoints, two_locus_distance_dimension,
-        unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
-        unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
+        project_sketch_design, project_spatial_sketch_design, radial_dimension_definition,
+        recipe_record_prefix, region_containing_points, remove_dimension_frame_relations,
+        repeated_linear_dimension, resolved_edge_candidate_intersection,
+        resolved_extrude_profile_selection, resolved_face_group, sketch_entity_endpoints,
+        two_locus_distance_dimension, unresolved_configuration_member_count,
+        unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
+        unresolved_configuration_suppressed_feature_count,
         unresolved_parameter_expression_dependency_count, untyped_parameter_unit_count,
         validate_configuration_payload, DesignFeatureFamily,
     };
@@ -18358,6 +18540,89 @@ mod relation_tests {
         ] {
             assert!(exact_atomic_constraint(kind, &[line, line]).is_none());
         }
+    }
+
+    #[test]
+    fn nonplanar_sketch_curves_project_in_model_space() {
+        use cadmpeg_ir::sketches::SpatialSketchGeometry;
+
+        let placement = DesignSketchPlacement {
+            member_run_head: false,
+            id: "f3d:Design/BulkStream.dat:placement#100".into(),
+            scope_record_index: None,
+            entity_id: "Sketch_42".into(),
+            entity_suffix: 42,
+            byte_offset: 100,
+            class_tag: "300".into(),
+            record_index: 100,
+            frame_length: 329,
+            transform: [
+                [0.0, 0.0, 1.0, 10.0],
+                [1.0, 0.0, 0.0, 20.0],
+                [0.0, 1.0, 0.0, 30.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ],
+            transform_offset: Some(155),
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 429,
+        };
+        let curve = |record_index, primary_id, geometry| SketchCurveIdentity {
+            id: format!("f3d:Design/BulkStream.dat:curve#{record_index}"),
+            record_index,
+            owner_reference: Some(42),
+            class_tag: "301".into(),
+            byte_offset: u64::from(record_index),
+            geometry_offset: 100,
+            entity_genesis: None,
+            primary_id,
+            secondary_id: 0,
+            geometry: Some(geometry),
+        };
+        let curves = [
+            curve(
+                101,
+                1,
+                SketchCurveGeometry::Line {
+                    start: Point3::new(1.0, 2.0, 3.0),
+                    end: Point3::new(4.0, 5.0, 6.0),
+                    direction: Vector3::new(1.0, 1.0, 1.0),
+                    normal: Vector3::new(0.0, 1.0, 0.0),
+                },
+            ),
+            curve(
+                102,
+                2,
+                SketchCurveGeometry::Arc {
+                    center: Point3::new(1.0, 2.0, 3.0),
+                    normal: Vector3::new(1.0, 0.0, 0.0),
+                    reference_direction: Vector3::new(0.0, 1.0, 0.0),
+                    radius: 2.0,
+                    start_angle: 0.0,
+                    end_angle: std::f64::consts::TAU,
+                },
+            ),
+        ];
+
+        let (sketches, entities) = project_spatial_sketch_design(&[placement], &curves);
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(entities.len(), 2);
+        assert!(entities.iter().any(|entity| matches!(
+            entity.geometry,
+            SpatialSketchGeometry::Line { start, end }
+                if start == Point3::new(13.0, 21.0, 32.0)
+                    && end == Point3::new(16.0, 24.0, 35.0)
+        )));
+        assert!(entities.iter().any(|entity| matches!(
+            entity.geometry,
+            SpatialSketchGeometry::Circle {
+                center,
+                normal,
+                reference_direction,
+                radius: Length(2.0),
+            } if center == Point3::new(13.0, 21.0, 32.0)
+                && normal == Vector3::new(0.0, 1.0, 0.0)
+                && reference_direction == Vector3::new(0.0, 0.0, 1.0)
+        )));
     }
 
     #[test]

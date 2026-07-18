@@ -3,7 +3,9 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::sketches::{SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus};
+use crate::sketches::{
+    SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus, SpatialSketchGeometry,
+};
 use std::collections::{HashMap, HashSet};
 
 fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
@@ -17,6 +19,24 @@ fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
 
 fn finite2(point: crate::math::Point2) -> bool {
     point.u.is_finite() && point.v.is_finite()
+}
+
+fn finite3(point: crate::math::Point3) -> bool {
+    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+}
+
+fn valid_spatial_circle_frame(
+    normal: crate::math::Vector3,
+    reference: crate::math::Vector3,
+) -> bool {
+    let normal_length = normal.norm();
+    let reference_length = reference.norm();
+    normal_length.is_finite()
+        && reference_length.is_finite()
+        && (normal_length - 1.0).abs() <= 1.0e-9
+        && (reference_length - 1.0).abs() <= 1.0e-9
+        && (normal.x * reference.x + normal.y * reference.y + normal.z * reference.z).abs()
+            <= 1.0e-9
 }
 
 fn line_offset_matches(source: &SketchGeometry, result: &SketchGeometry, expected: f64) -> bool {
@@ -222,6 +242,114 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SketchGeometry::Native { native_kind } => {
                 if native_kind.is_empty() {
                     finding(findings, Check::Counts, id, "empty native sketch kind");
+                }
+            }
+        }
+    }
+
+    let spatial_sketches = ir
+        .model
+        .spatial_sketches
+        .iter()
+        .map(|sketch| &sketch.id)
+        .collect::<HashSet<_>>();
+    for entity in &ir.model.spatial_sketch_entities {
+        let id = &entity.id.0;
+        if !spatial_sketches.contains(&entity.sketch) {
+            finding(
+                findings,
+                Check::ReferentialIntegrity,
+                id,
+                "spatial sketch entity references a missing spatial sketch",
+            );
+        }
+        match &entity.geometry {
+            SpatialSketchGeometry::Line { start, end } => {
+                let distance = (end.x - start.x)
+                    .hypot(end.y - start.y)
+                    .hypot(end.z - start.z);
+                if !finite3(*start) || !finite3(*end) || distance <= 1.0e-12 {
+                    finding(findings, Check::Bounds, id, "invalid spatial sketch line");
+                }
+            }
+            SpatialSketchGeometry::Circle {
+                center,
+                normal,
+                reference_direction,
+                radius,
+            }
+            | SpatialSketchGeometry::Arc {
+                center,
+                normal,
+                reference_direction,
+                radius,
+                ..
+            } => {
+                if !finite3(*center)
+                    || nonpositive(radius.0)
+                    || !valid_spatial_circle_frame(*normal, *reference_direction)
+                {
+                    finding(
+                        findings,
+                        Check::Bounds,
+                        id,
+                        "invalid spatial circular sketch geometry",
+                    );
+                }
+                if let SpatialSketchGeometry::Arc {
+                    start_angle,
+                    end_angle,
+                    ..
+                } = &entity.geometry
+                {
+                    if !start_angle.0.is_finite()
+                        || !end_angle.0.is_finite()
+                        || start_angle == end_angle
+                    {
+                        finding(
+                            findings,
+                            Check::ParameterDomain,
+                            id,
+                            "invalid spatial sketch arc interval",
+                        );
+                    }
+                }
+            }
+            SpatialSketchGeometry::Nurbs {
+                degree,
+                knots,
+                control_points,
+                weights,
+                ..
+            } => {
+                let expected = control_points.len().checked_add(*degree as usize + 1);
+                if *degree == 0
+                    || control_points.len() <= *degree as usize
+                    || expected != Some(knots.len())
+                    || knots.iter().any(|value| !value.is_finite())
+                    || knots.windows(2).any(|pair| pair[0] > pair[1])
+                    || control_points.iter().any(|point| !finite3(*point))
+                    || weights.as_ref().is_some_and(|weights| {
+                        weights.len() != control_points.len()
+                            || weights.iter().any(|weight| nonpositive(*weight))
+                    })
+                {
+                    finding(
+                        findings,
+                        Check::ParameterDomain,
+                        id,
+                        "invalid spatial sketch NURBS",
+                    );
+                }
+            }
+            SpatialSketchGeometry::Native { native_kind } => {
+                if native_kind.is_empty() {
+                    finding(
+                        findings,
+                        Check::Counts,
+                        id,
+                        "empty native spatial sketch kind",
+                    );
                 }
             }
         }

@@ -2866,6 +2866,47 @@ fn spatial_sketch_cannot_own_planar_geometry() {
 }
 
 #[test]
+fn spatial_sketch_geometry_round_trips_and_validates() {
+    use crate::features::Length;
+    use crate::sketches::{
+        SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
+        SpatialSketchId,
+    };
+
+    let mut ir = unit_cube();
+    let sketch = SpatialSketchId("synthetic:test:spatial-sketch#one".into());
+    ir.model.spatial_sketches.push(SpatialSketch {
+        id: sketch.clone(),
+        name: Some("3D path".into()),
+        configuration: None,
+        native_ref: None,
+    });
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#circle".into()),
+        sketch,
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            reference_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: Length(4.0),
+        },
+    });
+    ir.finalize();
+    assert!(validate(&ir, Vec::new()).findings.is_empty());
+    let json = ir.to_canonical_json().expect("serialize spatial sketch");
+    let decoded = CadIr::from_json(&json).expect("deserialize spatial sketch");
+    assert_eq!(decoded.model.spatial_sketches, ir.model.spatial_sketches);
+    assert_eq!(
+        decoded.model.spatial_sketch_entities,
+        ir.model.spatial_sketch_entities
+    );
+}
+
+#[test]
 fn feature_operation_geometry_is_validated() {
     use crate::features::{
         BooleanOp, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
