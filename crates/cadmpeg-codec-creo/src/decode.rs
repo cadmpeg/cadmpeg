@@ -3309,10 +3309,11 @@ fn saved_section_line_geometry(
             .then_some(internal_id)
         })
         .or_else(|| {
+            order_table.is_complete().then_some(())?;
             let trimmed = definition.trim_entities.as_ref()?;
-            let segment_ids = definition
-                .segments
-                .as_ref()?
+            let segment_table = definition.segments.as_ref()?;
+            segment_table.is_complete().then_some(())?;
+            let segment_ids = segment_table
                 .rows
                 .iter()
                 .filter(|candidate| {
@@ -15320,6 +15321,11 @@ mod resolved_sketch_tests {
             .expect("test definition has an order table")
             .rows
             .clear();
+        completed
+            .order_table
+            .as_mut()
+            .expect("test definition has an order table")
+            .declared_count = 0;
         completed.segments = Some(crate::feature::FeatureSegmentTable {
             declared_count: 1,
             entity_ref: None,
@@ -15347,6 +15353,26 @@ mod resolved_sketch_tests {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
+        );
+        let mut incomplete_order = completed.clone();
+        incomplete_order
+            .order_table
+            .as_mut()
+            .expect("test definition has an order table")
+            .declared_count = 1;
+        assert_eq!(
+            saved_section_line_geometry(&incomplete_order, &segment),
+            None
+        );
+        let mut incomplete_segments = completed.clone();
+        incomplete_segments
+            .segments
+            .as_mut()
+            .expect("segment table")
+            .declared_count = 2;
+        assert_eq!(
+            saved_section_line_geometry(&incomplete_segments, &segment),
+            None
         );
         let trim = completed.trim_entities.as_ref().expect("trim table").rows[0].clone();
         assert_eq!(trim_segment_id(&completed, &trim), Some(42));
