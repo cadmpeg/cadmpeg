@@ -10031,17 +10031,15 @@ fn attach_feature_operations(
                 identity_use.id.clone(),
             );
         }
-        for block_use in datum_plane_uses_by_input_operation
+        for (use_ordinal, block_use) in datum_plane_uses_by_input_operation
             .get(label.id.as_str())
             .into_iter()
             .flatten()
+            .enumerate()
         {
             source_properties.insert(
-                format!(
-                    "datum_plane_input.{}.{}",
-                    block_use.input_slot, block_use.reference_ordinal
-                ),
-                block_use.datum_plane_header.clone(),
+                format!("datum_plane_block_use.{use_ordinal}"),
+                block_use.id.clone(),
             );
         }
         source_properties.extend(simple_hole_native_properties(
