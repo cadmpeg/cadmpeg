@@ -177,6 +177,7 @@ name = "cadmpeg-codec-f3d"
 version = "0.2.0"
 dependencies = [
  "cadmpeg-ir",
+ "roxmltree",
  "schemars",
  "serde",
  "serde_json",

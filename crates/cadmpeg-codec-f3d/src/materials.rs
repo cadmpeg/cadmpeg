@@ -11,8 +11,9 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Write};
 
 use crate::records::DesignMaterialAssignment;
-use cadmpeg_ir::appearance::Appearance;
-use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
+use cadmpeg_ir::appearance::{
+    Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
+};
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::ids::{AppearanceId, BodyId};
 use cadmpeg_ir::le::{lp_u32_bytes_at, take_lp_u32_bytes, u32_at, u64_at, utf16le_at};
@@ -32,6 +33,11 @@ pub(crate) fn visual_guid_matches(left: &str, right: &str) -> bool {
 }
 
 pub(crate) fn encode_protein(appearance: &Appearance) -> Result<Vec<u8>, CodecError> {
+    if !appearance.textures.is_empty() {
+        return Err(CodecError::NotImplemented(
+            "source-less F3D cannot synthesize connected Protein texture assets".into(),
+        ));
+    }
     let schema = appearance.schema.as_deref().unwrap_or("GenericSchema");
     let guid = appearance
         .visual_guid
@@ -377,7 +383,12 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
             continue;
         };
         let catalog = definition_catalog(payload);
-        let mut appearances = decode_logical_records(&logical, &entry.name);
+        let mut appearances = if crate::protein::has_schemas(payload) {
+            let records = crate::protein::decode(payload, &logical)?;
+            appearances_from_schema_records(&records)
+        } else {
+            decode_fixed_logical_records(&logical)
+        };
         for appearance in &mut appearances {
             if let Some(name) = appearance.name.as_deref() {
                 if let Some((schema, category)) = catalog.get(name) {
@@ -472,6 +483,196 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         face_assignments,
         has_topology_assignments,
     })
+}
+
+fn appearances_from_schema_records(records: &[crate::protein::DecodedRecord]) -> Vec<Appearance> {
+    let textures = records
+        .iter()
+        .filter_map(texture_asset)
+        .map(|texture| (texture.asset_guid.clone(), texture))
+        .collect::<BTreeMap<_, _>>();
+    records
+        .iter()
+        .filter(|record| {
+            !matches!(
+                record.schema.as_str(),
+                "UnifiedBitmapSchema" | "BumpMapSchema"
+            )
+        })
+        .map(|record| {
+            let mut properties = BTreeMap::new();
+            let mut connected = Vec::new();
+            for (id, property) in &record.properties {
+                if let crate::protein::PropertyValue::Float(value) = property.value {
+                    properties.insert(neutral_property_name(id).to_owned(), value);
+                }
+                for guid in &property.connections {
+                    if let Some(texture) = textures.get(guid) {
+                        let mut texture = texture.clone();
+                        texture.slot.clone_from(id);
+                        connected.push(texture);
+                    }
+                }
+            }
+            connected.sort_by(|left, right| {
+                left.slot
+                    .cmp(&right.slot)
+                    .then_with(|| left.asset_guid.cmp(&right.asset_guid))
+            });
+            let base_color = [
+                "generic_diffuse",
+                "opaque_albedo",
+                "surface_albedo",
+                "common_Tint_color",
+            ]
+            .into_iter()
+            .find_map(|id| color_property(record, id));
+            Appearance {
+                id: AppearanceId(format!("f3d:design:appearance#{}", record.guid)),
+                name: Some(record.base.clone()),
+                asset_guid: Some(record.guid.clone()),
+                visual_guid: (!is_physical_schema(&record.schema)).then(|| record.guid.clone()),
+                physical_token: None,
+                schema: Some(record.schema.clone()),
+                category: None,
+                base_color,
+                properties,
+                textures: connected,
+            }
+        })
+        .collect()
+}
+
+fn color_property(record: &crate::protein::DecodedRecord, id: &str) -> Option<Color> {
+    let crate::protein::PropertyValue::Color([r, g, b, a]) =
+        record.properties.get(id).map(|property| &property.value)?
+    else {
+        return None;
+    };
+    Some(Color {
+        r: *r as f32,
+        g: *g as f32,
+        b: *b as f32,
+        a: *a as f32,
+    })
+}
+
+fn texture_asset(record: &crate::protein::DecodedRecord) -> Option<TextureRef> {
+    if !matches!(
+        record.schema.as_str(),
+        "UnifiedBitmapSchema" | "BumpMapSchema"
+    ) {
+        return None;
+    }
+    let paths = record
+        .properties
+        .iter()
+        .find_map(|(id, property)| {
+            (id.ends_with("_Bitmap"))
+                .then_some(&property.value)
+                .and_then(|value| match value {
+                    crate::protein::PropertyValue::TextureUri(paths) => Some(paths.clone()),
+                    _ => None,
+                })
+        })
+        .unwrap_or_default();
+    let urn = record.properties.iter().find_map(|(id, property)| {
+        (id.ends_with("_Bitmap_urn"))
+            .then_some(&property.value)
+            .and_then(|value| match value {
+                crate::protein::PropertyValue::String(value) if !value.is_empty() => {
+                    Some(value.clone())
+                }
+                _ => None,
+            })
+    });
+    let mapping = TextureMap2d {
+        map_channel: integer_property(record, "MapChannel").unwrap_or(1),
+        uvw_source: integer_property(record, "MapChannel_UVWSource_Advanced").unwrap_or(0),
+        u_offset: float_property(record, "UOffset").unwrap_or(0.0),
+        v_offset: float_property(record, "VOffset").unwrap_or(0.0),
+        u_scale: float_property(record, "UScale").unwrap_or(1.0),
+        v_scale: float_property(record, "VScale").unwrap_or(1.0),
+        rotation: float_property(record, "WAngle").unwrap_or(0.0).to_radians(),
+        repeat_u: boolean_property(record, "URepeat").unwrap_or(true),
+        repeat_v: boolean_property(record, "VRepeat").unwrap_or(true),
+        real_world_offset_x: distance_property(record, "RealWorldOffsetX").unwrap_or(0.0),
+        real_world_offset_y: distance_property(record, "RealWorldOffsetY").unwrap_or(0.0),
+        real_world_scale_x: distance_property(record, "RealWorldScaleX").unwrap_or(0.0),
+        real_world_scale_y: distance_property(record, "RealWorldScaleY").unwrap_or(0.0),
+    };
+    let bump = (record.schema == "BumpMapSchema").then(|| BumpMap {
+        normal_map: integer_property(record, "bumpmap_Type") == Some(1),
+        depth: distance_property(record, "bumpmap_Depth").unwrap_or(0.0),
+        normal_scale: float_property(record, "bumpmap_NormalScale").unwrap_or(1.0),
+    });
+    Some(TextureRef {
+        asset_guid: record.guid.clone(),
+        slot: String::new(),
+        schema: record.schema.clone(),
+        paths,
+        urn,
+        mapping,
+        bump,
+    })
+}
+
+fn property_with_suffix<'a>(
+    record: &'a crate::protein::DecodedRecord,
+    suffix: &str,
+) -> Option<&'a crate::protein::PropertyValue> {
+    let qualified_suffix = format!("_{suffix}");
+    record
+        .properties
+        .iter()
+        .find(|(id, _)| *id == suffix || id.ends_with(&qualified_suffix))
+        .map(|(_, property)| &property.value)
+}
+
+fn neutral_property_name(id: &str) -> &str {
+    match id {
+        "generic_reflectivity_at_0deg" => "reflectivity_at_0deg",
+        "generic_refraction_index" | "transparent_refraction_index" => "refraction_index",
+        _ => id,
+    }
+}
+
+fn is_physical_schema(schema: &str) -> bool {
+    schema == "PhysMatSchema" || schema.starts_with("Structural") || schema.starts_with("Thermal")
+}
+
+fn integer_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<u32> {
+    match property_with_suffix(record, suffix)? {
+        crate::protein::PropertyValue::Integer(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn float_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<f64> {
+    match property_with_suffix(record, suffix)? {
+        crate::protein::PropertyValue::Float(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn boolean_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<bool> {
+    match property_with_suffix(record, suffix)? {
+        crate::protein::PropertyValue::Boolean(value) => Some(*value),
+        _ => None,
+    }
+}
+
+fn distance_property(record: &crate::protein::DecodedRecord, suffix: &str) -> Option<f64> {
+    let crate::protein::PropertyValue::Distance { unit, value } =
+        property_with_suffix(record, suffix)?
+    else {
+        return None;
+    };
+    match *unit {
+        0x2016 => Some(*value * 25.4),
+        0x200e => Some(*value * 10.0),
+        _ => None,
+    }
 }
 
 pub(crate) fn decode_design_assignments(
@@ -1142,95 +1343,64 @@ fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn decode_logical_records(bytes: &[u8], stream: &str) -> Vec<Appearance> {
-    let starts: Vec<usize> = bytes
+/// Decode the fixed source-less layouts emitted by [`encode_protein`]. Native
+/// Protein assets package schemas and use the schema-driven path instead.
+fn decode_fixed_logical_records(bytes: &[u8]) -> Vec<Appearance> {
+    let starts = bytes
         .windows(RECORD_MARKER.len())
         .enumerate()
-        .filter_map(|(offset, window)| (window == RECORD_MARKER).then_some(offset))
-        .collect();
+        .filter_map(|(offset, marker)| (marker == RECORD_MARKER).then_some(offset))
+        .collect::<Vec<_>>();
     starts
         .iter()
         .enumerate()
-        .filter_map(|(index, start)| {
-            let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
-            decode_record(&bytes[*start..end], stream, *start)
+        .filter_map(|(ordinal, start)| {
+            let end = starts.get(ordinal + 1).copied().unwrap_or(bytes.len());
+            decode_fixed_record(&bytes[*start..end])
         })
         .collect()
 }
 
-fn decode_record(record: &[u8], _stream: &str, _offset: usize) -> Option<Appearance> {
-    if !record.starts_with(RECORD_MARKER) {
-        return None;
-    }
+fn decode_fixed_record(record: &[u8]) -> Option<Appearance> {
     let mut position = RECORD_MARKER.len();
     let schema = take_lp(record, &mut position)?;
     let guid = take_lp(record, &mut position)?;
     let base = take_lp(record, &mut position)?;
-    let _base_guid = take_lp(record, &mut position)?;
+    take_lp(record, &mut position)?;
     let color = match schema.as_str() {
-        "GenericSchema" => rgba(
+        "GenericSchema" => fixed_rgba(
             record,
             position + 112 + generic_connection_delta(record, position),
         ),
-        "PrismOpaqueSchema" | "PrismMetalSchema" => rgba(record, position + 8),
-        "PrismTransparentSchema" => rgba(record, position + 121),
+        "PrismOpaqueSchema" | "PrismMetalSchema" => fixed_rgba(record, position + 8),
+        "PrismTransparentSchema" => fixed_rgba(record, position + 121),
         "PhysMatSchema"
         | "StructuralMetalSchema"
         | "StructuralPlasticSchema"
         | "ThermalSolidSchema" => None,
         _ => return None,
     };
-    if color.is_none()
-        && !matches!(
-            schema.as_str(),
-            "PhysMatSchema"
-                | "StructuralMetalSchema"
-                | "StructuralPlasticSchema"
-                | "ThermalSolidSchema"
-        )
-    {
-        return None;
-    }
     let mut properties = BTreeMap::new();
-    match schema.as_str() {
-        "GenericSchema" => {
-            let delta = generic_connection_delta(record, position);
-            insert_tagged_scalar(
-                &mut properties,
-                "reflectivity_at_0deg",
-                record,
-                position + 171 + delta,
-                0.0..=1.0,
-            );
-            insert_tagged_scalar(
-                &mut properties,
-                "refraction_index",
-                record,
-                position + 197 + delta,
-                1.0..=4.0,
-            );
+    if schema == "GenericSchema" {
+        let delta = generic_connection_delta(record, position);
+        fixed_tagged_scalar(
+            &mut properties,
+            "reflectivity_at_0deg",
+            record,
+            position + 171 + delta,
+        );
+        fixed_tagged_scalar(
+            &mut properties,
+            "refraction_index",
+            record,
+            position + 197 + delta,
+        );
+    } else if schema == "PrismOpaqueSchema" {
+        if let Some(marker) = find(record, b"\x0e\x20\x00\x00", position) {
+            fixed_scalar(&mut properties, "surface_roughness", record, marker + 4);
         }
-        "PrismOpaqueSchema" => {
-            if let Some(marker) = find(record, b"\x0e\x20\x00\x00", position) {
-                insert_scalar(
-                    &mut properties,
-                    "surface_roughness",
-                    record,
-                    marker + 4,
-                    0.0..=1.0,
-                );
-            }
-        }
-        "PrismTransparentSchema" => {
-            insert_scalar(
-                &mut properties,
-                "refraction_index",
-                record,
-                position + 169,
-                1.0..=4.0,
-            );
-        }
-        _ => {}
+    } else if schema == "PrismTransparentSchema" {
+        fixed_scalar(&mut properties, "refraction_index", record, position + 169);
     }
     Some(Appearance {
         id: AppearanceId(format!("f3d:design:appearance#{guid}")),
@@ -1245,12 +1415,48 @@ fn decode_record(record: &[u8], _stream: &str, _offset: usize) -> Option<Appeara
         ))
         .then_some(guid),
         physical_token: None,
-        schema: Some(schema.clone()),
+        schema: Some(schema),
         category: None,
         base_color: color,
         properties,
         textures: Vec::new(),
     })
+}
+
+fn fixed_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {
+    let Some(raw) = bytes
+        .get(offset..offset + 8)
+        .and_then(|raw| raw.try_into().ok())
+    else {
+        return;
+    };
+    let value = f64::from_le_bytes(raw);
+    if value.is_finite() {
+        out.insert(name.to_owned(), value);
+    }
+}
+
+fn fixed_tagged_scalar(out: &mut BTreeMap<String, f64>, name: &str, bytes: &[u8], offset: usize) {
+    if bytes.get(offset..offset + 4) == Some(b"\x0c\x00\x00\x00") {
+        fixed_scalar(out, name, bytes, offset + 4);
+    }
+}
+
+fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
+    let mut values = [0.0; 4];
+    for (ordinal, value) in values.iter_mut().enumerate() {
+        let at = offset + ordinal * 8;
+        *value = f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?);
+    }
+    values
+        .iter()
+        .all(|value| value.is_finite())
+        .then_some(Color {
+            r: values[0] as f32,
+            g: values[1] as f32,
+            b: values[2] as f32,
+            a: values[3] as f32,
+        })
 }
 
 fn generic_connection_delta(record: &[u8], value_block: usize) -> usize {
@@ -1291,61 +1497,6 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
         .map(|offset| start + offset)
 }
 
-fn insert_scalar(
-    out: &mut BTreeMap<String, f64>,
-    name: &str,
-    bytes: &[u8],
-    offset: usize,
-    range: std::ops::RangeInclusive<f64>,
-) {
-    let Some(value) = bytes.get(offset..offset + 8).map(|slice| {
-        f64::from_le_bytes(
-            slice
-                .try_into()
-                .expect("invariant: chunks_exact(8) yields 8-byte slices"),
-        )
-    }) else {
-        return;
-    };
-    if value.is_finite() && range.contains(&value) {
-        out.insert(name.into(), value);
-    }
-}
-
-fn insert_tagged_scalar(
-    out: &mut BTreeMap<String, f64>,
-    name: &str,
-    bytes: &[u8],
-    offset: usize,
-    range: std::ops::RangeInclusive<f64>,
-) {
-    if bytes.get(offset..offset + 4) == Some(b"\x0c\x00\x00\x00") {
-        insert_scalar(out, name, bytes, offset + 4, range);
-    }
-}
-
 fn take_lp(bytes: &[u8], position: &mut usize) -> Option<String> {
     String::from_utf8(take_lp_u32_bytes(bytes, position)?.to_vec()).ok()
-}
-
-fn rgba(bytes: &[u8], offset: usize) -> Option<Color> {
-    let read = |at: usize| Some(f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?));
-    let [r, g, b, a] = [
-        read(offset)?,
-        read(offset + 8)?,
-        read(offset + 16)?,
-        read(offset + 24)?,
-    ];
-    if ![r, g, b, a].iter().all(|value| value.is_finite())
-        || ![r, g, b].iter().all(|value| (0.0..=1.0).contains(value))
-        || (a - 1.0).abs() > 1e-3
-    {
-        return None;
-    }
-    Some(Color {
-        r: r as f32,
-        g: g as f32,
-        b: b as f32,
-        a: a as f32,
-    })
 }

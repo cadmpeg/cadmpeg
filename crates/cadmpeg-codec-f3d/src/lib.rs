@@ -79,6 +79,7 @@ mod history_records;
 pub mod materials;
 mod native;
 pub mod nurbs;
+mod protein;
 pub mod records;
 pub mod sab;
 mod writer;

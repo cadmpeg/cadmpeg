@@ -50,7 +50,7 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Material assets
 
-- The `GenericSchema` InstanceProperties value block carries property carriers at fixed offsets in schema-id lexicographic order; the slot assignment for Boolean, Integer, and Choice fields is unspecified.
+- The semantic role of the leading u8 in a TextureURI carrier is unresolved.
+- The semantic role of the u32 prelude before `texture_RealWorldOffsetX`, the complete Distance and unit-tag namespaces, and the application-defined meanings of texture map-channel integer values are unresolved.
 - The resolution of preset phrases against the external material library is unresolved.
-- The `UnifiedBitmapSchema`, `BumpMapSchema`, and `TextureMap2dSchema` texture sub-asset layouts have no material-model mapping; texture-bearing appearance archives pass through the container unchanged with only their non-texture properties decoded.
 - The precedence of `color-adesk-attrib`, `material-adesk-attrib`, and `rh_material` library records relative to direct colors and appearance assignments is unresolved.
