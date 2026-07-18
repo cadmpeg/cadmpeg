@@ -95,10 +95,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "53";
+pub const IR_VERSION: &str = "54";
 
 /// Immediately preceding IR version supported by the explicit JSON migration.
-pub const PREVIOUS_IR_VERSION: &str = "52";
+pub const PREVIOUS_IR_VERSION: &str = "53";
 
 arena_registry!(declare_model);
 
@@ -257,7 +257,6 @@ impl CadIr {
         match version {
             Some(IR_VERSION) => serde_json::from_value(value),
             Some(PREVIOUS_IR_VERSION) => {
-                migrate_previous_external_documents(&mut value);
                 value
                     .as_object_mut()
                     .expect("a versioned CADIR document is a JSON object")
@@ -274,39 +273,6 @@ impl CadIr {
     pub fn finalize(&mut self) {
         self.model.finalize();
         self.native.finalize();
-    }
-}
-
-fn migrate_previous_external_documents(value: &mut serde_json::Value) {
-    let Some(occurrences) = value
-        .get_mut("model")
-        .and_then(|model| model.get_mut("occurrences"))
-        .and_then(serde_json::Value::as_array_mut)
-    else {
-        return;
-    };
-    for occurrence in occurrences {
-        let Some(document) = occurrence
-            .get_mut("prototype")
-            .and_then(serde_json::Value::as_object_mut)
-            .filter(|prototype| {
-                prototype.get("scope").and_then(serde_json::Value::as_str) == Some("external")
-            })
-            .and_then(|prototype| prototype.get_mut("document"))
-        else {
-            continue;
-        };
-        if let Some(identity) = document.as_str().map(str::to_owned) {
-            let resolution = if identity.is_empty() {
-                "missing_reference"
-            } else {
-                "unresolved"
-            };
-            *document = serde_json::json!({
-                "document_id": identity,
-                "resolution": resolution
-            });
-        }
     }
 }
 

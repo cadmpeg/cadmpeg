@@ -2631,7 +2631,7 @@ fn chamfer_definition(
     Some(FeatureDefinition::Chamfer {
         edges,
         spec,
-        flip_direction: bool_property(properties, "FlipDirection").unwrap_or(false),
+        flip_direction: Some(bool_property(properties, "FlipDirection").unwrap_or(false)),
     })
 }
 

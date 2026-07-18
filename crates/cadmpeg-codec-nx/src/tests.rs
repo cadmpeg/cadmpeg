@@ -3072,7 +3072,7 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::Chamfer {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Unresolved { form: None },
-            ..
+            flip_direction: None,
         }
     ));
     assert_eq!(

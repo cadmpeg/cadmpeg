@@ -693,9 +693,9 @@ pub enum FeatureDefinition {
         edges: EdgeSelection,
         /// Dimensional definition of the chamfer.
         spec: ChamferSpec,
-        /// Whether the dimensional reference side is reversed.
-        #[serde(default)]
-        flip_direction: bool,
+        /// Whether the dimensional reference side is reversed, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        flip_direction: Option<bool>,
     },
     /// Thin-wall shell operation.
     Shell {

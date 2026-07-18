@@ -776,7 +776,7 @@ fn transfers_revolution_fillet_and_chamfer_semantics() {
                 distance: cadmpeg_ir::features::Length(1.5),
                 angle,
             },
-            flip_direction: true,
+            flip_direction: Some(true),
             ..
         } if (angle.0 - std::f64::consts::FRAC_PI_6).abs() < 1e-12
     ));
@@ -946,7 +946,7 @@ fn transfers_part_and_partdesign_analytic_primitives() {
             &DecodeOptions::default(),
         )
         .expect("primitives");
-    assert_eq!(result.ir.ir_version, "53");
+    assert_eq!(result.ir.ir_version, "54");
     let feature = |name: &str| {
         &result
             .ir

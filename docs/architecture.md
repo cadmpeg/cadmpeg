@@ -19,7 +19,7 @@ native CAD ── detect + inspect ──> container summary
 - `convert` performs load/decode, validation, and export. Validation errors stop export unless `--allow-invalid` is set.
 - `diff` reads or decodes two inputs and compares units, tolerances, the neutral model, and native namespaces. Source-fidelity annotations and byte ownership use the independent sidecar diff. ID-bearing records are matched by globally unique IDs. Vector position is not entity identity.
 
-CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 53, including its required `subds` arena and excluding source-byte accounting. Library callers can explicitly migrate version 52 with `CadIr::migrate_json`. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
+CADIR input bypasses codec detection and parses directly into `CadIr`. The parser accepts exactly IR version 54, including its required `subds` arena and excluding source-byte accounting. Library callers can explicitly migrate version 53 with `CadIr::migrate_json`. Geometry exports are refused when a source decode transferred no geometry unless `--allow-empty` is set.
 
 ## CLI stream and exit contract
 

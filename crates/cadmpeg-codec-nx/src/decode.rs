@@ -11349,7 +11349,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
         "CHAMFER" => FeatureDefinition::Chamfer {
             edges: EdgeSelection::Unresolved,
             spec: ChamferSpec::Unresolved { form: None },
-            flip_direction: false,
+            flip_direction: None,
         },
         "SEW" => FeatureDefinition::SewBodies {
             bodies: BodySelection::Unresolved,

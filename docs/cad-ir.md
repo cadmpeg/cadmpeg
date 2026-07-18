@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"53"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"54"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -171,7 +171,7 @@ Each feature has an ID, source-history `ordinal`, optional name, suppression sta
 
 Neutral definitions include directly stored geometry, solid and surface construction, direct editing, body composition, sketches, datums, holes, and patterns. A stored-geometry feature has no fabricated replay construction; its outputs identify retained exact bodies. Constructed datum planes and coordinate systems have distinct unresolved-family variants when their operation kind is established but their complete model-space frame is not. `sew_bodies` joins an ordered body selection and carries an optional nonnegative gap tolerance. It remains distinct from `knit_surface`, whose operands are selected faces. `trim_bodies` keeps target and tool body selections distinct and records a forward, reverse, or unresolved retained side. `native` is the sole escape hatch for a feature with no neutral definition and carries its source kind, parameter map, and non-parameter property map. Length wrappers are millimeters and angle wrappers are radians.
 
-Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native profile identity or solved faces. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Hole entry and optional exit shapes are simple, chamfered, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
+Extents are blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles reference native profile identity or solved faces. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle and retain reference-side reversal only when resolved. Hole entry and optional exit shapes are simple, chamfered, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
 `native_ref` identifies the full-fidelity native record corresponding to a neutral projection. It does not change the neutral definition's meaning.
 
@@ -230,7 +230,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "53"`. `CadIr::migrate_json` explicitly migrates version 52. The `model.subds` arena is required, including when empty. Source-byte accounting is excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
+Readers accept exactly `ir_version: "54"`. `CadIr::migrate_json` explicitly migrates version 53. The `model.subds` arena is required, including when empty. Source-byte accounting is excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Removing or renaming a product field, changing its type, units, parameterization, or invariant requires a new IR version. Source-fidelity accounting versions independently as described in [byte-accounting.md](byte-accounting.md).
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -252,7 +252,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "53",
+  "ir_version": "54",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {

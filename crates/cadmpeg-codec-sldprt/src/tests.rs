@@ -2319,7 +2319,7 @@ fn encoder_writes_source_less_native_features() {
                 first: Length(1.0),
                 second: Length(2.0),
             },
-            flip_direction: false,
+            flip_direction: Some(false),
         },
         FeatureDefinition::Shell {
             removed_faces: FaceSelection::Resolved {
