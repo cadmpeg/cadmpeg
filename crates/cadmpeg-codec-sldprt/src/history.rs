@@ -1063,10 +1063,10 @@ fn compare_parameter_values(
         | (ParameterValue::Real(left), ParameterValue::Real(right)) => left.partial_cmp(right)?,
         (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left.cmp(right),
         (ParameterValue::Real(left), ParameterValue::Integer(right)) => {
-            left.partial_cmp(&(*right as f64))?
+            compare_integer_real(*right, *left)?.reverse()
         }
         (ParameterValue::Integer(left), ParameterValue::Real(right)) => {
-            (*left as f64).partial_cmp(right)?
+            compare_integer_real(*left, *right)?
         }
         (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left.cmp(right),
         _ => return None,
@@ -1080,6 +1080,24 @@ fn compare_parameter_values(
         ">=" => !ordering.is_lt(),
         _ => return None,
     })
+}
+
+fn compare_integer_real(integer: i64, real: f64) -> Option<std::cmp::Ordering> {
+    if real.is_nan() {
+        return None;
+    }
+    if real < i64::MIN as f64 {
+        return Some(std::cmp::Ordering::Greater);
+    }
+    if real >= -(i64::MIN as f64) {
+        return Some(std::cmp::Ordering::Less);
+    }
+
+    let truncated = real as i64;
+    match integer.cmp(&truncated) {
+        std::cmp::Ordering::Equal => 0.0f64.partial_cmp(&real.fract()),
+        ordering => Some(ordering),
+    }
 }
 
 fn conditional_parameter_value(
@@ -4027,8 +4045,8 @@ fn format_f64_literal(value: f64) -> String {
 #[cfg(test)]
 mod literal_tests {
     use super::{
-        apply_parameter_function, exact_integer_f64, format_f64_literal, parse_length_mm,
-        parse_parameter_literal, ParameterValue,
+        apply_parameter_function, compare_parameter_values, exact_integer_f64, format_f64_literal,
+        parse_length_mm, parse_parameter_literal, ParameterValue,
     };
 
     #[test]
@@ -4117,6 +4135,41 @@ mod literal_tests {
         assert_eq!(exact_integer_f64(largest_consecutive + 1), None);
         assert_eq!(exact_integer_f64(i64::MIN), Some(i64::MIN as f64));
         assert_eq!(exact_integer_f64(i64::MAX), None);
+    }
+
+    #[test]
+    fn mixed_numeric_comparisons_preserve_integer_identity() {
+        let integer = ParameterValue::Integer((1_i64 << 53) + 1);
+        let rounded_real = ParameterValue::Real(2_f64.powi(53));
+        assert_eq!(
+            compare_parameter_values(&integer, &rounded_real, "="),
+            Some(false)
+        );
+        assert_eq!(
+            compare_parameter_values(&integer, &rounded_real, ">"),
+            Some(true)
+        );
+        assert_eq!(
+            compare_parameter_values(&rounded_real, &integer, "<"),
+            Some(true)
+        );
+
+        assert_eq!(
+            compare_parameter_values(
+                &ParameterValue::Integer(-3),
+                &ParameterValue::Real(-3.5),
+                ">",
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            compare_parameter_values(
+                &ParameterValue::Integer(i64::MAX),
+                &ParameterValue::Real(-(i64::MIN as f64)),
+                "<",
+            ),
+            Some(true)
+        );
     }
 }
 
