@@ -2849,6 +2849,8 @@ fn scan_decodes_featdefs_generated_entity_order_table() {
         .as_ref()
         .expect("order_table");
     assert_eq!(order.declared_count, 2);
+    assert!(!order.has_prototype);
+    assert!(order.is_complete());
     assert_eq!(order.entity_ref, Some(258));
     assert_eq!(order.rows.len(), 2);
     assert_eq!(order.rows[0].external_id, 283);

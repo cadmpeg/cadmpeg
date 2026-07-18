@@ -907,6 +907,8 @@ pub struct FeatureOrderRow {
 pub struct FeatureOrderTable {
     /// Count declared by the `f8` opener.
     pub declared_count: u32,
+    /// Whether `declared_count` includes a structural prototype outside `rows`.
+    pub has_prototype: bool,
     /// Entity-table class reference following the opener.
     pub entity_ref: Option<u32>,
     /// Complete positional triples in stored order.
@@ -916,8 +918,15 @@ pub struct FeatureOrderTable {
 }
 
 impl FeatureOrderTable {
+    /// Whether every entry declared by the table opener was decoded.
+    pub fn is_complete(&self) -> bool {
+        usize::try_from(self.declared_count).ok()
+            == Some(usize::from(self.has_prototype) + self.rows.len())
+    }
+
     /// Resolve a generated-entity position to its section entity identifier.
     pub fn external_id(&self, internal_id: u32) -> Option<u32> {
+        self.is_complete().then_some(())?;
         let mut matches = self
             .rows
             .iter()
@@ -928,6 +937,7 @@ impl FeatureOrderTable {
 
     /// Resolve a section entity identifier to its generated-entity position.
     pub fn internal_id(&self, external_id: u32) -> Option<u32> {
+        self.is_complete().then_some(())?;
         let mut matches = self
             .rows
             .iter()
@@ -2635,6 +2645,7 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
     }
     Some(FeatureOrderTable {
         declared_count,
+        has_prototype: false,
         entity_ref,
         rows,
         offset: table,
@@ -2656,7 +2667,7 @@ fn positional_order_table(
             && payload.get(after_reference..after_reference + 2) == Some(&[0xfb, 0xe2]))
         .then_some((table, declared_count, after_reference + 2))
     })?;
-    let rows_start = (|| {
+    let prototype = (|| {
         (payload.get(cursor) == Some(&psb::token::ENTITY_REF)).then_some(())?;
         let (_, mut prototype) = psb::reference_id(payload, cursor + 1).ok()?;
         for _ in 0..3 {
@@ -2676,11 +2687,11 @@ fn positional_order_table(
     let capacity = bounded_len(
         u64::from(declared_count.saturating_sub(1)),
         1,
-        end.saturating_sub(rows_start.unwrap_or(end)),
+        end.saturating_sub(prototype.unwrap_or(end)),
     )
     .unwrap_or(0);
     let mut rows = Vec::with_capacity(capacity);
-    let mut cursor = rows_start.unwrap_or(end);
+    let mut cursor = prototype.unwrap_or(end);
     let mut external_ids = BTreeSet::new();
     let mut internal_ids = BTreeSet::new();
     while cursor < end && rows.len() < row_limit {
@@ -2715,6 +2726,7 @@ fn positional_order_table(
     }
     Some(FeatureOrderTable {
         declared_count,
+        has_prototype: prototype.is_some(),
         entity_ref: Some(table_class),
         rows,
         offset: table,
@@ -6226,6 +6238,7 @@ mod tests {
             trim_vertices: None,
             order_table: Some(FeatureOrderTable {
                 declared_count: external_ids.len() as u32,
+                has_prototype: false,
                 entity_ref: Some(1),
                 rows: external_ids
                     .iter()
@@ -7076,6 +7089,8 @@ mod tests {
             positional_order_table(payload, 0, payload.len(), 66).expect("positional order_table");
 
         assert_eq!(order.declared_count, 3);
+        assert!(order.has_prototype);
+        assert!(order.is_complete());
         assert_eq!(order.entity_ref, Some(66));
         assert_eq!(order.rows.len(), 2);
         assert_eq!(order.rows[0].external_id, 10);
@@ -7086,6 +7101,7 @@ mod tests {
         assert_eq!(order.external_id(2), Some(10));
 
         let mut duplicate_external = order.clone();
+        duplicate_external.declared_count += 1;
         duplicate_external.rows.push(FeatureOrderRow {
             external_id: 10,
             internal_id: 4,
@@ -7094,6 +7110,7 @@ mod tests {
         });
         assert_eq!(duplicate_external.internal_id(10), None);
         let mut duplicate_internal = order;
+        duplicate_internal.declared_count += 1;
         duplicate_internal.rows.push(FeatureOrderRow {
             external_id: 12,
             internal_id: 2,
@@ -7108,6 +7125,8 @@ mod tests {
         let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\xf1\xf7\x42\xe2";
         let order = order_table(named, 0, named.len()).expect("named order_table header");
         assert_eq!(order.declared_count, 2);
+        assert!(!order.has_prototype);
+        assert!(!order.is_complete());
         assert_eq!(order.entity_ref, Some(66));
         assert!(order.rows.is_empty());
 
@@ -7115,8 +7134,27 @@ mod tests {
         let order = positional_order_table(positional, 0, positional.len(), 66)
             .expect("positional order_table header");
         assert_eq!(order.declared_count, 2);
+        assert!(!order.has_prototype);
+        assert!(!order.is_complete());
         assert_eq!(order.entity_ref, Some(66));
         assert!(order.rows.is_empty());
+    }
+
+    #[test]
+    fn incomplete_order_tables_do_not_resolve_identifiers() {
+        let named = b"order_table\0\xf8\x02\xf7\x42\xfb\xe2\
+            \xf1\xf7\x42\xe2\x0a\x02\x00";
+        let order = order_table(named, 0, named.len()).expect("named order_table");
+        assert_eq!(order.rows.len(), 1);
+        assert!(!order.is_complete());
+        assert_eq!(order.internal_id(10), None);
+        assert_eq!(order.external_id(2), None);
+
+        let positional = b"\xf8\x02\xf7\x42\xfb\xe2";
+        let order = positional_order_table(positional, 0, positional.len(), 66)
+            .expect("positional order_table");
+        assert!(!order.is_complete());
+        assert_eq!(order.internal_id(10), None);
     }
 
     #[test]
@@ -7680,6 +7718,7 @@ mod tests {
         payload.push(0xe3);
         let order = FeatureOrderTable {
             declared_count: 1,
+            has_prototype: false,
             entity_ref: None,
             rows: vec![FeatureOrderRow {
                 external_id: 42,
@@ -7743,6 +7782,7 @@ mod tests {
         payload.push(0xe3);
         let order = FeatureOrderTable {
             declared_count: 1,
+            has_prototype: false,
             entity_ref: None,
             rows: vec![FeatureOrderRow {
                 external_id: 42,
@@ -7795,6 +7835,7 @@ mod tests {
         let payload = [0xe3, 8, 0xe2, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f, 0xe3];
         let order = FeatureOrderTable {
             declared_count: 1,
+            has_prototype: false,
             entity_ref: None,
             rows: vec![FeatureOrderRow {
                 external_id: 43,

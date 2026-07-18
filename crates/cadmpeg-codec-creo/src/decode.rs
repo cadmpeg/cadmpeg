@@ -13759,6 +13759,7 @@ mod resolved_sketch_tests {
         };
         let order = crate::feature::FeatureOrderTable {
             declared_count: 2,
+            has_prototype: false,
             entity_ref: Some(3),
             rows: vec![
                 crate::feature::FeatureOrderRow {
@@ -15118,6 +15119,7 @@ mod resolved_sketch_tests {
             trim_vertices: None,
             order_table: Some(crate::feature::FeatureOrderTable {
                 declared_count: 1,
+                has_prototype: false,
                 entity_ref: None,
                 rows: vec![crate::feature::FeatureOrderRow {
                     external_id: 42,
@@ -15475,6 +15477,7 @@ mod resolved_sketch_tests {
             trim_vertices: None,
             order_table: Some(crate::feature::FeatureOrderTable {
                 declared_count: 1,
+                has_prototype: false,
                 entity_ref: None,
                 rows: vec![crate::feature::FeatureOrderRow {
                     external_id: 42,
@@ -15712,6 +15715,7 @@ mod resolved_sketch_tests {
             trim_vertices: None,
             order_table: Some(crate::feature::FeatureOrderTable {
                 declared_count: 1,
+                has_prototype: false,
                 entity_ref: None,
                 rows: vec![crate::feature::FeatureOrderRow {
                     external_id: 42,
@@ -16508,6 +16512,7 @@ mod resolved_sketch_tests {
             .radius_ref = Some(101);
         saved_radius_definition.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 1,
+            has_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureOrderRow {
                 external_id: 99,
@@ -17509,6 +17514,7 @@ mod resolved_sketch_tests {
         ]);
         unresolved_angle.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 2,
+            has_prototype: false,
             entity_ref: None,
             rows: vec![
                 crate::feature::FeatureOrderRow {
@@ -17793,6 +17799,7 @@ mod resolved_sketch_tests {
         let mut saved_definition = definition;
         saved_definition.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 1,
+            has_prototype: false,
             entity_ref: None,
             rows: vec![crate::feature::FeatureOrderRow {
                 external_id: 14,
@@ -17840,6 +17847,11 @@ mod resolved_sketch_tests {
                 bitmask: 1,
                 offset: 83,
             });
+        saved_definition
+            .order_table
+            .as_mut()
+            .expect("order table")
+            .declared_count += 1;
         saved_definition
             .saved_section
             .as_mut()
