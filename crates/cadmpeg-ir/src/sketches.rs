@@ -261,6 +261,12 @@ pub enum SketchConstraintDefinition {
         /// Ordered polygon members.
         entities: Vec<SketchEntityId>,
     },
+    /// A spline's defining entities grouped by one native spline relation.
+    SplineGroup {
+        /// Ordered spline-group members: the spline's defining entities and
+        /// its curve entity.
+        entities: Vec<SketchEntityId>,
+    },
     /// Two or more explicit entity loci coincide.
     CoincidentLoci {
         /// Coincident endpoints, centers, or complete entities.

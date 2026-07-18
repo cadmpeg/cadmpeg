@@ -207,6 +207,7 @@ fn constraint_parameter(
         | Definition::Diameter { parameter, .. } => Some(parameter),
         Definition::Coincident { .. }
         | Definition::Polygon { .. }
+        | Definition::SplineGroup { .. }
         | Definition::CoincidentLoci { .. }
         | Definition::Midpoint { .. }
         | Definition::Concentric { .. }
@@ -1819,8 +1820,11 @@ fn extend_related_design_records(
         &native.design_parameter_scopes,
         &native.asm_histories,
     );
-    native.design_sketch_placements =
-        crate::design::decode_sketch_placements(scan, &native.design_parameter_scopes)?;
+    native.design_sketch_placements = crate::design::decode_sketch_placements(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_entity_headers,
+    )?;
     let stream_lengths: std::collections::HashMap<String, usize> = scan
         .entries
         .iter()
@@ -2478,8 +2482,9 @@ mod tests {
 
         let mut native = F3dNative::default();
         native.design_sketch_placements.push(DesignSketchPlacement {
+            member_run_head: false,
             id: "native:sketch-placement".into(),
-            scope_record_index: 10,
+            scope_record_index: Some(10),
             entity_id: "Sketch_1".into(),
             entity_suffix: 1,
             byte_offset: 0,

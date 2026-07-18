@@ -508,7 +508,7 @@ pub fn project_parameter_design(
         .iter()
         .filter_map(|placement| {
             Some((
-                (native_stream(&placement.id)?, placement.scope_record_index),
+                (native_stream(&placement.id)?, placement.scope_record_index?),
                 neutral_sketch_id(placement),
             ))
         })
@@ -2756,11 +2756,12 @@ pub(crate) fn neutral_dimension_constraint_id(
 
 /// Length scale from a placement's stored origin to the neutral length unit.
 /// The 201/329-byte frames store the origin in the neutral unit directly; the
-/// `EntityGenesis`-flavor 213/341-byte frames store it in centimetres while
-/// their sketch point and curve records carry values ten times the centimetre
-/// value, so the origin scales by ten to stay commensurate with the entities.
+/// `EntityGenesis`-flavor 213/341-byte frames and the member-run head record
+/// of a feature-owned sketch store it in centimetres while their sketch point
+/// and curve records carry values ten times the centimetre value, so the
+/// origin scales by ten to stay commensurate with the entities.
 fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
-    if matches!(placement.frame_length, 213 | 341) {
+    if placement.member_run_head || matches!(placement.frame_length, 213 | 341) {
         10.0
     } else {
         1.0
@@ -4264,7 +4265,7 @@ pub fn project_dimension_constraints(
         .iter()
         .filter_map(|placement| {
             Some((
-                (native_stream(&placement.id)?, placement.scope_record_index),
+                (native_stream(&placement.id)?, placement.scope_record_index?),
                 neutral_sketch_id(placement),
             ))
         })
@@ -5072,7 +5073,7 @@ pub fn bind_dimension_loci(
         .iter()
         .filter_map(|placement| {
             Some((
-                (native_stream(&placement.id)?, placement.scope_record_index),
+                (native_stream(&placement.id)?, placement.scope_record_index?),
                 u32::try_from(placement.entity_suffix).ok()?,
             ))
         })
@@ -5344,6 +5345,19 @@ fn exact_atomic_constraint(
                     == entities.len() =>
         {
             Some(Definition::Polygon {
+                entities: entities.iter().map(|entity| entity.id.clone()).collect(),
+            })
+        }
+        SketchConstraintKind::SplineGroup
+            if entities.len() >= 2
+                && entities
+                    .iter()
+                    .map(|entity| &entity.id)
+                    .collect::<HashSet<_>>()
+                    .len()
+                    == entities.len() =>
+        {
+            Some(Definition::SplineGroup {
                 entities: entities.iter().map(|entity| entity.id.clone()).collect(),
             })
         }
@@ -6269,6 +6283,7 @@ fn relation_kind_name(relation: &SketchRelation) -> String {
             SketchConstraintKind::Equal => "equal",
             SketchConstraintKind::Midpoint => "midpoint",
             SketchConstraintKind::Polygon => "polygon",
+            SketchConstraintKind::SplineGroup => "spline_group",
             SketchConstraintKind::CircularPattern => "circular_pattern",
             SketchConstraintKind::RectangularPattern => "rectangular_pattern",
             SketchConstraintKind::TextFrame => "text_frame",
@@ -9858,10 +9873,12 @@ fn parse_parameter_scope(
 }
 
 /// Decode the unique local-to-model placement frame referenced by every
-/// parameter-owning sketch scope.
+/// parameter-owning sketch scope, and the member-run head placement of every
+/// feature-owned sketch that no Sketch parameter scope references.
 pub fn decode_sketch_placements(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
+    entities: &[DesignEntityHeader],
 ) -> Result<Vec<DesignSketchPlacement>, CodecError> {
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| scope.kind == "Sketch") {
@@ -9917,8 +9934,126 @@ pub fn decode_sketch_placements(
             out.push(placement);
         }
     }
+    // Feature-owned sketches have no Sketch parameter scope. Their entity
+    // header pairs with a same-index member-run record whose leading marked
+    // reference names a head record carrying the row-major 4×4 placement.
+    let placed = out
+        .iter()
+        .filter_map(|placement| {
+            Some((
+                native_stream(&placement.id)?.to_owned(),
+                placement.entity_suffix,
+            ))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    for entity in entities
+        .iter()
+        .filter(|entity| entity.object_kind == Some(DesignObjectKind::Sketch))
+    {
+        let Some(stream) = native_stream(&entity.id) else {
+            continue;
+        };
+        if placed.contains(&(stream.to_owned(), entity.entity_suffix)) {
+            continue;
+        }
+        let Some(entry_name) = stream.strip_prefix("f3d:") else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(entry_name)?;
+        let Some(mut placement) = parse_member_run_head_placement(bytes, entity) else {
+            continue;
+        };
+        placement.id = format!(
+            "f3d:{entry_name}:design-sketch-placement#{}",
+            placement.byte_offset
+        );
+        out.push(placement);
+    }
     out.sort_by_key(|placement| placement.id.clone());
     Ok(out)
+}
+
+/// Byte length of a member-run head record: the seven-byte indexed header,
+/// four index bytes, eleven zero bytes, sixteen f64 matrix values, and the
+/// marked tail.
+const MEMBER_RUN_HEAD_FRAME: usize = 162;
+
+/// Parse the member-run head placement of a feature-owned sketch: the paired
+/// same-index record after the sketch's entity header opens with a marked
+/// reference naming a head record that stores eleven zero bytes and the
+/// row-major 4×4 local-to-model transform at offset 22.
+fn parse_member_run_head_placement(
+    bytes: &[u8],
+    entity: &DesignEntityHeader,
+) -> Option<DesignSketchPlacement> {
+    let start = usize::try_from(entity.byte_offset).ok()?;
+    // Locate the paired same-index record after the entity header.
+    let mut position = start + 1;
+    let paired_at = loop {
+        let at = next_indexed_record_offset(bytes, position)?;
+        if u32_at(bytes, at + 7).map(u64::from) == Some(entity.entity_suffix) && at > start {
+            break at;
+        }
+        position = at + 1;
+    };
+    let (paired_class_tag, paired_after_tag) = lp_ascii(bytes, paired_at)?;
+    if paired_class_tag.len() != 3 || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    // The paired record's prologue: the u32 index, zero bytes to offset 19,
+    // then a marked u64 reference naming the head record.
+    if paired_after_tag != paired_at + 7
+        || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
+        || bytes.get(paired_at + 19) != Some(&1)
+    {
+        return None;
+    }
+    let head_index = u32_at(bytes, paired_at + 20)?;
+    if bytes.get(paired_at + 24..paired_at + 28) != Some(&[0u8; 4][..]) {
+        return None;
+    }
+    // Locate the head record and decode its transform.
+    let mut position = 0usize;
+    let head_at = loop {
+        let at = next_indexed_record_offset(bytes, position)?;
+        if u32_at(bytes, at + 7) == Some(head_index) {
+            break at;
+        }
+        position = at + 1;
+    };
+    let (class_tag, after_tag) = lp_ascii(bytes, head_at)?;
+    if after_tag != head_at + 7
+        || class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || bytes.get(head_at + 11..head_at + 22) != Some(&[0u8; 11][..])
+    {
+        return None;
+    }
+    let values = f64s_at(bytes, head_at + 22, 16)?;
+    let mut transform = [[0.0; 4]; 4];
+    for (ordinal, value) in values.iter().copied().enumerate() {
+        transform[ordinal / 4][ordinal % 4] = value;
+    }
+    if !valid_sketch_transform(&transform)
+        || bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..])
+    {
+        return None;
+    }
+    Some(DesignSketchPlacement {
+        id: String::new(),
+        scope_record_index: None,
+        entity_id: entity.entity_id.clone(),
+        entity_suffix: entity.entity_suffix,
+        byte_offset: head_at as u64,
+        class_tag,
+        record_index: head_index,
+        frame_length: MEMBER_RUN_HEAD_FRAME as u64,
+        transform,
+        transform_offset: Some((head_at + 22) as u64),
+        paired_class_tag,
+        paired_byte_offset: paired_at as u64,
+        member_run_head: true,
+    })
 }
 
 fn parse_sketch_placement_candidates(
@@ -10010,7 +10145,7 @@ fn parse_sketch_placement_candidates(
         };
         out.push(DesignSketchPlacement {
             id: String::new(),
-            scope_record_index,
+            scope_record_index: Some(scope_record_index),
             entity_id: entity_id.to_owned(),
             entity_suffix,
             byte_offset: start as u64,
@@ -10021,6 +10156,7 @@ fn parse_sketch_placement_candidates(
             transform_offset,
             paired_class_tag,
             paired_byte_offset: paired_at as u64,
+            member_run_head: false,
         });
     }
     out
@@ -10485,7 +10621,7 @@ pub fn decode_entity_headers(
                     || (None, None, None, Vec::new(), Vec::new(), end),
                     |list| {
                         (
-                            Some(list.record_reference),
+                            list.record_reference,
                             Some(list.record_reference_offset as u64),
                             Some(list.declared_count),
                             list.references,
@@ -10800,7 +10936,7 @@ fn decode_pattern_definition(
     None
 }
 
-pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = 0x0300_3000_3fff;
+pub(crate) const SKETCH_CONSTRAINT_MASK: u64 = 0x0300_b000_3fff;
 
 pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>, u64) {
     let definitions = [
@@ -10820,6 +10956,7 @@ pub(crate) fn decode_constraint_kinds(state: u64) -> (Vec<SketchConstraintKind>,
         (0x0000_2000, SketchConstraintKind::Polygon),
         (0x1000_0000, SketchConstraintKind::CircularPattern),
         (0x2000_0000, SketchConstraintKind::RectangularPattern),
+        (0x8000_0000, SketchConstraintKind::SplineGroup),
         (0x100_0000_0000, SketchConstraintKind::TextFrame),
         (0x200_0000_0000, SketchConstraintKind::TextPath),
     ];
@@ -11581,7 +11718,7 @@ fn next_nonzero(bytes: &[u8], mut position: usize) -> Option<usize> {
 }
 
 struct SketchReferenceList {
-    record_reference: u32,
+    record_reference: Option<u32>,
     record_reference_offset: usize,
     declared_count: u32,
     references: Vec<u32>,
@@ -11590,9 +11727,19 @@ struct SketchReferenceList {
 }
 
 fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenceList> {
-    let record_reference = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?);
-    if bytes.get(position + 4..position + 8) != Some(&[0; 4]) || bytes.get(position + 8) != Some(&1)
-    {
+    // The eight-byte base-record slot is either a u32 record reference with a
+    // zero high half or the all-ones sentinel marking a sketch with no base
+    // record; the list grammar is identical in both forms.
+    let record_reference = if bytes.get(position..position + 8) == Some(&[0xFF; 8]) {
+        None
+    } else {
+        let reference = u32::from_le_bytes(bytes.get(position..position + 4)?.try_into().ok()?);
+        if bytes.get(position + 4..position + 8) != Some(&[0; 4]) {
+            return None;
+        }
+        Some(reference)
+    };
+    if bytes.get(position + 8) != Some(&1) {
         return None;
     }
     let declared_count =
@@ -15706,8 +15853,9 @@ mod relation_tests {
     #[test]
     fn entity_genesis_placement_origin_scales_to_neutral_units() {
         let placement = |frame_length: u64| DesignSketchPlacement {
+            member_run_head: false,
             id: "f3d:native:design-sketch-placement#0".into(),
-            scope_record_index: 10,
+            scope_record_index: Some(10),
             entity_id: "0_100".into(),
             entity_suffix: 100,
             byte_offset: 0,
@@ -15756,6 +15904,61 @@ mod relation_tests {
         // The settled explicit frame keeps its stored origin unscaled.
         let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], 1.0e-6);
         assert_eq!(sketches[0].origin, Point3::new(26.0, 0.0, 0.0));
+    }
+
+    #[test]
+    fn feature_owned_sketch_placement_follows_member_run_head_reference() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"281");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.resize(40, 0);
+
+        let paired_at = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"282");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.push(1);
+        bytes.extend_from_slice(&200u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.resize(80, 0);
+
+        let head_at = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"283");
+        bytes.extend_from_slice(&200u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 11]);
+        for value in identity_matrix().into_iter().flatten() {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0, 1]);
+        bytes.resize(head_at + super::MEMBER_RUN_HEAD_FRAME, 0);
+
+        let entity = DesignEntityHeader {
+            id: "f3d:Design/BulkStream.dat:design-entity-header#0".into(),
+            byte_offset: 0,
+            entity_suffix: 100,
+            entity_id: "0_100".into(),
+            class_tag: "281".into(),
+            optional_slot_present: false,
+            object_kind: Some(DesignObjectKind::Sketch),
+            record_reference: None,
+            record_reference_offset: None,
+            declared_reference_count: None,
+            reference_indices: Vec::new(),
+            reference_offsets: Vec::new(),
+            member_indices: Vec::new(),
+            member_offsets: Vec::new(),
+        };
+        let placement = super::parse_member_run_head_placement(&bytes, &entity)
+            .expect("feature-owned sketch placement");
+        assert_eq!(placement.record_index, 200);
+        assert_eq!(placement.byte_offset, head_at as u64);
+        assert_eq!(placement.paired_byte_offset, paired_at as u64);
+        assert_eq!(placement.transform, identity_matrix());
+        assert!(placement.member_run_head);
+        assert_eq!(placement.scope_record_index, None);
     }
 
     #[test]
@@ -15937,8 +16140,9 @@ mod relation_tests {
     #[test]
     fn placed_sketch_projects_signed_normal_and_nonclamped_curves() {
         let placement = DesignSketchPlacement {
+            member_run_head: false,
             id: "f3d:native:placement#0".into(),
-            scope_record_index: 177,
+            scope_record_index: Some(177),
             entity_id: "0_172".into(),
             entity_suffix: 172,
             byte_offset: 100,
@@ -16828,8 +17032,9 @@ mod relation_tests {
     fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         let stream = "f3d:A";
         let placement = DesignSketchPlacement {
+            member_run_head: false,
             id: format!("{stream}:design-sketch-placement#0"),
-            scope_record_index: 10,
+            scope_record_index: Some(10),
             entity_id: "0_100".into(),
             entity_suffix: 100,
             byte_offset: 0,
@@ -17114,8 +17319,9 @@ mod relation_tests {
     #[test]
     fn paired_dimensions_bind_geometry_with_stream_local_record_indices() {
         let placement = |stream: &str, suffix| DesignSketchPlacement {
+            member_run_head: false,
             id: format!("f3d:{stream}:design-sketch-placement#0"),
-            scope_record_index: 10,
+            scope_record_index: Some(10),
             entity_id: format!("0_{suffix}"),
             entity_suffix: suffix,
             byte_offset: 0,
@@ -17205,8 +17411,9 @@ mod relation_tests {
     fn recipe_backed_dimension_projects_disjoint_repeated_distance() {
         let stream = "f3d:A";
         let placement = DesignSketchPlacement {
+            member_run_head: false,
             id: format!("{stream}:design-sketch-placement#0"),
-            scope_record_index: 10,
+            scope_record_index: Some(10),
             entity_id: "0_100".into(),
             entity_suffix: 100,
             byte_offset: 0,
@@ -17500,8 +17707,9 @@ mod relation_tests {
     #[test]
     fn design_streams_scope_sketch_graphs_identities_and_parameter_names() {
         let placement = |stream: &str| DesignSketchPlacement {
+            member_run_head: false,
             id: format!("f3d:{stream}:design-sketch-placement#0"),
-            scope_record_index: 10,
+            scope_record_index: Some(10),
             entity_id: format!("{stream}_100"),
             entity_suffix: 100,
             byte_offset: 0,
@@ -18201,8 +18409,9 @@ mod relation_tests {
             paired_byte_offset: 300,
         };
         let placement = DesignSketchPlacement {
+            member_run_head: false,
             id: "f3d:Design/BulkStream.dat:placement#200".into(),
-            scope_record_index: 11,
+            scope_record_index: Some(11),
             entity_id: "0_172".into(),
             entity_suffix: 172,
             byte_offset: 600,
@@ -18289,7 +18498,9 @@ mod relation_tests {
         owner.parameter_record_index = owned_along.record_index;
         let mut sketch_scope = scope.clone();
         sketch_scope.id = "f3d:Design/BulkStream.dat:scope#11".into();
-        sketch_scope.record_index = placement.scope_record_index;
+        sketch_scope.record_index = placement
+            .scope_record_index
+            .expect("test placement carries a scope record index");
         sketch_scope.kind = "Sketch".into();
         sketch_scope.extrude_operation = None;
         sketch_scope.extrude_extent = None;

@@ -1268,6 +1268,7 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
         let (entities, parameter) = match &constraint.definition {
             Definition::Coincident { entities }
             | Definition::Polygon { entities }
+            | Definition::SplineGroup { entities }
             | Definition::Distance {
                 entities,
                 parameter: _,

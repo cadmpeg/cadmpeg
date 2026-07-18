@@ -4637,22 +4637,27 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                     out.vertices.push(Vertex {
                         id: VertexId(id(i)),
                         point: PointId(id(pi)),
+                        // The last of the three f64 tolerance slots is the
+                        // evaluated tolerance. A negative value is the
+                        // unevaluated sentinel and is retained verbatim
+                        // without unit conversion.
                         tolerance: matches!(r.head.as_str(), "tvertex")
-                            .then(|| match r.chunk(6) {
+                            .then(|| match r.chunk(8) {
+                                Some(Token::Double(value)) if *value < 0.0 => Some(*value),
                                 Some(Token::Double(value)) => Some(*value * LEN_TO_MM),
                                 _ => None,
                             })
                             .flatten(),
                     });
                     if r.head == "tvertex" {
-                        if let (Some(Token::Float(first)), Some(Token::Float(second))) =
-                            (r.chunk(7), r.chunk(8))
+                        if let (Some(Token::Double(first)), Some(Token::Double(second))) =
+                            (r.chunk(6), r.chunk(7))
                         {
                             out.tolerant_vertex_tails.push(TolerantVertexTail {
                                 id: format!("f3d:asm:tolerant-vertex-tail#{i}"),
                                 vertex: VertexId(id(i)),
                                 record_index: r.index as u32,
-                                trailing_floats: [*first, *second],
+                                leading_tolerances: [*first, *second],
                             });
                         }
                     }

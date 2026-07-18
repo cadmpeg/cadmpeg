@@ -200,6 +200,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     for constraint in &ir.model.sketch_constraints {
         let valid = match &constraint.definition {
             Constraint::Coincident { entities } => entities.len() >= 2,
+            Constraint::SplineGroup { entities } => entities.len() >= 2,
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,
             Constraint::Distance { entities, .. } => !entities.is_empty(),
             Constraint::RepeatedDistance { measurements, .. } => {

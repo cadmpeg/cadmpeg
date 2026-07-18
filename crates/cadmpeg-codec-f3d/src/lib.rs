@@ -328,11 +328,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let placements_by_scope = native
         .design_sketch_placements
         .iter()
-        .map(|placement| {
-            (
-                (design_stream(&placement.id), placement.scope_record_index),
+        .filter_map(|placement| {
+            Some((
+                (design_stream(&placement.id), placement.scope_record_index?),
                 placement,
-            )
+            ))
         })
         .collect::<std::collections::HashMap<_, _>>();
     let asm_state_ids = native
@@ -1499,19 +1499,43 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for placement in &native.design_sketch_placements {
         let native_stream = design_stream(&placement.id);
         let unique_record = placement_records.insert((native_stream, placement.record_index));
-        let unique_scope = placement_scopes.insert((native_stream, placement.scope_record_index));
-        let scope = scopes_by_index.get(&(native_stream, placement.scope_record_index));
-        let compact = placement.frame_length == 201
-            && placement.transform_offset.is_none()
-            && placement.transform
-                == [
-                    [1.0, 0.0, 0.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [0.0, 0.0, 1.0, 0.0],
-                    [0.0, 0.0, 0.0, 1.0],
-                ];
+        let unique_scope = placement
+            .scope_record_index
+            .is_none_or(|index| placement_scopes.insert((native_stream, index)));
+        let scope = placement
+            .scope_record_index
+            .and_then(|index| scopes_by_index.get(&(native_stream, index)));
+        let identity = placement.transform
+            == [
+                [1.0, 0.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0, 0.0],
+                [0.0, 0.0, 1.0, 0.0],
+                [0.0, 0.0, 0.0, 1.0],
+            ];
+        let compact =
+            placement.frame_length == 201 && placement.transform_offset.is_none() && identity;
         let explicit = placement.frame_length == 329
             && placement.transform_offset == Some(placement.byte_offset.saturating_add(55));
+        let genesis_compact =
+            placement.frame_length == 213 && placement.transform_offset.is_none() && identity;
+        let genesis_explicit = placement.frame_length == 341
+            && placement.transform_offset == Some(placement.byte_offset.saturating_add(66));
+        let member_run_head = placement.frame_length == 162
+            && placement.transform_offset == Some(placement.byte_offset.saturating_add(22));
+        let frame_valid = if placement.member_run_head {
+            // The paired member-run record precedes the head record; the
+            // frame length covers the head record alone.
+            member_run_head && placement.scope_record_index.is_none()
+        } else {
+            placement.paired_byte_offset
+                == placement.byte_offset.saturating_add(placement.frame_length)
+                && (compact || explicit || genesis_compact || genesis_explicit)
+                && scope.is_some_and(|scope| {
+                    scope.kind == "Sketch"
+                        && scope.entity_id.as_deref() == Some(placement.entity_id.as_str())
+                        && scope.entity_suffix == Some(placement.entity_suffix)
+                })
+        };
         let valid = placement.class_tag.len() == 3
             && placement
                 .class_tag
@@ -1522,15 +1546,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .paired_class_tag
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
-            && placement.paired_byte_offset
-                == placement.byte_offset.saturating_add(placement.frame_length)
-            && (compact || explicit)
+            && frame_valid
             && design::valid_sketch_transform(&placement.transform)
-            && scope.is_some_and(|scope| {
-                scope.kind == "Sketch"
-                    && scope.entity_id.as_deref() == Some(placement.entity_id.as_str())
-                    && scope.entity_suffix == Some(placement.entity_suffix)
-            })
             && unique_record
             && unique_scope;
         if !valid {

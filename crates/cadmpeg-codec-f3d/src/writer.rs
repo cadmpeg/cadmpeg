@@ -577,9 +577,9 @@ fn validate_source_less_design_ownership(native: &F3dNative) -> Result<(), Codec
             )));
         }
         if header.object_kind == Some(DesignObjectKind::Sketch) {
-            if header.record_reference.is_none()
-                || header.declared_reference_count
-                    != u32::try_from(header.reference_indices.len()).ok()
+            // `record_reference` is absent on the sentinel (no-base-record)
+            // reference-list form; the declared count must always match.
+            if header.declared_reference_count != u32::try_from(header.reference_indices.len()).ok()
             {
                 return Err(CodecError::Malformed(format!(
                     "F3D Design sketch header {} has an inconsistent reference list",
@@ -1136,7 +1136,10 @@ fn validate_source_less_design_links(target: &CadIr, native: &F3dNative) -> Resu
         }
     }
     for tail in &native.tolerant_vertex_tails {
-        if tail.trailing_floats.iter().any(|value| !value.is_finite())
+        if tail
+            .leading_tolerances
+            .iter()
+            .any(|value| !value.is_finite())
             || target
                 .model
                 .vertices
@@ -1562,14 +1565,17 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         }
         native_lp_utf16(&mut out, &header.entity_id)?;
         if header.object_kind == Some(DesignObjectKind::Sketch) {
-            let record_reference = header.record_reference.ok_or_else(|| {
-                CodecError::Malformed("Design sketch header lacks record_reference".into())
-            })?;
             let count = u32::try_from(header.reference_indices.len()).map_err(|_| {
                 CodecError::Malformed("Design sketch header exceeds u32::MAX references".into())
             })?;
-            out.extend_from_slice(&record_reference.to_le_bytes());
-            out.extend_from_slice(&[0; 4]);
+            match header.record_reference {
+                Some(record_reference) => {
+                    out.extend_from_slice(&record_reference.to_le_bytes());
+                    out.extend_from_slice(&[0; 4]);
+                }
+                // The sentinel base-record slot of a sketch with no base record.
+                None => out.extend_from_slice(&[0xFF; 8]),
+            }
             out.push(1);
             out.extend_from_slice(&count.to_le_bytes());
             for reference in &header.reference_indices {
@@ -5336,24 +5342,37 @@ fn native_tolerant_vertex_tail(
     let Some(tolerance) = vertex.tolerance else {
         return Ok(());
     };
-    if !tolerance.is_finite() || tolerance < 0.0 {
+    if !tolerance.is_finite() {
         return Err(CodecError::Malformed(format!(
-            "F3D vertex {} tolerance must be finite and non-negative",
+            "F3D vertex {} tolerance must be finite",
             vertex.id
         )));
     }
-    native_f64(records, tolerance / 10.0);
-    let trailing = f3d_native(target)?
+    // The record stores three f64 tolerance slots: the two leading slots
+    // verbatim (default: the -1 unevaluated sentinel) and the evaluated
+    // tolerance last, followed by an integer 0. A negative tolerance is the
+    // unevaluated sentinel, stored verbatim; a non-negative tolerance
+    // converts from millimetres to centimetres.
+    let leading = f3d_native(target)?
         .and_then(|native| {
             native
                 .tolerant_vertex_tails
                 .into_iter()
                 .find(|tail| tail.vertex == vertex.id)
         })
-        .map_or([0.0; 2], |tail| tail.trailing_floats);
-    for value in trailing {
-        native_f32(records, value);
+        .map_or([-1.0; 2], |tail| tail.leading_tolerances);
+    for value in leading {
+        native_f64(records, value);
     }
+    native_f64(
+        records,
+        if tolerance < 0.0 {
+            tolerance
+        } else {
+            tolerance / 10.0
+        },
+    );
+    native_i64(records, 0);
     Ok(())
 }
 
@@ -11084,11 +11103,6 @@ fn native_f64(bytes: &mut Vec<u8>, value: f64) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
-fn native_f32(bytes: &mut Vec<u8>, value: f32) {
-    bytes.push(0x05);
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-
 fn native_point(bytes: &mut Vec<u8>, point: [f64; 3]) {
     bytes.push(0x13);
     for value in point {
@@ -12187,7 +12201,7 @@ fn validate_face_sidedness_edits(
 fn validate_tolerant_vertex_edits(
     baseline: &CadIr,
     target: &CadIr,
-) -> Result<BTreeMap<usize, (f64, [f32; 2])>, CodecError> {
+) -> Result<BTreeMap<usize, (f64, [f64; 2])>, CodecError> {
     let baseline_vertices = baseline
         .model
         .vertices
@@ -12245,7 +12259,7 @@ fn validate_tolerant_vertex_edits(
     for (id, before) in baseline_by_id {
         let after = target_by_id[id];
         let mut normalized = after.clone();
-        normalized.trailing_floats = before.trailing_floats;
+        normalized.leading_tolerances = before.leading_tolerances;
         if &normalized != before {
             return Err(CodecError::NotImplemented(format!(
                 "F3D tolerant-vertex tail edit changes structural fields: {id}"
@@ -12257,8 +12271,10 @@ fn validate_tolerant_vertex_edits(
                 CodecError::Malformed(format!("tolerant vertex {id} has no tolerance"))
             })?;
         if !tolerance.is_finite()
-            || tolerance < 0.0
-            || after.trailing_floats.iter().any(|value| !value.is_finite())
+            || after
+                .leading_tolerances
+                .iter()
+                .any(|value| !value.is_finite())
         {
             return Err(CodecError::Malformed(format!(
                 "F3D tolerant vertex {id} has non-finite fields"
@@ -12268,11 +12284,19 @@ fn validate_tolerant_vertex_edits(
             != baseline_vertices[after.vertex.as_str()]
                 .tolerance
                 .unwrap_or(tolerance)
-            || after.trailing_floats != before.trailing_floats
+            || after.leading_tolerances != before.leading_tolerances
         {
+            // A negative tolerance is the unevaluated sentinel, stored
+            // verbatim; a non-negative tolerance converts back from
+            // millimetres to centimetres.
+            let stored = if tolerance < 0.0 {
+                tolerance
+            } else {
+                tolerance / 10.0
+            };
             edits.insert(
                 after.record_index as usize,
-                (tolerance / 10.0, after.trailing_floats),
+                (stored, after.leading_tolerances),
             );
         }
     }
@@ -16298,7 +16322,7 @@ fn patch_geometry(
     vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
     face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
     tolerant_edges: &BTreeMap<usize, f64>,
-    tolerant_vertices: &BTreeMap<usize, (f64, [f32; 2])>,
+    tolerant_vertices: &BTreeMap<usize, (f64, [f64; 2])>,
 ) -> Result<(), CodecError> {
     let start = asm_header::record_stream_start(bytes)
         .ok_or_else(|| CodecError::Malformed("active BREP has no SAB record stream".into()))?;
@@ -16369,7 +16393,7 @@ fn patch_framed_geometry(
     vertex_ownerships: &BTreeMap<usize, (i64, u8)>,
     face_sidedness: &BTreeMap<usize, crate::records::FaceContainment>,
     tolerant_edges: &BTreeMap<usize, f64>,
-    tolerant_vertices: &BTreeMap<usize, (f64, [f32; 2])>,
+    tolerant_vertices: &BTreeMap<usize, (f64, [f64; 2])>,
     header_scale: f64,
 ) -> Result<(), CodecError> {
     let records_by_index = records
@@ -16499,20 +16523,19 @@ fn patch_framed_geometry(
             };
             patch_sense_field(bytes, record, active_ref_width(bytes), 10, sense)?;
         }
-        if let Some((tolerance, trailing)) = tolerant_vertices.get(&record.index) {
+        if let Some((tolerance, leading)) = tolerant_vertices.get(&record.index) {
             if record.head != "tvertex" {
                 return Err(CodecError::Malformed(format!(
                     "F3D tolerant-vertex record {} is not a tvertex",
                     record.index
                 )));
             }
+            // The record's three f64 tolerance slots: the two leading slots
+            // verbatim and the evaluated tolerance last.
             let ref_width = active_ref_width(bytes);
-            let tolerance_offset = required_payload_field(bytes, record, ref_width, 6, 0x06)?;
-            bytes[tolerance_offset + 1..tolerance_offset + 9]
-                .copy_from_slice(&tolerance.to_le_bytes());
-            for (index, value) in [(7usize, trailing[0]), (8, trailing[1])] {
-                let offset = required_payload_field(bytes, record, ref_width, index, 0x05)?;
-                bytes[offset + 1..offset + 5].copy_from_slice(&value.to_le_bytes());
+            for (index, value) in [(6usize, leading[0]), (7, leading[1]), (8, *tolerance)] {
+                let offset = required_payload_field(bytes, record, ref_width, index, 0x06)?;
+                bytes[offset + 1..offset + 9].copy_from_slice(&value.to_le_bytes());
             }
         }
         if let Some(tolerance) = tolerant_edges.get(&record.index) {

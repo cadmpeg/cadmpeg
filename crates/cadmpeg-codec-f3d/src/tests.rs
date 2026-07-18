@@ -5039,7 +5039,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
             id: "f3d:asm:tolerant-vertex-tail#generated".into(),
             vertex: tolerant_vertex,
             record_index: 0,
-            trailing_floats: [1.25, -2.5],
+            leading_tolerances: [1.25, -2.5],
         }];
         native.tolerant_edge_tails = vec![crate::records::TolerantEdgeTail {
             id: "f3d:asm:tolerant-edge-tail#generated".into(),
@@ -5169,7 +5169,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         [22800, 0]
     );
     assert_eq!(
-        f3d_native(&round_trip.ir).tolerant_vertex_tails[0].trailing_floats,
+        f3d_native(&round_trip.ir).tolerant_vertex_tails[0].leading_tolerances,
         [1.25, -2.5]
     );
     assert_eq!(
@@ -5211,7 +5211,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
         let mut native = f3d_native_mut(&mut edited);
         native.body_native_keys[0].asm_body_key = Some(84);
         native.face_sidedness[0].containment = Some(crate::records::FaceContainment::Out);
-        native.tolerant_vertex_tails[0].trailing_floats = [3.5, -4.5];
+        native.tolerant_vertex_tails[0].leading_tolerances = [3.5, -4.5];
     }
     let mut retained = Vec::new();
     F3dCodec
@@ -5241,7 +5241,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     );
     assert!(f3d_native(&retained.ir).body_visibilities[0].visible);
     assert_eq!(
-        f3d_native(&retained.ir).tolerant_vertex_tails[0].trailing_floats,
+        f3d_native(&retained.ir).tolerant_vertex_tails[0].leading_tolerances,
         [3.5, -4.5]
     );
 }
@@ -7627,7 +7627,7 @@ fn generated_source_less_rejects_collapsed_native_topology_metadata() {
             id: "f3d:asm:tolerant-vertex-tail#generated".into(),
             vertex,
             record_index: 0,
-            trailing_floats: [1.0, 2.0],
+            leading_tolerances: [1.0, 2.0],
         }];
     }
     let error = F3dCodec

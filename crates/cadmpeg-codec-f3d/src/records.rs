@@ -152,7 +152,10 @@ pub struct FaceSidedness {
     pub containment: Option<FaceContainment>,
 }
 
-/// Native f32 tail retained from one tolerant ASM vertex record.
+/// Native leading tolerance slots retained from one tolerant ASM vertex
+/// record. The record's three f64 tolerance slots are non-decreasing across
+/// evaluated values; the last slot is always evaluated and becomes the
+/// neutral vertex tolerance, while the first two are retained here verbatim.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TolerantVertexTail {
     /// Globally unique deterministic identifier for this native record.
@@ -161,8 +164,9 @@ pub struct TolerantVertexTail {
     pub vertex: VertexId,
     /// Source SAB record index.
     pub record_index: u32,
-    /// Two trailing f32 slots following the model-space tolerance.
-    pub trailing_floats: [f32; 2],
+    /// The first two f64 tolerance slots, retained verbatim in native
+    /// centimetres; `-1` denotes an unevaluated tolerance.
+    pub leading_tolerances: [f64; 2],
 }
 
 /// Native integer tail retained from one tolerant ASM edge record.
@@ -1478,8 +1482,11 @@ pub struct DesignFaceRecipeStructure {
 pub struct DesignSketchPlacement {
     /// Globally unique deterministic identifier for this native record.
     pub id: String,
-    /// Parameter-scope record that references this placement.
-    pub scope_record_index: u32,
+    /// Parameter-scope record that references this placement; absent for the
+    /// member-run head form of a feature-owned sketch, which no Sketch
+    /// parameter scope references.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scope_record_index: Option<u32>,
     /// Full Design entity id of the placed sketch.
     pub entity_id: String,
     /// Numeric suffix of `entity_id`.
@@ -1501,6 +1508,11 @@ pub struct DesignSketchPlacement {
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+    /// Whether this placement is the member-run head record of a
+    /// feature-owned sketch (the transform-carrying record heading the
+    /// sketch's paired member run) rather than a parameter-scope frame.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub member_run_head: bool,
 }
 
 /// Persistent-reference channel in the Design construction stream.
@@ -1856,6 +1868,8 @@ pub enum SketchConstraintKind {
     Midpoint,
     /// Entities participate in a polygon relation.
     Polygon,
+    /// A spline's defining entities grouped under the owning sketch.
+    SplineGroup,
     /// Entities participate in a circular pattern.
     CircularPattern,
     /// Entities participate in a rectangular pattern.

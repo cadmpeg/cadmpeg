@@ -834,12 +834,14 @@ mod tests {
             bytes.push(tag);
             bytes.extend_from_slice(&value.to_le_bytes()[..ref_width]);
         }
-        bytes.push(0x06);
-        bytes.extend_from_slice(&0.001f64.to_le_bytes());
-        for value in [2.0f32, 3.0] {
-            bytes.push(0x05);
+        // Three f64 tolerance slots — two unevaluated `-1` sentinels and the
+        // evaluated tolerance last — followed by an integer 0.
+        for value in [-1.0f64, -1.0, 0.001] {
+            bytes.push(0x06);
             bytes.extend_from_slice(&value.to_le_bytes());
         }
+        bytes.push(0x04);
+        bytes.extend_from_slice(&0i64.to_le_bytes()[..ref_width]);
         bytes.push(0x11);
         bytes
     }
@@ -1168,8 +1170,9 @@ mod tests {
                 (4, 0x04),
                 (5, 0x0c),
                 (6, 0x06),
-                (7, 0x05),
-                (8, 0x05),
+                (7, 0x06),
+                (8, 0x06),
+                (9, 0x04),
             ] {
                 let offset = payload_token_offset(&bytes, record, ref_width, index)
                     .expect("tolerant vertex metadata field");
