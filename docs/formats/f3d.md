@@ -369,7 +369,7 @@ Every entity carries an `attrib` ref-chain. `Entity.attrib` is the chain head, e
 
 `generic_tag_attrib_def` begins with the family string, three tagged integers `3, 3, -1`, the string `"generic_tag_attrib_def "` including its trailing space, and a tagged integer group count. The group count determines the complete remaining payload. The record terminator follows the final group's final zero.
 
-A body-owned group has five fields:
+A body persistent-link group has five fields:
 
 ```text
 04 i64 = 3
@@ -379,7 +379,7 @@ A body-owned group has five fields:
 04 i64 = 0
 ```
 
-The persistent design ID string contains ASCII decimal digits. Groups are ordered from older assignments to the current final assignment.
+The persistent design ID string contains ASCII decimal digits. A body-owned generic-tag attribute can interleave groups whose entity-class discriminator is not `3`; those groups remain part of the retained attribute but do not identify the solved body. Discriminator-`3` groups are ordered from older assignments to the current final body assignment.
 
 A face- or edge-owned group is variable-width:
 

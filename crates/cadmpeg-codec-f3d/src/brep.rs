@@ -6003,6 +6003,10 @@ fn persistent_design_links(attribute: &SourceAttribute) -> Vec<PersistentDesignL
     if groups.len() != group_count {
         return Vec::new();
     }
+    let groups = groups
+        .into_iter()
+        .filter(|(entity_kind, _, _)| *entity_kind == 3)
+        .collect::<Vec<_>>();
     let last = groups.len().saturating_sub(1);
     groups
         .into_iter()

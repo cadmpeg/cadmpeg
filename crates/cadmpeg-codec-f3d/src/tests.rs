@@ -2319,11 +2319,13 @@ fn synthetic_geometry_with_attribute_smbh() -> Vec<u8> {
         t_long(&mut attribute, value);
     }
     push_u8_string(&mut attribute, "generic_tag_attrib_def ");
-    t_long(&mut attribute, 1);
     t_long(&mut attribute, 3);
-    push_u8_string(&mut attribute, "322");
-    for value in [7, 0, 0] {
-        t_long(&mut attribute, value);
+    for (kind, id, reference) in [(3, "311", 6), (4, "900", 42), (3, "322", 7)] {
+        t_long(&mut attribute, kind);
+        push_u8_string(&mut attribute, id);
+        for value in [reference, 0, 0] {
+            t_long(&mut attribute, value);
+        }
     }
     t_end(&mut attribute);
     t_subident(&mut attribute, "ATTRIB_CUSTOM");
@@ -20333,16 +20335,21 @@ fn decode_transfers_generated_custom_attribute() {
         value,
         cadmpeg_ir::attributes::AttributeValue::String(text) if text == "322"
     )));
-    assert_eq!(f3d_native(&result.ir).persistent_design_links.len(), 1);
+    assert_eq!(f3d_native(&result.ir).persistent_design_links.len(), 2);
     assert_eq!(
-        f3d_native(&result.ir).persistent_design_links[0].design_id,
+        f3d_native(&result.ir).persistent_design_links[1].design_id,
         "322"
     );
     assert_eq!(
-        f3d_native(&result.ir).persistent_design_links[0].design_reference,
+        f3d_native(&result.ir).persistent_design_links[1].design_reference,
         7
     );
-    assert!(f3d_native(&result.ir).persistent_design_links[0].is_current);
+    assert!(!f3d_native(&result.ir).persistent_design_links[0].is_current);
+    assert!(f3d_native(&result.ir).persistent_design_links[1].is_current);
+    assert!(attribute.values.iter().any(|value| matches!(
+        value,
+        cadmpeg_ir::attributes::AttributeValue::String(text) if text == "900"
+    )));
     assert_eq!(f3d_native(&result.ir).creation_timestamps.len(), 1);
     assert_eq!(
         f3d_native(&result.ir).creation_timestamps[0].unix_microseconds,
