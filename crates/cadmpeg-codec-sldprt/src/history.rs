@@ -1575,11 +1575,11 @@ fn expression_identifier_tokens(expression: &str) -> ParsedExpressionIdentifiers
         let Some(character) = rest.chars().next() else {
             break;
         };
-        if character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.' | '-') {
+        if character.is_ascii_alphanumeric() || matches!(character, '_' | '@' | '$' | '.') {
             let end = rest
                 .find(|candidate: char| {
                     !(candidate.is_ascii_alphanumeric()
-                        || matches!(candidate, '_' | '@' | '$' | '.' | '-'))
+                        || matches!(candidate, '_' | '@' | '$' | '.'))
                 })
                 .unwrap_or(rest.len());
             identifiers.push(ExpressionIdentifier {
@@ -1644,6 +1644,38 @@ mod history_reference_tests {
         let aliases = parameter_aliases(&parameters, &HashMap::new());
 
         assert_eq!(aliases.get("Width"), Some(&Some(parameters[0].id.clone())));
+    }
+
+    #[test]
+    fn subtraction_separates_unquoted_parameter_references() {
+        assert_eq!(
+            expression_identifiers("D1@Sketch1-D2@Sketch1").collect::<Vec<_>>(),
+            ["D1@Sketch1", "D2@Sketch1"]
+        );
+    }
+
+    #[test]
+    fn subtraction_projects_both_parameter_dependencies() {
+        let mut owner = feature("owner", Some("1"), 0);
+        owner.parameters = BTreeMap::from([
+            ("A".into(), "7".into()),
+            ("B".into(), "2".into()),
+            ("C".into(), "A-B".into()),
+        ]);
+        let parameters = project_parameters(&[FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![owner],
+        }]);
+
+        assert_eq!(
+            parameters[2].dependencies,
+            [parameters[0].id.clone(), parameters[1].id.clone()]
+        );
+        assert_eq!(parameters[2].value, Some(ParameterValue::Integer(5)));
     }
 
     #[test]
