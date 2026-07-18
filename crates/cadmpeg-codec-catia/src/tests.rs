@@ -4713,7 +4713,7 @@ fn outer_object_graph_requires_the_head_separator_for_relations() {
 }
 
 #[test]
-fn outer_object_graph_does_not_assign_compact_head_reference_roles() {
+fn outer_object_graph_reads_compact_owner_and_field_roles() {
     let bytes = object_graph_from_records(&[
         object_graph_record(&[0x02, 0x82], &[0xfe]),
         object_graph_record(&[0x12, 0x82, 0x83], &[0xfe]),
@@ -4721,11 +4721,14 @@ fn outer_object_graph_does_not_assign_compact_head_reference_roles() {
     ]);
     let graph = crate::object_graph::parse(&bytes).expect("compact heads");
 
-    for record in graph.records {
-        assert_eq!(record.owner_ref, None);
-        assert_eq!(record.class_ref, None);
-        assert_eq!(record.storage_ref, None);
-    }
+    assert_eq!(graph.records[0].owner_ref, Some(2));
+    assert_eq!(graph.records[0].class_ref, None);
+    assert_eq!(graph.records[1].owner_ref, Some(2));
+    assert_eq!(graph.records[1].class_ref, Some(3));
+    assert_eq!(graph.records[1].storage_ref, None);
+    assert_eq!(graph.records[2].owner_ref, Some(2));
+    assert_eq!(graph.records[2].class_ref, Some(3));
+    assert_eq!(graph.records[2].storage_ref, Some(4));
 }
 
 #[test]
@@ -4834,6 +4837,32 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
     );
     assert_eq!(native.design_objects[1].owner_ordinal, 3);
     assert!(native.design_objects[1].dependencies.is_empty());
+}
+
+#[test]
+fn compact_design_objects_use_field_vocabulary_not_anchor_class() {
+    let mut bytes = object_graph_from_records(&[
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+    ]);
+    bytes.extend(value_block_stream(&[0x81]));
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "BaseFeature",
+        "Groove",
+    ]));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(native.design_objects.len(), 1);
+    let object = &native.design_objects[0];
+    assert_eq!(object.owner_ordinal, 2);
+    assert!(object.owner_record.is_some());
+    assert_eq!(object.owner_class, None);
+    assert_eq!(object.owner_storage_ref, None);
+    assert_eq!(object.field_classes, ["BaseFeature", "Groove"]);
 }
 
 #[test]

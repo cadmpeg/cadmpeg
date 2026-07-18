@@ -271,10 +271,10 @@ pub struct CatiaDesignObject {
     /// Record selected by `owner_ordinal` when it lies inside the graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_record: Option<String>,
-    /// Resolved class of the selected owner record.
+    /// Resolved class of a separator-form owner declaration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_class: Option<String>,
-    /// Class-specific storage selector of the selected owner record.
+    /// Class-specific storage selector of a separator-form owner declaration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_storage_ref: Option<u32>,
     /// Field records carrying this owner ordinal, in serialized order.
@@ -328,8 +328,12 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                     parent: graph.id.clone(),
                     owner_ordinal,
                     owner_record: owner_record.map(|record| record.id.clone()),
-                    owner_class: owner_record.and_then(|record| record.class_name.clone()),
-                    owner_storage_ref: owner_record.and_then(|record| record.storage_ref),
+                    owner_class: owner_record
+                        .filter(|record| record_has_separator_roles(record))
+                        .and_then(|record| record.class_name.clone()),
+                    owner_storage_ref: owner_record
+                        .filter(|record| record_has_separator_roles(record))
+                        .and_then(|record| record.storage_ref),
                     fields: records.iter().map(|record| record.id.clone()).collect(),
                     field_classes: records
                         .iter()
@@ -348,6 +352,10 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
             })
         })
         .collect()
+}
+
+fn record_has_separator_roles(record: &CatiaObjectRecord) -> bool {
+    matches!(record.head.get(1), Some(HeadToken::Separator))
 }
 
 fn object_record_index(ordinal: u32, record_count: usize) -> Option<usize> {
