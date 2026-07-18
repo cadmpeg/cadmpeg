@@ -1323,6 +1323,15 @@ pcurve retains the circle's native angle parameter and the edge parameter
 interval. A displaced center, unequal radius, or misaligned meridian plane does
 not define this pcurve.
 
+When a native line with no native pcurve candidate is a constant-`u`
+generator of a solved cylinder or circular cone, its line origin fixes the
+surface azimuth and axial `v`. Its direction must be a nonzero scalar multiple
+of the surface derivative `axis + tan(half_angle) * radial_direction`; the
+cylinder derivative uses zero radial slope. The scalar multiple is the pcurve
+`v` direction, so the affine pcurve preserves the 3D line parameter and edge
+parameter interval. Lines off the surface, skew to the generator derivative,
+or on an elliptical cone do not define this pcurve.
+
 A NURBS curve has intrinsic domain
 `[knots[degree], knots[control_point_count]]`. A native edge on a nonperiodic
 higher-degree curve uses that complete domain when its two solved vertices

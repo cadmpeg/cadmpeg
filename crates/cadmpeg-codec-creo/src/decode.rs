@@ -21258,6 +21258,87 @@ fn torus_meridian_circle_pcurve(
     })
 }
 
+fn ruled_generator_line_pcurve(
+    surface: &SurfaceGeometry,
+    geometry: &CurveGeometry,
+) -> Option<PcurveGeometry> {
+    let CurveGeometry::Line {
+        origin: line_origin,
+        direction: line_direction,
+    } = geometry
+    else {
+        return None;
+    };
+    let (surface_origin, surface_axis, surface_x, reference_radius, radius_slope) = match surface {
+        SurfaceGeometry::Cylinder {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+        } if radius.is_finite() && *radius > 0.0 => (*origin, *axis, *ref_direction, *radius, 0.0),
+        SurfaceGeometry::Cone {
+            origin,
+            axis,
+            ref_direction,
+            radius,
+            ratio,
+            half_angle,
+        } if radius.is_finite()
+            && ratio.is_finite()
+            && (*ratio - 1.0).abs() <= 1e-12
+            && half_angle.is_finite() =>
+        {
+            let slope = half_angle.tan();
+            slope
+                .is_finite()
+                .then_some((*origin, *axis, *ref_direction, *radius, slope))?
+        }
+        _ => return None,
+    };
+    let surface_axis = stored_unit_vector([surface_axis.x, surface_axis.y, surface_axis.z])?;
+    let surface_x = stored_unit_vector([surface_x.x, surface_x.y, surface_x.z])?;
+    (dot(surface_axis, surface_x).abs() <= 1e-10).then_some(())?;
+    let surface_y = cross(surface_axis, surface_x);
+    let relative = [
+        line_origin.x - surface_origin.x,
+        line_origin.y - surface_origin.y,
+        line_origin.z - surface_origin.z,
+    ];
+    let v = dot(relative, surface_axis);
+    let radial = std::array::from_fn::<_, 3, _>(|index| relative[index] - v * surface_axis[index]);
+    let radial_length = dot(radial, radial).sqrt();
+    let local_radius = reference_radius + v * radius_slope;
+    let scale = local_radius.abs().max(radial_length).max(1.0);
+    (local_radius.abs() > 1e-12 * scale
+        && (radial_length - local_radius.abs()).abs() <= 1e-9 * scale)
+        .then_some(())?;
+    let chart_radial = radial.map(|coordinate| coordinate / local_radius);
+    let u = dot(chart_radial, surface_y).atan2(dot(chart_radial, surface_x));
+    let surface_derivative = std::array::from_fn::<_, 3, _>(|index| {
+        surface_axis[index] + radius_slope * chart_radial[index]
+    });
+    let line_direction = [line_direction.x, line_direction.y, line_direction.z];
+    let direction_length = dot(line_direction, line_direction).sqrt();
+    let derivative_norm = dot(surface_derivative, surface_derivative);
+    (direction_length.is_finite()
+        && direction_length > 0.0
+        && derivative_norm.is_finite()
+        && derivative_norm > 0.0)
+        .then_some(())?;
+    let parameter_scale = dot(line_direction, surface_derivative) / derivative_norm;
+    let residual = std::array::from_fn::<_, 3, _>(|index| {
+        line_direction[index] - parameter_scale * surface_derivative[index]
+    });
+    (parameter_scale.is_finite()
+        && parameter_scale.abs() > 0.0
+        && dot(residual, residual).sqrt() <= 1e-10 * direction_length)
+        .then_some(())?;
+    Some(PcurveGeometry::Line {
+        origin: Point2::new(u, v),
+        direction: Point2::new(0.0, parameter_scale),
+    })
+}
+
 #[cfg(test)]
 mod native_pcurve_tests {
     use super::*;
@@ -21593,6 +21674,62 @@ mod native_pcurve_tests {
             radius: 1.5,
         };
         assert!(torus_meridian_circle_pcurve(&surface, &displaced).is_none());
+    }
+
+    #[test]
+    fn projects_cylinder_and_cone_generators_with_native_line_parameters() {
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+        };
+        let cylinder_line = CurveGeometry::Line {
+            origin: Point3::new(1.0, 4.0, 8.0),
+            direction: Vector3::new(0.0, 0.0, -2.0),
+        };
+        let pcurve = ruled_generator_line_pcurve(&cylinder, &cylinder_line)
+            .expect("cylinder generator pcurve");
+        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+            panic!("cylinder-generator pcurve: {pcurve:#?}");
+        };
+        assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
+        assert!((origin.v - 5.0).abs() <= 1e-12);
+        assert_eq!(*direction, Point2::new(0.0, -2.0));
+        assert_pcurve_matches_curve(&cylinder, &cylinder_line, &pcurve, &[-1.0, 0.0, 2.0]);
+        let tiny_skew = CurveGeometry::Line {
+            origin: Point3::new(1.0, 4.0, 8.0),
+            direction: Vector3::new(1e-13, 0.0, 1e-13),
+        };
+        assert!(ruled_generator_line_pcurve(&cylinder, &tiny_skew).is_none());
+
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 1.0,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let cone_line = CurveGeometry::Line {
+            origin: Point3::new(0.0, 5.0, 3.0),
+            direction: Vector3::new(0.0, 2.0, 2.0),
+        };
+        let pcurve = ruled_generator_line_pcurve(&cone, &cone_line).expect("cone generator pcurve");
+        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+            panic!("cone-generator pcurve: {pcurve:#?}");
+        };
+        assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
+        assert!((origin.v - 3.0).abs() <= 1e-12);
+        assert!(direction.u.abs() <= 1e-12);
+        assert!((direction.v - 2.0).abs() <= 1e-12);
+        assert_pcurve_matches_curve(&cone, &cone_line, &pcurve, &[-1.0, 0.0, 2.0]);
+
+        let skew = CurveGeometry::Line {
+            origin: Point3::new(0.0, 5.0, 3.0),
+            direction: Vector3::new(0.1, 2.0, 2.0),
+        };
+        assert!(ruled_generator_line_pcurve(&cone, &skew).is_none());
     }
 }
 
@@ -22147,6 +22284,15 @@ fn transfer_native_brep(
                                         )
                                         .map(|geometry| {
                                             (geometry, "projected_torus_meridian_pcurve")
+                                        })
+                                    })
+                                    .or_else(|| {
+                                        ruled_generator_line_pcurve(
+                                            &surface.geometry,
+                                            &curve.geometry,
+                                        )
+                                        .map(|geometry| {
+                                            (geometry, "projected_ruled_generator_pcurve")
                                         })
                                     })?;
                             Some((
