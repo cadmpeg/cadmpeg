@@ -387,16 +387,17 @@ mod marker_tests {
         compact_single_face_reference_path_at, compact_surface_selection_at,
         complete_ordered_compact_line_profile, component_path_features,
         component_path_terminal_feature, component_profile_source_at,
-        component_reference_curve_path_at, coordinate_marker_local_links,
-        fixed_reference_plane_frame, marker_coordinates, marker_is_geometry_locus, marker_local_id,
-        marker_local_links, marker_object_index, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
-        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
-        plane_intersection_axis_sources, principal_sketch_frame, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers, sketch_plane_frames,
-        solved_tangent, spatial_vertex_coordinates, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        component_reference_curve_path_at, constraint_midplane_frame,
+        coordinate_marker_local_links, fixed_reference_plane_frame, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
+        named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
+        plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -560,6 +561,33 @@ mod marker_tests {
         frame[73..81].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(fixed_reference_plane_frame(&frame), None);
         assert_eq!(fixed_reference_plane_frame(&frame[..96]), None);
+    }
+
+    #[test]
+    fn constraint_midplane_uses_its_normal_form_equation() {
+        const CLASS: &str = "moConstraintMidPlaneRefplaneData_c";
+        let mut payload = vec![0xaa; 19];
+        payload.extend(CLASS_MARKER);
+        payload.extend((CLASS.len() as u16).to_le_bytes());
+        payload.extend(CLASS.as_bytes());
+        payload.extend([0; 8]);
+        payload.extend(1.0e-16f64.to_le_bytes());
+        payload.extend(0.145f64.to_le_bytes());
+        payload.extend(0.0f64.to_le_bytes());
+        payload.extend(0.0f64.to_le_bytes());
+        payload.extend(1.0f64.to_le_bytes());
+        assert_eq!(
+            constraint_midplane_frame(&payload),
+            Some((
+                Point3::new(0.0, 0.0, 145.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ))
+        );
+
+        let normal = payload.len() - 24;
+        payload[normal..normal + 8].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(constraint_midplane_frame(&payload), None);
     }
 
     #[test]
@@ -5367,6 +5395,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
                 .filter_map(fixed_reference_plane_frame)
                 .collect::<Vec<_>>();
+            frames.extend(constraint_midplane_frame(bytes));
             frames.sort_by_key(|(origin, normal, u_axis)| {
                 [
                     origin.x.to_bits(),
@@ -5652,6 +5681,95 @@ fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3
         && dot(normal, v_axis).abs() <= 1.0e-9
         && dot(u_axis, v_axis).abs() <= 1.0e-9)
         .then_some((origin, normal, u_axis))
+}
+
+fn constraint_midplane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const CLASS: &[u8] = b"moConstraintMidPlaneRefplaneData_c";
+    const NATIVE_TO_IR: f64 = 1000.0;
+    let record_len = CLASS_MARKER.len() + 2 + CLASS.len();
+    let mut frames = payload
+        .windows(record_len)
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
+            (bytes.get(..CLASS_MARKER.len()) == Some(CLASS_MARKER)
+                && bytes.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2)
+                    == Some(&(CLASS.len() as u16).to_le_bytes())
+                && bytes.get(CLASS_MARKER.len() + 2..) == Some(CLASS))
+            .then_some(offset + record_len)
+        })
+        .filter_map(|body| {
+            if payload.get(body..body + 8)?.iter().any(|byte| *byte != 0) {
+                return None;
+            }
+            let scalar = |relative| {
+                let value = f64::from_le_bytes(
+                    payload
+                        .get(body + relative..body + relative + 8)?
+                        .try_into()
+                        .ok()?,
+                );
+                value.is_finite().then_some(value)
+            };
+            let tolerance = scalar(8)?;
+            if tolerance.abs() > 1.0e-9 {
+                return None;
+            }
+            let distance = scalar(16)?;
+            let normal = Vector3::new(scalar(24)?, scalar(32)?, scalar(40)?);
+            let squared_norm = normal.x * normal.x + normal.y * normal.y + normal.z * normal.z;
+            if (squared_norm - 1.0).abs() > 1.0e-9 {
+                return None;
+            }
+            let reference = if normal.x.abs() <= normal.y.abs() && normal.x.abs() <= normal.z.abs()
+            {
+                Vector3::new(1.0, 0.0, 0.0)
+            } else if normal.y.abs() <= normal.z.abs() {
+                Vector3::new(0.0, 1.0, 0.0)
+            } else {
+                Vector3::new(0.0, 0.0, 1.0)
+            };
+            let projection =
+                reference.x * normal.x + reference.y * normal.y + reference.z * normal.z;
+            let u_axis = Vector3::new(
+                reference.x - projection * normal.x,
+                reference.y - projection * normal.y,
+                reference.z - projection * normal.z,
+            );
+            let u_length = (u_axis.x * u_axis.x + u_axis.y * u_axis.y + u_axis.z * u_axis.z).sqrt();
+            let u_axis = Vector3::new(
+                u_axis.x / u_length,
+                u_axis.y / u_length,
+                u_axis.z / u_length,
+            );
+            Some((
+                Point3::new(
+                    normal.x * distance * NATIVE_TO_IR,
+                    normal.y * distance * NATIVE_TO_IR,
+                    normal.z * distance * NATIVE_TO_IR,
+                ),
+                normal,
+                u_axis,
+            ))
+        })
+        .collect::<Vec<_>>();
+    frames.sort_by_key(|(origin, normal, u_axis)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
+            normal.x.to_bits(),
+            normal.y.to_bits(),
+            normal.z.to_bits(),
+            u_axis.x.to_bits(),
+            u_axis.y.to_bits(),
+            u_axis.z.to_bits(),
+        ]
+    });
+    frames.dedup();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
 }
 
 /// Bind Keywords history records to their serialized feature-input object classes.
