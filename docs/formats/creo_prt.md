@@ -697,13 +697,13 @@ coordinate on either endpoint therefore supplies the missing coordinate on the
 other endpoint; conflicting solved coordinates remain distinct.
 For an arc or circle operand, sense `4` selects its center. A type-14 incidence
 stores a symmetry axis as a sense-zero line followed by two point loci selected
-with senses `2`, `3`, or `4`. A type-3 incidence between a sense-zero entity
-and a sense-`2`, sense-`3`, or sense-`4` point locus makes the entity and locus
-coincident.
-When the sense-zero entity is a `segtab` point, its `pointid` coordinate equals
-the selected endpoint or arc-center `pointid` coordinate. Solved coordinates
-propagate across that equality under the same unique-row and conflict rules as
-type zero.
+with senses `2`, `3`, or `4`. A type-3 incidence between a sense-zero line and
+a selected point locus makes the locus coincident with the line and maps to a
+neutral point-on-object constraint. A type-3 incidence between a sense-zero
+`segtab` point and a selected point locus equates the point's `pointid`
+coordinate with the selected endpoint or arc-center `pointid` coordinate and
+maps to a neutral coincident-loci constraint. Solved coordinates propagate
+across that equality under the same unique-row and conflict rules as type zero.
 A two-item type-9 incidence with sense zero on one line and one point makes the
 point coincident with the line and maps to a neutral point-on-object
 constraint. Operand order does not change the line and point roles.
@@ -720,8 +720,8 @@ type-four incidence makes the referenced entities tangent at their selected
 endpoint loci.
 A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci map to a neutral
-coincident-loci constraint. A sense-zero non-point entity does not satisfy this
-typed form.
+coincident-loci constraint. The separate sense-zero-line form maps to
+point-on-object as defined above.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. Other senses select a locus and do not define an entity-level
