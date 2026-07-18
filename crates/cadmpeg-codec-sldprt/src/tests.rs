@@ -12314,15 +12314,19 @@ fn decode_projects_fixed_reference_plane_frame() {
     resolved.extend_from_slice(&("moFixedRefPlnData_c".len() as u16).to_le_bytes());
     resolved.extend_from_slice(b"moFixedRefPlnData_c");
     let mut frame = [0u8; 97];
-    frame[8..16].copy_from_slice(&2.5f64.to_le_bytes());
-    frame[16..24].copy_from_slice(&(-0.25f64).to_le_bytes());
-    frame[24..32].copy_from_slice(&1.5f64.to_le_bytes());
-    frame[32..40].copy_from_slice(&(-1.0f64).to_le_bytes());
+    frame[0..8].copy_from_slice(&2.5f64.to_le_bytes());
+    frame[8..16].copy_from_slice(&(-0.25f64).to_le_bytes());
+    frame[16..24].copy_from_slice(&1.5f64.to_le_bytes());
+    frame[24..32].copy_from_slice(&(-1.0f64).to_le_bytes());
+    frame[32..40].copy_from_slice(&0.0f64.to_le_bytes());
     frame[40..48].copy_from_slice(&0.0f64.to_le_bytes());
     frame[48] = 1;
+    frame[49..57].copy_from_slice(&0.0f64.to_le_bytes());
+    frame[57..65].copy_from_slice(&0.0f64.to_le_bytes());
+    frame[65..73].copy_from_slice(&(-1.0f64).to_le_bytes());
     frame[73..81].copy_from_slice(&0.0f64.to_le_bytes());
-    frame[81..89].copy_from_slice(&0.0f64.to_le_bytes());
-    frame[89..97].copy_from_slice(&(-1.0f64).to_le_bytes());
+    frame[81..89].copy_from_slice(&(-1.0f64).to_le_bytes());
+    frame[89..97].copy_from_slice(&0.0f64.to_le_bytes());
     resolved.extend_from_slice(&frame);
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -12343,13 +12347,13 @@ fn decode_projects_fixed_reference_plane_frame() {
         decoded.ir.model.features[0].definition,
         FeatureDefinition::DatumPlane {
             origin: Point3 {
-                x: 1500.0,
-                y: 2500.0,
-                z: -250.0,
+                x: 2500.0,
+                y: -250.0,
+                z: 1500.0,
             },
             normal: Vector3 {
-                x: 0.0,
-                y: -1.0,
+                x: -1.0,
+                y: 0.0,
                 z: 0.0,
             },
             u_axis: Vector3 {
@@ -12370,9 +12374,10 @@ fn decode_rejects_nonorthogonal_fixed_reference_plane_frame() {
     resolved.extend_from_slice(&("moFixedRefPlnData_c".len() as u16).to_le_bytes());
     resolved.extend_from_slice(b"moFixedRefPlnData_c");
     let mut frame = [0u8; 97];
-    frame[32..40].copy_from_slice(&1.0f64.to_le_bytes());
+    frame[24..32].copy_from_slice(&1.0f64.to_le_bytes());
     frame[48] = 1;
-    frame[81..89].copy_from_slice(&1.0f64.to_le_bytes());
+    frame[49..57].copy_from_slice(&1.0f64.to_le_bytes());
+    frame[73..81].copy_from_slice(&1.0f64.to_le_bytes());
     resolved.extend_from_slice(&frame);
 
     let mut source = sldprt_with_body(&triangle_body());

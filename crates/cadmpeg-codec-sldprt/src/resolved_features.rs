@@ -387,21 +387,22 @@ mod marker_tests {
         compact_single_face_reference_path_at, compact_surface_selection_at,
         complete_ordered_compact_line_profile, component_path_features,
         component_path_terminal_feature, component_profile_source_at,
-        component_reference_curve_path_at, coordinate_marker_local_links, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
-        named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
-        plane_intersection_axis_sources, principal_sketch_frame, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers, sketch_plane_frames,
-        solved_tangent, spatial_vertex_coordinates, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
+        component_reference_curve_path_at, coordinate_marker_local_links,
+        fixed_reference_plane_frame, marker_coordinates, marker_is_geometry_locus, marker_local_id,
+        marker_local_links, marker_object_index, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_sources,
+        principal_sketch_frame, resolve_operand_marker, resolve_operand_marker_excluding,
+        resolve_scalar_operand_markers, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
         SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
     };
-    use cadmpeg_ir::math::{Point2, Point3};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchLocus};
     use std::collections::{BTreeMap, HashSet};
 
@@ -500,6 +501,40 @@ mod marker_tests {
         assert_eq!(plane_intersection_axis_sources(&payload, &known), None);
         let incomplete = record(17, 0xb6, 3);
         assert_eq!(plane_intersection_axis_sources(&incomplete, &known), None);
+    }
+
+    #[test]
+    fn fixed_reference_plane_uses_all_three_stored_basis_vectors() {
+        let mut frame = [0; FIXED_REFERENCE_PLANE_FRAME_LEN];
+        for (offset, value) in [
+            (0, 0.374_f64),
+            (8, -0.25),
+            (16, 0.125),
+            (24, 1.0),
+            (32, 0.0),
+            (40, 0.0),
+            (49, 0.0),
+            (57, 0.0),
+            (65, 1.0),
+            (73, 0.0),
+            (81, 1.0),
+            (89, 0.0),
+        ] {
+            frame[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        frame[48] = 1;
+        assert_eq!(
+            fixed_reference_plane_frame(&frame),
+            Some((
+                Point3::new(374.0, -250.0, 125.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ))
+        );
+
+        frame[73..81].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(fixed_reference_plane_frame(&frame), None);
+        assert_eq!(fixed_reference_plane_frame(&frame[..96]), None);
     }
 
     #[test]
@@ -5475,27 +5510,32 @@ const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
 
 fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    if bytes.get(..8)?.iter().any(|byte| *byte != 0) || bytes.get(48) != Some(&1) {
+    if bytes.len() != FIXED_REFERENCE_PLANE_FRAME_LEN || bytes.get(48) != Some(&1) {
         return None;
     }
     let scalar = |offset| {
         let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
         value.is_finite().then_some(value)
     };
-    let native_origin = [scalar(8)?, scalar(16)?, scalar(24)?];
+    let native_origin = [scalar(0)?, scalar(8)?, scalar(16)?];
     let origin = Point3::new(
-        native_origin[2] * NATIVE_TO_IR,
         native_origin[0] * NATIVE_TO_IR,
         native_origin[1] * NATIVE_TO_IR,
+        native_origin[2] * NATIVE_TO_IR,
     );
-    let normal = Vector3::new(0.0, scalar(32)?, scalar(40)?);
-    let u_axis = Vector3::new(scalar(73)?, scalar(81)?, scalar(89)?);
+    let normal = Vector3::new(scalar(24)?, scalar(32)?, scalar(40)?);
+    let u_axis = Vector3::new(scalar(49)?, scalar(57)?, scalar(65)?);
+    let v_axis = Vector3::new(scalar(73)?, scalar(81)?, scalar(89)?);
     let norm =
         |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
-    let normal_norm = norm(normal);
-    let u_norm = norm(u_axis);
-    let dot = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
-    ((normal_norm - 1.0).abs() <= 1.0e-9 && (u_norm - 1.0).abs() <= 1.0e-9 && dot.abs() <= 1.0e-9)
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    ([normal, u_axis, v_axis]
+        .into_iter()
+        .all(|vector| (norm(vector) - 1.0).abs() <= 1.0e-9)
+        && dot(normal, u_axis).abs() <= 1.0e-9
+        && dot(normal, v_axis).abs() <= 1.0e-9
+        && dot(u_axis, v_axis).abs() <= 1.0e-9)
         .then_some((origin, normal, u_axis))
 }
 
