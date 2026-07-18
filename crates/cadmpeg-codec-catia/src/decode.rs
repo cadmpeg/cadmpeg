@@ -1394,8 +1394,7 @@ mod chart_tests {
         neutral_model_is_admissible, ordered_range, parameter_ranges_reversed, point_distance,
         point_on_known_surface, point_on_standard_face, quintic_jet_pcurve, rational_pcurve_arc,
         resolve_standard_endpoint_pairs, reverse_e5_pcurve_geometry,
-        standard_circle_endpoint_candidates, standard_circle_param_range,
-        standard_native_edge_references, standard_pcurve_geometry,
+        standard_circle_endpoint_candidates, standard_circle_param_range, standard_pcurve_geometry,
         standard_plane_normal_from_adjacent_circle_carriers,
         standard_plane_normal_from_circle_centers, unique_index_owners,
         unique_native_identity_points, unresolved_carrier_counts, UnknownRecord,
@@ -2362,24 +2361,6 @@ mod chart_tests {
             merge_native_endpoint_evidence(Some(&graph), Some(&roster)),
             Ok(Some(roster.to_vec()))
         );
-    }
-
-    #[test]
-    fn standard_native_edges_include_width_coded_nodes_and_reject_conflicts() {
-        let record = vec![
-            0xb2, 0x03, 0x5e, 0x0d, 0x05, 0x04, 0xd8, 0x08, 0x79, 0x03, 0x08, 0x7f, 0x03, 0x04,
-            0xd7, 0x04, 0xd6, 0x21,
-        ];
-        assert_eq!(
-            standard_native_edge_references(&record),
-            BTreeMap::from([(216, [889, 895])])
-        );
-
-        let mut conflicting = record.clone();
-        let mut second = record;
-        second[8] = 0x7a;
-        conflicting.extend(second);
-        assert!(standard_native_edge_references(&conflicting).is_empty());
     }
 
     #[test]
@@ -5535,7 +5516,7 @@ fn attach_standard_topology(
             .map_or(edge, |candidate| edge_classes[candidate]);
         edge_classes.push(class);
     }
-    let native_edges = standard_native_edge_references(source);
+    let native_edges = crate::b5::edge_vertex_references(source);
     let graph_endpoint_pairs =
         standard_native_graph_endpoint_pairs(source, &supports, &native_edges, &ir.model.points);
     let native_port_options = supports
@@ -6376,22 +6357,6 @@ fn standard_native_graph_endpoint_pairs(
             })
             .collect(),
     )
-}
-
-fn standard_native_edge_references(source: &[u8]) -> BTreeMap<u32, [u32; 2]> {
-    let mut edges = crate::b5::edge_vertex_references(source);
-    let mut ambiguous = HashSet::new();
-    for node in geometry::b2_edge_nodes(source) {
-        let endpoints = [node.start_vertex_ref, node.end_vertex_ref];
-        if edges
-            .insert(node.curve_ref, endpoints)
-            .is_some_and(|existing| existing != endpoints)
-        {
-            ambiguous.insert(node.curve_ref);
-        }
-    }
-    edges.retain(|curve, _| !ambiguous.contains(curve));
-    edges
 }
 
 fn include_native_endpoint_pairs(candidates: &mut [Vec<usize>], pairs: &[Option<[usize; 2]>]) {
