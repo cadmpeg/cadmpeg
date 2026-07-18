@@ -363,10 +363,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ),
             _ => Some(false),
         };
-        let extrude_profile_link = match (&scope.extrude_profile, scope.kind.as_str()) {
-            (None, "Extrude") => false,
+        let is_extrude = design::design_feature_family(&scope.kind)
+            == Some(design::DesignFeatureFamily::Extrude);
+        let extrude_profile_link = match (&scope.extrude_profile, is_extrude) {
             (None, _) => true,
-            (Some(_), kind) if kind != "Extrude" => false,
+            (Some(_), false) => false,
             (Some(profile), _) => {
                 let header = records_by_index.get(&(native_stream, profile.record_index));
                 let entity = entities_by_suffix.get(&(native_stream, profile.entity_suffix));
@@ -509,7 +510,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                scope.kind == "Extrude"
+                design::design_feature_family(&scope.kind)
+                    == Some(design::DesignFeatureFamily::Extrude)
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -557,7 +559,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         }
     }
     let mut operand_group_slots = HashSet::new();
-    let mut operand_group_scopes = HashSet::new();
     for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
         let scope = scopes_by_index.get(&(native_stream, group.scope_record_index));
@@ -577,16 +578,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                let role_is_valid = match scope.kind.as_str() {
-                    "Extrude" => match group.extrude_role {
+                let role_is_valid = match design::design_feature_family(&scope.kind) {
+                    Some(design::DesignFeatureFamily::Extrude) => match group.extrude_role {
                         Some(records::DesignExtrudeOperandRole::Bodies) => {
                             group.role == 0x0000_0008_0000_0000 && group.extrude_face_role.is_none()
                         }
                         Some(records::DesignExtrudeOperandRole::Profile) => {
                             group.role == 0x0000_0041_0000_0000
                                 && group.extrude_face_role.is_none()
-                                && scope.extrude_profile.as_ref().is_some_and(|profile| {
-                                    group.members.as_slice() == [profile.record_index]
+                                && scope.extrude_profile.as_ref().is_none_or(|profile| {
+                                    group.members.first() == Some(&profile.record_index)
                                 })
                         }
                         Some(records::DesignExtrudeOperandRole::Faces) => {
@@ -594,15 +595,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         }
                         None => false,
                     },
-                    "Fillet" | "Congé" | "Chamfer" | "Chanfrein" => {
-                        group.extrude_role.is_none() && group.extrude_face_role.is_none()
-                    }
+                    Some(
+                        design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer,
+                    ) => group.extrude_role.is_none() && group.extrude_face_role.is_none(),
                     _ => false,
                 };
-                matches!(
-                    scope.kind.as_str(),
-                    "Extrude" | "Fillet" | "Congé" | "Chamfer" | "Chanfrein"
-                ) && role_is_valid
+                design::design_feature_family(&scope.kind).is_some()
+                    && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))
@@ -640,9 +639,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 group.scope_record_index,
                 group.scope_reference_ordinal,
             ));
-        if valid {
-            operand_group_scopes.insert((native_stream, group.scope_record_index));
-        } else {
+        if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -652,21 +649,19 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
-    for scope in native
-        .design_parameter_scopes
-        .iter()
-        .filter(|scope| matches!(scope.kind.as_str(), "Extrude" | "Fillet" | "Chamfer"))
-    {
+    for scope in native.design_parameter_scopes.iter().filter(|scope| {
+        matches!(
+            design::design_feature_family(&scope.kind),
+            Some(
+                design::DesignFeatureFamily::Extrude
+                    | design::DesignFeatureFamily::Fillet
+                    | design::DesignFeatureFamily::Chamfer
+            )
+        )
+    }) {
         let native_stream = design_stream(&scope.id);
-        if !operand_group_scopes.contains(&(native_stream, scope.record_index)) {
-            findings.push(Finding {
-                check: Check::NativeLinks,
-                severity: Severity::Error,
-                message: "Fusion Design feature scope has no counted operand group".into(),
-                entity: Some(scope.id.clone()),
-            });
-        }
-        if scope.kind == "Extrude" {
+        if design::design_feature_family(&scope.kind) == Some(design::DesignFeatureFamily::Extrude)
+        {
             let mut profile_groups =
                 native
                     .design_construction_operand_groups
@@ -679,9 +674,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     });
             let profile_group = profile_groups.next();
             let profile_matches_operand = profile_groups.next().is_none()
-                && scope.extrude_profile.as_ref().is_some_and(|profile| {
+                && scope.extrude_profile.as_ref().is_none_or(|profile| {
                     profile_group
-                        .is_some_and(|group| group.members.as_slice() == [profile.record_index])
+                        .is_some_and(|group| group.members.first() == Some(&profile.record_index))
                 });
             if !profile_matches_operand {
                 findings.push(Finding {
@@ -1092,7 +1087,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && member.context_id_offset > member.asset_id_offset
             && valid_design_guid(&member.asset_id)
             && valid_design_guid(&member.context_id)
-            && selected_profile.is_some_and(|profile| profile.asset_id == member.asset_id)
+            && selected_profile.is_none_or(|profile| profile.asset_id == member.asset_id)
             && member.resolved_geometry == expected_target
             && member
                 .operand_identity_ids
@@ -1370,7 +1365,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                scope.kind == "Extrude"
+                design::design_feature_family(&scope.kind)
+                    == Some(design::DesignFeatureFamily::Extrude)
                     && usize::try_from(operand.scope_reference_ordinal)
                         .ok()
                         .and_then(|ordinal| scope.reference_members.get(ordinal))

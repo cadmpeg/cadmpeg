@@ -2193,7 +2193,7 @@ fn project_extrude(
     if !profile_groups.is_empty()
         && !matches!(
             profile_groups.as_slice(),
-            [group] if group.members.as_slice() == [profile.record_index]
+            [group] if group.members.first() == Some(&profile.record_index)
         )
     {
         return None;
@@ -8756,7 +8756,10 @@ pub fn bind_extrude_profiles(
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
-    for scope in scopes.iter_mut().filter(|scope| scope.kind == "Extrude") {
+    for scope in scopes
+        .iter_mut()
+        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude))
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8797,7 +8800,10 @@ pub fn decode_extrude_selection_groups(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes.iter().filter(|scope| scope.kind == "Extrude") {
+    for scope in scopes
+        .iter()
+        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude))
+    {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8840,10 +8846,10 @@ pub fn decode_construction_operand_groups(
         .filter_map(|h| Some(((native_stream(&h.id)?, h.record_index), h)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| scope.kind == "Extrude" || has_typed_edge_treatment_group(&scope.kind))
-    {
+    for scope in scopes.iter().filter(|scope| {
+        design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
+            || has_typed_edge_treatment_group(&scope.kind)
+    }) {
         let scope_group_start = out.len();
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -8871,7 +8877,7 @@ pub fn decode_construction_operand_groups(
                 out.push(group);
             }
         }
-        if scope.kind == "Extrude" {
+        if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
             assign_extrude_face_roles(scope, &mut out[scope_group_start..]);
         }
     }
@@ -9013,7 +9019,7 @@ fn parse_construction_operand_group(
     }
     let identity_record_index = u32_at(bytes, position + 7)?;
     let role = read_u64(bytes, position + 17)?;
-    let extrude_role = if scope.kind == "Extrude" {
+    let extrude_role = if design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude) {
         Some(match role {
             0x0000_0008_0000_0000 => DesignExtrudeOperandRole::Bodies,
             0x0000_0041_0000_0000 => DesignExtrudeOperandRole::Profile,
