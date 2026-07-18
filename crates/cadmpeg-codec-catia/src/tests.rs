@@ -3922,11 +3922,14 @@ fn decode_standard_does_not_promote_unbound_consolidated_pcurve() {
 
 #[test]
 fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
-    let mut bytes = a5_pcurve_stream();
-    bytes.extend(b2_pcurve_stream());
+    let mut bytes = Vec::new();
+    for _ in 0..6 {
+        bytes.extend(a5_pcurve_stream());
+        bytes.extend(b2_pcurve_stream());
+    }
     let native = crate::native::CatiaNative::decode(&bytes);
 
-    assert_eq!(native.consolidated_pcurves.len(), 2);
+    assert_eq!(native.consolidated_pcurves.len(), 12);
     assert_eq!(
         native.consolidated_pcurves[0].family,
         crate::native::CatiaConsolidatedFamily::A

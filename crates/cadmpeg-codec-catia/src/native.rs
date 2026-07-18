@@ -1145,8 +1145,9 @@ impl CatiaNative {
         }
         let preview_images = expected_preview_images;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
-        let consolidated_pcurves: Vec<CatiaConsolidatedPcurve> =
+        let mut consolidated_pcurves: Vec<CatiaConsolidatedPcurve> =
             namespace.arena_as("consolidated_pcurves")?;
+        consolidated_pcurves.sort_by_key(|pcurve| pcurve.byte_offset);
         validate_consolidated_pcurves(&consolidated_pcurves)?;
         validate_native_links(
             &alias_rows,
