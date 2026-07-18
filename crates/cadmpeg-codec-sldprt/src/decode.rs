@@ -1160,6 +1160,11 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
                 .filter_map(|entity| entity.native_ref.clone()),
         )
         .collect::<std::collections::HashSet<_>>();
+    let owned_instances = crate::resolved_features::owned_relation_parameters(
+        &ir.model.features,
+        &ir.model.parameters,
+        &native.feature_input_lanes,
+    );
 
     native
         .feature_input_lanes
@@ -1168,7 +1173,9 @@ fn unprojected_sketch_relation_records(ir: &CadIr, native: &crate::native::Sldpr
             let instances = lane
                 .relation_instances
                 .iter()
-                .filter(|relation| !projected.contains(&relation.id))
+                .filter(|relation| {
+                    owned_instances.contains_key(&relation.id) && !projected.contains(&relation.id)
+                })
                 .count();
             let bindings = lane
                 .relation_bindings

@@ -6590,24 +6590,12 @@ pub(crate) fn type_display_relation_parameters(
     features: &[cadmpeg_ir::features::Feature],
     lanes: &[FeatureInputLane],
 ) {
+    let ownership = owned_relation_parameters(features, parameters, lanes);
     let mut families = HashMap::<cadmpeg_ir::features::ParameterId, HashSet<_>>::new();
-    for lane in lanes {
-        for relation in &lane.relation_instances {
-            let parameter = relation
-                .parameter_scalar_ref
-                .as_deref()
-                .and_then(|scalar| {
-                    parameters
-                        .iter()
-                        .find(|parameter| parameter.native_ref.as_deref() == Some(scalar))
-                })
-                .or_else(|| {
-                    relation.parameter_scalar_ref.is_none().then_some(())?;
-                    relation_parameter_by_display_name(relation, lane, features, parameters)
-                });
-            let Some(parameter) = parameter else { continue };
+    for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
+        if let Some(Some(parameter)) = ownership.get(&relation.id) {
             families
-                .entry(parameter.id.clone())
+                .entry(parameter.clone())
                 .or_default()
                 .insert(relation.family);
         }
@@ -8270,10 +8258,18 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             Some((feature.native_ref.as_deref()?, sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
-    let parameters_by_scalar = parameters
+    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let parameters_by_id = parameters
         .iter()
-        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
+        .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
+    let relation_parameter = |relation: &FeatureInputRelationInstance| {
+        ownership
+            .get(&relation.id)?
+            .as_ref()
+            .and_then(|parameter| parameters_by_id.get(parameter))
+            .copied()
+    };
     let markers_by_id = lanes
         .iter()
         .flat_map(|lane| &lane.sketch_entities)
@@ -8321,19 +8317,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
                         return None;
                     }
                     let [u, v] = marker.coordinates_m?;
-                    let parameter = relation
-                        .parameter_scalar_ref
-                        .as_deref()
-                        .and_then(|id| parameters_by_scalar.get(id).copied())
-                        .or_else(|| {
-                            relation.parameter_scalar_ref.is_none().then_some(())?;
-                            let lane = lanes.iter().find(|lane| {
-                                lane.relation_instances
-                                    .iter()
-                                    .any(|candidate| candidate.id == relation.id)
-                            })?;
-                            relation_parameter_by_display_name(relation, lane, features, parameters)
-                        })?;
+                    let parameter = relation_parameter(relation)?;
                     let cadmpeg_ir::features::ParameterValue::Length(value) =
                         parameter.value.as_ref()?
                     else {
@@ -8418,14 +8402,7 @@ pub(crate) fn project_dimensioned_sketch_geometry(
             ) {
                 continue;
             }
-            let parameter = relation
-                .parameter_scalar_ref
-                .as_deref()
-                .and_then(|id| parameters_by_scalar.get(id).copied())
-                .or_else(|| {
-                    relation.parameter_scalar_ref.is_none().then_some(())?;
-                    relation_parameter_by_display_name(relation, lane, features, parameters)
-                });
+            let parameter = relation_parameter(relation);
             let (Some([u, v]), Some(parameter)) = (marker.coordinates_m, parameter) else {
                 continue;
             };
@@ -8768,9 +8745,10 @@ pub(crate) fn project_relation_solved_point_geometry(
             Some((feature.native_ref.as_deref()?, sketch.clone()))
         })
         .collect::<HashMap<_, _>>();
-    let parameters_by_scalar = parameters
+    let ownership = owned_relation_parameters(features, parameters, lanes);
+    let parameters_by_id = parameters
         .iter()
-        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
+        .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
     let markers_by_id = lanes
         .iter()
@@ -8797,15 +8775,11 @@ pub(crate) fn project_relation_solved_point_geometry(
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
-            let parameter = relation
-                .parameter_scalar_ref
-                .as_deref()
-                .and_then(|scalar| parameters_by_scalar.get(scalar))
-                .copied()
-                .or_else(|| {
-                    relation.parameter_scalar_ref.is_none().then_some(())?;
-                    relation_parameter_by_display_name(relation, lane, features, parameters)
-                });
+            let parameter = ownership
+                .get(&relation.id)
+                .and_then(Option::as_ref)
+                .and_then(|parameter| parameters_by_id.get(parameter))
+                .copied();
             let Some(cadmpeg_ir::features::ParameterValue::Length(distance)) =
                 parameter.and_then(|parameter| parameter.value.as_ref())
             else {
@@ -8954,17 +8928,11 @@ pub(crate) fn project_relation_bindings(
         .flat_map(|lane| &lane.sketch_entities)
         .map(|marker| (marker.id.as_str(), marker))
         .collect::<HashMap<_, _>>();
-    let parameters_by_scalar = parameters
+    let relation_parameters = owned_relation_parameters(features, parameters, lanes);
+    let parameters_by_id = parameters
         .iter()
-        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
+        .map(|parameter| (&parameter.id, parameter))
         .collect::<HashMap<_, _>>();
-    let mut claimed_parameter_ids = lanes
-        .iter()
-        .flat_map(|lane| &lane.relation_instances)
-        .filter_map(|relation| relation.parameter_scalar_ref.as_deref())
-        .filter_map(|scalar| parameters_by_scalar.get(scalar))
-        .map(|parameter| parameter.id.clone())
-        .collect::<HashSet<_>>();
 
     for lane in lanes {
         let lane_key = lane
@@ -8972,28 +8940,16 @@ pub(crate) fn project_relation_bindings(
             .rsplit_once('#')
             .map_or(lane.id.as_str(), |(_, key)| key);
         for relation in &lane.relation_instances {
+            let Some(parameter_id) = relation_parameters.get(&relation.id) else {
+                continue;
+            };
             let Some(sketch) = sketches_by_feature.get(relation.feature_ref.as_str()) else {
                 continue;
             };
-            let direct_parameter = relation
-                .parameter_scalar_ref
-                .as_deref()
-                .and_then(|scalar| parameters_by_scalar.get(scalar))
+            let parameter = parameter_id
+                .as_ref()
+                .and_then(|parameter| parameters_by_id.get(parameter))
                 .copied();
-            let display_parameter = relation
-                .parameter_scalar_ref
-                .is_none()
-                .then(|| relation_parameter_by_display_name(relation, lane, features, parameters))
-                .flatten();
-            let parameter = direct_parameter.or(display_parameter);
-            if relation.parameter_scalar_ref.is_none() && parameter.is_none() {
-                continue;
-            }
-            if let Some(parameter) = display_parameter {
-                if !claimed_parameter_ids.insert(parameter.id.clone()) {
-                    continue;
-                }
-            }
             let parameter_id = parameter.map(|parameter| parameter.id.clone());
             let native_kind = match relation.family {
                 FeatureInputRelationFamily::LineLineDistance => "sgLLDist",
@@ -9076,6 +9032,51 @@ pub(crate) fn project_relation_bindings(
     }
 }
 
+/// Assign each constraint-owning relation instance to its parameter. Driving
+/// instances own their dimensions before display-only instances are considered.
+/// A driving instance whose scalar was not projected remains present with no
+/// parameter so completeness accounting can report it.
+pub(crate) fn owned_relation_parameters(
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+    lanes: &[FeatureInputLane],
+) -> HashMap<String, Option<cadmpeg_ir::features::ParameterId>> {
+    let parameters_by_scalar = parameters
+        .iter()
+        .filter_map(|parameter| Some((parameter.native_ref.as_deref()?, parameter)))
+        .collect::<HashMap<_, _>>();
+    let mut claimed = HashSet::new();
+    let mut owned = HashMap::new();
+    for relation in lanes.iter().flat_map(|lane| &lane.relation_instances) {
+        let Some(scalar) = relation.parameter_scalar_ref.as_deref() else {
+            continue;
+        };
+        let parameter = parameters_by_scalar
+            .get(scalar)
+            .map(|parameter| parameter.id.clone());
+        if let Some(parameter) = &parameter {
+            claimed.insert(parameter.clone());
+        }
+        owned.insert(relation.id.clone(), parameter);
+    }
+    for lane in lanes {
+        for relation in &lane.relation_instances {
+            if relation.parameter_scalar_ref.is_some() {
+                continue;
+            }
+            let Some(parameter) =
+                relation_parameter_by_display_name(relation, lane, features, parameters)
+            else {
+                continue;
+            };
+            if claimed.insert(parameter.id.clone()) {
+                owned.insert(relation.id.clone(), Some(parameter.id.clone()));
+            }
+        }
+    }
+    owned
+}
+
 fn relation_parameter_by_display_name<'a>(
     relation: &FeatureInputRelationInstance,
     lane: &FeatureInputLane,
@@ -9105,11 +9106,9 @@ fn relation_parameter_by_display_name<'a>(
         .filter(|scalar| scalar.role == FeatureInputScalarRole::Display)
         .filter_map(|scalar| names.get(scalar.name.as_str()).copied())
         .flat_map(|name| {
-            parameters.iter().filter(move |parameter| {
-                &parameter.owner == owner
-                    && parameter.name == name
-                    && parameter.native_ref.is_none()
-            })
+            parameters
+                .iter()
+                .filter(move |parameter| &parameter.owner == owner && parameter.name == name)
         });
     let first = matches.next()?;
     matches
@@ -12713,12 +12712,12 @@ mod profile_join_tests {
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
         bind_sweep_adjacent_profiles, dimensioned_circle_surface_transforms,
         dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
-        line_reference_direction, marker_entities, marker_point_locus, profile_loci_by_marker,
-        project_dimensioned_sketch_geometry, project_relation_point_geometry,
-        project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
-        relation_parameter_by_display_name, resolved_marker_locus,
-        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
-        sketch_frame_marker_transform, type_display_relation_parameters,
+        line_reference_direction, marker_entities, marker_point_locus, owned_relation_parameters,
+        profile_loci_by_marker, project_dimensioned_sketch_geometry,
+        project_relation_point_geometry, project_relation_solved_point_geometry,
+        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
+        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
+        single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
@@ -15118,7 +15117,7 @@ mod profile_join_tests {
             display: None,
             properties: BTreeMap::new(),
             pmi: None,
-            native_ref: None,
+            native_ref: Some("existing-driver".into()),
             dependencies: Vec::new(),
         };
         let scalar = FeatureInputScalar {
@@ -15179,6 +15178,35 @@ mod profile_join_tests {
             .map(|parameter| &parameter.id),
             Some(&parameter.id)
         );
+        assert_eq!(
+            owned_relation_parameters(
+                std::slice::from_ref(&feature),
+                std::slice::from_ref(&parameter),
+                std::slice::from_ref(&FeatureInputLane {
+                    relation_instances: vec![relation.clone()],
+                    ..lane.clone()
+                }),
+            )["relation"]
+                .as_ref(),
+            Some(&parameter.id)
+        );
+        let driving_relation = FeatureInputRelationInstance {
+            id: "driving-relation".into(),
+            parameter_scalar_ref: Some("existing-driver".into()),
+            display_scalar_ref: None,
+            scalar_refs: vec!["existing-driver".into()],
+            ..relation.clone()
+        };
+        let ownership = owned_relation_parameters(
+            std::slice::from_ref(&feature),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&FeatureInputLane {
+                relation_instances: vec![relation.clone(), driving_relation],
+                ..lane.clone()
+            }),
+        );
+        assert_eq!(ownership.len(), 1);
+        assert_eq!(ownership["driving-relation"].as_ref(), Some(&parameter.id));
 
         let mut detached = scalar;
         detached.id = "driver".into();
@@ -15226,6 +15254,7 @@ mod profile_join_tests {
                         ..relation.clone()
                     },
                     FeatureInputRelationInstance {
+                        id: "other-relation".into(),
                         family: FeatureInputRelationFamily::Angle,
                         parameter_scalar_ref: Some("other-driver".into()),
                         ..relation
