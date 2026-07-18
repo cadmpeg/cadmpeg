@@ -275,6 +275,11 @@ pub enum FeatureDefinition {
         /// Structural or presentation role of the node.
         role: FeatureTreeNodeRole,
     },
+    /// Direct-modeling session represented by its captured result bodies.
+    BaseFeature {
+        /// Bodies copied into the parametric timeline when the session closed.
+        bodies: BodySelection,
+    },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {
         /// Canonical principal-plane role.

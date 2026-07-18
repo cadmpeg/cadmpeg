@@ -188,6 +188,7 @@ struct DesignProjectionGaps {
     unprojected_dimensions: usize,
     profile_selections: usize,
     face_selections: usize,
+    body_selections: usize,
     partially_resolved_face_members: usize,
     native_edge_selections: usize,
     partially_resolved_edge_members: usize,
@@ -251,7 +252,7 @@ fn constraint_parameters(
 }
 
 fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGaps {
-    use cadmpeg_ir::features::{EdgeSelection, Extent, ExtrudeStart, FaceSelection};
+    use cadmpeg_ir::features::{BodySelection, EdgeSelection, Extent, ExtrudeStart, FaceSelection};
     use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
     use cadmpeg_ir::sketches::SketchConstraintDefinition;
     use std::collections::{HashMap, HashSet};
@@ -443,6 +444,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     for feature in &ir.model.features {
         match &feature.definition {
             FeatureDefinition::Native { .. } => gaps.native_features += 1,
+            FeatureDefinition::BaseFeature { bodies } => {
+                if matches!(bodies, BodySelection::Native(_) | BodySelection::Unresolved) {
+                    gaps.body_selections += 1;
+                }
+            }
             FeatureDefinition::Extrude {
                 profile,
                 start,
@@ -594,6 +600,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         format!(
             "{} feature face selection(s) retain native candidates because no unique topological face was resolved.",
             gaps.face_selections
+        ),
+    );
+    push(
+        gaps.body_selections,
+        format!(
+            "{} feature body selection(s) retain native identities because no unique solved body was resolved.",
+            gaps.body_selections
         ),
     );
     push(
@@ -810,6 +823,7 @@ pub fn decode(
                     &native.design_edge_identity_operands,
                     &native.design_face_operands,
                     &native.design_sketch_placements,
+                    &native.design_body_bindings,
                 );
             crate::design::bind_configuration_parameter_overrides(
                 &mut ir.model.configurations,
@@ -1093,6 +1107,7 @@ pub fn decode(
             &native.design_edge_identity_operands,
             &native.design_face_operands,
             &native.design_sketch_placements,
+            &native.design_body_bindings,
         );
     crate::design::bind_configuration_parameter_overrides(
         &mut ir.model.configurations,
@@ -2752,6 +2767,7 @@ mod tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -2781,6 +2797,7 @@ mod tests {
                 unprojected_dimensions: 1,
                 profile_selections: 1,
                 face_selections: 1,
+                body_selections: 0,
                 partially_resolved_face_members: 0,
                 native_edge_selections: 2,
                 partially_resolved_edge_members: 1,
@@ -2878,6 +2895,7 @@ mod tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,

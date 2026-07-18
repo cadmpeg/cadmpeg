@@ -8,17 +8,17 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::records::{
-    BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBodyBinding, DesignBodyBounds,
-    DesignBodyMember, DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement,
-    DesignConfiguration, DesignConfigurationKind, DesignConstructionOperandGroup,
-    DesignConstructionOperandIdentity, DesignConstructionPersistentIdentity,
-    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
-    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
-    DesignDimensionRecipeRecord, DesignDirectFaceOperation, DesignEdgeIdentityOperand,
-    DesignEdgeOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
+    BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBaseFeatureConstruction,
+    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignCoilExtent, DesignCoilSection,
+    DesignCoilSectionPlacement, DesignConfiguration, DesignConfigurationKind,
+    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    DesignConstructionPersistentIdentity, DesignDimensionAnnotationFrame,
+    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
+    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
+    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
+    DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
     DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObject, DesignObjectKind,
     DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
     DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignSketchPlacement,
@@ -491,7 +491,7 @@ fn neutral_configuration_id(
 
 /// Project parameter scopes and their document- or scope-owned parameters into
 /// the neutral construction history.
-// Faithful signature over eight parallel design-parameter slices; bundling them
+// Faithful signature over parallel design-parameter slices; bundling them
 // into a struct would only shift the fan-out to every caller.
 #[allow(clippy::too_many_arguments)]
 pub fn project_parameter_design(
@@ -517,6 +517,7 @@ pub fn project_parameter_design(
         &[],
         face_operands,
         placements,
+        &[],
     )
 }
 
@@ -532,13 +533,14 @@ pub fn project_parameter_design_with_edge_identities(
     edge_identity_operands: &[DesignEdgeIdentityOperand],
     face_operands: &[DesignFaceOperand],
     placements: &[DesignSketchPlacement],
+    body_bindings: &[DesignBodyBinding],
 ) -> (
     Vec<cadmpeg_ir::features::Feature>,
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
     use cadmpeg_ir::features::{
-        Angle, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection, Feature,
-        FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternForm,
+        Angle, BodySelection, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection,
+        Feature, FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternForm,
         PatternKind, ProfileRef, RadiusSpec, SketchSpace,
     };
     use std::collections::BTreeMap;
@@ -933,6 +935,42 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     }
                 })
+            } else if scope.kind == "Base Feature" {
+                scope.base_feature_construction.as_ref().map_or_else(
+                    || FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    },
+                    |construction| {
+                        let bodies = construction
+                            .body_entity_suffixes
+                            .iter()
+                            .filter_map(|suffix| {
+                                let matches = body_bindings
+                                    .iter()
+                                    .filter(|binding| {
+                                        native_stream(&binding.id) == Some(native_scope)
+                                            && binding.entity_suffix == *suffix
+                                    })
+                                    .filter_map(|binding| binding.body.clone())
+                                    .collect::<HashSet<_>>();
+                                (matches.len() == 1)
+                                    .then(|| matches.into_iter().next())
+                                    .flatten()
+                            })
+                            .collect::<Vec<_>>();
+                        let bodies = if bodies.len() == construction.body_entity_suffixes.len() {
+                            BodySelection::Resolved {
+                                bodies,
+                                native: scope.id.clone(),
+                            }
+                        } else {
+                            BodySelection::Native(scope.id.clone())
+                        };
+                        FeatureDefinition::BaseFeature { bodies }
+                    },
+                )
             } else {
                 FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -12725,6 +12763,7 @@ pub fn decode_parameter_scopes(
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
             scope.fixed_chamfer_parameters = exact_fixed_chamfer_parameters(bytes, &scope);
             scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
+            scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             scope.id = format!(
                 "f3d:{}:design-parameter-scope#{}",
                 entry.name, scope.byte_offset
@@ -12735,6 +12774,131 @@ pub fn decode_parameter_scopes(
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+fn exact_base_feature_construction(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignBaseFeatureConstruction> {
+    if scope.kind != "Base Feature" {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    if scope.frame_length == 267 {
+        return Some(DesignBaseFeatureConstruction {
+            body_entity_suffixes: Vec::new(),
+            body_entity_suffix_offsets: Vec::new(),
+            body_entity_fields: Vec::new(),
+            body_reference_records: Vec::new(),
+            body_reference_record_offsets: Vec::new(),
+            body_reference_fields: Vec::new(),
+            repeated_reference_fields: Vec::new(),
+            metadata_record: u32_at(bytes, usize::try_from(scope.byte_offset).ok()? + 37)?,
+            metadata_record_offset: scope.byte_offset + 37,
+            metadata_field: bytes.get(start + 45..start + 51)?.try_into().ok()?,
+            result_records: Vec::new(),
+            result_record_offsets: Vec::new(),
+            result_fields: Vec::new(),
+        });
+    }
+    let body_count = scope.frame_length.checked_sub(271)?.checked_div(52)?;
+    if body_count == 0 || body_count > 100_000 || scope.frame_length != 271 + body_count * 52 {
+        return None;
+    }
+    let body_count = usize::try_from(body_count).ok()?;
+    if bytes.get(start + 19) != Some(&1)
+        || u32_at(bytes, start + 20)? != u32::try_from(body_count.checked_mul(2)?).ok()?
+    {
+        return None;
+    }
+    let mut cursor = start + 24;
+    let mut read_u64_run = |count: usize| {
+        let mut values = Vec::with_capacity(count);
+        let mut offsets = Vec::with_capacity(count);
+        let mut fields = Vec::with_capacity(count);
+        for _ in 0..count {
+            if bytes.get(cursor) != Some(&1) {
+                return None;
+            }
+            values.push(read_u64(bytes, cursor + 1)?);
+            offsets.push(u64::try_from(cursor + 1).ok()?);
+            fields.push(bytes.get(cursor + 9..cursor + 15)?.try_into().ok()?);
+            cursor += 15;
+        }
+        Some((values, offsets, fields))
+    };
+    let (body_entity_suffixes, body_entity_suffix_offsets, body_entity_fields) =
+        read_u64_run(body_count)?;
+    let (body_reference_values, body_reference_record_offsets, body_reference_fields) =
+        read_u64_run(body_count)?;
+    let body_reference_records = body_reference_values
+        .into_iter()
+        .map(u32::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if bytes.get(cursor) != Some(&1) || bytes.get(cursor + 1..cursor + 11) != Some(&[0; 10]) {
+        return None;
+    }
+    cursor += 11;
+    if usize::try_from(u32_at(bytes, cursor)?).ok()? != body_count {
+        return None;
+    }
+    cursor += 4;
+    let mut repeated_reference_fields = Vec::with_capacity(body_count);
+    for expected in &body_reference_records {
+        if bytes.get(cursor) != Some(&1) || u32_at(bytes, cursor + 1)? != *expected {
+            return None;
+        }
+        repeated_reference_fields.push(bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?);
+        cursor += 11;
+    }
+    if bytes.get(cursor) != Some(&0) {
+        return None;
+    }
+    cursor += 1;
+    if bytes.get(cursor) != Some(&1) {
+        return None;
+    }
+    let metadata_record = u32::try_from(read_u64(bytes, cursor + 1)?).ok()?;
+    let metadata_record_offset = u64::try_from(cursor + 1).ok()?;
+    let metadata_field = bytes.get(cursor + 9..cursor + 15)?.try_into().ok()?;
+    cursor += 15;
+    if usize::try_from(u32_at(bytes, cursor)?).ok()? != body_count {
+        return None;
+    }
+    cursor += 4;
+    let mut result_records = Vec::with_capacity(body_count);
+    let mut result_record_offsets = Vec::with_capacity(body_count);
+    let mut result_fields = Vec::with_capacity(body_count);
+    for _ in 0..body_count {
+        if bytes.get(cursor) != Some(&1) {
+            return None;
+        }
+        result_records.push(u32_at(bytes, cursor + 1)?);
+        result_record_offsets.push(u64::try_from(cursor + 1).ok()?);
+        result_fields.push(bytes.get(cursor + 5..cursor + 11)?.try_into().ok()?);
+        cursor += 11;
+    }
+    let uuid_offset = usize::try_from(scope.kind_offset).ok()?.checked_sub(102)?;
+    (cursor <= uuid_offset
+        && bytes
+            .get(cursor..uuid_offset)
+            .is_some_and(|padding| padding.iter().all(|byte| *byte == 0)))
+    .then_some(DesignBaseFeatureConstruction {
+        body_entity_suffixes,
+        body_entity_suffix_offsets,
+        body_entity_fields,
+        body_reference_records,
+        body_reference_record_offsets,
+        body_reference_fields,
+        repeated_reference_fields,
+        metadata_record,
+        metadata_record_offset,
+        metadata_field,
+        result_records,
+        result_record_offsets,
+        result_fields,
+    })
 }
 
 fn exact_solid_primitive(
@@ -15181,6 +15345,7 @@ fn parse_parameter_scope(
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
         work_plane_reference: None,
@@ -17982,17 +18147,18 @@ mod relation_tests {
         bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
         contiguous_i32_program, decode_constraint_kinds, decode_fillet_radius_groups,
         decode_pattern_definition, design_feature_family, design_parameter_prefix,
-        directional_point_dimension, exact_atomic_constraint, exact_counted_dimension_relation,
-        exact_counted_offset, exact_direct_face_operation, exact_fixed_chamfer_parameters,
-        exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_offset_constraint,
-        exact_path_feature_construction, exact_solid_primitive, exact_work_plane_frame,
-        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
-        find_dimension_locus_pair, find_dimension_null_locus_pair,
-        historical_profile_face_candidates, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
-        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
-        neutral_sketch_point_id, next_indexed_record_offset, next_indexed_record_offset_with_index,
-        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
+        directional_point_dimension, exact_atomic_constraint, exact_base_feature_construction,
+        exact_counted_dimension_relation, exact_counted_offset, exact_direct_face_operation,
+        exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
+        exact_fixed_fillet_parameters, exact_offset_constraint, exact_path_feature_construction,
+        exact_solid_primitive, exact_work_plane_frame, expression_identifiers,
+        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
+        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
+        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
+        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
+        next_indexed_record_offset_with_index, null_locus_dimension_definition,
+        offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -21265,6 +21431,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -21473,6 +21640,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -21758,6 +21926,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25415,6 +25584,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25528,6 +25698,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -25688,6 +25859,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26190,6 +26362,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -26840,6 +27013,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -27042,6 +27216,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
             work_plane_reference: None,
@@ -27146,6 +27321,7 @@ mod relation_tests {
                 fixed_fillet_parameters: None,
                 fixed_chamfer_parameters: None,
                 path_feature_construction: None,
+                base_feature_construction: None,
                 work_plane_transform: None,
                 work_plane_transform_offset: None,
                 work_plane_reference: None,
@@ -27553,6 +27729,107 @@ mod relation_tests {
         assert!(!optional_slot_present);
         assert_eq!(end, bytes.len());
         assert!(parse_settled_entity_header(&bytes, 0).is_none());
+    }
+
+    #[test]
+    fn base_feature_scope_decodes_parallel_result_body_runs() {
+        let mut bytes = vec![0u8; 375];
+        bytes[19] = 1;
+        bytes[20..24].copy_from_slice(&4u32.to_le_bytes());
+        let mut cursor = 24;
+        for (value, field) in [
+            (101u64, [0, 0, 1, 0, 0, 0]),
+            (202, [0; 6]),
+            (301, [0; 6]),
+            (302, [0, 0, 2, 0, 0, 0]),
+        ] {
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 9].copy_from_slice(&value.to_le_bytes());
+            bytes[cursor + 9..cursor + 15].copy_from_slice(&field);
+            cursor += 15;
+        }
+        bytes[cursor] = 1;
+        cursor += 11;
+        bytes[cursor..cursor + 4].copy_from_slice(&2u32.to_le_bytes());
+        cursor += 4;
+        for reference in [301u32, 302] {
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 5].copy_from_slice(&reference.to_le_bytes());
+            cursor += 11;
+        }
+        cursor += 1;
+        bytes[cursor] = 1;
+        bytes[cursor + 1..cursor + 9].copy_from_slice(&401u64.to_le_bytes());
+        cursor += 15;
+        bytes[cursor..cursor + 4].copy_from_slice(&2u32.to_le_bytes());
+        cursor += 4;
+        for result in [501u32, 502] {
+            bytes[cursor] = 1;
+            bytes[cursor + 1..cursor + 5].copy_from_slice(&result.to_le_bytes());
+            cursor += 11;
+        }
+        assert!(cursor <= 171);
+
+        let scope = DesignParameterScope {
+            id: "f3d:Design/BulkStream.dat:design-parameter-scope#0".into(),
+            byte_offset: 0,
+            class_tag: "306".into(),
+            record_index: 1,
+            frame_length: 375,
+            kind: "Base Feature".into(),
+            kind_offset: 273,
+            extrude_operation: None,
+            extrude_operation_offset: None,
+            extrude_extent: None,
+            extrude_extent_offsets: None,
+            extrude_direction_reversed: None,
+            extrude_direction_reversed_offset: None,
+            extrude_start: None,
+            extrude_start_offset: None,
+            coil_operation: None,
+            coil_operation_offset: None,
+            coil_extent: None,
+            coil_extent_offset: None,
+            coil_section: None,
+            coil_section_offset: None,
+            coil_section_placement: None,
+            coil_section_placement_offset: None,
+            coil_clockwise: None,
+            coil_clockwise_offset: None,
+            feature_ordinal: 1,
+            feature_ordinal_offset: 0,
+            history_state_id: Some(2),
+            history_state_id_offset: 0,
+            previous_history_state_id: Some(2),
+            previous_history_state_id_offset: 0,
+            reference_count_offset: 0,
+            reference_members: vec![301],
+            reference_member_offsets: vec![0],
+            solid_primitive: None,
+            direct_face_operation: None,
+            fixed_extrude_parameters: None,
+            fixed_fillet_parameters: None,
+            fixed_chamfer_parameters: None,
+            path_feature_construction: None,
+            base_feature_construction: None,
+            work_plane_transform: None,
+            work_plane_transform_offset: None,
+            work_plane_reference: None,
+            work_plane_reference_offset: None,
+            extrude_profile: None,
+            entity_id: None,
+            entity_suffix: None,
+            entity_reference_offset: None,
+            paired_class_tag: "261".into(),
+            paired_byte_offset: 375,
+        };
+        let construction = exact_base_feature_construction(&bytes, &scope)
+            .expect("generated Base Feature frame is canonical");
+        assert_eq!(construction.body_entity_suffixes, [101, 202]);
+        assert_eq!(construction.body_reference_records, [301, 302]);
+        assert_eq!(construction.metadata_record, 401);
+        assert_eq!(construction.result_records, [501, 502]);
+        assert_eq!(construction.body_entity_fields[0], [0, 0, 1, 0, 0, 0]);
     }
 
     #[test]

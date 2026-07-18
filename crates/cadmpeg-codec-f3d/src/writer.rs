@@ -1376,6 +1376,7 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         &native.design_edge_identity_operands,
         &native.design_face_operands,
         &native.design_sketch_placements,
+        &native.design_body_bindings,
     );
     if target.model.parameters != projected_parameters {
         return Err(CodecError::Malformed(

@@ -1020,6 +1020,9 @@ pub struct DesignParameterScope {
     /// Exact fixed construction carried by a Loft or Sweep scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_feature_construction: Option<DesignPathFeatureConstruction>,
+    /// Exact result-body references carried by a `Base Feature` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_feature_construction: Option<DesignBaseFeatureConstruction>,
     /// Exact row-major local-to-model frame carried by a `WorkPlane` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_transform: Option<[[f64; 4]; 4]>,
@@ -1048,6 +1051,37 @@ pub struct DesignParameterScope {
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+/// Result bodies captured when a Fusion direct-modeling Base Feature closes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignBaseFeatureConstruction {
+    /// Ordered Design body entity suffixes exposed by the Base Feature.
+    pub body_entity_suffixes: Vec<u64>,
+    /// Byte offsets parallel to `body_entity_suffixes`.
+    pub body_entity_suffix_offsets: Vec<u64>,
+    /// Six-byte source fields parallel to `body_entity_suffixes`.
+    pub body_entity_fields: Vec<[u8; 6]>,
+    /// Ordered passive body-reference records parallel to the body suffixes.
+    pub body_reference_records: Vec<u32>,
+    /// Byte offsets parallel to `body_reference_records`.
+    pub body_reference_record_offsets: Vec<u64>,
+    /// Six-byte source fields parallel to `body_reference_records`.
+    pub body_reference_fields: Vec<[u8; 6]>,
+    /// Six-byte source fields in the repeated passive-reference run.
+    pub repeated_reference_fields: Vec<[u8; 6]>,
+    /// Shared passive-reference metadata record.
+    pub metadata_record: u32,
+    /// Byte offset of `metadata_record`.
+    pub metadata_record_offset: u64,
+    /// Six-byte source field following `metadata_record`.
+    pub metadata_field: [u8; 6],
+    /// Ordered result-body join records parallel to the body suffixes.
+    pub result_records: Vec<u32>,
+    /// Byte offsets parallel to `result_records`.
+    pub result_record_offsets: Vec<u64>,
+    /// Six-byte source fields parallel to `result_records`.
+    pub result_fields: Vec<[u8; 6]>,
 }
 
 /// Sketch-profile selection frame named by an Extrude scope.

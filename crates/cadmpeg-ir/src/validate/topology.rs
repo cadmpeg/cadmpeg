@@ -1748,6 +1748,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         let mut face_selections = Vec::new();
         let mut body_selections = Vec::new();
         match &feature.definition {
+            FeatureDefinition::BaseFeature { bodies } => body_selections.push(bodies),
             FeatureDefinition::Extrude {
                 profile,
                 direction,
