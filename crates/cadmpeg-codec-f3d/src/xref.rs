@@ -209,23 +209,25 @@ pub(crate) fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
                 .as_ref()
                 .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
     });
-    let streams = streams
+    let mut streams = streams
         .filter_map(|entry| scan.entry_bytes(&entry.name).ok())
         .filter_map(|bytes| {
-            let headers = indexed_headers(bytes);
-            let class_tag = xref_class_tag(bytes, &headers, &roles)?;
-            Some((bytes, headers, class_tag))
+            let headers = indexed_records(bytes);
+            let mut matrices = std::collections::HashMap::new();
+            let class_tag = xref_class_tag(bytes, &headers, &roles, &mut matrices)?;
+            Some((bytes, headers, class_tag, matrices))
         })
         .collect::<Vec<_>>();
     let mut expanded = Vec::new();
     for reference in &table.references {
         let mut occurrences = Vec::new();
-        for (bytes, headers, class_tag) in &streams {
+        for (bytes, headers, class_tag, matrices) in &mut streams {
             occurrences.extend(occurrence_transforms(
                 bytes,
                 headers,
                 &reference.neutron_role,
                 class_tag,
+                matrices,
             ));
         }
         if occurrences.is_empty() {
@@ -246,19 +248,37 @@ pub(crate) fn bind_occurrences(scan: &ContainerScan, table: &mut XrefTable) {
     table.references = expanded;
 }
 
-fn xref_class_tag(bytes: &[u8], headers: &[(usize, String)], roles: &[&str]) -> Option<String> {
-    let encoded = roles
-        .iter()
-        .map(|role| (role.encode_utf16().collect::<Vec<_>>(), *role))
-        .collect::<Vec<_>>();
+#[derive(Debug)]
+struct IndexedRecord {
+    offset: usize,
+    end: usize,
+    class_tag: String,
+    record_index: u64,
+}
+
+fn xref_class_tag(
+    bytes: &[u8],
+    records: &[IndexedRecord],
+    roles: &[&str],
+    matrices: &mut std::collections::HashMap<u64, Option<[[f64; 4]; 4]>>,
+) -> Option<String> {
     let mut by_tag = std::collections::HashMap::<String, std::collections::HashSet<&str>>::new();
-    for (at, class_tag) in headers {
-        let role_at = *at + 185;
-        let Some((candidate, _)) = lp_utf16(bytes, role_at) else {
-            continue;
-        };
-        if let Some((_, role)) = encoded.iter().find(|(encoded, _)| *encoded == candidate) {
-            by_tag.entry(class_tag.clone()).or_default().insert(role);
+    for record in records {
+        for role in roles {
+            let tails = role_tails(bytes, record, role);
+            if tails.len() == 1
+                && occurrence_tail(bytes, tails[0]).is_some_and(|tail| {
+                    tail.transform.is_some()
+                        || tail.references.iter().any(|reference| {
+                            indexed_transform(bytes, records, *reference, matrices).is_some()
+                        })
+                })
+            {
+                by_tag
+                    .entry(record.class_tag.clone())
+                    .or_default()
+                    .insert(role);
+            }
         }
     }
     let maximum = by_tag.values().map(std::collections::HashSet::len).max()?;
@@ -271,45 +291,31 @@ fn xref_class_tag(bytes: &[u8], headers: &[(usize, String)], roles: &[&str]) -> 
 
 fn occurrence_transforms(
     bytes: &[u8],
-    headers: &[(usize, String)],
+    records: &[IndexedRecord],
     role: &str,
     xref_class_tag: &str,
+    indexed_matrices: &mut std::collections::HashMap<u64, Option<[[f64; 4]; 4]>>,
 ) -> Vec<Option<[[f64; 4]; 4]>> {
-    let encoded_role = role.encode_utf16().collect::<Vec<_>>();
     let mut out = Vec::new();
-    for (ordinal, (at, class_tag)) in headers.iter().enumerate() {
-        if class_tag != xref_class_tag {
+    for record in records {
+        if record.class_tag != xref_class_tag {
             continue;
         }
-        let at = *at;
-        let role_at = at + 185;
-        let Some((candidate, _)) = lp_utf16(bytes, role_at) else {
+        let tails = role_tails(bytes, record, role);
+        let [after_role] = tails.as_slice() else {
             continue;
         };
-        if candidate != encoded_role {
+        let Some(tail) = occurrence_tail(bytes, *after_role) else {
             continue;
+        };
+        let mut matrices = tail.transform.into_iter().collect::<Vec<_>>();
+        if matrices.is_empty() {
+            matrices.extend(tail.references.into_iter().filter_map(|reference| {
+                indexed_transform(bytes, records, reference, indexed_matrices)
+            }));
         }
-        let end = headers
-            .get(ordinal + 1)
-            .map_or(bytes.len(), |(offset, _)| *offset);
-        let mut matrices = Vec::new();
-        let mut search_at = at;
-        while search_at < end {
-            let Some(relative) = find_lp_utf16(bytes.get(search_at..end).unwrap_or_default(), role)
-            else {
-                break;
-            };
-            let role_at = search_at + relative;
-            let Some((_, after_role)) = lp_utf16(bytes, role_at) else {
-                break;
-            };
-            if let Some(matrix) = role_adjacent_transform(bytes, after_role) {
-                if !matrices.contains(&matrix) {
-                    matrices.push(matrix);
-                }
-            }
-            search_at = after_role;
-        }
+        matrices.sort_by(matrix_order);
+        matrices.dedup();
         out.push(match matrices.as_slice() {
             [matrix] => Some(*matrix),
             _ => None,
@@ -318,7 +324,7 @@ fn occurrence_transforms(
     out
 }
 
-fn indexed_headers(bytes: &[u8]) -> Vec<(usize, String)> {
+fn indexed_records(bytes: &[u8]) -> Vec<IndexedRecord> {
     let mut headers = Vec::new();
     for at in 0..bytes.len().saturating_sub(11) {
         let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
@@ -328,33 +334,107 @@ fn indexed_headers(bytes: &[u8]) -> Vec<(usize, String)> {
             && class_tag.len() == 3
             && class_tag.bytes().all(|byte| byte.is_ascii_digit())
         {
-            headers.push((at, class_tag));
+            let Some(record_index) = bytes
+                .get(after_tag..after_tag + 8)
+                .and_then(|raw| raw.try_into().ok())
+                .map(u64::from_le_bytes)
+            else {
+                continue;
+            };
+            headers.push((at, class_tag, record_index));
         }
     }
     headers
+        .iter()
+        .enumerate()
+        .map(
+            |(ordinal, (offset, class_tag, record_index))| IndexedRecord {
+                offset: *offset,
+                end: headers
+                    .get(ordinal + 1)
+                    .map_or(bytes.len(), |(offset, _, _)| *offset),
+                class_tag: class_tag.clone(),
+                record_index: *record_index,
+            },
+        )
+        .collect()
 }
 
-fn find_lp_utf16(bytes: &[u8], value: &str) -> Option<usize> {
+fn role_tails(bytes: &[u8], record: &IndexedRecord, value: &str) -> Vec<usize> {
     let encoded = value.encode_utf16().collect::<Vec<_>>();
-    (0..bytes.len().saturating_sub(4))
-        .find(|at| lp_utf16(bytes, *at).is_some_and(|(candidate, _)| candidate == encoded))
+    let mut needle = Vec::with_capacity(4 + encoded.len() * 2);
+    needle.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+    needle.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+    bytes[record.offset..record.end]
+        .windows(needle.len())
+        .enumerate()
+        .filter_map(|(relative, candidate)| {
+            (candidate == needle).then_some(record.offset + relative + needle.len())
+        })
+        .collect()
 }
 
-fn role_adjacent_transform(bytes: &[u8], mut at: usize) -> Option<[[f64; 4]; 4]> {
+struct OccurrenceTail {
+    references: Vec<u64>,
+    transform: Option<[[f64; 4]; 4]>,
+}
+
+fn occurrence_tail(bytes: &[u8], mut at: usize) -> Option<OccurrenceTail> {
     if bytes.get(at) != Some(&0) {
         return None;
     }
     at += 5;
+    let mut references = Vec::new();
     while bytes.get(at) == Some(&1) {
         if bytes.get(at + 9..at + 11) != Some(&[0, 0]) {
             return None;
         }
+        references.push(u64::from_le_bytes(
+            bytes.get(at + 1..at + 9)?.try_into().ok()?,
+        ));
         at = at.checked_add(15)?;
     }
     if bytes.get(at..at + 2) != Some(&[0, 0]) {
         return None;
     }
-    decode_rigid_matrix(bytes, at + 2)
+    Some(OccurrenceTail {
+        references,
+        transform: decode_rigid_matrix(bytes, at + 2),
+    })
+}
+
+fn indexed_transform(
+    bytes: &[u8],
+    records: &[IndexedRecord],
+    record_index: u64,
+    cache: &mut std::collections::HashMap<u64, Option<[[f64; 4]; 4]>>,
+) -> Option<[[f64; 4]; 4]> {
+    if let Some(matrix) = cache.get(&record_index) {
+        return *matrix;
+    }
+    let mut matrices = records
+        .iter()
+        .filter(|record| record.record_index == record_index)
+        .flat_map(|record| record.offset..record.end.saturating_sub(127))
+        .filter_map(|at| decode_rigid_matrix(bytes, at))
+        .collect::<Vec<_>>();
+    matrices.sort_by(matrix_order);
+    matrices.dedup();
+    let resolved = match matrices.as_slice() {
+        [matrix] => Some(*matrix),
+        _ => None,
+    };
+    cache.insert(record_index, resolved);
+    resolved
+}
+
+fn matrix_order(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> std::cmp::Ordering {
+    left.iter()
+        .flatten()
+        .zip(right.iter().flatten())
+        .map(|(left, right)| left.total_cmp(right))
+        .find(|order| !order.is_eq())
+        .unwrap_or(std::cmp::Ordering::Equal)
 }
 
 fn decode_rigid_matrix(bytes: &[u8], at: usize) -> Option<[[f64; 4]; 4]> {
@@ -392,20 +472,20 @@ fn lp_ascii(bytes: &[u8], at: usize) -> Option<(String, usize)> {
     ))
 }
 
-fn lp_utf16(bytes: &[u8], at: usize) -> Option<(Vec<u16>, usize)> {
-    let count =
-        usize::try_from(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?)).ok()?;
-    let end = at.checked_add(4)?.checked_add(count.checked_mul(2)?)?;
-    let values = bytes
-        .get(at + 4..end)?
-        .chunks_exact(2)
-        .map(|raw| u16::from_le_bytes([raw[0], raw[1]]))
-        .collect();
-    Some((values, end))
-}
-
 #[cfg(test)]
 mod tests {
+    fn placement_record(index: u64, transform: [[f64; 4]; 4]) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3_u32.to_le_bytes());
+        bytes.extend_from_slice(b"381");
+        bytes.extend_from_slice(&index.to_le_bytes());
+        bytes.extend_from_slice(&[0; 17]);
+        for value in transform.into_iter().flatten() {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        bytes
+    }
+
     fn occurrence_record(
         role: &str,
         ordinal: u32,
@@ -455,9 +535,16 @@ mod tests {
         ];
         let mut bytes = occurrence_record("role", 10, &[], Some(first));
         bytes.extend_from_slice(&occurrence_record("role", 11, &[42, 43], Some(second)));
+        let mut matrices = std::collections::HashMap::new();
 
         assert_eq!(
-            super::occurrence_transforms(&bytes, &super::indexed_headers(&bytes), "role", "380"),
+            super::occurrence_transforms(
+                &bytes,
+                &super::indexed_records(&bytes),
+                "role",
+                "380",
+                &mut matrices,
+            ),
             vec![Some(first), Some(second)]
         );
     }
@@ -471,10 +558,63 @@ mod tests {
         nonrigid[3][3] = 1.0;
         let mut bytes = occurrence_record("role", 10, &[], None);
         bytes.extend_from_slice(&occurrence_record("role", 11, &[], Some(nonrigid)));
+        let mut matrices = std::collections::HashMap::new();
 
         assert_eq!(
-            super::occurrence_transforms(&bytes, &super::indexed_headers(&bytes), "role", "380"),
+            super::occurrence_transforms(
+                &bytes,
+                &super::indexed_records(&bytes),
+                "role",
+                "380",
+                &mut matrices,
+            ),
             vec![None, None]
+        );
+    }
+
+    #[test]
+    fn occurrence_resolves_matrix_from_referenced_indexed_record() {
+        let transform = [
+            [0.0, 0.0, 1.0, 2.0],
+            [0.0, 1.0, 0.0, 3.0],
+            [-1.0, 0.0, 0.0, 4.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let mut bytes = placement_record(42, transform);
+        bytes.extend_from_slice(&occurrence_record("role", 10, &[42], None));
+        let records = super::indexed_records(&bytes);
+        let mut matrices = std::collections::HashMap::new();
+        let class_tag = super::xref_class_tag(&bytes, &records, &["role"], &mut matrices);
+
+        assert_eq!(class_tag.as_deref(), Some("380"));
+        assert_eq!(
+            super::occurrence_transforms(&bytes, &records, "role", "380", &mut matrices),
+            vec![Some(transform)]
+        );
+    }
+
+    #[test]
+    fn role_adjacent_matrix_precedes_other_referenced_matrices() {
+        let local = [
+            [1.0, 0.0, 0.0, 5.0],
+            [0.0, 1.0, 0.0, 6.0],
+            [0.0, 0.0, 1.0, 7.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let referenced = [
+            [0.0, -1.0, 0.0, 2.0],
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 0.0, 1.0, 4.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let mut bytes = placement_record(42, referenced);
+        bytes.extend_from_slice(&occurrence_record("role", 10, &[42], Some(local)));
+        let records = super::indexed_records(&bytes);
+        let mut matrices = std::collections::HashMap::new();
+
+        assert_eq!(
+            super::occurrence_transforms(&bytes, &records, "role", "380", &mut matrices),
+            vec![Some(local)]
         );
     }
 }
