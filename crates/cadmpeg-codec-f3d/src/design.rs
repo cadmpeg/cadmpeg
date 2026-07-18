@@ -4036,14 +4036,53 @@ fn historical_selection_regions(
     histories: &[crate::history_records::AsmHistory],
     linear_tolerance: f64,
 ) -> Option<ResolvedProfileSelection> {
-    let member_points = members
-        .iter()
-        .map(|member| {
-            historical_member_points(member, histories)
-                .or_else(|| resolved_selection_member_points(member, sketch, entities))
-        })
-        .collect::<Option<Vec<_>>>()?;
     let tolerance = linear_tolerance.max(1.0e-7);
+    let mut states = HashMap::new();
+    for state in histories.iter().flat_map(|history| &history.states) {
+        states
+            .entry(state.state_id)
+            .and_modify(|state| *state = None)
+            .or_insert(Some(state));
+    }
+    let mut state_ids = members
+        .iter()
+        .flat_map(|member| member.historical_state_ids.iter().copied())
+        .collect::<Vec<_>>();
+    state_ids.sort_unstable();
+    state_ids.dedup();
+    let state_selections = state_ids
+        .into_iter()
+        .filter_map(|state_id| {
+            let topology = states.get(&state_id)?.as_ref()?.topology.as_ref()?;
+            let member_points = members
+                .iter()
+                .map(|member| {
+                    historical_member_points_in_state(member, topology)
+                        .or_else(|| resolved_selection_member_points(member, sketch, entities))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            selection_for_member_points(members, sketch, entities, &member_points, tolerance)
+        })
+        .collect::<Vec<_>>();
+    if !state_selections.is_empty() {
+        return unique_resolved_selection(state_selections.into_iter().map(Some));
+    }
+    {
+        let member_points = members
+            .iter()
+            .map(|member| resolved_selection_member_points(member, sketch, entities))
+            .collect::<Option<Vec<_>>>()?;
+        selection_for_member_points(members, sketch, entities, &member_points, tolerance)
+    }
+}
+
+fn selection_for_member_points(
+    members: &[&DesignExtrudeSelectionMember],
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    member_points: &[Vec<Point3>],
+    tolerance: f64,
+) -> Option<ResolvedProfileSelection> {
     let all_points = member_points.iter().flatten().copied().collect::<Vec<_>>();
     if let Some(selection) = selection_containing_points(sketch, entities, &all_points, tolerance) {
         return Some(selection);
@@ -5390,6 +5429,51 @@ fn region_containing_points(
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
         .collect::<Vec<_>>();
+    let incidences = projected
+        .iter()
+        .map(|point| {
+            sketch
+                .profiles
+                .iter()
+                .enumerate()
+                .filter(|(_, profile)| {
+                    profile.iter().any(|use_| {
+                        entities
+                            .iter()
+                            .find(|entity| entity.id == use_.entity)
+                            .is_some_and(|entity| point_on_sketch_entity(*point, entity, tolerance))
+                    })
+                })
+                .map(|(index, _)| index)
+                .collect::<HashSet<_>>()
+        })
+        .collect::<Vec<_>>();
+    let region = |outer: usize| {
+        let holes = immediate_containment_children(outer, &containment);
+        projected
+            .iter()
+            .zip(&incidences)
+            .all(|(point, incident)| {
+                incident.contains(&outer)
+                    || holes.iter().any(|hole| incident.contains(hole))
+                    || incident.is_empty()
+                        && boundaries[outer].contains_point(*point)
+                        && holes
+                            .iter()
+                            .all(|hole| !boundaries[*hole].contains_point(*point))
+            })
+            .then_some((outer, holes))
+    };
+    let closure_matches = (0..boundaries.len()).filter_map(region).collect::<Vec<_>>();
+    if let [(outer, holes)] = closure_matches.as_slice() {
+        return Some(SketchProfileRegion::Loops {
+            outer: u32::try_from(*outer).ok()?,
+            holes: holes
+                .iter()
+                .map(|hole| u32::try_from(*hole).ok())
+                .collect::<Option<Vec<_>>>()?,
+        });
+    }
     if projected.iter().any(|point| {
         sketch.profiles.iter().any(|profile| {
             profile.iter().any(|use_| {
@@ -5425,25 +5509,29 @@ fn region_containing_points(
             .iter()
             .all(|other| other == *candidate || containment[*other][**candidate])
     })?;
-    let mut holes = Vec::new();
-    for candidate in 0..boundaries.len() {
-        if candidate == outer || !containment[outer][candidate] {
-            continue;
-        }
-        let has_intermediate_parent = boundaries.iter().enumerate().any(|(index, _)| {
-            index != outer
-                && index != candidate
-                && containment[outer][index]
-                && containment[index][candidate]
-        });
-        if !has_intermediate_parent {
-            holes.push(u32::try_from(candidate).ok()?);
-        }
-    }
+    let holes = immediate_containment_children(outer, &containment)
+        .into_iter()
+        .map(|candidate| u32::try_from(candidate).ok())
+        .collect::<Option<Vec<_>>>()?;
     Some(SketchProfileRegion::Loops {
         outer: u32::try_from(outer).ok()?,
         holes,
     })
+}
+
+fn immediate_containment_children(outer: usize, containment: &[Vec<bool>]) -> Vec<usize> {
+    (0..containment.len())
+        .filter(|candidate| {
+            *candidate != outer
+                && containment[outer][*candidate]
+                && !(0..containment.len()).any(|intermediate| {
+                    intermediate != outer
+                        && intermediate != *candidate
+                        && containment[outer][intermediate]
+                        && containment[intermediate][*candidate]
+                })
+        })
+        .collect()
 }
 
 enum ProfileBoundary {
@@ -6367,9 +6455,9 @@ fn arcs_intersect(left: (Point2, f64, f64, f64), right: (Point2, f64, f64, f64))
     })
 }
 
-fn historical_member_points(
+fn historical_member_points_in_state(
     member: &DesignExtrudeSelectionMember,
-    histories: &[crate::history_records::AsmHistory],
+    topology: &crate::history_records::AsmHistoricalTopology,
 ) -> Option<Vec<Point3>> {
     use crate::records::AsmHistoricalEntityKind;
 
@@ -6384,27 +6472,7 @@ fn historical_member_points(
     let entity_ref = member
         .historical_entity_ref
         .or_else(|| i64::try_from(member.local_id).ok())?;
-    let mut states = HashMap::new();
-    for state in histories.iter().flat_map(|history| &history.states) {
-        states
-            .entry(state.state_id)
-            .and_modify(|state| *state = None)
-            .or_insert(Some(state));
-    }
-    let mut positions = Vec::new();
-    for state_id in &member.historical_state_ids {
-        let Some(Some(state)) = states.get(state_id) else {
-            continue;
-        };
-        let Some(topology) = state.topology.as_ref() else {
-            continue;
-        };
-        if let Some(mut state_positions) = historical_entity_positions(kind, entity_ref, topology) {
-            positions.append(&mut state_positions);
-        }
-    }
-    positions.dedup_by(|a, b| a == b);
-    (!positions.is_empty()).then_some(positions)
+    historical_entity_positions(kind, entity_ref, topology)
 }
 
 fn historical_entity_positions(
@@ -17394,6 +17462,22 @@ mod relation_tests {
                 outer: 2,
                 holes: Vec::new(),
             })
+        );
+        assert_eq!(
+            region_containing_points(
+                &sketch,
+                &entities,
+                &[Point3::new(0.0, 5.0, 0.0), Point3::new(2.0, 5.0, 0.0)],
+                1.0e-6,
+            ),
+            Some(SketchProfileRegion::Loops {
+                outer: 0,
+                holes: vec![1],
+            })
+        );
+        assert_eq!(
+            region_containing_points(&sketch, &entities, &[Point3::new(2.0, 5.0, 0.0)], 1.0e-6),
+            None
         );
     }
 
