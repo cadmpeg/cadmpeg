@@ -17899,6 +17899,7 @@ mod resolved_sketch_tests {
             axis: [0.0, 0.0, 1.0],
             ref_direction: [1.0, 0.0, 0.0],
             radius: 2.0,
+            ratio: 1.0,
             half_angle: std::f64::consts::FRAC_PI_4,
         });
         let secant_torus = CarrierEquation::Torus(TorusEquation {
@@ -18020,6 +18021,7 @@ mod resolved_sketch_tests {
             axis: [0.0, 0.0, 1.0],
             ref_direction: [1.0, 0.0, 0.0],
             radius: 2.0,
+            ratio: 1.0,
             half_angle: std::f64::consts::FRAC_PI_4,
         });
         let second = CarrierEquation::Cone(ConeEquation {
@@ -18027,6 +18029,7 @@ mod resolved_sketch_tests {
             axis: [0.0, 0.0, 1.0],
             ref_direction: [1.0, 0.0, 0.0],
             radius: 4.0,
+            ratio: 1.0,
             half_angle: 0.5_f64.atan(),
         });
         let candidates = coaxial_cones_circle_candidates(first, second);
@@ -18051,6 +18054,7 @@ mod resolved_sketch_tests {
             axis: [0.0, 0.0, -1.0],
             ref_direction: [1.0, 0.0, 0.0],
             radius: 4.0,
+            ratio: 1.0,
             half_angle: 0.5_f64.atan(),
         });
         let reversed_candidates = coaxial_cones_circle_candidates(first, reversed);
@@ -18067,6 +18071,7 @@ mod resolved_sketch_tests {
             axis: [0.0, 0.0, 1.0],
             ref_direction: [1.0, 0.0, 0.0],
             radius: 4.0,
+            ratio: 1.0,
             half_angle: 0.5_f64.atan(),
         });
         assert!(coaxial_cones_circle_candidates(first, shifted).is_empty());
@@ -18337,6 +18342,7 @@ mod resolved_sketch_tests {
             axis: [0.0, 0.0, 1.0],
             ref_direction: [1.0, 0.0, 0.0],
             radius: 2.0,
+            ratio: 1.0,
             half_angle: std::f64::consts::FRAC_PI_4,
         });
         assert!(matches!(
@@ -18344,6 +18350,44 @@ mod resolved_sketch_tests {
             Some((CurveGeometry::Circle { center, radius, .. }, "plane_cone_circle"))
                 if center == Point3::new(0.0, 0.0, 3.0) && (radius - 5.0).abs() < 1e-12
         ));
+        let elliptical_cone = CarrierEquation::Cone(ConeEquation {
+            origin: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 2.0,
+            ratio: 0.5,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        });
+        assert!(matches!(
+            carrier_intersection_curve(cap, elliptical_cone),
+            Some((
+                CurveGeometry::Ellipse {
+                    center,
+                    major_radius,
+                    minor_radius,
+                    ..
+                },
+                "plane_cone_parallel_ellipse"
+            )) if center == Point3::new(0.0, 0.0, 3.0)
+                && (major_radius - 5.0).abs() < 1e-12
+                && (minor_radius - 2.5).abs() < 1e-12
+        ));
+        let elliptical_tangent = CarrierEquation::Plane(PlaneEquation {
+            origin: [5.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert_eq!(
+            solve_carriers(&[elliptical_cone, cap, elliptical_tangent]),
+            Some([5.0, 0.0, 3.0])
+        );
+        let elliptical_secant = CarrierEquation::Plane(PlaneEquation {
+            origin: [3.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert_eq!(
+            solve_carriers(&[elliptical_cone, cap, elliptical_secant]),
+            None
+        );
         let inverse_sqrt_two = 1.0 / 2.0_f64.sqrt();
         let cone_tangent_plane = CarrierEquation::Plane(PlaneEquation {
             origin: [0.0, 0.0, -2.0],
@@ -18665,7 +18709,12 @@ struct ConeEquation {
     axis: [f64; 3],
     ref_direction: [f64; 3],
     radius: f64,
+    ratio: f64,
     half_angle: f64,
+}
+
+fn circular_cone(cone: ConeEquation) -> bool {
+    cone.ratio.is_finite() && (cone.ratio - 1.0).abs() <= 1e-12
 }
 
 #[derive(Clone, Copy)]
@@ -18854,9 +18903,18 @@ fn intersect_two_planes_with_cone(
     let Some(axis) = normalized(cone.axis) else {
         return Vec::new();
     };
-    if denominator <= 1e-18 || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle) {
+    let Some(x_axis) = normalized(cone.ref_direction) else {
+        return Vec::new();
+    };
+    if denominator <= 1e-18
+        || dot(axis, x_axis).abs() > 1e-10
+        || !cone.ratio.is_finite()
+        || cone.ratio <= 0.0
+        || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle)
+    {
         return Vec::new();
     }
+    let y_axis = cross(axis, x_axis);
     let first_distance = dot(first.normal, first.origin);
     let second_distance = dot(second.normal, second.origin);
     let second_cross_direction = cross(second.normal, direction);
@@ -18869,15 +18927,20 @@ fn intersect_two_planes_with_cone(
     let relative = std::array::from_fn(|index| line_origin[index] - cone.origin[index]);
     let axial = dot(relative, axis);
     let axial_direction = dot(direction, axis);
-    let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
-    let radial_direction =
-        std::array::from_fn(|index| direction[index] - axial_direction * axis[index]);
+    let radial_x = dot(relative, x_axis);
+    let radial_y = dot(relative, y_axis) / cone.ratio;
+    let radial_direction_x = dot(direction, x_axis);
+    let radial_direction_y = dot(direction, y_axis) / cone.ratio;
     let slope = cone.half_angle.tan();
     let local_radius = cone.radius + axial * slope;
     let radius_rate = axial_direction * slope;
-    let quadratic = dot(radial_direction, radial_direction) - radius_rate * radius_rate;
-    let linear = 2.0 * (dot(radial, radial_direction) - local_radius * radius_rate);
-    let constant = dot(radial, radial) - local_radius * local_radius;
+    let quadratic = radial_direction_x
+        .mul_add(radial_direction_x, radial_direction_y * radial_direction_y)
+        - radius_rate * radius_rate;
+    let linear = 2.0
+        * (radial_x.mul_add(radial_direction_x, radial_y * radial_direction_y)
+            - local_radius * radius_rate);
+    let constant = radial_x.mul_add(radial_x, radial_y * radial_y) - local_radius * local_radius;
     let scale = quadratic
         .abs()
         .max(linear.abs())
@@ -19120,14 +19183,21 @@ fn point_on_carrier(point: [f64; 3], carrier: CarrierEquation) -> bool {
             (dot(radial, radial).sqrt() - cylinder.radius).abs() <= 1e-7 * cylinder.radius.max(1.0)
         }
         CarrierEquation::Cone(cone) => {
-            let Some(axis) = normalized(cone.axis) else {
+            let (Some(axis), Some(x_axis)) =
+                (normalized(cone.axis), normalized(cone.ref_direction))
+            else {
                 return false;
             };
+            if cone.ratio <= 0.0 || !cone.ratio.is_finite() || dot(axis, x_axis).abs() > 1e-10 {
+                return false;
+            }
+            let y_axis = cross(axis, x_axis);
             let relative = std::array::from_fn(|index| point[index] - cone.origin[index]);
             let axial = dot(relative, axis);
-            let radial = std::array::from_fn(|index| relative[index] - axial * axis[index]);
             let radius = cone.radius + axial * cone.half_angle.tan();
-            (dot(radial, radial).sqrt() - radius.abs()).abs() <= 1e-7 * radius.abs().max(1.0)
+            let radial_x = dot(relative, x_axis);
+            let radial_y = dot(relative, y_axis) / cone.ratio;
+            (radial_x.hypot(radial_y) - radius.abs()).abs() <= 1e-7 * radius.abs().max(1.0)
         }
         CarrierEquation::Sphere(sphere) => {
             let relative = std::array::from_fn(|index| point[index] - sphere.center[index]);
@@ -19655,7 +19725,7 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
             half_angle,
         } = &surface.geometry
         {
-            if (*ratio - 1.0).abs() <= 1e-12 {
+            if ratio.is_finite() && *ratio > 0.0 {
                 carriers.insert(
                     row.id,
                     CarrierEquation::Cone(ConeEquation {
@@ -19663,6 +19733,7 @@ fn placed_carriers(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, CarrierEqu
                         axis: [axis.x, axis.y, axis.z],
                         ref_direction: [ref_direction.x, ref_direction.y, ref_direction.z],
                         radius: *radius,
+                        ratio: *ratio,
                         half_angle: *half_angle,
                     }),
                 );
@@ -23428,6 +23499,9 @@ fn carrier_intersection_curve(
             let axis = normalized(cone.axis)?;
             let alignment = dot(normal, axis);
             let slope = cone.half_angle.tan();
+            if !circular_cone(cone) && (alignment.abs() - 1.0).abs() > 1e-10 {
+                return None;
+            }
             if slope.abs() > 1e-12 {
                 let apex: [f64; 3] = std::array::from_fn(|index| {
                     cone.origin[index] - (cone.radius / slope) * axis[index]
@@ -23464,15 +23538,29 @@ fn carrier_intersection_curve(
                 let center: [f64; 3] =
                     std::array::from_fn(|index| cone.origin[index] + axial * axis[index]);
                 let reference = normalized(cone.ref_direction)?;
-                return Some((
-                    CurveGeometry::Circle {
-                        center: Point3::new(center[0], center[1], center[2]),
-                        axis: Vector3::new(normal[0], normal[1], normal[2]),
-                        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                        radius,
-                    },
-                    "plane_cone_circle",
-                ));
+                let (geometry, tag) = if circular_cone(cone) {
+                    (
+                        CurveGeometry::Circle {
+                            center: Point3::new(center[0], center[1], center[2]),
+                            axis: Vector3::new(normal[0], normal[1], normal[2]),
+                            ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                            radius,
+                        },
+                        "plane_cone_circle",
+                    )
+                } else {
+                    (
+                        CurveGeometry::Ellipse {
+                            center: Point3::new(center[0], center[1], center[2]),
+                            axis: Vector3::new(normal[0], normal[1], normal[2]),
+                            major_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                            major_radius: radius,
+                            minor_radius: radius * cone.ratio,
+                        },
+                        "plane_cone_parallel_ellipse",
+                    )
+                };
+                return Some((geometry, tag));
             }
             plane_cone_conic(plane, cone)
         }
@@ -23643,6 +23731,9 @@ fn carrier_intersection_curve(
         }
         (CarrierEquation::Cone(cone), CarrierEquation::Sphere(sphere))
         | (CarrierEquation::Sphere(sphere), CarrierEquation::Cone(cone)) => {
+            if !circular_cone(cone) {
+                return None;
+            }
             let cone_axis = normalized(cone.axis)?;
             let relative: [f64; 3] =
                 std::array::from_fn(|index| sphere.center[index] - cone.origin[index]);
@@ -23972,6 +24063,9 @@ fn coaxial_cone_cylinder_circle_candidates(
     else {
         return Vec::new();
     };
+    if !circular_cone(cone) {
+        return Vec::new();
+    }
     let (Some(cone_axis), Some(cylinder_axis), Some(reference)) = (
         normalized(cone.axis),
         normalized(cylinder.axis),
@@ -24023,6 +24117,9 @@ fn coaxial_cones_circle_candidates(
     let (CarrierEquation::Cone(first), CarrierEquation::Cone(second)) = (first, second) else {
         return Vec::new();
     };
+    if !circular_cone(first) || !circular_cone(second) {
+        return Vec::new();
+    }
     let (Some(first_axis), Some(second_axis), Some(reference)) = (
         normalized(first.axis),
         normalized(second.axis),
@@ -24110,6 +24207,9 @@ fn apex_plane_cone_generator_candidates(
     else {
         return Vec::new();
     };
+    if !circular_cone(cone) {
+        return Vec::new();
+    }
     let Some(normal) = normalized(plane.normal) else {
         return Vec::new();
     };
@@ -24172,6 +24272,9 @@ fn coaxial_cone_sphere_circle_candidates(
     else {
         return Vec::new();
     };
+    if !circular_cone(cone) {
+        return Vec::new();
+    }
     let Some(axis) = normalized(cone.axis) else {
         return Vec::new();
     };
@@ -24235,6 +24338,9 @@ fn coaxial_cone_torus_circle_candidates(
     else {
         return Vec::new();
     };
+    if !circular_cone(cone) {
+        return Vec::new();
+    }
     let (Some(cone_axis), Some(torus_axis), Some(reference)) = (
         normalized(cone.axis),
         normalized(torus.axis),

@@ -994,6 +994,16 @@ An analytic carrier pair transfers its sole intersection-curve candidate without
 
 A plane through a circular cone's apex is tangent to the cone when the absolute dot product of their unit normal and axis equals the sine of the cone half-angle. Their intersection is the single generator through the apex in the projection of the cone axis onto the plane. A plane normal to the cone axis intersects it in one circle away from the apex. Substitution of an oblique plane basis into the cone equation yields a diagonal quadratic whose signs distinguish ellipse, parabola, and hyperbola carriers. Completing the square gives the conic center or vertex, in-plane principal direction, radii, and parabola focal distance. A plane through the apex that cuts the cone strictly inside its tangent angle produces two generators. The edge's paired solved endpoint orbits select a generator when exactly one line contains both endpoints.
 
+A positive-ratio elliptical cone uses local frame coordinates
+`x² + (y / ratio)² = (radius + axial * tan(half_angle))²`. A plane normal to
+its axis intersects it in an ellipse with major-frame radius equal to the
+absolute local radius and minor-frame radius equal to that radius times the
+ratio. Intersecting two independent planes produces a model-space line; direct
+substitution into this equation yields a quadratic. One retained root defines
+a topological vertex, while two roots remain ambiguous without another
+selector. Circular-cone tangent, oblique-conic, coaxial-surface, and
+surface-of-revolution reductions require `ratio = 1`.
+
 ## 6. Features and datums
 
 `MdlStatus` names encode feature kinds as `<Kind> id <N>`. Defined names include
