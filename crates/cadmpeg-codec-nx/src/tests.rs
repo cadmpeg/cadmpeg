@@ -1951,6 +1951,50 @@ fn nx_cyclic_formula_table_omits_invalid_neutral_dependency_edges() {
 }
 
 #[test]
+fn nx_cyclic_formula_table_retains_independent_acyclic_dependencies() {
+    let expression = |id: &str, name: &str, text: &str, source_offset| crate::native::Expression {
+        id: format!("nx:test:expression#{id}"),
+        object_id: None,
+        record: None,
+        declaration: None,
+        name: name.to_string(),
+        parameter_index: None,
+        qualifier: None,
+        unit: crate::native::ExpressionUnit::Millimeter,
+        expression: text.to_string(),
+        value: None,
+        source_entry: "part".to_string(),
+        source_table: "table".to_string(),
+        source_offset,
+    };
+    let expressions = [
+        expression("p2", "p2", "p3 + 1", 10),
+        expression("p3", "p3", "p2 + 1", 20),
+        expression("p5", "p5", "p4 * 2", 40),
+        expression("p4", "p4", "7", 30),
+    ];
+    let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+    let mut annotations = cadmpeg_ir::AnnotationBuilder::new();
+
+    crate::decode::attach_expression_parameters(&mut ir, &expressions, &[], &[], &mut annotations);
+
+    assert_eq!(
+        ir.model
+            .parameters
+            .iter()
+            .map(|parameter| parameter.name.as_str())
+            .collect::<Vec<_>>(),
+        ["p4", "p5", "p2", "p3"]
+    );
+    assert_eq!(
+        ir.model.parameters[1].dependencies,
+        [ir.model.parameters[0].id.clone()]
+    );
+    assert!(ir.model.parameters[2].dependencies.is_empty());
+    assert!(ir.model.parameters[3].dependencies.is_empty());
+}
+
+#[test]
 fn nx_parameter_uses_group_binding_witnesses_and_project_consumers() {
     use crate::native::{feature_parameter_uses, FeatureParameterBinding};
 

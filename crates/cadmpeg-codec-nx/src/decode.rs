@@ -11957,12 +11957,12 @@ pub(crate) fn attach_expression_parameters(
     let tables = tables
         .into_iter()
         .map(|(table, mut expressions)| {
-            let dependency_order_valid = order_expression_dependencies(&mut expressions);
-            (table, expressions, dependency_order_valid)
+            let dependency_ordered_expressions = order_expression_dependencies(&mut expressions);
+            (table, expressions, dependency_ordered_expressions)
         })
         .collect::<Vec<_>>();
     let base_ordinal = ir.model.features.len() as u64;
-    for (table_ordinal, (table, expressions, dependency_order_valid)) in
+    for (table_ordinal, (table, expressions, dependency_ordered_expressions)) in
         tables.into_iter().enumerate()
     {
         let feature_id = FeatureId(table.split_once(":expression-table#").map_or_else(
@@ -12017,7 +12017,7 @@ pub(crate) fn attach_expression_parameters(
             annotations.derived(&id.0, "ordinal");
             annotations.derived(&id.0, "value");
             annotations.derived(&id.0, "native_ref");
-            let dependencies = if dependency_order_valid {
+            let dependencies = if dependency_ordered_expressions.contains(&expression.id) {
                 let mut seen_dependencies = BTreeSet::new();
                 crate::native::expression_parameter_names(&expression.expression)
                     .into_iter()
@@ -12110,7 +12110,9 @@ fn build_metadata_ir(
     Ok((ir, annotations.build(), unknowns))
 }
 
-fn order_expression_dependencies(expressions: &mut Vec<&crate::native::Expression>) -> bool {
+fn order_expression_dependencies(
+    expressions: &mut Vec<&crate::native::Expression>,
+) -> BTreeSet<String> {
     let mut indices_by_name = BTreeMap::<&str, Vec<usize>>::new();
     for (index, expression) in expressions.iter().enumerate() {
         indices_by_name
@@ -12134,20 +12136,28 @@ fn order_expression_dependencies(expressions: &mut Vec<&crate::native::Expressio
         .collect::<Vec<_>>();
     let mut emitted = BTreeSet::new();
     let mut order = Vec::with_capacity(expressions.len());
-    while order.len() < expressions.len() {
-        let Some(index) = (0..expressions.len()).find(|index| {
-            !emitted.contains(index)
-                && dependencies[*index]
-                    .iter()
-                    .all(|dependency| emitted.contains(dependency))
-        }) else {
-            return false;
-        };
+    while let Some(index) = (0..expressions.len()).find(|index| {
+        !emitted.contains(index)
+            && dependencies[*index]
+                .iter()
+                .all(|dependency| emitted.contains(dependency))
+    }) {
         emitted.insert(index);
         order.push(expressions[index]);
     }
+    let dependency_ordered_expression_ids = order
+        .iter()
+        .map(|expression| expression.id.clone())
+        .collect();
+    order.extend(
+        expressions
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| !emitted.contains(index))
+            .map(|(_, expression)| *expression),
+    );
     *expressions = order;
-    true
+    dependency_ordered_expression_ids
 }
 
 pub(crate) fn attach_block_dimension_parameter_consumers(
