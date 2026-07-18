@@ -24,6 +24,9 @@ use crate::b5::{loop_chain_senses, B5Graph, B5Pcurve, B5Profile, B5Surface};
 
 const POINT_TOLERANCE: f64 = 1.5e-3;
 
+type B5Support = (u32, u32, [f64; 2]);
+type B5SupportPlan = HashMap<u32, Vec<B5Support>>;
+
 struct RevolutionPlan {
     directrix: NurbsCurve,
     axis_origin: Point3,
@@ -158,7 +161,7 @@ fn transfer_complete(
     let mut edge_curve_plan = HashMap::<u32, CurvePlan>::new();
     let mut conflicting_edge_curves = HashSet::<u32>::new();
     let mut edge_helix_plan = HashMap::<u32, HelixPlan>::new();
-    let mut edge_support_plan = HashMap::<u32, Vec<(u32, u32, [f64; 2])>>::new();
+    let mut edge_support_plan = B5SupportPlan::new();
     let mut loop_senses = BTreeMap::new();
     let mut edge_ids = BTreeSet::new();
     for loop_ in graph.loops.values() {
@@ -344,7 +347,8 @@ fn transfer_complete(
     let Some(loop_orientation) = orient_loop_members(graph, loop_senses) else {
         return false;
     };
-    let vertex_tolerances = transfer_vertex_tolerances(graph, &pcurve_plan, &surface_plan);
+    let vertex_tolerances =
+        transfer_vertex_tolerances(graph, &edge_support_plan, &surface_plan, &pcurve_plan);
     for (&edge, supports) in &mut edge_support_plan {
         let vertices = graph.edge_vertices[&edge];
         let [Some(start), Some(end)] = vertices.map(|vertex| b5_vertex_point(graph, vertex)) else {
@@ -935,39 +939,24 @@ fn transfer_complete(
 
 fn transfer_vertex_tolerances(
     graph: &B5Graph,
-    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
+    supports: &B5SupportPlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
+    pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
 ) -> BTreeMap<usize, f64> {
     let mut tolerances = graph.vertex_tolerances.clone();
-    for loop_ in graph.loops.values() {
-        let Some(surface) = surfaces.get(&loop_.surface) else {
+    for (&edge, supports) in supports {
+        let Some(&vertices) = graph.edge_vertices.get(&edge) else {
             continue;
         };
-        for (&pcurve_id, &edge_id) in loop_.pcurves.iter().zip(&loop_.edges) {
-            let (Some((pcurve, _, parameter_range)), Some(&vertices)) =
-                (pcurves.get(&pcurve_id), graph.edge_vertices.get(&edge_id))
-            else {
+        let [Some(first), Some(second)] = vertices.map(|vertex| b5_vertex_point(graph, vertex))
+        else {
+            continue;
+        };
+        let coordinates = [first, second];
+        for support in supports {
+            let Some(lifted) = b5_support_endpoints(support, surfaces, pcurves) else {
                 continue;
             };
-            let occurrence_parameters = edge_pcurve_parameters(graph, edge_id, pcurve_id)
-                .filter(|parameters| ordered_subrange(*parameters, *parameter_range).is_some())
-                .unwrap_or(*parameter_range);
-            let Some(lifted) = occurrence_parameters
-                .map(|parameter| {
-                    let uv = pcurve_uv(pcurve, parameter)?;
-                    let point = surface_point(&surface.geometry, uv.u, uv.v)?;
-                    Some([point.x, point.y, point.z])
-                })
-                .into_iter()
-                .collect::<Option<Vec<_>>>()
-            else {
-                continue;
-            };
-            let [Some(first), Some(second)] = vertices.map(|vertex| b5_vertex_point(graph, vertex))
-            else {
-                continue;
-            };
-            let coordinates = [first, second];
             let forward = [
                 distance(coordinates[0], lifted[0]),
                 distance(coordinates[1], lifted[1]),
@@ -1774,7 +1763,7 @@ fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2
 }
 
 fn b5_edge_support_definition(
-    supports: &[(u32, u32, [f64; 2])],
+    supports: &[B5Support],
     surface_ids: &HashMap<u32, SurfaceId>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
     solved_parameter_range: Option<[f64; 2]>,
@@ -1833,7 +1822,7 @@ fn b5_edge_support_definition(
 }
 
 fn b5_supports_follow_edge(
-    supports: &[(u32, u32, [f64; 2])],
+    supports: &[B5Support],
     endpoints: [[f64; 3]; 2],
     tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
@@ -1849,7 +1838,7 @@ fn b5_supports_follow_edge(
 }
 
 fn orient_b5_supports_to_edge(
-    supports: &mut [(u32, u32, [f64; 2])],
+    supports: &mut [B5Support],
     endpoints: [[f64; 3]; 2],
     tolerances: [f64; 2],
     surfaces: &BTreeMap<u32, SurfacePlan>,
@@ -1870,7 +1859,7 @@ fn orient_b5_supports_to_edge(
 }
 
 fn b5_supports_agree(
-    supports: &[(u32, u32, [f64; 2])],
+    supports: &[B5Support],
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
 ) -> bool {
@@ -1907,7 +1896,7 @@ fn b5_support_endpoints(
 }
 
 fn b5_supports_follow_curve(
-    supports: &[(u32, u32, [f64; 2])],
+    supports: &[B5Support],
     curve: &CurvePlan,
     surfaces: &BTreeMap<u32, SurfacePlan>,
     pcurves: &BTreeMap<u32, (PcurveGeometry, bool, [f64; 2])>,
@@ -3067,8 +3056,9 @@ mod tests {
                 revolution: None,
             },
         )]);
+        let supports = HashMap::from([(3, vec![(4, 2, [0.25, 0.75])])]);
 
-        let tolerances = transfer_vertex_tolerances(&graph, &pcurves, &surfaces);
+        let tolerances = transfer_vertex_tolerances(&graph, &supports, &surfaces, &pcurves);
         assert!((tolerances[&0] - (1e-4 + 1e-9)).abs() < 1e-12);
         assert!(!tolerances.contains_key(&1));
     }
