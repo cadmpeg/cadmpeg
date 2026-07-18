@@ -5913,13 +5913,23 @@ impl MeshQuotient {
         (solutions.len() == 1).then(|| solutions.remove(0))
     }
 
+    #[cfg(test)]
     fn point_assignment_exists(
         &mut self,
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
     ) -> bool {
+        self.point_assignment_exists_with_budget(point_count, edge_candidates, None)
+    }
+
+    fn point_assignment_exists_with_budget(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        budget: Option<&MeshConstraintBudget>,
+    ) -> bool {
         !self
-            .point_assignments(point_count, edge_candidates, 1)
+            .point_assignments_with_budget(point_count, edge_candidates, 1, budget)
             .is_empty()
     }
 
@@ -5928,6 +5938,16 @@ impl MeshQuotient {
         point_count: usize,
         edge_candidates: &[Vec<[usize; 2]>],
         solution_limit: usize,
+    ) -> Vec<HashMap<usize, usize>> {
+        self.point_assignments_with_budget(point_count, edge_candidates, solution_limit, None)
+    }
+
+    fn point_assignments_with_budget(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        solution_limit: usize,
+        budget: Option<&MeshConstraintBudget>,
     ) -> Vec<HashMap<usize, usize>> {
         type PointNeighbors = HashMap<usize, HashSet<usize>>;
 
@@ -6001,6 +6021,7 @@ impl MeshQuotient {
             used: &mut HashSet<usize>,
             solutions: &mut Vec<Vec<usize>>,
             solution_limit: usize,
+            budget: Option<&MeshConstraintBudget>,
         ) {
             fn rollback(
                 assigned: &mut [Option<usize>],
@@ -6014,6 +6035,9 @@ impl MeshQuotient {
             }
 
             if solutions.len() >= solution_limit {
+                return;
+            }
+            if budget.is_some_and(|budget| !budget.charge()) {
                 return;
             }
             let values_for = |root: usize, assigned: &[Option<usize>], used: &HashSet<usize>| {
@@ -6109,6 +6133,7 @@ impl MeshQuotient {
                     used,
                     solutions,
                     solution_limit,
+                    budget,
                 );
                 used.remove(&point);
                 assigned[root] = None;
@@ -6181,6 +6206,7 @@ impl MeshQuotient {
             &mut HashSet::new(),
             &mut solutions,
             solution_limit,
+            budget,
         );
         solutions
             .into_iter()
@@ -7444,7 +7470,11 @@ impl MeshSelectionSearch<'_> {
             measured.close_coordinate_roots(self.vertex_points.len(), self.edge_candidates)?;
         }
         if root_count == self.vertex_points.len()
-            && !measured.point_assignment_exists(self.vertex_points.len(), self.edge_candidates)
+            && !measured.point_assignment_exists_with_budget(
+                self.vertex_points.len(),
+                self.edge_candidates,
+                Some(budget),
+            )
         {
             return None;
         }
@@ -7503,8 +7533,15 @@ impl MeshSelectionSearch<'_> {
                 return;
             }
             if root_count == self.vertex_points.len()
-                && !measured.point_assignment_exists(self.vertex_points.len(), self.edge_candidates)
+                && !measured.point_assignment_exists_with_budget(
+                    self.vertex_points.len(),
+                    self.edge_candidates,
+                    Some(budget),
+                )
             {
+                if budget.exhausted.get() {
+                    self.exhausted = true;
+                }
                 return;
             }
             if !self.fixed_remaining_faces_are_orientable() {
@@ -9623,6 +9660,19 @@ mod motif_tests {
         assert_eq!(assignment[&1], 2);
         assert_eq!(assignment[&2], 1);
         assert_eq!(assignment[&3], 3);
+    }
+
+    #[test]
+    fn quotient_point_existence_declines_when_its_work_budget_is_exhausted() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![Arc::new(HashSet::from([0, 1])); 2],
+            members: (0..2).map(|node| vec![node]).collect(),
+        };
+        let budget = MeshConstraintBudget::new(0);
+
+        assert!(!quotient.point_assignment_exists_with_budget(2, &[vec![]], Some(&budget)));
+        assert!(budget.exhausted.get());
     }
 
     #[test]
