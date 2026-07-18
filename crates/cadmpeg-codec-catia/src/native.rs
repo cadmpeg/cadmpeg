@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 47;
+pub const CATIA_NATIVE_VERSION: u32 = 48;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -464,6 +464,14 @@ fn extents_overlap(first_start: u64, first_len: u64, second_start: u64, second_l
         .is_some_and(|(first_end, second_end)| first_start < second_end && second_start < first_end)
 }
 
+fn finjpl_family(kind: container::FinjplKind) -> &'static str {
+    match kind {
+        container::FinjplKind::Storage => "storage",
+        container::FinjplKind::ProjectFlags => "project-flags",
+        container::FinjplKind::Other => "other",
+    }
+}
+
 fn validate_native_links(
     aliases: &[CatiaAliasRow],
     catalogs: &[CatiaCatalog],
@@ -472,6 +480,23 @@ fn validate_native_links(
     external_references: &[CatiaExternalReference],
     value_blocks: &[CatiaValueBlock],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, segment) in segments.iter().enumerate() {
+        let parsed = container::finjpl_segments(&segment.data, 0, segment.data.len());
+        let expected_id = format!("catia:outer:finjpl#{index}");
+        if segment.id != expected_id
+            || u64::try_from(segment.data.len()).ok() != Some(segment.byte_len)
+            || !matches!(parsed.as_slice(), [parsed]
+                if parsed.range == (0..segment.data.len())
+                    && parsed.type_word == segment.type_word
+                    && finjpl_family(parsed.kind) == segment.family
+                    && parsed.name == segment.name)
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "FINJPL segment `{}` has an invalid retained view",
+                segment.id
+            )));
+        }
+    }
     for block in value_blocks {
         let Some(catalog) = catalogs.iter().find(|catalog| catalog.id == block.catalog) else {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
@@ -673,12 +698,7 @@ impl CatiaNative {
                 byte_offset: segment.range.start as u64,
                 byte_len: (segment.range.end - segment.range.start) as u64,
                 type_word: segment.type_word,
-                family: match segment.kind {
-                    container::FinjplKind::Storage => "storage",
-                    container::FinjplKind::ProjectFlags => "project-flags",
-                    container::FinjplKind::Other => "other",
-                }
-                .to_string(),
+                family: finjpl_family(segment.kind).to_string(),
                 name: segment.name,
                 data: bytes[segment.range].to_vec(),
             })
@@ -828,24 +848,27 @@ impl CatiaNative {
                 ));
             }
         }
-        let finjpl_segments: Vec<CatiaFinjplSegment> =
+        let mut finjpl_segments: Vec<CatiaFinjplSegment> =
             if namespace.arenas.contains_key("finjpl_segments") {
                 namespace.arena_as("finjpl_segments")?
             } else {
                 Vec::new()
             };
-        let external_references: Vec<CatiaExternalReference> =
+        finjpl_segments.sort_by_key(|segment| segment.byte_offset);
+        let mut external_references: Vec<CatiaExternalReference> =
             if namespace.arenas.contains_key("external_references") {
                 namespace.arena_as("external_references")?
             } else {
                 Vec::new()
             };
-        let preview_images: Vec<CatiaPreviewImage> =
+        external_references.sort_by_key(|reference| reference.byte_offset);
+        let mut preview_images: Vec<CatiaPreviewImage> =
             if namespace.arenas.contains_key("preview_images") {
                 namespace.arena_as("preview_images")?
             } else {
                 Vec::new()
             };
+        preview_images.sort_by_key(|preview| preview.byte_offset);
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
         validate_native_links(
             &alias_rows,

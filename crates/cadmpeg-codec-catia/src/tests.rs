@@ -5513,6 +5513,67 @@ fn native_load_rejects_noncanonical_value_block_views() {
 }
 
 #[test]
+fn native_load_restores_segment_source_order_and_validates_retained_views() {
+    let mut bytes = Vec::new();
+    for index in 0..12 {
+        bytes.extend(external_reference_segment(&format!(
+            "Support{index}.CATPart"
+        )));
+    }
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store indexed FINJPL segments");
+    let loaded =
+        crate::native::CatiaNative::load(&namespace).expect("load indexed FINJPL segments");
+    assert_eq!(
+        loaded
+            .finjpl_segments
+            .iter()
+            .map(|segment| segment.id.clone())
+            .collect::<Vec<_>>(),
+        (0..12)
+            .map(|index| format!("catia:outer:finjpl#{index}"))
+            .collect::<Vec<_>>()
+    );
+    assert!(loaded
+        .finjpl_segments
+        .windows(2)
+        .all(|pair| pair[0].byte_offset < pair[1].byte_offset));
+    assert_eq!(
+        loaded
+            .external_references
+            .iter()
+            .map(|reference| reference.id.clone())
+            .collect::<Vec<_>>(),
+        (0..12)
+            .map(|index| format!("catia:outer:external-reference#{index}"))
+            .collect::<Vec<_>>()
+    );
+
+    let assert_rejected = |malformed: crate::native::CatiaNative| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed
+            .store(&mut namespace)
+            .expect("store malformed FINJPL view");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+    };
+    let mut invalid_length = native.clone();
+    invalid_length.finjpl_segments[0].byte_len += 1;
+    assert_rejected(invalid_length);
+    let mut invalid_family = native.clone();
+    invalid_family.finjpl_segments[0].family = "other".to_string();
+    assert_rejected(invalid_family);
+    let mut invalid_type = native;
+    invalid_type.finjpl_segments[0].type_word ^= 1;
+    assert_rejected(invalid_type);
+}
+
+#[test]
 fn decode_retains_catalog_schema_names_without_promoting_features() {
     let decoded = CatiaCodec
         .decode(
