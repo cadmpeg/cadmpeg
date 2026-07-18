@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 41;
+pub const CATIA_NATIVE_VERSION: u32 = 42;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -443,6 +443,13 @@ fn contains_extent(
             .is_some_and(|(owner_end, candidate_end)| candidate_end <= owner_end)
 }
 
+fn extents_overlap(first_start: u64, first_len: u64, second_start: u64, second_len: u64) -> bool {
+    first_start
+        .checked_add(first_len)
+        .zip(second_start.checked_add(second_len))
+        .is_some_and(|(first_end, second_end)| first_start < second_end && second_start < first_end)
+}
+
 impl CatiaNative {
     /// Decode CATIA-native records directly from the complete file image.
     #[must_use]
@@ -481,12 +488,15 @@ impl CatiaNative {
             .collect();
         alias_rows.retain(|row| {
             let row_start = row.byte_offset.saturating_sub(4);
-            let row_end = row.byte_offset + 20;
-            !object_graphs.iter().any(|graph| {
-                row_start < graph.byte_offset + graph.byte_len && row_end > graph.byte_offset
-            }) && !parsed_value_blocks.iter().any(|block| {
-                row_start < (block.pos + block.total_len) as u64 && row_end > block.pos as u64
-            })
+            !object_graphs
+                .iter()
+                .any(|graph| extents_overlap(row_start, 24, graph.byte_offset, graph.byte_len))
+                && !parsed_value_blocks.iter().any(|block| {
+                    extents_overlap(row_start, 24, block.pos as u64, block.total_len as u64)
+                })
+                && !catalogs.iter().any(|catalog| {
+                    extents_overlap(row_start, 24, catalog.byte_offset, catalog.byte_len)
+                })
         });
         let design_objects = design_objects(&object_graphs);
         let maximum_records = object_graphs
