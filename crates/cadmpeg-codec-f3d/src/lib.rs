@@ -1520,8 +1520,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             placement.frame_length == 213 && placement.transform_offset.is_none() && identity;
         let genesis_explicit = placement.frame_length == 341
             && placement.transform_offset == Some(placement.byte_offset.saturating_add(66));
-        let member_run_head = placement.frame_length == 162
-            && placement.transform_offset == Some(placement.byte_offset.saturating_add(22));
+        let member_run_head = (placement.frame_length == 34
+            && placement.transform_offset.is_none()
+            && identity)
+            || (placement.frame_length == 162
+                && placement.transform_offset == Some(placement.byte_offset.saturating_add(22)));
         let frame_valid = if placement.member_run_head {
             // The paired member-run record precedes the head record; the
             // frame length covers the head record alone.
@@ -2266,6 +2269,32 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     severity: Severity::Error,
                     message: "Fusion sketch member belongs to multiple sketch owners".into(),
                     entity: Some(relation.id.clone()),
+                });
+            }
+        }
+    }
+    for entity in native
+        .design_entity_headers
+        .iter()
+        .filter(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch))
+    {
+        let native_stream = design_stream(&entity.id);
+        let Ok(owner) = u32::try_from(entity.entity_suffix) else {
+            continue;
+        };
+        for member in &entity.member_indices {
+            if !typed_sketch_records.contains(&(native_stream, *member)) {
+                continue;
+            }
+            if relation_owners
+                .insert((native_stream, *member), owner)
+                .is_some_and(|existing| existing != owner)
+            {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: "Fusion sketch member belongs to multiple sketch owners".into(),
+                    entity: Some(entity.id.clone()),
                 });
             }
         }

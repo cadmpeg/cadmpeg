@@ -9998,15 +9998,14 @@ pub fn decode_sketch_placements(
     Ok(out)
 }
 
-/// Byte length of a member-run head record: the seven-byte indexed header,
-/// four index bytes, eleven zero bytes, sixteen f64 matrix values, and the
-/// marked tail.
+/// Byte length of a member-run head carrying an explicit 4×4 transform.
 const MEMBER_RUN_HEAD_FRAME: usize = 162;
 
 /// Parse a member-run head placement: the paired same-index record after the
 /// sketch's entity header opens with a marked
-/// reference naming a head record that stores eleven zero bytes and the
-/// row-major 4×4 local-to-model transform at offset 22.
+/// reference naming a head record. A 34-byte head denotes the identity
+/// placement. A 162-byte head stores eleven zero bytes and the row-major 4×4
+/// local-to-model transform at offset 22.
 fn parse_member_run_head_placement(
     bytes: &[u8],
     entity: &DesignEntityHeader,
@@ -10050,20 +10049,36 @@ fn parse_member_run_head_placement(
     if after_tag != head_at + 7
         || class_tag.len() != 3
         || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
-        || bytes.get(head_at + 11..head_at + 22) != Some(&[0u8; 11][..])
     {
         return None;
     }
-    let values = f64s_at(bytes, head_at + 22, 16)?;
-    let mut transform = [[0.0; 4]; 4];
-    for (ordinal, value) in values.iter().copied().enumerate() {
-        transform[ordinal / 4][ordinal % 4] = value;
-    }
-    if !valid_sketch_transform(&transform)
-        || bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..])
-    {
-        return None;
-    }
+    let head_end = next_indexed_record_offset(bytes, head_at + 11).unwrap_or(bytes.len());
+    let frame_length = head_end.checked_sub(head_at)?;
+    let (transform, transform_offset) = match frame_length {
+        34 if bytes.get(head_at + 11..head_at + 34)
+            == Some(
+                &[
+                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                ][..],
+            ) =>
+        {
+            (identity_matrix(), None)
+        }
+        MEMBER_RUN_HEAD_FRAME if bytes.get(head_at + 11..head_at + 22) == Some(&[0u8; 11][..]) => {
+            let values = f64s_at(bytes, head_at + 22, 16)?;
+            let mut transform = [[0.0; 4]; 4];
+            for (ordinal, value) in values.iter().copied().enumerate() {
+                transform[ordinal / 4][ordinal % 4] = value;
+            }
+            if !valid_sketch_transform(&transform)
+                || bytes.get(head_at + 150..head_at + 152) != Some(&[0, 1][..])
+            {
+                return None;
+            }
+            (transform, Some((head_at + 22) as u64))
+        }
+        _ => return None,
+    };
     Some(DesignSketchPlacement {
         id: String::new(),
         scope_record_index: None,
@@ -10072,9 +10087,9 @@ fn parse_member_run_head_placement(
         byte_offset: head_at as u64,
         class_tag,
         record_index: head_index,
-        frame_length: MEMBER_RUN_HEAD_FRAME as u64,
+        frame_length: frame_length as u64,
         transform,
-        transform_offset: Some((head_at + 22) as u64),
+        transform_offset,
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
         member_run_head: true,
@@ -10586,6 +10601,54 @@ fn parse_sketch_member_run(bytes: &[u8], from: usize, entity_suffix: u64) -> (Ve
     (member_indices, member_offsets)
 }
 
+/// Parse the counted member-record run of a legacy sketch container's paired
+/// same-index record. The paired record stores its head-placement reference
+/// at offset 19, six zero bytes, a u32 sketch ordinal and seven bytes of
+/// state, then the member count at offset 41. Each member is a padded marked
+/// reference.
+fn parse_legacy_sketch_member_run(
+    bytes: &[u8],
+    primary_at: usize,
+    entity_suffix: u32,
+) -> Option<(Vec<u32>, Vec<u64>)> {
+    let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
+    if u32_at(bytes, paired_at + 7) != Some(entity_suffix)
+        || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
+        || bytes.get(paired_at + 19) != Some(&1)
+        || bytes.get(paired_at + 24..paired_at + 30) != Some(&[0u8; 6][..])
+    {
+        return None;
+    }
+    let (paired_class_tag, after_tag) = lp_ascii(bytes, paired_at)?;
+    if after_tag != paired_at + 7
+        || paired_class_tag.len() != 3
+        || !paired_class_tag.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let count = usize::try_from(u32_at(bytes, paired_at + 41)?).ok()?;
+    if count == 0 {
+        return None;
+    }
+    let run_end = (paired_at + 45).checked_add(count.checked_mul(11)?)?;
+    if run_end > bytes.len() {
+        return None;
+    }
+    let mut member_indices = Vec::with_capacity(count);
+    let mut member_offsets = Vec::with_capacity(count);
+    for ordinal in 0..count {
+        let marker = paired_at + 45 + ordinal * 11;
+        if bytes.get(marker) != Some(&1)
+            || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
+        {
+            return None;
+        }
+        member_indices.push(u32_at(bytes, marker + 1)?);
+        member_offsets.push((marker + 1) as u64);
+    }
+    Some((member_indices, member_offsets))
+}
+
 /// Decode every self-validating per-entity design `BulkStream` header (spec
 /// [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)): a three-digit class tag, an entity suffix, a UTF-16LE entity ID
 /// whose numeric suffix must match the header's entity suffix, and, for
@@ -10597,11 +10660,34 @@ pub fn decode_entity_headers(
 ) -> Result<Vec<DesignEntityHeader>, CodecError> {
     let mut out = Vec::new();
     let mut object_kinds = HashMap::new();
-    for object in decode_objects(reader, scan)? {
-        for entity_id in object.entity_ids {
+    let objects = decode_objects(reader, scan)?;
+    let mut legacy_sketch_candidates = HashMap::<String, std::collections::HashSet<u32>>::new();
+    for object in objects {
+        for &entity_id in &object.entity_ids {
             object_kinds
                 .entry(entity_id)
                 .or_insert_with(|| object.kind.clone());
+        }
+        if object.kind == DesignObjectKind::Sketch {
+            let Some(stream) = native_stream(&object.id) else {
+                continue;
+            };
+            let Some(meta_name) = stream.strip_prefix("f3d:") else {
+                continue;
+            };
+            let Some(prefix) = meta_name.strip_suffix("MetaStream.dat") else {
+                continue;
+            };
+            let bulk_name = format!("{prefix}BulkStream.dat");
+            legacy_sketch_candidates
+                .entry(bulk_name)
+                .or_default()
+                .extend(
+                    object
+                        .entity_ids
+                        .into_iter()
+                        .filter_map(|identity| u32::try_from(identity).ok()),
+                );
         }
     }
     for entry in scan
@@ -10685,7 +10771,65 @@ pub fn decode_entity_headers(
             });
             offset = record_end;
         }
+
+        // Legacy Design streams do not carry textual entity headers. Their
+        // MSketch metadata names candidate record indices; only actual sketch
+        // containers have a consecutive same-index pair with the legacy
+        // counted member run. Materialize the same ownership abstraction used
+        // by later entity-header forms so downstream binding remains uniform.
+        let candidates = legacy_sketch_candidates
+            .get(&entry.name)
+            .cloned()
+            .unwrap_or_default();
+        let scope = format!("f3d:{}", entry.name);
+        let mut existing = out
+            .iter()
+            .filter(|entity| native_stream(&entity.id) == Some(scope.as_str()))
+            .filter_map(|entity| u32::try_from(entity.entity_suffix).ok())
+            .collect::<std::collections::HashSet<_>>();
+        let mut position = 0usize;
+        while let Some(start) = next_indexed_record_offset(bytes, position) {
+            position = start + 1;
+            let Some(entity_suffix) = u32_at(bytes, start + 7) else {
+                continue;
+            };
+            if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
+                continue;
+            }
+            let Some((class_tag, after_tag)) = lp_ascii(bytes, start) else {
+                continue;
+            };
+            if after_tag != start + 7
+                || class_tag.len() != 3
+                || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            {
+                continue;
+            }
+            let Some((member_indices, member_offsets)) =
+                parse_legacy_sketch_member_run(bytes, start, entity_suffix)
+            else {
+                continue;
+            };
+            existing.insert(entity_suffix);
+            out.push(DesignEntityHeader {
+                id: format!("f3d:{}:design-entity-header#{start}", entry.name),
+                byte_offset: start as u64,
+                entity_suffix: u64::from(entity_suffix),
+                entity_id: format!("Sketch_{entity_suffix}"),
+                class_tag,
+                optional_slot_present: false,
+                object_kind: Some(DesignObjectKind::Sketch),
+                record_reference: None,
+                record_reference_offset: None,
+                declared_reference_count: None,
+                reference_indices: Vec::new(),
+                reference_offsets: Vec::new(),
+                member_indices,
+                member_offsets,
+            });
+        }
     }
+    out.sort_by_key(|entity| entity.id.clone());
     Ok(out)
 }
 
@@ -15984,6 +16128,52 @@ mod relation_tests {
         assert_eq!(placement.transform, identity_matrix());
         assert!(placement.member_run_head);
         assert_eq!(placement.scope_record_index, None);
+
+        bytes.truncate(head_at);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"283");
+        bytes.extend_from_slice(&200u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&[1, 0, 1, 3]);
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"284");
+        bytes.extend_from_slice(&201u32.to_le_bytes());
+        let compact = super::parse_member_run_head_placement(&bytes, &entity)
+            .expect("compact identity sketch placement");
+        assert_eq!(compact.frame_length, 34);
+        assert_eq!(compact.transform, identity_matrix());
+        assert_eq!(compact.transform_offset, None);
+    }
+
+    #[test]
+    fn legacy_sketch_pair_decodes_its_complete_member_run() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"380");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.resize(40, 0);
+        let paired_at = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"381");
+        bytes.extend_from_slice(&100u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.push(1);
+        bytes.extend_from_slice(&200u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 7]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for member in [300u32, 301] {
+            bytes.push(1);
+            bytes.extend_from_slice(&member.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+
+        let (members, offsets) = super::parse_legacy_sketch_member_run(&bytes, 0, 100)
+            .expect("legacy sketch member run");
+        assert_eq!(members, [300, 301]);
+        assert_eq!(offsets, [(paired_at + 46) as u64, (paired_at + 57) as u64]);
     }
 
     #[test]
