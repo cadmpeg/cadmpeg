@@ -686,6 +686,11 @@ pub struct FeatureVariableTable {
 }
 
 impl FeatureVariableTable {
+    /// Whether every row declared by the table decoded.
+    pub fn is_complete(&self) -> bool {
+        usize::try_from(self.declared_count).ok() == Some(self.rows.len())
+    }
+
     /// Reconcile repeated and complementary section-point rows by identity.
     pub fn reconciled_points(&self) -> (BTreeMap<u32, [Option<f64>; 2]>, BTreeSet<u32>) {
         let point_ids = self
@@ -796,8 +801,14 @@ pub struct FeatureSegmentTable {
 }
 
 impl FeatureSegmentTable {
+    /// Whether every row declared by the table decoded.
+    pub fn is_complete(&self) -> bool {
+        usize::try_from(self.declared_count).ok() == Some(self.rows.len())
+    }
+
     /// Resolve a uniquely identified defining-sketch segment.
     pub fn segment(&self, external_id: u32) -> Option<&FeatureSegment> {
+        self.is_complete().then_some(())?;
         let mut matches = self
             .rows
             .iter()
@@ -6550,6 +6561,7 @@ mod tests {
         assert_eq!(segments.declared_count, 2);
         assert_eq!(segments.entity_ref, Some(1));
         assert_eq!(segments.rows.len(), 2);
+        assert!(segments.is_complete());
         assert_eq!(segments.rows[0].point_ids, [7, 8]);
         assert_eq!(segments.rows[1].kind, FeatureSegmentKind::Arc);
         assert_eq!(segments.rows[1].center_id, Some(10));
@@ -6569,6 +6581,8 @@ mod tests {
 
         assert_eq!(segments.declared_count, 3);
         assert_eq!(segments.rows.len(), 2);
+        assert!(!segments.is_complete());
+        assert!(segments.segment(42).is_none());
         assert_eq!(segments.rows[0].external_id, 42);
         assert_eq!(segments.rows[1].external_id, 43);
     }
@@ -6580,6 +6594,7 @@ mod tests {
         assert_eq!(segments.declared_count, 2);
         assert_eq!(segments.entity_ref, Some(1));
         assert!(segments.rows.is_empty());
+        assert!(!segments.is_complete());
 
         let positional = b"\xf8\x02\xf7\x01\xfb\xe2\xf2\xf7\x01\xe2";
         let segments = segment_table_body(positional, 0, 0, positional.len())
@@ -6587,6 +6602,7 @@ mod tests {
         assert_eq!(segments.declared_count, 2);
         assert_eq!(segments.entity_ref, Some(1));
         assert!(segments.rows.is_empty());
+        assert!(!segments.is_complete());
     }
 
     #[test]
@@ -6684,6 +6700,7 @@ mod tests {
         assert_eq!(variables.declared_count, 2);
         assert_eq!(variables.entity_ref, Some(119));
         assert_eq!(variables.rows.len(), 2);
+        assert!(variables.is_complete());
         assert_eq!(variables.rows[0].uvar_id, Some(9));
         assert_eq!(variables.rows[1].uvar_id, Some(10));
         assert_eq!(variables.points.len(), 1);
@@ -6702,6 +6719,7 @@ mod tests {
         assert_eq!(variables.entity_ref, Some(119));
         assert!(variables.rows.is_empty());
         assert!(variables.points.is_empty());
+        assert!(!variables.is_complete());
 
         let positional = b"\xf8\x02\xf7\x77\xfb\xe2\xf7\x78";
         let cache = scalar::ScalarCache::from_section(positional);
@@ -6711,6 +6729,7 @@ mod tests {
         assert_eq!(variables.entity_ref, Some(119));
         assert!(variables.rows.is_empty());
         assert!(variables.points.is_empty());
+        assert!(!variables.is_complete());
     }
 
     #[test]

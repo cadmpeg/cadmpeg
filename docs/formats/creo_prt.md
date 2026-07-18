@@ -686,6 +686,9 @@ and schema close. It is a data row and contributes to the declared count;
 positional replay rows follow the close.
 The `f8` count is the exact total row count; bytes following that many rows do
 not belong to `var_arr`.
+An incomplete `var_arr` contributes no solved section coordinates. An
+incomplete `segtab_ptr` contributes no uniquely identified section entity;
+both tables remain present as native records with their complete row prefixes.
 
 `skamp_ptr` accepts the table wrappers `f1`, `f3`, and `f4 05`. Its named row
 is the first counted row. Positional rows repeat the nested item schema for the

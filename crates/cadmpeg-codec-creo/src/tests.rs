@@ -2442,7 +2442,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         parameter_frames: Vec::new(),
         outlines: Vec::new(),
         variables: Some(crate::feature::FeatureVariableTable {
-            declared_count: 4,
+            declared_count: 1,
             entity_ref: None,
             rows: vec![crate::feature::FeatureVariableRow {
                 variable_type: 3,
@@ -2505,7 +2505,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
             offset: 0,
         }),
         segments: Some(crate::feature::FeatureSegmentTable {
-            declared_count: 2,
+            declared_count: 5,
             entity_ref: None,
             rows: vec![
                 crate::feature::FeatureSegment {
@@ -2695,6 +2695,21 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
         crate::decode::resolved_section_points(&definition).get(&8),
         Some(&[8.0, 40.0])
     );
+    let mut incomplete_variables = definition.clone();
+    incomplete_variables
+        .variables
+        .as_mut()
+        .expect("variables")
+        .declared_count = 2;
+    assert!(crate::decode::resolved_section_points(&incomplete_variables).is_empty());
+
+    let mut incomplete_segments = definition;
+    incomplete_segments
+        .segments
+        .as_mut()
+        .expect("segments")
+        .declared_count = 6;
+    assert!(!crate::decode::resolved_section_points(&incomplete_segments).contains_key(&2));
 }
 
 #[test]

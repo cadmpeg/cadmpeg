@@ -3288,7 +3288,9 @@ fn saved_section_line_geometry(
     let internal_id = order_table
         .internal_id(segment.external_id)
         .or_else(|| {
-            let segments = &definition.segments.as_ref()?.rows;
+            let segment_table = definition.segments.as_ref()?;
+            segment_table.is_complete().then_some(())?;
+            let segments = &segment_table.rows;
             let position = segments
                 .iter()
                 .position(|candidate| candidate.external_id == segment.external_id)?;
@@ -3723,6 +3725,9 @@ pub(crate) fn resolved_section_points(
     let Some(variables) = &definition.variables else {
         return BTreeMap::new();
     };
+    if !variables.is_complete() {
+        return BTreeMap::new();
+    }
     let (points, ambiguous_point_ids) = variables.reconciled_points();
     let mut segment_counts = BTreeMap::new();
     for segment in definition.segments.iter().flat_map(|table| &table.rows) {
@@ -4482,16 +4487,17 @@ fn unique_section_skamp_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
 ) -> Option<&crate::feature::FeatureSegment> {
-    let segments = definition
+    definition.segments.as_ref()?.segment(external_id)
+}
+
+fn complete_section_segment_rows(
+    definition: &crate::feature::FeatureDefinition,
+) -> &[crate::feature::FeatureSegment] {
+    definition
         .segments
-        .iter()
-        .flat_map(|table| &table.rows)
-        .filter(|segment| segment.external_id == external_id)
-        .collect::<Vec<_>>();
-    let [segment] = segments.as_slice() else {
-        return None;
-    };
-    Some(segment)
+        .as_ref()
+        .filter(|table| table.is_complete())
+        .map_or(&[], |table| table.rows.as_slice())
 }
 
 fn section_skamp_point_entity_id(
@@ -4559,7 +4565,12 @@ pub(crate) fn resolved_section_radii(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeMap<u32, f64> {
     let mut candidates = BTreeMap::<u32, Vec<f64>>::new();
-    for row in definition.variables.iter().flat_map(|table| &table.rows) {
+    for row in definition
+        .variables
+        .iter()
+        .filter(|table| table.is_complete())
+        .flat_map(|table| &table.rows)
+    {
         if row.variable_type == 3 {
             if let Some(value) = row.value.filter(|value| value.is_finite() && *value > 0.0) {
                 candidates.entry(row.key).or_default().push(value);
@@ -4835,6 +4846,7 @@ fn trim_segment_id(
     let Some(segment_table) = &definition.segments else {
         return Some(row.external_id);
     };
+    segment_table.is_complete().then_some(())?;
     let segments = &segment_table.rows;
     let trim_rows = &definition.trim_entities.as_ref()?.rows;
     let matching_segment_count = segments
@@ -6396,10 +6408,8 @@ fn transfer_feature_extrusion_surfaces(
             .flat_map(|trim_entities| &trim_entities.rows)
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
-        for segment in definition
-            .segments
+        for segment in complete_section_segment_rows(definition)
             .iter()
-            .flat_map(|segments| &segments.rows)
             .filter(|segment| solved.contains(&segment.external_id))
         {
             let surface_id = match segment.kind {
@@ -8813,10 +8823,7 @@ fn section_dimension_constraints(
     let Some(relations) = &definition.relations else {
         return Vec::new();
     };
-    let segments = definition
-        .segments
-        .as_ref()
-        .map_or(&[][..], |segments| segments.rows.as_slice());
+    let segments = complete_section_segment_rows(definition);
     let known_entities = section_entity_external_ids(definition);
     relations
         .rows
@@ -9451,21 +9458,12 @@ fn section_skamp_constraints(
 }
 
 fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -> BTreeSet<u32> {
-    let mut ids = unique_section_segment_external_ids(
-        definition
-            .segments
-            .iter()
-            .flat_map(|segments| &segments.rows),
-    );
+    let segments = complete_section_segment_rows(definition);
+    let mut ids = unique_section_segment_external_ids(segments);
     let Some(order) = &definition.order_table else {
         return ids;
     };
-    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(
-        definition
-            .segments
-            .iter()
-            .flat_map(|segments| &segments.rows),
-    );
+    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(segments);
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
     ids.extend(
         definition
@@ -9792,7 +9790,11 @@ fn resolved_segment_profile_chains(
     definition: &crate::feature::FeatureDefinition,
     emitted: &BTreeSet<u32>,
 ) -> Vec<Vec<SketchEntityUse>> {
-    let Some(table) = &definition.segments else {
+    let Some(table) = definition
+        .segments
+        .as_ref()
+        .filter(|table| table.is_complete())
+    else {
         return Vec::new();
     };
     let rows = table
@@ -9908,10 +9910,7 @@ fn transfer_resolved_sketches(
         else {
             continue;
         };
-        let segments = definition
-            .segments
-            .as_ref()
-            .map_or(&[][..], |segments| segments.rows.as_slice());
+        let segments = complete_section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(segments);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(segments);
         let points = resolved_section_points(definition);
@@ -10751,12 +10750,7 @@ fn transfer_resolved_revolution_surfaces(
             .iter()
             .find(|sketch| sketch.id == sketch_id)
         {
-            let segments = definition
-                .segments
-                .iter()
-                .flat_map(|table| &table.rows)
-                .cloned()
-                .collect::<Vec<_>>();
+            let segments = complete_section_segment_rows(definition).to_vec();
             generating_ids.extend(profile_segment_ids(
                 definition.id,
                 &segments,
@@ -10772,10 +10766,8 @@ fn transfer_resolved_revolution_surfaces(
                     feature_id,
                     &scan.feature_entity_tables,
                     order,
-                    definition
-                        .segments
+                    complete_section_segment_rows(definition)
                         .iter()
-                        .flat_map(|segments| &segments.rows)
                         .filter(|segment| {
                             generating_ids.contains(&segment.external_id)
                                 && segment.kind == crate::feature::FeatureSegmentKind::Arc
@@ -10806,10 +10798,8 @@ fn transfer_resolved_revolution_surfaces(
                     crate::surface::SurfaceKind::Spline,
                 )
             });
-        for segment in definition
-            .segments
+        for segment in complete_section_segment_rows(definition)
             .iter()
-            .flat_map(|table| &table.rows)
             .filter(|segment| generating_ids.contains(&segment.external_id))
         {
             let Some(geometry) = resolved_section_segment_geometry(definition, &points, segment)
@@ -12049,6 +12039,7 @@ fn resolved_revolution_axis(
 ) -> Option<RevolutionAxis> {
     definition.variables.as_ref()?;
     let segments = definition.segments.as_ref()?;
+    segments.is_complete().then_some(())?;
     let points = resolved_section_points(definition);
     let candidates = segments
         .rows
@@ -13275,6 +13266,11 @@ mod resolved_sketch_tests {
             .as_mut()
             .expect("skamp header")
             .declared_count = u32::try_from(relations.skamps.len()).expect("skamp count");
+    }
+
+    fn synchronize_segment_count(definition: &mut crate::feature::FeatureDefinition) {
+        let segments = definition.segments.as_mut().expect("segments");
+        segments.declared_count = u32::try_from(segments.rows.len()).expect("segment count");
     }
 
     #[test]
@@ -16497,6 +16493,11 @@ mod resolved_sketch_tests {
                 dimension_driven: false,
                 offset: 91,
             });
+        equal_radius_definition
+            .variables
+            .as_mut()
+            .expect("variables")
+            .declared_count = 1;
         assert!(resolved_section_radii(&equal_radius_definition).is_empty());
         let mut saved_radius_definition = definition.clone();
         saved_radius_definition
@@ -17149,6 +17150,7 @@ mod resolved_sketch_tests {
             .expect("segments")
             .rows
             .push(duplicate);
+        synchronize_segment_count(&mut duplicate_identity);
         assert!(!resolved_section_points(&duplicate_identity).contains_key(&2));
         let mut duplicate_endpoint_segment = solver_definition;
         let mut duplicate = duplicate_endpoint_segment
@@ -17165,6 +17167,7 @@ mod resolved_sketch_tests {
             .expect("segments")
             .rows
             .push(duplicate);
+        synchronize_segment_count(&mut duplicate_endpoint_segment);
         assert!(!resolved_section_points(&duplicate_endpoint_segment).contains_key(&2));
         let mut shared_vertex_definition = distance_definition.clone();
         let mut incident = shared_vertex_definition
@@ -17181,6 +17184,7 @@ mod resolved_sketch_tests {
             .expect("segments")
             .rows
             .push(incident);
+        synchronize_segment_count(&mut shared_vertex_definition);
         assert_eq!(
             section_dimension_constraints(&shared_vertex_definition, &SketchId("sketch".into()))[0]
                 .0
@@ -17236,6 +17240,7 @@ mod resolved_sketch_tests {
             .expect("segments")
             .rows
             .push(duplicate);
+        synchronize_segment_count(&mut duplicate_measured_segment);
         assert!(matches!(
             section_dimension_constraints(
                 &duplicate_measured_segment,
@@ -17344,6 +17349,7 @@ mod resolved_sketch_tests {
             .expect("segments")
             .rows
             .push(duplicate);
+        synchronize_segment_count(&mut radius_definition);
         assert!(matches!(
             section_dimension_constraints(&radius_definition, &SketchId("sketch".into()))[0]
                 .0
@@ -17359,6 +17365,7 @@ mod resolved_sketch_tests {
             .expect("segments")
             .rows
             .pop();
+        synchronize_segment_count(&mut radius_definition);
         radius_definition
             .dimensions
             .as_mut()
@@ -17566,8 +17573,9 @@ mod resolved_sketch_tests {
                 external_id: 17,
                 offset: 87,
             });
+        synchronize_segment_count(&mut coincident_definition);
         coincident_definition.variables = Some(crate::feature::FeatureVariableTable {
-            declared_count: 2,
+            declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
             points: vec![
