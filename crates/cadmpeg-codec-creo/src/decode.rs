@@ -21328,32 +21328,40 @@ fn ruled_generator_line_pcurve(
     else {
         return None;
     };
-    let (surface_origin, surface_axis, surface_x, reference_radius, radius_slope) = match surface {
-        SurfaceGeometry::Cylinder {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-        } if radius.is_finite() && *radius > 0.0 => (*origin, *axis, *ref_direction, *radius, 0.0),
-        SurfaceGeometry::Cone {
-            origin,
-            axis,
-            ref_direction,
-            radius,
-            ratio,
-            half_angle,
-        } if radius.is_finite()
-            && ratio.is_finite()
-            && (*ratio - 1.0).abs() <= 1e-12
-            && half_angle.is_finite() =>
-        {
-            let slope = half_angle.tan();
-            slope
-                .is_finite()
-                .then_some((*origin, *axis, *ref_direction, *radius, slope))?
-        }
-        _ => return None,
-    };
+    let (surface_origin, surface_axis, surface_x, reference_radius, radius_ratio, radius_slope) =
+        match surface {
+            SurfaceGeometry::Cylinder {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+            } if radius.is_finite() && *radius > 0.0 => {
+                (*origin, *axis, *ref_direction, *radius, 1.0, 0.0)
+            }
+            SurfaceGeometry::Cone {
+                origin,
+                axis,
+                ref_direction,
+                radius,
+                ratio,
+                half_angle,
+            } if radius.is_finite()
+                && ratio.is_finite()
+                && *ratio > 0.0
+                && half_angle.is_finite() =>
+            {
+                let slope = half_angle.tan();
+                slope.is_finite().then_some((
+                    *origin,
+                    *axis,
+                    *ref_direction,
+                    *radius,
+                    *ratio,
+                    slope,
+                ))?
+            }
+            _ => return None,
+        };
     let surface_axis = stored_unit_vector([surface_axis.x, surface_axis.y, surface_axis.z])?;
     let surface_x = stored_unit_vector([surface_x.x, surface_x.y, surface_x.z])?;
     (dot(surface_axis, surface_x).abs() <= 1e-10).then_some(())?;
@@ -21365,14 +21373,22 @@ fn ruled_generator_line_pcurve(
     ];
     let v = dot(relative, surface_axis);
     let radial = std::array::from_fn::<_, 3, _>(|index| relative[index] - v * surface_axis[index]);
-    let radial_length = dot(radial, radial).sqrt();
     let local_radius = reference_radius + v * radius_slope;
-    let scale = local_radius.abs().max(radial_length).max(1.0);
-    (local_radius.abs() > 1e-12 * scale
-        && (radial_length - local_radius.abs()).abs() <= 1e-9 * scale)
+    let scale = local_radius
+        .abs()
+        .max((local_radius * radius_ratio).abs())
+        .max(1.0);
+    (local_radius.abs() > 1e-12 * scale).then_some(())?;
+    let chart_x = dot(radial, surface_x) / local_radius;
+    let chart_y = dot(radial, surface_y) / (local_radius * radius_ratio);
+    (chart_x.is_finite()
+        && chart_y.is_finite()
+        && (chart_x.mul_add(chart_x, chart_y * chart_y) - 1.0).abs() <= 1e-9)
         .then_some(())?;
-    let chart_radial = radial.map(|coordinate| coordinate / local_radius);
-    let u = dot(chart_radial, surface_y).atan2(dot(chart_radial, surface_x));
+    let u = chart_y.atan2(chart_x);
+    let chart_radial = std::array::from_fn::<_, 3, _>(|index| {
+        chart_x * surface_x[index] + radius_ratio * chart_y * surface_y[index]
+    });
     let surface_derivative = std::array::from_fn::<_, 3, _>(|index| {
         surface_axis[index] + radius_slope * chart_radial[index]
     });
@@ -21847,6 +21863,35 @@ mod native_pcurve_tests {
         assert!(direction.u.abs() <= 1e-12);
         assert!((direction.v - 2.0).abs() <= 1e-12);
         assert_pcurve_matches_curve(&cone, &cone_line, &pcurve, &[-1.0, 0.0, 2.0]);
+
+        let elliptical_cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 2.0,
+            ratio: 0.5,
+            half_angle: std::f64::consts::FRAC_PI_4,
+        };
+        let root_half = std::f64::consts::FRAC_1_SQRT_2;
+        let elliptical_generator = CurveGeometry::Line {
+            origin: Point3::new(5.0 * root_half, 2.5 * root_half, 3.0),
+            direction: Vector3::new(2.0 * root_half, root_half, 2.0),
+        };
+        let pcurve = ruled_generator_line_pcurve(&elliptical_cone, &elliptical_generator)
+            .expect("elliptical cone generator pcurve");
+        let PcurveGeometry::Line { origin, direction } = &pcurve else {
+            panic!("elliptical-cone generator pcurve: {pcurve:#?}");
+        };
+        assert!((origin.u - std::f64::consts::FRAC_PI_4).abs() <= 1e-12);
+        assert!((origin.v - 3.0).abs() <= 1e-12);
+        assert!(direction.u.abs() <= 1e-12);
+        assert!((direction.v - 2.0).abs() <= 1e-12);
+        assert_pcurve_matches_curve(
+            &elliptical_cone,
+            &elliptical_generator,
+            &pcurve,
+            &[-3.0, 0.0, 2.0],
+        );
 
         let skew = CurveGeometry::Line {
             origin: Point3::new(0.0, 5.0, 3.0),

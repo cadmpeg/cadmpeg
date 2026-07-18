@@ -1330,13 +1330,16 @@ displaced center, unequal radius, or misaligned meridian plane does not define
 this pcurve.
 
 When a native line with no native pcurve candidate is a constant-`u`
-generator of a solved cylinder or circular cone, its line origin fixes the
-surface azimuth and axial `v`. Its direction must be a nonzero scalar multiple
-of the surface derivative `axis + tan(half_angle) * radial_direction`; the
-cylinder derivative uses zero radial slope. The scalar multiple is the pcurve
-`v` direction, so the affine pcurve preserves the 3D line parameter and edge
-parameter interval. Lines off the surface, skew to the generator derivative,
-or on an elliptical cone do not define this pcurve.
+generator of a solved cylinder or positive-ratio cone, its line origin fixes
+the surface azimuth and axial `v`. Cone azimuth is recovered by dividing the
+two radial frame components by the signed local major and minor radii; the
+normalized components must lie on the unit circle. Its direction must be a
+nonzero scalar multiple of the surface derivative
+`axis + tan(half_angle) * (cos(u) * x_axis + ratio * sin(u) * y_axis)`; the
+cylinder derivative uses zero radial slope and unit ratio. The scalar multiple
+is the pcurve `v` direction, so the affine pcurve preserves the 3D line
+parameter and edge parameter interval. Lines off the surface or skew to the
+generator derivative do not define this pcurve.
 
 A NURBS curve has intrinsic domain
 `[knots[degree], knots[control_point_count]]`. A native edge on a nonperiodic
