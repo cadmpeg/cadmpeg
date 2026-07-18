@@ -12,7 +12,7 @@ use crate::records::{
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::cursor::bounded_len;
-use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, Length, PathRef, PatternKind};
+use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length, PathRef, PatternKind};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
@@ -6318,6 +6318,17 @@ pub(crate) fn project_marker_backed_sketches(
                         QUANTUM,
                     ))?;
                     let point = Point2::new(point.0 as f64 * QUANTUM, point.1 as f64 * QUANTUM);
+                    let project = |endpoint: &SketchInputEntity| {
+                        let [u, v] = endpoint.coordinates_m?;
+                        let point = transform.apply(quantize(
+                            Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
+                            QUANTUM,
+                        ))?;
+                        Some(Point2::new(
+                            point.0 as f64 * QUANTUM,
+                            point.1 as f64 * QUANTUM,
+                        ))
+                    };
                     let geometry = match marker.kind {
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
                             SketchGeometry::Point { position: point }
@@ -6325,17 +6336,6 @@ pub(crate) fn project_marker_backed_sketches(
                         SketchInputKind::LineOrCircle => {
                             let endpoints = line_endpoint_markers(marker, &markers_by_id);
                             if let [start, end] = endpoints.as_slice() {
-                                let project = |endpoint: &SketchInputEntity| {
-                                    let [u, v] = endpoint.coordinates_m?;
-                                    let point = transform.apply(quantize(
-                                        Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
-                                        QUANTUM,
-                                    ))?;
-                                    Some(Point2::new(
-                                        point.0 as f64 * QUANTUM,
-                                        point.1 as f64 * QUANTUM,
-                                    ))
-                                };
                                 let (Some(start), Some(end)) = (project(start), project(end))
                                 else {
                                     return None;
@@ -6353,12 +6353,47 @@ pub(crate) fn project_marker_backed_sketches(
                                 }
                             }
                         }
-                        SketchInputKind::Arc => SketchGeometry::Native {
-                            native_kind: format!(
-                                "sldprt:marker-geometry:{}",
-                                marker.kind.native_code()
-                            ),
-                        },
+                        SketchInputKind::Arc => {
+                            let endpoints = line_endpoint_markers(marker, &markers_by_id);
+                            if let [start, end] = endpoints.as_slice() {
+                                let (Some(start), Some(end)) = (project(start), project(end))
+                                else {
+                                    return None;
+                                };
+                                let start_radius = (start.u - point.u).hypot(start.v - point.v);
+                                let end_radius = (end.u - point.u).hypot(end.v - point.v);
+                                let start_angle = (start.v - point.v).atan2(start.u - point.u);
+                                let end_angle = (end.v - point.v).atan2(end.u - point.u);
+                                let sweep =
+                                    (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+                                if start_radius > QUANTUM
+                                    && same_dimension_length(start_radius, end_radius)
+                                    && sweep > QUANTUM
+                                    && sweep <= std::f64::consts::PI + QUANTUM
+                                {
+                                    SketchGeometry::Arc {
+                                        center: point,
+                                        radius: Length(start_radius),
+                                        start_angle: Angle(start_angle),
+                                        end_angle: Angle(end_angle),
+                                    }
+                                } else {
+                                    SketchGeometry::Native {
+                                        native_kind: format!(
+                                            "sldprt:marker-geometry:{}",
+                                            marker.kind.native_code()
+                                        ),
+                                    }
+                                }
+                            } else {
+                                SketchGeometry::Native {
+                                    native_kind: format!(
+                                        "sldprt:marker-geometry:{}",
+                                        marker.kind.native_code()
+                                    ),
+                                }
+                            }
+                        }
                         SketchInputKind::Relation(_) | SketchInputKind::Native(_) => return None,
                     };
                     Some(SketchEntity {
@@ -13480,7 +13515,7 @@ mod profile_join_tests {
     }
 
     #[test]
-    fn marker_backed_sketch_projects_lines_with_two_endpoint_owners() {
+    fn marker_backed_sketch_projects_endpoint_backed_lines_and_minor_arcs() {
         let native_feature = |id: &str, source_id: &str, name: &str| NativeFeature {
             id: id.into(),
             parent: "history".into(),
@@ -13572,6 +13607,24 @@ mod profile_join_tests {
         endpoint.ordinal = 2;
         endpoint.offset = 2;
         endpoint.links = point.links.clone();
+        let mut arc = marker("arc", Some([0.0, 0.0]));
+        arc.feature_ref = Some("sketch-native".into());
+        arc.ordinal = 3;
+        arc.offset = 3;
+        arc.kind = SketchInputKind::Arc;
+        let mut arc_start = marker("arc-start", Some([0.001, 0.0]));
+        arc_start.feature_ref = Some("sketch-native".into());
+        arc_start.ordinal = 4;
+        arc_start.offset = 4;
+        arc_start.links = vec![SketchInputLink {
+            local_id: 4,
+            entity_ref: arc.id.clone(),
+        }];
+        let mut arc_end = marker("arc-end", Some([0.0, 0.001]));
+        arc_end.feature_ref = Some("sketch-native".into());
+        arc_end.ordinal = 5;
+        arc_end.offset = 5;
+        arc_end.links = arc_start.links.clone();
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
@@ -13602,7 +13655,7 @@ mod profile_join_tests {
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
             references: Vec::new(),
-            sketch_entities: vec![point, curve, endpoint],
+            sketch_entities: vec![point, curve, endpoint, arc, arc_start, arc_end],
         };
         let mut sketches = Vec::new();
         let mut entities = Vec::new();
@@ -13617,7 +13670,7 @@ mod profile_join_tests {
         );
 
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 3);
+        assert_eq!(entities.len(), 6);
         assert!(matches!(
             entities[0].geometry,
             SketchGeometry::Point { position }
@@ -13628,6 +13681,18 @@ mod profile_join_tests {
             SketchGeometry::Line { start, end }
                 if start == Point2::new(-2.0, 1.0)
                     && end == Point2::new(-6.0, 5.0)
+        ));
+        assert!(matches!(
+            entities[3].geometry,
+            SketchGeometry::Arc {
+                center,
+                radius: Length(radius),
+                start_angle: Angle(start_angle),
+                end_angle: Angle(end_angle),
+            } if center == Point2::new(0.0, 0.0)
+                && radius == 1.0
+                && start_angle == std::f64::consts::FRAC_PI_2
+                && end_angle == std::f64::consts::PI
         ));
         assert!(matches!(
             features[1].definition,
@@ -13650,7 +13715,7 @@ mod profile_join_tests {
             &lanes,
         );
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 3);
+        assert_eq!(entities.len(), 6);
         assert!(matches!(
             &configured_features[1].definition,
             FeatureDefinition::Sketch {
