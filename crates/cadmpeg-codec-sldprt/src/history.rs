@@ -1715,6 +1715,7 @@ mod history_reference_tests {
     fn reserved_feature_manager_nodes_use_source_identity() {
         let cases = [
             ("1", FeatureTreeNodeRole::Annotations),
+            ("5", FeatureTreeNodeRole::ModelOrigin),
             ("7", FeatureTreeNodeRole::DesignBinder),
             ("8", FeatureTreeNodeRole::Notes),
             ("9", FeatureTreeNodeRole::SolidBodies),
@@ -1725,6 +1726,9 @@ mod history_reference_tests {
         for (source_id, expected) in cases {
             let mut node = feature("node", Some(source_id), 0);
             node.kind = "任意本地化標籤".into();
+            if source_id == "5" {
+                node.xml_tag = "Sketch".into();
+            }
             assert_eq!(feature_tree_node_role(&node), Some(expected));
         }
     }
@@ -2988,14 +2992,12 @@ fn directional_light_tree_node_role(feature: &Feature) -> Option<FeatureTreeNode
 }
 
 fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
-    if !feature.xml_tag.eq_ignore_ascii_case("Feature")
-        || !feature.parameters.is_empty()
-        || !feature.properties.is_empty()
-    {
+    if !feature.parameters.is_empty() || !feature.properties.is_empty() {
         return None;
     }
     match feature.source_id.as_deref()? {
         "1" => Some(FeatureTreeNodeRole::Annotations),
+        "5" => Some(FeatureTreeNodeRole::ModelOrigin),
         "6" => Some(FeatureTreeNodeRole::LightsAndCameras),
         "7" => Some(FeatureTreeNodeRole::DesignBinder),
         "8" => Some(FeatureTreeNodeRole::Notes),
