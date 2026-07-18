@@ -1779,6 +1779,7 @@ fn a5_nurbs_bound_edge_stream(offset: f64) -> Vec<u8> {
     let mut bytes = a5_pcurve_stream_with_uv(cylinder_uv.0, cylinder_uv.1);
     bytes.extend_from_slice(&a5_pcurve_stream_with_uv(surface_uv.0, surface_uv.1));
     bytes.extend_from_slice(&b2_edge_parameter_stream_for(0.0, 1.0));
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
     bytes.extend_from_slice(&b2_cylinder_stream());
     bytes.extend_from_slice(&a5_surface_stream_with_poles([
         s0,
@@ -4237,6 +4238,68 @@ fn standard_decode_transfers_resolved_consolidated_cone_surface_curve() {
     let end = cadmpeg_ir::eval::pcurve_uv(pcurve, 1.0).expect("pcurve end");
     assert_eq!([start.u, start.v], [0.0, 0.0]);
     assert_eq!([end.u, end.v], [1.0 / 3.0, 0.25f64.cos()]);
+}
+
+#[test]
+fn standard_decode_transfers_resolved_consolidated_nurbs_surface_curves() {
+    for offset in [0.0, 1.25] {
+        let mut file = standard_catpart();
+        file.splice(16..16, a5_nurbs_bound_edge_stream(offset));
+        let file_len = u32::try_from(file.len()).expect("consolidated fixture length");
+        file[8..12].copy_from_slice(&be32(file_len));
+
+        let decoded = CatiaCodec
+            .decode(&mut Cursor::new(file), &DecodeOptions::default())
+            .expect("decode resolved consolidated NURBS edge");
+        let procedural = decoded
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+            .expect("resolved consolidated construction");
+        let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+            panic!("two resolved support sides form an intersection");
+        };
+        let surface_id = context.sides[1]
+            .surface
+            .as_ref()
+            .expect("resolved NURBS support");
+        let pcurve = context.sides[1].pcurve.as_ref().expect("NURBS pcurve");
+        let start = cadmpeg_ir::eval::pcurve_uv(pcurve, 0.0).expect("pcurve start");
+        let end = cadmpeg_ir::eval::pcurve_uv(pcurve, 1.0).expect("pcurve end");
+        assert_eq!([start.u, start.v], [0.0, 0.0]);
+        assert_eq!([end.u, end.v], [1.0, 0.0]);
+
+        if offset == 0.0 {
+            let surface = decoded
+                .ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| &surface.id == surface_id)
+                .expect("direct NURBS carrier");
+            assert!(matches!(surface.geometry, SurfaceGeometry::Nurbs(_)));
+        } else {
+            let construction = decoded
+                .ir
+                .model
+                .procedural_surfaces
+                .iter()
+                .find(|surface| &surface.surface == surface_id)
+                .expect("offset NURBS construction");
+            let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset {
+                support, distance, ..
+            } = &construction.definition
+            else {
+                panic!("resolved normal offset is retained as an offset construction");
+            };
+            assert!((*distance - offset).abs() < 1e-12);
+            assert!(decoded.ir.model.surfaces.iter().any(|surface| {
+                surface.id == *support && matches!(surface.geometry, SurfaceGeometry::Nurbs(_))
+            }));
+        }
+    }
 }
 
 #[test]

@@ -4796,7 +4796,7 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
     }
 
     append_a8_rolling_ball_pools(ir, annotations, data);
-    append_resolved_consolidated_surface_curves(ir, annotations, data);
+    append_resolved_consolidated_surface_curves(ir, annotations, data, &surfaces, &carrier_ids);
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -4804,9 +4804,11 @@ enum ConsolidatedCarrierKey {
     Cylinder(usize),
     EmbeddedCylinder(usize),
     Cone(usize),
+    NurbsOffset(usize, u64),
 }
 
 enum ConsolidatedCarrierChart<'a> {
+    Identity,
     Cylinder { radius: f64 },
     Cone { cone: &'a geometry::B2Cone },
 }
@@ -4814,6 +4816,7 @@ enum ConsolidatedCarrierChart<'a> {
 impl ConsolidatedCarrierChart<'_> {
     fn point(&self, [u, v]: [f64; 2]) -> [f64; 2] {
         match self {
+            Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
             Self::Cone { cone } => [
                 u / cone.angular_scale,
@@ -4824,16 +4827,44 @@ impl ConsolidatedCarrierChart<'_> {
 
     fn derivative(&self, [u, v]: [f64; 2]) -> [f64; 2] {
         match self {
+            Self::Identity => [u, v],
             Self::Cylinder { radius } => [u / radius, v],
             Self::Cone { cone } => [u / cone.angular_scale, v * cone.half_angle.cos()],
         }
     }
 }
 
+fn consolidated_jet_pcurve(
+    pcurve: &geometry::ConsolidatedPcurve,
+    chart: &ConsolidatedCarrierChart<'_>,
+) -> Option<PcurveGeometry> {
+    let points = pcurve
+        .points
+        .iter()
+        .copied()
+        .map(|point| chart.point(point))
+        .collect::<Vec<_>>();
+    let first = pcurve
+        .first_derivatives
+        .iter()
+        .copied()
+        .map(|derivative| chart.derivative(derivative))
+        .collect::<Vec<_>>();
+    let second = pcurve
+        .second_derivatives
+        .iter()
+        .copied()
+        .map(|derivative| chart.derivative(derivative))
+        .collect::<Vec<_>>();
+    quintic_jet_pcurve(pcurve.degree, &pcurve.knots, &points, &first, &second)
+}
+
 fn append_resolved_consolidated_surface_curves(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     data: &[u8],
+    freeform_surfaces: &[geometry::A8Surface],
+    freeform_surface_ids: &[SurfaceId],
 ) {
     let standalone = geometry::b2_cylinders(data)
         .into_iter()
@@ -4865,6 +4896,83 @@ fn append_resolved_consolidated_surface_curves(
             pcurve_parameter_range: None,
         });
         for (side, binding) in resolved.supports.iter().enumerate() {
+            if let Some(geometry::ConsolidatedSupportBinding::NurbsCarrier { pos, offset }) =
+                binding
+            {
+                let Some((carrier_index, _)) = freeform_surfaces
+                    .iter()
+                    .enumerate()
+                    .find(|(_, surface)| surface.pos == *pos)
+                else {
+                    continue;
+                };
+                let Some(support) = freeform_surface_ids.get(carrier_index).cloned() else {
+                    continue;
+                };
+                let surface = if *offset == 0.0 {
+                    support
+                } else {
+                    let key = ConsolidatedCarrierKey::NurbsOffset(*pos, offset.to_bits());
+                    if let Some(id) = surface_ids.get(&key) {
+                        id.clone()
+                    } else {
+                        let id = SurfaceId(format!(
+                            "catia:consolidated:nurbs-offset#{}",
+                            ir.model.surfaces.len()
+                        ));
+                        annotate(
+                            annotations,
+                            &id,
+                            "consolidated_a5_03_34_offset_cache",
+                            *pos as u64,
+                            "resolved_pcurve_support",
+                            Exactness::Unknown,
+                        );
+                        ir.model.surfaces.push(Surface {
+                            id: id.clone(),
+                            geometry: SurfaceGeometry::Unknown { record: None },
+                            source_object: None,
+                        });
+                        let procedural_id = ProceduralSurfaceId(format!(
+                            "catia:consolidated:nurbs-offset-construction#{}",
+                            ir.model.procedural_surfaces.len()
+                        ));
+                        annotate(
+                            annotations,
+                            &procedural_id,
+                            "consolidated_a5_03_34_constant_normal_offset",
+                            *pos as u64,
+                            "resolved_pcurve_support",
+                            Exactness::Derived,
+                        );
+                        ir.model.procedural_surfaces.push(ProceduralSurface {
+                            id: procedural_id,
+                            surface: id.clone(),
+                            definition: ProceduralSurfaceDefinition::Offset {
+                                support,
+                                distance: *offset,
+                                u_sense: Some(1),
+                                v_sense: Some(1),
+                                extension_flags: Vec::new(),
+                            },
+                            cache_fit_tolerance: None,
+                        });
+                        surface_ids.insert(key, id.clone());
+                        id
+                    }
+                };
+                let pcurve = &resolved.block.pcurves[side];
+                let chart = ConsolidatedCarrierChart::Identity;
+                let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart) else {
+                    continue;
+                };
+                sides[side] = IntcurveSupportSide {
+                    surface: Some(surface),
+                    pcurve: Some(geometry),
+                    pcurve_parameter_range: None,
+                };
+                continue;
+            }
             let (key, carrier, source_object, chart, annotation_kind, id_kind) = match binding {
                 Some(geometry::ConsolidatedSupportBinding::Cylinder { pos }) => {
                     let Some(cylinder) = standalone.get(pos) else {
@@ -4949,7 +5057,8 @@ fn append_resolved_consolidated_surface_curves(
                     match key {
                         ConsolidatedCarrierKey::Cylinder(pos)
                         | ConsolidatedCarrierKey::EmbeddedCylinder(pos)
-                        | ConsolidatedCarrierKey::Cone(pos) => pos as u64,
+                        | ConsolidatedCarrierKey::Cone(pos)
+                        | ConsolidatedCarrierKey::NurbsOffset(pos, _) => pos as u64,
                     },
                     "resolved_pcurve_support",
                     Exactness::ByteExact,
@@ -4964,27 +5073,7 @@ fn append_resolved_consolidated_surface_curves(
             };
 
             let pcurve = &resolved.block.pcurves[side];
-            let points = pcurve
-                .points
-                .iter()
-                .copied()
-                .map(|point| chart.point(point))
-                .collect::<Vec<_>>();
-            let first = pcurve
-                .first_derivatives
-                .iter()
-                .copied()
-                .map(|derivative| chart.derivative(derivative))
-                .collect::<Vec<_>>();
-            let second = pcurve
-                .second_derivatives
-                .iter()
-                .copied()
-                .map(|derivative| chart.derivative(derivative))
-                .collect::<Vec<_>>();
-            let Some(geometry) =
-                quintic_jet_pcurve(pcurve.degree, &pcurve.knots, &points, &first, &second)
-            else {
+            let Some(geometry) = consolidated_jet_pcurve(pcurve, &chart) else {
                 continue;
             };
             sides[side] = IntcurveSupportSide {
