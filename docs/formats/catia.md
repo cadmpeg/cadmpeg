@@ -385,7 +385,7 @@ The start/end references form a global native vertex-identity namespace across c
 - **Count-framed `b2/b3/b4 03 62` owner packet:** `0x80+n`, exactly `n` persistent identities, then a nonempty class-specific tail. Persistent identities use the compact integer grammar or `0x0a <u16le>`. The count fixes the reference-lane boundary.
 - **Counted `b2/b3/b4 03 61` family:** `0x80+n`, exactly `n` compact values, then a nonempty class-specific tail ending in `0x03`. Long `61` records without the leading count use a separate payload grammar.
 - **Long `b2/b3/b4 03 61` family:** eight prefix bytes, `0x06`, a nonempty strictly increasing `u16le` member lane, `0xfe`, five `0x0a <u16le>` persistent identities, one finite f64le scalar, and terminal `0x03`. The fixed 25-byte suffix determines the member-lane boundary.
-- **`b2/b3/b4 03 5f` link:** six-byte payload `82 <width-coded target> 03 05`. The target token consumes three bytes in this fixed-width form.
+- **`b2/b3/b4 03 5f` link:** payload `82 <width-coded target> 03 05`. The target uses the compact integer grammar; its encoded width determines the payload length.
 - **Owner allocation link:** when a `5f` link is immediately followed by a `62` owner packet, the owner's final identity equals `5f.target + 1` (the fixed nine-reference form uses its ninth identity). Both checked successor identity and framed adjacency are required; an intervening record breaks the link.
 - **`b2 03 3b`** has payload length `0x20`: compact references followed by f64 angular scale and cone half-angle.
 - **`b2 03 23`** stores `[lo,hi,eps, lo,hi,1.0, lo,hi,eps]` as nine f64 values. The repeated range is the native parameter interval shared by the two preceding pcurves.

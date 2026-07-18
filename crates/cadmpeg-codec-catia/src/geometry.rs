@@ -1424,13 +1424,13 @@ pub fn b2_long_61(data: &[u8]) -> Vec<B2Long61> {
         .collect()
 }
 
-/// Decode fixed `82 <width-coded target> 03 05` class-`0x5f` links.
+/// Decode `82 <width-coded target> 03 05` class-`0x5f` links.
 #[must_use]
 pub fn b2_links_5f(data: &[u8]) -> Vec<B2Link5f> {
     b_family_frames(data, 0x5f)
         .into_iter()
         .filter_map(|frame| {
-            if frame.end - frame.payload != 6 || data.get(frame.payload) != Some(&0x82) {
+            if data.get(frame.payload) != Some(&0x82) {
                 return None;
             }
             let mut at = frame.payload + 1;

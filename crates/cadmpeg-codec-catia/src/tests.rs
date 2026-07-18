@@ -4073,11 +4073,29 @@ fn b2_long_61_parser_derives_monotone_member_boundary_from_suffix() {
 }
 
 #[test]
-fn b2_link_5f_parser_reads_width_coded_target_and_fixed_tail() {
-    let links = crate::geometry::b2_links_5f(&b2_link_5f_stream());
-    assert_eq!(links.len(), 1);
-    assert_eq!(links[0].header_token, 5);
-    assert_eq!(links[0].target, 0x025d);
+fn b2_link_5f_parser_accepts_each_compact_target_width_and_fixed_tail() {
+    let mut bytes = Vec::new();
+    for payload in [
+        &[0x82, 0x04, 0x5d, 0x03, 0x05][..],
+        &[0x82, 0x08, 0x5d, 0x02, 0x03, 0x05],
+        &[0x82, 0x0c, 0x5d, 0x02, 0x01, 0x03, 0x05],
+        &[0x82, 0x10, 0x5d, 0x02, 0x01, 0x01, 0x03, 0x05],
+    ] {
+        bytes.extend_from_slice(&[0xb2, 0x03, 0x5f, u8::try_from(payload.len()).unwrap(), 0x05]);
+        bytes.extend_from_slice(payload);
+    }
+    let links = crate::geometry::b2_links_5f(&bytes);
+    assert_eq!(links.len(), 4);
+    assert!(links.iter().all(|link| link.header_token == 5));
+    assert_eq!(
+        links.iter().map(|link| link.target).collect::<Vec<_>>(),
+        [0x5d, 0x025d, 0x01025d, 0x0101_025d]
+    );
+
+    let malformed = [
+        0xb2, 0x03, 0x5f, 0x06, 0x05, 0x82, 0x04, 0x5d, 0x00, 0x03, 0x05,
+    ];
+    assert!(crate::geometry::b2_links_5f(&malformed).is_empty());
 }
 
 #[test]
