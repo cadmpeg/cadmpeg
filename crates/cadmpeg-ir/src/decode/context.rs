@@ -685,6 +685,18 @@ impl<'a> DecodeContext<'a> {
 
     // --- lifecycle ----------------------------------------------------------
 
+    /// Closes an inspection, returning a fused resource error even when codec
+    /// code swallowed the charge that caused it.
+    pub(crate) fn finish_inspection<T>(
+        self,
+        result: Result<T, CodecError>,
+    ) -> Result<T, CodecError> {
+        if let Some(limit) = self.fuse.get() {
+            return Err(CodecError::ResourceLimit(limit));
+        }
+        result
+    }
+
     /// Closes the decode, enforcing the session invariants.
     ///
     /// A fused context cannot return `Ok`: the original resource error is

@@ -131,6 +131,21 @@ fn fuse_then_swallow_still_fails_at_finish() {
 }
 
 #[test]
+fn fuse_then_swallow_still_fails_at_inspection_finish() {
+    let bytes: &[u8] = &[0u8; 16];
+    let arena = DecodeArena::new();
+    let policy = tight(|limits| limits.max_work = 0);
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+
+    let swallowed = ctx.charge_work(1, "test", None).ok();
+    assert!(swallowed.is_none());
+    assert!(matches!(
+        ctx.finish_inspection(Ok(())),
+        Err(CodecError::ResourceLimit(_))
+    ));
+}
+
+#[test]
 fn depth_guard_recurses_to_the_limit_and_fuses_beyond() {
     fn recurse(ctx: &DecodeContext<'_>, remaining: u32) -> Result<u32, CodecError> {
         let _guard = ctx.descend()?;

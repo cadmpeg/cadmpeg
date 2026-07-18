@@ -279,9 +279,9 @@ pub trait CodecEntry: Codec + sealed::Sealed {
     ///
     /// Acquires the root buffer under `options.limits.max_input_bytes` through
     /// an internal context, then runs [`Codec::inspect_impl`]. Inspection
-    /// commits no records and produces no [`DecodeResult`], so there is no
-    /// finalize step; the enforcement it adds over a bare reader is the bounded
-    /// root read.
+    /// commits no records and produces no [`DecodeResult`], but the wrapper
+    /// still checks the context fuse before returning so a swallowed resource
+    /// refusal cannot become a successful inspection.
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
@@ -312,7 +312,8 @@ impl<C: Codec + ?Sized> CodecEntry for C {
             limits: options.limits,
         };
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
-        self.inspect_impl(&ctx, root)
+        let result = self.inspect_impl(&ctx, root);
+        ctx.finish_inspection(result)
     }
 
     fn decode(
