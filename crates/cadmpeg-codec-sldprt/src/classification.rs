@@ -384,7 +384,7 @@ fn classify_xml_element(tag: &str) -> Option<FeatureClass> {
         "Dome" => FeatureClass::Dome,
         "Flex" => FeatureClass::Flex,
         "Scale" => FeatureClass::Scale,
-        "Hole" => FeatureClass::Hole,
+        "Hole" | "HoleWizard" => FeatureClass::Hole,
         "Revolve" | "Revolution" => FeatureClass::Revolve,
         "Pattern" | "Mirror" => FeatureClass::Pattern,
         "Sweep" | "Surface-Sweep" => FeatureClass::Sweep,
@@ -487,6 +487,14 @@ mod tests {
                 "{kind}"
             );
         }
+    }
+
+    #[test]
+    fn hole_wizard_element_is_a_hole_independent_of_display_language() {
+        assert_eq!(
+            classify(&feature("HoleWizard", "localized", "localized", None)),
+            Some(FeatureClass::Hole)
+        );
     }
 
     #[test]
