@@ -7558,7 +7558,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
 
 #[test]
 fn decode_leaves_position_allocated_tree_nodes_untyped() {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
+    use cadmpeg_ir::features::FeatureDefinition;
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -7577,13 +7577,10 @@ fn decode_leaves_position_allocated_tree_nodes_untyped() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(
-        decoded.ir.model.features[0].definition,
-        FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::LightsAndCameras,
-        }
-    );
-    assert!(decoded.ir.model.features[1..]
+    assert!(decoded
+        .ir
+        .model
+        .features
         .iter()
         .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
 }

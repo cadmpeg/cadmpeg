@@ -1774,7 +1774,6 @@ mod history_reference_tests {
         let cases = [
             ("1", FeatureTreeNodeRole::Annotations),
             ("5", FeatureTreeNodeRole::ModelOrigin),
-            ("6", FeatureTreeNodeRole::LightsAndCameras),
         ];
 
         for (source_id, expected) in cases {
@@ -3153,9 +3152,6 @@ fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeR
     match (feature.xml_tag.as_str(), feature.source_id.as_deref()?) {
         (tag, "1") if tag.eq_ignore_ascii_case("Feature") => Some(FeatureTreeNodeRole::Annotations),
         (tag, "5") if tag.eq_ignore_ascii_case("Sketch") => Some(FeatureTreeNodeRole::ModelOrigin),
-        (tag, "6") if tag.eq_ignore_ascii_case("Feature") => {
-            Some(FeatureTreeNodeRole::LightsAndCameras)
-        }
         _ => None,
     }
 }
