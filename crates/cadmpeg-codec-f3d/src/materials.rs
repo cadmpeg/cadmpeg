@@ -411,6 +411,7 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
                 category: None,
                 base_color: None,
                 properties: BTreeMap::new(),
+                textures: Vec::new(),
             });
         }
     }
@@ -1248,6 +1249,7 @@ fn decode_record(record: &[u8], _stream: &str, _offset: usize) -> Option<Appeara
         category: None,
         base_color: color,
         properties,
+        textures: Vec::new(),
     })
 }
 

@@ -388,6 +388,7 @@ fn build_geometry_ir(
                 category: None,
                 base_color: Some(face_color.color),
                 properties: BTreeMap::new(),
+                textures: Vec::new(),
             });
         }
         if let Some(target) = face_color.target {
@@ -437,6 +438,7 @@ fn build_geometry_ir(
             category: None,
             base_color: Some(material.color),
             properties: BTreeMap::new(),
+            textures: Vec::new(),
         });
         if unique_material {
             for (body_index, body) in ir.model.bodies.iter().enumerate() {

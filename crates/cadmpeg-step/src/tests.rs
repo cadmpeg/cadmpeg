@@ -735,6 +735,7 @@ fn face_appearance_binding_styles_the_advanced_face() {
             a: 1.0,
         }),
         properties: Default::default(),
+        textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),
@@ -793,6 +794,7 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
             a: 1.0,
         }),
         properties: Default::default(),
+        textures: Vec::new(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:appearance-binding#face".to_string(),

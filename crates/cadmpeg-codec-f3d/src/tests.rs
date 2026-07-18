@@ -8747,6 +8747,7 @@ fn generated_source_less_writes_protein_appearance_and_body_binding() {
             ("reflectivity_at_0deg".into(), 0.25),
             ("refraction_index".into(), 1.5),
         ]),
+        textures: Vec::new(),
     }];
     source_less.model.appearance_bindings = vec![AppearanceBinding {
         id: "generated:appearance-binding#0".into(),

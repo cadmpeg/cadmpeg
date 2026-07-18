@@ -3058,6 +3058,7 @@ mod tests {
             category: None,
             base_color: Some(material),
             properties: Default::default(),
+            textures: Vec::new(),
         });
         let binding = |id: &str, target| AppearanceBinding {
             id: id.into(),

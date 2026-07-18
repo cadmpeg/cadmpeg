@@ -1311,7 +1311,9 @@ fn json_round_trip_preserves_ulp_edge_scalars_exactly() {
 
 #[test]
 fn appearance_asset_and_binding_round_trip() {
-    use crate::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use crate::appearance::{
+        Appearance, AppearanceBinding, AppearanceTarget, BumpMap, TextureMap2d, TextureRef,
+    };
     use crate::ids::AppearanceId;
 
     let mut ir = unit_cube();
@@ -1331,6 +1333,33 @@ fn appearance_asset_and_binding_round_trip() {
             a: 1.0,
         }),
         properties: std::collections::BTreeMap::new(),
+        textures: vec![TextureRef {
+            asset_guid: "texture-guid".into(),
+            slot: "generic_bump_map".into(),
+            schema: "BumpMapSchema".into(),
+            paths: vec!["cloud/resource/texture.png".into()],
+            urn: Some("adsk.raas:asset.name:texture".into()),
+            mapping: TextureMap2d {
+                map_channel: 1,
+                uvw_source: 0,
+                u_offset: 0.25,
+                v_offset: -0.5,
+                u_scale: 2.0,
+                v_scale: 3.0,
+                rotation: std::f64::consts::FRAC_PI_2,
+                repeat_u: true,
+                repeat_v: false,
+                real_world_offset_x: 12.7,
+                real_world_offset_y: 25.4,
+                real_world_scale_x: 304.8,
+                real_world_scale_y: 609.6,
+            },
+            bump: Some(BumpMap {
+                normal_map: true,
+                depth: 2.54,
+                normal_scale: 0.75,
+            }),
+        }],
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "synthetic:test:appearance-binding#0".into(),
