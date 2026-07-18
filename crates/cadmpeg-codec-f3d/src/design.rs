@@ -8551,6 +8551,7 @@ fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecordHeader> {
 pub fn decode_edge_operands(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
+    groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
     recipes: &[ConstructionRecipe],
 ) -> Result<Vec<DesignEdgeOperand>, CodecError> {
@@ -8559,10 +8560,20 @@ pub fn decode_edge_operands(
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
-    for scope in scopes
-        .iter()
-        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Chamfer"))
-    {
+    for scope in scopes.iter().filter(|scope| {
+        matches!(
+            design_feature_family(&scope.kind),
+            Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
+        )
+    }) {
+        let member_indices = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+            })
+            .flat_map(|group| group.members.iter().copied())
+            .collect::<HashSet<_>>();
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -8575,6 +8586,9 @@ pub fn decode_edge_operands(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+            if !member_indices.contains(&record_index) {
+                continue;
+            }
             let Ok(ordinal) = u32::try_from(ordinal) else {
                 continue;
             };

@@ -1201,11 +1201,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                matches!(scope.kind.as_str(), "Fillet" | "Chamfer")
-                    && usize::try_from(operand.scope_reference_ordinal)
-                        .ok()
-                        .and_then(|ordinal| scope.reference_members.get(ordinal))
-                        == Some(&operand.record_index)
+                matches!(
+                    design::design_feature_family(&scope.kind),
+                    Some(
+                        design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer
+                    )
+                ) && usize::try_from(operand.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                    == Some(&operand.record_index)
             })
             && header.is_some_and(|header| {
                 header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
