@@ -4599,11 +4599,19 @@ fn historical_selection_regions(
         return unique_resolved_selection(state_selections.into_iter().map(Some));
     }
     {
-        let member_points = members
+        let selections = members
             .iter()
-            .map(|member| resolved_selection_member_points(member, sketch, entities))
-            .collect::<Option<Vec<_>>>()?;
-        selection_for_member_points(members, sketch, entities, &member_points, tolerance)
+            .map(|member| {
+                if let Some(points) = resolved_selection_member_points(member, sketch, entities) {
+                    selection_containing_points(sketch, entities, &points, tolerance)
+                } else {
+                    resolved_selection_member_profiles(member, sketch)
+                        .map(ResolvedProfileSelection::Loops)
+                }
+            })
+            .collect::<Vec<_>>();
+        ordered_unique_profile_selections(selections.iter().cloned())
+            .or_else(|| region_with_boundary_selection_members(members, sketch, &selections))
     }
 }
 
@@ -21863,6 +21871,77 @@ mod relation_tests {
                 sketch: ref actual_sketch,
                 ref profiles,
             } if actual_sketch == &sketch_id && profiles == &[0]
+        ));
+        let mut point_member = member.clone();
+        point_member.id = "f3d:Design/BulkStream.dat:selection-member#201".into();
+        point_member.record_index = 201;
+        point_member.group_member_ordinal = 1;
+        point_member.local_id = 587;
+        point_member.resolved_geometry = Some(SketchRelationOperand::Point {
+            record_index: 401,
+            persistent_id: 587,
+        });
+        group.members.push(201);
+        let mut sketch = sketch;
+        let second_profile_id = SketchEntityId("second-profile".into());
+        sketch.profiles.push(vec![SketchEntityUse {
+            entity: second_profile_id.clone(),
+            reversed: false,
+        }]);
+        let point_entity = SketchEntity {
+            id: neutral_sketch_point_id(&point_member.id, 587),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point {
+                position: Point2::new(0.5, 1.0),
+            },
+        };
+        let line_entity = SketchEntity {
+            id: neutral_sketch_curve_id(&member.id, 586, 0),
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(1.0, 0.0),
+            },
+        };
+        let second_profile_entity = SketchEntity {
+            id: second_profile_id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 1.0),
+                end: Point2::new(1.0, 1.0),
+            },
+        };
+        let profile_entities = [line_entity, second_profile_entity, point_entity];
+        assert!(matches!(
+            resolved_extrude_profile_selection(
+                &sketch_id,
+                &group,
+                &[member.clone(), point_member],
+                &sketch,
+                super::ExtrudeProfileResolution {
+                    entities: &profile_entities,
+                    histories: &[],
+                    linear_tolerance: 1.0e-6,
+                },
+                None,
+                None,
+            ),
+            cadmpeg_ir::features::ProfileRef::SketchProfiles {
+                sketch: ref actual_sketch,
+                ref profiles,
+            } if actual_sketch == &sketch_id && profiles == &[0, 1]
         ));
         member.resolved_geometry = None;
         assert!(matches!(
