@@ -4737,6 +4737,25 @@ fn decode_transfers_closed_plane_intersection_brep() {
         .iter()
         .all(|lp| lp.boundary_role == cadmpeg_ir::topology::LoopBoundaryRole::Outer));
     assert_eq!(model.coedges.len(), 12);
+    assert_eq!(model.pcurves.len(), 12);
+    assert!(model.coedges.iter().all(|coedge| coedge.pcurves.len() == 1));
+    for coedge in &model.coedges {
+        let pcurve = model
+            .pcurves
+            .iter()
+            .find(|pcurve| pcurve.id == coedge.pcurves[0].pcurve)
+            .expect("projected plane pcurve");
+        assert!(matches!(
+            pcurve.geometry,
+            cadmpeg_ir::geometry::PcurveGeometry::Line { .. }
+        ));
+        let edge = model
+            .edges
+            .iter()
+            .find(|edge| edge.id == coedge.edge)
+            .expect("pcurve edge");
+        assert_eq!(pcurve.parameter_range, edge.param_range);
+    }
     assert_eq!(model.shells.len(), 1);
     assert_eq!(model.regions.len(), 1);
     assert_eq!(model.bodies.len(), 1);

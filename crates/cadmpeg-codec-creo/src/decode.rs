@@ -20891,6 +20891,167 @@ fn unique_oriented_native_pcurve(
     Some(selected)
 }
 
+fn planar_curve_pcurve(
+    surface: &SurfaceGeometry,
+    geometry: &CurveGeometry,
+) -> Option<PcurveGeometry> {
+    let SurfaceGeometry::Plane {
+        origin,
+        normal,
+        u_axis,
+    } = surface
+    else {
+        return None;
+    };
+    let origin = [origin.x, origin.y, origin.z];
+    let normal = normalized([normal.x, normal.y, normal.z])?;
+    let u_axis = normalized([u_axis.x, u_axis.y, u_axis.z])?;
+    (dot(normal, u_axis).abs() <= 1e-10).then_some(())?;
+    let v_axis = normalized(cross(normal, u_axis))?;
+    let project_point = |point: [f64; 3], tolerance: f64| {
+        let relative: [f64; 3] = std::array::from_fn(|index| point[index] - origin[index]);
+        (dot(relative, normal).abs() <= tolerance)
+            .then_some(Point2::new(dot(relative, u_axis), dot(relative, v_axis)))
+    };
+    let project_direction = |direction: [f64; 3]| {
+        let length = dot(direction, direction).sqrt();
+        (length.is_finite() && length > 0.0 && dot(direction, normal).abs() <= 1e-10 * length)
+            .then_some(Point2::new(dot(direction, u_axis), dot(direction, v_axis)))
+    };
+    let conic_frame = |center: [f64; 3], axis: [f64; 3], x_axis: [f64; 3], scale: f64| {
+        let axis = normalized(axis)?;
+        let x_axis = normalized(x_axis)?;
+        ((dot(axis, normal).abs() - 1.0).abs() <= 1e-10 && dot(axis, x_axis).abs() <= 1e-10)
+            .then_some(())?;
+        let y_axis = normalized(cross(axis, x_axis))?;
+        Some((
+            project_point(center, 1e-9 * scale.max(1.0))?,
+            project_direction(x_axis)?,
+            project_direction(y_axis)?,
+        ))
+    };
+
+    match geometry {
+        CurveGeometry::Line { origin, direction } => {
+            let direction = [direction.x, direction.y, direction.z];
+            Some(PcurveGeometry::Line {
+                origin: project_point([origin.x, origin.y, origin.z], 1e-9)?,
+                direction: project_direction(direction)?,
+            })
+        }
+        CurveGeometry::Circle {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } if radius.is_finite() && *radius > 0.0 => {
+            let (center, x_axis, y_axis) = conic_frame(
+                [center.x, center.y, center.z],
+                [axis.x, axis.y, axis.z],
+                [ref_direction.x, ref_direction.y, ref_direction.z],
+                *radius,
+            )?;
+            Some(PcurveGeometry::Circle {
+                center,
+                x_axis,
+                y_axis,
+                radius: *radius,
+            })
+        }
+        CurveGeometry::Ellipse {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } if major_radius.is_finite()
+            && minor_radius.is_finite()
+            && *major_radius > 0.0
+            && *minor_radius > 0.0 =>
+        {
+            let (center, x_axis, y_axis) = conic_frame(
+                [center.x, center.y, center.z],
+                [axis.x, axis.y, axis.z],
+                [major_direction.x, major_direction.y, major_direction.z],
+                major_radius.max(*minor_radius),
+            )?;
+            Some(PcurveGeometry::Ellipse {
+                center,
+                x_axis,
+                y_axis,
+                major_radius: *major_radius,
+                minor_radius: *minor_radius,
+            })
+        }
+        CurveGeometry::Parabola {
+            vertex,
+            axis,
+            major_direction,
+            focal_distance,
+        } if focal_distance.is_finite() && *focal_distance > 0.0 => {
+            let (vertex, x_axis, y_axis) = conic_frame(
+                [vertex.x, vertex.y, vertex.z],
+                [axis.x, axis.y, axis.z],
+                [major_direction.x, major_direction.y, major_direction.z],
+                *focal_distance,
+            )?;
+            Some(PcurveGeometry::Parabola {
+                vertex,
+                x_axis,
+                y_axis,
+                focal_distance: *focal_distance,
+            })
+        }
+        CurveGeometry::Hyperbola {
+            center,
+            axis,
+            major_direction,
+            major_radius,
+            minor_radius,
+        } if major_radius.is_finite()
+            && minor_radius.is_finite()
+            && *major_radius > 0.0
+            && *minor_radius > 0.0 =>
+        {
+            let (center, x_axis, y_axis) = conic_frame(
+                [center.x, center.y, center.z],
+                [axis.x, axis.y, axis.z],
+                [major_direction.x, major_direction.y, major_direction.z],
+                major_radius.max(*minor_radius),
+            )?;
+            Some(PcurveGeometry::Hyperbola {
+                center,
+                x_axis,
+                y_axis,
+                major_radius: *major_radius,
+                minor_radius: *minor_radius,
+            })
+        }
+        CurveGeometry::Nurbs(nurbs) => {
+            nurbs_intrinsic_parameter_range(nurbs)?;
+            nurbs
+                .weights
+                .as_ref()
+                .is_none_or(|weights| weights.iter().all(|weight| weight.is_finite()))
+                .then_some(())?;
+            let tolerance = 1e-9 * nurbs_control_extent(nurbs)?;
+            let control_points = nurbs
+                .control_points
+                .iter()
+                .map(|point| project_point([point.x, point.y, point.z], tolerance))
+                .collect::<Option<Vec<_>>>()?;
+            Some(PcurveGeometry::Nurbs {
+                degree: nurbs.degree,
+                knots: nurbs.knots.clone(),
+                control_points,
+                weights: nurbs.weights.clone(),
+                periodic: nurbs.periodic,
+            })
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod native_pcurve_tests {
     use super::*;
@@ -20973,9 +21134,57 @@ mod native_pcurve_tests {
             None
         );
     }
+
+    #[test]
+    fn projects_exact_planar_carriers_without_changing_parameters() {
+        let circle = CurveGeometry::Circle {
+            center: Point3::new(2.0, 4.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(0.0, 1.0, 0.0),
+            radius: 2.0,
+        };
+        assert!(matches!(
+            planar_curve_pcurve(&plane(), &circle),
+            Some(PcurveGeometry::Circle { center, x_axis, y_axis, radius })
+                if center == Point2::new(2.0, 4.0)
+                    && x_axis == Point2::new(0.0, 1.0)
+                    && y_axis == Point2::new(-1.0, 0.0)
+                    && radius == 2.0
+        ));
+
+        let nurbs = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![2.0, 2.0, 5.0, 5.0],
+            control_points: vec![Point3::new(2.0, 4.0, 3.0), Point3::new(5.0, 7.0, 3.0)],
+            weights: Some(vec![2.0, 1.0]),
+            periodic: false,
+        });
+        assert!(matches!(
+            planar_curve_pcurve(&plane(), &nurbs),
+            Some(PcurveGeometry::Nurbs { degree: 1, knots, control_points, weights: Some(weights), periodic: false })
+                if knots == [2.0, 2.0, 5.0, 5.0]
+                    && control_points == [Point2::new(2.0, 4.0), Point2::new(5.0, 7.0)]
+                    && weights == [2.0, 1.0]
+        ));
+
+        let off_plane = CurveGeometry::Line {
+            origin: Point3::new(0.0, 0.0, 3.1),
+            direction: Vector3::new(1.0, 0.0, 0.0),
+        };
+        assert!(planar_curve_pcurve(&plane(), &off_plane).is_none());
+
+        let malformed_nurbs = CurveGeometry::Nurbs(NurbsCurve {
+            degree: 1,
+            knots: vec![0.0, 0.0, 1.0],
+            control_points: vec![Point3::new(0.0, 0.0, 3.0), Point3::new(1.0, 0.0, 3.0)],
+            weights: None,
+            periodic: false,
+        });
+        assert!(planar_curve_pcurve(&plane(), &malformed_nurbs).is_none());
+    }
 }
 
-fn transfer_plane_brep(
+fn transfer_native_brep(
     scan: &ContainerScan,
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
@@ -21467,8 +21676,8 @@ fn transfer_plane_brep(
                         "native_half_edge",
                         Exactness::Derived,
                     );
-                    let pcurves = native_pcurves
-                        .get(&(half_edge.curve_id, *face_id))
+                    let native_candidates = native_pcurves.get(&(half_edge.curve_id, *face_id));
+                    let pcurve_geometry = native_candidates
                         .and_then(|candidates| {
                             let incidence = incidence.get(half_edge)?;
                             let end = incidence.end_vertex_id?;
@@ -21483,6 +21692,39 @@ fn transfer_plane_brep(
                             unique_oriented_native_pcurve(&surface.geometry, candidates, traversal)
                         })
                         .map(|(endpoints, offset)| {
+                            (
+                                line_pcurve(endpoints[0], endpoints[1]),
+                                Some([0.0, 1.0]),
+                                offset,
+                                "native_endpoint_pcurve",
+                            )
+                        })
+                        .or_else(|| {
+                            native_candidates.is_none().then_some(())?;
+                            let surface = ir.model.surfaces.iter().find(|candidate| {
+                                candidate.id
+                                    == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
+                            })?;
+                            let curve = ir.model.curves.iter().find(|candidate| {
+                                candidate.id
+                                    == CurveId(format!(
+                                        "creo:visibgeom:curve#{}",
+                                        half_edge.curve_id
+                                    ))
+                            })?;
+                            let edge = ir.model.edges.iter().find(|candidate| {
+                                candidate.id
+                                    == EdgeId(format!("creo:visibgeom:edge#{}", half_edge.curve_id))
+                            })?;
+                            Some((
+                                planar_curve_pcurve(&surface.geometry, &curve.geometry)?,
+                                edge.param_range,
+                                row_offsets.get(&half_edge.curve_id).copied().unwrap_or(0),
+                                "projected_planar_pcurve",
+                            ))
+                        });
+                    let pcurves = pcurve_geometry
+                        .map(|(geometry, parameter_range, offset, tag)| {
                             let pcurve = PcurveId(format!(
                                 "creo:visibgeom:pcurve#{}:{face_id}",
                                 half_edge.curve_id
@@ -21493,15 +21735,15 @@ fn transfer_plane_brep(
                                     &pcurve,
                                     "VisibGeom",
                                     offset as u64,
-                                    "native_endpoint_pcurve",
+                                    tag,
                                     Exactness::Derived,
                                 );
                                 ir.model.pcurves.push(Pcurve {
                                     id: pcurve.clone(),
-                                    geometry: line_pcurve(endpoints[0], endpoints[1]),
+                                    geometry,
                                     wrapper_reversed: None,
                                     native_tail_flags: None,
-                                    parameter_range: Some([0.0, 1.0]),
+                                    parameter_range,
                                     fit_tolerance: None,
                                 });
                             }
@@ -24841,7 +25083,7 @@ fn build_ir(
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
     let derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
-    transfer_plane_brep(
+    transfer_native_brep(
         scan,
         &mut ir,
         &mut annotations,

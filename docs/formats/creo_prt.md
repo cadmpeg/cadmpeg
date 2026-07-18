@@ -1287,6 +1287,17 @@ positional and labeled forms define one pcurve. Distinct matching paths, or a
 pair that matches neither endpoint order or both orders, do not define a
 pcurve.
 
+When a native edge has no pcurve candidate on a solved planar face, an exact
+line, circle, ellipse, parabola, hyperbola, or NURBS carrier lying in that plane
+projects into the plane chart. For plane origin `O`, unit `u` axis `U`, unit
+normal `N`, and `V = N × U`, model point `P` maps to
+`(dot(P - O, U), dot(P - O, V))`. Directions use the same two dot products.
+This affine projection preserves analytic parameters and NURBS degree, knots,
+weights, periodicity, and edge parameter interval. Every analytic carrier
+frame and every NURBS control point must lie in the plane. A present native
+pcurve candidate remains authoritative; failure to reconcile it does not fall
+back to a derived projection.
+
 A NURBS curve has intrinsic domain
 `[knots[degree], knots[control_point_count]]`. A native edge on a nonperiodic
 higher-degree curve uses that complete domain when its two solved vertices
