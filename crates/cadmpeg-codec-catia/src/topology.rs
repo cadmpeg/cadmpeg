@@ -12,7 +12,7 @@ use cadmpeg_ir::topology::BodyKind;
 const FBB_ROW: [u8; 4] = [0x30, 0x04, 0x04, 0xff];
 const EDGE_DELIMITER: [u8; 8] = [0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00];
 const MAX_FACE_EQUATION_CACHE_ENTRIES: usize = 4_096;
-const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 1_000_000;
+const MAX_MESH_CONSTRAINT_OPERATIONS: usize = 100_000;
 const TRIM_KINDS: [u8; 14] = [
     0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f,
 ];
@@ -3231,10 +3231,8 @@ pub fn parse_standard_mesh_selection(
 fn boundary_endpoint_support(
     boundary: &[MeshBoundaryEdgeCandidate],
     edge_candidates: &[Vec<[usize; 2]>],
-    work: &mut usize,
+    budget: &MeshConstraintBudget,
 ) -> Option<HashMap<usize, HashSet<[usize; 2]>>> {
-    const MAX_BOUNDARY_SUPPORT_WORK: usize = 20_000_000;
-
     #[derive(Clone, Copy)]
     struct State {
         pair: [usize; 2],
@@ -3271,6 +3269,9 @@ fn boundary_endpoint_support(
         })
         .collect::<Option<Vec<_>>>()?;
     let first_layer = layers.first()?;
+    let layer_states = layers
+        .iter()
+        .try_fold(0usize, |total, layer| total.checked_add(layer.len()))?;
     let first_points = first_layer
         .iter()
         .map(|state| state.start)
@@ -3280,6 +3281,9 @@ fn boundary_endpoint_support(
         .map(|layer| vec![false; layer.len()])
         .collect::<Vec<_>>();
     for first_point in first_points {
+        if !budget.charge_by(layer_states.checked_mul(3)?) {
+            return None;
+        }
         let mut forward = layers
             .iter()
             .map(|layer| vec![false; layer.len()])
@@ -3288,8 +3292,7 @@ fn boundary_endpoint_support(
             *reachable = state.start == first_point;
         }
         for layer in 1..layers.len() {
-            *work = work.checked_add(layers[layer - 1].len() + layers[layer].len())?;
-            if *work > MAX_BOUNDARY_SUPPORT_WORK {
+            if !budget.charge_by(layers[layer - 1].len() + layers[layer].len()) {
                 return None;
             }
             let reachable_points = layers[layer - 1]
@@ -3380,13 +3383,13 @@ pub fn standard_mesh_prune_endpoint_candidates(
         })
         .collect::<Vec<_>>();
     let mut faces = standard_mesh_boundary_assignments(bytes, edge_faces)?;
+    let budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
     loop {
         let before = (
             faces.iter().map(Vec::len).sum::<usize>(),
             candidates.iter().map(Vec::len).sum::<usize>(),
         );
         let mut face_supports = Vec::with_capacity(faces.len());
-        let mut work = 0usize;
         for assignments in &mut faces {
             let evaluated = assignments
                 .iter()
@@ -3395,7 +3398,7 @@ pub fn standard_mesh_prune_endpoint_candidates(
                     let mut support = HashMap::<usize, HashSet<[usize; 2]>>::new();
                     for boundary in &assignment.boundaries {
                         for (edge, domain) in
-                            boundary_endpoint_support(boundary, &candidates, &mut work)?
+                            boundary_endpoint_support(boundary, &candidates, &budget)?
                         {
                             support
                                 .entry(edge)
@@ -6472,12 +6475,16 @@ impl MeshConstraintBudget {
     }
 
     fn charge(&self) -> bool {
+        self.charge_by(1)
+    }
+
+    fn charge_by(&self, work: usize) -> bool {
         let remaining = self.remaining.get();
-        if remaining == 0 {
+        if work > remaining {
             self.exhausted.set(true);
             false
         } else {
-            self.remaining.set(remaining - 1);
+            self.remaining.set(remaining - work);
             true
         }
     }
