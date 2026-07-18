@@ -18032,7 +18032,7 @@ mod resolved_sketch_tests {
             ratio: 1.0,
             half_angle: 0.5_f64.atan(),
         });
-        let candidates = coaxial_cones_circle_candidates(first, second);
+        let candidates = coaxial_cones_section_candidates(first, second);
         assert_eq!(candidates.len(), 2);
         assert!(matches!(
             select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 6.0, 4.0]]),
@@ -18057,7 +18057,7 @@ mod resolved_sketch_tests {
             ratio: 1.0,
             half_angle: 0.5_f64.atan(),
         });
-        let reversed_candidates = coaxial_cones_circle_candidates(first, reversed);
+        let reversed_candidates = coaxial_cones_section_candidates(first, reversed);
         assert_eq!(reversed_candidates.len(), 2);
         assert!(reversed_candidates.iter().any(|(geometry, _)| matches!(
             geometry,
@@ -18065,7 +18065,7 @@ mod resolved_sketch_tests {
                 if (center.z - 4.0 / 3.0).abs() < 1e-12
                     && (radius - 10.0 / 3.0).abs() < 1e-12
         )));
-        assert!(coaxial_cones_circle_candidates(first, first).is_empty());
+        assert!(coaxial_cones_section_candidates(first, first).is_empty());
         let shifted = CarrierEquation::Cone(ConeEquation {
             origin: [1.0, 0.0, 0.0],
             axis: [0.0, 0.0, 1.0],
@@ -18074,7 +18074,47 @@ mod resolved_sketch_tests {
             ratio: 1.0,
             half_angle: 0.5_f64.atan(),
         });
-        assert!(coaxial_cones_circle_candidates(first, shifted).is_empty());
+        assert!(coaxial_cones_section_candidates(first, shifted).is_empty());
+
+        let CarrierEquation::Cone(mut elliptical_first_equation) = first else {
+            unreachable!();
+        };
+        elliptical_first_equation.ratio = 0.5;
+        let elliptical_first = CarrierEquation::Cone(elliptical_first_equation);
+        let CarrierEquation::Cone(mut elliptical_second_equation) = second else {
+            unreachable!();
+        };
+        elliptical_second_equation.ratio = 0.5;
+        let elliptical_second = CarrierEquation::Cone(elliptical_second_equation);
+        let candidates = coaxial_cones_section_candidates(elliptical_first, elliptical_second);
+        assert_eq!(candidates.len(), 2);
+        let selected =
+            select_unique_curve_candidate(candidates, [[6.0, 0.0, 4.0], [0.0, 3.0, 4.0]])
+                .expect("selected coaxial elliptical-cone section");
+        assert!(matches!(
+            &selected,
+            (
+                CurveGeometry::Ellipse {
+                    center,
+                    major_radius,
+                    minor_radius,
+                    ..
+                },
+                "coaxial_cones_ellipse"
+            ) if (center.z - 4.0).abs() < 1e-12
+                && (major_radius - 6.0).abs() < 1e-12
+                && (minor_radius - 3.0).abs() < 1e-12
+        ));
+        for parameter in [-1.0, 0.0, 1.0] {
+            let point = cadmpeg_ir::eval::curve_point(&selected.0, parameter)
+                .expect("coaxial cone ellipse point");
+            let point = [point.x, point.y, point.z];
+            assert!(point_on_carrier(point, elliptical_first));
+            assert!(point_on_carrier(point, elliptical_second));
+        }
+        elliptical_second_equation.ref_direction = [0.0, 1.0, 0.0];
+        let incompatible_frame = CarrierEquation::Cone(elliptical_second_equation);
+        assert!(coaxial_cones_section_candidates(elliptical_first, incompatible_frame).is_empty());
     }
 
     #[test]
@@ -24228,25 +24268,36 @@ fn coaxial_cone_cylinder_circle_candidates(
         .collect()
 }
 
-fn coaxial_cones_circle_candidates(
+fn coaxial_cones_section_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
 ) -> Vec<(CurveGeometry, &'static str)> {
     let (CarrierEquation::Cone(first), CarrierEquation::Cone(second)) = (first, second) else {
         return Vec::new();
     };
-    if !circular_cone(first) || !circular_cone(second) {
+    if first.ratio <= 0.0
+        || second.ratio <= 0.0
+        || !first.ratio.is_finite()
+        || !second.ratio.is_finite()
+    {
         return Vec::new();
     }
-    let (Some(first_axis), Some(second_axis), Some(reference)) = (
+    let (Some(first_axis), Some(second_axis), Some(reference), Some(second_reference)) = (
         normalized(first.axis),
         normalized(second.axis),
         normalized(first.ref_direction),
+        normalized(second.ref_direction),
     ) else {
         return Vec::new();
     };
     let axis_alignment = dot(first_axis, second_axis);
-    if (axis_alignment.abs() - 1.0).abs() > 1e-10 {
+    let ratio_scale = first.ratio.max(second.ratio).max(1.0);
+    if (axis_alignment.abs() - 1.0).abs() > 1e-10
+        || dot(first_axis, reference).abs() > 1e-10
+        || dot(second_axis, second_reference).abs() > 1e-10
+        || (first.ratio - second.ratio).abs() > 1e-10 * ratio_scale
+        || (!circular_cone(first) && (dot(reference, second_reference).abs() - 1.0).abs() > 1e-10)
+    {
         return Vec::new();
     }
     let relative: [f64; 3] =
@@ -24303,15 +24354,29 @@ fn coaxial_cones_circle_candidates(
             let radius = (first.radius + parameter * first_slope).abs();
             let center: [f64; 3] =
                 std::array::from_fn(|index| first.origin[index] + parameter * first_axis[index]);
-            (
-                CurveGeometry::Circle {
-                    center: Point3::new(center[0], center[1], center[2]),
-                    axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
-                    ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
-                    radius,
-                },
-                "coaxial_cones_circle",
-            )
+            let (geometry, tag) = if circular_cone(first) {
+                (
+                    CurveGeometry::Circle {
+                        center: Point3::new(center[0], center[1], center[2]),
+                        axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                        ref_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                        radius,
+                    },
+                    "coaxial_cones_circle",
+                )
+            } else {
+                (
+                    CurveGeometry::Ellipse {
+                        center: Point3::new(center[0], center[1], center[2]),
+                        axis: Vector3::new(first_axis[0], first_axis[1], first_axis[2]),
+                        major_direction: Vector3::new(reference[0], reference[1], reference[2]),
+                        major_radius: radius,
+                        minor_radius: radius * first.ratio,
+                    },
+                    "coaxial_cones_ellipse",
+                )
+            };
+            (geometry, tag)
         })
         .collect()
 }
@@ -24917,7 +24982,7 @@ fn multi_component_intersection_candidates(
     candidates.extend(parallel_cylinder_generator_candidates(first, second));
     candidates.extend(coaxial_cylinder_sphere_circle_candidates(first, second));
     candidates.extend(coaxial_cone_cylinder_circle_candidates(first, second));
-    candidates.extend(coaxial_cones_circle_candidates(first, second));
+    candidates.extend(coaxial_cones_section_candidates(first, second));
     candidates.extend(apex_plane_cone_generator_candidates(first, second));
     candidates.extend(coaxial_cone_sphere_circle_candidates(first, second));
     candidates.extend(coaxial_cone_torus_circle_candidates(first, second));
