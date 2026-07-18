@@ -1585,7 +1585,8 @@ fn build_geometry_ir(
         &lanes,
     );
     stamp_feature_baseline(&mut ir);
-    let attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+    let mut attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+    attributes.extend(crate::history::custom_property_attributes(&histories));
     let mut native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -2091,7 +2092,8 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
     let (sketches, sketch_entities, sketch_constraints) =
         crate::resolved_features::sketches(scan, &mut ir.annotations);
-    let model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+    let mut model_attributes = crate::metadata::attributes(scan, &mut ir.annotations);
+    model_attributes.extend(crate::history::custom_property_attributes(&histories));
     ir.model.attributes = model_attributes;
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;

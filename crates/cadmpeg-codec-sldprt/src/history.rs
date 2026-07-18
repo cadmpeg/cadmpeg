@@ -5,6 +5,7 @@ use crate::classification::{classify, native_object_class, FeatureClass, NativeC
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
+use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
@@ -17,6 +18,7 @@ use cadmpeg_ir::features::{
     TrimRegion, VariableRadius, VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
+use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
 use cadmpeg_ir::Exactness;
@@ -301,6 +303,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
             history
                 .features
                 .iter()
+                .filter(|feature| !is_custom_property(feature))
                 .map(move |feature| cadmpeg_ir::features::Feature {
                     id: neutral_feature_id(&feature.id),
                     ordinal: u64::from(feature.ordinal),
@@ -327,6 +330,36 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                 })
         })
         .collect()
+}
+
+/// Project Keywords custom-property records into document-owned attributes.
+pub(crate) fn custom_property_attributes(histories: &[FeatureHistory]) -> Vec<SourceAttribute> {
+    histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| is_custom_property(feature))
+        .map(|feature| {
+            let key = feature
+                .id
+                .strip_prefix("sldprt:history:feature#")
+                .unwrap_or(&feature.id);
+            SourceAttribute {
+                id: AttributeId(format!("sldprt:history:custom-property#{key}")),
+                target: AttributeTarget::Document,
+                name: feature.name.clone(),
+                values: feature
+                    .text
+                    .iter()
+                    .cloned()
+                    .map(AttributeValue::String)
+                    .collect(),
+            }
+        })
+        .collect()
+}
+
+fn is_custom_property(feature: &Feature) -> bool {
+    feature.xml_tag.eq_ignore_ascii_case("CustomProperty")
 }
 
 fn unique_source_bindings(history: &FeatureHistory) -> HashMap<&str, Option<(&str, FeatureId)>> {
@@ -1731,6 +1764,40 @@ mod history_reference_tests {
             }
             assert_eq!(feature_tree_node_role(&node), Some(expected));
         }
+    }
+
+    #[test]
+    fn custom_properties_are_document_attributes_not_model_features() {
+        let mut property = feature("property", None, 0);
+        property.xml_tag = "CustomProperty".into();
+        property.name = "PartNumber".into();
+        property.text = Some("A-123".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![property],
+        };
+
+        assert!(project_features(std::slice::from_ref(&history)).is_empty());
+        let attributes = custom_property_attributes(std::slice::from_ref(&history));
+        assert_eq!(attributes.len(), 1);
+        assert_eq!(attributes[0].name, "PartNumber");
+        assert_eq!(
+            attributes[0].values,
+            vec![AttributeValue::String("A-123".into())]
+        );
+
+        let mut native = Some(crate::native::SldprtNative {
+            version: crate::native::SLDPRT_NATIVE_VERSION,
+            feature_histories: vec![history],
+            feature_input_lanes: Vec::new(),
+            pmi_dimensions: Vec::new(),
+        });
+        sync_neutral_features(&[], &[], &[], &mut native).unwrap();
+        assert_eq!(native.unwrap().feature_histories[0].features.len(), 1);
     }
 
     fn design_configuration(
@@ -6952,7 +7019,7 @@ pub fn sync_neutral_features(
     if features.is_empty() {
         if let Some(native) = native {
             for history in &mut native.feature_histories {
-                history.features.clear();
+                history.features.retain(is_custom_property);
             }
         }
         return Ok(());
@@ -7057,9 +7124,9 @@ pub fn sync_neutral_features(
         .cloned()
         .collect::<std::collections::HashSet<_>>();
     for history in &mut native.feature_histories {
-        history
-            .features
-            .retain(|feature| desired_record_ids.contains(&feature.id));
+        history.features.retain(|feature| {
+            is_custom_property(feature) || desired_record_ids.contains(&feature.id)
+        });
     }
     let record_sources = native
         .feature_histories
