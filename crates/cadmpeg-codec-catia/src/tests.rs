@@ -3921,6 +3921,43 @@ fn decode_standard_does_not_promote_unbound_consolidated_pcurve() {
 }
 
 #[test]
+fn native_namespace_retains_unbound_consolidated_pcurve_jets() {
+    let mut bytes = a5_pcurve_stream();
+    bytes.extend(b2_pcurve_stream());
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert_eq!(native.consolidated_pcurves.len(), 2);
+    assert_eq!(
+        native.consolidated_pcurves[0].family,
+        crate::native::CatiaConsolidatedFamily::A
+    );
+    assert_eq!(
+        native.consolidated_pcurves[1].family,
+        crate::native::CatiaConsolidatedFamily::B
+    );
+    assert_eq!(native.consolidated_pcurves[0].support_id, 0x1234);
+    assert_eq!(
+        native.consolidated_pcurves[0].points,
+        vec![[0.0, 0.0], [1.0, 1.0]]
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native.store(&mut namespace).expect("store CATIA pcurves");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace).expect("load CATIA pcurves"),
+        native
+    );
+
+    let mut invalid = native;
+    invalid.consolidated_pcurves[0].degree = 4;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA pcurve for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
 fn consolidated_pcurve_parser_reads_width2_frame() {
     let pcurves = crate::geometry::a5_pcurves(&a6_pcurve_stream());
     assert_eq!(pcurves.len(), 1);

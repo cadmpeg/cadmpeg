@@ -7,18 +7,20 @@ use std::collections::{HashMap, HashSet};
 
 use crate::catalog;
 use crate::container;
+use crate::geometry;
 use crate::object_graph::{
     self, AliasLead, HeadToken, ListItem, ObjectPayload, PayloadField, PayloadSubtype,
 };
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 52;
+pub const CATIA_NATIVE_VERSION: u32 = 53;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
+    "consolidated_pcurves",
     "design_objects",
     "external_references",
     "finjpl_segments",
@@ -27,6 +29,48 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "preview_images",
     "value_blocks",
 ];
+
+/// Consolidated pcurve framing family.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CatiaConsolidatedFamily {
+    /// A-family frame with a u32 payload length.
+    A,
+    /// B-family frame with a u8 payload length.
+    B,
+}
+
+/// One structurally complete consolidated `A/B:20` pcurve jet whose support
+/// identity has not necessarily been resolved to a native surface record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedPcurve {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Byte offset of the framed record.
+    pub byte_offset: u64,
+    /// Consolidated framing family.
+    pub family: CatiaConsolidatedFamily,
+    /// Absolute persistent support-surface identity.
+    pub support_id: u32,
+    /// Parametric curve degree.
+    pub degree: u32,
+    /// Number of leading extrapolation sites.
+    pub extrapolation_sites: u32,
+    /// Strictly increasing native parameter sites.
+    pub knots: Vec<f64>,
+    /// Surface-chart positions at the parameter sites.
+    pub points: Vec<[f64; 2]>,
+    /// First derivatives at the parameter sites.
+    pub first_derivatives: Vec<[f64; 2]>,
+    /// Second derivatives at the parameter sites.
+    pub second_derivatives: Vec<[f64; 2]>,
+    /// Native evaluation interval.
+    pub range: [f64; 2],
+    /// Bytes following the evaluation interval in the framed payload.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub tail: Vec<u8>,
+}
 
 /// One complete outer FINJPL segment retained with its framing identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -406,7 +450,7 @@ fn resolved_payload_references(
 }
 
 /// CATIA-native records retained outside the format-neutral model.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaNative {
     /// Schema version this namespace was written under.
     pub version: u32,
@@ -416,6 +460,9 @@ pub struct CatiaNative {
     /// Framed source-schema name catalogs.
     #[serde(default)]
     pub catalogs: Vec<CatiaCatalog>,
+    /// Consolidated pcurve jets retained before support resolution.
+    #[serde(default)]
+    pub consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
     /// Design objects grouped by their serialized owner ordinal.
     #[serde(default)]
     pub design_objects: Vec<CatiaDesignObject>,
@@ -442,6 +489,7 @@ impl Default for CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
+            consolidated_pcurves: Vec::new(),
             design_objects: Vec::new(),
             external_references: Vec::new(),
             finjpl_segments: Vec::new(),
@@ -450,6 +498,71 @@ impl Default for CatiaNative {
             value_blocks: Vec::new(),
         }
     }
+}
+
+fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
+    let mut pcurves = geometry::a5_pcurves(bytes)
+        .into_iter()
+        .map(|pcurve| (pcurve, CatiaConsolidatedFamily::A))
+        .chain(
+            geometry::b2_pcurves(bytes)
+                .into_iter()
+                .map(|pcurve| (pcurve, CatiaConsolidatedFamily::B)),
+        )
+        .collect::<Vec<_>>();
+    pcurves.sort_by_key(|(pcurve, _)| pcurve.pos);
+    pcurves
+        .into_iter()
+        .enumerate()
+        .map(|(index, (pcurve, family))| CatiaConsolidatedPcurve {
+            id: format!("catia:consolidated:pcurve#{index}"),
+            byte_offset: pcurve.pos as u64,
+            family,
+            support_id: pcurve.support_id,
+            degree: pcurve.degree,
+            extrapolation_sites: pcurve.extrapolation_sites,
+            knots: pcurve.knots,
+            points: pcurve.points,
+            first_derivatives: pcurve.first_derivatives,
+            second_derivatives: pcurve.second_derivatives,
+            range: pcurve.range,
+            tail: pcurve.tail,
+        })
+        .collect()
+}
+
+fn validate_consolidated_pcurves(
+    pcurves: &[CatiaConsolidatedPcurve],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for (index, pcurve) in pcurves.iter().enumerate() {
+        let expected_id = format!("catia:consolidated:pcurve#{index}");
+        let count = pcurve.knots.len();
+        if pcurve.id != expected_id
+            || pcurve.degree != 5
+            || count < 2
+            || pcurve.points.len() != count
+            || pcurve.first_derivatives.len() != count
+            || pcurve.second_derivatives.len() != count
+            || pcurve.knots.windows(2).any(|pair| pair[0] >= pair[1])
+            || pcurve.range[0] >= pcurve.range[1]
+            || pcurve
+                .knots
+                .iter()
+                .chain(pcurve.points.iter().flatten())
+                .chain(pcurve.first_derivatives.iter().flatten())
+                .chain(pcurve.second_derivatives.iter().flatten())
+                .chain(&pcurve.range)
+                .any(|value| !value.is_finite())
+            || !matches!(pcurve.tail.as_slice(), [0x07] | [0x07, 0x00])
+            || index > 0 && pcurves[index - 1].byte_offset >= pcurve.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated pcurve `{}` is structurally invalid",
+                pcurve.id
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn contains_extent(
@@ -866,10 +979,12 @@ impl CatiaNative {
             .collect::<Vec<_>>();
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
+        let consolidated_pcurves = consolidated_pcurves(bytes);
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
+            consolidated_pcurves,
             design_objects,
             external_references,
             finjpl_segments,
@@ -1030,6 +1145,9 @@ impl CatiaNative {
         }
         let preview_images = expected_preview_images;
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
+        let consolidated_pcurves: Vec<CatiaConsolidatedPcurve> =
+            namespace.arena_as("consolidated_pcurves")?;
+        validate_consolidated_pcurves(&consolidated_pcurves)?;
         validate_native_links(
             &alias_rows,
             &catalogs,
@@ -1041,6 +1159,7 @@ impl CatiaNative {
             version: namespace.version,
             alias_rows,
             catalogs,
+            consolidated_pcurves,
             design_objects,
             external_references,
             finjpl_segments,
@@ -1085,6 +1204,7 @@ impl CatiaNative {
             .flat_map(|graph| graph.records.iter().cloned())
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
         namespace.set_arena("design_objects", &self.design_objects)?;
         namespace.set_arena("external_references", &self.external_references)?;
         namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
@@ -1112,6 +1232,7 @@ impl CatiaNative {
             version: _,
             alias_rows,
             mut catalogs,
+            consolidated_pcurves,
             design_objects,
             external_references,
             finjpl_segments,
@@ -1130,6 +1251,7 @@ impl CatiaNative {
 
         namespace.version = CATIA_NATIVE_VERSION;
         namespace.set_arena_owned("catalogs", catalogs)?;
+        namespace.set_arena_owned("consolidated_pcurves", consolidated_pcurves)?;
         namespace.set_arena_owned("design_objects", design_objects)?;
         namespace.set_arena_owned("external_references", external_references)?;
         namespace.set_arena_owned("catalog_entries", entries)?;
