@@ -2950,6 +2950,7 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::AmbientLight => "Ambient",
         FeatureTreeNodeRole::Comments => "Comments",
         FeatureTreeNodeRole::DesignBinder => "Design Binder",
+        FeatureTreeNodeRole::DissectedProfile => "Profile Selection",
         FeatureTreeNodeRole::DirectionalLight => "Directional",
         FeatureTreeNodeRole::Equations => "Equations",
         FeatureTreeNodeRole::ExplodedViews => "Exploded Views",
@@ -5204,6 +5205,11 @@ pub(crate) fn project_configuration_sketch_states(
             scoped_lanes,
         );
         bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
+        crate::resolved_features::project_single_profile_dissected_sketches(
+            &mut features,
+            &ir.model.sketches,
+            histories,
+        );
         crate::resolved_features::project_adjacent_extrusion_profiles(
             &mut features,
             histories,

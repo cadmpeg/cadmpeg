@@ -8506,16 +8506,6 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             feature.properties.contains_key("DissectableChildren")
                 || feature.properties.get("Dissectable").map(String::as_str) == Some("true")
         };
-        let is_dissected_profile = |feature: &crate::records::Feature| {
-            feature.properties.get("Description") == Some(&feature.name)
-                && feature
-                    .name
-                    .rsplit_once('<')
-                    .and_then(|(_, suffix)| suffix.strip_suffix('>'))
-                    .is_some_and(|ordinal| {
-                        !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
-                    })
-        };
         for (name, feature) in &objects {
             if object_kind(name, feature) == NativeClassKind::Extrusion {
                 profiles
@@ -8537,7 +8527,7 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     (*first, *second)
                 }
                 (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature)
-                    if is_dissectable(first) || is_dissected_profile(second) =>
+                    if is_dissectable(first) || is_dissected_profile_feature(second) =>
                 {
                     (*second, *first)
                 }
@@ -8587,6 +8577,126 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             *neutral_profile = cadmpeg_ir::features::ProfileRef::Feature(dependency.clone());
             if !features[index].dependencies.contains(&dependency) {
                 features[index].dependencies.push(dependency);
+            }
+        }
+    }
+}
+
+fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
+    feature.properties.get("Description") == Some(&feature.name)
+        && feature
+            .name
+            .rsplit_once('<')
+            .and_then(|(_, suffix)| suffix.strip_suffix('>'))
+            .is_some_and(|ordinal| {
+                !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+            })
+}
+
+/// Bind a dissected child to its owning sketch when that sketch has one complete profile.
+pub(crate) fn project_single_profile_dissected_sketches(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    histories: &[crate::records::FeatureHistory],
+) {
+    let native_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let single_profile_sketches = sketches
+        .iter()
+        .filter(|sketch| sketch.profiles.len() == 1)
+        .map(|sketch| sketch.id.clone())
+        .collect::<HashSet<_>>();
+    let resolved = features
+        .iter()
+        .filter_map(|feature| {
+            let FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } = &feature.definition
+            else {
+                return None;
+            };
+            single_profile_sketches
+                .contains(sketch)
+                .then(|| (feature.id.clone(), sketch.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+
+    let aliases = features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition,
+                FeatureDefinition::Sketch {
+                    space: cadmpeg_ir::features::SketchSpace::Planar,
+                    sketch: None,
+                }
+            ) && feature
+                .native_ref
+                .as_deref()
+                .and_then(|native| native_features.get(native))
+                .is_some_and(|native| is_dissected_profile_feature(native))
+        })
+        .filter_map(|feature| {
+            let mut candidates = feature.dependencies.iter().filter_map(|dependency| {
+                resolved.get(dependency).map(|sketch| (dependency, sketch))
+            });
+            let (owner, sketch) = candidates.next()?;
+            candidates
+                .next()
+                .is_none()
+                .then(|| (feature.id.clone(), (owner.clone(), sketch.clone())))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for feature in features {
+        if aliases.contains_key(&feature.id) {
+            feature.definition = FeatureDefinition::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+            };
+            continue;
+        }
+        let replace = |profile: &mut cadmpeg_ir::features::ProfileRef| {
+            let cadmpeg_ir::features::ProfileRef::Feature(child) = profile else {
+                return None;
+            };
+            let (owner, sketch) = aliases.get(child)?;
+            let child = child.clone();
+            *profile = cadmpeg_ir::features::ProfileRef::Sketch(sketch.clone());
+            Some((child, owner.clone()))
+        };
+        let replaced = match &mut feature.definition {
+            FeatureDefinition::Extrude { profile, .. }
+            | FeatureDefinition::Wrap { profile, .. } => replace(profile).into_iter().collect(),
+            FeatureDefinition::Rib { construction, .. } => construction
+                .profile
+                .as_mut()
+                .and_then(replace)
+                .into_iter()
+                .collect(),
+            FeatureDefinition::Revolve { construction, .. } => construction
+                .profile
+                .as_mut()
+                .and_then(replace)
+                .into_iter()
+                .collect(),
+            FeatureDefinition::Sweep { profile, .. } => {
+                profile.as_mut().and_then(replace).into_iter().collect()
+            }
+            FeatureDefinition::Loft { profiles, .. } => {
+                profiles.iter_mut().filter_map(replace).collect()
+            }
+            _ => Vec::new(),
+        };
+        for (child, owner) in replaced {
+            feature
+                .dependencies
+                .retain(|dependency| dependency != &child);
+            if !feature.dependencies.contains(&owner) {
+                feature.dependencies.push(owner);
             }
         }
     }
@@ -13126,10 +13236,10 @@ mod profile_join_tests {
         line_reference_direction, marker_entities, marker_point_locus, owned_relation_parameters,
         profile_loci_by_marker, project_dimensioned_sketch_geometry,
         project_marker_backed_sketches, project_relation_point_geometry,
-        project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
-        relation_parameter_by_display_name, resolved_marker_locus,
-        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
-        sketch_frame_marker_transform, type_display_relation_parameters,
+        project_relation_solved_point_geometry, project_single_profile_dissected_sketches,
+        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
+        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
+        single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
@@ -13150,15 +13260,16 @@ mod profile_join_tests {
         SketchRelationKind,
     };
     use cadmpeg_ir::features::{
-        Angle, DesignParameter, DimensionDisplay, Feature, FeatureDefinition, FeatureId, Length,
-        ParameterId, ParameterValue, PathRef, PatternKind, SketchSpace, SweepMode,
+        Angle, BooleanOp, DesignParameter, DimensionDisplay, Extent, Feature, FeatureDefinition,
+        FeatureId, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
+        SketchSpace, SweepMode,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
-        SketchLocus, SketchNativeOperand,
+        Sketch, SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchEntityUse,
+        SketchGeometry, SketchId, SketchLocus, SketchNativeOperand,
     };
     use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -13391,6 +13502,149 @@ mod profile_join_tests {
                 ..
             } if sketch == &expected_sketch
         ));
+    }
+
+    #[test]
+    fn dissected_child_shares_only_a_single_profile_owner_sketch() {
+        let native_feature = |id: &str, name: &str, description: Option<&str>| NativeFeature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: None,
+            parent_source_id: None,
+            ordinal: 0,
+            name: name.into(),
+            kind: String::new(),
+            input_class: Some("moProfileFeature_c".into()),
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: description
+                .map(|description| BTreeMap::from([("Description".into(), description.into())]))
+                .unwrap_or_default(),
+            text: None,
+            content: Vec::new(),
+        };
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                native_feature("owner-native", "Sketch", None),
+                native_feature("child-native", "Sketch<3>", Some("Sketch<3>")),
+                native_feature("multi-child-native", "Sketch<5>", Some("Sketch<5>")),
+            ],
+        };
+        let feature = |id: &str, native_ref: &str, dependencies, sketch| Feature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies,
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch,
+            },
+            native_ref: Some(native_ref.into()),
+        };
+        let single = SketchId("single".into());
+        let multiple = SketchId("multiple".into());
+        let mut features = vec![
+            feature("owner", "owner-native", Vec::new(), Some(single.clone())),
+            feature(
+                "child",
+                "child-native",
+                vec![FeatureId("owner".into())],
+                None,
+            ),
+            feature(
+                "multi-owner",
+                "owner-native",
+                Vec::new(),
+                Some(multiple.clone()),
+            ),
+            feature(
+                "multi-child",
+                "multi-child-native",
+                vec![FeatureId("multi-owner".into())],
+                None,
+            ),
+            Feature {
+                id: FeatureId("consumer".into()),
+                ordinal: 3,
+                name: None,
+                suppressed: false,
+                parent: None,
+                dependencies: vec![FeatureId("child".into())],
+                source_properties: BTreeMap::new(),
+                source_tag: None,
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition: FeatureDefinition::Extrude {
+                    profile: ProfileRef::Feature(FeatureId("child".into())),
+                    direction: None,
+                    extent: Extent::Blind {
+                        length: Length(1.0),
+                    },
+                    op: BooleanOp::Join,
+                    draft: None,
+                },
+                native_ref: Some("consumer-native".into()),
+            },
+        ];
+        let sketch = |id: SketchId, profile_count: usize| Sketch {
+            id,
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: (0..profile_count)
+                .map(|index| {
+                    vec![SketchEntityUse {
+                        entity: SketchEntityId(format!("entity-{index}")),
+                        reversed: false,
+                    }]
+                })
+                .collect(),
+            native_ref: None,
+        };
+        let sketches = vec![sketch(single.clone(), 1), sketch(multiple, 2)];
+
+        project_single_profile_dissected_sketches(
+            &mut features,
+            &sketches,
+            std::slice::from_ref(&history),
+        );
+
+        assert!(matches!(
+            &features[1].definition,
+            FeatureDefinition::TreeNode {
+                role: cadmpeg_ir::features::FeatureTreeNodeRole::DissectedProfile,
+            }
+        ));
+        assert!(matches!(
+            features[3].definition,
+            FeatureDefinition::Sketch { sketch: None, .. }
+        ));
+        assert!(matches!(
+            &features[4].definition,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Sketch(sketch),
+                ..
+            } if sketch == &single
+        ));
+        assert_eq!(features[4].dependencies, [FeatureId("owner".into())]);
     }
 
     #[test]

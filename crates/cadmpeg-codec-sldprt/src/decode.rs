@@ -1508,6 +1508,11 @@ fn build_geometry_ir(
         &lanes,
     );
     crate::history::bind_unique_sketch_feature(&mut ir.model.features, &sketches, &histories);
+    crate::resolved_features::project_single_profile_dissected_sketches(
+        &mut ir.model.features,
+        &sketches,
+        &histories,
+    );
     crate::resolved_features::bind_pattern_inputs(&mut ir.model.features, &histories, &lanes);
     crate::resolved_features::bind_sweep_adjacent_profiles(
         &mut ir.model.features,
@@ -2121,6 +2126,11 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &lanes,
     );
     crate::history::bind_unique_sketch_feature(
+        &mut ir.model.features,
+        &ir.model.sketches,
+        &histories,
+    );
+    crate::resolved_features::project_single_profile_dissected_sketches(
         &mut ir.model.features,
         &ir.model.sketches,
         &histories,

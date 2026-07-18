@@ -786,6 +786,8 @@ pub enum FeatureTreeNodeRole {
     Comments,
     /// Design-binder container.
     DesignBinder,
+    /// Profile-selection handle generated from a dissectable sketch.
+    DissectedProfile,
     /// Directional scene light.
     DirectionalLight,
     /// Equation container.
