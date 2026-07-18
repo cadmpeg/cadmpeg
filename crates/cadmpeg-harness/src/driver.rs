@@ -128,6 +128,7 @@ pub fn run_job(
 
     let start = Instant::now();
     let mut timed_out = false;
+    let mut wait_error = None;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
@@ -140,7 +141,12 @@ pub fn run_job(
                 }
                 thread::sleep(Duration::from_millis(5));
             }
-            Err(_) => break None,
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                wait_error = Some(error);
+                break None;
+            }
         }
     };
     let elapsed = start.elapsed();
@@ -148,6 +154,9 @@ pub fn run_job(
     let _ = writer.join();
     let stdout = stdout.join().unwrap_or_default();
     let stderr = stderr.join().unwrap_or_default();
+    if let Some(error) = wait_error {
+        return Err(error);
+    }
 
     let outcome: Option<RunnerOutcome> = if timed_out {
         None

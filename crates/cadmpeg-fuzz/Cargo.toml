@@ -49,13 +49,6 @@ doc = false
 bench = false
 
 [[bin]]
-name = "f3d_decode_modes"
-path = "fuzz_targets/f3d_decode_modes.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "fcstd_container"
 path = "fuzz_targets/fcstd_container.rs"
 test = false
@@ -119,22 +112,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "sldprt_decode_modes"
-path = "fuzz_targets/sldprt_decode_modes.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "catia_container"
 path = "fuzz_targets/catia_container.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "catia_strict_salvage"
-path = "fuzz_targets/catia_strict_salvage.rs"
 test = false
 doc = false
 bench = false
@@ -147,22 +126,8 @@ doc = false
 bench = false
 
 [[bin]]
-name = "creo_strict_salvage"
-path = "fuzz_targets/creo_strict_salvage.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
 name = "nx_container"
 path = "fuzz_targets/nx_container.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "nx_strict_salvage"
-path = "fuzz_targets/nx_strict_salvage.rs"
 test = false
 doc = false
 bench = false

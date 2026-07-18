@@ -9,6 +9,7 @@ use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
+use cadmpeg_ir::source_fidelity_diff::{diff_source_fidelity, FidelityDiff};
 use cadmpeg_ir::{
     validate, validate_with_source_fidelity, CadIr, CodecEntry, InspectOptions, SourceFidelity,
 };
@@ -492,16 +493,14 @@ enum FidelitySummary {
     /// Only the right input reported a sidecar.
     OnlyRight,
     /// Both inputs reported a sidecar; the interpreted delta between them.
-    Both(cadmpeg_ir::FidelityDiff),
+    Both(FidelityDiff),
 }
 
 fn fidelity_diff(left: Option<&DecodeReport>, right: Option<&DecodeReport>) -> FidelitySummary {
     let left = left.and_then(|report| report.source_fidelity.as_ref());
     let right = right.and_then(|report| report.source_fidelity.as_ref());
     match (left, right) {
-        (Some(left), Some(right)) => {
-            FidelitySummary::Both(cadmpeg_ir::diff_source_fidelity(left, right))
-        }
+        (Some(left), Some(right)) => FidelitySummary::Both(diff_source_fidelity(left, right)),
         (Some(_), None) => FidelitySummary::OnlyLeft,
         (None, Some(_)) => FidelitySummary::OnlyRight,
         (None, None) => FidelitySummary::None,

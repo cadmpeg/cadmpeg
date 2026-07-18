@@ -118,7 +118,6 @@ pub use source_fidelity::{
     LedgerSpan, RetainedRef, RetainedSourceRecord, SerializedOrigin, SerializedRange,
     SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass, SOURCE_FIDELITY_VERSION,
 };
-pub use source_fidelity_diff::{diff_source_fidelity, ClassBytes, FidelityDiff, SpaceDelta};
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,
