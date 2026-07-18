@@ -1041,8 +1041,11 @@ impl<'a> ParameterExpressionParser<'a> {
 
     fn token(&mut self) -> Option<(String, bool)> {
         let rest = &self.input[self.offset..];
-        if rest.starts_with("<MOD-DIAM>") {
-            self.offset += "<MOD-DIAM>".len();
+        if let Some(marker) = ["<MOD-DIAM>", "&lt;MOD-DIAM&gt;"]
+            .into_iter()
+            .find(|marker| rest.starts_with(marker))
+        {
+            self.offset += marker.len();
             let (value, quoted) = self.token()?;
             return (!quoted).then(|| (format!("<MOD-DIAM>{value}"), false));
         }
@@ -4132,7 +4135,7 @@ fn simple_hole_profile_dimensions(
     let mut diameters = Vec::new();
     let mut other_lengths = Vec::new();
     for expression in profile.parameters.values() {
-        if expression.to_ascii_uppercase().contains("<MOD-DIAM>") {
+        if strip_diameter_modifier(expression).is_some() {
             if let Some(value) = parse_dimension_display_length(expression)
                 .filter(|value| *value > 0.0)
                 .map(Length)
@@ -4900,6 +4903,14 @@ mod literal_tests {
             ParameterExpressionParser::new("<MOD-DIAM>4 + 1mm", &aliases, &values).parse(),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
         );
+        assert_eq!(
+            ParameterExpressionParser::new("&lt;MOD-DIAM&gt;4mm / 2", &aliases, &values).parse(),
+            Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
+        );
+        assert_eq!(
+            parse_parameter_literal("&lt;MOD-DIAM&gt;4.917"),
+            Some(ParameterValue::Length(cadmpeg_ir::features::Length(4.917)))
+        );
     }
 
     #[test]
@@ -5207,7 +5218,7 @@ fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
 
 fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
     let expression = expression.trim();
-    if expression.starts_with("<MOD-DIAM>")
+    if strip_diameter_modifier(expression).is_some()
         || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
     {
         Some(DimensionDisplay::Diameter)
@@ -5219,12 +5230,17 @@ fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
 }
 
 fn parse_dimension_display_length(expression: &str) -> Option<f64> {
-    let value = expression
-        .trim()
-        .strip_prefix("<MOD-DIAM>")
+    let value = strip_diameter_modifier(expression)
         .unwrap_or(expression)
         .trim();
     parse_dimension_length_mm(value).or_else(|| parse_length_mm(expression))
+}
+
+fn strip_diameter_modifier(expression: &str) -> Option<&str> {
+    let expression = expression.trim();
+    expression
+        .strip_prefix("<MOD-DIAM>")
+        .or_else(|| expression.strip_prefix("&lt;MOD-DIAM&gt;"))
 }
 
 fn parse_neutral_parameter_literal(
