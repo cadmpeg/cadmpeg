@@ -2125,12 +2125,12 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
     let header = trim_table_header(payload, b"ent_tab\0", start, end);
     let prototype = find_bytes(payload, b"entry_ptr(entity_entry)", table, end)?;
     let mut cursor = header
-        .and_then(|(_, table_class, _)| {
+        .and_then(|header| {
             (prototype..end).find_map(|offset| {
                 (payload.get(offset..offset + 3) == Some(&[0xf4, 0x04, psb::token::ENTITY_REF]))
                     .then_some(())?;
                 let (class, after_reference) = psb::reference_id(payload, offset + 3).ok()?;
-                (class == table_class && payload.get(after_reference) == Some(&0xe2))
+                (class == header.classes.table && payload.get(after_reference) == Some(&0xe2))
                     .then_some(after_reference + 1)
             })
         })
@@ -2179,23 +2179,26 @@ fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<Feature
         cursor += 1;
     }
     Some(FeatureTrimEntityTable {
-        declared_count: header.map(|header| header.0),
-        entity_ref: header.map(|header| header.1),
-        entry_ref: header.map(|header| header.2),
+        declared_count: header.map(|header| header.declared_count),
+        entity_ref: header.map(|header| header.classes.table),
+        entry_ref: header.map(|header| header.classes.entry),
         solved_external_ids: seen.into_iter().collect(),
         rows,
         offset: table,
     })
 }
 
-fn trim_table_classes(
-    payload: &[u8],
-    label: &[u8],
-    start: usize,
-    end: usize,
-) -> Option<(u32, u32)> {
-    trim_table_header(payload, label, start, end)
-        .map(|(_, table_class, entry_class)| (table_class, entry_class))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TrimTableClasses {
+    table: u32,
+    bucket: u32,
+    entry: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TrimTableHeader {
+    declared_count: u32,
+    classes: TrimTableClasses,
 }
 
 fn trim_table_header(
@@ -2203,12 +2206,18 @@ fn trim_table_header(
     label: &[u8],
     start: usize,
     end: usize,
-) -> Option<(u32, u32, u32)> {
+) -> Option<TrimTableHeader> {
     let table = find_bytes(payload, label, start, end)? + label.len();
     let opener = (table..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
     let (declared_count, after_count) = psb::compact_int(payload, opener + 1);
     (payload.get(after_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
     let (table_class, _) = psb::reference_id(payload, after_count + 1).ok()?;
+    let bucket_label = find_bytes(payload, b"bucket_xar\0", table, end)? + b"bucket_xar\0".len();
+    let bucket_opener =
+        (bucket_label..end).find(|&offset| payload[offset] == psb::token::ARRAY_OPEN)?;
+    let (_, after_bucket_count) = psb::compact_int(payload, bucket_opener + 1);
+    (payload.get(after_bucket_count) == Some(&psb::token::ENTITY_REF)).then_some(())?;
+    let (bucket_class, _) = psb::reference_id(payload, after_bucket_count + 1).ok()?;
     let entry_class = (after_count..end).find_map(|offset| {
         (payload.get(offset) == Some(&psb::token::ENTITY_REF)).then_some(())?;
         let (class, after_reference) = psb::reference_id(payload, offset + 1).ok()?;
@@ -2225,7 +2234,14 @@ fn trim_table_header(
         }
         (payload.get(after_reference..after_reference + 2) == Some(&[0, 0xe3])).then_some(class)
     })?;
-    Some((declared_count, table_class, entry_class))
+    Some(TrimTableHeader {
+        declared_count,
+        classes: TrimTableClasses {
+            table: table_class,
+            bucket: bucket_class,
+            entry: entry_class,
+        },
+    })
 }
 
 fn positional_table_region(
@@ -2268,10 +2284,14 @@ fn positional_trim_entity_table(
     payload: &[u8],
     start: usize,
     end: usize,
-    table_class: u32,
-    entry_class: u32,
+    classes: TrimTableClasses,
     next_table_class: Option<u32>,
 ) -> Option<FeatureTrimEntityTable> {
+    let TrimTableClasses {
+        table: table_class,
+        entry: entry_class,
+        ..
+    } = classes;
     let (table, declared_count, rows_start, region_end) =
         positional_table_region(payload, start, end, table_class, next_table_class)?;
     let mut rows = Vec::new();
@@ -2434,9 +2454,9 @@ fn trim_vertex_table(
         cursor = next + 1;
     }
     Some(FeatureTrimVertexTable {
-        declared_count: header.map(|header| header.0),
-        entity_ref: header.map(|header| header.1),
-        entry_ref: header.map(|header| header.2),
+        declared_count: header.map(|header| header.declared_count),
+        entity_ref: header.map(|header| header.classes.table),
+        entry_ref: header.map(|header| header.classes.entry),
         rows,
         offset: table,
     })
@@ -2446,12 +2466,16 @@ fn positional_trim_vertex_table(
     payload: &[u8],
     start: usize,
     end: usize,
-    classes: (u32, u32),
+    classes: TrimTableClasses,
     entities: Option<&FeatureTrimEntityTable>,
     segments: Option<&FeatureSegmentTable>,
     variables: Option<&FeatureVariableTable>,
 ) -> Option<FeatureTrimVertexTable> {
-    let (table_class, entry_class) = classes;
+    let TrimTableClasses {
+        table: table_class,
+        entry: entry_class,
+        ..
+    } = classes;
     let (table, declared_count, rows_start, region_end) =
         positional_table_region(payload, start, end, table_class, None)?;
     let valid_entities = entities.map(|table| {
@@ -5230,8 +5254,8 @@ fn definitions_in_ranges(
     let mut replay_relation_class = None;
     let mut replay_skamp_class = None;
     let mut replay_triples_class = None;
-    let mut replay_trim_entity_classes = None;
-    let mut replay_trim_vertex_classes = None;
+    let mut replay_trim_entity_classes: Option<TrimTableClasses> = None;
+    let mut replay_trim_vertex_classes: Option<TrimTableClasses> = None;
     let mut replay_order_class = None;
     for (index, &(start, id, owner_override, positional)) in starts.iter().enumerate() {
         let end = starts
@@ -5330,21 +5354,20 @@ fn definitions_in_ranges(
         });
         let trim_entities = trim_entity_table(payload, start, end).or_else(|| {
             if positional {
-                let (table_class, entry_class) = replay_trim_entity_classes?;
                 positional_trim_entity_table(
                     payload,
                     start,
                     end,
-                    table_class,
-                    entry_class,
-                    replay_trim_vertex_classes.map(|(class, _)| class),
+                    replay_trim_entity_classes?,
+                    replay_trim_vertex_classes.map(|classes| classes.table),
                 )
             } else {
                 None
             }
         });
         if !positional {
-            replay_trim_entity_classes = trim_table_classes(payload, b"ent_tab\0", start, end);
+            replay_trim_entity_classes =
+                trim_table_header(payload, b"ent_tab\0", start, end).map(|header| header.classes);
         }
         let trim_vertices = trim_vertex_table(
             payload,
@@ -5356,12 +5379,11 @@ fn definitions_in_ranges(
         )
         .or_else(|| {
             if positional {
-                let (table_class, entry_class) = replay_trim_vertex_classes?;
                 positional_trim_vertex_table(
                     payload,
                     start,
                     end,
-                    (table_class, entry_class),
+                    replay_trim_vertex_classes?,
                     trim_entities.as_ref(),
                     segments.as_ref(),
                     variables.as_ref(),
@@ -5371,7 +5393,8 @@ fn definitions_in_ranges(
             }
         });
         if !positional {
-            replay_trim_vertex_classes = trim_table_classes(payload, b"vert_tab\0", start, end);
+            replay_trim_vertex_classes =
+                trim_table_header(payload, b"vert_tab\0", start, end).map(|header| header.classes);
         }
         let order_table = order_table(payload, start, end).or_else(|| {
             positional
@@ -6992,8 +7015,18 @@ mod tests {
         let payload = b"prefix\xf8\x07\xf7\x42\xfb\xe2\xf7\x43\x00\xe3\
             \x09\x00\x03\x04\xf6\x00\
             \xf4\x04\xf7\x42\xe2\x01\xf8\x13\xf7\x44\xfb\xe2";
-        let entities = positional_trim_entity_table(payload, 0, payload.len(), 66, 67, Some(68))
-            .expect("positional ent_tab");
+        let entities = positional_trim_entity_table(
+            payload,
+            0,
+            payload.len(),
+            TrimTableClasses {
+                table: 66,
+                bucket: 67,
+                entry: 67,
+            },
+            Some(68),
+        )
+        .expect("positional ent_tab");
 
         assert_eq!(entities.declared_count, Some(7));
         assert_eq!(entities.entity_ref, Some(66));
@@ -7008,8 +7041,18 @@ mod tests {
         let payload = b"prefix\xf8\x00\xf7\x42\xfb\xe2\
             \xf8\x01\xf7\x44\xfb\xe2";
 
-        let entities = positional_trim_entity_table(payload, 0, payload.len(), 66, 67, Some(68))
-            .expect("empty positional ent_tab");
+        let entities = positional_trim_entity_table(
+            payload,
+            0,
+            payload.len(),
+            TrimTableClasses {
+                table: 66,
+                bucket: 67,
+                entry: 67,
+            },
+            Some(68),
+        )
+        .expect("empty positional ent_tab");
 
         assert_eq!(entities.declared_count, Some(0));
         assert_eq!(entities.entity_ref, Some(66));
@@ -7023,8 +7066,18 @@ mod tests {
         let payload = b"prefix\xf8\x01\xf7\x42\xfb\xe2\
             \x00\xe3\x09\x00\x03\x04\xf6\x00";
 
-        let entities = positional_trim_entity_table(payload, 0, payload.len(), 66, 67, None)
-            .expect("positional ent_tab header");
+        let entities = positional_trim_entity_table(
+            payload,
+            0,
+            payload.len(),
+            TrimTableClasses {
+                table: 66,
+                bucket: 67,
+                entry: 67,
+            },
+            None,
+        )
+        .expect("positional ent_tab header");
 
         assert_eq!(entities.declared_count, Some(1));
         assert!(entities.rows.is_empty());
@@ -7143,7 +7196,11 @@ mod tests {
             payload,
             0,
             payload.len(),
-            (68, 69),
+            TrimTableClasses {
+                table: 68,
+                bucket: 69,
+                entry: 69,
+            },
             Some(&entities),
             None,
             None,
@@ -7162,9 +7219,20 @@ mod tests {
     fn positional_trim_vertex_table_retains_an_empty_extent() {
         let payload = b"prefix\xf8\x00\xf7\x44\xfb\xe2";
 
-        let vertices =
-            positional_trim_vertex_table(payload, 0, payload.len(), (68, 69), None, None, None)
-                .expect("empty positional vert_tab");
+        let vertices = positional_trim_vertex_table(
+            payload,
+            0,
+            payload.len(),
+            TrimTableClasses {
+                table: 68,
+                bucket: 69,
+                entry: 69,
+            },
+            None,
+            None,
+            None,
+        )
+        .expect("empty positional vert_tab");
 
         assert_eq!(vertices.declared_count, Some(0));
         assert_eq!(vertices.entity_ref, Some(68));
@@ -7261,16 +7329,19 @@ mod tests {
     #[test]
     fn trim_vertex_template_identifies_table_and_entry_classes() {
         let payload = b"vert_tab\0\xf8\x13\xf7\x44\xfb\xe2\
-            attrs\0\xf1\xf7\x46\xe3\xf8\x01\xf7\x46\xfb\xe3\
+            attrs\0\xf1\xf7\x46\xe3bucket_xar\0\xf8\x01\xf7\x46\xfb\xe3\
             \xf7\x45\x09\x0a\x03\x00";
 
         assert_eq!(
-            trim_table_classes(payload, b"vert_tab\0", 0, payload.len()),
-            Some((68, 69))
-        );
-        assert_eq!(
             trim_table_header(payload, b"vert_tab\0", 0, payload.len()),
-            Some((19, 68, 69))
+            Some(TrimTableHeader {
+                declared_count: 19,
+                classes: TrimTableClasses {
+                    table: 68,
+                    bucket: 70,
+                    entry: 69,
+                },
+            })
         );
     }
 
