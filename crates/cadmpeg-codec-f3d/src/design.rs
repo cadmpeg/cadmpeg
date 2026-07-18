@@ -4226,11 +4226,1138 @@ fn selection_containing_points(
     if let [profile] = boundaries.as_slice() {
         return Some(ResolvedProfileSelection::Loops(vec![*profile]));
     }
+    if let Some(region) =
+        arrangement_region_containing_points(sketch, entities, &projected, tolerance)
+    {
+        return Some(ResolvedProfileSelection::Regions(vec![region]));
+    }
     if !boundaries.is_empty() {
         return None;
     }
     region_containing_points(sketch, entities, points, tolerance)
         .map(|region| ResolvedProfileSelection::Regions(vec![region]))
+}
+
+#[derive(Clone)]
+struct SketchArrangementEdge {
+    nodes: [usize; 2],
+    boundary: cadmpeg_ir::features::SketchProfileBoundaryUse,
+    polyline: Vec<Point2>,
+}
+
+struct SketchArrangementFace {
+    boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
+    polyline: Vec<Point2>,
+}
+
+fn arrangement_region_containing_points(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    points: &[Point2],
+    tolerance: f64,
+) -> Option<cadmpeg_ir::features::SketchProfileRegion> {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    let faces = sketch_arrangement_faces(sketch, entities, tolerance)?;
+    let mut boundary_matches = faces.iter().filter(|face| {
+        points.iter().all(|point| {
+            face.boundary
+                .iter()
+                .any(|use_| point_on_profile_boundary_use(*point, use_, entities, tolerance))
+        })
+    });
+    let boundary = boundary_matches.next();
+    if boundary.is_some() && boundary_matches.next().is_none() {
+        return Some(SketchProfileRegion::Trimmed {
+            outer_boundary: boundary?.boundary.clone(),
+            hole_boundaries: Vec::new(),
+        });
+    }
+    let mut interior_matches = faces.iter().filter(|face| {
+        points.iter().all(|point| {
+            !face
+                .boundary
+                .iter()
+                .any(|use_| point_on_profile_boundary_use(*point, use_, entities, tolerance))
+                && point_in_polygon(*point, &face.polyline)
+        })
+    });
+    let interior = interior_matches.next()?;
+    interior_matches
+        .next()
+        .is_none()
+        .then(|| SketchProfileRegion::Trimmed {
+            outer_boundary: interior.boundary.clone(),
+            hole_boundaries: Vec::new(),
+        })
+}
+
+fn sketch_arrangement_faces(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> Option<Vec<SketchArrangementFace>> {
+    use cadmpeg_ir::features::SketchProfileBoundaryUse;
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let mut nodes = Vec::<Point2>::new();
+    let mut pending = Vec::<SketchProfileBoundaryUse>::new();
+    let mut circles = Vec::new();
+    for profile in &sketch.profiles {
+        for use_ in profile {
+            let entity = entities.iter().find(|entity| entity.id == use_.entity)?;
+            if matches!(entity.geometry, SketchGeometry::Circle { .. }) {
+                circles.push((use_, entity));
+                continue;
+            }
+            let range = sketch_geometry_parameter_range(&entity.geometry)?;
+            for point in [
+                sketch_geometry_point(&entity.geometry, range[0])?,
+                sketch_geometry_point(&entity.geometry, range[1])?,
+            ] {
+                arrangement_node(&mut nodes, point, tolerance);
+            }
+            pending.push(SketchProfileBoundaryUse {
+                entity: entity.id.clone(),
+                parameter_range: range,
+                reversed: use_.reversed,
+            });
+        }
+    }
+    for (use_, entity) in circles {
+        let SketchGeometry::Circle { center, radius } = entity.geometry else {
+            unreachable!("circle collection contains only circles")
+        };
+        let mut angles = nodes
+            .iter()
+            .filter(|point| (point_distance(**point, center) - radius.0).abs() <= tolerance)
+            .map(|point| {
+                (point.v - center.v)
+                    .atan2(point.u - center.u)
+                    .rem_euclid(std::f64::consts::TAU)
+            })
+            .collect::<Vec<_>>();
+        angles.sort_by(f64::total_cmp);
+        angles.dedup_by(|left, right| (*left - *right).abs() <= tolerance / radius.0);
+        if angles.len() < 2 {
+            return None;
+        }
+        for index in 0..angles.len() {
+            let start = angles[index];
+            let mut end = angles[(index + 1) % angles.len()];
+            if index + 1 == angles.len() {
+                end += std::f64::consts::TAU;
+            }
+            let range = [start, end];
+            pending.push(SketchProfileBoundaryUse {
+                entity: use_.entity.clone(),
+                parameter_range: range,
+                reversed: use_.reversed,
+            });
+        }
+    }
+    let mut split_pending = Vec::new();
+    for boundary in pending {
+        let entity = entities
+            .iter()
+            .find(|entity| entity.id == boundary.entity)?;
+        let parameters = arrangement_split_parameters(
+            &entity.geometry,
+            boundary.parameter_range,
+            &nodes,
+            tolerance,
+        )?;
+        for parameters in parameters.windows(2) {
+            let range = [parameters[0], parameters[1]];
+            split_pending.push((
+                SketchProfileBoundaryUse {
+                    entity: boundary.entity.clone(),
+                    parameter_range: range,
+                    reversed: boundary.reversed,
+                },
+                profile_use_polyline(entity, range, boundary.reversed, tolerance)?,
+            ));
+        }
+    }
+    let mut edges = Vec::<SketchArrangementEdge>::new();
+    for (boundary, polyline) in split_pending {
+        let edge = SketchArrangementEdge {
+            nodes: [
+                arrangement_node(&mut nodes, *polyline.first()?, tolerance),
+                arrangement_node(&mut nodes, *polyline.last()?, tolerance),
+            ],
+            boundary,
+            polyline,
+        };
+        if edge.nodes[0] == edge.nodes[1] {
+            return None;
+        }
+        if edges.iter().any(|candidate| {
+            (candidate.nodes == edge.nodes || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
+                && arrangement_edges_coincident(candidate, &edge, entities, tolerance)
+        }) {
+            continue;
+        }
+        edges.push(edge);
+    }
+    if edges.len() < 3 {
+        return None;
+    }
+    let edge_tubes = edges
+        .iter()
+        .map(|edge| arrangement_edge_tubes(edge, entities, tolerance))
+        .collect::<Option<Vec<_>>>()?;
+    let edge_bounds = edge_tubes
+        .iter()
+        .map(|tubes| certified_tube_bounds(tubes))
+        .collect::<Option<Vec<_>>>()?;
+    for left_index in 0..edges.len() {
+        for right_index in left_index + 1..edges.len() {
+            let left = &edges[left_index];
+            let right = &edges[right_index];
+            let shared_nodes = left
+                .nodes
+                .into_iter()
+                .filter(|node| right.nodes.contains(node))
+                .collect::<Vec<_>>();
+            if !shared_nodes.is_empty() {
+                if !arrangement_edges_meet_only_at_nodes(
+                    left,
+                    right,
+                    entities,
+                    &nodes,
+                    &shared_nodes,
+                    tolerance,
+                ) {
+                    return None;
+                }
+                continue;
+            }
+            let left_bounds = edge_bounds[left_index];
+            let right_bounds = edge_bounds[right_index];
+            if left_bounds[1].u < right_bounds[0].u
+                || right_bounds[1].u < left_bounds[0].u
+                || left_bounds[1].v < right_bounds[0].v
+                || right_bounds[1].v < left_bounds[0].v
+            {
+                continue;
+            }
+            if !arrangement_edges_proven_disjoint(
+                left,
+                right,
+                entities,
+                &edge_tubes[left_index],
+                &edge_tubes[right_index],
+            ) {
+                return None;
+            }
+        }
+    }
+    let mut outgoing = vec![Vec::<(usize, bool, f64)>::new(); nodes.len()];
+    for (edge_index, edge) in edges.iter().enumerate() {
+        let forward = edge.polyline.get(1)?;
+        let reverse = edge.polyline.get(edge.polyline.len().checked_sub(2)?)?;
+        outgoing[edge.nodes[0]].push((
+            edge_index,
+            false,
+            (forward.v - nodes[edge.nodes[0]].v).atan2(forward.u - nodes[edge.nodes[0]].u),
+        ));
+        outgoing[edge.nodes[1]].push((
+            edge_index,
+            true,
+            (reverse.v - nodes[edge.nodes[1]].v).atan2(reverse.u - nodes[edge.nodes[1]].u),
+        ));
+    }
+    if outgoing.iter().any(|uses| uses.len() < 2) {
+        return None;
+    }
+    for uses in &mut outgoing {
+        uses.sort_by(|left, right| left.2.total_cmp(&right.2));
+    }
+    let mut visited = vec![[false; 2]; edges.len()];
+    let mut faces = Vec::new();
+    for edge_index in 0..edges.len() {
+        for reversed in [false, true] {
+            if visited[edge_index][usize::from(reversed)] {
+                continue;
+            }
+            let start = (edge_index, reversed);
+            let mut current = start;
+            let mut boundary = Vec::new();
+            let mut polyline = Vec::new();
+            loop {
+                let (index, reverse) = current;
+                if visited[index][usize::from(reverse)] {
+                    if current != start {
+                        return None;
+                    }
+                    break;
+                }
+                visited[index][usize::from(reverse)] = true;
+                let edge = &edges[index];
+                let mut use_ = edge.boundary.clone();
+                let mut points = edge.polyline.clone();
+                if reverse {
+                    use_.reversed = !use_.reversed;
+                    points.reverse();
+                }
+                boundary.push(use_);
+                polyline.extend(points.into_iter().take(edge.polyline.len() - 1));
+                let destination = edge.nodes[usize::from(!reverse)];
+                let uses = &outgoing[destination];
+                let twin = uses.iter().position(|(candidate, candidate_reverse, _)| {
+                    *candidate == index && *candidate_reverse != reverse
+                })?;
+                let next = uses[(twin + uses.len() - 1) % uses.len()];
+                current = (next.0, next.1);
+            }
+            if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
+                faces.push(SketchArrangementFace { boundary, polyline });
+            }
+        }
+    }
+    (!faces.is_empty()).then_some(faces)
+}
+
+fn arrangement_edges_meet_only_at_nodes(
+    left: &SketchArrangementEdge,
+    right: &SketchArrangementEdge,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    nodes: &[Point2],
+    shared_nodes: &[usize],
+    tolerance: f64,
+) -> bool {
+    if arrangement_line_nurbs_meet_only_at_endpoint(
+        left,
+        right,
+        entities,
+        nodes,
+        shared_nodes,
+        tolerance,
+    ) || arrangement_line_nurbs_meet_only_at_endpoint(
+        right,
+        left,
+        entities,
+        nodes,
+        shared_nodes,
+        tolerance,
+    ) {
+        return true;
+    }
+    if arrangement_arc_nurbs_meet_only_at_endpoint(
+        left,
+        right,
+        entities,
+        nodes,
+        shared_nodes,
+        tolerance,
+    ) || arrangement_arc_nurbs_meet_only_at_endpoint(
+        right,
+        left,
+        entities,
+        nodes,
+        shared_nodes,
+        tolerance,
+    ) {
+        return true;
+    }
+    let Some(left_segment) = arrangement_analytic_segment(left, entities) else {
+        return false;
+    };
+    let Some(right_segment) = arrangement_analytic_segment(right, entities) else {
+        return false;
+    };
+    if let (
+        ProfileBoundarySegment::Arc {
+            center: left_center,
+            radius: left_radius,
+            start_angle: left_start,
+            end_angle: left_end,
+            ..
+        },
+        ProfileBoundarySegment::Arc {
+            center: right_center,
+            radius: right_radius,
+            start_angle: right_start,
+            end_angle: right_end,
+            ..
+        },
+    ) = (&left_segment, &right_segment)
+    {
+        if left_center == right_center && left_radius == right_radius {
+            let strictly_inside = |angle: f64, start: f64, end: f64| {
+                let parameter_tolerance =
+                    (tolerance / (left_radius * (end - start).abs())).min(0.5);
+                directed_angle_parameter(angle, start, end).is_some_and(|parameter| {
+                    parameter > parameter_tolerance && parameter < 1.0 - parameter_tolerance
+                })
+            };
+            return !strictly_inside(*left_start, *right_start, *right_end)
+                && !strictly_inside(*left_end, *right_start, *right_end)
+                && !strictly_inside(*right_start, *left_start, *left_end)
+                && !strictly_inside(*right_end, *left_start, *left_end);
+        }
+    }
+    analytic_segment_intersections(&left_segment, &right_segment).is_some_and(|intersections| {
+        intersections.iter().all(|intersection| {
+            shared_nodes
+                .iter()
+                .any(|node| point_distance(*intersection, nodes[*node]) <= tolerance)
+        })
+    })
+}
+
+fn arrangement_arc_nurbs_meet_only_at_endpoint(
+    arc: &SketchArrangementEdge,
+    nurbs: &SketchArrangementEdge,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    nodes: &[Point2],
+    shared_nodes: &[usize],
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    if shared_nodes.len() != 1 {
+        return false;
+    }
+    let Some(arc_entity) = entities
+        .iter()
+        .find(|entity| entity.id == arc.boundary.entity)
+    else {
+        return false;
+    };
+    let Some(nurbs_entity) = entities
+        .iter()
+        .find(|entity| entity.id == nurbs.boundary.entity)
+    else {
+        return false;
+    };
+    let (center, radius) = match arc_entity.geometry {
+        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+            (center, radius.0)
+        }
+        _ => return false,
+    };
+    let SketchGeometry::Nurbs {
+        control_points,
+        weights,
+        periodic: false,
+        ..
+    } = &nurbs_entity.geometry
+    else {
+        return false;
+    };
+    if weights.as_ref().is_some_and(|weights| {
+        weights.len() != control_points.len() || weights.iter().any(|weight| *weight <= 0.0)
+    }) || sketch_geometry_parameter_range(&nurbs_entity.geometry)
+        != Some(nurbs.boundary.parameter_range)
+    {
+        return false;
+    }
+    let shared = nodes[shared_nodes[0]];
+    if (point_distance(center, shared) - radius).abs() > tolerance {
+        return false;
+    }
+    let first_shared = point_distance(control_points[0], shared) <= tolerance;
+    let last_shared = control_points
+        .last()
+        .is_some_and(|point| point_distance(*point, shared) <= tolerance);
+    if first_shared == last_shared {
+        return false;
+    }
+    let endpoint = if first_shared {
+        0
+    } else {
+        control_points.len() - 1
+    };
+    let normal = Point2::new(shared.u - center.u, shared.v - center.v);
+    let support = |point: Point2| normal.u * (point.u - shared.u) + normal.v * (point.v - shared.v);
+    let threshold = tolerance * radius;
+    support(control_points[endpoint]).abs() <= threshold
+        && (control_points
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != endpoint)
+            .all(|(_, point)| support(*point) > threshold)
+            || control_points
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != endpoint)
+                .all(|(_, point)| point_distance(center, *point) < radius - tolerance))
+}
+
+fn arrangement_line_nurbs_meet_only_at_endpoint(
+    line: &SketchArrangementEdge,
+    nurbs: &SketchArrangementEdge,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    nodes: &[Point2],
+    shared_nodes: &[usize],
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    if shared_nodes.len() != 1 {
+        return false;
+    }
+    let Some(line_entity) = entities
+        .iter()
+        .find(|entity| entity.id == line.boundary.entity)
+    else {
+        return false;
+    };
+    let Some(nurbs_entity) = entities
+        .iter()
+        .find(|entity| entity.id == nurbs.boundary.entity)
+    else {
+        return false;
+    };
+    let SketchGeometry::Line { start, end } = line_entity.geometry else {
+        return false;
+    };
+    let SketchGeometry::Nurbs {
+        degree,
+        knots,
+        control_points,
+        weights,
+        periodic: false,
+    } = &nurbs_entity.geometry
+    else {
+        return false;
+    };
+    if weights.as_ref().is_some_and(|weights| {
+        weights.len() != control_points.len() || weights.iter().any(|weight| *weight <= 0.0)
+    }) {
+        return false;
+    }
+    let Some(domain) = sketch_geometry_parameter_range(&nurbs_entity.geometry) else {
+        return false;
+    };
+    if nurbs.boundary.parameter_range != domain
+        || usize::try_from(*degree).ok().is_none()
+        || knots.is_empty()
+    {
+        return false;
+    }
+    let shared = nodes[shared_nodes[0]];
+    let first_shared = point_distance(control_points[0], shared) <= tolerance;
+    let last_shared = control_points
+        .last()
+        .is_some_and(|point| point_distance(*point, shared) <= tolerance);
+    if first_shared == last_shared {
+        return false;
+    }
+    let direction = Point2::new(end.u - start.u, end.v - start.v);
+    let line_length = point_distance(start, end);
+    if line_length <= tolerance {
+        return false;
+    }
+    let side =
+        |point: Point2| direction.u * (point.v - start.v) - direction.v * (point.u - start.u);
+    let endpoint = if first_shared {
+        0
+    } else {
+        control_points.len() - 1
+    };
+    let threshold = tolerance * line_length;
+    if side(control_points[endpoint]).abs() > threshold {
+        return false;
+    }
+    let mut signs = control_points
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| *index != endpoint)
+        .map(|(_, point)| side(*point));
+    let Some(first_side) = signs.next() else {
+        return false;
+    };
+    first_side.abs() > threshold
+        && signs.all(|candidate| {
+            candidate.abs() > threshold
+                && candidate.is_sign_positive() == first_side.is_sign_positive()
+        })
+}
+
+fn analytic_segment_intersections(
+    left: &ProfileBoundarySegment,
+    right: &ProfileBoundarySegment,
+) -> Option<Vec<Point2>> {
+    match (left, right) {
+        (
+            ProfileBoundarySegment::Line { start: a, end: b },
+            ProfileBoundarySegment::Line { start: c, end: d },
+        ) => {
+            let ab = Point2::new(b.u - a.u, b.v - a.v);
+            let cd = Point2::new(d.u - c.u, d.v - c.v);
+            let denominator = ab.u * cd.v - ab.v * cd.u;
+            if denominator == 0.0 {
+                return None;
+            }
+            let ac = Point2::new(c.u - a.u, c.v - a.v);
+            let parameter = (ac.u * cd.v - ac.v * cd.u) / denominator;
+            let other_parameter = (ac.u * ab.v - ac.v * ab.u) / denominator;
+            Some(
+                ((0.0..=1.0).contains(&parameter) && (0.0..=1.0).contains(&other_parameter))
+                    .then(|| Point2::new(a.u + parameter * ab.u, a.v + parameter * ab.v))
+                    .into_iter()
+                    .collect(),
+            )
+        }
+        (ProfileBoundarySegment::Line { start, end }, arc @ ProfileBoundarySegment::Arc { .. })
+        | (arc @ ProfileBoundarySegment::Arc { .. }, ProfileBoundarySegment::Line { start, end }) => {
+            line_arc_intersection_points((*start, *end), arc)
+        }
+        (left @ ProfileBoundarySegment::Arc { .. }, right @ ProfileBoundarySegment::Arc { .. }) => {
+            arc_intersection_points(left, right)
+        }
+    }
+}
+
+fn line_arc_intersection_points(
+    (start, end): (Point2, Point2),
+    arc: &ProfileBoundarySegment,
+) -> Option<Vec<Point2>> {
+    let ProfileBoundarySegment::Arc {
+        center,
+        radius,
+        start_angle,
+        end_angle,
+    } = arc
+    else {
+        return None;
+    };
+    let direction = Point2::new(end.u - start.u, end.v - start.v);
+    let offset = Point2::new(start.u - center.u, start.v - center.v);
+    let quadratic = direction.u * direction.u + direction.v * direction.v;
+    if quadratic == 0.0 {
+        return Some(Vec::new());
+    }
+    let linear = 2.0 * (offset.u * direction.u + offset.v * direction.v);
+    let constant = offset.u * offset.u + offset.v * offset.v - radius * radius;
+    let discriminant = linear * linear - 4.0 * quadratic * constant;
+    let error =
+        64.0 * f64::EPSILON * (linear * linear + (4.0 * quadratic * constant).abs()).max(1.0);
+    if discriminant < -error {
+        return Some(Vec::new());
+    }
+    let root = discriminant.max(0.0).sqrt();
+    let mut points = Vec::new();
+    for signed_root in [-root, root] {
+        let parameter = (-linear + signed_root) / (2.0 * quadratic);
+        if (0.0..=1.0).contains(&parameter) {
+            let point = Point2::new(
+                start.u + parameter * direction.u,
+                start.v + parameter * direction.v,
+            );
+            if directed_angle_parameter(
+                (point.v - center.v).atan2(point.u - center.u),
+                *start_angle,
+                *end_angle,
+            )
+            .is_some()
+                && !points.contains(&point)
+            {
+                points.push(point);
+            }
+        }
+    }
+    Some(points)
+}
+
+fn arc_intersection_points(
+    left: &ProfileBoundarySegment,
+    right: &ProfileBoundarySegment,
+) -> Option<Vec<Point2>> {
+    let ProfileBoundarySegment::Arc {
+        center: lc,
+        radius: lr,
+        start_angle: ls,
+        end_angle: le,
+    } = left
+    else {
+        return None;
+    };
+    let ProfileBoundarySegment::Arc {
+        center: rc,
+        radius: rr,
+        start_angle: rs,
+        end_angle: re,
+    } = right
+    else {
+        return None;
+    };
+    let du = rc.u - lc.u;
+    let dv = rc.v - lc.v;
+    let distance_squared = du * du + dv * dv;
+    if distance_squared == 0.0 {
+        return (*lr != *rr).then(Vec::new);
+    }
+    let distance = distance_squared.sqrt();
+    if distance > lr + rr || distance < (lr - rr).abs() {
+        return Some(Vec::new());
+    }
+    let along = (lr * lr - rr * rr + distance_squared) / (2.0 * distance);
+    let height_squared = lr * lr - along * along;
+    let error = 64.0 * f64::EPSILON * (lr * lr + along * along).max(1.0);
+    if height_squared < -error {
+        return Some(Vec::new());
+    }
+    let base = Point2::new(lc.u + along * du / distance, lc.v + along * dv / distance);
+    let height = height_squared.max(0.0).sqrt();
+    let mut points = Vec::new();
+    for signed_height in [height, -height] {
+        let point = Point2::new(
+            base.u - signed_height * dv / distance,
+            base.v + signed_height * du / distance,
+        );
+        if directed_angle_parameter((point.v - lc.v).atan2(point.u - lc.u), *ls, *le).is_some()
+            && directed_angle_parameter((point.v - rc.v).atan2(point.u - rc.u), *rs, *re).is_some()
+            && !points.contains(&point)
+        {
+            points.push(point);
+        }
+    }
+    Some(points)
+}
+
+fn arrangement_split_parameters(
+    geometry: &cadmpeg_ir::sketches::SketchGeometry,
+    range: [f64; 2],
+    nodes: &[Point2],
+    tolerance: f64,
+) -> Option<Vec<f64>> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let mut parameters = vec![range[0], range[1]];
+    match geometry {
+        SketchGeometry::Line { start, end } => {
+            let direction = Point2::new(end.u - start.u, end.v - start.v);
+            let length_squared = direction.u * direction.u + direction.v * direction.v;
+            if length_squared <= tolerance * tolerance {
+                return None;
+            }
+            for point in nodes {
+                let parameter = ((point.u - start.u) * direction.u
+                    + (point.v - start.v) * direction.v)
+                    / length_squared;
+                if parameter > 0.0
+                    && parameter < 1.0
+                    && point_segment_distance(*point, (*start, *end)) <= tolerance
+                {
+                    parameters.push(parameter);
+                }
+            }
+        }
+        SketchGeometry::Arc { center, radius, .. } => {
+            for point in nodes {
+                if (point_distance(*point, *center) - radius.0).abs() > tolerance {
+                    continue;
+                }
+                let angle = (point.v - center.v).atan2(point.u - center.u);
+                if let Some(parameter) = directed_angle_parameter(angle, range[0], range[1]) {
+                    if parameter > 0.0 && parameter < 1.0 {
+                        parameters.push(range[0] + parameter * (range[1] - range[0]));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    parameters.sort_by(|left, right| {
+        ((left - range[0]) / (range[1] - range[0]))
+            .total_cmp(&((right - range[0]) / (range[1] - range[0])))
+    });
+    let parameter_tolerance =
+        tolerance / sketch_geometry_speed_bound(geometry, range)?.max(tolerance);
+    parameters.dedup_by(|left, right| (*left - *right).abs() <= parameter_tolerance);
+    (parameters.len() >= 2).then_some(parameters)
+}
+
+fn arrangement_node(nodes: &mut Vec<Point2>, point: Point2, tolerance: f64) -> usize {
+    nodes
+        .iter()
+        .position(|candidate| point_distance(*candidate, point) <= tolerance)
+        .unwrap_or_else(|| {
+            nodes.push(point);
+            nodes.len() - 1
+        })
+}
+
+fn arrangement_edges_coincident(
+    left: &SketchArrangementEdge,
+    right: &SketchArrangementEdge,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    if left.boundary.entity == right.boundary.entity
+        && left.boundary.parameter_range == right.boundary.parameter_range
+    {
+        return true;
+    }
+    let Some(left_entity) = entities
+        .iter()
+        .find(|entity| entity.id == left.boundary.entity)
+    else {
+        return false;
+    };
+    let Some(right_entity) = entities
+        .iter()
+        .find(|entity| entity.id == right.boundary.entity)
+    else {
+        return false;
+    };
+    match (&left_entity.geometry, &right_entity.geometry) {
+        (SketchGeometry::Line { .. }, SketchGeometry::Line { .. }) => {
+            let left_midpoint = sketch_geometry_point(
+                &left_entity.geometry,
+                (left.boundary.parameter_range[0] + left.boundary.parameter_range[1]) * 0.5,
+            );
+            left_midpoint
+                .zip(right.polyline.last().copied())
+                .is_some_and(|(point, end)| {
+                    point_segment_distance(point, (right.polyline[0], end)) <= tolerance
+                })
+        }
+        (
+            SketchGeometry::Circle {
+                center: left_center,
+                radius: left_radius,
+            }
+            | SketchGeometry::Arc {
+                center: left_center,
+                radius: left_radius,
+                ..
+            },
+            SketchGeometry::Circle {
+                center: right_center,
+                radius: right_radius,
+            }
+            | SketchGeometry::Arc {
+                center: right_center,
+                radius: right_radius,
+                ..
+            },
+        ) => {
+            point_distance(*left_center, *right_center) <= tolerance
+                && (left_radius.0 - right_radius.0).abs() <= tolerance
+                && ((left.boundary.parameter_range[1] - left.boundary.parameter_range[0]).abs()
+                    - (right.boundary.parameter_range[1] - right.boundary.parameter_range[0]).abs())
+                .abs()
+                    <= tolerance / left_radius.0
+                && sketch_geometry_point(
+                    &left_entity.geometry,
+                    (left.boundary.parameter_range[0] + left.boundary.parameter_range[1]) * 0.5,
+                )
+                .zip(sketch_geometry_point(
+                    &right_entity.geometry,
+                    (right.boundary.parameter_range[0] + right.boundary.parameter_range[1]) * 0.5,
+                ))
+                .is_some_and(|(left, right)| point_distance(left, right) <= tolerance)
+        }
+        _ => false,
+    }
+}
+
+fn arrangement_edges_proven_disjoint(
+    left: &SketchArrangementEdge,
+    right: &SketchArrangementEdge,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    left_tubes: &[CertifiedCurveTube],
+    right_tubes: &[CertifiedCurveTube],
+) -> bool {
+    match (
+        arrangement_analytic_segment(left, entities),
+        arrangement_analytic_segment(right, entities),
+    ) {
+        (Some(left), Some(right)) => !boundary_segments_intersect(&left, &right),
+        _ => left_tubes.iter().all(|left| {
+            right_tubes.iter().all(|right| {
+                segment_distance((left.start, left.end), (right.start, right.end))
+                    > left.error + right.error
+            })
+        }),
+    }
+}
+
+fn certified_tube_bounds(tubes: &[CertifiedCurveTube]) -> Option<[Point2; 2]> {
+    let first = tubes.first()?;
+    Some(tubes.iter().fold(
+        [
+            Point2::new(
+                first.start.u.min(first.end.u) - first.error,
+                first.start.v.min(first.end.v) - first.error,
+            ),
+            Point2::new(
+                first.start.u.max(first.end.u) + first.error,
+                first.start.v.max(first.end.v) + first.error,
+            ),
+        ],
+        |mut bounds, tube| {
+            bounds[0].u = bounds[0].u.min(tube.start.u.min(tube.end.u) - tube.error);
+            bounds[0].v = bounds[0].v.min(tube.start.v.min(tube.end.v) - tube.error);
+            bounds[1].u = bounds[1].u.max(tube.start.u.max(tube.end.u) + tube.error);
+            bounds[1].v = bounds[1].v.max(tube.start.v.max(tube.end.v) + tube.error);
+            bounds
+        },
+    ))
+}
+
+fn arrangement_edge_tubes(
+    edge: &SketchArrangementEdge,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> Option<Vec<CertifiedCurveTube>> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let entity = entities
+        .iter()
+        .find(|entity| entity.id == edge.boundary.entity)?;
+    let scale = edge
+        .polyline
+        .iter()
+        .flat_map(|point| [point.u.abs(), point.v.abs()])
+        .fold(1.0_f64, f64::max);
+    let target_error = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
+    match &entity.geometry {
+        SketchGeometry::Line { .. } => Some(vec![CertifiedCurveTube {
+            start: edge.polyline[0],
+            end: *edge.polyline.last()?,
+            error: 0.0,
+        }]),
+        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+            certified_arc_tubes(
+                *center,
+                radius.0,
+                edge.boundary.parameter_range[0],
+                edge.boundary.parameter_range[1],
+                target_error,
+            )
+        }
+        SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic: false,
+        } if sketch_geometry_parameter_range(&entity.geometry)
+            == Some(edge.boundary.parameter_range) =>
+        {
+            certified_nurbs_tubes(
+                *degree,
+                knots,
+                control_points,
+                weights.as_deref(),
+                target_error,
+            )
+        }
+        _ => None,
+    }
+}
+
+fn arrangement_analytic_segment(
+    edge: &SketchArrangementEdge,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Option<ProfileBoundarySegment> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let entity = entities
+        .iter()
+        .find(|entity| entity.id == edge.boundary.entity)?;
+    match &entity.geometry {
+        SketchGeometry::Line { .. } => Some(ProfileBoundarySegment::Line {
+            start: edge.polyline[0],
+            end: *edge.polyline.last()?,
+        }),
+        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+            Some(ProfileBoundarySegment::Arc {
+                center: *center,
+                radius: radius.0,
+                start_angle: edge.boundary.parameter_range[0],
+                end_angle: edge.boundary.parameter_range[1],
+            })
+        }
+        _ => None,
+    }
+}
+
+fn sketch_geometry_parameter_range(
+    geometry: &cadmpeg_ir::sketches::SketchGeometry,
+) -> Option<[f64; 2]> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    match geometry {
+        SketchGeometry::Line { .. } => Some([0.0, 1.0]),
+        SketchGeometry::Arc {
+            start_angle,
+            end_angle,
+            ..
+        } => Some([start_angle.0, end_angle.0]),
+        SketchGeometry::Ellipse {
+            start_angle: Some(start),
+            end_angle: Some(end),
+            ..
+        } => Some([start.0, end.0]),
+        SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            periodic: false,
+            ..
+        } => Some([
+            *knots.get(usize::try_from(*degree).ok()?)?,
+            *knots.get(control_points.len())?,
+        ]),
+        _ => None,
+    }
+}
+
+fn profile_use_polyline(
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    range: [f64; 2],
+    reversed: bool,
+    tolerance: f64,
+) -> Option<Vec<Point2>> {
+    let travel =
+        sketch_geometry_speed_bound(&entity.geometry, range)? * (range[1] - range[0]).abs();
+    let scale = [
+        sketch_geometry_point(&entity.geometry, range[0])?,
+        sketch_geometry_point(&entity.geometry, range[1])?,
+        sketch_geometry_point(&entity.geometry, (range[0] + range[1]) * 0.5)?,
+    ]
+    .into_iter()
+    .flat_map(|point| [point.u.abs(), point.v.abs()])
+    .fold(1.0_f64, f64::max);
+    let target = (tolerance * scale).sqrt().max(64.0 * f64::EPSILON * scale);
+    // This bounded polyline supplies tangent order, winding sign, and
+    // intersection witnesses only. Exact output retains source parameter
+    // intervals rather than this derived representation.
+    let count = (travel / target).ceil().clamp(2.0, 256.0) as usize;
+    let mut points = (0..=count)
+        .map(|index| {
+            let parameter = range[0] + (range[1] - range[0]) * index as f64 / count as f64;
+            sketch_geometry_point(&entity.geometry, parameter)
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if reversed {
+        points.reverse();
+    }
+    Some(points)
+}
+
+fn sketch_geometry_speed_bound(
+    geometry: &cadmpeg_ir::sketches::SketchGeometry,
+    range: [f64; 2],
+) -> Option<f64> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    match geometry {
+        SketchGeometry::Line { start, end } => Some(point_distance(*start, *end)),
+        SketchGeometry::Circle { radius, .. } | SketchGeometry::Arc { radius, .. } => {
+            Some(radius.0)
+        }
+        SketchGeometry::Ellipse {
+            major_radius,
+            minor_radius,
+            ..
+        } => Some(major_radius.0.max(minor_radius.0)),
+        SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic: false,
+        } => nurbs_speed_bound(*degree, knots, control_points, weights.as_deref()),
+        _ if range[0] == range[1] => None,
+        _ => None,
+    }
+}
+
+fn sketch_geometry_point(
+    geometry: &cadmpeg_ir::sketches::SketchGeometry,
+    parameter: f64,
+) -> Option<Point2> {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    match geometry {
+        SketchGeometry::Line { start, end } => Some(Point2::new(
+            start.u + parameter * (end.u - start.u),
+            start.v + parameter * (end.v - start.v),
+        )),
+        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+            Some(Point2::new(
+                center.u + radius.0 * parameter.cos(),
+                center.v + radius.0 * parameter.sin(),
+            ))
+        }
+        SketchGeometry::Ellipse {
+            center,
+            major_angle,
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            let (axis_sine, axis_cosine) = major_angle.0.sin_cos();
+            Some(Point2::new(
+                center.u + major_radius.0 * parameter.cos() * axis_cosine
+                    - minor_radius.0 * parameter.sin() * axis_sine,
+                center.v
+                    + major_radius.0 * parameter.cos() * axis_sine
+                    + minor_radius.0 * parameter.sin() * axis_cosine,
+            ))
+        }
+        SketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic: false,
+        } => cadmpeg_ir::eval::nurbs_pcurve_uv(
+            *degree,
+            knots,
+            control_points,
+            weights.as_deref(),
+            parameter,
+        ),
+        _ => None,
+    }
+}
+
+fn point_on_profile_boundary_use(
+    point: Point2,
+    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometry;
+
+    let Some(entity) = entities.iter().find(|entity| entity.id == use_.entity) else {
+        return false;
+    };
+    if !point_on_sketch_entity(point, entity, tolerance) {
+        return false;
+    }
+    match &entity.geometry {
+        SketchGeometry::Circle { center, radius } | SketchGeometry::Arc { center, radius, .. } => {
+            let angle = (point.v - center.v).atan2(point.u - center.u);
+            directed_angle_parameter(angle, use_.parameter_range[0], use_.parameter_range[1])
+                .is_some_and(|parameter| {
+                    parameter >= -tolerance / radius.0 && parameter <= 1.0 + tolerance / radius.0
+                })
+        }
+        _ => true,
+    }
+}
+
+fn signed_polygon_area(vertices: &[Point2]) -> f64 {
+    vertices
+        .iter()
+        .copied()
+        .zip(vertices.iter().copied().cycle().skip(1))
+        .take(vertices.len())
+        .map(|(start, end)| start.u * end.v - end.u * start.v)
+        .sum::<f64>()
+        * 0.5
 }
 
 fn region_containing_points(
@@ -16363,6 +17490,129 @@ mod relation_tests {
                 outer: 0,
                 holes: vec![1],
             })
+        );
+    }
+
+    #[test]
+    fn coincident_circle_arc_arrangement_resolves_trimmed_faces() {
+        use cadmpeg_ir::features::{SketchProfileBoundaryUse, SketchProfileRegion};
+
+        let sketch_id = SketchId("sketch".into());
+        let line_id = SketchEntityId("diameter".into());
+        let arc_id = SketchEntityId("left-arc".into());
+        let circle_id = SketchEntityId("circle".into());
+        let entity = |id, geometry| SketchEntity {
+            id,
+            sketch: sketch_id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry,
+        };
+        let entities = vec![
+            entity(
+                line_id.clone(),
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, -1.0),
+                    end: Point2::new(0.0, 1.0),
+                },
+            ),
+            entity(
+                arc_id.clone(),
+                SketchGeometry::Arc {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(1.0),
+                    start_angle: Angle(std::f64::consts::FRAC_PI_2),
+                    end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
+                },
+            ),
+            entity(
+                circle_id.clone(),
+                SketchGeometry::Circle {
+                    center: Point2::new(0.0, 0.0),
+                    radius: Length(1.0),
+                },
+            ),
+        ];
+        let sketch = Sketch {
+            id: sketch_id,
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: vec![
+                vec![
+                    SketchEntityUse {
+                        entity: line_id.clone(),
+                        reversed: false,
+                    },
+                    SketchEntityUse {
+                        entity: arc_id.clone(),
+                        reversed: false,
+                    },
+                ],
+                vec![SketchEntityUse {
+                    entity: circle_id,
+                    reversed: false,
+                }],
+            ],
+            native_ref: None,
+        };
+
+        let faces = super::sketch_arrangement_faces(&sketch, &entities, 1.0e-7)
+            .expect("endpoint arrangement faces");
+        assert_eq!(faces.len(), 2);
+        let selected = super::arrangement_region_containing_points(
+            &sketch,
+            &entities,
+            &[
+                Point2::new(0.0, -1.0),
+                Point2::new(0.0, 1.0),
+                Point2::new(-1.0, 0.0),
+            ],
+            1.0e-7,
+        )
+        .expect("left half-disk arrangement face");
+        let SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } = selected
+        else {
+            panic!("arrangement selection must emit a trimmed boundary")
+        };
+        assert!(hole_boundaries.is_empty());
+        assert_eq!(outer_boundary.len(), 2);
+        assert!(outer_boundary.iter().any(|use_| use_.entity == line_id));
+        assert!(outer_boundary.iter().any(|use_| use_.entity == arc_id));
+        assert!(outer_boundary.iter().all(|use_| matches!(
+            use_,
+            SketchProfileBoundaryUse {
+                parameter_range: [start, end],
+                ..
+            } if start != end
+        )));
+    }
+
+    #[test]
+    fn analytic_arrangement_intersections_include_hidden_second_crossing() {
+        let line = super::ProfileBoundarySegment::Line {
+            start: Point2::new(-2.0, 0.0),
+            end: Point2::new(2.0, 0.0),
+        };
+        let circle = super::ProfileBoundarySegment::Arc {
+            center: Point2::new(0.0, 0.0),
+            radius: 1.0,
+            start_angle: 0.0,
+            end_angle: std::f64::consts::TAU,
+        };
+
+        assert_eq!(
+            super::analytic_segment_intersections(&line, &circle)
+                .expect("analytic intersection family")
+                .len(),
+            2
         );
     }
 
