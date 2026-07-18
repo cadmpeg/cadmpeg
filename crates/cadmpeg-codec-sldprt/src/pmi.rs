@@ -35,6 +35,7 @@ pub(crate) fn enrich_history_parameters(
         let millimetres = record.value * 1000.0;
         let expression = match record.subtype.as_str() {
             "Linear" => format!("{millimetres}mm"),
+            "Angle" => record.value.to_string(),
             "Diameter" => format!("<MOD-DIAM>{millimetres}mm"),
             "Radial" => format!("R{millimetres}mm"),
             _ => continue,

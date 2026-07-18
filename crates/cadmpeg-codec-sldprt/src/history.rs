@@ -1041,13 +1041,18 @@ impl<'a> ParameterExpressionParser<'a> {
 
     fn token(&mut self) -> Option<(String, bool)> {
         let rest = &self.input[self.offset..];
-        if let Some(marker) = ["<MOD-DIAM>", "&lt;MOD-DIAM&gt;"]
-            .into_iter()
-            .find(|marker| rest.starts_with(marker))
+        if let Some((marker, prefix)) = [
+            ("<MOD-DIAM>", "<MOD-DIAM>"),
+            ("&lt;MOD-DIAM&gt;", "<MOD-DIAM>"),
+            ("<MOD-RHO>", "R"),
+            ("&lt;MOD-RHO&gt;", "R"),
+        ]
+        .into_iter()
+        .find(|(marker, _)| rest.starts_with(marker))
         {
             self.offset += marker.len();
             let (value, quoted) = self.token()?;
-            return (!quoted).then(|| (format!("<MOD-DIAM>{value}"), false));
+            return (!quoted).then(|| (format!("{prefix}{value}"), false));
         }
         if rest.starts_with('"') {
             self.offset += 1;
@@ -4844,9 +4849,9 @@ fn format_f64_literal(value: f64) -> String {
 #[cfg(test)]
 mod literal_tests {
     use super::{
-        apply_parameter_function, compare_parameter_values, exact_integer_f64,
+        apply_parameter_function, compare_parameter_values, dimension_display, exact_integer_f64,
         exponentiate_parameter_value, format_f64_literal, parse_length_mm, parse_parameter_literal,
-        rewrite_parameter_expression, ParameterExpressionParser, ParameterValue,
+        rewrite_parameter_expression, DimensionDisplay, ParameterExpressionParser, ParameterValue,
     };
 
     #[test]
@@ -4910,6 +4915,28 @@ mod literal_tests {
         assert_eq!(
             parse_parameter_literal("&lt;MOD-DIAM&gt;4.917"),
             Some(ParameterValue::Length(cadmpeg_ir::features::Length(4.917)))
+        );
+    }
+
+    #[test]
+    fn radius_display_literals_participate_in_expressions() {
+        let aliases = std::collections::HashMap::new();
+        let values = std::collections::HashMap::new();
+        assert_eq!(
+            ParameterExpressionParser::new("<MOD-RHO>4mm / 2", &aliases, &values).parse(),
+            Some(ParameterValue::Length(cadmpeg_ir::features::Length(2.0)))
+        );
+        assert_eq!(
+            ParameterExpressionParser::new("&lt;MOD-RHO&gt;4 + 1mm", &aliases, &values).parse(),
+            Some(ParameterValue::Length(cadmpeg_ir::features::Length(5.0)))
+        );
+        assert_eq!(
+            parse_parameter_literal("<MOD-RHO>0.5"),
+            Some(ParameterValue::Length(cadmpeg_ir::features::Length(0.5)))
+        );
+        assert_eq!(
+            dimension_display("&lt;MOD-RHO&gt;0.5"),
+            Some(DimensionDisplay::Radius)
         );
     }
 
@@ -5222,7 +5249,9 @@ fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
         || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
     {
         Some(DimensionDisplay::Diameter)
-    } else if expression.starts_with(['R', 'r']) && parse_length_mm(expression).is_some() {
+    } else if strip_radius_modifier(expression).is_some()
+        || (expression.starts_with(['R', 'r']) && parse_length_mm(expression).is_some())
+    {
         Some(DimensionDisplay::Radius)
     } else {
         None
@@ -5231,6 +5260,7 @@ fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
 
 fn parse_dimension_display_length(expression: &str) -> Option<f64> {
     let value = strip_diameter_modifier(expression)
+        .or_else(|| strip_radius_modifier(expression))
         .unwrap_or(expression)
         .trim();
     parse_dimension_length_mm(value).or_else(|| parse_length_mm(expression))
@@ -5241,6 +5271,13 @@ fn strip_diameter_modifier(expression: &str) -> Option<&str> {
     expression
         .strip_prefix("<MOD-DIAM>")
         .or_else(|| expression.strip_prefix("&lt;MOD-DIAM&gt;"))
+}
+
+fn strip_radius_modifier(expression: &str) -> Option<&str> {
+    let expression = expression.trim();
+    expression
+        .strip_prefix("<MOD-RHO>")
+        .or_else(|| expression.strip_prefix("&lt;MOD-RHO&gt;"))
 }
 
 fn parse_neutral_parameter_literal(
