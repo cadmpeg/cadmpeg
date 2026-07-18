@@ -21,10 +21,11 @@ use cadmpeg_ir::eval::{
 };
 use cadmpeg_ir::features::{
     Angle, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, ConfigurationBodies,
-    ConfigurationId, DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceSelection,
-    Feature, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm,
-    HoleKind, Length, ParameterId, ParameterValue, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RibConstruction, RibDraft, SketchSpace, ThickenSide,
+    ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration,
+    DesignParameter, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
+    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId,
+    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RibConstruction,
+    RibDraft, SketchSpace, ThickenSide,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -11275,6 +11276,12 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
         "SKETCH" => FeatureDefinition::Sketch {
             space: SketchSpace::Unresolved,
             sketch: None,
+        },
+        "CPROJ" | "CPROJ_CMB" => FeatureDefinition::ProjectedCurve {
+            source: PathRef::Unresolved,
+            target_faces: FaceSelection::Unresolved,
+            direction: CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved),
+            bidirectional: None,
         },
         "SIMPLE HOLE" => FeatureDefinition::Hole {
             profile: None,

@@ -8,13 +8,14 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationBodies, ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay,
-    EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition, FeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length,
-    ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm,
-    RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide,
-    RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension,
-    SweepMode, TrimRegion, VariableRadius, WrapMode,
+    ConfigurationBodies, ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState,
+    DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent, FaceMotion,
+    FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole,
+    FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef,
+    PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter,
+    ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion,
+    VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -1454,18 +1455,20 @@ fn project_projected_curve(
         .get(source.as_str())
         .map_or_else(|| source.clone(), |id| (*id).to_string());
     let direction = match feature.properties.get("Direction") {
-        Some(value) => Some(parse_valid_direction(value)?),
-        None => None,
+        Some(value) => CurveProjectionDirection::Vector(parse_valid_direction(value)?),
+        None => CurveProjectionDirection::State(CurveProjectionDirectionState::TargetNormal),
     };
     Some(FeatureDefinition::ProjectedCurve {
         source: PathRef::Native(source),
         target_faces: FaceSelection::Native(feature.properties.get("TargetFaces")?.clone()),
         direction,
-        bidirectional: feature
-            .properties
-            .get("Bidirectional")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
+        bidirectional: Some(
+            feature
+                .properties
+                .get("Bidirectional")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(false),
+        ),
     })
 }
 
@@ -4366,14 +4369,31 @@ pub fn sync_neutral_features(
                 let mut properties = feature.source_properties.clone();
                 properties.insert("Source".into(), source);
                 properties.insert("TargetFaces".into(), target_faces);
-                properties.insert("Bidirectional".into(), bidirectional.to_string());
+                if let Some(bidirectional) = bidirectional {
+                    properties.insert("Bidirectional".into(), bidirectional.to_string());
+                } else if existing.is_none() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved projection directionality",
+                        feature.id
+                    )));
+                }
                 match direction {
-                    Some(direction) => {
+                    CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved) => {
+                        if existing.is_none() {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has an unresolved projection direction",
+                                feature.id
+                            )));
+                        }
+                    }
+                    CurveProjectionDirection::State(
+                        CurveProjectionDirectionState::TargetNormal,
+                    ) => {
+                        properties.remove("Direction");
+                    }
+                    CurveProjectionDirection::Vector(direction) => {
                         require_direction(*direction, &feature.id, "projection direction")?;
                         properties.insert("Direction".into(), format_vector3(*direction));
-                    }
-                    None => {
-                        properties.remove("Direction");
                     }
                 }
                 (
@@ -7236,6 +7256,7 @@ fn path_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match path {
+        PathRef::Unresolved => None,
         PathRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         PathRef::Sketch(id) => sketches.get(id).cloned(),
         PathRef::Edges(edges) if !edges.is_empty() => Some(

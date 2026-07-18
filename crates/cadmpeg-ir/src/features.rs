@@ -426,12 +426,12 @@ pub enum FeatureDefinition {
         source: PathRef,
         /// Faces receiving the projected curve.
         target_faces: FaceSelection,
-        /// Explicit projection direction; absent for target-normal projection.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
-        /// Whether projection proceeds in both directions.
+        /// Direction law used to project the source path.
         #[serde(default)]
-        bidirectional: bool,
+        direction: CurveProjectionDirection,
+        /// Whether projection proceeds in both directions, when resolved.
+        #[serde(default = "default_projected_curve_bidirectional")]
+        bidirectional: Option<bool>,
     },
     /// Shapes projected along a direction onto one support surface.
     ProjectOnSurface {
@@ -1080,6 +1080,11 @@ pub enum FuzzyTolerance {
 
 const fn default_true() -> bool {
     true
+}
+
+#[allow(clippy::unnecessary_wraps)]
+const fn default_projected_curve_bidirectional() -> Option<bool> {
+    Some(false)
 }
 
 /// Geometric offset construction used by a thin-wall shell operation.
@@ -1737,7 +1742,33 @@ pub enum HelixConstructionStyle {
     Corrected,
 }
 
-/// Result topology retained by a projection-on-surface operation.
+/// Direction law for a projected-curve operation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum CurveProjectionDirection {
+    /// Project every source point along one model-space vector.
+    Vector(Vector3),
+    /// Projection state without one explicit vector.
+    State(CurveProjectionDirectionState),
+}
+
+impl Default for CurveProjectionDirection {
+    fn default() -> Self {
+        Self::State(CurveProjectionDirectionState::TargetNormal)
+    }
+}
+
+/// Direction state for a projected curve without one explicit vector.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CurveProjectionDirectionState {
+    /// Projection direction exists semantically but is not resolved.
+    Unresolved,
+    /// Project independently along each target face's normal.
+    TargetNormal,
+}
+
+/// Result family produced by projection onto a support surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SurfaceProjectionMode {
@@ -2028,6 +2059,8 @@ pub enum ProfileRef {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum PathRef {
+    /// Path exists semantically but its geometry is not resolved.
+    Unresolved,
     /// Opaque reference into a native path record.
     Native(String),
     /// Ordered geometry from a neutral sketch.

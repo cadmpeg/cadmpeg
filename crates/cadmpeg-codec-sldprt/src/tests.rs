@@ -7644,7 +7644,11 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     assert!(matches!(
         decoded.ir.model.features[2].definition,
         FeatureDefinition::Extrude {
-            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            direction: Some(Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            }),
             extent: Extent::Symmetric { length: Length(4.0) },
             op: BooleanOp::NewBody,
             draft: Some(Angle(value)),
@@ -10717,8 +10721,12 @@ fn semantic_writer_round_trips_projected_curve() {
         FeatureDefinition::ProjectedCurve {
             source: PathRef::Edges(edges),
             target_faces: FaceSelection::Resolved { faces, native },
-            direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
-            bidirectional: false,
+            direction: cadmpeg_ir::features::CurveProjectionDirection::Vector(Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0,
+            }),
+            bidirectional: Some(false),
         } if edges == &[edge_id.clone()] && faces == &[face_id.clone()] && native == &face
     ));
 
@@ -10733,8 +10741,10 @@ fn semantic_writer_round_trips_projected_curve() {
     };
     *source = PathRef::Edges(vec![edge_id.clone()]);
     *target_faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *direction = None;
-    *bidirectional = true;
+    *direction = cadmpeg_ir::features::CurveProjectionDirection::State(
+        cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+    );
+    *bidirectional = Some(true);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -10752,8 +10762,10 @@ fn semantic_writer_round_trips_projected_curve() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::ProjectedCurve {
-            direction: None,
-            bidirectional: true,
+            direction: cadmpeg_ir::features::CurveProjectionDirection::State(
+                cadmpeg_ir::features::CurveProjectionDirectionState::TargetNormal,
+            ),
+            bidirectional: Some(true),
             ..
         }
     ));

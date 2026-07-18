@@ -2470,7 +2470,11 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 paths.push(source);
                 face_selections.push(target_faces);
-                if direction.is_some_and(|value| !valid_feature_direction(value)) {
+                if matches!(
+                    direction,
+                    crate::features::CurveProjectionDirection::Vector(value)
+                        if !valid_feature_direction(*value)
+                ) {
                     feature_geometry_error(findings, feature, "projection direction is invalid");
                 }
             }
@@ -2883,7 +2887,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     curves.iter().map(|id| id.0.as_str()),
                     &ids.curves,
                 ),
-                PathRef::Native(_) | PathRef::Sketch(_) => {}
+                PathRef::Unresolved | PathRef::Native(_) | PathRef::Sketch(_) => {}
             }
         }
         for extent in extents {

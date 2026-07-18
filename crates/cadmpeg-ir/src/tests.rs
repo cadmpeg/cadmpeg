@@ -816,6 +816,53 @@ fn unresolved_surface_offset_round_trips_through_json() {
 }
 
 #[test]
+fn unresolved_projected_curve_operands_round_trip_through_json() {
+    use crate::features::{FaceSelection, FeatureDefinition, PathRef};
+
+    let definition = FeatureDefinition::ProjectedCurve {
+        source: PathRef::Unresolved,
+        target_faces: FaceSelection::Unresolved,
+        direction: crate::features::CurveProjectionDirection::State(
+            crate::features::CurveProjectionDirectionState::Unresolved,
+        ),
+        bidirectional: None,
+    };
+    let json = serde_json::to_string(&definition).unwrap();
+    assert_eq!(
+        serde_json::from_str::<FeatureDefinition>(&json).unwrap(),
+        definition
+    );
+
+    let mut legacy = serde_json::to_value(&definition).unwrap();
+    legacy["direction"] = serde_json::json!({"x": 1.0, "y": 0.0, "z": 0.0});
+    legacy.as_object_mut().unwrap().remove("bidirectional");
+    assert!(matches!(
+        serde_json::from_value::<FeatureDefinition>(legacy).unwrap(),
+        FeatureDefinition::ProjectedCurve {
+            direction: crate::features::CurveProjectionDirection::Vector(Vector3 {
+                x: 1.0,
+                y: 0.0,
+                z: 0.0,
+            }),
+            bidirectional: Some(false),
+            ..
+        }
+    ));
+
+    let mut legacy = serde_json::to_value(&definition).unwrap();
+    legacy.as_object_mut().unwrap().remove("direction");
+    assert!(matches!(
+        serde_json::from_value::<FeatureDefinition>(legacy).unwrap(),
+        FeatureDefinition::ProjectedCurve {
+            direction: crate::features::CurveProjectionDirection::State(
+                crate::features::CurveProjectionDirectionState::TargetNormal,
+            ),
+            ..
+        }
+    ));
+}
+
+#[test]
 fn unresolved_block_dimensions_round_trip_through_json() {
     use crate::features::FeatureDefinition;
 
@@ -3102,8 +3149,10 @@ fn feature_operation_geometry_is_validated() {
         FeatureDefinition::ProjectedCurve {
             source: crate::features::PathRef::Native("source".into()),
             target_faces: FaceSelection::Unresolved,
-            direction: Some(Vector3::new(0.0, 0.0, 0.0)),
-            bidirectional: false,
+            direction: crate::features::CurveProjectionDirection::Vector(Vector3::new(
+                0.0, 0.0, 0.0,
+            )),
+            bidirectional: Some(false),
         },
         FeatureDefinition::CompositeCurve {
             segments: Vec::new(),

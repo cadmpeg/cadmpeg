@@ -3126,6 +3126,19 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
             radius: RadiusSpec::Unresolved { form: None },
         }
     );
+    for kind in ["CPROJ", "CPROJ_CMB"] {
+        assert_eq!(
+            crate::decode::non_boolean_feature_definition(kind, &[], None, None, None),
+            FeatureDefinition::ProjectedCurve {
+                source: cadmpeg_ir::features::PathRef::Unresolved,
+                target_faces: FaceSelection::Unresolved,
+                direction: cadmpeg_ir::features::CurveProjectionDirection::State(
+                    cadmpeg_ir::features::CurveProjectionDirectionState::Unresolved,
+                ),
+                bidirectional: None,
+            }
+        );
+    }
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("CHAMFER", &[], None, None, None),
         FeatureDefinition::Chamfer {
