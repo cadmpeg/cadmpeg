@@ -737,6 +737,14 @@ Type-five and type-seven line incidences propagate perpendicular and parallel
 orientation, respectively, through their connected line component. A
 contradictory incidence cycle or conflicting stored or unary orientation leaves
 the component orientation unresolved.
+Stored point ordinates, held-coordinate line equations, signed linear
+dimensions, coincidence, point-on-line, same-coordinate, and axis-symmetry
+incidences form affine equation components independently for `u` and `v` except
+where one symmetry equation joins three ordinates. A consistent component
+supplies every uniquely determined ordinate, including values that require
+simultaneous equations rather than one-way propagation. A contradictory
+component supplies no derived ordinate; byte-stored non-conflicting ordinates
+retain their values.
 A three-item type-fourteen incidence stores a sense-zero line followed by two
 endpoint-selected loci. The loci are symmetric about the line, in stored order.
 When the axis is uniquely horizontal or vertical and its held coordinate is

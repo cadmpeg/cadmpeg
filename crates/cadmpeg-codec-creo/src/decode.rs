@@ -3723,7 +3723,7 @@ pub(crate) fn resolved_section_points(
     let Some(variables) = &definition.variables else {
         return BTreeMap::new();
     };
-    let (mut points, ambiguous_point_ids) = variables.reconciled_points();
+    let (points, ambiguous_point_ids) = variables.reconciled_points();
     let mut segment_counts = BTreeMap::new();
     for segment in definition.segments.iter().flat_map(|table| &table.rows) {
         *segment_counts.entry(segment.external_id).or_insert(0usize) += 1;
@@ -3894,170 +3894,319 @@ pub(crate) fn resolved_section_points(
             Some((first, second, coordinate, delta?))
         })
         .collect::<Vec<_>>();
-    loop {
-        let mut changed = false;
-        for segment in &segments {
-            let Some(coordinate) = section_line_fixed_coordinate(definition, segment) else {
-                continue;
-            };
-            let [first_id, second_id] = segment.point_ids;
-            let [first, second] =
-                [first_id, second_id].map(|id| points.get(&id).copied().unwrap_or([None, None]));
-            match [first[coordinate], second[coordinate]] {
-                [Some(value), None] => {
-                    points.entry(second_id).or_insert([None, None])[coordinate] = Some(value);
-                    changed = true;
-                }
-                [None, Some(value)] => {
-                    points.entry(first_id).or_insert([None, None])[coordinate] = Some(value);
-                    changed = true;
-                }
-                _ => {}
+    let mut equations = Vec::new();
+    for (&point_id, coordinates) in &points {
+        for (coordinate, value) in coordinates.iter().copied().enumerate() {
+            if let Some(value) = value {
+                equations.push(SectionCoordinateEquation::point_value(
+                    point_id, coordinate, value,
+                ));
             }
         }
-        for &(first_id, second_id, coordinate, delta) in &signed_dimensions {
-            let [first, second] =
-                [first_id, second_id].map(|id| points.get(&id).copied().unwrap_or([None, None]));
-            match [first[coordinate], second[coordinate]] {
-                [Some(value), None] => {
-                    points.entry(second_id).or_insert([None, None])[coordinate] =
-                        Some(value + delta);
-                    changed = true;
+    }
+    for segment in &segments {
+        if let Some(coordinate) = section_line_fixed_coordinate(definition, segment) {
+            equations.push(SectionCoordinateEquation::point_difference(
+                segment.point_ids[0],
+                segment.point_ids[1],
+                coordinate,
+                0.0,
+            ));
+        }
+    }
+    for &(first, second, coordinate, delta) in &signed_dimensions {
+        equations.push(SectionCoordinateEquation::point_difference(
+            first, second, coordinate, delta,
+        ));
+    }
+    for &[first, second] in &coincident_points {
+        for coordinate in 0..2 {
+            equations.push(SectionCoordinateEquation::source_difference(
+                first, second, coordinate, 0.0,
+            ));
+        }
+    }
+    for &([first, second], coordinate) in &same_coordinate_points {
+        equations.push(SectionCoordinateEquation::source_difference(
+            first, second, coordinate, 0.0,
+        ));
+    }
+    for &(first, second, coordinate) in &point_on_line_coordinates {
+        equations.push(SectionCoordinateEquation::point_difference(
+            first, second, coordinate, 0.0,
+        ));
+    }
+    for &(point, coordinate, value) in &saved_point_on_line_coordinates {
+        equations.push(SectionCoordinateEquation::point_value(
+            point, coordinate, value,
+        ));
+    }
+    for &(axis, first, second, fixed_coordinate) in &symmetric_point_constraints {
+        let parallel_coordinate = 1usize.saturating_sub(fixed_coordinate);
+        equations.push(SectionCoordinateEquation::source_difference(
+            first,
+            second,
+            parallel_coordinate,
+            0.0,
+        ));
+        let mut equation = SectionCoordinateEquation::default();
+        equation.add_source(first, fixed_coordinate, 1.0);
+        equation.add_source(second, fixed_coordinate, 1.0);
+        match axis {
+            SectionSymmetryAxis::Point(point_id) => {
+                equation.add_point(point_id, fixed_coordinate, -2.0);
+            }
+            SectionSymmetryAxis::Value(value) => equation.rhs += 2.0 * value,
+        }
+        equations.push(equation);
+    }
+    let stored_coordinates = points
+        .into_iter()
+        .flat_map(|(point, coordinates)| {
+            coordinates
+                .into_iter()
+                .enumerate()
+                .filter_map(move |(coordinate, value)| Some(((point, coordinate), value?)))
+        })
+        .collect();
+    solve_section_coordinate_equations(&equations, &stored_coordinates)
+}
+
+type SectionCoordinateVariable = (u32, usize);
+
+#[derive(Default)]
+struct SectionCoordinateEquation {
+    terms: BTreeMap<SectionCoordinateVariable, f64>,
+    rhs: f64,
+}
+
+impl SectionCoordinateEquation {
+    fn point_value(point: u32, coordinate: usize, value: f64) -> Self {
+        let mut equation = Self::default();
+        equation.add_point(point, coordinate, 1.0);
+        equation.rhs = value;
+        equation
+    }
+
+    fn point_difference(first: u32, second: u32, coordinate: usize, delta: f64) -> Self {
+        let mut equation = Self::default();
+        equation.add_point(first, coordinate, -1.0);
+        equation.add_point(second, coordinate, 1.0);
+        equation.rhs = delta;
+        equation
+    }
+
+    fn source_difference(
+        first: SectionPointSource,
+        second: SectionPointSource,
+        coordinate: usize,
+        delta: f64,
+    ) -> Self {
+        let mut equation = Self::default();
+        equation.add_source(first, coordinate, -1.0);
+        equation.add_source(second, coordinate, 1.0);
+        equation.rhs += delta;
+        equation
+    }
+
+    fn add_point(&mut self, point: u32, coordinate: usize, coefficient: f64) {
+        *self.terms.entry((point, coordinate)).or_default() += coefficient;
+    }
+
+    fn add_source(&mut self, source: SectionPointSource, coordinate: usize, coefficient: f64) {
+        match source {
+            SectionPointSource::Point(point) => self.add_point(point, coordinate, coefficient),
+            SectionPointSource::Value(value) => self.rhs -= coefficient * value[coordinate],
+        }
+    }
+}
+
+fn solve_section_coordinate_equations(
+    equations: &[SectionCoordinateEquation],
+    stored_coordinates: &BTreeMap<SectionCoordinateVariable, f64>,
+) -> BTreeMap<u32, [f64; 2]> {
+    let variables = equations
+        .iter()
+        .flat_map(|equation| equation.terms.keys().copied())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let indices = variables
+        .iter()
+        .enumerate()
+        .map(|(index, variable)| (*variable, index))
+        .collect::<BTreeMap<_, _>>();
+    let mut adjacency = vec![BTreeSet::new(); variables.len()];
+    let mut variable_equations = vec![BTreeSet::new(); variables.len()];
+    for (equation_index, equation) in equations.iter().enumerate() {
+        let members = equation
+            .terms
+            .keys()
+            .filter_map(|variable| indices.get(variable).copied())
+            .collect::<Vec<_>>();
+        for &first in &members {
+            adjacency[first].extend(members.iter().copied().filter(|second| *second != first));
+            variable_equations[first].insert(equation_index);
+        }
+    }
+    let mut solved = BTreeMap::<SectionCoordinateVariable, f64>::new();
+    let mut remaining = (0..variables.len()).collect::<BTreeSet<_>>();
+    while let Some(seed) = remaining.pop_first() {
+        let mut component = BTreeSet::from([seed]);
+        let mut pending = std::collections::VecDeque::from([seed]);
+        while let Some(variable) = pending.pop_front() {
+            for &neighbor in &adjacency[variable] {
+                if component.insert(neighbor) {
+                    remaining.remove(&neighbor);
+                    pending.push_back(neighbor);
                 }
-                [None, Some(value)] => {
-                    points.entry(first_id).or_insert([None, None])[coordinate] =
-                        Some(value - delta);
-                    changed = true;
-                }
-                _ => {}
             }
         }
-        for &[first_source, second_source] in &coincident_points {
-            let [first, second] = [first_source, second_source].map(|source| match source {
-                SectionPointSource::Point(id) => points.get(&id).copied().unwrap_or([None, None]),
-                SectionPointSource::Value(value) => [Some(value[0]), Some(value[1])],
-            });
-            for coordinate in 0..2 {
-                match [first[coordinate], second[coordinate]] {
-                    [Some(value), None] => {
-                        if let SectionPointSource::Point(second_id) = second_source {
-                            points.entry(second_id).or_insert([None, None])[coordinate] =
-                                Some(value);
-                            changed = true;
-                        }
+        let columns = component.iter().copied().collect::<Vec<_>>();
+        let local_columns = columns
+            .iter()
+            .enumerate()
+            .map(|(local, global)| (*global, local))
+            .collect::<BTreeMap<_, _>>();
+        let component_equations = component
+            .iter()
+            .flat_map(|variable| variable_equations[*variable].iter().copied())
+            .collect::<BTreeSet<_>>();
+        let mut matrix = component_equations
+            .into_iter()
+            .map(|equation_index| &equations[equation_index])
+            .map(|equation| {
+                let mut row = SectionLinearRow {
+                    coefficients: BTreeMap::new(),
+                    rhs: equation.rhs,
+                };
+                for (variable, coefficient) in &equation.terms {
+                    let global = indices[variable];
+                    if *coefficient != 0.0 {
+                        row.coefficients
+                            .insert(local_columns[&global], *coefficient);
                     }
-                    [None, Some(value)] => {
-                        if let SectionPointSource::Point(first_id) = first_source {
-                            points.entry(first_id).or_insert([None, None])[coordinate] =
-                                Some(value);
-                            changed = true;
-                        }
-                    }
-                    _ => {}
+                }
+                row
+            })
+            .collect::<Vec<_>>();
+        let Some(component_solution) = uniquely_solved_linear_variables(&mut matrix, columns.len())
+        else {
+            for global in columns {
+                let variable = variables[global];
+                if let Some(value) = stored_coordinates.get(&variable) {
+                    solved.insert(variable, *value);
                 }
             }
+            continue;
+        };
+        for (local, value) in component_solution {
+            solved.insert(variables[columns[local]], value);
         }
-        for &([first_source, second_source], coordinate) in &same_coordinate_points {
-            let [first, second] = [first_source, second_source].map(|source| match source {
-                SectionPointSource::Point(id) => points.get(&id).copied().unwrap_or([None, None]),
-                SectionPointSource::Value(value) => [Some(value[0]), Some(value[1])],
-            });
-            match [first[coordinate], second[coordinate]] {
-                [Some(value), None] => {
-                    if let SectionPointSource::Point(second_id) = second_source {
-                        points.entry(second_id).or_insert([None, None])[coordinate] = Some(value);
-                        changed = true;
-                    }
-                }
-                [None, Some(value)] => {
-                    if let SectionPointSource::Point(first_id) = first_source {
-                        points.entry(first_id).or_insert([None, None])[coordinate] = Some(value);
-                        changed = true;
-                    }
-                }
-                _ => {}
-            }
-        }
-        for &(line_point_id, point_id, coordinate) in &point_on_line_coordinates {
-            let [line_point, point] = [line_point_id, point_id]
-                .map(|id| points.get(&id).copied().unwrap_or([None, None]));
-            match [line_point[coordinate], point[coordinate]] {
-                [Some(value), None] => {
-                    points.entry(point_id).or_insert([None, None])[coordinate] = Some(value);
-                    changed = true;
-                }
-                [None, Some(value)] => {
-                    points.entry(line_point_id).or_insert([None, None])[coordinate] = Some(value);
-                    changed = true;
-                }
-                _ => {}
-            }
-        }
-        for &(point_id, coordinate, value) in &saved_point_on_line_coordinates {
-            let point = points.get(&point_id).copied().unwrap_or([None, None]);
-            if point[coordinate].is_none() {
-                points.entry(point_id).or_insert([None, None])[coordinate] = Some(value);
-                changed = true;
-            }
-        }
-        for &(axis, first_source, second_source, fixed_coordinate) in &symmetric_point_constraints {
-            let [first, second] = [first_source, second_source].map(|source| match source {
-                SectionPointSource::Point(id) => points.get(&id).copied().unwrap_or([None, None]),
-                SectionPointSource::Value(value) => [Some(value[0]), Some(value[1])],
-            });
-            let parallel_coordinate = 1usize.saturating_sub(fixed_coordinate);
-            match [first[parallel_coordinate], second[parallel_coordinate]] {
-                [Some(value), None] => {
-                    if let SectionPointSource::Point(second_id) = second_source {
-                        points.entry(second_id).or_insert([None, None])[parallel_coordinate] =
-                            Some(value);
-                        changed = true;
-                    }
-                }
-                [None, Some(value)] => {
-                    if let SectionPointSource::Point(first_id) = first_source {
-                        points.entry(first_id).or_insert([None, None])[parallel_coordinate] =
-                            Some(value);
-                        changed = true;
-                    }
-                }
-                _ => {}
-            }
-            let axis_value = match axis {
-                SectionSymmetryAxis::Point(point_id) => points
-                    .get(&point_id)
-                    .and_then(|point| point[fixed_coordinate]),
-                SectionSymmetryAxis::Value(value) => Some(value),
-            };
-            let Some(axis_value) = axis_value else {
-                continue;
-            };
-            match [first[fixed_coordinate], second[fixed_coordinate]] {
-                [Some(value), None] => {
-                    if let SectionPointSource::Point(second_id) = second_source {
-                        points.entry(second_id).or_insert([None, None])[fixed_coordinate] =
-                            Some(2.0 * axis_value - value);
-                        changed = true;
-                    }
-                }
-                [None, Some(value)] => {
-                    if let SectionPointSource::Point(first_id) = first_source {
-                        points.entry(first_id).or_insert([None, None])[fixed_coordinate] =
-                            Some(2.0 * axis_value - value);
-                        changed = true;
-                    }
-                }
-                _ => {}
-            }
-        }
-        if !changed {
-            break;
-        }
+    }
+    let mut points = BTreeMap::<u32, [Option<f64>; 2]>::new();
+    for ((point, coordinate), value) in solved {
+        points.entry(point).or_insert([None; 2])[coordinate] = Some(value);
     }
     points
         .into_iter()
-        .filter_map(|(id, [u, v])| Some((id, [u?, v?])))
+        .filter_map(|(point, [u, v])| Some((point, [u?, v?])))
         .collect()
+}
+
+struct SectionLinearRow {
+    coefficients: BTreeMap<usize, f64>,
+    rhs: f64,
+}
+
+fn uniquely_solved_linear_variables(
+    matrix: &mut [SectionLinearRow],
+    variable_count: usize,
+) -> Option<Vec<(usize, f64)>> {
+    let coefficient_scale = matrix
+        .iter()
+        .flat_map(|row| row.coefficients.values())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let rhs_scale = matrix.iter().map(|row| row.rhs.abs()).fold(1.0, f64::max);
+    let coefficient_tolerance = 1e-12 * coefficient_scale;
+    let residual_tolerance = 1e-9 * rhs_scale;
+    let mut pivot_rows = BTreeMap::new();
+    let mut pivot_row = 0;
+    for column in 0..variable_count {
+        let Some(selected) = (pivot_row..matrix.len()).max_by(|&first, &second| {
+            matrix[first]
+                .coefficients
+                .get(&column)
+                .copied()
+                .unwrap_or(0.0)
+                .abs()
+                .total_cmp(
+                    &matrix[second]
+                        .coefficients
+                        .get(&column)
+                        .copied()
+                        .unwrap_or(0.0)
+                        .abs(),
+                )
+        }) else {
+            break;
+        };
+        let divisor = matrix[selected]
+            .coefficients
+            .get(&column)
+            .copied()
+            .unwrap_or(0.0);
+        if divisor.abs() <= coefficient_tolerance {
+            continue;
+        }
+        matrix.swap(pivot_row, selected);
+        for value in matrix[pivot_row].coefficients.values_mut() {
+            *value /= divisor;
+        }
+        matrix[pivot_row].rhs /= divisor;
+        let pivot_coefficients = matrix[pivot_row].coefficients.clone();
+        let pivot_rhs = matrix[pivot_row].rhs;
+        for (row, target) in matrix.iter_mut().enumerate() {
+            if row == pivot_row {
+                continue;
+            }
+            let factor = target.coefficients.get(&column).copied().unwrap_or(0.0);
+            if factor.abs() <= coefficient_tolerance {
+                continue;
+            }
+            for (&index, &pivot_value) in &pivot_coefficients {
+                let value = target.coefficients.entry(index).or_default();
+                *value -= factor * pivot_value;
+                if value.abs() <= coefficient_tolerance {
+                    target.coefficients.remove(&index);
+                }
+            }
+            target.rhs -= factor * pivot_rhs;
+        }
+        pivot_rows.insert(column, pivot_row);
+        pivot_row += 1;
+    }
+    if matrix
+        .iter()
+        .any(|row| row.coefficients.is_empty() && row.rhs.abs() > residual_tolerance)
+    {
+        return None;
+    }
+    let free_columns = (0..variable_count)
+        .filter(|column| !pivot_rows.contains_key(column))
+        .collect::<Vec<_>>();
+    Some(
+        pivot_rows
+            .into_iter()
+            .filter_map(|(column, row)| {
+                free_columns
+                    .iter()
+                    .all(|free| !matrix[row].coefficients.contains_key(free))
+                    .then_some((column, matrix[row].rhs))
+            })
+            .collect(),
+    )
 }
 
 fn section_line_fixed_coordinate(
@@ -13055,6 +13204,69 @@ mod resolved_sketch_tests {
     use super::*;
 
     #[test]
+    fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_on_conflict() {
+        let mut sum = SectionCoordinateEquation::default();
+        sum.add_point(1, 0, 1.0);
+        sum.add_point(2, 0, 1.0);
+        sum.rhs = 10.0;
+        let mut difference = SectionCoordinateEquation::default();
+        difference.add_point(1, 0, 1.0);
+        difference.add_point(2, 0, -1.0);
+        difference.rhs = 2.0;
+        assert_eq!(
+            solve_section_coordinate_equations(
+                &[
+                    sum,
+                    difference,
+                    SectionCoordinateEquation::point_value(1, 1, 3.0),
+                    SectionCoordinateEquation::point_value(2, 1, 4.0),
+                ],
+                &BTreeMap::new(),
+            ),
+            BTreeMap::from([(1, [6.0, 3.0]), (2, [4.0, 4.0])])
+        );
+
+        let stored = BTreeMap::from([((1, 0), 1.0), ((1, 1), 3.0)]);
+        assert_eq!(
+            solve_section_coordinate_equations(
+                &[
+                    SectionCoordinateEquation::point_value(1, 0, 1.0),
+                    SectionCoordinateEquation::point_value(1, 0, 2.0),
+                    SectionCoordinateEquation::point_value(1, 1, 3.0),
+                ],
+                &stored,
+            ),
+            BTreeMap::from([(1, [1.0, 3.0])])
+        );
+        let stored = BTreeMap::from([((1, 0), 1.0), ((1, 1), 3.0), ((2, 0), 2.0), ((2, 1), 4.0)]);
+        assert_eq!(
+            solve_section_coordinate_equations(
+                &[
+                    SectionCoordinateEquation::point_value(1, 0, 1.0),
+                    SectionCoordinateEquation::point_value(1, 1, 3.0),
+                    SectionCoordinateEquation::point_value(2, 0, 2.0),
+                    SectionCoordinateEquation::point_value(2, 1, 4.0),
+                    SectionCoordinateEquation::point_difference(1, 3, 0, 0.0),
+                    SectionCoordinateEquation::point_difference(2, 3, 0, 0.0),
+                    SectionCoordinateEquation::point_value(3, 1, 5.0),
+                ],
+                &stored,
+            ),
+            BTreeMap::from([(1, [1.0, 3.0]), (2, [2.0, 4.0])])
+        );
+        assert_eq!(
+            solve_section_coordinate_equations(
+                &[
+                    SectionCoordinateEquation::point_value(3, 0, 1.0e12),
+                    SectionCoordinateEquation::point_value(3, 1, -1.0e12),
+                ],
+                &BTreeMap::new(),
+            ),
+            BTreeMap::from([(3, [1.0e12, -1.0e12])])
+        );
+    }
+
+    #[test]
     fn normalization_rejects_overflowed_finite_vectors() {
         assert_eq!(normalized([f64::MAX, f64::MAX, 0.0]), None);
         assert_eq!(normalized([3.0, 4.0, 0.0]), Some([0.6, 0.8, 0.0]));
@@ -16438,6 +16650,17 @@ mod resolved_sketch_tests {
                 ],
             }
         );
+        let center_relation = center_coincidence
+            .relations
+            .as_ref()
+            .expect("relations")
+            .skamps[4]
+            .clone();
+        center_coincidence
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![center_relation];
         let variables = center_coincidence.variables.as_mut().expect("variables");
         let first_point = variables
             .points
