@@ -1856,14 +1856,14 @@ mod marker_tests {
     }
 
     #[test]
-    fn coordinate_marker_links_are_counted_reference_cells() {
+    fn coordinate_marker_links_are_sentinel_terminated_reference_cells() {
         let mut payload = vec![0; 118];
         payload[5..13].fill(0xff);
         payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
         payload[66..74].copy_from_slice(&1.25f64.to_le_bytes());
         payload[74..82].copy_from_slice(&(-2.5f64).to_le_bytes());
-        payload[84..86].copy_from_slice(&2u16.to_le_bytes());
+        payload[84..86].copy_from_slice(&3u16.to_le_bytes());
         for (index, local_id) in [7u16, 11].into_iter().enumerate() {
             let start = 86 + index * 12;
             payload[start..start + 2].copy_from_slice(&0x8386u16.to_le_bytes());
@@ -4595,16 +4595,16 @@ fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> 
 
 fn coordinate_marker_local_links(payload: &[u8], offset: usize) -> Option<(Vec<u16>, u16)> {
     marker_coordinates(payload, offset)?;
-    let count = usize::from(u16::from_le_bytes(
-        payload.get(offset + 84..offset + 86)?.try_into().ok()?,
-    ));
-    if !(1..=2).contains(&count) {
-        return None;
-    }
-    let mut links = Vec::with_capacity(count);
+    let mut links = Vec::with_capacity(2);
     let mut selector = None;
-    for index in 0..count {
+    for index in 0..=2 {
         let start = offset.checked_add(86 + index * 12)?;
+        if payload.get(start..start + 6)? == [0, 0, 0xfe, 0xff, 0xff, 0xff] {
+            return (!links.is_empty()).then_some((links, selector?));
+        }
+        if index == 2 {
+            return None;
+        }
         let cell = payload.get(start..start + 12)?;
         let tag = u16::from_le_bytes([cell[0], cell[1]]);
         let kind = operand_kind([cell[0], cell[1]])?;
@@ -4619,9 +4619,7 @@ fn coordinate_marker_local_links(payload: &[u8], offset: usize) -> Option<(Vec<u
         selector = Some(tag);
         links.push(u16::from_le_bytes([cell[2], cell[3]]));
     }
-    let sentinel = offset.checked_add(86 + count * 12)?;
-    (payload.get(sentinel..sentinel + 6)? == [0, 0, 0xfe, 0xff, 0xff, 0xff])
-        .then_some((links, selector?))
+    None
 }
 
 fn relation_instances(
