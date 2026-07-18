@@ -619,6 +619,8 @@ For rational arrays (`dimension == 4`) `00 2d` stores `[x*w, y*w, z*w, w]` per p
 
 Curve carriers: an edge's `00 10.refs[3]` can point to a `00 86` B-spline/list curve carrier, whose body references a `00 88` **curve descriptor** (attr, degree, control_count, dimension, knot_count, subtype, flags, then control/multiplicity/knot array attrs). Adjacent `00 87`/`00 b8`/`00 a3` are 3D prolog/wrapper records, not 2D UV pcurves.
 
+An edge's support curve can instead point to a `00 85` **bounded-curve wrapper**. After the compact header and orientation marker, the wrapper stores the source curve attr, start xyz, end xyz, and the source parameter interval as eight f64 BE values. The optional `ff` byte after the tag shifts the compact header by one byte. The stored endpoint coordinates equal evaluation of the referenced source curve at the two interval parameters; the wrapper retains the source curve's geometry and bounds its use.
+
 The Parasolid partition and deltas grammar contains no two-dimensional UV pcurve control array. The `00 2d`, `00 7f`, and `00 80` arrays carry 3D or homogeneous control nets and knot data.
 
 Planar pcurves are the exact inverse of the edge carrier in the support plane frame. Lines remain lines. Coplanar circles and ellipses remain analytic circles and ellipses with the same angular parameter; an edge axis opposite the plane normal reverses the parameter-plane rotation.

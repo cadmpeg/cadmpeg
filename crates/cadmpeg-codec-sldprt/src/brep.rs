@@ -24,6 +24,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 mod entity;
 mod intersection;
 mod spline;
+mod subset;
 mod topology;
 
 /// Millimetres per Parasolid model-space length unit (metres), [spec §12](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#9-units).
@@ -357,6 +358,9 @@ pub(crate) fn scan_carriers(body: &[u8]) -> CarrierIndex {
     }
     for (attr, carrier) in spline::scan_surface_carriers(body) {
         debug_assert_eq!(attr, carrier.attr);
+        out.insert(carrier);
+    }
+    for carrier in subset::scan(body, &out) {
         out.insert(carrier);
     }
     for (attr, carrier) in intersection::scan_intersection_carriers(body) {
