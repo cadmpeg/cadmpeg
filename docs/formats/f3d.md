@@ -667,7 +667,7 @@ An unresolved edge-selection record consists of its eleven-byte indexed header, 
 
 Standalone persistent-reference properties named `pt_tag`, `crv_primary_id`, and `crv_secondary_id` store the u32 pair `(2, 14)`, a 14-byte property slot, LP-ASCII `IntrinsicMetaTypeuint64`, and the referenced u64. The compact properties embedded in sketch point and curve records omit the `(2, 14)` pair and property slot.
 
-A sketch point record ends with `0x01 + u32 sketch_container_index + six zero bytes`. This final marked reference is the point's direct owner backlink. It is independent of constraint membership and resolves to the sketch entity container with the same record index in the Design stream.
+A sketch point or curve record ends with `0x01 + u32 sketch_container_index + six zero bytes`. This final marked reference is the geometry record's direct owner backlink. It is independent of constraint membership and resolves to the sketch entity container with the same record index in the Design stream. For a NURBS curve, the backlink follows the complete knot, weight, and three-coordinate control-point arrays; the indexed NURBS subtype header is nested within the curve record and does not terminate it.
 
 A browser-node record stores a length-prefixed 36-character UTF-16LE node GUID, a one-byte hidden flag, the `0x01 0x01` marker, and the node's `u64` design-entity suffix. Flag `1` hides the entity in the document display; `0` shows it. **Body visibility join:** ASM `asm_body_key` → BREP body map `entity_suffix` → browser-node hidden flag. Native writing emits this join for every body with explicit visibility and retained writing patches the hidden flag in place.
 

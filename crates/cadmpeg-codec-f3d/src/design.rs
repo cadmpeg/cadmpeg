@@ -11301,20 +11301,29 @@ pub fn decode_sketch_curve_identities(
                 let geometry_payload = payload
                     .get(geometry_shift..)
                     .expect("invariant: geometry_shift (0 or 52) is <= payload.len() (checked >= 133 by the at + 133 <= bytes.len() loop guard)");
+                let (geometry, owner_scan_from) =
+                    if let Some((geometry, end)) = decode_sketch_nurbs(geometry_payload) {
+                        (Some(geometry), geometry_shift + end)
+                    } else if let Some(geometry) = decode_circular_arc(geometry_payload) {
+                        (Some(geometry), geometry_shift + 133 + 12 * 8)
+                    } else if let Some(geometry) = decode_line(geometry_payload) {
+                        (Some(geometry), geometry_shift + 133 + 12 * 8)
+                    } else if let Some(geometry) = decode_referenced_analytic(geometry_payload) {
+                        (Some(geometry), geometry_shift + 11 + 133 + 12 * 8)
+                    } else {
+                        (None, geometry_shift + 133)
+                    };
                 out.push(SketchCurveIdentity {
                     id: format!("f3d:{}:sketch-curve-identity#{at}", entry.name),
                     record_index,
-                    owner_reference: None,
+                    owner_reference: trailing_sketch_owner_reference(bytes, at + owner_scan_from),
                     class_tag,
                     byte_offset: at as u64,
                     geometry_offset: (133 + geometry_shift) as u32,
                     entity_genesis,
                     primary_id,
                     secondary_id,
-                    geometry: decode_sketch_nurbs(geometry_payload)
-                        .or_else(|| decode_circular_arc(geometry_payload))
-                        .or_else(|| decode_line(geometry_payload))
-                        .or_else(|| decode_referenced_analytic(geometry_payload)),
+                    geometry,
                 });
             }
             at += 133;
@@ -11570,7 +11579,7 @@ fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
     decode_circular_arc(shifted).or_else(|| decode_line(shifted))
 }
 
-fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
+fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let base = 133usize;
     let prefix = payload.get(base..base + 8)?;
     let carrier_reference = (prefix != [0xff; 8]).then(|| {
@@ -11631,17 +11640,20 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<SketchCurveGeometry> {
         .chunks_exact(3)
         .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
         .collect();
-    Some(SketchCurveGeometry::Nurbs {
-        carrier_reference,
-        subtype_class_tag,
-        subtype_record_index: u32_at(payload, base + 15)?,
-        degree,
-        fit_tolerance: fit_tolerance * 10.0,
-        scalar_width: 8,
-        knots,
-        weights,
-        control_points,
-    })
+    Some((
+        SketchCurveGeometry::Nurbs {
+            carrier_reference,
+            subtype_class_tag,
+            subtype_record_index: u32_at(payload, base + 15)?,
+            degree,
+            fit_tolerance: fit_tolerance * 10.0,
+            scalar_width: 8,
+            knots,
+            weights,
+            control_points,
+        },
+        points_at + 12 + point_count * 24,
+    ))
 }
 
 fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
@@ -16266,7 +16278,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn sketch_point_tail_names_its_owner_container() {
+    fn sketch_geometry_tail_names_its_owner_container() {
         let mut bytes = vec![0u8; 112];
         bytes.push(1);
         bytes.extend_from_slice(&201u32.to_le_bytes());
@@ -16281,6 +16293,21 @@ mod relation_tests {
 
         bytes[117] = 1;
         assert_eq!(super::trailing_sketch_owner_reference(&bytes, 112), None);
+
+        let mut nested = vec![0u8; 140];
+        nested[120..124].copy_from_slice(&3u32.to_le_bytes());
+        nested[124..127].copy_from_slice(b"302");
+        nested[127..131].copy_from_slice(&500u32.to_le_bytes());
+        nested.push(1);
+        nested.extend_from_slice(&201u32.to_le_bytes());
+        nested.extend_from_slice(&[0; 6]);
+        nested.extend_from_slice(&3u32.to_le_bytes());
+        nested.extend_from_slice(b"303");
+        nested.extend_from_slice(&501u32.to_le_bytes());
+        assert_eq!(
+            super::trailing_sketch_owner_reference(&nested, 131),
+            Some(201)
+        );
     }
 
     #[test]
