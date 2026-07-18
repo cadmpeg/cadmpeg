@@ -24,6 +24,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 - The byte relation assigning logical vertex components to `05 08 01` allocation rows is unspecified.
 - Standard spline cache poles, knots, and native parameterization. The exact two-surface intersection construction and endpoint trim are resolved, but the serialized cache referenced by the standard row remains unresolved.
 - `op1` and persistent-tag resolution. The mapping from absolute persistent CGM tags to serialized records remains unresolved for the consolidated `a5` family.
+- The mapping from a standard `0x60` row's local allocation tag to its native edge record remains unresolved when no edge node carries the same curve identity.
 - Standard-path topology membership across multiple separate FBB face groups.
 - The standard-path arc branch is unspecified for arcs with no witnessed adjacent face.
 - The `a5 03 20` `op1` or persistent-tag reference to serialized-record mapping is unspecified.
