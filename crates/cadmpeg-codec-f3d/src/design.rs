@@ -4242,7 +4242,7 @@ fn region_containing_points(
         .profiles
         .iter()
         .map(|profile| profile_boundary(profile, entities, tolerance))
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     let projected = points
         .iter()
         .map(|point| project_to_sketch(sketch, *point))
@@ -4262,7 +4262,6 @@ fn region_containing_points(
     let containing = boundaries
         .iter()
         .enumerate()
-        .filter_map(|(index, boundary)| Some((index, boundary.as_ref()?)))
         .filter(|(_, boundary)| {
             projected
                 .iter()
@@ -4282,11 +4281,7 @@ fn region_containing_points(
         .iter()
         .min_by(|left, right| left.2.total_cmp(&right.2))?;
     let mut holes = Vec::new();
-    for (candidate, boundary) in boundaries
-        .iter()
-        .enumerate()
-        .filter_map(|(index, boundary)| Some((index, boundary.as_ref()?)))
-    {
+    for (candidate, boundary) in boundaries.iter().enumerate() {
         if candidate == outer || !outer_boundary.strictly_contains(boundary) {
             continue;
         }
@@ -4294,7 +4289,6 @@ fn region_containing_points(
         let parent = boundaries
             .iter()
             .enumerate()
-            .filter_map(|(index, parent)| Some((index, parent.as_ref()?)))
             .filter(|(index, parent)| {
                 *index != candidate
                     && parent.area() > candidate_area
@@ -15673,6 +15667,38 @@ mod relation_tests {
         );
         assert_eq!(
             region_containing_points(&sketch, &entities, &[Point3::new(15.0, 21.0, 12.0)], 1.0e-6,),
+            None
+        );
+
+        let mut incomplete = sketch.clone();
+        let ellipse = SketchEntityId("unsupported-ellipse".into());
+        incomplete.profiles.push(vec![SketchEntityUse {
+            entity: ellipse.clone(),
+            reversed: false,
+        }]);
+        entities.push(SketchEntity {
+            id: ellipse,
+            sketch: incomplete.id.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Ellipse {
+                center: Point2::new(30.0, 30.0),
+                major_angle: Angle(0.0),
+                major_radius: Length(2.0),
+                minor_radius: Length(1.0),
+                start_angle: None,
+                end_angle: None,
+            },
+        });
+        assert_eq!(
+            region_containing_points(
+                &incomplete,
+                &entities,
+                &[Point3::new(12.0, 21.0, 12.0)],
+                1.0e-6,
+            ),
             None
         );
     }
