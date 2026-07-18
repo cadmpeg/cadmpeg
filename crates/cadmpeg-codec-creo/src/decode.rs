@@ -3744,6 +3744,7 @@ pub(crate) fn resolved_section_points(
     let coincident_points = definition
         .relations
         .iter()
+        .filter(|table| feature_skamp_table_complete(table))
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| {
             let [first, second] = skamp.items.as_slice() else {
@@ -3784,6 +3785,7 @@ pub(crate) fn resolved_section_points(
     let same_coordinate_points = definition
         .relations
         .iter()
+        .filter(|table| feature_skamp_table_complete(table))
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_same_coordinate_sources(definition, skamp))
         .filter(|(pair, _)| {
@@ -3798,6 +3800,7 @@ pub(crate) fn resolved_section_points(
     let point_on_line_coordinates = definition
         .relations
         .iter()
+        .filter(|table| feature_skamp_table_complete(table))
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_point_on_line(definition, skamp))
         .filter(|(first, second, _)| {
@@ -3807,6 +3810,7 @@ pub(crate) fn resolved_section_points(
     let saved_point_on_line_coordinates = definition
         .relations
         .iter()
+        .filter(|table| feature_skamp_table_complete(table))
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_saved_point_on_line(definition, skamp))
         .filter(|(point_id, _, _)| !ambiguous_point_ids.contains(point_id))
@@ -3814,6 +3818,7 @@ pub(crate) fn resolved_section_points(
     let symmetric_point_constraints = definition
         .relations
         .iter()
+        .filter(|table| feature_skamp_table_complete(table))
         .flat_map(|table| &table.skamps)
         .filter_map(|skamp| section_skamp_axis_symmetry(definition, skamp))
         .filter(|(axis, first, second, _)| {
@@ -3833,6 +3838,7 @@ pub(crate) fn resolved_section_points(
     let signed_dimension_candidates = definition
         .relations
         .iter()
+        .filter(|table| feature_relation_table_complete(table))
         .flat_map(|table| &table.rows)
         .filter_map(|relation| {
             if relation.relation_type != 0 {
@@ -4219,7 +4225,12 @@ fn section_line_entity_fixed_coordinate(
     entity_id: u32,
 ) -> Option<usize> {
     let mut adjacency = BTreeMap::<u32, Vec<(u32, usize)>>::new();
-    for skamp in definition.relations.iter().flat_map(|table| &table.skamps) {
+    for skamp in definition
+        .relations
+        .iter()
+        .filter(|table| feature_skamp_table_complete(table))
+        .flat_map(|table| &table.skamps)
+    {
         let (parity, first, second) = match (skamp.kind, skamp.items.as_slice()) {
             (5 | 7, [first, second]) if first.sense == 0 && second.sense == 0 => {
                 ((skamp.kind == 5) as usize, first, second)
@@ -4286,6 +4297,7 @@ fn section_line_direct_fixed_coordinates(
         definition
             .relations
             .iter()
+            .filter(|table| feature_skamp_table_complete(table))
             .flat_map(|table| &table.skamps)
             .filter_map(|skamp| match (skamp.kind, skamp.items.as_slice()) {
                 (1, [item]) if item.sense == 0 && item.entity_id == entity_id => Some(1),
@@ -4554,7 +4566,12 @@ pub(crate) fn resolved_section_radii(
             }
         }
     }
-    for relation in definition.relations.iter().flat_map(|table| &table.rows) {
+    for relation in definition
+        .relations
+        .iter()
+        .filter(|table| feature_relation_table_complete(table))
+        .flat_map(|table| &table.rows)
+    {
         if relation.relation_type != 14 || relation.sign != 1 {
             continue;
         }
@@ -4613,7 +4630,12 @@ pub(crate) fn resolved_section_radii(
         }
     }
     let mut adjacency = BTreeMap::<u32, BTreeSet<u32>>::new();
-    for skamp in definition.relations.iter().flat_map(|table| &table.skamps) {
+    for skamp in definition
+        .relations
+        .iter()
+        .filter(|table| feature_skamp_table_complete(table))
+        .flat_map(|table| &table.skamps)
+    {
         let [first, second] = skamp.items.as_slice() else {
             continue;
         };
@@ -8698,6 +8720,11 @@ fn relation_incidence(
     let Some(relations) = &definition.relations else {
         return None;
     };
+    if !feature_solver_table_complete(relations.triples_header.as_ref(), relations.triples.len())
+        || !feature_solver_table_complete(relations.skamp_header.as_ref(), relations.skamps.len())
+    {
+        return None;
+    }
     let incidence_ids = relations
         .triples
         .iter()
@@ -8795,12 +8822,13 @@ fn section_dimension_constraints(
         .rows
         .iter()
         .map(|relation| {
-            let unique_relation_id = relations
-                .rows
-                .iter()
-                .filter(|candidate| candidate.relation_id == relation.relation_id)
-                .count()
-                == 1;
+            let unique_relation_id = feature_relation_table_complete(relations)
+                && relations
+                    .rows
+                    .iter()
+                    .filter(|candidate| candidate.relation_id == relation.relation_id)
+                    .count()
+                    == 1;
             let dimension = definition
                 .owner_feature_id
                 .zip(definition.dimensions.as_ref())
@@ -9196,17 +9224,20 @@ fn section_skamp_constraints(
     let Some(relations) = &definition.relations else {
         return Vec::new();
     };
+    let complete_skamps =
+        feature_solver_table_complete(relations.skamp_header.as_ref(), relations.skamps.len());
     let section_entities = section_entity_external_ids(definition);
     relations
         .skamps
         .iter()
         .filter_map(|skamp| {
-            let unique_skamp_id = relations
-                .skamps
-                .iter()
-                .filter(|candidate| candidate.id == skamp.id)
-                .count()
-                == 1;
+            let unique_skamp_id = complete_skamps
+                && relations
+                    .skamps
+                    .iter()
+                    .filter(|candidate| candidate.id == skamp.id)
+                    .count()
+                    == 1;
             let native_constraint = || {
                 let entities = skamp
                     .items
@@ -11202,6 +11233,27 @@ fn resolved_feature_dimension_parameter(
 
 fn feature_dimension_table_complete(table: &crate::feature::FeatureDimensionTable) -> bool {
     usize::try_from(table.declared_count).ok() == Some(table.rows.len())
+}
+
+fn feature_relation_table_complete(table: &crate::feature::FeatureRelationTable) -> bool {
+    table
+        .declared_count
+        .checked_sub(2)
+        .and_then(|count| usize::try_from(count).ok())
+        == Some(table.rows.len())
+}
+
+fn feature_solver_table_complete(
+    header: Option<&crate::feature::FeatureSolverTableHeader>,
+    row_count: usize,
+) -> bool {
+    header.map_or(row_count == 0, |header| {
+        usize::try_from(header.declared_count).ok() == Some(row_count)
+    })
+}
+
+fn feature_skamp_table_complete(table: &crate::feature::FeatureRelationTable) -> bool {
+    feature_solver_table_complete(table.skamp_header.as_ref(), table.skamps.len())
 }
 
 fn feature_dimension_parameter_layout(
@@ -13216,6 +13268,15 @@ fn extrusion_extent_and_direction(
 mod resolved_sketch_tests {
     use super::*;
 
+    fn synchronize_skamp_count(definition: &mut crate::feature::FeatureDefinition) {
+        let relations = definition.relations.as_mut().expect("relations");
+        relations
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = u32::try_from(relations.skamps.len()).expect("skamp count");
+    }
+
     #[test]
     fn section_coordinate_system_solves_coupled_equations_and_withholds_derivations_on_conflict() {
         let mut sum = SectionCoordinateEquation::default();
@@ -15210,14 +15271,22 @@ mod resolved_sketch_tests {
                 }],
                 offset: 30,
             }],
-            skamp_header: None,
+            skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 1,
+                offset: 29,
+            }),
             triples: vec![crate::feature::FeatureRelationTriple {
                 relation_id: Some(7),
                 equation_id: None,
                 skamp_id: Some(5),
                 offset: 31,
             }],
-            triples_header: None,
+            triples_header: Some(crate::feature::FeatureSolverTableHeader {
+                declared_count: 1,
+                entity_ref: 2,
+                offset: 31,
+            }),
             offset: 28,
         });
         let constraints =
@@ -16067,7 +16136,7 @@ mod resolved_sketch_tests {
             offset: 44,
         };
         let relations = crate::feature::FeatureRelationTable {
-            declared_count: 1,
+            declared_count: 3,
             entity_ref: None,
             rows: vec![crate::feature::FeatureRelation {
                 relation_id: 8,
@@ -16321,7 +16390,11 @@ mod resolved_sketch_tests {
                     offset: 82,
                 },
             ],
-            skamp_header: None,
+            skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+                declared_count: 15,
+                entity_ref: 1,
+                offset: 46,
+            }),
             triples: Vec::new(),
             triples_header: None,
             offset: 45,
@@ -16475,6 +16548,14 @@ mod resolved_sketch_tests {
             ],
             offset: 94,
         }];
+        saved_radius_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = 1;
         assert_eq!(
             resolved_section_radii(&saved_radius_definition),
             BTreeMap::from([(101, 4.0)])
@@ -16682,6 +16763,7 @@ mod resolved_sketch_tests {
             .as_mut()
             .expect("relations")
             .skamps = vec![center_relation];
+        synchronize_skamp_count(&mut center_coincidence);
         let variables = center_coincidence.variables.as_mut().expect("variables");
         let first_point = variables
             .points
@@ -16940,6 +17022,14 @@ mod resolved_sketch_tests {
                 }],
                 offset: 83,
             });
+        incidence_oriented_distance
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = 1;
         assert_eq!(
             section_dimension_constraints(&incidence_oriented_distance, &SketchId("sketch".into()))
                 [0]
@@ -16955,6 +17045,22 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let mut incomplete_skamps = incidence_oriented_distance.clone();
+        incomplete_skamps
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamp_header = Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 2,
+            entity_ref: 1,
+            offset: 82,
+        });
+        assert!(matches!(
+            section_dimension_constraints(&incomplete_skamps, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
         let mut conflicting_orientation = incidence_oriented_distance.clone();
         let mut vertical = conflicting_orientation
             .relations
@@ -16971,6 +17077,14 @@ mod resolved_sketch_tests {
             .expect("relations")
             .skamps
             .push(vertical);
+        conflicting_orientation
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = 2;
         assert!(matches!(
             section_dimension_constraints(&conflicting_orientation, &SketchId("sketch".into()))[0]
                 .0
@@ -16988,6 +17102,13 @@ mod resolved_sketch_tests {
             resolved_section_points(&solver_definition).get(&2),
             Some(&[0.0, 5.0])
         );
+        let mut incomplete_relations = solver_definition.clone();
+        incomplete_relations
+            .relations
+            .as_mut()
+            .expect("relations")
+            .declared_count = 4;
+        assert!(!resolved_section_points(&incomplete_relations).contains_key(&2));
         let mut equivalent_relation = solver_definition.clone();
         let duplicate = equivalent_relation
             .relations
@@ -17001,6 +17122,11 @@ mod resolved_sketch_tests {
             .expect("relations")
             .rows
             .push(duplicate);
+        equivalent_relation
+            .relations
+            .as_mut()
+            .expect("relations")
+            .declared_count = 4;
         assert_eq!(
             resolved_section_points(&equivalent_relation).get(&2),
             Some(&[0.0, 5.0])
@@ -17275,6 +17401,16 @@ mod resolved_sketch_tests {
             skamp_id: Some(81),
             offset: 82,
         }];
+        incidence_relations.skamp_header = Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 1,
+            offset: 80,
+        });
+        incidence_relations.triples_header = Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 1,
+            entity_ref: 2,
+            offset: 82,
+        });
         assert_eq!(
             section_dimension_constraints(&incidence_distance, &SketchId("sketch".into()))[0]
                 .0
@@ -17289,6 +17425,17 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let mut incomplete_triples = incidence_distance.clone();
+        incomplete_triples
+            .relations
+            .as_mut()
+            .expect("relations")
+            .triples_header = Some(crate::feature::FeatureSolverTableHeader {
+            declared_count: 2,
+            entity_ref: 2,
+            offset: 82,
+        });
+        assert!(relation_incidence(&incomplete_triples, 8).is_none());
         incidence_distance
             .relations
             .as_mut()
@@ -17574,6 +17721,7 @@ mod resolved_sketch_tests {
                 offset: 90,
             },
         ];
+        synchronize_skamp_count(&mut coincident_definition);
         let related_line = unique_section_skamp_segment(&coincident_definition, 17).expect("line");
         assert_eq!(
             section_line_fixed_coordinate(&coincident_definition, related_line),
@@ -17716,6 +17864,7 @@ mod resolved_sketch_tests {
             }],
             offset: 85,
         }];
+        synchronize_skamp_count(&mut saved_definition);
         assert_eq!(
             section_skamp_constraints(&saved_definition, &SketchId("sketch".into()))[0]
                 .0
@@ -17745,6 +17894,7 @@ mod resolved_sketch_tests {
             ],
             offset: 86,
         }];
+        synchronize_skamp_count(&mut saved_definition);
         let segment = unique_section_skamp_segment(&saved_definition, 12).expect("segment line");
         assert_eq!(
             section_line_fixed_coordinate(&saved_definition, segment),
@@ -17781,6 +17931,7 @@ mod resolved_sketch_tests {
             ],
             offset: 87,
         }];
+        synchronize_skamp_count(&mut saved_definition);
         assert_eq!(
             resolved_section_points(&saved_definition).get(&4),
             Some(&[3.0, 1.0])
@@ -17837,6 +17988,7 @@ mod resolved_sketch_tests {
                 offset: 89,
             },
         ];
+        synchronize_skamp_count(&mut saved_coincident);
         assert_eq!(
             resolved_section_points(&saved_coincident),
             BTreeMap::from([(1, [0.0, 2.0]), (4, [1.0, 1.0]), (5, [0.0, 1.0])])
@@ -17877,6 +18029,7 @@ mod resolved_sketch_tests {
             ],
             offset: 90,
         }];
+        synchronize_skamp_count(&mut saved_symmetric);
         assert_eq!(
             resolved_section_points(&saved_symmetric).get(&5),
             Some(&[0.0, 1.0])
@@ -17915,6 +18068,7 @@ mod resolved_sketch_tests {
             ],
             offset: 88,
         }];
+        synchronize_skamp_count(&mut saved_definition);
         assert_eq!(
             resolved_section_points(&saved_definition).get(&5),
             Some(&[3.0, 0.0])
@@ -17941,6 +18095,7 @@ mod resolved_sketch_tests {
             ],
             offset: 91,
         }];
+        synchronize_skamp_count(&mut saved_same_coordinate);
         assert_eq!(
             section_skamp_constraints(&saved_same_coordinate, &SketchId("sketch".into()))[0]
                 .0

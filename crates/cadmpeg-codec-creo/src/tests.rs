@@ -2601,7 +2601,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
             offset: 0,
         }),
         relations: Some(crate::feature::FeatureRelationTable {
-            declared_count: 3,
+            declared_count: 6,
             entity_ref: None,
             rows: vec![
                 crate::feature::FeatureRelation {
