@@ -378,7 +378,7 @@ mod marker_tests {
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
         compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
-        compact_line_chain_addresses, compact_line_region_addresses,
+        compact_line_chain_addresses, compact_line_region_addresses, compact_offset_plane_source,
         compact_profile_reference_plane_source, compact_reference_plane_source,
         compact_single_face_reference_path_at, compact_surface_selection_at,
         complete_ordered_compact_line_profile, component_path_features,
@@ -388,10 +388,10 @@ mod marker_tests {
         named_scalars, native_scalar_matches_discrete_parameter, object_names,
         ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
         principal_sketch_frame, resolve_operand_marker, resolve_operand_marker_excluding,
-        resolve_scalar_operand_markers, solved_tangent, spatial_vertex_coordinates,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER,
-        SCALAR_HEADER,
+        resolve_scalar_operand_markers, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -399,7 +399,7 @@ mod marker_tests {
     };
     use cadmpeg_ir::math::{Point2, Point3};
     use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchLocus};
-    use std::collections::HashSet;
+    use std::collections::{BTreeMap, HashSet};
 
     #[test]
     fn spatial_vertex_patch_preserves_record_shape_and_order() {
@@ -698,6 +698,19 @@ mod marker_tests {
         assert_eq!(compact_reference_plane_source(&payload), Some(2));
         payload[start + 59] ^= 1;
         assert_eq!(compact_reference_plane_source(&payload), None);
+    }
+
+    #[test]
+    fn compact_offset_plane_source_requires_the_reference_record() {
+        let mut payload = Vec::new();
+        payload.extend(3u32.to_le_bytes());
+        payload.extend([
+            0x02, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x2d, 0x80, 0x2b, 0x80,
+        ]);
+        assert_eq!(compact_offset_plane_source(&payload), Some(3));
+        payload[19] ^= 1;
+        assert_eq!(compact_offset_plane_source(&payload), None);
     }
 
     #[test]
@@ -1931,6 +1944,81 @@ mod marker_tests {
             assert!((super::dot(u_axis, u_axis) - 1.0).abs() <= 1.0e-12);
             assert!(super::dot(normal, u_axis).abs() <= 1.0e-12);
         }
+    }
+
+    #[test]
+    fn offset_plane_frame_translates_its_reference_frame() {
+        use cadmpeg_ir::features::{
+            Feature as NeutralFeature, FeatureDefinition, FeatureId, Length, PrincipalPlane,
+        };
+
+        let native = |id: &str, source: &str| Feature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(source.into()),
+            parent_source_id: None,
+            ordinal: source.parse().unwrap(),
+            name: id.into(),
+            kind: String::new(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        };
+        let neutral = |id: &str, native_ref: &str, definition| NeutralFeature {
+            id: FeatureId(id.into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: Some(native_ref.into()),
+        };
+        let features = vec![
+            neutral(
+                "plane",
+                "plane-native",
+                FeatureDefinition::DatumPrincipalPlane {
+                    plane: PrincipalPlane::Top,
+                },
+            ),
+            neutral(
+                "offset",
+                "offset-native",
+                FeatureDefinition::DatumOffsetPlane {
+                    reference: Some(FeatureId("plane".into())),
+                    distance: Length(3.0),
+                },
+            ),
+        ];
+        let history = crate::records::FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native("plane-native", "3"), native("offset-native", "549")],
+        };
+
+        assert_eq!(
+            sketch_plane_frames(&features, &[history]).get(&549),
+            Some(&(
+                Point3::new(0.0, 0.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            ))
+        );
     }
 
     #[test]
@@ -5059,6 +5147,12 @@ pub(crate) fn enrich_history_reference_planes(
     lanes: &[FeatureInputLane],
 ) {
     let mut candidates = BTreeMap::<(usize, usize), Vec<(Point3, Vector3, Vector3)>>::new();
+    let mut reference_candidates = BTreeMap::<(usize, usize), Vec<u32>>::new();
+    let known_sources = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+        .collect::<HashSet<_>>();
     for lane in lanes {
         let mut starts =
             histories
@@ -5093,6 +5187,19 @@ pub(crate) fn enrich_history_reference_planes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
+            if let Some(source) = compact_offset_plane_source(bytes).filter(|source| {
+                known_sources.contains(source)
+                    && feature
+                        .source_id
+                        .as_deref()
+                        .and_then(|value| value.parse::<u32>().ok())
+                        != Some(*source)
+            }) {
+                reference_candidates
+                    .entry((history_index, feature_index))
+                    .or_default()
+                    .push(source);
+            }
             let mut frames = bytes
                 .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
                 .filter_map(fixed_reference_plane_frame)
@@ -5119,6 +5226,16 @@ pub(crate) fn enrich_history_reference_planes(
                 .or_default()
                 .push((*origin, *normal, *u_axis));
         }
+    }
+    for ((history_index, feature_index), mut sources) in reference_candidates {
+        sources.sort_unstable();
+        sources.dedup();
+        let [source] = sources.as_slice() else {
+            continue;
+        };
+        histories[history_index].features[feature_index]
+            .properties
+            .insert("Reference".into(), source.to_string());
     }
     for ((history_index, feature_index), mut frames) in candidates {
         frames.sort_by_key(|(origin, normal, u_axis)| {
@@ -5152,6 +5269,21 @@ pub(crate) fn enrich_history_reference_planes(
             format!("{},{},{}", u_axis.x, u_axis.y, u_axis.z),
         );
     }
+}
+
+fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
+    const TRAILER: &[u8] = &[
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x2d, 0x80, 0x2b, 0x80,
+    ];
+    let matches = payload.windows(4 + TRAILER.len()).filter_map(|bytes| {
+        let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+        (source != 0 && bytes.get(4..) == Some(TRAILER)).then_some(source)
+    });
+    let matches = matches.collect::<HashSet<_>>();
+    let mut matches = matches.into_iter();
+    let source = matches.next()?;
+    matches.next().is_none().then_some(source)
 }
 
 const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
@@ -6153,15 +6285,24 @@ fn sketch_plane_frames(
     features: &[cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
 ) -> HashMap<u32, (Point3, Vector3, Vector3)> {
-    histories
+    let source_by_feature = histories
         .iter()
         .flat_map(|history| &history.features)
         .filter_map(|feature| {
-            let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
-            let neutral = features
-                .iter()
-                .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?;
-            let frame = match neutral.definition {
+            Some((
+                features
+                    .iter()
+                    .find(|neutral| neutral.native_ref.as_deref() == Some(feature.id.as_str()))?
+                    .id
+                    .clone(),
+                feature.source_id.as_deref()?.parse::<u32>().ok()?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut frames_by_feature = features
+        .iter()
+        .filter_map(|feature| {
+            let frame = match feature.definition {
                 cadmpeg_ir::features::FeatureDefinition::DatumPrincipalPlane { plane } => {
                     principal_sketch_frame(plane)
                 }
@@ -6172,8 +6313,44 @@ fn sketch_plane_frames(
                 } => (origin, normal, u_axis),
                 _ => return None,
             };
-            Some((source, frame))
+            Some((feature.id.clone(), frame))
         })
+        .collect::<HashMap<_, _>>();
+    loop {
+        let derived = features
+            .iter()
+            .filter(|feature| !frames_by_feature.contains_key(&feature.id))
+            .filter_map(|feature| {
+                let cadmpeg_ir::features::FeatureDefinition::DatumOffsetPlane {
+                    reference: Some(reference),
+                    distance,
+                } = &feature.definition
+                else {
+                    return None;
+                };
+                let &(origin, normal, u_axis) = frames_by_feature.get(reference)?;
+                Some((
+                    feature.id.clone(),
+                    (
+                        Point3::new(
+                            origin.x + normal.x * distance.0,
+                            origin.y + normal.y * distance.0,
+                            origin.z + normal.z * distance.0,
+                        ),
+                        normal,
+                        u_axis,
+                    ),
+                ))
+            })
+            .collect::<Vec<_>>();
+        if derived.is_empty() {
+            break;
+        }
+        frames_by_feature.extend(derived);
+    }
+    source_by_feature
+        .into_iter()
+        .filter_map(|(feature, source)| Some((source, *frames_by_feature.get(&feature)?)))
         .collect()
 }
 
