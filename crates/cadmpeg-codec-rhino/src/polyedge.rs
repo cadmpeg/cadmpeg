@@ -1,22 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Persistent polyedge-reference construction decoding.
-//!
-//! Migrated module (doc section 10 Phase 2). The record body and every child
-//! segment are read through a bounded [`View`] over the caller's threaded
-//! platform [`DecodeContext`]: the count-framed parameter table and the segment
-//! list are sized by [`View::counted`] physical-plausibility proofs and
-//! reserved through [`DecodeContext::exact_vec`], committed scalar reads use the
-//! `req_*` mirror, and per-element `work` is charged against the document-level
-//! budget. Residual: each child segment record is located by the legacy
-//! `chunk_at`/`parse_class_wrapper`, which take the raw `&[u8]` file slice, and
-//! its class check runs on that raw slice before the child `View` takes over the
-//! body. That slice is the whole record window obtained via `MeshExpand::data()`,
-//! which returns the `MeshExpand::root` window, so this is a real raw-byte egress
-//! boundary — named in the `polyedge.rs` `window_egress` entry of
-//! `parser-manifest.toml` — not a typed-`Range`-only handoff; the
-//! window-yielding call site itself lives in `mesh.rs` and is counted there by
-//! the source ratchet. The module carries the graduated
-//! `deny(clippy::disallowed_methods)`.
 #![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
@@ -72,36 +55,31 @@ fn malformed(offset: usize, message: impl Into<String>) -> FramingError {
     }
 }
 
-/// Maps a budget refusal from the platform context onto the module's framing
-/// error. The codec-local `ITEM_CAP` bounds each count well below any default
+/// The codec-local `ITEM_CAP` bounds each count well below any default
 /// budget ceiling, so a refusal here means the reserved size was implausible for
 /// the surrounding window.
 fn refused(offset: usize, error: &CodecError) -> FramingError {
     malformed(offset, format!("polyedge allocation refused: {error}"))
 }
 
-/// Reads one committed `u8` through the `req_*` mirror.
 fn req_u8(view: &mut View<'_>) -> Result<u8, FramingError> {
     let offset = view.position();
     view.req_u8()
         .map_err(|_| malformed(offset, "polyedge record truncated"))
 }
 
-/// Reads one committed `i32` through the `req_*` mirror.
 fn req_i32(view: &mut View<'_>) -> Result<i32, FramingError> {
     let offset = view.position();
     view.req_i32_le()
         .map_err(|_| malformed(offset, "polyedge record truncated"))
 }
 
-/// Reads one committed `f64` through the `req_*` mirror.
 fn req_f64(view: &mut View<'_>) -> Result<f64, FramingError> {
     let offset = view.position();
     view.req_f64_le()
         .map_err(|_| malformed(offset, "polyedge record truncated"))
 }
 
-/// Reads a committed 16-byte UUID through the `req_*` mirror.
 fn req_uuid(view: &mut View<'_>) -> Result<Uuid, FramingError> {
     let offset = view.position();
     let bytes = view
@@ -110,7 +88,6 @@ fn req_uuid(view: &mut View<'_>) -> Result<Uuid, FramingError> {
     Ok(Uuid::from_wire(bytes.try_into().expect("length checked")))
 }
 
-/// Reads an archive boolean encoded as one byte through the `req_*` mirror.
 fn req_bool(view: &mut View<'_>) -> Result<bool, FramingError> {
     let offset = view.position();
     match req_u8(view)? {
@@ -168,8 +145,6 @@ fn segment(
     let mut body = root
         .child(chunk.body.start, chunk.body.end)
         .ok_or_else(|| malformed(chunk.body.start, "polyedge segment body out of range"))?;
-    // A polyedge segment is a fixed field layout (no count-framed collection);
-    // charge one work unit per committed scalar field read.
     ctx.charge_work(13, "polyedge_segment", Some(body.location()))
         .map_err(|error| refused(chunk.body.start, &error))?;
     if req_i32(&mut body)? != 1 || req_i32(&mut body)? != 0 {
@@ -207,9 +182,6 @@ pub(crate) fn decode(
     range: Range<usize>,
     archive: ArchiveVersion,
 ) -> Result<PolyEdge, FramingError> {
-    // Read the record body through a bounded `View` on the caller's threaded
-    // platform context so parameter/segment charges accumulate against the
-    // document-level budget.
     let data = expand.data();
     let ctx = expand.ctx();
     let mut body = expand
@@ -237,7 +209,6 @@ pub(crate) fn decode(
         ));
     }
 
-    // Count-framed parameter table: reserve exactly `parameter_count` scalars.
     ctx.charge_work(
         parameter_count as u64,
         "polyedge_parameters",
@@ -263,9 +234,6 @@ pub(crate) fn decode(
         .finish_exact()
         .map_err(|error| refused(body.position(), &error))?;
 
-    // Count-framed segment list: reserve exactly `segment_count` segments; each
-    // child record is located by `chunk_at`/`parse_class_wrapper` framing and
-    // read through a child `View`.
     let mut segments = ctx
         .exact_vec::<Segment>(segment_bound)
         .map_err(|error| refused(body.position(), &error))?;

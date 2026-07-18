@@ -36,11 +36,9 @@ const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
 /// when that mapping is fixed.
 ///
 /// The root space is always serialized as `source`, so a ticket committed in it
-/// reconciles against the ledger's `source` space (§6.1). Derived spaces receive
-/// canonical ids only when the registry serialization pass (Phase 3A) assigns
-/// them; until then a ticket in a derived space returns `None` and its ledger
-/// coverage is not asserted. Every codec that issues tickets today commits them
-/// in the root space, so the mapping covers all live issuance.
+/// reconciles against the ledger's `source` space. Derived spaces receive
+/// canonical ids during registry serialization; a ticket in a derived space
+/// therefore returns `None` here and its ledger coverage is not asserted.
 fn canonical_space(space: SpaceId) -> Option<CanonicalSpaceId> {
     (space == SpaceId::ROOT).then(CanonicalSpaceId::source)
 }
@@ -222,7 +220,7 @@ impl<'a> DecodeContext<'a> {
     /// budget once. The bytes are borrowed for the arena's lifetime, never
     /// re-copied, so the blob survives the context teardown.
     ///
-    /// The exhaustion outcome is mode-defined (§11.10). A fresh blob whose bytes
+    /// The exhaustion outcome is mode-defined. A fresh blob whose bytes
     /// do not fit the retained budget fails in strict mode with a
     /// `ResourceLimit` (fusing the context) and degrades in salvage mode to
     /// [`Retention::Accounted`]: the digest is kept, the bytes are dropped, a
@@ -240,13 +238,10 @@ impl<'a> DecodeContext<'a> {
             len: bytes.len(),
         };
         if self.retained.contains(&digest) {
-            // Dedup: identical bytes are already retained and already charged.
             return Ok(Retention::Retained(RetainedRange::whole(digest, len)));
         }
         match self.policy.mode {
             DecodeMode::Strict => {
-                // Strict fails on retained exhaustion: charge_retained fuses and
-                // returns ResourceLimit, aborting the decode (§11.10).
                 self.charge_retained(len, "retain", None)?;
                 self.retained.insert(digest.clone(), addr);
                 Ok(Retention::Retained(RetainedRange::whole(digest, len)))
@@ -259,8 +254,7 @@ impl<'a> DecodeContext<'a> {
                     // Salvage degrades R->A: keep the digest, drop the bytes,
                     // and record the degradation for finish. Keyed by digest so a
                     // later successful retention of the same blob reconciles it.
-                    // The context is not fused — retention alone never fails a
-                    // decode (§11.10).
+                    // The context is not fused; retention alone never fails a decode.
                     self.retained.mark_degraded(&digest, len);
                     Ok(Retention::Accounted { digest })
                 }
@@ -312,7 +306,7 @@ impl<'a> DecodeContext<'a> {
     }
 
     /// Returns whether any retention degraded from recoverable to accounted
-    /// because the retained-byte budget was exhausted (salvage mode, §11.10).
+    /// because the retained-byte budget was exhausted in salvage mode.
     pub fn retention_degraded(&self) -> bool {
         self.retained.is_degraded()
     }
@@ -581,10 +575,10 @@ impl<'a> DecodeContext<'a> {
     ///   such as a dictionary-preset decompression that `begin_expand` cannot
     ///   express with its single source view. The caller streams the output
     ///   through [`DerivedWriter::write`], charged to `decompressed_bytes`
-    ///   under the per-expand and cumulative decompression ceilings (§4.5,
-    ///   §5.2); [`DerivedWriter::finalize`] grows the input basis like
+    ///   under the per-expand and cumulative decompression ceilings;
+    ///   [`DerivedWriter::finalize`] grows the input basis like
     ///   [`ExpandWriter::finalize`], because the output is genuine decompressed
-    ///   content the calibrated decompression-bomb ceilings must bound.
+    ///   content the decompression-bomb ceilings must bound.
     ///
     /// `begin_expand` is the single-source [`SpaceOrigin::Transform`] special
     /// case. The output space registers only on successful
@@ -741,7 +735,7 @@ impl<'a> DecodeContext<'a> {
     /// and its [`LossNote`] is appended to the result's report, so the
     /// omission stays an accountable outcome.
     ///
-    /// `Check::TransferAccounting` (§6.2) then validates the resolved
+    /// `Check::TransferAccounting` then validates the resolved
     /// disposition table against the ledger: a [`RecordDisposition::Typed`]
     /// must name at least one output entity, a [`RecordDisposition::Retained`]
     /// must name at least one retained record and every named record must
@@ -749,7 +743,7 @@ impl<'a> DecodeContext<'a> {
     /// name at least one unknown record and every named record must resolve in
     /// the document's native unknowns, and a [`RecordDisposition::Dropped`]'s
     /// loss note must be reflected in the report's losses. When the report
-    /// carries a §6.1 ledger, every resolved ticket in a canonically-named space
+    /// carries a ledger, every resolved ticket in a canonically-named space
     /// must additionally land inside a span the ledger tiles, so a disposition
     /// and the serialized ledger cannot claim disjoint byte accounts. A codec
     /// that issues no tickets has an empty table and passes trivially. A violation is a
@@ -778,7 +772,7 @@ impl<'a> DecodeContext<'a> {
                 }
             }
         }
-        // Check::TransferAccounting (§6.2): validate the resolved disposition
+        // Validate the resolved disposition
         // table against the retained ledger, the document's native unknowns,
         // and the report's losses. Runs after salvage auto-drop so
         // auto-generated Dropped dispositions are checked against the loss
@@ -837,7 +831,7 @@ impl<'a> DecodeContext<'a> {
         if self.retained.is_degraded() {
             // Salvage degraded recovery to accounting on retained exhaustion:
             // surface it as an accountable outcome — a report flag plus one
-            // deterministic loss note — never as a decode failure (§11.10).
+            // deterministic loss note, never as a decode failure.
             result.report.retention_degraded = true;
             result.report.losses.push(LossNote {
                 code: LossCode::RetentionDegraded,
@@ -856,9 +850,8 @@ impl<'a> DecodeContext<'a> {
         Ok(result)
     }
 
-    /// Resolves the versioned calibration identifiers recorded on the decode
-    /// report (§5.2): the active limits-profile version, the acceptance-
-    /// envelope version, and any caller ceilings that deviate from the default.
+    /// Resolves the limits-profile version, acceptance-envelope version, and
+    /// caller ceilings recorded on the decode report.
     ///
     /// The desktop profile is the documented `Default`, so a custom policy's
     /// overrides are its deviations from desktop.
@@ -926,7 +919,7 @@ impl<'a> DecodeContext<'a> {
 }
 
 /// Appends a `dimension=value` override descriptor for each ceiling that
-/// differs from the desktop default, the §5.2 baseline for custom policies.
+/// differs from the desktop default.
 ///
 /// `limits` is destructured by field on purpose: adding a `ResourceLimits`
 /// dimension fails to compile here until the new field is listed, so a fresh
@@ -1283,7 +1276,7 @@ impl<'a> DerivedWriter<'_, 'a> {
     /// per-expand and cumulative decompression ceilings before it is retained.
     ///
     /// Valid only for a [`DerivedKind::Transform`] space, whose output is new
-    /// decompressed content that the calibrated decompression-bomb ceilings
+    /// decompressed content that the decompression-bomb ceilings
     /// must bound. A [`DerivedKind::Concat`] space assembles from its declared
     /// inputs at construction and holds no caller-written bytes; writing to one
     /// is refused so its provenance ledger cannot be contradicted.
@@ -1337,7 +1330,7 @@ impl<'a> DerivedWriter<'_, 'a> {
     /// derived space with its `Concat` or `Transform` origin.
     ///
     /// A Transform's output is new decompressed content, so it grows the input
-    /// basis (§5.2) like [`ExpandWriter::finalize`]; a Concat reassembles
+    /// basis like [`ExpandWriter::finalize`]; a Concat reassembles
     /// already-accounted bytes and leaves the basis unchanged.
     pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
         let length = self.written;
@@ -1451,8 +1444,7 @@ impl TicketTable {
     }
 
     /// Validates the resolved disposition table against the retained ledger, the
-    /// serialized §6.1 ledger, and the report's losses
-    /// (`Check::TransferAccounting`, §6.2), returning one message per violation
+    /// serialized ledger, and the report's losses, returning one message per violation
     /// in ticket order.
     ///
     /// The checks: a [`RecordDisposition::Typed`] names at least one output
@@ -1468,9 +1460,9 @@ impl TicketTable {
     /// unconstrained by the retained ledger and the model.
     ///
     /// When `ledger` is present, every ticket whose space maps to a canonical
-    /// id (see [`canonical_space`]) is additionally reconciled against the §6.1
+    /// id (see [`canonical_space`]) is additionally reconciled against the
     /// ledger: its byte location must fall inside a span the ledger tiles. This
-    /// is the cross-artifact conservation §6.2 assigns the check — a disposition
+    /// is the cross-artifact conservation check: a disposition
     /// whose bytes the ledger does not tile (a span absent from the ledger, or a
     /// location in a tiling gap) is a violation, closing the gap between the
     /// disposition table and the serialized ledger that would otherwise let both
@@ -1483,7 +1475,7 @@ impl TicketTable {
     /// `Dropped` claims a distinct un-consumed `LossNote` matching its key, so
     /// N records dropped under a shared key require N notes in `report.losses`.
     /// Existence-only matching would let one note account for many drops,
-    /// reintroducing the concealed under-accounting §6.2 forbids.
+    /// reintroducing concealed under-accounting.
     fn transfer_accounting(
         &self,
         model: &Model,
@@ -1502,12 +1494,12 @@ impl TicketTable {
                 location.space.index(),
                 location.offset
             );
-            // §6.1 reconciliation: when the codec serialized a ledger, the bytes
-            // this disposition accounts for must be tiled by it. A resolved
+            // When the codec serialized a ledger, the bytes this disposition
+            // accounts for must be tiled by it. A resolved
             // ticket whose canonical space is absent from the ledger, or whose
             // offset lands in a tiling gap, is a disposition the ledger does not
-            // corroborate. Derived spaces without a canonical id yet (Phase 3A)
-            // carry no ledger assertion.
+            // corroborate. Derived spaces without a canonical id carry no
+            // ledger assertion.
             if let (Some(ledger), Some(space)) = (ledger, canonical_space(location.space)) {
                 if state.disposition.is_some() && ledger.class_at(&space, location.offset).is_none()
                 {

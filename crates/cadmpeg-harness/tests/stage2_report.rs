@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stage-2 runtime report-oracle gate (doc §7 byte-accounting and
-//! no-silent-fallback rows).
+//! Stage-2 runtime report-oracle gate.
 //!
 //! The stage-2 adoption matrix (`tests/stage2_gates.rs`) pins *which* report
 //! oracles gate for each codec; this gate runs them. For every gate fixture's
-//! successful full decode, it carries the child's [`ReportSummary`] back over
-//! the stage-1 wire protocol and judges it against the codec's adopted report
+//! successful full decode, it judges the child's [`ReportSummary`] against the codec's report
 //! oracles, failing when a produced source-fidelity ledger does not validate or
 //! a retention degradation carries no paired loss note.
 
@@ -49,8 +47,6 @@ fn report_oracles_hold_on_gate_fixtures() {
             );
             let result = run_job(&runner(), key.clone(), &bytes, &limits).expect("run decode");
             let Some(report) = &result.report else {
-                // No report means the decode did not succeed; the stage-1
-                // oracles judge that path, not the report oracles.
                 continue;
             };
             for violation in status.judge_report(report) {

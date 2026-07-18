@@ -334,8 +334,8 @@ fn records(bytes: &[u8], tag: u8, min_len: usize) -> Vec<(usize, u16)> {
         .collect()
 }
 
-/// Codec-local ceiling on the total expanded knot count (§4.4 zero-floor
-/// defense in depth). Multiplicities are attacker-controlled `u16` values with
+/// Codec-local ceiling on the total expanded knot count. Multiplicities are
+/// attacker-controlled `u16` values with
 /// no physical input floor of their own, so a hostile record can request a knot
 /// vector of `distinct.len() * 65535` entries out of a few input bytes. This cap
 /// bounds the `repeat_n`-style expansion (class A) independently of input size;
@@ -347,8 +347,7 @@ fn expand_knots(distinct: &[f64], multiplicities: &[u16]) -> Option<Vec<f64>> {
     {
         return None;
     }
-    // Accumulate through `Vec::new`/`push` (lint-invisible per §8) with an
-    // explicit running cap instead of `repeat_n`, so the expansion cannot commit
+    // The explicit running cap prevents the expansion from committing
     // memory proportional to an untrusted multiplicity sum.
     let mut out = Vec::new();
     for (&value, &count) in distinct.iter().zip(multiplicities) {

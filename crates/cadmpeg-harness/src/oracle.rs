@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The stage-1 oracles, their verdicts, and the calibrated envelopes.
+//! Stage-1 oracles, verdicts, and resource envelopes.
 //!
 //! An oracle is a single falsifiable property of one run. Baselines key on
 //! each oracle separately so one oracle cannot regress while another improves
@@ -13,12 +13,10 @@ const GIB: u64 = 1024 * 1024 * 1024;
 /// Default peak-allocation envelope: the largest process-wide live heap a run
 /// may reach.
 ///
-/// **Provisional.** This is a process-safety ceiling, deliberately separate
-/// from — and larger than — the decode budget's per-input `K` term: the process
+/// This process-safety ceiling is separate from the decode budget's per-input
+/// `K` term: the process
 /// legitimately pays for IR, serde, and report memory the budget never meters.
-/// It is not derivable from `alloc_bytes`. The stage-1 base corpus is small and
-/// sits far below this; the constant freezes only after report-only calibration
-/// against the full sweep.
+/// It is not derivable from `alloc_bytes`.
 pub const DEFAULT_PEAK_ENVELOPE_BYTES: u64 = GIB;
 
 /// Default wall-clock ceiling per run. The hard timeout that kills a child that
@@ -101,7 +99,7 @@ impl OracleStatus {
     }
 }
 
-/// The calibrated envelopes an oracle run enforces.
+/// The resource envelopes an oracle run enforces.
 #[derive(Debug, Clone, Copy)]
 pub struct OracleLimits {
     /// Peak-allocation envelope in bytes.

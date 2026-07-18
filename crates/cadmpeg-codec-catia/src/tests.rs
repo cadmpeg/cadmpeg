@@ -17,9 +17,6 @@ use cadmpeg_ir::LossCode;
 use crate::variant::Variant;
 use crate::CatiaCodec;
 
-/// Drive [`crate::container::scan_view`] over a fixture under a default session,
-/// so tests observe the registered `Concat` BREP derived space and the physical
-/// extent spans exactly as `decode` and `inspect` do.
 fn with_scan<R>(bytes: &[u8], f: impl FnOnce(&crate::container::ContainerScan<'_>) -> R) -> R {
     use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
@@ -29,8 +26,6 @@ fn with_scan<R>(bytes: &[u8], f: impl FnOnce(&crate::container::ContainerScan<'_
     f(&scan)
 }
 
-/// Drive a migrated leaf parser over a raw fixture under a default session,
-/// exposing the [`DecodeContext`] and root [`View`] the parser charges against.
 fn with_root<R>(
     bytes: &[u8],
     f: impl FnOnce(&cadmpeg_ir::decode::DecodeContext<'_>, cadmpeg_ir::decode::View<'_>) -> R,
@@ -331,13 +326,10 @@ fn le_f64(v: f64) -> [u8; 8] {
 /// edge-table delimiter, and three `05 08 01` vertex records.
 fn main_stream() -> Vec<u8> {
     let mut b = Vec::new();
-    // Two stride-8 FBB rows (`30 04 04 ff` + 4 constant bytes).
     for _ in 0..2 {
         b.extend_from_slice(&[0x30, 0x04, 0x04, 0xff, 0xd2, 0xd2, 0xd2, 0xd2]);
     }
-    // Standard edge-table delimiter.
     b.extend_from_slice(&[0x10, 0x24, 0x04, 0xff, 0xff, 0x00, 0x00, 0x00]);
-    // Three vertex records (3×f32 LE, millimetres).
     for xyz in [[0.0f32, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0]] {
         b.extend_from_slice(&[0x05, 0x08, 0x01]);
         for v in xyz {
@@ -351,24 +343,21 @@ fn main_stream() -> Vec<u8> {
 /// the strict 5-byte prefix template.
 fn surf_stream() -> Vec<u8> {
     let mut b = Vec::new();
-    b.extend_from_slice(&[0xAA, 0xBB, 0xCC]); // target u24
-    b.push(0x00); // sentinel
-    b.push(0x1a); // cylinder/cone prebyte
-    b.extend_from_slice(&[0x00, 0x33, 0x33]); // `00 33 KIND` (cylinder)
-                                              // BE f32: px py pz ax ay radius
+    b.extend_from_slice(&[0xAA, 0xBB, 0xCC]);
+    b.push(0x00);
+    b.push(0x1a);
+    b.extend_from_slice(&[0x00, 0x33, 0x33]);
     for v in [0.0f32, 0.0, 0.0, 0.0, 0.0, 5.0] {
         b.extend_from_slice(&be_f32(v));
     }
     b.resize(73, 0);
-    b[72] = 0x01; // cylinder face sense
-                  // Tag-bridged plane: the plane marker and parameter record share the same
-                  // u24le tag.  The normal is perpendicular to the stored yz diagonal.
+    b[72] = 0x01;
     b.extend_from_slice(&[0x11, 0x22, 0x33]);
     b.push(0x00);
     b.push(0x02);
     b.extend_from_slice(&[0x00, 0x33, 0x32]);
     b.resize(122, 0);
-    b[121] = 0xff; // plane face sense
+    b[121] = 0xff;
     b.extend_from_slice(&[0xff, 0x11, 0x22, 0x33]);
     b.extend_from_slice(&[0x00, 0x02, 0x00, 0x33, 0x32]);
     for v in [1.0f32, 2.0, 3.0, 0.0, 4.0, 0.0, 1.0, 2.0, 3.0, 4.0] {
@@ -379,7 +368,7 @@ fn surf_stream() -> Vec<u8> {
     for v in [0.0f32, 0.0, 0.0, 5.0] {
         b.extend_from_slice(&be_f32(v));
     }
-    b.extend_from_slice(&[0, 1]); // adjacent face ordinals
+    b.extend_from_slice(&[0, 1]);
     b
 }
 
@@ -388,19 +377,19 @@ fn surf_stream() -> Vec<u8> {
 /// extent. `phys_off` is measured from the inner magic.
 fn descriptor(name: &str, phys_off: u32, phys_len: u32) -> Vec<u8> {
     let mut b = vec![0u8; 0x54];
-    b[0x0c..0x10].copy_from_slice(&be32(phys_len)); // logical_length == cum
+    b[0x0c..0x10].copy_from_slice(&be32(phys_len));
     let mut np = 0x10;
     for ch in name.chars() {
         b[np] = ch as u8;
         b[np + 1] = 0x00;
         np += 2;
     }
-    b[0x50..0x54].copy_from_slice(&be32(1)); // extent count k = 1
-    b.extend_from_slice(&be32(phys_off)); // phys_off
-    b.extend_from_slice(&be32(phys_len)); // phys_len
-    b.extend_from_slice(&be32(phys_len)); // log_len
-    b.extend_from_slice(&be32(0)); // log_off
-    b.extend_from_slice(&be32(0)); // flags
+    b[0x50..0x54].copy_from_slice(&be32(1));
+    b.extend_from_slice(&be32(phys_off));
+    b.extend_from_slice(&be32(phys_len));
+    b.extend_from_slice(&be32(phys_len));
+    b.extend_from_slice(&be32(0));
+    b.extend_from_slice(&be32(0));
     b
 }
 
@@ -413,13 +402,9 @@ fn standard_catpart() -> Vec<u8> {
 }
 
 fn standard_catpart_from_streams(main: &[u8], surf: &[u8]) -> Vec<u8> {
-    // Physical stream layout, relative to the inner magic:
-    //   [0..16]  inner header (magic, A, B)
-    //   [16..]   MainDataStream, then SurfacicReps
-    //   [A..A+B] directory
     let main_off = 16u32;
     let surf_off = main_off + main.len() as u32;
-    let dir_rel = surf_off + surf.len() as u32; // == A
+    let dir_rel = surf_off + surf.len() as u32;
 
     let mut dir = Vec::new();
     dir.extend_from_slice(DIR_MAGIC);
@@ -430,17 +415,15 @@ fn standard_catpart_from_streams(main: &[u8], surf: &[u8]) -> Vec<u8> {
 
     let mut inner = Vec::new();
     inner.extend_from_slice(OUTER_MAGIC);
-    inner.extend_from_slice(&be32(dir_rel)); // A
-    inner.extend_from_slice(&be32(b_len)); // B
+    inner.extend_from_slice(&be32(dir_rel));
+    inner.extend_from_slice(&be32(b_len));
     inner.extend_from_slice(main);
     inner.extend_from_slice(surf);
     inner.extend_from_slice(&dir);
 
-    // Outer header: magic + a big-endian directory offset/length pair whose sum
-    // is the file size (the directory here is the inner container's tail).
     let mut f = Vec::new();
     f.extend_from_slice(OUTER_MAGIC);
-    let outer_dir_off = 16u32 + inner.len() as u32; // placed at EOF (zero-length)
+    let outer_dir_off = 16u32 + inner.len() as u32;
     f.extend_from_slice(&be32(outer_dir_off));
     f.extend_from_slice(&be32(0));
     f.extend_from_slice(&inner);
@@ -1557,7 +1540,6 @@ fn scan_parses_directory_and_identifies_standard() {
         assert!(dir.descriptors.iter().any(|d| d.name == "MainDataStream"));
         assert!(dir.descriptors.iter().any(|d| d.name == "SurfacicReps"));
         let brep = scan.brep_bytes().expect("reconstructed brep stream");
-        // The BREP stream is MainDataStream followed by SurfacicReps.
         assert!(brep.windows(3).any(|w| w == [0x05, 0x08, 0x01]));
         assert!(brep.windows(3).any(|w| w == [0x00, 0x33, 0x33]));
         assert!(scan.census.fbb_runs >= 2);
@@ -1589,10 +1571,8 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .unwrap();
 
     assert!(result.report.geometry_transferred);
-    // Three vertex records → three points and three vertices.
     assert_eq!(result.ir.model.points.len(), 3);
     assert_eq!(result.ir.model.vertices.len(), 3);
-    // A vertex coordinate is transferred verbatim in millimetres (no scaling).
     assert!(result
         .ir
         .model
@@ -1600,8 +1580,6 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .iter()
         .any(|p| (p.position.x - 10.0).abs() < 1e-6));
 
-    // Cylinder and tag-bridged plane carriers are decoded from their stored
-    // parameters.
     assert_eq!(result.ir.model.surfaces.len(), 2);
     assert_eq!(result.ir.model.curves.len(), 1);
     let unknowns = result.ir.native_unknowns("catia").unwrap();
@@ -1635,9 +1613,6 @@ fn decode_standard_transfers_vertices_and_cylinder() {
                 && u_axis.z.abs() < 1e-6
     )));
 
-    // Complete FBB face records with stored carrier senses bind the analytic
-    // carrier order to a body/shell/face hierarchy. Boundary topology remains
-    // unavailable until the trim/edge graph is decoded.
     assert_eq!(result.ir.model.faces.len(), 2);
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert!(matches!(
@@ -1655,7 +1630,6 @@ fn decode_standard_transfers_vertices_and_cylinder() {
         .iter()
         .any(|l| l.category == cadmpeg_ir::report::LossCategory::Topology));
 
-    // The produced IR validates (free carriers, no dangling references).
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
@@ -2215,10 +2189,6 @@ fn zero_entity_parser_decodes_face_loop_lanes_and_packed_senses() {
 
 #[test]
 fn zero_entity_parser_rejects_record_truncated_at_declared_length() {
-    // An `a9 03` header declaring a 212-byte record over a 4-byte buffer: the
-    // stream walk hits the record boundary (`end > bytes.len()`), admits no
-    // record, and the probe returns `Ok(None)` rather than reading past the
-    // buffer or charging the phantom payload.
     let bytes = vec![0xa9, 0x03, 0x5f, 200];
     let admitted = with_root(&bytes, |ctx, root| {
         crate::zero_entity::parse(ctx, root)
@@ -2844,9 +2814,6 @@ fn catalog_parser_reads_exact_inclusive_length_dictionary() {
 
 #[test]
 fn catalog_parser_rejects_frame_truncated_at_entry_boundary() {
-    // A full frame parses; truncating the image below the framed `total_len`
-    // record boundary must yield no catalog, and the entry-count proof must not
-    // reserve past the remaining bytes.
     let entries = [
         "CATCatalogManager",
         "catalogManager",
@@ -2877,8 +2844,6 @@ fn value_block_parser_rejects_payload_truncated_before_terminator() {
         "",
         "Sketch",
     ]));
-    // Drop the trailing `7C02` frame so the block terminator lookahead fails at
-    // the record boundary; no block survives.
     let truncated = &bytes[..value_block_stream(&payload).len() - 1];
     let blocks = with_root(truncated, |ctx, root| {
         crate::value_block::parse(ctx, root).unwrap()
@@ -2935,10 +2900,6 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
 
 #[test]
 fn outer_object_graph_parser_rejects_frame_truncated_at_record_boundary() {
-    // A full stream yields a two-record graph; truncating the image below the
-    // framed `7C08` `total_len` record boundary drops the candidate (its nested
-    // walk runs past the shortened end), and no allocation is sized past the
-    // remaining bytes.
     let full = object_graph_stream();
     assert_eq!(
         with_root(&full, |ctx, root| crate::object_graph::parse(ctx, root)
@@ -2957,10 +2918,6 @@ fn outer_object_graph_parser_rejects_frame_truncated_at_record_boundary() {
 
 #[test]
 fn container_directory_parser_rejects_frame_truncated_at_directory_boundary() {
-    // A full CATPart parses a two-descriptor inner directory. Truncating the
-    // image by one byte cuts the directory frame below `dir_offset + b`, so
-    // `parse_stream_directory` refuses the candidate before sizing any extent
-    // or descriptor accumulator, rather than reading past the shortened tail.
     let full = standard_catpart();
     assert_eq!(
         crate::container::parse_stream_directory(&full)
@@ -3141,11 +3098,6 @@ fn a5_surface_parser_reads_consolidated_nurbs() {
 
 #[test]
 fn decode_a5_consolidated_stream_transfers_nurbs_carrier() {
-    // End-to-end value-level golden for the consolidated `a5 03 34` NURBS
-    // surface family: a full `CatiaCodec::decode` over a container whose main
-    // stream carries one bi-linear pole grid must surface exact degrees, pole
-    // counts, expanded knot vectors, all pole coordinates, and non-rational
-    // weights rather than a bare `Nurbs` variant match.
     let file = object_main_catpart(&a5_surface_stream());
     let mut cur = Cursor::new(file);
     let result = CatiaCodec
@@ -3249,10 +3201,6 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    // Value-level golden for the a8 common-form NURBS surface family (§10
-    // Phase-4D): the end-to-end decode must reproduce the exact degrees, control
-    // counts, expanded knot vectors, and pole coordinates the parser reads, not
-    // merely land on the `Nurbs` variant.
     assert_eq!(result.ir.model.surfaces.len(), 1);
     match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Nurbs(surface) => {
@@ -3301,11 +3249,6 @@ fn decode_float_packed_stream_transfers_reference_closed_b5_topology() {
     assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
-/// The `b5_closed_triangle_stream` fixture rigidly translated by `t`: the plane
-/// carrier origin (f64) and every standalone vertex point (f32) shift by the
-/// same offset, so the pcurve lift and the vertex cloud move together and the
-/// reference graph still closes. A pure translation is a rigid motion, so the
-/// decoded topology must be invariant and every point must move by exactly `t`.
 fn b5_closed_triangle_stream_translated(t: [f64; 3]) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut plane = vec![0; 73];
@@ -3371,10 +3314,6 @@ fn decode_b5_points(t: [f64; 3]) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// Metamorphic property (§9, §10 Phase-4D): decode is invariant under a rigid
-/// motion of the source coordinates. Translating the B5 triangle by `t` must
-/// translate every decoded point by exactly `t` while leaving the topology
-/// (body/face/loop/coedge/edge/vertex census) unchanged.
 #[test]
 fn b5_topology_is_invariant_under_rigid_translation() {
     let base = object_main_catpart(&b5_closed_triangle_stream_translated([0.0, 0.0, 0.0]));
@@ -3403,12 +3342,6 @@ fn b5_topology_is_invariant_under_rigid_translation() {
     }
 }
 
-/// Metamorphic property (§9, §10 Phase-4D) on a second decode path: the
-/// zero-entity framed cylinder carrier. A rigid translation of the source
-/// coordinates shifts the decoded cylinder origin and the standalone vertex by
-/// exactly `t`, while the frame-relative axis, reference direction, and radius
-/// are invariant. This exercises the analytic-carrier path the B5 property does
-/// not reach.
 #[test]
 fn zero_entity_cylinder_is_invariant_under_rigid_translation() {
     let t = [10.0, -4.0, 7.0];
@@ -3468,11 +3401,6 @@ fn zero_entity_cylinder_is_invariant_under_rigid_translation() {
     assert!((mp.z - (bp.z + t[2] as f32 as f64)).abs() < 1e-4);
 }
 
-/// Strict-reject / salvage-loss-code pair (§10 Phase-4D): a `standard_catpart`
-/// whose face runs are detected but whose complete trim graph does not resolve
-/// accounts topology as a `Reject`-consequence loss. Salvage keeps the partial
-/// model and surfaces the stable code; strict refuses the decode outright rather
-/// than return a model that silently omits the mandatory topology.
 #[test]
 fn topology_not_transferred_rejects_strict_and_reports_code_under_salvage() {
     let salvage = CatiaCodec
@@ -3529,9 +3457,6 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
     let result = CatiaCodec
         .decode(&mut cur, &DecodeOptions::default())
         .unwrap();
-    // Value-level golden: the `b2 03 28` arc-length carrier (layout `0x5a`,
-    // frame token `0x19`) resolves to an exact analytic cylinder whose origin,
-    // axis, reference direction, and radius match the stored frame verbatim.
     match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder {
             origin,
@@ -3553,13 +3478,6 @@ fn decode_inner_no_directory_transfers_b2_cylinder() {
 
 #[test]
 fn decode_main_stream_transfers_b2_cone_carrier() {
-    // End-to-end value-level golden for the `b2 03 29` orthonormal slant-chart
-    // cone family (§10 Phase-4D): a full `CatiaCodec::decode` over a container
-    // whose main stream carries one cone record must reproduce the exact apex-
-    // derived origin, axis, reference direction, radius, and half-angle the
-    // parser reads, not merely land on the `Cone` variant. The cone is
-    // parametrised by apex `[1,2,3]`, axis `[0,0,1]`, transverse `t1 = [1,0,0]`,
-    // half-angle `0.25`, and slant floor `2.0`.
     let file = object_main_catpart(&b2_cone_stream());
     let mut cur = Cursor::new(file);
     let result = CatiaCodec
@@ -3599,14 +3517,6 @@ fn decode_main_stream_transfers_b2_cone_carrier() {
 
 #[test]
 fn decode_a5_consolidated_stream_transfers_rational_nurbs_weights() {
-    // End-to-end value-level golden for the rational branch of the consolidated
-    // `a5 03 34` NURBS surface family (§10 Phase-4D): a full `CatiaCodec::decode`
-    // over a container whose main stream carries a rational pole grid must
-    // surface the per-pole weight program `[2, 2, 2, 2]` verbatim, alongside the
-    // same degrees, pole counts, knot vectors, and pole coordinates as the
-    // non-rational golden. The non-rational golden asserts `weights == None`, so
-    // this pair pins the rational discriminator end to end, not only at the
-    // parser.
     let file = object_main_catpart(&a5_rational_surface_stream());
     let mut cur = Cursor::new(file);
     let result = CatiaCodec
@@ -3712,7 +3622,6 @@ fn container_only_stops_before_geometry() {
     let result = CatiaCodec.decode(&mut cur, &opts).unwrap();
     assert!(!result.report.geometry_transferred);
     assert!(result.report.container_only);
-    // The reconstructed BREP stream is preserved as an unknown passthrough.
     let unknowns = result.ir.native_unknowns("catia").unwrap();
     assert_eq!(unknowns.len(), 1);
     let retained = &result.source_fidelity.retained_records[0];
@@ -3753,7 +3662,6 @@ fn every_decode_path_populates_v1_annotations() {
     );
 }
 
-/// Record-ticket issuance and transfer accounting (doc §6.2, §10 Phase 3D).
 mod tickets {
     use cadmpeg_ir::codec::{CodecEntry, DecodeOptions};
     use cadmpeg_ir::decode::{DecodeMode, DecodePolicy};
@@ -3790,12 +3698,6 @@ mod tickets {
         }
     }
 
-    /// `Check::TransferAccounting` runs inside `finish`; a disposition that did
-    /// not validate against the ledger fails a strict decode and appends an
-    /// accountable loss under salvage. Salvage always accounts; a strict decode
-    /// either accounts (`Ok`) or is refused by the §10 Phase-4 semantic gate
-    /// because a mandatory-semantics loss (a `Reject`-consequence `LossCode`)
-    /// could only be accounted as a loss — never any other error kind.
     #[test]
     fn every_fixture_transfer_accounts_in_both_modes() {
         for fixture in fixtures() {
@@ -3822,9 +3724,6 @@ mod tickets {
             }
         }
 
-        // The container-only and metadata fallbacks issue a `Dropped` stream
-        // ticket whose loss must ride the report; exercise strict mode so an
-        // unmatched drop would fail rather than degrade.
         CatiaCodec
             .decode(
                 &mut Cursor::new(standard_catpart()),
@@ -3839,8 +3738,6 @@ mod tickets {
             .expect("container-only decode transfer-accounts in strict mode");
     }
 
-    /// A path that transfers typed geometry resolves its stream ticket `Typed`,
-    /// so no dropped-stream loss note is appended.
     #[test]
     fn typed_transfer_appends_no_dropped_stream_loss() {
         let decoded = CatiaCodec
@@ -3860,8 +3757,6 @@ mod tickets {
         );
     }
 
-    /// A container-only decode transfers no record; its stream ticket resolves
-    /// `Dropped` and the accountable loss rides the report.
     #[test]
     fn dropped_stream_records_accountable_loss() {
         let decoded = CatiaCodec
@@ -3884,7 +3779,6 @@ mod tickets {
     }
 }
 
-/// L1 coarse source-fidelity tiling (doc §6.1, §10 Phase 3C).
 mod ledger {
     use cadmpeg_ir::{LedgerCapability, LedgerLevel, SerializedOrigin, SpanClass};
 
@@ -3894,8 +3788,6 @@ mod ledger {
     };
     use crate::ledger::container_ledger;
 
-    /// Every fixture's every space tiles `[0, length)` exactly with no gap and no
-    /// overlap, and validation passes — the L1 completeness invariant.
     #[test]
     fn ledger_tiles_every_space_completely() {
         let fixtures = [
@@ -3928,14 +3820,11 @@ mod ledger {
                         space.id.as_str()
                     );
                 }
-                // Re-running validation on the built sidecar must also succeed.
                 sidecar.validate().expect("built sidecar re-validates");
             });
         }
     }
 
-    /// The standard fixture yields a `source` root space plus the reconstructed
-    /// BREP `Concat` stream whose segments name in-bounds `source` ranges.
     #[test]
     fn ledger_serializes_brep_concat_stream() {
         with_scan(&standard_catpart(), |scan| {
@@ -3966,8 +3855,6 @@ mod ledger {
         });
     }
 
-    /// Two decodes of one file serialize byte-identical canonical JSON — the
-    /// determinism invariant (§10 Phase 3C).
     #[test]
     fn ledger_serialization_is_deterministic() {
         let fixture = tetrahedron_topology_catpart();
@@ -3980,8 +3867,6 @@ mod ledger {
         assert_eq!(first, second);
     }
 
-    /// A container with no nested directory still tiles its single `source`
-    /// space completely and emits no stream space.
     #[test]
     fn ledger_covers_flat_container() {
         with_scan(&zero_entity_catpart(), |scan| {
@@ -3991,16 +3876,9 @@ mod ledger {
         });
     }
 
-    /// A hostile outer directory extent that reaches back over the inner
-    /// container must not relabel the catalogued opaque stream extents as
-    /// discardable structural framing: the outer-directory claim is emitted only
-    /// when it clears the inner container's content, so the physical-extent spans
-    /// stay `Opaque` (defect classes C and E).
     #[test]
     fn ledger_rejects_outer_directory_over_inner_container() {
         let mut fixture = standard_catpart();
-        // Point the outer directory at the inner container (offset 16) and give
-        // it a length that clamps to the whole file.
         fixture[8..12].copy_from_slice(&16u32.to_be_bytes());
         fixture[12..16].copy_from_slice(&u32::MAX.to_be_bytes());
         with_scan(&fixture, |scan| {

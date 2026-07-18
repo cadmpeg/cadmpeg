@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Doc section 8.6 / 10 Phase 2 manifest-completeness ratchet.
-//!
-//! The per-crate `parser-manifest.toml` makes the half-migrated state
-//! auditable only if it lists every decoder module. A module that reads
-//! untrusted bytes but carries no `[[module]]` entry escapes the migration
-//! gate entirely — the failure that let `appearance.rs` ship as a live leaf
-//! decoder with no manifest row. This test enrolls every `cadmpeg-codec-*`
-//! crate from the filesystem and fails when a decoder `src` module is absent
-//! from that crate's manifest.
+//! Verifies that every codec decoder module appears in its parser manifest.
 //!
 //! Scope is the codec crates. In a codec crate every `src` module is a
 //! decoder except the non-decoder classes named below, so "listed" is a
@@ -23,8 +15,8 @@
 //! fuzz glue (`tests.rs`, `*_tests.rs`, `*_test_support.rs`, `fuzzing.rs`).
 //! A module may still be listed despite matching an exclusion (some crates
 //! enroll `lib.rs`); the exclusion only lifts the *requirement* to list it.
-//! Detection is textual on filenames, so a decoder hidden behind an excluded
-//! naming pattern would slip; that residual is held by review discipline.
+//! Detection is textual on filenames; excluded naming patterns are therefore
+//! part of the enforced convention.
 
 use std::collections::BTreeSet;
 use std::fs;
@@ -181,12 +173,7 @@ fn registered_fuzz_targets(root: &Path) -> BTreeSet<String> {
     registered
 }
 
-/// Doc section 7 reachability / Phase 2 exit gate item 4: every manifest
-/// `fuzz_targets` entry must resolve to a registered fuzz target. Commit
-/// `c203b937` exists because sldprt manifest entries once named unregistered
-/// targets; without this guard a renamed or dropped `[[bin]]` turns every
-/// citing manifest entry into a dangling reachability claim that CI still
-/// passes.
+/// Every manifest `fuzz_targets` entry must resolve to a registered fuzz target.
 #[test]
 fn every_manifest_fuzz_target_is_registered() {
     let root = workspace_root();

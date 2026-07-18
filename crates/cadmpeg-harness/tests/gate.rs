@@ -70,9 +70,6 @@ fn regression_gate() {
             .join("\n")
     );
 
-    // The performance ratchet: an order-of-magnitude slowdown or heap growth
-    // that stays inside the absolute envelope still fails, requiring a re-bless
-    // (explicit review) to clear — doc §10 Phase 2 performance gate.
     let perf = perf_regressions(&baseline, &results);
     assert!(
         perf.is_empty(),

@@ -19,11 +19,6 @@
 //! [`LedgerCapability`] states whether every opaque span additionally resolves
 //! to retained bytes. The two are orthogonal — retention can be refused while
 //! classification still succeeds.
-//!
-//! [`SourceFidelity`] is the sole current writer. The prior single-stream form
-//! is preserved as [`v1::ByteLedgerV1`] with [`migrate_v1`] and the
-//! version-detecting [`SourceFidelity::from_json_any`] loader, so a sidecar
-//! written before the generalization still reads.
 
 use std::collections::BTreeMap;
 
@@ -214,7 +209,7 @@ impl SerializedOrigin {
     }
 }
 
-/// Byte classification for one span, unchanged from the single-stream schema.
+/// Byte classification for one span.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -230,8 +225,7 @@ pub enum SpanClass {
 
 /// A containment reference from an opaque span into a retained blob.
 ///
-/// Replaces the single-stream one-record-per-span rule: one blob may back many
-/// opaque spans through distinct subranges.
+/// One blob may back many opaque spans through distinct subranges.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RetainedRef {
     /// The retained blob's stable identity.
@@ -543,14 +537,6 @@ impl SourceFidelity {
     /// Returns the classification of the span covering `offset` in the space
     /// named `space`, or `None` when no space carries that id or no span covers
     /// the offset.
-    ///
-    /// This is the ledger's disposition-facing query: `Check::TransferAccounting`
-    /// (§6.2) uses it to confirm every resolved record disposition names bytes
-    /// the §6.1 ledger actually tiles. A `Some` result proves the disposition's
-    /// span exists in the ledger; a `None` result — the space is absent, or the
-    /// offset lies in a tiling gap — is the cross-artifact conservation failure
-    /// the check reports, closing the gap between a codec's disposition table
-    /// and its serialized ledger.
     pub fn class_at(&self, space: &CanonicalSpaceId, offset: u64) -> Option<SpanClass> {
         let ledger = self
             .spaces
@@ -578,8 +564,6 @@ impl SourceFidelity {
             });
         }
 
-        // Index space id -> length once; the key set doubles as the presence
-        // check for referenced spaces, so origin validation stays linear.
         let mut lengths: BTreeMap<CanonicalSpaceId, u64> = BTreeMap::new();
         for space in &self.spaces {
             if lengths.insert(space.id.clone(), space.length).is_some() {
@@ -610,8 +594,6 @@ impl SourceFidelity {
             });
         }
 
-        // Slice carries its own referenced range that `referenced()` omits;
-        // handle it explicitly alongside the extent-bearing variants.
         let is_slice = matches!(space.origin, SerializedOrigin::Slice { .. });
         if let SerializedOrigin::Slice { parent, range } = &space.origin {
             Self::check_extent(space, lengths, parent, *range)?;
@@ -692,8 +674,6 @@ impl SourceFidelity {
                     offset: span.range.start,
                 });
             };
-            // Presence is not enough: the retained subrange must resolve to as
-            // many bytes as the span it recovers, or bytes are silently lost.
             if retained.range.len() != span.range.len() {
                 return Err(FidelityError::RetainedLengthMismatch {
                     id: space.id.as_str().to_string(),
@@ -716,8 +696,6 @@ impl SourceFidelity {
         }
         let mut marks: Vec<Mark> = vec![Mark::Unvisited; self.spaces.len()];
 
-        // Resolve every origin edge to a node index once, up front, so the DFS
-        // is linear in the graph rather than rescanning spaces per child visit.
         let index: BTreeMap<&CanonicalSpaceId, usize> = self
             .spaces
             .iter()
@@ -747,7 +725,6 @@ impl SourceFidelity {
             if marks[root] != Mark::Unvisited {
                 continue;
             }
-            // (node, next-child-cursor) frames simulate recursion.
             let mut stack: Vec<(usize, usize)> = vec![(root, 0)];
             marks[root] = Mark::OnStack;
             while let Some(&(node, cursor)) = stack.last() {
@@ -1061,8 +1038,6 @@ mod tests {
 
     #[test]
     fn validate_rejects_origin_cycle() {
-        // Two non-root spaces reference each other; neither is `source`, and
-        // both carry non-Root origins so the id/origin check passes first.
         let sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
             level: LedgerLevel::L1,
@@ -1161,8 +1136,6 @@ mod tests {
 
     #[test]
     fn validate_rejects_non_root_without_reference() {
-        // An empty `Concat` references nothing, so following origins never
-        // reaches `source`; it must not validate as a second root.
         let sidecar = SourceFidelity::new(
             LedgerLevel::L1,
             LedgerCapability::Accounted,
@@ -1192,7 +1165,6 @@ mod tests {
         let json = sidecar.to_canonical_json().expect("serialize");
         let parsed = SourceFidelity::from_json(&json).expect("parse");
         assert_eq!(sidecar, parsed);
-        // Re-serialization is byte-stable.
         assert_eq!(json, parsed.to_canonical_json().expect("reserialize"));
     }
 

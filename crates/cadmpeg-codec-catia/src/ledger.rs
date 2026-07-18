@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! L1 coarse source-fidelity tiling for the `V5_CFV2` container (doc §6.1,
-//! §10 Phase 3C).
+//! L1 coarse source-fidelity tiling for the `V5_CFV2` container.
 //!
 //! [`container_ledger`] turns a parsed [`ContainerScan`] into a validated v2
 //! [`SourceFidelity`] sidecar at [`LedgerLevel::L1`]: every physical byte of
@@ -16,7 +15,7 @@
 //! opaque padding span, so `[0, length)` tiles exactly without refining record
 //! structure. Completeness is the invariant, not granularity.
 //!
-//! Only spaces with canonical serialized ids (§6.1) are emitted: the root
+//! Only spaces with canonical serialized ids are emitted: the root
 //! `source` space and the reconstructed `stream:brep#0` space. The runtime
 //! per-extent `Slice` spaces have no canonical id spelling; their bytes are
 //! tiled inside `source` as opaque extent spans and referenced from the BREP

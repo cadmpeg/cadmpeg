@@ -131,7 +131,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         // must be non-negative (checked above), so `count <= table / 4 <=
         // bytes.len() / 4`. Allocation is therefore input-bounded; the
         // `2..=100_000` window above is an extra codec-local cap. Accumulate via
-        // `Vec::new`/`push` (lint-invisible per §8).
+        // `Vec::new`/`push`.
         let mut offsets = Vec::new();
         for index in 0..=count {
             let Some(value) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {

@@ -76,8 +76,6 @@ impl Codec for CreoCodec {
     }
 
     fn detect(&self, prefix: &[u8]) -> Confidence {
-        // The `#UGC:2` ASCII magic is unique to the Creo/Pro-E PSB container and
-        // distinguishes it from a Siemens NX `.prt` sharing the extension.
         if container::looks_like_creo(prefix) {
             Confidence::High
         } else {

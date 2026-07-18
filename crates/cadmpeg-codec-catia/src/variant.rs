@@ -5,12 +5,6 @@
 //! delimiters, and record-family markers determine which decoder applies.
 //! [`Variant::Unknown`] represents layouts that satisfy no recognized
 //! structural pattern.
-//!
-//! Graduated per doc section 10 Phase 2: a pure classifier over structural
-//! census facts computed upstream. It performs no hostile-byte read, no
-//! allocation, and no scan, so it carries the migrated
-//! `#[deny(clippy::disallowed_methods)]` with no `req_*`/`BoundedCount`
-//! obligations of its own.
 #![deny(clippy::disallowed_methods)]
 
 /// Recognized `CATPart` storage families and fallback classifications.

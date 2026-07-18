@@ -1,64 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-#
-# Per-module migration manifest for `cadmpeg-codec-sldprt` (doc section 8.6 /
-# 10 Phase 2). One `[[module]]` entry per decoder module — a module that reads
-# untrusted bytes or shapes decoded records. Encoder-only modules (`writer.rs`,
-# `writer_patch.rs`, `writer_transform.rs`) implement the `Encoder` trait and
-# carry no decode read path; they are outside the Phase-2 decode ratchet and are
-# intentionally absent, matching the platform manifest, which omits writers.
-#
-# `status` is `migrated` or `legacy`. A `migrated` module satisfies the full
-# section-10 checklist: hostile reads through `View` or a proven fixed-size
-# array; `req_*` mirrors for committed required reads; `BoundedCount` for
-# floored counts; `read_counted`/`exact_vec` for count-framed collections;
-# `grow_vec` for accumulators; `alloc_unfloored` plus a codec-local cap for
-# zero-floor production; `DepthGuard` on recursion; work charged per a stated
-# honest cost model; module-level `#[deny(clippy::disallowed_methods)]`. A
-# `legacy` module carries a written reason for staying legacy.
-#
-# `window_egress` lists the audited `View::window()` sites a graduated module is
-# allowed to keep (section 8.8 ratchet). `charges` names the budget dimensions
-# the module drives; `cost_model` states the charge shape (never a flat unit per
-# iteration). `ledger_level` is the section 6.1 record-accounting level; sldprt
-# is L0 until Phase 3.
-#
-# Migration state (this batch). Container decompression is already migrated:
-# `container::admit_block` streams every block's DEFLATE payload through
-# `DecodeContext::begin_expand`/`ExpandWriter` (`ExpandSpec::Exact`), charging
-# `decompressed_bytes` per chunk before the arena grows and registering the
-# derived `Transform` space on `finalize`. The residual is downstream of that
-# egress: `admit_block` copies each finalized inflated `View` into an owned
-# `Block::payload`/`ps_streams` `Vec` for the legacy leaf and writer paths, and
-# every leaf geometry, history, and metadata module then reads that owned buffer
-# with the legacy `cadmpeg_ir::read`/`le` free functions rather than a `View`.
-# Threading a `View` into the leaves is gated on `ContainerScan` retaining the
-# derived-space `View`/`SpaceId` instead of the owned copy (`View::over_space` is
-# `pub(crate)`, so a codec leaf cannot reconstruct one over a bare slice, and no
-# public `ctx.space_view(SpaceId)` re-view API exists — see `shared_requests`).
-# That container-to-leaf View plumbing is the high-risk work that remains; the
-# four modules with no hostile-byte read path graduate now, and every module that
-# still parses raw framing over the owned buffer is listed `legacy` with the
-# concrete residual named. Count-framed collection sites are ordered first below,
-# then irregular marker probes and graph traversals.
 
-# ===========================================================================
-# Migrated — no hostile-byte read path. These modules shape already-typed
-# records or validated JSON; they graduate with the module-level deny and carry
-# no `req_*`/`BoundedCount`/`DepthGuard` obligations, matching the platform
-# manifest's model/namespace entries.
-#
-# Errata (commit 5603466c). That commit's body claims `annotations`,
-# `classification`, `native`, and `records` "read their record bodies through
-# the pre-`View` path and sized their accumulators from decoded lengths" and were
-# graduated "reading through the charged `View`/`exact_vec`/`grow_vec` primitives
-# with stated allocation bounds". Both halves are false: these four modules never
-# had a hostile-byte read path, they call no `View`/`exact_vec`/`grow_vec`/`req_*`
-# primitive, and they charge nothing (`charges = []` below). They graduate purely
-# on the "no hostile-byte read path" criterion recorded in their entries and doc
-# comments — not on any bounded-read migration. The genuine hostile paths
-# (`brep/*`, `history`, `parasolid`, `container`) remain `legacy` and uncharged.
-# This note is the reconciliation; the commit body cannot be amended.
-# ===========================================================================
 
 [[module]]
 path = "crates/cadmpeg-codec-sldprt/src/records.rs"
@@ -100,13 +41,6 @@ cost_model = "no budget charge; source-native record conversion to/from stored J
 window_egress = []
 ledger_level = 0
 
-# ===========================================================================
-# Legacy — count-framed collection loops (migrate first per section 10 order).
-# These size a Vec from an untrusted count decoded out of a `&[u8]` window and
-# read it with legacy free functions. Migration is `View::counted` ->
-# `BoundedCount` -> `read_counted`/`exact_vec`; blocked on the container-to-leaf
-# View plumbing above.
-# ===========================================================================
 
 [[module]]
 path = "crates/cadmpeg-codec-sldprt/src/brep/spline.rs"
@@ -148,15 +82,6 @@ cost_model = "unbudgeted: value list reserved with `Vec::with_capacity(len.min(1
 window_egress = []
 ledger_level = 0
 
-# ===========================================================================
-# Legacy — modules with a raw `flate2` `read_to_end` decompression sink: a
-# class-A sink whose output is proportional to attacker-controlled compression
-# ratio, not input size. Migration routes through
-# `DecodeContext::begin_expand`/`ExpandWriter`, which charges
-# `decompressed_bytes` before the buffer grows. `container.rs` is NOT in this
-# class — its block inflation already streams through `begin_expand` (see its
-# entry); it stays legacy for the marker-scan/owned-buffer residual only.
-# ===========================================================================
 
 [[module]]
 path = "crates/cadmpeg-codec-sldprt/src/container.rs"
@@ -182,12 +107,6 @@ cost_model = "unbudgeted: locates and inflates wrapped Parasolid members through
 window_egress = []
 ledger_level = 0
 
-# ===========================================================================
-# Legacy — irregular marker probes and graph traversals (migrate after the
-# count-framed loops). These walk `&[u8]` windows by scanning for record
-# markers or traversing the decoded feature/topology graph, accumulating into
-# unbudgeted `Vec`s and, for the graph, recursing without a `DepthGuard`.
-# ===========================================================================
 
 [[module]]
 path = "crates/cadmpeg-codec-sldprt/src/brep/graph.rs"
@@ -270,12 +189,6 @@ cost_model = "unbudgeted: decodes sequential triangle-strip cells over a `&[u8]`
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# L1 container accounting (doc section 10 Phase 3C). Not a byte parser: builds
-# the coarse source-fidelity ledger from already-scanned `ContainerScan` facts,
-# digesting bounded source spans and deriving one child space per block. No
-# hostile read, no `.window()` egress, and no budget charge of its own; the
-# container scan already charged the bytes. Emits the serialized L1 ledger.
 [[module]]
 path = "crates/cadmpeg-codec-sldprt/src/fidelity.rs"
 status = "migrated"
@@ -286,18 +199,6 @@ cost_model = "no budget charge; builds the L1 source-fidelity ledger from alread
 window_egress = []
 ledger_level = 1
 
-# ---------------------------------------------------------------------------
-# Typed lossy builder (doc section 10 Phase 4B). Not a byte parser: wraps the
-# platform `cadmpeg_ir::transfer::Builder` over the decode's loss channel and is
-# the codec's single lossy-construction path. `omit` resolves a
-# `Transfer::omitted` for an unsupported concept that never reached typed IR,
-# `substitute` resolves a `Transfer::fallback` for a deterministic gauge that
-# stands in for an absent source field, and `census` threads an accountable
-# aggregate note; so no fallback or drop reaches the model without surrendering
-# its `LossNote`. No hostile read, no `.window()` egress, and no budget charge
-# of its own. Its `semantic_builder` flag is the doc section 7 capability-matrix
-# signal that sldprt has adopted the typed lossy builder, gating the
-# `no_silent_fallback` stage-2 oracle.
 [[module]]
 path = "crates/cadmpeg-codec-sldprt/src/builder.rs"
 status = "migrated"

@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for NX Parasolid stream extraction.
-//!
-//! Drives the same context-based path `decode::scan` runs: register the root
-//! space over the input, frame the container, then inflate embedded streams
-//! through `cadmpeg_codec_nx::parasolid::extract_streams`, exercising zlib
-//! inflation and stream location. Contract: no input may panic.
+//! No input may panic.
 
 #![no_main]
 

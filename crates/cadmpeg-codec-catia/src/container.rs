@@ -32,7 +32,7 @@ use crate::variant::Variant;
 /// raw input does not bound byte-for-byte. `register_slice` copies nothing and
 /// charges no counter, so this fixed footprint is charged here to keep extent
 /// registration bounded by allocation policy rather than only by
-/// `max_input_bytes`. Mirrors the creo/f3d per-entry graph charge.
+/// `max_input_bytes`.
 const PER_EXTENT_GRAPH_BYTES: u64 = 256;
 
 /// Maximum physical extents per catalogued descriptor.
@@ -408,8 +408,7 @@ fn parse_extents(
 ) -> Option<(Vec<Extent>, usize)> {
     // `k` is gated to `1..=MAX_EXTENTS_PER_DESCRIPTOR` and `o + 4 + 20 * k <=
     // dirbuf.len()` by the caller, so the run is capped both by the structural
-    // gate and by the buffer; a lint-invisible `Vec::new`+push accumulates it
-    // (doc section 8.3) with no untrusted-count reservation.
+    // gate and by the buffer, so no untrusted count drives a reservation.
     let mut extents = Vec::new();
     let mut cum: usize = 0;
     for i in 0..k {
@@ -503,8 +502,7 @@ fn brep_descriptors(dir: &InnerDir) -> Option<(&Descriptor, &Descriptor)> {
 pub(crate) fn brep_extent_ranges(data: &[u8], dir: &InnerDir) -> Option<Vec<Range<usize>>> {
     let (main, surf) = brep_descriptors(dir)?;
     // Both descriptors carry at most `MAX_EXTENTS_PER_DESCRIPTOR` already-admitted
-    // extents; the range list is a lint-invisible `Vec::new`+push over that
-    // capped, already-materialised set.
+    // extents, so the range list is capped by the admitted directory structure.
     let mut ranges = Vec::new();
     for descriptor in [main, surf] {
         for e in &descriptor.extents {
@@ -614,8 +612,7 @@ pub fn scan_view<'a>(
     // `identify` examines the whole image three times (A9 count, E5 count, E5
     // record-stream search) and the reconstructed BREP three times (FBB runs,
     // edge delimiters, vertex markers). Charge those examined bytes as `work`
-    // before running the census so the counter matches the §5.1 per-byte
-    // semantics rather than the single directory-scan charge above.
+    // before running the census rather than charging only the directory scan.
     ctx.charge_work(
         (data.len() as u64).saturating_mul(3),
         "catia_container_census",
@@ -700,9 +697,6 @@ fn build_brep_space<'a>(
     let Some(ranges) = brep_extent_ranges(root.window(), dir) else {
         return Ok(None);
     };
-    // `ranges` is already materialised and capped by the per-descriptor extent
-    // gate; the child-view segment list grows through a lint-invisible push.
-    // `begin_derived_space` charges the assembled `Concat` copy.
     let mut segments = Vec::new();
     for range in ranges {
         let Some(child) = root.child(range.start, range.end) else {

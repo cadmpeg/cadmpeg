@@ -23,10 +23,8 @@ use crate::container::{admit_entry, role, ContainerScan};
 
 /// Byte length of one `.protein` instance page.
 ///
-/// Limit classification (§10 Phase 1): format validity. The paged instance
-/// container uses a fixed 0x88-byte page; a stream whose declared page size or
-/// total length disagrees is not this format and is rejected, so the constant
-/// stays permanently.
+/// The paged instance container uses fixed 0x88-byte pages. A stream with a
+/// different declared page size or incompatible total length is rejected.
 const PAGE_SIZE: usize = 0x88;
 const RECORD_MARKER: &[u8] = b"\x80\x00\x01\x00";
 
@@ -323,8 +321,6 @@ pub struct DecodedMaterials {
     /// Per-face appearance assignments awaiting the BREP face-attribute join.
     pub face_assignments: Vec<FaceAppearanceAssignment>,
     /// Appearance-id to originating `.protein` entry name, first writer wins.
-    /// Lets record accounting attribute each appearance to the single archive
-    /// that decoded it instead of the flattened union (§6.2).
     pub appearance_origins: BTreeMap<String, String>,
 }
 
@@ -680,18 +676,15 @@ fn browser_body_appearance_at(
     marker_at: usize,
     fields_at: usize,
 ) -> Option<(u64, String)> {
-    // Physical-material token, then its entity reference.
     let (token, after) = lp_utf16_at(bytes, skip_zeros(bytes, fields_at))?;
     if !token.starts_with("PrismMaterial") || bytes.get(after)? != &0x01 {
         return None;
     }
-    // Browser-node GUID, then the node's entity.
     let (node_guid, after) = lp_utf16_at(bytes, skip_zeros(bytes, after + 9))?;
     if node_guid.len() != 36 || !is_guid_prefix(&node_guid) || bytes.get(after)? != &0x01 {
         return None;
     }
     let node_entity = u64_at(bytes, after + 1)?;
-    // Optional display name, opacity, and the `01 01` marker.
     let name_end = match lp_utf16_at(bytes, skip_zeros(bytes, after + 9)) {
         Some((_, end)) => end,
         None => after + 9,
@@ -701,8 +694,6 @@ fn browser_body_appearance_at(
     if visual.len() < 36 || !is_guid_prefix(&visual) {
         return None;
     }
-    // The record head's `299` class tag names the body's design entity; it
-    // precedes the marker pair and equals the node entity minus one.
     let head_entity = preceding_class_299_entity(bytes, marker_at)?;
     if head_entity + 1 != node_entity {
         return None;
@@ -744,7 +735,6 @@ fn preceding_class_299_entity(bytes: &[u8], at: usize) -> Option<u64> {
     u64_at(bytes, window_start + tag_at + CLASS_299.len())
 }
 
-/// Encode a string as its length-prefixed UTF-16 byte form.
 fn lp_utf16_needle(value: &str) -> Vec<u8> {
     let units: Vec<u8> = value.encode_utf16().flat_map(u16::to_le_bytes).collect();
     let mut out = ((units.len() / 2) as u32).to_le_bytes().to_vec();
@@ -768,7 +758,6 @@ fn lp_utf16_at(bytes: &[u8], position: usize) -> Option<(String, usize)> {
     Some((String::from_utf16(&units).ok()?, end))
 }
 
-/// Advance past at most `cap` zero bytes starting at `position`.
 fn skip_zeros_capped(bytes: &[u8], position: usize, cap: usize) -> usize {
     let mut at = position;
     while at < bytes.len() && at - position < cap && bytes[at] == 0 {
@@ -777,12 +766,10 @@ fn skip_zeros_capped(bytes: &[u8], position: usize, cap: usize) -> usize {
     at
 }
 
-/// Advance past at most eight zero bytes starting at `position`.
 fn skip_zeros(bytes: &[u8], position: usize) -> usize {
     skip_zeros_capped(bytes, position, 8)
 }
 
-/// Whether the first 36 characters of `value` form a hyphenated GUID.
 fn is_guid_prefix(value: &str) -> bool {
     let bytes = value.as_bytes();
     bytes.len() >= 36
@@ -1029,8 +1016,8 @@ fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, 
 /// root-length argument — and each entry is admitted through the shared
 /// container path, so a stored nested entry aliases the `.protein` space as a
 /// `Slice` and a compressed one is charged and bounded by the platform expander
-/// (§10 Phase 1B). Malformed nested framing yields `Ok(None)`; a budget refusal
-/// during expansion propagates.
+/// Malformed nested framing yields `Ok(None)`; a budget refusal during expansion
+/// propagates.
 fn nested_entry_view<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
@@ -1073,10 +1060,8 @@ fn definition_catalog<'a>(
         let end = starts.get(index + 1).copied().unwrap_or(bytes.len());
         let mut strings = Vec::new();
         let mut position = *start + marker.len();
-        // Limit classification (§10 Phase 1): format validity. A catalog record
-        // carries at most eight length-prefixed strings, each 1..=200 bytes of
-        // printable ASCII; a run outside that shape is not a catalog string and
-        // is skipped. Both bounds are grammar facts and stay permanently.
+        // A catalog record carries at most eight length-prefixed strings, each
+        // 1..=200 bytes of printable ASCII.
         while position + 4 <= end && strings.len() < 8 {
             let length = u32::from_le_bytes(
                 bytes[position..position + 4]
@@ -1160,8 +1145,7 @@ fn dechunk(bytes: &[u8]) -> Option<Vec<u8>> {
 /// Reassemble the paged `.protein` instance stream into its logical byte stream,
 /// registering it as a `Concat` derived space so the reconstruction is named in
 /// the runtime graph, its segments recorded as the exact page-body extents
-/// assembled (§10 Phase 1C). Returns `Ok(None)` when the framing is not the
-/// expected shape.
+/// assembled. Returns `Ok(None)` when the framing is not the expected shape.
 fn dechunk_space<'a>(
     ctx: &DecodeContext<'a>,
     instance: View<'a>,

@@ -512,9 +512,6 @@ fn decode_headers_for_indices(
                     byte_offset: position as u64,
                 });
             }
-            // Headers are located in an otherwise heterogeneous stream. Keep
-            // the scan byte-aligned so a plausible length-prefixed string in
-            // an enclosing payload cannot skip a real nested header.
             position += 1;
         }
     }
@@ -1013,11 +1010,6 @@ fn parse_sketch_relation(
         return None;
     }
     let mut cursor = 24;
-    // Member/offset lists grow through `push` under the 64-record domain cap
-    // above rather than reserving from the untrusted `member_count`: the record
-    // stride here is variable (`marked_u32` + `next_reference_marker`), so there
-    // is no fixed physical floor to justify an `exact_vec` reservation, and the
-    // cap already bounds the worst case to 64 elements.
     let mut members = Vec::new();
     let mut member_offsets = Vec::new();
     for _ in 0..member_count {
@@ -1050,8 +1042,6 @@ fn parse_sketch_relation(
         return None;
     }
     cursor += 4;
-    // Same variable-stride reasoning as the member loop above: grow through
-    // `push` under the 64-record cap, no untrusted-count reservation.
     let mut return_members = Vec::new();
     let mut return_member_offsets = Vec::new();
     for ordinal in 0..return_count {
@@ -1158,8 +1148,6 @@ pub fn decode_body_members(
         let Some(base) = scan.entry_view(&entry.name) else {
             continue;
         };
-        // The prefix search examines the entry window once; charge the pass
-        // before scanning (the whole-window `windows` walk is the work cost).
         ctx.charge_work(
             body_members_win_len(base) as u64,
             "design::decode_body_members::scan",
@@ -1179,8 +1167,6 @@ pub fn decode_body_members(
             continue;
         }
         let cursor_start = count_offset + 4;
-        // Physical-floor proof: each member record is 11 bytes, so the count
-        // cannot reserve past the window's remaining extent.
         let Some(bounded) =
             seek_rel(base, cursor_start).and_then(|view| view.counted(count as u64, 11))
         else {
@@ -1206,11 +1192,6 @@ pub fn decode_body_members(
                 ok = false;
                 break;
             };
-            // `exact_vec` reserves only the inline `size_of::<DesignBodyMember>()`
-            // per element; the per-member `id` `String` is a separate heap
-            // allocation `format!` makes, so charge its bytes explicitly. Growth
-            // stays bounded by the window (count <= window/11), but the charge
-            // keeps the reservation honest rather than undercounting by the id.
             let id = format!("f3d:{}:design-body-member#{cursor}", entry.name);
             ctx.charge_alloc(
                 id.len() as u64,
@@ -1234,14 +1215,10 @@ pub fn decode_body_members(
     Ok(out.finish())
 }
 
-/// Readable window length of `base`, in bytes; the entry-relative offset space
-/// the body-member records report their offsets in.
 fn body_members_win_len(base: View<'_>) -> usize {
     base.end().saturating_sub(base.start())
 }
 
-/// A copy of `base` positioned at entry-relative offset `rel`, or `None` if the
-/// offset is out of the window. Reads stay bounded by the returned view.
 fn seek_rel(base: View<'_>, rel: usize) -> Option<View<'_>> {
     let mut view = base;
     let abs = base.start().checked_add(rel)?;
@@ -1249,13 +1226,10 @@ fn seek_rel(base: View<'_>, rel: usize) -> Option<View<'_>> {
     Some(view)
 }
 
-/// The single byte at entry-relative offset `rel`, without advancing `base`.
 fn byte_at_rel(base: View<'_>, rel: usize) -> Option<u8> {
     seek_rel(base, rel)?.u8()
 }
 
-/// Entry-relative offset of the first `needle` occurrence in `base`, scanning
-/// the window. The caller charges the scan cost separately.
 fn find_prefix(base: View<'_>, needle: &[u8]) -> Option<usize> {
     let len = body_members_win_len(base);
     let n = needle.len();

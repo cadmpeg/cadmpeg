@@ -300,7 +300,6 @@ struct ColorSpec<'a> {
     binding_id: Option<&'a str>,
 }
 
-/// Builds the DATA instance graph and accumulates export losses.
 struct Builder<'a> {
     ir: &'a CadIr,
     schema: StepSchema,
@@ -308,7 +307,6 @@ struct Builder<'a> {
     losses: Vec<LossNote>,
     notes: Vec<String>,
 
-    // Lookup indices from the flat IR arenas.
     points: HashMap<&'a str, &'a Point>,
     bodies: HashMap<&'a str, &'a Body>,
     shells: HashMap<&'a str, &'a Shell>,
@@ -324,7 +322,6 @@ struct Builder<'a> {
     procedural_curves: HashMap<&'a str, &'a ProceduralCurve>,
     edge_coedges: HashMap<&'a str, Vec<(&'a str, &'a str)>>,
 
-    // Emitted-instance caches keyed by IR id, so shared carriers emit once.
     surface_refs: HashMap<String, Ref>,
     curve_refs: HashMap<String, Ref>,
     edge_refs: HashMap<String, Ref>,
@@ -346,18 +343,14 @@ struct Builder<'a> {
     /// is reached once per shell) and aggregated into a single counted loss.
     unknown_surface_faces: BTreeSet<String>,
 
-    /// Emitted `ADVANCED_FACE` instances keyed by IR face id, for presentation
-    /// styling.
     face_step_refs: HashMap<String, Ref>,
     /// First emitted exact solid or shell for each body, used by AP242 tessellation links.
     body_step_refs: HashMap<String, Ref>,
     default_product_definition_shape: Option<Ref>,
-    /// Emitted representation item for each body.
     body_shape_refs: HashMap<String, Ref>,
     body_item_refs: HashMap<String, Vec<Ref>>,
     tessellation_step_refs: HashMap<String, Ref>,
     written_appearance_bindings: BTreeSet<String>,
-    /// Display colors that could not be attached to an emitted STEP item.
     unstyled_colors: usize,
     unsupported_standalone_geometry: usize,
     written_pmi: usize,
@@ -367,9 +360,6 @@ struct Builder<'a> {
     geometry_emission_depth: usize,
 }
 
-/// Export losses drain into the builder's accumulator, so a `Transfer`
-/// resolved at an entity-to-writer boundary records into the same buffer the
-/// `ExportReport` reads (§10 Phase 4B).
 impl LossSink for Builder<'_> {
     fn record_loss(&mut self, note: LossNote) {
         self.losses.push(note);
@@ -531,14 +521,6 @@ impl<'a> Builder<'a> {
         });
     }
 
-    /// Record an entity-to-writer omission (§10 Phase 4B) through the `Transfer`
-    /// barrier. The dropped concept — a curveless edge, an unknown-surface face,
-    /// a hidden body, a pcurve, a `SubD`, or a tessellation — carries no STEP value
-    /// the writer can emit, so the omission is a [`Transfer::omitted`] that
-    /// resolves to [`None`]: the note recording the drop is inseparable from the
-    /// decision to drop, and cannot be removed while the geometry is still
-    /// omitted. The counts are already aggregated at the call site, so one
-    /// resolved omission yields exactly one aggregate note.
     fn omit(
         &mut self,
         code: LossCode,
@@ -560,10 +542,6 @@ impl<'a> Builder<'a> {
     fn build(&mut self) {
         let context = self.emit_context();
 
-        // Entity-to-writer boundary (§10 Phase 4B): the exportable-solid set is
-        // either transferred or omitted. Routing the decision through `Transfer`
-        // makes the empty-representation omission inseparable from its loss
-        // note — the solids cannot be dropped silently.
         let shape_items = self.emit_shape_items(context);
         let mut standalone_items = self.emit_standalone_geometry();
         let has_standalone_geometry = !standalone_items.is_empty();
@@ -583,7 +561,6 @@ impl<'a> Builder<'a> {
             Transfer::exact(emitted_items)
         };
         let mut items = emitted_items.resolve(&mut self.losses).unwrap_or_default();
-        // A representation-space origin placement is conventional and harmless.
         let origin = geometry::placement(
             &mut self.emitter,
             cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
@@ -643,16 +620,6 @@ impl<'a> Builder<'a> {
         self.note_unrepresented();
     }
 
-    /// Emit a per-face `STYLED_ITEM` surface color for every colored face.
-    ///
-    /// A face's color is its own `color` field or face appearance binding when
-    /// present; otherwise it inherits the color of the body that owns it. Body
-    /// colors are pushed down onto each face rather than styled on the solid,
-    /// because common OCCT/VTK-based viewers read surface colors only from
-    /// `ADVANCED_FACE` and ignore `MANIFOLD_SOLID_BREP`. Each distinct color
-    /// shares one `PRESENTATION_STYLE_ASSIGNMENT`; the styled items are gathered
-    /// into one `MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION` in the
-    /// geometric context.
     fn emit_presentation(&mut self, context: Ref) {
         use cadmpeg_ir::appearance::AppearanceTarget;
 
@@ -712,8 +679,6 @@ impl<'a> Builder<'a> {
             }
         }
 
-        // Map each face to the body that owns it, so a body-level color can be
-        // pushed down onto the body's individual faces.
         let mut face_body: HashMap<&str, &str> = HashMap::new();
         for region in &ir.model.regions {
             let body = region.body.0.as_str();
@@ -741,8 +706,6 @@ impl<'a> Builder<'a> {
             .map(|(id, r)| (id.clone(), *r))
             .collect();
         faces.sort_by(|a, b| a.0.cmp(&b.0));
-        // Bodies whose color actually reached at least one face, for loss
-        // accounting.
         let mut styled_bodies: BTreeSet<&str> = BTreeSet::new();
         for (face_id, face) in &faces {
             let own = face_colors.get(face_id.as_str()).copied();
@@ -854,8 +817,6 @@ impl<'a> Builder<'a> {
         );
     }
 
-    /// Emit (or reuse) the `PRESENTATION_STYLE_ASSIGNMENT` chain for one
-    /// surface color.
     fn surface_style(
         &mut self,
         color: cadmpeg_ir::topology::Color,
@@ -1022,8 +983,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Emit the `PRODUCT` → `PRODUCT_DEFINITION_SHAPE` chain, returning the
-    /// `PRODUCT_DEFINITION_SHAPE` reference.
     fn emit_product_structure(&mut self) -> Ref {
         let name = self
             .ir
@@ -1279,8 +1238,6 @@ impl<'a> Builder<'a> {
         }
     }
 
-    /// Emit the units and the geometric representation context, returning the
-    /// context reference.
     fn emit_context(&mut self) -> Ref {
         let len = self.emit_length_unit();
         let angle = self.emit_angle_unit();
@@ -1308,9 +1265,6 @@ impl<'a> Builder<'a> {
         )
     }
 
-    /// Emit the millimetre length unit used by the representation context.
-    ///
-    /// Coordinate values are written unchanged.
     fn emit_length_unit(&mut self) -> Ref {
         if let Some(unit) = self.length_unit {
             return unit;
@@ -1350,8 +1304,6 @@ impl<'a> Builder<'a> {
     /// when the target application protocol supports `INVISIBILITY`.
     fn emit_shape_items(&mut self, context: Ref) -> Vec<Ref> {
         let mut items = Vec::new();
-        // `ir` is a shared `&CadIr`; binding it locally lets us read the arenas
-        // while still calling `&mut self` helpers (loss/emit).
         let ir = self.ir;
         let hidden: BTreeSet<&str> = ir
             .model
@@ -1875,7 +1827,6 @@ impl<'a> Builder<'a> {
                 continue;
             };
             let orientation = matches!(coedge.sense, Sense::Forward);
-            // The edge carrier emits the coedge pcurve through SURFACE_CURVE.
             let Some(edge_ref) = self.emit_edge(coedge.edge.as_str()) else {
                 continue;
             };
@@ -2599,7 +2550,6 @@ impl<'a> Builder<'a> {
         )
     }
 
-    /// Record aggregate loss notes for IR content the writer does not carry.
     fn note_unrepresented(&mut self) {
         let nonstandard_analytic_surfaces = self
             .ir
@@ -3254,7 +3204,6 @@ impl From<StepError> for CodecError {
     }
 }
 
-/// Whether a 4×4 row-major matrix is (numerically) the identity.
 fn is_identity(rows: &[[f64; 4]; 4]) -> bool {
     for (i, row) in rows.iter().enumerate() {
         for (j, &v) in row.iter().enumerate() {

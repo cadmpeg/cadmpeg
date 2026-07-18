@@ -1,15 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Single source of truth for the STEP writer's carrier dispatch.
+//! STEP writer carrier dispatch table.
 //!
 //! Every IR geometry carrier the writer can emit is described once, here, as a
 //! [`CarrierSpec`]: the IR enum variant, the STEP entity keyword it maps to, the
 //! emission form (simple, interned, or the AND-combined complex instance a
-//! rational carrier requires), and the ordered mandatory parameter fields. The
-//! [`geometry`](crate::geometry) dispatch, the writer reference doc under
-//! `docs/formats/`, and the `step_writer` fuzz dictionary are all downstream of
-//! this table; a checked test regenerates the derived artifacts and diffs them,
-//! and drives the writer once per carrier so the table cannot drift from the
-//! code it describes.
+//! rational carrier requires), and the ordered mandatory parameter fields.
 //!
 //! The table is the precedence record: for rational NURBS the STEP realization
 //! is a complex instance combining several supertypes, and [`CarrierSpec::form`]
@@ -318,11 +313,6 @@ mod tests {
             .join("..")
     }
 
-    /// Regenerate a derived artifact and diff it against the committed file.
-    ///
-    /// Set `CADMPEG_BLESS=1` to write the regenerated content instead of
-    /// asserting; that is the one-command path to update both artifacts after an
-    /// intentional table change.
     fn check_generated(relative: &str, expected: &str) {
         let path = workspace_root().join(relative);
         if std::env::var_os("CADMPEG_BLESS").is_some() {
@@ -393,9 +383,6 @@ mod tests {
         e.counts().into_keys().collect()
     }
 
-    /// The writer must actually emit the tally keyword every carrier spec
-    /// claims; a variant added to the dispatch without a table row (or the
-    /// reverse) fails here, keeping the table the true source of truth.
     #[test]
     fn every_carrier_keyword_is_emitted() {
         let cases: Vec<(&str, Vec<String>)> = vec![

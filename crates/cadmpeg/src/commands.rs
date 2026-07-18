@@ -483,7 +483,6 @@ pub fn diff(
     }
 }
 
-/// The source-fidelity comparison between two decode reports.
 enum FidelitySummary {
     /// Neither decode reported a sidecar (e.g. both inputs were CADIR JSON, or
     /// both codecs are below L1).
@@ -496,7 +495,6 @@ enum FidelitySummary {
     Both(cadmpeg_ir::FidelityDiff),
 }
 
-/// Compare the source-fidelity sidecars of two decode reports, when present.
 fn fidelity_diff(left: Option<&DecodeReport>, right: Option<&DecodeReport>) -> FidelitySummary {
     let left = left.and_then(|report| report.source_fidelity.as_ref());
     let right = right.and_then(|report| report.source_fidelity.as_ref());
@@ -510,12 +508,6 @@ fn fidelity_diff(left: Option<&DecodeReport>, right: Option<&DecodeReport>) -> F
     }
 }
 
-/// Whether the two inputs' source-fidelity sidecars differ.
-///
-/// A sidecar present on one side only is a difference, as is a non-empty
-/// interpreted delta between two present sidecars. Absent on both sides is not a
-/// difference. Feeds the diff command's exit code and trailing `identical` line
-/// so byte-differing inputs whose IR happens to match are not reported identical.
 fn fidelity_differs(summary: &FidelitySummary) -> bool {
     match summary {
         FidelitySummary::None => false,
@@ -524,7 +516,6 @@ fn fidelity_differs(summary: &FidelitySummary) -> bool {
     }
 }
 
-/// Render the fidelity summary as JSON, or null when neither side reported one.
 fn fidelity_json(summary: &FidelitySummary) -> serde_json::Value {
     match summary {
         FidelitySummary::None => serde_json::Value::Null,
@@ -538,7 +529,6 @@ fn fidelity_json(summary: &FidelitySummary) -> serde_json::Value {
     }
 }
 
-/// Print the interpreted source-fidelity delta under a `source fidelity:` head.
 fn print_fidelity_summary(summary: &FidelitySummary) {
     let diff = match summary {
         FidelitySummary::None => return,
@@ -601,8 +591,6 @@ fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {
         .unwrap_or_default()
 }
 
-/// A loss-based model refusal, or `None` when the output may be written.
-///
 /// When `--reject-lossy` is set and the decode reported any loss, the export is
 /// refused as a model refusal — [`SemanticFailure`], exit 1 — distinct from a
 /// decode error, which is an operational failure at exit 2. This is the

@@ -136,9 +136,6 @@ pub fn subd(data: &[u8]) {
     let _ = crate::subd::decode(data, 1..data.len(), selected_archive(data[0]), 1.0, id);
 }
 
-/// Runs `f` with a [`MeshExpand`](crate::mesh::MeshExpand) whose root spans
-/// `data`, mirroring the production invariant that a leaf record decoder reads
-/// its body through the session root view and threaded platform context.
 fn with_expand(data: &[u8], f: impl FnOnce(crate::mesh::MeshExpand<'_>)) {
     let arena = cadmpeg_ir::decode::DecodeArena::new();
     let policy = cadmpeg_ir::decode::DecodePolicy::default();
@@ -149,8 +146,7 @@ fn with_expand(data: &[u8], f: impl FnOnce(crate::mesh::MeshExpand<'_>)) {
     f(crate::mesh::MeshExpand::new(&ctx, root));
 }
 
-/// Exercises the count-framed NURBS cage knot and control-net expansion through
-/// the committed `cage::decode` path.
+/// Exercises NURBS cage knot and control-net expansion.
 pub fn cage(data: &[u8]) {
     if data.len() < 2 {
         return;
@@ -161,8 +157,7 @@ pub fn cage(data: &[u8]) {
     });
 }
 
-/// Exercises the count-framed hatch boundary-loop table through the committed
-/// `hatch::decode` path.
+/// Exercises hatch boundary-loop decoding.
 pub fn hatch(data: &[u8]) {
     if data.len() < 2 {
         return;
@@ -173,8 +168,7 @@ pub fn hatch(data: &[u8]) {
     });
 }
 
-/// Exercises the count-framed polyedge parameter and segment tables through the
-/// committed `polyedge::decode` path.
+/// Exercises polyedge parameter and segment decoding.
 pub fn polyedge(data: &[u8]) {
     if data.len() < 2 {
         return;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! L1 coarse container accounting for the PSB `.prt` container (§10 Phase 3C).
+//! Coarse container accounting for the PSB `.prt` container.
 //!
 //! The Creo container is a single flat address space: the `#UGC:2` ASCII header
 //! and table of contents, then a contiguous run of named binary sections to
@@ -10,7 +10,7 @@
 //! [`coarse_ledger`] tiles that space completely at container granularity:
 //! the leading header/TOC framing is one [`SpanClass::Structural`] span and
 //! every enumerated section is one [`SpanClass::Opaque`] span carrying a
-//! SHA-256 digest but no retained bytes (accounted, not recoverable — §6.1).
+//! SHA-256 digest but no retained bytes.
 //! Any byte a section walk leaves uncovered — an inter-section gap or a
 //! trailing region — is filled with an explicit opaque padding span, so the
 //! spans tile `[0, length)` with no hole. The builder validates the assembled
@@ -58,8 +58,6 @@ pub fn coarse_ledger(scan: &ContainerScan<'_>) -> Result<SourceFidelity, CodecEr
     let data = scan.data;
     let length = data.len() as u64;
 
-    // Collect the container's known spans, then let `tile` fill every gap so
-    // the result is complete by construction regardless of section layout.
     let mut coarse: Vec<CoarseSpan> = Vec::with_capacity(scan.sections.len() + 1);
     let first_section_offset = scan
         .sections

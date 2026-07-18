@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for CATIA `7C0B` value block parsing.
-//!
-//! Feeds arbitrary bytes through `cadmpeg_codec_catia::value_block::parse` under
-//! a default decode session, exercising the migrated framed value-block scan and
-//! its work/retained-bytes charges. Contract: no input may panic.
+//! No input may panic.
 
 #![no_main]
 

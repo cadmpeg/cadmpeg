@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Doc section 8.8 window-egress ratchet.
+//! Window-egress ratchet.
 //!
-//! `View::window()` is the audited raw-byte egress: handing back `&[u8]`
-//! re-creates the bug habitat migration exists to drain. This test counts
+//! `View::window()` is an audited raw-byte egress. This test counts
 //! `.window()` call sites in the `src` and `fuzz_targets` trees of every
 //! workspace crate and fails if a crate exceeds the frozen ceiling in
 //! `window-egress-ratchet.toml`. The count is a monotonically decreasing
@@ -15,8 +14,7 @@
 //! has no ceiling entry, so a newly added crate cannot escape the ratchet by
 //! omission. Detection remains textual (`.window()` substring), so a call
 //! spelled to dodge the match (`. window()`, an alias, a wrapper method) still
-//! bypasses the ceiling; that residual gap is doc section 8.8 class E, held by
-//! review discipline rather than by this test.
+//! bypasses the ceiling.
 
 use std::collections::BTreeMap;
 use std::fs;

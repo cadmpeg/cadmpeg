@@ -1,13 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzz target for the Creo Phase-4 strict/salvage decode contract.
+//! Fuzz target for the Creo strict/salvage decode contract.
 //!
-//! Feeds arbitrary bytes through `CreoCodec::decode` in both strict and salvage
-//! modes. Contract: no input may panic in either mode, and a successful strict
-//! decode never carries a reject-consequence loss (`§10` Phase 4) — that is the
-//! invariant `decode::reject_unrepresentable_in_strict` enforces at the
-//! typed-lossy builder boundary. Salvage may return either a classified
-//! `CodecError` or a partial model with the loss recorded. This mirrors the
-//! strict/salvage differential drivers its Phase-4B batch peers carry.
+//! Neither mode may panic. A successful strict decode contains no loss whose
+//! strict consequence is rejection.
 
 #![no_main]
 
@@ -31,12 +26,8 @@ fn options(mode: DecodeMode) -> DecodeOptions {
 fuzz_target!(|data: &[u8]| {
     let codec = CreoCodec;
 
-    // Salvage mode: must not panic; result kind is unconstrained here.
     let _ = codec.decode(&mut Cursor::new(data), &options(DecodeMode::Salvage));
 
-    // Strict mode: must not panic, and any successful decode must be free of a
-    // Reject-coded loss — the gate rejects those regardless of severity, so a
-    // strict Ok that kept one would be a silent bypass.
     if let Ok(result) = codec.decode(&mut Cursor::new(data), &options(DecodeMode::Strict)) {
         assert!(
             !result

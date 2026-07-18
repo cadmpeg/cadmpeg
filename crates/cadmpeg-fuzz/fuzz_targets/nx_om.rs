@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for NX object-model section framing.
-//!
-//! Feeds arbitrary bytes through the migrated `cadmpeg_codec_nx::om`
-//! entity-index/object-id-table pairing and its numeric-expression decode to
-//! exercise the count-framed boundary arrays whose reservations this module
-//! migrated off `Vec::with_capacity`. Contract: no input may panic.
+//! No input may panic.
 
 #![no_main]
 

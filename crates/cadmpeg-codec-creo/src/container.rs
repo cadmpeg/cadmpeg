@@ -42,17 +42,7 @@ pub const MAGIC: &[u8] = b"#UGC:2";
 /// End of the UGC header block.
 const UGC_HEADER_END: &[u8] = b"#-END_OF_UGC_HEADER";
 
-/// Allocation charged per section registered as a runtime space.
-///
-/// A conservative constant covering the retained space-graph record each
-/// enumerated section adds: the [`SpaceId`](cadmpeg_ir::decode::SpaceId) parent,
-/// the [`ByteRange`] span, and the [`SpaceOrigin::Slice`] tag. The platform
-/// graph layout is not visible to the codec, so this rounds up rather than
-/// measuring; its purpose is to make the section count consume the
-/// input-proportional allocation budget so a container packed with minimal
-/// section headers cannot grow the space graph without a matching charge. This
-/// mirrors the f3d reference `PER_ENTRY_GRAPH_BYTES` charge over admitted
-/// archive entries, whose per-entry graph footprint is identical.
+/// Conservative allocation charge for one registered section space.
 const PER_SECTION_GRAPH_BYTES: u64 = 256;
 /// Start of the ASCII table of contents.
 const TOC_START: &[u8] = b"#UGC_TOC";
@@ -266,7 +256,6 @@ fn line_at(data: &[u8], start: usize) -> String {
 fn normalize_name(raw: &str) -> String {
     let base = raw.split('#').next().unwrap_or(raw);
     if let Some(rest) = base.strip_prefix("ND:") {
-        // ND:0:Name:N  ->  parts = ["0", "Name", "N"]; the name is index 1.
         let parts: Vec<&str> = rest.split(':').collect();
         if parts.len() >= 2 {
             return parts[1].to_string();
@@ -296,7 +285,6 @@ fn classify(name: &str) -> &'static str {
 /// header rule ([spec §2.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#1-container)). A candidate header is accepted only when its name is
 /// a printable run and is not one of the header/TOC framing markers.
 fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
-    // Collect header hits as (offset_of_section_hash, raw_name).
     let mut hits: Vec<(usize, String)> = Vec::new();
     let search_start = body_start.saturating_sub(1);
     let mut i = search_start;
@@ -305,15 +293,13 @@ fn scan_sections(data: &[u8], body_start: usize) -> Vec<Section> {
             i += 1;
             continue;
         }
-        let hash_off = i + 1; // offset of the section-header '#'
+        let hash_off = i + 1;
         let name_start = i + 2;
         let Some(nl) = find(data, b"\n", name_start) else {
             break;
         };
         let name_bytes = &data[name_start..nl];
-        i = nl; // continue scanning after this line regardless of acceptance
-                // A real section name is a printable run with at least one alphanumeric
-                // character; this rejects TOC/EOF padding lines made only of `#`.
+        i = nl;
         if !name_bytes.iter().all(|&b| is_name_byte(b))
             || name_bytes.len() < 2
             || !name_bytes.iter().any(u8::is_ascii_alphanumeric)
@@ -379,10 +365,8 @@ fn read_array_count(region: &[u8], label: &[u8]) -> Option<u32> {
     let mut found = false;
     while let Some(pos) = find(region, label, from) {
         let mut p = pos + label.len();
-        // Require the NUL that terminates the namespace label.
         if region.get(p) == Some(&0) {
             p += 1;
-            // Skip up to two framing bytes before the array opener.
             for _ in 0..3 {
                 match region.get(p) {
                     Some(&psb::token::ARRAY_OPEN) => {

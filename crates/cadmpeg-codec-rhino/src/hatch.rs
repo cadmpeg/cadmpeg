@@ -1,27 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Bounded hatch payload decoding.
-//!
-//! Migrated module (doc section 10 Phase 2). The record body is read through a
-//! bounded [`View`] over the caller's threaded platform
-//! [`DecodeContext`](cadmpeg_ir::decode::DecodeContext): the plane, the pattern
-//! scalars, and each loop's header fields commit through the `req_*` mirror, the
-//! count-framed boundary-loop table is sized by a [`View::counted`]
-//! physical-plausibility proof (five-byte minimum loop header) under the
-//! `MAX_LOOPS` cap and reserved through
-//! [`exact_vec`](cadmpeg_ir::decode::DecodeContext::exact_vec), the
-//! parse-warning accumulator grows through
-//! [`grow_vec`](cadmpeg_ir::decode::DecodeContext::grow_vec), and
-//! per-element `work` is charged against the document-level budget. Residual:
-//! each loop's curve is located by the legacy `chunk_at`/`parse_class_wrapper`
-//! and re-read by the still-legacy `curves::decode_2d`, all of which take the
-//! raw `&[u8]` file slice and size their own accumulators off the platform
-//! budget. That slice is the whole record window obtained via
-//! `MeshExpand::data()`, which returns the `MeshExpand::root` window, so this is
-//! a real raw-byte egress boundary — named in the `hatch.rs` `window_egress`
-//! entry of `parser-manifest.toml` — not a typed-[`Range`] handoff; the
-//! window-yielding call site itself lives in `mesh.rs` and is counted there by
-//! the source ratchet. The module carries the graduated
-//! `deny(clippy::disallowed_methods)`.
 #![deny(clippy::disallowed_methods)]
 
 use std::ops::Range;
@@ -73,36 +51,31 @@ fn structural(offset: usize, message: impl Into<String>) -> GeometryError {
     })
 }
 
-/// Maps a budget refusal from the platform context onto the module's framing
-/// error. The codec-local `MAX_LOOPS` cap bounds the loop count well below any
+/// The codec-local `MAX_LOOPS` cap bounds the loop count well below any
 /// default budget ceiling, so a refusal here means the reserved size was
 /// implausible for the surrounding window.
 fn refused(offset: usize, error: &CodecError) -> GeometryError {
     structural(offset, format!("hatch allocation refused: {error}"))
 }
 
-/// Reads one committed `u8` through the `req_*` mirror.
 fn req_u8(view: &mut View<'_>) -> Result<u8, GeometryError> {
     let offset = view.position();
     view.req_u8()
         .map_err(|_| structural(offset, "hatch record truncated"))
 }
 
-/// Reads one committed `i32` through the `req_*` mirror.
 fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
     let offset = view.position();
     view.req_i32_le()
         .map_err(|_| structural(offset, "hatch record truncated"))
 }
 
-/// Reads one committed `f64` through the `req_*` mirror.
 fn req_f64(view: &mut View<'_>) -> Result<f64, GeometryError> {
     let offset = view.position();
     view.req_f64_le()
         .map_err(|_| structural(offset, "hatch record truncated"))
 }
 
-/// Reads three committed `f64` coordinates and rejects any nonfinite component.
 fn coordinate3(view: &mut View<'_>, label: &str) -> Result<[f64; 3], GeometryError> {
     let offset = view.position();
     let values = [req_f64(view)?, req_f64(view)?, req_f64(view)?];
@@ -116,8 +89,6 @@ fn coordinate3(view: &mut View<'_>, label: &str) -> Result<[f64; 3], GeometryErr
     }
 }
 
-/// Reads the 16-`f64` plane frame (origin, axes, equation) through the `req_*`
-/// mirror, rejecting any nonfinite component.
 fn read_plane(view: &mut View<'_>) -> Result<Plane, GeometryError> {
     let origin = Point3(coordinate3(view, "point")?);
     let xaxis = Vector3(coordinate3(view, "vector")?);
@@ -151,10 +122,6 @@ pub(crate) fn decode(
     _scale: f64,
     archive: ArchiveVersion,
 ) -> Result<Hatch, GeometryError> {
-    // Read the record body through a bounded `View` on the caller's threaded
-    // platform context so loop-table charges accumulate against the
-    // document-level budget. The count-framed loop table below sizes itself
-    // against `body`'s remaining window, not a trusted decoded count.
     let data = expand.data();
     let ctx = expand.ctx();
     let mut body = expand
@@ -210,8 +177,6 @@ pub(crate) fn decode(
     let loop_bound = body
         .counted(count as u64, 5)
         .ok_or_else(|| structural(count_offset, "hatch loop count exceeds remaining window"))?;
-    // Fixed header field reads (plane's 16 `f64` plus the three pattern scalars)
-    // plus one unit per loop.
     ctx.charge_work(19 + count as u64, "hatch", Some(body.location()))
         .map_err(|error| refused(body.position(), &error))?;
     let mut loops = ctx

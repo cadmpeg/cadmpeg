@@ -33,21 +33,14 @@ pub struct RunnerOutcome {
     pub peak_alloc_bytes: u64,
     /// A compact summary of the produced
     /// [`DecodeReport`](cadmpeg_ir::DecodeReport) when the operation ran a decode
-    /// that succeeded, so the parent can judge the §7 stage-2 report properties
+    /// that succeeded, so the parent can judge the stage-2 report properties
     /// without the full IR crossing the pipe. `None` for detection, a failed
     /// decode, or a broken run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub report: Option<ReportSummary>,
 }
 
-/// The decode-report facts the parent stage-2 oracles judge, extracted in-child
-/// from a successful decode's [`DecodeReport`](cadmpeg_ir::DecodeReport).
-///
-/// The stage-1 wire protocol carried only the classified result and process
-/// measurements; the §7 stage-2 oracles judge the report itself. Serializing
-/// this compact summary — not the full report or IR — lets those oracles run in
-/// the parent without inflating the pipe or coupling the harness to the IR
-/// schema beyond the few facts it gates on.
+/// The decode-report facts the parent stage-2 oracles judge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReportSummary {
     /// Total loss notes.
@@ -55,7 +48,7 @@ pub struct ReportSummary {
     /// Loss notes at or above `Error` severity.
     pub error_losses: usize,
     /// A source-fidelity ledger is present (the codec adopted container
-    /// accounting, §10 Phase 3C).
+    /// accounting).
     pub ledger_present: bool,
     /// The present ledger passes
     /// [`SourceFidelity::validate`](cadmpeg_ir::source_fidelity::SourceFidelity::validate).
@@ -142,7 +135,6 @@ fn decode_digest(result: &DecodeResult) -> String {
 struct RunOnce {
     class: ResultClass,
     digest: String,
-    /// The report summary, present only for a successful decode.
     report: Option<ReportSummary>,
 }
 

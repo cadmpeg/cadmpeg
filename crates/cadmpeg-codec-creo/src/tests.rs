@@ -26,8 +26,6 @@ fn build_prt(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
     out.extend_from_slice(b"toc entry line\n");
     out.extend_from_slice(b"#END_OF_TOC_HEADER\n");
     for (name, payload) in sections {
-        // The previous payload's terminator `#` plus `\n` precede each header;
-        // for the first section the TOC's trailing newline serves as the `\n`.
         out.push(b'#');
         out.push(b'\n');
         out.push(b'#');
@@ -42,10 +40,10 @@ fn build_prt(version: &str, sections: &[(&str, Vec<u8>)]) -> Vec<u8> {
 fn visibgeom_payload(srf: u8, crv: u8) -> Vec<u8> {
     let mut p = Vec::new();
     p.extend_from_slice(b"srf_array\0");
-    p.extend_from_slice(&[0xf8, srf]); // f8 <count>
-    p.extend_from_slice(&[0xe0, 0x22, b'p', 0]); // some noise resembling a row
+    p.extend_from_slice(&[0xf8, srf]);
+    p.extend_from_slice(&[0xe0, 0x22, b'p', 0]);
     p.extend_from_slice(b"crv_array\0");
-    p.extend_from_slice(&[0xf3, 0xf8, crv]); // [f3] f8 <count>
+    p.extend_from_slice(&[0xf3, 0xf8, crv]);
     p
 }
 
@@ -125,7 +123,6 @@ fn assert_annotation(
 fn detect_matches_ugc_magic_only() {
     let codec = CreoCodec;
     assert_eq!(codec.detect(b"#UGC:2 P foo"), Confidence::High);
-    // A Siemens NX `.prt` (shares the extension) must not be claimed here.
     assert_eq!(codec.detect(b"\x0e\x93\x13\x01NX"), Confidence::No);
     assert_eq!(codec.detect(b"PK\x03\x04"), Confidence::No);
     assert_eq!(codec.detect(b""), Confidence::No);
@@ -230,11 +227,7 @@ fn scan_decodes_plane_local_system_support_frame() {
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[0x0f; 10]);
     payload.push(0xe3);
-    payload.extend_from_slice(&[
-        0x0f, 0xe4, 0x0f, // first in-plane direction
-        0x0f, 0x0f, 0x0f, // structural zero row
-        0xe4, 0x0f, 0x0f, // second in-plane direction
-    ]);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let scan_data = build_prt("c", &[("VisibGeom", payload)]);
@@ -426,10 +419,7 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
     let mut geometry = visibgeom_payload(1, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     let allfeatur = vec![
-        4, 0xeb, 0x04, // feature row for owner 4
-        0xf8, 2, 0xf7, 0x1d, 0xfb, 0xe3, // two mixed entity references
-        7, 0xe3, // a materialized surface id
-        0xf7, 0x1e, 9, 0xe3, // a prefixed non-surface entity id
+        4, 0xeb, 0x04, 0xf8, 2, 0xf7, 0x1d, 0xfb, 0xe3, 7, 0xe3, 0xf7, 0x1e, 9, 0xe3,
     ];
     let scan_data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
     let scan = container::scan_bytes(&scan_data);
@@ -1387,12 +1377,6 @@ fn decode_transfers_closed_plane_intersection_brep() {
     assert!(validation.is_ok(), "{validation:#?}");
 }
 
-/// Transfer accounting (§6.2, §10 Phase 3D) validates the resolved disposition
-/// table against the ledger in strict mode: a violation would fail the decode
-/// with `Malformed`. A fixture that exercises `Typed` (datum plane, placed plane
-/// frames, feature operation), `Structural` (preserved geometry sections), and a
-/// `Dropped` salvage skip must still decode cleanly under strict policy, proving
-/// every committed record resolves and every disposition is consistent.
 #[test]
 fn decode_passes_transfer_accounting_in_strict_mode() {
     let mut payload = b"srf_array\0\xf8\x04".to_vec();
@@ -1424,10 +1408,6 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
         [2.0, -2.0, 1.0],
         [1.0, 0.0, 0.0],
     );
-    // Row 5 has mismatched axis magnitudes, so `plane_frame` recovers neither a
-    // u-axis nor a normal: an incomplete support frame that resolves
-    // `RecordDisposition::Dropped` with a salvage-skip loss instead of a placed
-    // carrier. It transfers no surface, so the surface count stays 5.
     push_generated_plane_row(
         &mut payload,
         5,
@@ -1465,9 +1445,6 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
             ("VisibGeom", payload),
             ("NovisGeom", vec![0xaa, 0xbb]),
             ("ActDatums", datum),
-            // A single feature operation resolves `RecordDisposition::Typed`
-            // naming its `MdlStatus` feature entity, so the fixture drives the
-            // feature-operation `Typed` path alongside the geometry ones.
             ("MdlStatus", b"Extrude id 40\0".to_vec()),
         ],
     );
@@ -1482,25 +1459,19 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
     let result = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &strict)
         .expect("strict decode passes transfer accounting");
-    // The four placed frames plus the datum carrier transfer as model surfaces;
-    // the fifth incomplete frame transfers none and resolves `Dropped`.
     assert_eq!(result.ir.model.surfaces.len(), 5);
     assert_eq!(result.ir.model.bodies.len(), 1);
-    // The `MdlStatus` feature operation resolves `Typed`.
     assert_eq!(result.ir.model.features.len(), 1);
     assert_eq!(
         result.ir.model.features[0].id.as_str(),
         "creo:mdlstatus:feature#40"
     );
-    // The incomplete support frame's `Dropped` disposition reflects a matching
-    // salvage-skip loss in the report.
     assert!(result
         .report
         .losses
         .iter()
         .any(|loss| { loss.code == LossCode::GeometryNotTransferred }));
 
-    // Salvage mode over the same bytes must also pass accounting.
     CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
         .expect("salvage decode passes transfer accounting");
@@ -1679,7 +1650,6 @@ fn nd_decoration_selects_nd_layout() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))]);
     let scan = container::scan_bytes(&data);
     assert_eq!(scan.layout, Layout::Nd);
-    // The decorated name is normalized for classification and census.
     assert_eq!(scan.sections[0].name, "VisibGeom");
     assert_eq!(scan.sections[0].raw_name, "ND:0:VisibGeom:1");
     assert_eq!(scan.census.srf_array_count, Some(3));
@@ -1699,7 +1669,6 @@ fn depdb_data_with_sparse_sections_selects_depdb() {
 fn framing_names_are_not_mistaken_for_sections() {
     let data = build_prt("c", &[("VisibGeom", vec![0x00])]);
     let scan = container::scan_bytes(&data);
-    // Only VisibGeom — the header/TOC framing markers are excluded.
     assert_eq!(scan.sections.len(), 1);
     assert_eq!(scan.sections[0].name, "VisibGeom");
 }
@@ -1722,16 +1691,13 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         .expect("decode");
 
     assert!(!result.report.geometry_transferred);
-    // The two PSB geometry sections are preserved as unknown records.
     let unknowns = result.ir.native_unknowns("creo").unwrap();
     assert_eq!(unknowns.len(), 2);
     assert!(unknowns.iter().any(|u| u.id.0.contains("VisibGeom")));
     assert!(unknowns.iter().any(|u| u.id.0.contains("NovisGeom")));
-    // No geometry arenas populated.
     assert!(result.ir.model.surfaces.is_empty());
     assert!(result.ir.model.points.is_empty());
     assert!(result.ir.model.faces.is_empty());
-    // Source attributes carry the census.
     let source = result.ir.source.as_ref().expect("source");
     assert_eq!(
         source.attributes.get("srf_array_count").map(String::as_str),
@@ -1745,7 +1711,6 @@ fn decode_is_honest_geometryless_with_preserved_sections() {
         source.attributes.get("principal_unit").map(String::as_str),
         Some("mmNs")
     );
-    // A blocking loss note names the prototype-vs-instance limitation.
     assert!(result
         .report
         .losses
@@ -1766,14 +1731,6 @@ fn inspect_summary_has_layout_and_census_notes() {
     assert!(summary.notes.iter().any(|n| n.contains("srf_array=7")));
 }
 
-/// Typed lossy construction at the §10 Phase 4B boundaries: the datum-plane
-/// u-axis fallback, the incomplete-frame and unplaced-sketch omissions, plus
-/// the metamorphic rigid-motion property. Creo has no writer, so there is no
-/// decode-encode-decode fixpoint; every typed record it emits is representable
-/// by construction (basis normals, normalized frame bases, and a scalar decoder
-/// that masks its leading byte so no value is ever non-finite), so the value
-/// level carries no unrepresentable mandatory semantic and strict-mode
-/// rejection is the platform's unresolved-ticket / transfer-accounting path.
 mod phase4b {
     use super::*;
     use cadmpeg_ir::decode::{DecodeMode, DecodePolicy, ResourceLimits};
@@ -1793,8 +1750,6 @@ mod phase4b {
         bytes.to_vec()
     }
 
-    /// An `ActDatums` section carrying one datum plane whose outline corners are
-    /// `[a, b]` in model-space XYZ.
     fn datum_section(geom_id: u8, a: [f64; 3], b: [f64; 3]) -> Vec<u8> {
         let mut section = vec![geom_id, 0x22, 1, 1, 0, 0];
         section.extend([0x0f; 4]);
@@ -1814,11 +1769,6 @@ mod phase4b {
         }
     }
 
-    /// Resolver-to-fallback-axis boundary: a datum plane stores no in-plane
-    /// reference, so the u-axis is synthesized from the normal and the
-    /// substitution surrenders exactly one `CarrierAxisInferred` note per plane.
-    /// The emitted geometry is the golden: the derived u-axis is the value the
-    /// fallback carried.
     #[test]
     fn datum_plane_u_axis_is_an_accountable_fallback() {
         let data = build_prt(
@@ -1851,9 +1801,6 @@ mod phase4b {
         assert_eq!(inferred, 1, "one inferred-axis note per datum plane");
     }
 
-    /// The fallback note is not silently dropped under strict policy either: the
-    /// plane is still representable, so the decode succeeds and still records the
-    /// substitution.
     #[test]
     fn datum_plane_u_axis_fallback_is_recorded_in_strict_mode() {
         let data = build_prt(
@@ -1873,10 +1820,6 @@ mod phase4b {
             .any(|loss| loss.code == LossCode::CarrierAxisInferred));
     }
 
-    /// Metamorphic rigid-motion property: translating the model along a datum
-    /// plane's normal by `d` shifts the decoded plane origin by exactly `normal *
-    /// d` and leaves the normal invariant. The two fixtures differ only by the
-    /// shared y-coordinate of the outline corners.
     #[test]
     fn datum_plane_decode_is_rigid_motion_covariant() {
         let base = build_prt(
@@ -1935,11 +1878,6 @@ mod phase4b {
         );
     }
 
-    /// Incomplete `VisibGeom` support frame: an omission that reports
-    /// `GeometryNotTransferred` in salvage and decodes cleanly (the same
-    /// accountable drop) in strict, because a partial carrier is not a mandatory
-    /// semantic. The frame's fifth plane row has mismatched axis magnitudes so
-    /// `plane_frame` recovers neither a u-axis nor a normal.
     #[test]
     fn incomplete_frame_omission_salvage_and_strict_pair() {
         let mut payload = b"srf_array\0\xf8\x01".to_vec();
@@ -1967,9 +1905,6 @@ mod phase4b {
             .expect("strict decode accounts the same omission cleanly");
     }
 
-    /// Unplaced `FeatDefs` sketch: a native design record with no `MdlStatus`
-    /// feature to carry it is an omission reporting `PassthroughRecordOmitted` in
-    /// salvage and decoding cleanly in strict.
     #[test]
     fn unplaced_sketch_omission_salvage_and_strict_pair() {
         let mut payload =
@@ -2025,7 +1960,6 @@ mod fidelity {
         assert_eq!(space.origin, SerializedOrigin::Root);
         assert_eq!(space.length, data.len() as u64);
 
-        // Spans tile [0, length) with no gap or overlap.
         let mut cursor = 0_u64;
         for span in &space.spans {
             assert_eq!(span.range.start, cursor, "gap or overlap before {cursor}");
@@ -2034,8 +1968,6 @@ mod fidelity {
         }
         assert_eq!(cursor, data.len() as u64);
 
-        // The leading framing is structural; every section is opaque with a
-        // digest and no retained bytes (accounted, not recoverable).
         assert_eq!(space.spans[0].class, SpanClass::Structural);
         assert_eq!(space.spans[0].range.start, 0);
         let section_spans = space
@@ -2050,7 +1982,6 @@ mod fidelity {
                 assert!(span.retained.is_none());
             }
         }
-        // Validation is mandatory and already ran inside the builder.
         sidecar.validate().expect("validated sidecar re-validates");
     }
 

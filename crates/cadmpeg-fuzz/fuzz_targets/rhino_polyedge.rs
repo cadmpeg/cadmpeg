@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzzes Rhino polyedge record decoding through the committed `polyedge::decode` path.
+//! Fuzzes Rhino polyedge record decoding.
 
 #![no_main]
 

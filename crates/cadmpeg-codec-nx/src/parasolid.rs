@@ -52,9 +52,7 @@ pub struct Stream {
     pub file_offset: usize,
     /// Compressed input bytes the decoder consumed at `file_offset`.
     ///
-    /// The physical extent `[file_offset, file_offset + consumed)` in the source
-    /// space is the decompression `Transform` input this stream's derived space
-    /// names in the source-fidelity ledger (§6.1).
+    /// The physical extent `[file_offset, file_offset + consumed)` in the source.
     pub consumed: u64,
     /// Inflated bytes.
     pub inflated: Vec<u8>,
@@ -67,8 +65,8 @@ pub struct Stream {
 /// The minimum inflated length for a candidate to count as a real stream; below
 /// this a `78 01` match is almost certainly a coincidence in packed data.
 ///
-/// Limit classification (§10 Phase 1): historical guess. This threshold rejects
-/// coincidental zlib-header matches in packed data; it is not a resource bound.
+/// This threshold rejects coincidental zlib-header matches in packed data; it
+/// is not a resource bound.
 /// The per-expand and cumulative decompressed-bytes ceilings enforced by
 /// [`DecodeContext::begin_expand`] are what bound inflation against a
 /// decompression bomb.
@@ -83,8 +81,8 @@ const INFLATE_CHUNK: usize = 8192;
 /// runtime space graph, then inflates each embedded zlib stream through
 /// [`DecodeContext::begin_expand`] so every decompressed byte is charged and
 /// bounded by the per-expand and cumulative ceilings, and each stream registers
-/// as a decompression `Transform` space only on successful finalize (§10 Phase
-/// 1A/1B). Returns an empty vector when the canonical part entry is absent, so
+/// as a decompression `Transform` space only on successful finalize. Returns an
+/// empty vector when the canonical part entry is absent, so
 /// an assembly `.prt` with no inline geometry decodes without error.
 ///
 /// [`SpaceOrigin::Slice`]: cadmpeg_ir::decode::SpaceOrigin::Slice
@@ -107,10 +105,6 @@ pub fn extract_streams<'a>(
     let Some(end) = start.checked_add(size) else {
         return Ok(Vec::new());
     };
-    // Register the canonical part payload as a Slice alias of the root space:
-    // its bytes were already accounted for when the root was admitted, so no
-    // copy is made and no counter is charged. The scan stays inside this span,
-    // excluding compressed payloads stored elsewhere in the container.
     let (_part_space, part_view) = ctx.register_slice(
         root,
         ByteRange {
@@ -119,8 +113,6 @@ pub fn extract_streams<'a>(
         },
     )?;
     let part = part_view.window();
-    // The header scan is a linear pass over the part payload; charge its bytes
-    // as work once (§10 Phase 1A file-wide search charging).
     ctx.charge_work(
         part.len() as u64,
         "nx_parasolid_scan",
@@ -186,18 +178,12 @@ fn inflate_stream<'a>(
                 writer.write(&chunk[..read])?;
                 inflated.extend_from_slice(&chunk[..read]);
             }
-            // Truncation-tolerant: keep the decoded prefix, exactly as the
-            // shared `inflate_zlib_prefix` helper did.
             Err(_) => break,
         }
     }
     if inflated.len() < MIN_INFLATED {
         return Ok(None);
     }
-    // The source view reaches to the end of the part payload because a member's
-    // compressed length is unknown until it is decoded. Record only the bytes
-    // the decoder actually consumed, so packed members register disjoint input
-    // spans instead of each overlapping every later member.
     let consumed = decoder.total_in();
     writer.set_consumed(consumed);
     writer.finalize()?;
@@ -215,12 +201,9 @@ fn is_zlib_header(cmf: u8, flg: u8) -> bool {
 
 /// Classify an inflated payload from its prologue text and read the schema token.
 fn classify(inflated: &[u8]) -> (StreamKind, Option<String>) {
-    // A Parasolid neutral-binary stream begins `PS 00 00`.
     if !inflated.starts_with(b"PS\x00\x00") {
         return (StreamKind::Preview, None);
     }
-    // The prologue is ASCII up to `END_OF_HEADER`/the first record; scan a bounded
-    // window for the transmit subtype and the schema token.
     let window = &inflated[..inflated.len().min(512)];
     let kind = if contains(window, b"(partition)") {
         StreamKind::Partition

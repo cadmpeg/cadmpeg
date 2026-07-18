@@ -1,36 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed lossy construction at creo's §10 Phase 4B boundaries.
-//!
-//! The decoder reaches its one value substitution through [`datum_u_axis`],
-//! which resolves a platform [`Transfer::fallback`] against the decode's loss
-//! channel so a defaulted axis cannot enter the model without surrendering its
-//! [`LossNote`]. Omissions route through the platform
-//! [`cadmpeg_ir::transfer::omit`] directly; this module supplies their notes
-//! ([`incomplete_frame_note`], [`unplaced_sketch_note`]) alongside the u-axis
-//! note. The guarantee is that these are the paths the decode uses, not a
-//! compiler ban on `Vec::push` (`clippy.toml` disallows only the capacity-taking
-//! `Vec` methods): a bare `losses.push` would still compile and is kept out by
-//! review.
-//!
-//! Creo's three named boundaries are the datum-plane u-axis (resolver to
-//! fallback axis), the incomplete `VisibGeom` support frame (unsupported concept
-//! to omission), and the unplaced `FeatDefs` sketch (decoder record to
-//! omission). Every typed record the codec emits is otherwise representable by
-//! construction — datum normals are basis vectors, frame bases are normalized,
-//! and the scalar decoder masks its leading byte so no value is ever non-finite
-//! — so no value-level mandatory semantic can be unrepresentable, and strict
-//! mode has nothing to reject at this layer beyond the platform's
-//! unresolved-ticket and transfer-accounting path.
+//! Loss notes for Creo geometry substitutions and omissions.
 
 use cadmpeg_ir::geometry::derive_reference_direction;
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::report::{LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::transfer::{Builder, Transfer};
 
-/// Resolver-to-fallback-axis boundary: an `ActDatums` datum plane carries no
-/// in-plane reference direction, so the u-axis is synthesized from the normal by
-/// convention. Resolving the [`Transfer::fallback`] records the substitution
-/// note into `sink` before returning the derived axis.
+/// Derive the missing in-plane axis of an `ActDatums` plane and record the
+/// substitution.
 pub(crate) fn datum_u_axis(
     sink: &mut Vec<LossNote>,
     normal: Vector3,

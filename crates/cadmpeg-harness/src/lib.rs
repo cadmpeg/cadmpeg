@@ -22,10 +22,10 @@
 //! - [`sweep`] turns a fixture plus its boundaries into truncation and
 //!   single-byte mutation cases.
 //! - [`fixtures`] discovers per-codec inputs from the checked-in corpora.
-//! - [`oracle`] defines the stage-1 oracles and their calibrated envelopes.
+//! - [`oracle`] defines the stage-1 oracles and their resource envelopes.
 //! - [`baseline`] is the multidimensional baseline schema and the regression
 //!   check the gate test runs against committed baselines.
-//! - [`stage2`] resolves the §7 stage-2 capability matrix per codec from its
+//! - [`stage2`] resolves the stage-2 capability matrix per codec from its
 //!   `parser-manifest.toml`: which oracle rows gate, and the runtime predicates
 //!   ([`judge_report`](stage2::CodecStage2Status::judge_report)) that judge a
 //!   decode's report against the byte-accounting and no-silent-fallback rows.
@@ -33,7 +33,7 @@
 //! # Oracles
 //!
 //! Every run is judged by four stage-1 oracles: no panic or abort, peak process
-//! allocation within its own calibrated envelope (a separate, larger constant
+//! allocation within its own envelope (a separate, larger constant
 //! than the budget's `K` — the process pays for IR, serde, and report memory
 //! the budget never meters), a wall-clock ceiling, and decode-twice determinism
 //! (identical IR JSON, report, and losses).
@@ -52,8 +52,7 @@
 //! and a bounded `sweep_smoke` touches every discovered fixture through a small
 //! prefix of its truncation cases so the sweep pipeline itself runs in the fast
 //! gate. The exhaustive truncation and mutation sweep across every discovered
-//! fixture — the calibration source for the peak envelope and the run counts the
-//! phase gates cite — is behind an ignored test that a scheduled CI job runs:
+//! fixture is behind an ignored test that a scheduled CI job runs:
 //!
 //! ```text
 //! cargo test -p cadmpeg-harness --test sweep -- --ignored --nocapture

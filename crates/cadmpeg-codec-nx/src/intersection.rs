@@ -204,9 +204,6 @@ fn chart_records(stream: &[u8]) -> BTreeMap<u32, Chart> {
             let Some(points) = chart_points(stream, block, count) else {
                 continue;
             };
-            // `points` is already materialized, so its length is a trusted
-            // in-memory bound; accumulate via `Vec::new`/`push` (lint-invisible
-            // per §8) to satisfy the module deny lint.
             let mut parameters = Vec::new();
             parameters.push(base_parameter);
             for pair in points.windows(2) {

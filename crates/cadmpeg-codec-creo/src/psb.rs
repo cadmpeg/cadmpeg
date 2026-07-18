@@ -5,15 +5,6 @@
 //! grammar. [`compact_int`], [`reference_id`], and [`short_form_float`] decode
 //! primitive values. Unknown and truncated input remains explicit in the token
 //! stream.
-//!
-//! Migrated per doc section 10 Phase 2: a pure primitive decoder over a
-//! caller-owned slice. Hostile-length reads use a bounds-checked `get`; the
-//! `data[offset]` head read is proven in range by the enclosing
-//! `while offset < data.len()` loop bound. All offset
-//! arithmetic is `checked_*` or saturating, and [`tokens`] accumulates one
-//! entry per structural form while walking `while offset < data.len()`, so its
-//! output length is bounded by input bytes, never by an untrusted count. No
-//! disallowed accumulation method is reachable.
 #![deny(clippy::disallowed_methods)]
 
 /// Structural token bytes ([spec §3.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#22-structural-tokens)).
@@ -257,9 +248,7 @@ mod tests {
 
     #[test]
     fn compact_int_two_byte() {
-        // (0x80 - 0x80) << 8 | 0x80 = 128
         assert_eq!(compact_int(&[0x80, 0x80], 0), (128, 2));
-        // (0x81 - 0x80) << 8 | 0x02 = 258
         assert_eq!(compact_int(&[0x81, 0x02], 0), (258, 2));
     }
 
@@ -285,11 +274,7 @@ mod tests {
     #[test]
     fn token_walker_preserves_boundaries_and_unknown_bytes() {
         let payload = [
-            0xe0, 0x22, b'p', 0, // named record
-            0xf8, 0x81, 0x02, // array count 258
-            0x2f, 0x43, 0x00, // short float 38
-            0xf7, 0x80, 0x80, // canonical reference 128
-            0xcc, // unrecognized control byte
+            0xe0, 0x22, b'p', 0, 0xf8, 0x81, 0x02, 0x2f, 0x43, 0x00, 0xf7, 0x80, 0x80, 0xcc,
         ];
         assert_eq!(
             tokens(&payload),
@@ -335,7 +320,6 @@ mod tests {
         );
     }
 
-    /// Every worked example from [spec §3.3](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#23-scalar-tokens), byte-exact.
     #[test]
     fn short_form_float_worked_examples() {
         let cases: &[(&[u8], f64)] = &[

@@ -1,9 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for Creo `ActDatums` model-space plane decoding.
-//!
-//! Feeds arbitrary bytes through the migrated `datum::planes` and
-//! `datum::named_zero_plane` primitive decoders. Contract: no input may panic
-//! and every read stays within the caller-owned slice.
+//! No input may panic or read outside the input slice.
 
 #![no_main]
 

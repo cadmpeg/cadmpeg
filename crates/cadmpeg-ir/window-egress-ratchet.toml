@@ -1,10 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Frozen per-crate ceiling for `View::window()` raw-byte egress sites
-# (doc section 8.8). `window()` hands back `&[u8]`, re-creating the bug
-# habitat migration exists to drain, so its call-site count per crate is a
-# monotonically decreasing ratchet: a graduated module may call it only at a
-# boundary named in that module's `parser-manifest.toml` window_egress list.
+# Per-crate ceiling for `View::window()` raw-byte egress sites. A site must be
+# named in its module's `parser-manifest.toml` `window_egress` list.
 #
 # The `tests/window_egress_ratchet.rs` test counts `.window()` occurrences in
 # each crate's `src` and `fuzz_targets` trees and fails if a crate exceeds its

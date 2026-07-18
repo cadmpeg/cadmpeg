@@ -9,7 +9,7 @@
 //!
 //! One blob backs many opaque spans through containment: a full archive entry is
 //! retained once, and each record inside it references a [`RetainedRange`]
-//! subrange rather than copying bytes (§6.1). Retained bytes are borrowed, never
+//! subrange rather than copying bytes. Retained bytes are borrowed, never
 //! re-copied: the store holds the address of `&'a [u8]` bytes in the arena (or
 //! the caller's input), so blobs survive the context's teardown without a copy —
 //! the egress a codec collects through
@@ -18,8 +18,8 @@
 //!
 //! Retained bytes charge the
 //! [`RetainedBytes`](super::error::ResourceDimension::RetainedBytes) budget
-//! dimension. When that budget is exhausted the outcome is mode-defined
-//! (§11.10): strict mode fails with a `ResourceLimit` (the charge fuses the
+//! dimension. When that budget is exhausted the outcome is mode-defined:
+//! strict mode fails with a `ResourceLimit` (the charge fuses the
 //! context); salvage mode degrades recovery to accounting — it keeps the digest,
 //! drops the bytes, records a loss note and a report flag, and never fails the
 //! decode for retention alone.
@@ -104,7 +104,7 @@ impl RetainedRange {
     /// Narrows this range to a contained `[start, end)` subrange, returning
     /// `None` if the requested range is inverted or escapes this range.
     ///
-    /// Containment, not exact-extent equality, is the rule (§6.1): every
+    /// Containment, not exact-extent equality, is the rule: every
     /// resulting reference stays inside the one retained blob.
     pub fn subrange(&self, start: u64, end: u64) -> Option<RetainedRange> {
         (self.start <= start && start <= end && end <= self.end).then(|| RetainedRange {
@@ -114,7 +114,7 @@ impl RetainedRange {
         })
     }
 
-    /// Converts to the serialized sidecar reference (§6.1, schema v2).
+    /// Converts to the serialized sidecar reference.
     pub fn to_serialized(&self) -> RetainedRef {
         RetainedRef {
             blob: self.blob.0.clone(),
@@ -133,7 +133,7 @@ pub enum Retention {
     Retained(RetainedRange),
     /// The retained-byte budget was exhausted in salvage mode: the digest is
     /// kept for accounting, the bytes are not retained, and recovery for this
-    /// span is unavailable (§11.10).
+    /// span is unavailable.
     Accounted {
         /// The SHA-256 digest of the bytes that would have been retained.
         digest: String,
@@ -193,7 +193,7 @@ pub(crate) struct RetainedStore {
     /// retained: a digest is recorded here at most once regardless of how many
     /// opaque spans reference it, and a later successful [`insert`](Self::insert)
     /// of the same digest removes it, so a blob retained after an early
-    /// over-budget attempt is not falsely reported as lost (§11.10).
+    /// over-budget attempt is not falsely reported as lost.
     degraded: RefCell<BTreeMap<String, u64>>,
 }
 
@@ -204,8 +204,8 @@ impl RetainedStore {
     }
 
     /// Returns whether `id` names a retained record known to this store, whether
-    /// its bytes are held or its digest was kept after a salvage-mode degradation
-    /// (§11.10). A [`RecordDisposition::Retained`](super::RecordDisposition::Retained)
+    /// its bytes are held or its digest was kept after a salvage-mode degradation.
+    /// A [`RecordDisposition::Retained`](super::RecordDisposition::Retained)
     /// naming a record absent from both is an accounting violation:
     /// [`Check::TransferAccounting`](super::DecodeContext::finish) reports it.
     pub(crate) fn contains_record(&self, id: &str) -> bool {
@@ -272,13 +272,10 @@ mod tests {
     fn later_retention_reconciles_earlier_degradation() {
         let store = RetainedStore::default();
         let bytes = [7u8; 16];
-        // An early over-budget attempt degrades the blob.
         store.mark_degraded("digest-a", 16);
         assert!(store.is_degraded());
         assert_eq!(store.degraded_count(), 1);
         assert_eq!(store.degraded_bytes(), 16);
-        // The allowance later grows and the same blob is retained: the
-        // degradation record is reconciled away, so no false loss is reported.
         store.insert("digest-a".to_owned(), addr_of(&bytes));
         assert!(!store.is_degraded());
         assert_eq!(store.degraded_count(), 0);
@@ -288,7 +285,6 @@ mod tests {
     #[test]
     fn repeated_degradation_of_one_blob_counts_once() {
         let store = RetainedStore::default();
-        // The same over-budget blob is referenced by three opaque spans.
         store.mark_degraded("digest-b", 32);
         store.mark_degraded("digest-b", 32);
         store.mark_degraded("digest-b", 32);

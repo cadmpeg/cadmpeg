@@ -39,8 +39,6 @@ pub struct CatalogEntry {
 /// The whole-image marker scan is charged once as `work`; each catalog's entry
 /// vector is proven against the remaining frame bytes and reserved exactly.
 pub fn parse<'a>(ctx: &DecodeContext<'a>, view: View<'a>) -> Result<Vec<Catalog>, CodecError> {
-    // Named `View::window()` egress: the `7C02` marker probe examines the whole
-    // admitted image, whose length is charged as work below.
     let bytes = view.window();
     ctx.charge_work(
         bytes.len() as u64,

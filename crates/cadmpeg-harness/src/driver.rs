@@ -62,10 +62,10 @@ pub struct RunResult {
     /// Peak process allocation the child measured, when it reported an outcome.
     /// Retained as a measured value beside the [`Oracle::PeakAlloc`] pass/fail
     /// verdict so a large regression that stays inside the envelope is still
-    /// visible to the performance ratchet (doc §10 Phase 2 performance gate).
+    /// visible to the performance ratchet.
     pub peak_alloc_bytes: Option<u64>,
     /// The child's decode-report summary, when the operation ran a successful
-    /// decode. The §7 stage-2 report oracles judge this.
+    /// decode. The stage-2 report oracles judge this.
     pub report: Option<ReportSummary>,
     /// Wall-clock time the parent measured.
     pub elapsed: Duration,

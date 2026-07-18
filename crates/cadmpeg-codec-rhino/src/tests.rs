@@ -1491,10 +1491,7 @@ fn near_budget_user_table_keeps_count_without_record_descriptors() {
     assert_eq!(user.record_count, 127);
     assert!(user.records.is_empty());
 
-    // The user table's records are not retained individually, so the partition
-    // emits them as one undissected `TableRecordStream` span. That coarse table
-    // caps the sidecar at `L1`, not the `L2` a fully record-dissected archive
-    // earns, and the level must not overstate the refinement it actually has.
+    // An undissected `TableRecordStream` caps source fidelity at L1.
     let sidecar = crate::fidelity::ledger(&scan);
     assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(sidecar.validate(), Ok(()));
@@ -2297,8 +2294,6 @@ fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
     assert_eq!(opaque.len(), 1);
     assert_eq!(opaque[0].id, "rhino:source:opaque#comment");
 
-    // The decode report carries the L2 source-fidelity sidecar: complete refined
-    // tiling at record granularity over the single `source` space.
     let sidecar = result
         .report
         .source_fidelity
@@ -2311,9 +2306,6 @@ fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
     assert_eq!(sidecar.spaces[0].length, bytes.len() as u64);
     assert_eq!(sidecar.validate(), Ok(()));
 
-    // A fresh scan of the same bytes projects a byte-identical sidecar:
-    // canonical ids and ordering derive from the scan alone, so repeat decodes
-    // serialize identically.
     let again = crate::fidelity::ledger(&crate::container::scan_owned(bytes.clone()).unwrap());
     assert_eq!(
         sidecar.to_canonical_json().unwrap(),
@@ -2868,13 +2860,8 @@ fn instance_bakes_mesh_subd_and_normals_without_changing_subd_metadata() {
 
 #[test]
 fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
-    // A definition member mesh inflates its compressed buffers into the shared
-    // session arena while the expansion runs on a throwaway context clone. When a
-    // later member aborts the expansion, the clone is discarded, but the arena
-    // cannot reclaim the bytes it already retained. The parent must therefore keep
-    // the clone's mesh-budget charge; dropping it would let a hostile document
-    // ratchet arena memory past the cap by failing one reference after another
-    // while `used` falls back to zero (§10 Phase 1B).
+    // Failed expansions cannot reclaim bytes retained in the shared arena. Their
+    // mesh-budget charge must survive to prevent repeated failures bypassing the cap.
     let archive = ArchiveVersion::V5;
     let mesh_id = [0x54; 16];
     let missing_id = [0x99; 16];
@@ -2895,8 +2882,6 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
     let mut scan = scan_with_objects(&[mesh, reference]);
     set_identity(&mut scan, 0, mesh_id, "mesh", None, true);
     set_identity(&mut scan, 1, reference_id, "reference", None, true);
-    // The mesh member decodes first and charges the budget; the trailing member is
-    // absent from the scan, so the expansion aborts after the mesh has inflated.
     install_definitions(
         &mut scan,
         vec![static_definition(definition_id, &[mesh_id, missing_id])],
@@ -2905,9 +2890,6 @@ fn failed_instance_expansion_retains_inflated_member_mesh_budget() {
     super::decode::with_expand(&scan, |expand| {
         let mut context = super::decode::DecodeContext::new(&scan, expand);
         context.decode_geometry();
-        // The expansion was discarded, so nothing baked into the committed IR, yet
-        // the retained-byte count reflects the arena bytes the member mesh left
-        // behind rather than resetting to zero.
         assert!(context.mesh_budget_used() > 0);
         let result = context.commit();
         assert!(result.ir.model.tessellations.is_empty());

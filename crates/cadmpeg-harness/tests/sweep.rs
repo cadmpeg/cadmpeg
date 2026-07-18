@@ -30,23 +30,10 @@ fn runner() -> PathBuf {
 /// Environment override for the per-fixture case cap of [`sweep_smoke`].
 const ENV_SMOKE_PER_FIXTURE: &str = "CADMPEG_HARNESS_SMOKE_PER_FIXTURE";
 
-/// Default per-fixture derived-case cap for the smoke. One case per fixture
-/// keeps the smoke to roughly `fixtures × profiles` child runs, comparable to
-/// the regression gate, while still touching every discovered fixture.
+/// Default per-fixture derived-case cap for the smoke.
 const DEFAULT_SMOKE_PER_FIXTURE: usize = 1;
 
 /// A bounded truncation sweep that runs in the fast gate, unlike [`full_sweep`].
-///
-/// [`full_sweep`] is exhaustive (tens of thousands of runs) and therefore
-/// `#[ignore]`, so before this test nothing exercised the truncation sweep in
-/// `cargo test` — the pipeline only ran when someone invoked it by hand. That
-/// let a panic on a truncated non-gate fixture (only six of ~sixty fixtures are
-/// curated gate fixtures, decoded whole) reach `main` unnoticed. This smoke
-/// closes the routine gap: it discovers **every** fixture, derives a small,
-/// deterministic prefix of its sweep cases (the boundary-neighbourhood
-/// truncations, ordered first), and runs each through the isolated runner under
-/// both profiles, judged by the same stage-1 oracles. The exhaustive matrix
-/// stays in [`full_sweep`], which a scheduled CI job runs.
 #[test]
 fn sweep_smoke() {
     let corpus = default_corpus_root();

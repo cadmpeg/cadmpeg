@@ -566,7 +566,6 @@ test = false
 doc = false
 bench = false
 
-# Phase 2 migrated-leaf parser targets
 [[bin]]
 name = "rhino_cage"
 path = "fuzz_targets/rhino_cage.rs"

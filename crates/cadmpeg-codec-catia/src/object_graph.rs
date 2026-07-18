@@ -1,19 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer `7C08` feature and object-ownership graph decoder.
-//!
-//! Migrated per doc section 10 Phase 2. Every public entry ([`parse`],
-//! [`surface_aliases`], [`markers_7cd9`]) takes the session [`DecodeContext`]
-//! and a [`View`] over the file image. The `7C08`/`7C09`/`7CD9`/alias marker
-//! scans charge `work` proportional to the bytes examined; record, head, field,
-//! list, alias, and marker accumulators grow through [`DecodeContext::grow_vec`]
-//! so each element is charged before it is reserved; the two raw-byte copies
-//! that escape as `Vec<u8>` (a `0xe5` payload blob and a `7CD9` context window)
-//! are charged against `retained_bytes` before the copy. The parser stays a
-//! pure [`Option`] probe (section 3.3): any framing inconsistency is `NoMatch`,
-//! not a committed error, so no `req_*` mirror applies. The three residual
-//! `View::window()` egresses (`parse`, `surface_aliases`, `markers_7cd9`) feed
-//! the marker scans and are recorded in `parser-manifest.toml` under
-//! `window_egress`.
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::codec::CodecError;
@@ -230,8 +216,6 @@ pub fn markers_7cd9<'a>(
     view: View<'a>,
     context_len: usize,
 ) -> Result<Vec<Marker7cd9>, CodecError> {
-    // Named `View::window()` egress: the `7CD9` marker probe examines the whole
-    // admitted image, whose length is charged as work below.
     let data = view.window();
     ctx.charge_work(
         data.len() as u64,
@@ -273,8 +257,6 @@ pub fn surface_aliases<'a>(
     view: View<'a>,
 ) -> Result<Vec<SurfaceAlias>, CodecError> {
     const MARKER: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
-    // Named `View::window()` egress: the alias marker probe examines the whole
-    // admitted image, whose length is charged as work below.
     let data = view.window();
     ctx.charge_work(
         data.len() as u64,
@@ -336,8 +318,6 @@ pub fn parse<'a>(
     ctx: &DecodeContext<'a>,
     view: View<'a>,
 ) -> Result<Option<ObjectGraph>, CodecError> {
-    // Named `View::window()` egress: the `7C08` marker probe examines the whole
-    // admitted image, whose length is charged as work below.
     let data = view.window();
     ctx.charge_work(
         data.len() as u64,
@@ -350,9 +330,7 @@ pub fn parse<'a>(
             continue;
         }
         if let Some(candidate) = parse_candidate(ctx, view, data, pos)? {
-            // Tie-break matches the pre-migration `max_by_key`, which returns the
-            // last element holding the maximum key: on an equal record count the
-            // later candidate wins, so `>=` (not `>`).
+            // Equal record counts select the later candidate.
             if best
                 .as_ref()
                 .is_none_or(|graph| candidate.records.len() >= graph.records.len())

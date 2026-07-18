@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! SOLIDWORKS native feature-history records.
-//!
-//! Migrated (doc section 10 Phase 2): the source-native namespace that
-//! converts codec-owned typed records to and from the stored JSON arenas.
-//! Input is validated document JSON, not raw untrusted framing, and every
-//! accumulator flows through iterator `collect`/`for` over caller-owned typed
-//! slices, so allocation is proportional to the trusted record count. No
-//! hostile-byte read path, so it graduates with the module-level deny.
 #![deny(clippy::disallowed_methods)]
 
 use schemars::JsonSchema;

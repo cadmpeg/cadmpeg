@@ -22,11 +22,10 @@ pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
 
 /// Read chunk for streaming a block's inflated DEFLATE output into the platform
 /// expander. A fixed stack buffer, so no decompressed bytes are retained outside
-/// the [`cadmpeg_ir::decode::ExpandWriter`] before finalize (§10 Phase 1B gate 2).
+/// the [`cadmpeg_ir::decode::ExpandWriter`] before finalization.
 const EXPAND_CHUNK: usize = 16 * 1024;
 
-/// Allocation charged per space-graph record admitted while scanning a block
-/// (§10 Phase 1A): once for the block's decompressed `Transform` space, and once
+/// Allocation charged per space-graph record admitted while scanning a block: once for the block's decompressed `Transform` space, and once
 /// for each Parasolid `Slice`/`Transform` stream it carries.
 ///
 /// Covers the fixed heap footprint each record adds. This rounds up rather than
@@ -44,13 +43,9 @@ pub(crate) const BLOCK_HEADER_LEN: usize = 26;
 /// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
 /// from driving an unbounded allocation. Real part streams sit far below this.
 ///
-/// Limit classification (§10 Phase 1 table): deployment ceiling. On the session
-/// decode path `read_root` enforces the platform `max_input_bytes` policy limit
-/// first and [`DecodeContext::begin_expand`] bounds the decompressed output
+/// On the session decode path [`DecodeContext::begin_expand`] bounds decompressed output
 /// against the per-expand and cumulative decompression envelope; this tighter
-/// codec-local cap is retained as dual enforcement — and remains the sole bound
-/// on the writer-side [`scan_bytes`] path, which does not run under a session —
-/// until per-profile calibration justifies migrating it wholesale.
+/// codec-local cap also bounds the writer-side [`scan_bytes`] path.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
@@ -158,7 +153,7 @@ pub struct Block {
     /// Outer-payload offset of each entry in `ps_streams`.
     pub ps_stream_offsets: Vec<usize>,
     /// Content-addressed identity of the block payload retained in the platform
-    /// store (§6.2), when the block was admitted on the session decode path.
+    /// store when the block was admitted on the session decode path.
     ///
     /// `Some` names the retained-blob digest a `RecordDisposition::Retained`
     /// resolution references; `None` on the writer/test [`scan_bytes`] path,
@@ -219,19 +214,15 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Consume the session root view directly (§10 Phase 1A) and scan the container.
-///
 /// Block candidates must inflate to their declared size and match their stored
 /// CRC-32. Cache cells and directory entries must satisfy their framing
 /// invariants. Unclassified marker occurrences are ignored.
 ///
 /// The marker walk visits every input byte once; its bytes are charged as work
 /// before scanning begins. Every block's DEFLATE payload is inflated through the
-/// platform expander ([`DecodeContext::begin_expand`], §10 Phase 1B), and each
+/// platform expander ([`DecodeContext::begin_expand`]), and each
 /// decompressed block plus its nested Parasolid streams is registered in the
-/// runtime space graph ("L1-ready", not emitting L1 — the v2 ledger schema is not
-/// yet serialized). Both `inspect` and `decode` enter here, so they run one
-/// shared container policy (graduation-gate item 6).
+/// runtime space graph.
 ///
 /// The returned scan owns its block payloads: the retained source image and the
 /// preserved per-block records are IR-level requirements, so the validated
@@ -241,7 +232,7 @@ pub fn scan_view(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerSca
 }
 
 /// Scan the container and additionally retain each admitted block's decompressed
-/// payload as a content-addressed platform blob (§6.2).
+/// payload as a content-addressed platform blob.
 ///
 /// The decode path calls this so every block carries a [`Block::retained_digest`]
 /// a [`RecordDisposition::Retained`](cadmpeg_ir::decode::RecordDisposition)
@@ -323,8 +314,8 @@ fn scan_view_impl(
 /// are validated from the streamed output before finalize, so a marker hit that
 /// is not a real block registers no space and the writer is dropped. Returns
 /// `Ok(None)` for any marker hit that does not frame or validate as a block — the
-/// probe idiom (§3.3): the caller tries the cache-cell and directory framings
-/// next. The only propagated error is an unswallowable `ResourceLimit` (§4.7).
+/// probe idiom: the caller tries the cache-cell and directory framings next.
+/// Resource-limit errors always propagate.
 fn admit_block(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -373,12 +364,10 @@ fn admit_block(
                     return probe_or_propagate(e);
                 }
             }
-            // Corrupt DEFLATE stream: not a block, try the next interpretation.
             Err(_) => return Ok(None),
         }
     }
     if writer.written() != uncomp_sz as u64 || hasher.finalize() != crc {
-        // Not a valid block; dropping the writer registers no space.
         return Ok(None);
     }
     // Charge the block's decompressed `Transform` space-graph record before
@@ -395,14 +384,13 @@ fn admit_block(
     };
     let inflated = view.window();
 
-    // §6.2 record accounting: retain the validated decompressed payload as a
-    // content-addressed platform blob so the block's decode-time
+    // Retain the validated decompressed payload so the block's decode-time
     // `RecordDisposition::Retained` can name a record present in the retained
-    // store. Retention is a §3.3 commit-boundary act — it runs only after the
+    // store. Retention runs only after the
     // CRC and declared-length gates admit the block. A strict-mode retained-byte
     // exhaustion fuses the context and propagates as an unswallowable
     // `ResourceLimit`; salvage degrades recovery to accounting and keeps the
-    // digest (§11.10), which still satisfies the disposition check.
+    // digest, which still satisfies the disposition check.
     let retained_digest = if retain {
         match ctx.retain(inflated)? {
             Retention::Retained(range) => Some(range.blob().as_str().to_owned()),
@@ -465,7 +453,7 @@ fn admit_block(
 }
 
 /// Map an expander error hit during a probe: a fused `ResourceLimit` is
-/// unswallowable and propagates (§4.7); any other error means this marker hit is
+/// unswallowable and propagates; any other error means this marker hit is
 /// not a valid block, so the probe reports `NoMatch`.
 fn probe_or_propagate<T>(e: CodecError) -> Result<Option<T>, CodecError> {
     match e {
@@ -481,7 +469,7 @@ fn probe_or_propagate<T>(e: CodecError) -> Result<Option<T>, CodecError> {
 /// decompressed space. When no direct stream is present but the transmit-wrapper
 /// magic is, each candidate zlib member is inflated through the charging
 /// expander ([`inflate_wrapped_stream`]) and registered as a `Transform` derived
-/// space (§10 Phase 1C). Every registered record is charged against the
+/// space. Every registered record is charged against the
 /// allocation budget before it is registered, so the graph cannot grow past the
 /// budget on a payload packed with minimal stream headers.
 fn collect_parasolid_streams(
@@ -538,7 +526,7 @@ fn collect_parasolid_streams(
 /// Inflate a wrapped Parasolid zlib member through the charging expander.
 ///
 /// The member is framed as a view of the block space from `offset`, never a raw
-/// length (§10 Phase 1B). Output streams through a `Transform` derived-space
+/// length. Output streams through a `Transform` derived-space
 /// writer that charges `decompressed_bytes` per chunk under the per-expand and
 /// cumulative decompression ceilings, so a crafted deflate bomb fuses the
 /// context before the retained buffer grows unbounded. A member that does not

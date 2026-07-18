@@ -1,15 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! CATIA-native ownership and design records retained outside the neutral model.
-//!
-//! Migrated per doc section 10 Phase 2. [`CatiaNative::decode`] performs no
-//! hostile read itself: it delegates every untrusted `.CATPart` byte to the
-//! migrated `catalog` (`7C02`), `value_block` (`7C0B`), and `object_graph`
-//! (`7C08`) leaf parsers, each of which charges its own marker scan as work and
-//! its own allocations. The per-source `.collect()` here is a one-to-one typed
-//! transformation of records those parsers already counted and charged, sized
-//! by `records.len()`, not by any untrusted count, so it introduces no
-//! unbudgeted growth. `load`/`store` route through the platform native-arena
-//! API. No recursion, so no `DepthGuard` obligation.
 #![deny(clippy::disallowed_methods)]
 
 use schemars::JsonSchema;
@@ -148,12 +138,6 @@ impl Default for CatiaNative {
 
 impl CatiaNative {
     /// Decode CATIA-native records directly from the session root view.
-    ///
-    /// The `7C02` catalog, `7C0B` value-block, and `7C08` object-graph parsers
-    /// are migrated: each takes the
-    /// [`DecodeContext`](cadmpeg_ir::decode::DecodeContext) and charges its
-    /// whole-image marker scan as work, so this entry is fallible and every
-    /// source it reads charges its own reads (see `parser-manifest.toml`).
     pub fn decode<'a>(
         ctx: &cadmpeg_ir::decode::DecodeContext<'a>,
         view: cadmpeg_ir::decode::View<'a>,

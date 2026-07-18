@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzzes Rhino cage record decoding through the committed `cage::decode` path.
+//! Fuzzes Rhino cage record decoding.
 
 #![no_main]
 

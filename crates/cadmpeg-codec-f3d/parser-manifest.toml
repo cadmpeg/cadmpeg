@@ -1,27 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-#
-# Per-module migration manifest for `cadmpeg-codec-f3d` (doc section 8.6 /
-# 10 Phase 2). One `[[module]]` entry per source module that reads or shapes
-# untrusted `.f3d` bytes. `status` is `migrated` or `legacy`; a `legacy`
-# module records why it has not graduated in `legacy_reason`. `charges` names
-# the budget dimensions the module drives; `cost_model` states the charge
-# shape (never a flat unit per iteration). `window_egress` lists the audited
-# `View::window()` raw-byte egress sites the module keeps, cross-referenced by
-# the section 8.8 ratchet. `ledger_level` is the section 6.1 record-accounting
-# level: `fidelity.rs` serializes the L1 source-fidelity ledger (level 1, doc
-# section 10 Phase 3C); every byte-parser module stays at level 0 because it
-# reads untrusted bytes without emitting a ledger of its own.
-#
-# Ordering follows doc section 10 Phase 2: count-framed / container framing
-# first, then the pure record model, then the irregular marker probes and
-# graph traversals still awaiting leaf migration.
 
-# ---------------------------------------------------------------------------
-# Container framing and pipeline orchestration. Migrated in Phase 1 to consume
-# the session root `View`, route inflation through `begin_expand`, and charge
-# alloc/work before touching an untrusted entry count. Graduated here with
-# module-level `#[deny(clippy::disallowed_methods)]`; the one bounded entry
-# accumulator was converted to the `Vec::new` + `push` migrated spelling.
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/container.rs"
 status = "migrated"
@@ -35,15 +13,6 @@ window_egress = [
 ]
 ledger_level = 0
 
-# Phase-4B typed lossy construction (doc section 6.2 / 10 Phase 4B) lives on the
-# orchestration path: `decode.rs` constructs every f3d incomplete-transfer note
-# through the shared platform helpers `cadmpeg_ir::transfer::{omit, reduce}` —
-# `omit` resolves an unsupported-concept-to-omission through `Transfer::omitted`,
-# `reduce` records an accountable reduction or census through the platform
-# `Builder` — so the bare `losses.push` spelling that would let a drop go
-# unrecorded is not written on the transfer path. Its `semantic_builder` flag is
-# the section 7 capability signal that gates the `no_silent_fallback` stage-2
-# oracle for f3d.
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/decode.rs"
 status = "migrated"
@@ -56,11 +25,6 @@ cost_model = "orchestration only: navigates the root View and dispatches to cont
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Pure record model. Struct definitions plus deterministic serde and id
-# derivation; no hostile-byte read path of their own, so they graduate with
-# the deny lint and no `req_*`/`BoundedCount`/`DepthGuard` obligations (same
-# basis as `cadmpeg-ir/src/unknown.rs`).
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/records.rs"
 status = "migrated"
@@ -91,14 +55,6 @@ cost_model = "no budget charge; ASM history record shapes and serde only, no unt
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Leaf decoders still on the legacy free-function read path. Each consumes a
-# `&[u8]` inflated-entry slice through `cadmpeg_ir::{read,le,be}` (themselves
-# migrated primitive probes) but has not yet moved its count-framed loops to
-# `exact_vec`/`read_counted`/`BoundedCount`, its recursion to `DepthGuard`, or
-# its committed reads to the `req_*` mirror. They remain reachable and
-# truncation-tested through the full-decode `f3d_container` fuzz target and the
-# named leaf targets; they carry no module-level deny lint yet.
 
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/sab.rs"
@@ -166,13 +122,6 @@ cost_model = "target: work per delta-state record examined"
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Migrated leaf decoder. `act.rs` graduated ahead of the count-framed topology
-# leaves: it is the smallest self-contained marker-probe module (single caller,
-# no cross-module coupling to the still-legacy `brep`/`nurbs` graph), so it
-# migrates in isolation without threading a `View` through the legacy leaves.
-# It carries `#![deny(clippy::disallowed_methods)]`; the surrounding legacy
-# leaves below do not yet.
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/act.rs"
 status = "migrated"
@@ -182,24 +131,7 @@ charges = ["alloc_bytes", "work"]
 cost_model = "work charged in two parts: (1) once per stream pass in each of the three whole-stream scans for the position-stepping cost, proportional to `win_len` (doubled for `decode_table` to cover the ACTTable marker search and the trailing GUID scan); (2) inside each `lp_ascii`/`lp_utf16` probe, `4 + payload_bytes` charged before the probe reads and allocates, so a scan that runs the probe at every position charges CPU proportional to the bytes each probe actually examines rather than a flat unit per position; alloc_bytes charged via exact_vec over the ACTTable count under a BoundedCount physical-floor proof, via grow_vec for the entity/guid/root-component accumulators, and via charge_alloc per merged `by_key` graph node (untrusted-count-tracked map growth)"
 window_egress = []
 ledger_level = 0
-# Migrated per doc section 10 Phase 2: hostile reads go through `View` at
-# entry-relative offsets (`seek_rel`), the count-framed `ACTTable` loop reserves
-# through `exact_vec` under `View::counted`, accumulators use `grow_vec`, and
-# every marker scan charges work per byte examined. Reached and truncation-
-# tested through `f3d_container` plus the dedicated
-# `truncation_at_act_record_boundaries_is_deterministic_and_never_panics` test,
-# which also asserts deterministic output across cuts. No `req_*` obligation:
-# every ACT read is an optional marker probe (`Option`), never a committed
-# required read, so classification stays pre-commit `NoMatch` per section 3.3.
-# Module carries `#![deny(clippy::disallowed_methods)]`; the domain caps
-# (`MAX_TABLE_ENTRIES`, 1024-unit UTF-16, 128-byte ASCII, 8-channel groups)
-# stay as format facts and defense in depth alongside the budget.
 
-# ---------------------------------------------------------------------------
-# Remaining legacy leaf. `asm_header.rs` reads through `View` at its callers'
-# boundary only after the still-legacy `brep`/`container` slices migrate; it is
-# entangled with them (called from `brep::decode` and `container::scan` over
-# `&[u8]`), so it does not carry the deny lint yet.
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/asm_header.rs"
 status = "legacy"
@@ -211,12 +143,6 @@ cost_model = "target: fixed-width committed reads via req_* mirror; no count or 
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# L1 container accounting (doc section 10 Phase 3C). Not a byte parser: builds
-# the coarse source-fidelity ledger from already-scanned `ContainerScan` facts,
-# digesting bounded source and entry spans. No hostile read, no `.window()`
-# egress, and no budget charge of its own; the container scan already charged
-# the bytes. Emits the serialized L1 ledger.
 [[module]]
 path = "crates/cadmpeg-codec-f3d/src/fidelity.rs"
 status = "migrated"

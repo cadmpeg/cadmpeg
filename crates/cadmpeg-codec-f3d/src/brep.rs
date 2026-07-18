@@ -3047,8 +3047,6 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                 }
             }
             _ if unknown_surface_records.contains(&i) => {
-                // Topology-known face on an undecoded surface: emit an opaque
-                // carrier linking to the preserved record bytes, marked Unknown.
                 out.surfaces.push(Surface {
                     id: SurfaceId(id(i)),
                     geometry: SurfaceGeometry::Unknown {
@@ -3971,8 +3969,6 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         }
     }
 
-    // Containers: emitted for every record so back-references resolve, with
-    // child lists filtered to reachable entities.
     for r in records {
         let i = r.index as i64;
         match r.head.as_str() {
@@ -4148,7 +4144,6 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         .filter_map(creation_timestamp)
         .collect();
 
-    // Preserve undecoded carriers referenced by real topology as passthrough.
     for r in records {
         let i = r.index as i64;
         if undecoded_carriers.contains(&i) {
@@ -4163,7 +4158,6 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         }
     }
 
-    // Count remaining record kinds we neither emitted nor preserved.
     let kept_transforms: HashSet<i64> = records
         .iter()
         .filter(|record| record.head == "body")
@@ -4193,8 +4187,6 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     };
     for r in records {
         let i = r.index as i64;
-        // Spline/intcurve records that decoded into a NURBS carrier are counted
-        // as transferred, not as opaque leftovers.
         let transferred = kept_surfaces.contains(&i)
             || kept_curves.contains(&i)
             || kept_pcurves.contains(&i)

@@ -32,8 +32,6 @@ use crate::{asm_header, fidelity, materials, sab};
 
 /// Decode a `.f3d` root view into a document and its loss report.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
-    // The root `source` space each container entry's opaque payload is tiled in;
-    // record tickets attribute their commit offsets against it (§6.2).
     let source_space = root.location().space;
     let scan = container::scan(ctx, root)?;
 
@@ -120,9 +118,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
             if !native.lost_edge_references.is_empty() {
-                // Lost parametric edge references are an attribute concept the
-                // decode cannot replay: route the omission through the Phase-4B
-                // builder module so it is not a bare silent push.
                 cadmpeg_ir::transfer::omit(
                     &mut report.losses,
                     LossNote {
@@ -268,32 +263,7 @@ fn decode_result(
     ))
 }
 
-/// Reject a decode in strict mode when the report carries a loss whose code
-/// removes mandatory, unreconstructable semantics (§10 Phase 4).
-///
-/// Phase 4 requires strict mode to refuse a decode that could only be completed
-/// by dropping semantics the target model treats as mandatory, rather than
-/// silently returning a partial model. The decision keys on
-/// [`LossCode::strict_consequence`] together with severity: a
-/// [`Reject`](StrictConsequence::Reject) code (untransferred geometry or
-/// topology) carried at [`Severity::Blocking`] marks mandatory, unreconstructable
-/// semantics strict mode cannot tolerate — this is the f3d metadata-only
-/// fallback, where the active B-rep stream was not a decodable SAB and no typed
-/// geometry or topology was produced. The same Reject code at a lower severity is
-/// an accountable partial loss over content that *was* transferred (faces on
-/// undecoded spline surfaces standing beside a decoded topology graph); it,
-/// accountable approximations ([`ProceduralReduced`](LossCode::ProceduralReduced)),
-/// retained passthrough, and operator-requested omissions
-/// [`Tolerate`](StrictConsequence::Tolerate) and pass through. Salvage mode never
-/// rejects; it returns the same report with the loss code recorded, so every
-/// strict rejection has a salvage counterpart that names the loss.
-///
-/// The refusal is surfaced as [`CodecError::Malformed`] with a `strict:` prefix:
-/// the error taxonomy (§3.1) has no dedicated semantic-refusal decode variant,
-/// and `Malformed` is the codebase's established spelling for a strict-mode
-/// refusal (a classified error the stage-2 salvage/strict oracles accept).
-/// Container-only decode never reaches here — the caller returns before entity
-/// decode — so an operator-requested skip is never a strict rejection.
+/// Reject strict decodes that omit mandatory, unreconstructable semantics.
 fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecError> {
     if mode != DecodeMode::Strict {
         return Ok(());
@@ -318,28 +288,7 @@ fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecEr
     )))
 }
 
-/// Issue and resolve one record ticket per container entry the decode walked
-/// (§6.2). The container entry is f3d's L1 commit boundary — the same unit the
-/// L1 fidelity ledger tiles as one opaque payload span — so issuance instruments
-/// the §3.3 boundary the codec already crosses rather than adding a separate
-/// bookkeeping pass. Duplicate archive paths collapse to one ticket, matching
-/// the ledger's derived-space dedup.
-///
-/// Each entry resolves at the point its outcome is decided:
-/// - the active B-rep stream resolves [`RecordDisposition::Typed`] against its
-///   emitted geometry entities when geometry transferred, or
-///   [`RecordDisposition::Dropped`] against the blocking geometry loss when the
-///   stream fell back to container metadata;
-/// - a `.protein` appearance archive resolves `Typed` against its appearance
-///   entities when appearances transferred, or `Dropped` against the material
-///   loss otherwise;
-/// - a secondary tessellation, preview, or image asset the codec does not
-///   transfer resolves `Dropped` against a per-entry loss note appended here, so
-///   the skip is accounted and never silent;
-/// - every other entry — inactive B-rep snapshots and design/history/ACT streams
-///   retained into the native namespace, plus pure container framing — resolves
-///   [`RecordDisposition::Structural`]: its bytes are conservation-accounted by
-///   the L1 ledger and it contributes no format-neutral model entity.
+/// Account for each unique container entry consumed by the decode.
 fn account_records(
     ctx: &DecodeContext,
     source_space: SpaceId,
@@ -364,9 +313,6 @@ fn account_records(
             continue;
         }
         let role_label = container::classify(&entry.name);
-        // Every admitted entry carries a data offset (`admit_entry` refuses those
-        // without one), so it is always tiled into `layout`; a miss is a scan
-        // invariant break, surfaced in debug builds rather than mislocated to 0.
         debug_assert!(
             offsets.contains_key(entry.name.as_str()),
             "container entry {} absent from scan layout",
@@ -396,17 +342,10 @@ fn account_records(
                         RecordDisposition::Structural
                     }
                 } else {
-                    // An inactive construction snapshot is retained verbatim in
-                    // the source image; its bytes are byte-accounted and it emits
-                    // no format-neutral model entity.
                     RecordDisposition::Structural
                 }
             }
             role::PROTEIN => {
-                // Attribute only the appearances this archive decoded, keyed by the
-                // per-entry origin map, so multiple `.protein` archives never each
-                // claim the flattened union (§6.2). An archive that decoded nothing
-                // resolves via its material loss, not a borrowed transfer.
                 let outputs: Vec<String> = ir
                     .model
                     .appearances
@@ -432,10 +371,6 @@ fn account_records(
                 }
             }
             role::PARAMESH | role::PREVIEW | role::IMAGE => {
-                // A walked secondary asset the codec does not transfer: an
-                // omission that drains through the Phase-4B builder module so its
-                // report entry cannot be skipped, then backs its `Dropped`
-                // disposition (§6.2).
                 let loss = untransferred_asset_loss(role_label, &entry.name);
                 cadmpeg_ir::transfer::omit(&mut report.losses, loss.clone());
                 RecordDisposition::Dropped { loss }
@@ -485,8 +420,7 @@ fn find_loss(
         .cloned()
 }
 
-/// A distinct per-entry loss note for a secondary asset the codec walked but did
-/// not transfer, so its `Dropped` ticket consumes its own report entry (§6.2).
+/// Build the loss note for an untransferred secondary asset.
 fn untransferred_asset_loss(role_label: &str, name: &str) -> LossNote {
     use container::role;
 
@@ -517,10 +451,6 @@ fn untransferred_asset_loss(role_label: &str, name: &str) -> LossNote {
 }
 
 /// Build the validated L1 container-accounting ledger for the scanned archive.
-///
-/// A tiling defect surfaces as a `Malformed` decode failure rather than a
-/// silently absent proof, so an accounting-enabled report never ships an
-/// inconsistent ledger through its `source_fidelity` slot.
 fn build_source_fidelity(
     scan: &ContainerScan<'_>,
 ) -> Result<cadmpeg_ir::source_fidelity::SourceFidelity, CodecError> {
@@ -849,20 +779,7 @@ fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMet
     )
 }
 
-/// Loss report for a successful geometry decode.
-///
-/// Every note is constructed through the shared platform helpers (doc §6.2,
-/// §10 Phase 4B): a concept the decode did not carry into typed IR goes through
-/// [`cadmpeg_ir::transfer::omit`] so the omission cannot be reached without
-/// recording its note, while a reduction that survives approximately
-/// (spline/procedural forms solved into cached NURBS carriers) or an
-/// informational census goes through [`cadmpeg_ir::transfer::reduce`]. Both
-/// resolve through the platform [`Builder`](cadmpeg_ir::transfer::Builder) into
-/// the report's loss channel. This function routes every note through those
-/// helpers rather than the bare `losses.push` spelling; the guarantee is that
-/// the platform builder is the one construction path used on the geometry path,
-/// not a type error against `Vec::push` (the platform `Builder` cannot ban the
-/// method). A direct push would compile — review keeps it out.
+/// Build the loss report for a successful geometry decode.
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     use cadmpeg_ir::transfer::{omit, reduce};
 
@@ -902,9 +819,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     if s.unknown_surface_faces > 0 {
-        // Unsupported-concept-to-omission boundary: the underlying surface shape
-        // was not decoded into a typed carrier. Topology transfers; the shape
-        // does not, so the omitted value does not exist.
         omit(
             &mut losses,
             LossNote {
@@ -1080,10 +994,6 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     let summary = container::summarize(scan);
     let brep_count = scan.breps.len();
 
-    // The metadata-only fallback: geometry, topology, and materials are all
-    // concepts this decode did not carry into typed IR. Each resolves through
-    // the Phase-4B builder module as an omission (§10) so no drop is silent;
-    // retained source bytes remain available for native replay.
     let mut losses: Vec<LossNote> = Vec::new();
     cadmpeg_ir::transfer::omit(
         &mut losses,

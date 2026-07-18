@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-
-//! End-to-end command behavior and output-contract tests.
+//! CLI integration tests.
 
 #![allow(clippy::unwrap_used)]
 
@@ -502,7 +501,6 @@ fn diff_summarizes_the_source_fidelity_sidecar_for_native_inputs() {
     let a = minimal_rhino_archive(dir.path(), "a.3dm", "50");
     let b = minimal_rhino_archive(dir.path(), "b.3dm", "50");
 
-    // Two byte-identical archives: the L2 sidecars match.
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
@@ -510,7 +508,6 @@ fn diff_summarizes_the_source_fidelity_sidecar_for_native_inputs() {
         .success()
         .stdout(predicate::str::contains("source fidelity: identical"));
 
-    // JSON diff exposes the interpreted sidecar comparison, not raw spans.
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["diff", "--json", a.to_str().unwrap(), b.to_str().unwrap()])
@@ -543,8 +540,6 @@ fn diff_renders_the_interpreted_fidelity_delta_when_only_sidecars_differ() {
                 .and(predicate::str::contains("identical").not()),
         );
 
-    // The JSON branch agrees: the IR is identical but the sidecars differ, so the
-    // top-level `different` flag is set.
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args(["diff", "--json", a.to_str().unwrap(), b.to_str().unwrap()])
@@ -923,8 +918,6 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
 #[test]
 fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     let dir = tempdir().unwrap();
-    // The geometryless Creo container decodes with losses; it is the lossy
-    // fixture here.
     let lossy = geometryless_creo(dir.path(), "lossy.prt");
 
     // `--reject-lossy` turns a lossy decode into a model refusal (exit 1),
@@ -944,7 +937,6 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
         .code(1)
         .stderr(predicate::str::contains("refusing to write a lossy"));
 
-    // Convert refuses the same way, reporting the refusal in its command report.
     let report = dir.path().join("lossy-report.json");
     Command::cargo_bin("cadmpeg")
         .unwrap()
@@ -964,7 +956,6 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     assert!(value["decode_report"].is_object());
     assert!(value["export"].is_null());
 
-    // Without the flag the same lossy decode exports: losses alone are allowed.
     Command::cargo_bin("cadmpeg")
         .unwrap()
         .args([

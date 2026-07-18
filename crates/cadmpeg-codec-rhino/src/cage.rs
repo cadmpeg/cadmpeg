@@ -39,8 +39,7 @@ fn malformed(offset: usize, message: impl Into<String>) -> GeometryError {
     })
 }
 
-/// Maps a budget refusal from the platform context onto the module's framing
-/// error. A refusal is treated as malformed input: the codec-local caps
+/// A budget refusal is treated as malformed input: the codec-local caps
 /// (`MAX_CONTROL_POINTS`, `MAX_SCALARS`) bound the counts well below any
 /// default budget ceiling, so a refusal here means the reserved size was
 /// implausible for the surrounding window.
@@ -48,15 +47,12 @@ fn refused(offset: usize, error: &CodecError) -> GeometryError {
     malformed(offset, format!("NURBS cage allocation refused: {error}"))
 }
 
-/// Reads one committed `i32` through the `req_*` mirror, mapping a short read
-/// onto the module's framing error at the read offset.
 fn req_i32(view: &mut View<'_>) -> Result<i32, GeometryError> {
     let offset = view.position();
     view.req_i32_le()
         .map_err(|_| malformed(offset, "NURBS cage record truncated"))
 }
 
-/// Reads one committed `f64` through the `req_*` mirror.
 fn req_f64(view: &mut View<'_>) -> Result<f64, GeometryError> {
     let offset = view.position();
     view.req_f64_le()
@@ -102,9 +98,7 @@ pub(crate) fn decode_at(
         return Err(malformed(offset, "invalid NURBS cage framing"));
     }
 
-    // Read the record body through a bounded `View` on the caller's threaded
-    // platform context so knot/control-point charges accumulate against the
-    // document-level budget. Only this record's bytes are navigable; the
+    // Only this record's bytes are navigable; the
     // count-framed loops below size themselves against `body`'s remaining
     // window, not a trusted decoded count.
     let mut body = expand
@@ -162,7 +156,6 @@ pub(crate) fn decode_at(
         .filter(|count| *count <= MAX_CONTROL_POINTS)
         .ok_or_else(|| malformed(body.position(), "NURBS cage control count exceeds cap"))?;
 
-    // Count-framed knot vectors: each axis reserves exactly its proven length.
     let mut knots: [Vec<f64>; 3] = std::array::from_fn(|_| Vec::new());
     for axis in 0..3 {
         let knot_count = orders[axis]

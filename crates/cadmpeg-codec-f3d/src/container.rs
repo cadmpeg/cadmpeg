@@ -20,19 +20,16 @@ use crate::asm_header;
 
 /// Maximum `.f3d` archive the container scanner accepts.
 ///
-/// Limit classification (§10 Phase 1): deployment ceiling. `read_root` enforces
-/// the platform `max_input_bytes` policy limit first; this tighter codec-local
-/// cap bounds the offset space the ZIP directory walk indexes and is retained as
-/// dual enforcement behind the policy limit until per-profile evidence justifies
-/// migrating it wholesale.
+/// `read_root` enforces `max_input_bytes` first. This tighter limit bounds the
+/// offset space indexed by the ZIP directory walk.
 const INPUT_CAP: u64 = 256 * 1024 * 1024;
 
 /// Read chunk for streaming a compressed entry's inflated output into the
 /// platform expander. A fixed stack buffer, so no decompressed bytes are
-/// retained outside the `ExpandWriter` (§10 Phase 1B gate 2).
+/// retained outside the `ExpandWriter`.
 const EXPAND_CHUNK: usize = 16 * 1024;
 
-/// Allocation charged per admitted archive entry (§10 Phase 1A).
+/// Allocation charged per admitted archive entry.
 ///
 /// A conservative constant covering the fixed heap footprint each entry adds:
 /// the runtime space-graph record, the payload lookup-map node, and the
@@ -208,7 +205,7 @@ impl<'a> ContainerScan<'a> {
 /// its payload. Stored entries alias the `parent` space as a `Slice`; compressed
 /// entries stream their inflated output through [`DecodeContext::begin_expand`]
 /// under an exact-size contract, so the ZIP central directory's declared
-/// uncompressed length is enforced per write and at finalize (§10 Phase 1B).
+/// uncompressed length is enforced per write and at finalize.
 ///
 /// `parent` is the address space the entry's compressed bytes live in: the root
 /// for a top-level entry, a nested `.protein` entry's own space for a nested
@@ -231,8 +228,6 @@ pub(crate) fn admit_entry<'a>(
         .ok_or_else(|| CodecError::Malformed(format!("entry {name} data range overflows")))?;
 
     if compression == CompressionMethod::Stored {
-        // A stored entry is uncompressed: its bytes are already accounted for in
-        // the parent space, so it registers as a Slice alias, never a copy.
         let (_space, view) = ctx.register_slice(
             parent,
             ByteRange {
@@ -243,10 +238,6 @@ pub(crate) fn admit_entry<'a>(
         return Ok(view);
     }
 
-    // A compressed entry's inflated bytes are new content the decompression-bomb
-    // ceilings must bound. Frame the compressed source as a nested view of the
-    // parent — never a raw length — and route every inflated byte through the
-    // expander, whose exact-size contract enforces the declared length.
     let source = child_range(parent, data_start, data_end).ok_or_else(|| {
         CodecError::Malformed(format!("entry {name} data range escapes its parent space"))
     })?;
@@ -278,8 +269,8 @@ fn child_range(root: View<'_>, start: u64, end: u64) -> Option<View<'_>> {
 /// Consumes the session root view directly: no re-read, no `std::io::Cursor`
 /// adapter. The file-wide directory walk both `inspect` and `decode` run is
 /// charged as work up front, and every entry is registered in the runtime space
-/// graph — a `Slice` alias when stored, a decompression `Transform` when
-/// compressed (§10 Phase 1A/1B).
+/// graph: a `Slice` alias when stored, a decompression `Transform` when
+/// compressed.
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
     let source_image = root.window();
     if source_image.len() as u64 > INPUT_CAP {
@@ -287,8 +278,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             "input exceeds f3d size cap of {INPUT_CAP} bytes"
         )));
     }
-    // Enumerating and framing every entry is a linear pass over the whole input;
-    // charge its bytes as work once, before scanning begins.
     ctx.charge_work(
         source_image.len() as u64,
         "f3d_container_scan",
@@ -298,12 +287,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
     let mut archive = zip::ZipArchive::new(Cursor::new(source_image))
         .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
 
-    // Each entry the directory walk admits pushes a runtime space-graph record,
-    // a payload-map node, and a summary row — growth proportional to the ZIP
-    // central directory's entry count, which the input does not bound
-    // byte-for-byte. Charge that fixed per-entry footprint against the
-    // input-proportional allocation budget up front so a directory packed with
-    // minimal records is bounded by policy, not only by `INPUT_CAP`.
     let entry_count = archive.len() as u64;
     ctx.charge_alloc(
         entry_count.saturating_mul(PER_ENTRY_GRAPH_BYTES),
@@ -311,8 +294,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         Some(root.location()),
     )?;
 
-    // Charged above; `Vec::new` + `push` is the migrated accumulation spelling
-    // (doc section 8), so no disallowed reservation reaches the deny lint.
     let mut entries = Vec::new();
     let mut breps = Vec::new();
     let mut asset_folder = None;
@@ -329,8 +310,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
         let compression = compression_label(method);
         let compressed_size = file.compressed_size();
         let uncompressed_size = file.size();
-        // Read the compressed payload offset before `admit_entry` consumes the
-        // file: it fixes the entry's opaque extent in the root `source` space.
         let data_start = file.data_start();
         let mut attributes = BTreeMap::new();
 
@@ -344,7 +323,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
                     asset_folder = Some(folder.to_string());
                 }
             }
-            // Read the header fields from the framed payload.
             let header = asm_header::parse(buf);
             let delta = asm_header::first_delta_state_offset(buf);
             let sha = sha256_hex(buf);
@@ -404,8 +382,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             });
         }
 
-        // `admit_entry` already refused an entry whose data offset was absent or
-        // whose extent overflowed, so a present offset here has a bounded end.
         if let Some(start) = data_start {
             if let Some(end) = start.checked_add(compressed_size) {
                 layout.push(EntryLayout {

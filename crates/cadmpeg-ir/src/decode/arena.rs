@@ -85,8 +85,7 @@ mod tests {
     /// many times over; reading every slice handed out so far, on every
     /// iteration, forces the aliasing model to validate each earlier pointer
     /// against the later retag. This is the alloc-while-earlier-borrows-live
-    /// pattern the §4.1 note calls out, and the case a raw-pointer rework would
-    /// exist to satisfy.
+    /// case a raw-pointer rework would need to satisfy.
     ///
     /// It subsumes the narrower scenarios that do not add coverage: outer-`Vec`
     /// regrowth (the reallocations here relocate the box *pointers* while the

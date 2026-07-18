@@ -4,16 +4,6 @@
 //! [`build`] resolves successors only when a curve and face identify one
 //! candidate. It emits a [`Loop`] only when traversal closes on its starting
 //! half-edge.
-//!
-//! Every entry point consumes already-decoded [`CurveTopologyRow`] values, never
-//! hostile bytes or an untrusted count: each allocation is bounded by the
-//! admitted `rows` length (two half-edges per row), and every traversal
-//! (`build`, `face_components`, `vertex_orbits`) is iterative under a monotone
-//! visited set, so no recursion and no [`DepthGuard`](cadmpeg_ir::decode) obligation
-//! arise. The module therefore graduates with the deny lint on the same basis as
-//! `datum.rs`, with no `req_*`/`BoundedCount` obligation; the former
-//! `Vec::with_capacity(rows.len() * 2)` accumulator becomes a `Vec::new` + push
-//! to clear the last disallowed method.
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -209,8 +199,6 @@ pub fn build(rows: &[CurveTopologyRow]) -> (Vec<HalfEdge>, Vec<Loop>) {
                 });
         }
     }
-    // `Vec::new` + the bounded `0..2` push loop below keeps the module clear of
-    // disallowed methods; the accumulator is still bounded by `rows.len() * 2`.
     let mut edges = Vec::new();
     for row in rows {
         for side in 0..2 {

@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for NX Parasolid deltas-stream walking.
-//!
-//! Feeds arbitrary bytes through the migrated `cadmpeg_codec_nx::deltas`
-//! status-byte-framed record walk and point extraction to exercise the
-//! record-boundary scan on the committed decode path. Contract: no input may
-//! panic.
+//! No input may panic.
 
 #![no_main]
 

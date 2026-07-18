@@ -563,27 +563,11 @@ fn transfer_plane_brep(
 
 /// Decode a `.prt` view into an IR document and loss report.
 ///
-/// Consumes the session root view directly (§10 Phase 1A): [`container::scan_view`]
-/// borrows the root bytes, charges the container scan as work, and registers the
-/// section spans. `ctx.container_only()` is reflected in the report, but the
-/// current decoder always performs the same structural scan.
+/// Container-only mode is reflected in the report, but still performs the full
+/// structural scan.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan_view(ctx, root)?;
 
-    // L1 container accounting (§10 Phase 3C): build the complete coarse tiling
-    // of the source space and run its mandatory conservation validation on
-    // every decode. `coarse_ledger` fails the decode if the framing the scan
-    // reported cannot tile the file, so an accounting-enabled result never
-    // ships an inconsistent ledger. The validated sidecar rides the decode
-    // report through its `source_fidelity` slot.
-    // Record disposition accounting (§10 Phase 3D, §6.2): every record-shaped
-    // unit the codec walks is committed at its §3.3 boundary and resolved to a
-    // disposition before the decode finishes. Records skipped on a salvage path
-    // (an incomplete VisibGeom support frame, a sketch definition with no placed
-    // feature) resolve `Dropped` with an accountable loss note rather than
-    // vanishing; `ctx.finish` runs `Check::TransferAccounting` over the resolved
-    // table. The dropped-record notes rejoin the report so each `Dropped`
-    // disposition has its matching loss.
     let space = root.location().space;
     let (mut ir, dropped_losses, annotations, unknowns) = build_ir(ctx, space, &scan)?;
     let mut report = build_report(&scan, ctx.container_only());
@@ -599,8 +583,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     ))
 }
 
-/// Commit a record-shaped unit at `offset` in the source `space`, returning its
-/// unresolved ticket (§6.2).
+/// Commit a record-shaped unit at `offset` in the source `space`.
 fn commit(
     ctx: &DecodeContext<'_>,
     space: SpaceId,
@@ -611,21 +594,6 @@ fn commit(
 }
 
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
-///
-/// Every record-shaped unit is committed and resolved against the disposition
-/// ledger (§6.2). Value substitutions and omissions at the §10 Phase 4B
-/// boundaries — a datum plane's conventionally derived u-axis (resolver to
-/// fallback axis), an incomplete plane carrier (unsupported concept to
-/// omission), an unplaced sketch record (decoder record to omission) — resolve
-/// through a [`Builder`] threaded over the returned loss channel, so no fallback
-/// or drop reaches the model without surrendering its note. Every typed record
-/// creo emits is representable by construction (datum normals are basis vectors,
-/// frame bases are normalized, and the scalar decoder masks its leading byte so
-/// no value is ever non-finite), so no value-level mandatory semantic can be
-/// unrepresentable; the strict-mode mandatory rejection is the platform's
-/// unresolved-ticket and transfer-accounting path. The returned loss notes also
-/// account each `Dropped` disposition so `Check::TransferAccounting` finds a
-/// matching loss for every drop.
 fn build_ir(
     ctx: &DecodeContext<'_>,
     space: SpaceId,
@@ -648,16 +616,6 @@ fn build_ir(
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
         let end = (section.offset + section.length).min(scan.data.len());
         let bytes = &scan.data[section.offset..end];
-        // A PSB geometry section is preserved verbatim as an `UnknownRecord`
-        // in the native `unknowns` arena and conserved physically by the §6.1
-        // coarse ledger's `Opaque` span. It yields no typed model entity, so it
-        // resolves `Preserved`, naming the emitted unknown-record id: transfer
-        // accounting then confirms the record actually reached
-        // `ir.native_unknowns`, closing the §6.2 identity guarantee over the
-        // arena the codec preserves the most content into. `Structural` would
-        // leave the emission unchecked; `ctx.retain` is barred by the root-byte
-        // lifetime, so the bytes travel through `push_native_unknown`, not the
-        // retained store.
         let section_ticket = commit(ctx, space, section.offset as u64, "psb_geometry_section");
         let id = UnknownId(format!("creo:{}:section#{}", section.name, section.offset));
         let unknown_id = id.0.clone();
@@ -697,9 +655,6 @@ fn build_ir(
             "datum_plane_outline",
             Exactness::Derived,
         );
-        // Resolver-to-fallback-axis boundary (§10 Phase 4B): the source stores
-        // no in-plane reference, so the u-axis is synthesized from the normal
-        // through the typed lossy builder, which records the substitution note.
         let u_axis = builder::datum_u_axis(
             &mut dropped_losses,
             Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]),
@@ -738,11 +693,6 @@ fn build_ir(
         let frame_ticket = commit(ctx, space, frame.offset as u64, "plane_local_system");
         let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
         else {
-            // Unsupported-concept-to-omission boundary (§10 Phase 4B): an
-            // incomplete support frame is not transferred as a placed carrier.
-            // Drain the omission through the typed lossy builder so the record
-            // cannot be skipped without recording its note, and reflect the same
-            // note on its `Dropped` disposition (§6.2).
             let loss = builder::incomplete_frame_note(frame.surface_id, frame.offset as u64);
             cadmpeg_ir::transfer::omit(&mut dropped_losses, loss.clone());
             ctx.resolve(frame_ticket, RecordDisposition::Dropped { loss });
@@ -911,12 +861,6 @@ fn build_ir(
                 "feature_sketch",
                 Exactness::Derived,
             );
-            // A sketch's parsed data surfaces both as native design records and,
-            // when its feature was placed, folded into that feature's typed
-            // parameters. If the model carries the feature, the sketch resolves
-            // `Typed` naming it; if the definition has no placed feature
-            // operation, the native record has no model output and resolves
-            // `Dropped` with an accountable loss (§6.2).
             let feature_id = format!("creo:mdlstatus:feature#{}", sketch.feature_id);
             if ir.model.features.iter().any(|f| f.id.0 == feature_id) {
                 ctx.resolve(
@@ -926,13 +870,6 @@ fn build_ir(
                     },
                 );
             } else {
-                // Decoder-record-to-omission boundary (§10 Phase 4B). The note
-                // carries the sketch's unique record id so each `Dropped` note is
-                // structurally distinct from every other: the `finish`-time loss
-                // match (category+message) consumes one note per `Dropped`
-                // disposition, so distinct notes keep the count of pushed notes
-                // tied to the count of resolutions even if two definitions ever
-                // shared a `feature_id` and offset (§6.2).
                 let loss =
                     builder::unplaced_sketch_note(&sketch.id, sketch.feature_id, offset as u64);
                 cadmpeg_ir::transfer::omit(&mut dropped_losses, loss.clone());
@@ -1225,7 +1162,6 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
         });
     }
 
-    // The namespace census: what is byte-backed and readable.
     let srf = scan
         .census
         .srf_array_count
@@ -1254,7 +1190,6 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
         provenance: None,
     });
 
-    // The core prototype-vs-instance limitation.
     losses.push(LossNote {
         code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
@@ -1298,7 +1233,6 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
         });
     }
 
-    // The specific undecoded PSB layers that gate per-instance geometry.
     losses.push(LossNote {
         code: LossCode::GeometryNotTransferred,
         category: LossCategory::Geometry,
@@ -1311,7 +1245,6 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
         provenance: None,
     });
 
-    // Topology.
     losses.push(LossNote {
         code: LossCode::TopologyNotTransferred,
         category: LossCategory::Topology,
@@ -1324,7 +1257,6 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
         provenance: None,
     });
 
-    // Features, history, materials.
     losses.push(LossNote {
         code: LossCode::FeatureHistoryRetained,
         category: LossCategory::Attribute,

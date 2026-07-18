@@ -1,24 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-#
-# Per-module migration manifest for the platform-owned parsers in
-# `cadmpeg-ir` (doc section 8.6 / 10 Phase 2). One `[[module]]` entry per
-# module that reads untrusted bytes. `status` is `migrated` or `legacy`;
-# `window_egress` lists the audited `View::window()` sites the module is
-# allowed to keep, cross-referenced by the section 8.8 ratchet. `charges`
-# names the budget dimensions the module drives; `cost_model` states the
-# charge shape (never a flat unit per iteration). `ledger_level` is the
-# section 6.1 record-accounting level (0 for space-neutral primitives).
 
-# ---------------------------------------------------------------------------
-# Checked primitive readers. These are the legacy free-function readers that
-# every binary codec still uses in parallel with `View`. Each read is a pure
-# `Option` probe over a caller-owned slice: `bytes.get(offset..offset+count)`
-# bounds-checks before any dereference, all offset/length arithmetic is
-# `checked_*`, and the few allocating readers (`f64s_at`, `take_f64s`,
-# `utf16le_at`) size their `Vec` from a slice that already passed the bounds
-# check, so allocation is proportional to validated input, never to an
-# untrusted count. No disallowed accumulation method is reachable, so each
-# carries module-level `#[deny(clippy::disallowed_methods)]`.
 [[module]]
 path = "crates/cadmpeg-ir/src/read.rs"
 status = "migrated"
@@ -29,12 +10,6 @@ cost_model = "no budget charge; every read is a bounds-checked slice get, alloca
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Codec-entry adapters integrated while the legacy parsers still accept
-# `Read + Seek` or raw byte slices. Each adapter receives a platform `View`,
-# then exposes its finite window exactly once per inspect/decode entry point.
-# These boundaries remain legacy until the underlying parsers consume `View`
-# directly; the per-crate window-egress ratchet freezes every site.
 [[module]]
 path = "crates/cadmpeg-codec-freecad/src/lib.rs"
 status = "legacy"
@@ -88,10 +63,6 @@ cost_model = "no budget charge; fixed-width big-endian reads over bounds-checked
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Retained source records. Pure data model plus deterministic serde; no
-# hostile-byte read path of its own, so it graduates with the deny lint and
-# no `req_*`/`BoundedCount` obligations.
 [[module]]
 path = "crates/cadmpeg-ir/src/unknown.rs"
 status = "migrated"
@@ -102,12 +73,6 @@ cost_model = "no budget charge; a location/digest/links record with optional ret
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Source-native namespaces. Converts codec-owned typed records to and from
-# the stored JSON arenas; input is validated document JSON, not raw untrusted
-# framing. Accumulation flows through an iterator `collect` over a caller-owned
-# slice, so allocation is proportional to the trusted record count. Carries the
-# deny lint. Sort keeps canonical identity order.
 [[module]]
 path = "crates/cadmpeg-ir/src/native/mod.rs"
 status = "migrated"
@@ -118,15 +83,6 @@ cost_model = "no budget charge; per-record JSON object conversion over an in-mem
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Legacy zlib prefix helper. `inflate_zlib_prefix` runs `read_to_end` on a
-# `ZlibDecoder` with no output ceiling: a class-A decompression sink whose
-# output is proportional to attacker-controlled compression ratio, not input
-# size. The migrated, budget-charged decompression path is
-# `DecodeContext::begin_derived_space` / `ExpandWriter::write` in
-# `decode/context.rs`, which charges `decompressed_bytes`. This raw helper is
-# a drain target for its remaining callers (sldprt, nx parasolid) and stays
-# `legacy` until they route through the derived-space writer.
 [[module]]
 path = "crates/cadmpeg-ir/src/compression.rs"
 status = "legacy"
@@ -137,16 +93,6 @@ cost_model = "unbudgeted: raw read_to_end, output unbounded by input size; migra
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Legacy cursor. The pre-`View` reader with the section 8.5 reference ratchet
-# still open. `read_counted` sizes its `Vec` with `Vec::with_capacity(count)`,
-# but `count` first passes `counted`/`bounded_len`, which reject any count
-# whose elements could not fit in the unread bytes, so allocation is bounded by
-# input size rather than by the declared count. It stays `legacy` because it is
-# the pre-`View` reader API and has not adopted the migrated
-# `#[deny(clippy::disallowed_methods)]`; it is superseded by `View`
-# (`decode/view.rs`) and its `BoundedCount`/`read_counted` API, and graduates
-# once its references reach zero.
 [[module]]
 path = "crates/cadmpeg-ir/src/cursor.rs"
 status = "legacy"

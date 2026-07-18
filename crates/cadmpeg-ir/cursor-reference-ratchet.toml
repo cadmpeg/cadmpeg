@@ -1,27 +1,19 @@
 # SPDX-License-Identifier: Apache-2.0
 #
-# Frozen per-crate ceiling for domain `cursor::` references (doc section 8.5).
-# `cadmpeg_ir::cursor::Cursor` is the pre-migration reader that `View` replaces;
-# it is not `#[deprecated]` in Phase 0 because `-D warnings` would turn every
-# reference red at once. Instead CI tracks each crate's domain-`cursor::`
-# reference count as a frozen, monotonically decreasing ratchet, mirroring the
-# `window()` egress ratchet. The `#[deprecated]` attribute lands per crate once
-# its count reaches zero.
+# Per-crate ceiling for domain `cursor::` references.
 #
 # The `tests/cursor_reference_ratchet.rs` test counts the qualified module path
 # `cursor::` (as in `cadmpeg_ir::cursor::Cursor` or `crate::cursor::bounded_len`)
 # in each crate's `src` and `fuzz_targets` trees and enforces the ceiling by
-# **exact equality**. The qualified path deliberately excludes `std::io::Cursor`
-# test drivers and prose mentions, which are not the domain reader and once
-# forced this ceiling upward commit after commit. Migrating a reader means
+# **exact equality**. The qualified path excludes `std::io::Cursor` test drivers
+# and prose mentions. Removing a reader means
 # lowering the number here in the same commit; reintroducing one raises the count
 # and fails; leaving a ceiling above the real count also fails, so the toml
 # cannot carry stale slack that hides a later regression. Every crate directory
 # under `crates/` must appear below: the test fails any crate with no ceiling,
 # so new crates cannot escape by omission. Detection is textual on the qualified
 # path, so a bare `Cursor` after a domain import would slip; no crate does this
-# today, and that residual gap is held by review discipline rather than by this
-# test.
+# today.
 [crates]
 cadmpeg = 0
 # `crate::cursor::bounded_len` in `decode/view.rs`; the `Cursor` type definition
@@ -33,9 +25,7 @@ cadmpeg-codec-catia = 0
 cadmpeg-codec-creo = 0
 cadmpeg-codec-freecad = 3
 cadmpeg-codec-iges = 0
-# `cadmpeg_ir::cursor::Cursor::with_bounds` in `container.rs` — the one domain
-# reader still to migrate; the noise-counting form buried this behind 72
-# `std::io::Cursor` test-driver references.
+# `cadmpeg_ir::cursor::Cursor::with_bounds` in `container.rs`.
 cadmpeg-codec-nx = 1
 cadmpeg-codec-rhino = 0
 cadmpeg-step = 0

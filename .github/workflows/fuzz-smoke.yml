@@ -14,7 +14,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   # Per-target wall time for a smoke/nightly run. Short enough for a PR gate,
-  # long enough to reach committed decode paths from the seed corpus.
+  # long enough to reach format-gated decode paths from the seed corpus.
   FUZZ_TIME: "60"
 
 jobs:

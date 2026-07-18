@@ -145,9 +145,8 @@ impl DecodeResult {
 
 /// Errors a codec can raise.
 ///
-/// Marked `#[non_exhaustive]`: the failure taxonomy grows as the decode
-/// platform lands, and external exhaustive matches must carry a wildcard arm.
-/// Same-crate matches keep exhaustiveness checking.
+/// Marked `#[non_exhaustive]`: external exhaustive matches must carry a
+/// wildcard arm. Same-crate matches keep exhaustiveness checking.
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
 pub enum CodecError {
@@ -294,11 +293,6 @@ pub trait CodecEntry: Codec + sealed::Sealed {
     /// Acquires the root buffer under the policy's input limit, records the
     /// container-only request, runs [`Codec::decode_impl`], and finalizes the
     /// context so a fused decode cannot return `Ok`.
-    ///
-    /// The root buffer is read once into the arena and handed to `decode_impl`
-    /// as the session root [`View`]: Phase 1 container migration removed the
-    /// transitional `std::io` double buffer, so no codec re-reads the input on
-    /// the decode path.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,

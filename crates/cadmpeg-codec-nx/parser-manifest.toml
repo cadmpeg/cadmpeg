@@ -1,42 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-#
-# Per-module migration manifest for `cadmpeg-codec-nx` (doc section 8.6 / 10
-# Phase 2). One `[[module]]` entry per decoder module. `status` is `migrated`
-# or `legacy`; a `legacy` module records why it is not yet migrated. Order
-# follows the Phase 2 rule: count-framed loops first, then irregular marker
-# probes and graph traversals, with the container/orchestration modules last.
-#
-# `input_spaces` names the runtime address spaces (doc section 4.1) a module
-# reads. The NX geometry, topology, NURBS, deltas, intersection, and object-model
-# scanners all read the inflated Parasolid stream (`parasolid_stream`), a
-# decompression `Transform` space registered by
-# `DecodeContext::begin_expand`/`ExpandWriter::finalize` in `parasolid.rs`; every
-# byte they read was already charged as `decompressed_bytes` at expand time and
-# the whole stream length is finite, so their allocations are bounded by the
-# already-charged inflated length. `charges` names the budget dimensions the
-# module drives directly. The geometry/topology/NURBS/deltas/intersection/
-# object-model leaf scanners thread no context, so they charge nothing and stay
-# `legacy` with reasons: their allocations rest on structural bounds
-# (already-charged inflated length plus codec-local caps), not on a budget
-# charge, until the `decode.rs` bridge threads a `DecodeContext` in Phase 3D.
-# `cost_model` states the allocation/scan bound (never a
-# flat unit per iteration). `window_egress` lists the audited `View::window()`
-# sites the module keeps, cross-referenced by the section 8.8 ratchet (crate
-# ceiling 3: one in `decode.rs`, two in `parasolid.rs`). `ledger_level` is 0
-# across the crate: NX is L0 (no byte ledger) per doc section 6.1.
 
-# ---------------------------------------------------------------------------
-# Count-framed loops. Legacy until the leaf scanners thread a context (Phase 3D).
-
-# Object-model section framing. `indexed_sections` reads an entity-index array
-# and object-id table whose element count is physically floored:
-# `index_start = table - (count + 1) * 4` must be non-negative, so
-# `count <= bytes.len() / 4`. The two count-framed reservations moved off
-# `Vec::with_capacity(count +/- 1)` to `Vec::new`/`push` (lint-invisible per
-# section 8), and the `2..=100_000` window stays as an extra codec-local cap.
-# Every field read is a bounds-checked `u32_at`/slice get with checked
-# arithmetic. Numeric-expression text is parsed from already-bounded record
-# slices. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/om.rs"
 status = "legacy"
@@ -48,9 +11,6 @@ cost_model = "allocation bounded by input: index count physically floored to byt
 window_egress = []
 ledger_level = 0
 
-# OM serialization vocabulary (Phase 4E generated source of truth): the anchor
-# literals and unit-token table `om.rs` matches and dispatches against, plus the
-# doc/fuzz-dictionary generators. No hostile read.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/om_tokens.rs"
 status = "migrated"
@@ -61,16 +21,6 @@ cost_model = "no budget charge; static anchor-literal and unit-token table and i
 window_egress = []
 ledger_level = 0
 
-# NURBS curve and surface families. Control-point vectors moved off
-# `Vec::with_capacity(poles)` to `Vec::new`/`push`; `poles` is proven equal to
-# `payload.values.len() / stride` before the loop, so the vector is bounded by
-# the already-materialized payload length. Knot expansion (`expand_knots`) is the
-# module's one zero-floor site: multiplicities are attacker-controlled `u16`
-# values with no physical input floor, so the `repeat_n`-style expansion is
-# capped by the codec-local `MAX_KNOT_ENTRIES` (2^20) and accumulated through a
-# running-checked `push` loop (doc section 4.4 defense in depth). Descriptor,
-# payload, and array reads are bounds-checked big-endian gets with `checked_mul`/
-# `checked_div` framing. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/nurbs.rs"
 status = "legacy"
@@ -82,11 +32,6 @@ cost_model = "control points bounded by the materialized payload length (poles *
 window_egress = []
 ledger_level = 0
 
-# Surface-intersection charts. Chart point counts frame the reconstruction; the
-# parameter accumulator moved off `Vec::with_capacity(points.len())` to
-# `Vec::new`/`push` over the already-materialized `points` vector. Chart point
-# extraction and term scanning are bounds-checked reads over the stream slice.
-# Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/intersection.rs"
 status = "legacy"
@@ -98,15 +43,7 @@ cost_model = "parameter vector bounded by the materialized chart-point count; ch
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Irregular marker probes and record scans.
 
-# Point and analytic geometry scanners. Each `while p + 2 <= stream.len()`
-# marker walk advances by at least one byte per iteration over the finite
-# inflated stream, and every field is read through a bounds-checked big-endian
-# get before scale/finite/direction validation. Accumulators are `Vec::new`/
-# `push`, bounded by the number of matching records in the stream. No
-# `with_capacity`, no untrusted reservation. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/geometry.rs"
 status = "legacy"
@@ -118,10 +55,6 @@ cost_model = "bytes examined per marker scan: each of the three scanners is one 
 window_egress = []
 ledger_level = 0
 
-# Deltas-stream record walk. `walk`/`points` step a status-byte-framed cursor
-# `while offset + 4 <= stream.len()`, advancing every iteration over the finite
-# stream; records accumulate through `Vec::new`/`push`. Every field read is
-# bounds-checked. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/deltas.rs"
 status = "legacy"
@@ -133,18 +66,7 @@ cost_model = "bytes examined per status-byte walk: one linear pass over the delt
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Graph traversals.
 
-# Fixed-record topology graph and extractors. `Graph::parse` indexes records by
-# type and XMT identifier in a single linear pass; the extractors
-# (composite/intersection/blend/offset/surface/trimmed) resolve references
-# through the index without recursion, so no `DepthGuard` is required. XMT
-# reference sequences moved off `Vec::with_capacity(count)` to `Vec::new`/`push`;
-# each iteration consumes at least two stream bytes and `read_xmt` returns `None`
-# at end of record, bounding the vector by `bytes.len() / 2` independent of the
-# requested `count`. All record reads are bounds-checked. Carries the module deny
-# lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/topology.rs"
 status = "legacy"
@@ -156,12 +78,6 @@ cost_model = "nodes plus edges: Graph::parse is one linear index pass; reference
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Retained typed records. Pure data model plus serde for the native NX
-# object-model namespace; no hostile-byte read path of its own — records are
-# constructed from `om`-framed, already-bounded slices. Graduates with the deny
-# lint and no `req_*`/`BoundedCount` obligations. Reached through the object-model
-# framing target.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/native.rs"
 status = "migrated"
@@ -172,18 +88,7 @@ cost_model = "no framing decisions; typed records built from om-bounded slices, 
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Decompression and space registration.
 
-# Parasolid stream extraction. Already Phase-1 migrated: the canonical part
-# payload registers as a `SpaceOrigin::Slice` alias of the root, the header scan
-# charges its bytes as `work`, and every embedded zlib member inflates through
-# `DecodeContext::begin_expand`/`ExpandWriter::write` so decompression is charged
-# as `decompressed_bytes` and bounded by the per-expand and cumulative ceilings,
-# registering a `Transform` space only on finalize. `MIN_INFLATED` (64) is a
-# historical coincidence-rejection guess, not a resource bound. Two audited
-# `window()` egress sites remain (below): the decompressor input and the header
-# scan. Carries the module deny lint.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/parasolid.rs"
 status = "migrated"
@@ -197,17 +102,7 @@ window_egress = [
 ]
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# Legacy modules (written reasons per doc section 10 Phase 2).
 
-# Container directory walk. Still reads through the pre-`View`
-# `cadmpeg_ir::cursor::Cursor` under the section 8.5 reference ratchet, so it has
-# not adopted the module deny lint or the `View`/`req_*` API. Its one count-framed
-# collection uses the cursor's `read_counted`, whose `Vec::with_capacity` is sized
-# from a count first bounded by `counted`/`bounded_len` (elements must fit the
-# unread bytes), so allocation is input-bounded today; the `misses < 64` probe
-# idiom bounds the marker scan. Legacy until the directory walk is ported to
-# `View`.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/container.rs"
 status = "legacy"
@@ -218,13 +113,6 @@ cost_model = "legacy Cursor reader; read_counted allocates via a count first bou
 window_egress = []
 ledger_level = 0
 
-# Decode orchestration and record commit boundary. Consumes the session root
-# `View` (Phase 1) but still bridges the leaf scanners over a raw `root.window()`
-# image (one audited egress site) and holds the record commit boundary where
-# section 3.3 ticket issuance and the `req_*` mirror will land in Phase 3D. It
-# also keeps one trusted-length `Vec::with_capacity(parameters.len() + 2)` knot
-# assembly. Legacy until the commit boundary issues tickets and the leaf
-# scanners take a threaded context instead of a byte image.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/decode.rs"
 status = "legacy"
@@ -236,16 +124,6 @@ cost_model = "legacy orchestrator; scan charges the root scan as work and the re
 window_egress = ["scan: root image handed to the legacy leaf scanners"]
 ledger_level = 0
 
-# Codec entry and container summary. Not a byte parser: implements the `Codec`
-# trait and builds `ContainerSummary` from an already-decoded `Scan`. Reads no
-# untrusted framing directly; delegates to `decode`/`parasolid`. Listed for
-# completeness. Carries no disallowed accumulation method. Unlike the per-file
-# leaf modules it does NOT carry `#![deny(clippy::disallowed_methods)]`: the
-# attribute at the crate root is crate-wide and would break the still-`legacy`
-# `container.rs`/`decode.rs` (and the count-framed leaf scanners) that
-# legitimately call the ratcheted methods, so lib.rs's freedom from disallowed
-# accumulation is held by review discipline, not by the lint, until the crate
-# can deny the method list workspace-wide.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/lib.rs"
 status = "migrated"
@@ -256,13 +134,6 @@ cost_model = "no budget charge; summary built from trusted decoded scan results,
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# L1 container accounting (doc section 10 Phase 3C). Not a byte parser: builds
-# the coarse source-fidelity ledger from the decoded `Scan` and inflated
-# streams, tiling the source space and deriving one `Decompress` space per
-# inflated member. No hostile read, no `.window()` egress, and no budget charge
-# of its own; the container scan already charged the bytes. Emits the
-# serialized L1 ledger.
 [[module]]
 path = "crates/cadmpeg-codec-nx/src/accounting.rs"
 status = "migrated"

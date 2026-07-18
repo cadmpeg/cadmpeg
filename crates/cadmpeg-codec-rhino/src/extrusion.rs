@@ -499,9 +499,6 @@ fn mitered_local(
     Ok(rodrigues(scaled, axis, normal.z.acos()))
 }
 
-// Threads the platform expander through the extrusion mesh-cache walk in
-// addition to the backing bytes, reader, archive, writer version, scale, budget,
-// and warning sink it already carried (§10 Phase 1B).
 #[allow(clippy::too_many_arguments)]
 fn read_mesh_cache(
     expand: crate::mesh::MeshExpand<'_>,
@@ -768,9 +765,6 @@ pub(crate) mod tests {
     use cadmpeg_ir::geometry::{CurveGeometry, NurbsCurve};
     use cadmpeg_ir::math::{Point3, Vector3};
 
-    /// Test wrapper that supplies a [`MeshExpand`](crate::mesh::MeshExpand) over
-    /// `data`, so extrusion tests keep calling `decode` with the fixture bytes
-    /// while the mesh cache inflates through the platform expander.
     fn decode(
         data: &[u8],
         range: std::ops::Range<usize>,

@@ -65,12 +65,6 @@
 //! [`CodecError::NotImplemented`]: cadmpeg_ir::CodecError::NotImplemented
 //! [`DecodeOptions::container_only`]: cadmpeg_ir::DecodeOptions::container_only
 
-// Ungraduated crate: legacy leaf modules still call `Vec::with_capacity` /
-// `iter::repeat_n` from untrusted counts (doc section 8.2). The crate root
-// allows `disallowed_methods` while each migrated parser module opts back into
-// `#![deny(clippy::disallowed_methods)]`, so the ratchet holds module by module
-// and a half-migrated crate cannot backslide. Inert until the workspace-root
-// `clippy.toml` method list lands (see `parser-manifest.toml` shared requests).
 #![allow(clippy::disallowed_methods)]
 
 mod annotations;
@@ -121,12 +115,6 @@ impl SldprtCodec {
     /// surfaces as [`CodecError::Malformed`]. Serialize the result through
     /// [`SourceFidelity::to_canonical_json`] for the stable-id sidecar.
     pub fn source_fidelity(&self, reader: &mut dyn ReadSeek) -> Result<SourceFidelity, CodecError> {
-        // Enter the shared session wrapper: `read_root` bounds the root read
-        // against the platform `max_input_bytes` policy and hands the input to
-        // `scan_view`, so the container scan — including per-block DEFLATE
-        // inflation — runs under the session `DecodeContext` with its budgets,
-        // fuse, and mode, exactly like `inspect`. No codec-side `read_to_end`
-        // and no context-free scan of hostile input.
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;

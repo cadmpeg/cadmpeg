@@ -122,8 +122,7 @@ impl ArenaLengths {
     }
 }
 
-// Limit classification (§10 Phase 1): algorithm limits. Instance expansion
-// re-enters `decode_geometry` per member, which reaches the mesh decoder's
+// Instance expansion re-enters `decode_geometry` per member, which reaches the mesh decoder's
 // `begin_expand` path; these caps bound reference, member, and entity
 // amplification from a hostile definition graph independently of the platform
 // budget, and are kept as defense in depth.
@@ -178,10 +177,6 @@ impl ExpansionBudget {
 #[derive(Clone)]
 pub(crate) struct DecodeContext<'a> {
     scan: &'a Scan<'a>,
-    /// Platform context and root view routed to the mesh decoder so every
-    /// compressed mesh buffer inflates through `begin_expand` (§10 Phase 1B).
-    /// Threaded here once so the geometry, instance-expansion, extrusion, and
-    /// history-projection paths all reach the same charging context.
     expand: crate::mesh::MeshExpand<'a>,
     ir: CadIr,
     annotations: cadmpeg_ir::Annotations,
@@ -193,7 +188,7 @@ pub(crate) struct DecodeContext<'a> {
     mesh_budget: crate::mesh::MeshBudget,
     geometry_transferred: bool,
     phase_warnings: Vec<String>,
-    /// Typed loss notes raised when a Phase-4B boundary resolves through a
+    /// Typed loss notes raised when a semantic boundary resolves through a
     /// [`Transfer`]. Distinct from `phase_warnings`, which aggregate into
     /// untyped `DecodeDiagnostic` notes; these carry the boundary's own loss
     /// code and drain into the report's `losses` at finalization.
@@ -411,13 +406,6 @@ impl<'a> DecodeContext<'a> {
         &mut self.ir
     }
 
-    /// Returns the module's single Phase-4B construction path: a [`Builder`]
-    /// over the typed loss channel (§10 Phase 4B). Every boundary this module
-    /// crosses — a resolver's fallback carrier, an unsupported-family omission —
-    /// resolves its [`Transfer`] through this one `Builder`, so the substituted
-    /// or omitted value cannot be reached without draining its loss note into
-    /// `typed_losses`. Naming the sink here keeps the barrier the mechanism the
-    /// boundaries share rather than a per-site `resolve` call.
     fn builder(&mut self) -> Builder<'_, Vec<LossNote>> {
         Builder::new(&mut self.typed_losses)
     }
@@ -1412,7 +1400,7 @@ impl<'a> DecodeContext<'a> {
         let parent = Transform::identity();
         let outcome = candidate.expand_reference_inner(source_order, parent, &mut path, &mut stack);
         // Every member the candidate decoded inflated its mesh buffers into the
-        // shared session arena, which cannot reclaim them (§10 Phase 1B). Adopt the
+        // shared session arena, which cannot reclaim them. Adopt the
         // candidate's retained-byte count before any discard below, so a rejected
         // expansion still charges the parent for the bytes it left in the arena. A
         // refund here — dropping the charge with the candidate while the arena keeps
@@ -1454,9 +1442,8 @@ impl<'a> DecodeContext<'a> {
         path: &mut Vec<String>,
         stack: &mut Vec<crate::wire::Uuid>,
     ) -> Result<Vec<String>, String> {
-        // Limit classification (§10 Phase 1): algorithm limit. Bounds instance
-        // recursion depth on the geometry-expansion path that reaches the mesh
-        // decoder; kept as defense in depth alongside the platform depth gauge.
+        // Bounds instance recursion depth on the geometry-expansion path that
+        // reaches the mesh decoder, independently of the platform depth gauge.
         const MAX_INSTANCE_DEPTH: usize = 64;
         self.expansion_budget.reference()?;
         if stack.len() >= MAX_INSTANCE_DEPTH {
@@ -1893,13 +1880,6 @@ impl<'a> DecodeContext<'a> {
                 });
             }
         }
-        // Unsupported-concept-to-omission boundary (§10 Phase 4B): each retained
-        // object family has no typed geometry in the IR. The omission drains
-        // through the module's shared `builder()` sink — the same construction
-        // path the brep topology fallback uses — so the note lands in
-        // `typed_losses` and cannot be taken without recording. The value the
-        // `Transfer` would have carried (typed geometry) does not exist, so
-        // resolution yields `None` and only the note survives.
         for note in omissions {
             let omitted: Option<()> = self.builder().take(Transfer::omitted(note));
             debug_assert!(omitted.is_none());
@@ -1992,9 +1972,7 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
-    /// Issues and resolves a platform record ticket for every scanned object
-    /// record (§6.2), instrumenting the commit boundary the codec already
-    /// crosses in [`retain_object_records`](Self::retain_object_records).
+    /// Issues and resolves a platform record ticket for every scanned object.
     ///
     /// A record whose geometry decoded resolves [`Typed`](RecordDisposition::Typed)
     /// naming the IR entities it produced (filtered to entities that survived
@@ -2735,16 +2713,6 @@ impl<'a> DecodeContext<'a> {
                 if validation.is_ok() {
                     for warning in warnings {
                         if let Some(cause) = warning.strip_prefix("Brep topology fallback: ") {
-                            // Resolver-to-fallback carrier/axis boundary (§10
-                            // Phase 4B): the brep's topology could not be
-                            // represented, so the resolver substituted the
-                            // decoded free carriers for it. The substitution is
-                            // a `Transfer::fallback` resolved into the typed
-                            // loss channel, so the retained carriers cannot be
-                            // committed without recording, with the boundary's
-                            // own `TopologyNotTransferred` code, why topology
-                            // was not transferred — where the untyped warning
-                            // path recorded only an opaque `DecodeDiagnostic`.
                             let carriers: Option<()> = self.builder().take(Transfer::fallback(
                                 (),
                                 LossNote {
@@ -4715,9 +4683,6 @@ pub(crate) fn decode(scan: &Scan<'_>, expand: crate::mesh::MeshExpand<'_>) -> De
     context.commit()
 }
 
-/// Builds a [`MeshExpand`](crate::mesh::MeshExpand) whose root spans `data` and
-/// runs `f`. The arena and platform context live for the callback only; the
-/// value `f` returns is owned and outlives them.
 #[cfg(test)]
 pub(crate) fn with_expand_bytes<R>(
     data: &[u8],
@@ -4730,9 +4695,6 @@ pub(crate) fn with_expand_bytes<R>(
     f(crate::mesh::MeshExpand::new(&ctx, root))
 }
 
-/// Runs `f` with a [`MeshExpand`](crate::mesh::MeshExpand) spanning `scan.data`,
-/// mirroring the production invariant that the geometry decoder's backing slice
-/// is the session root view.
 #[cfg(test)]
 pub(crate) fn with_expand<R>(
     scan: &Scan<'_>,
@@ -4741,8 +4703,6 @@ pub(crate) fn with_expand<R>(
     with_expand_bytes(scan.data, f)
 }
 
-/// Decodes a scan under a fresh platform expansion context. Test-only mirror of
-/// [`decode`] for call sites that only need the owned [`DecodeResult`].
 #[cfg(test)]
 pub(crate) fn decode_for_test(scan: &Scan<'_>) -> DecodeResult {
     with_expand(scan, |expand| decode(scan, expand))

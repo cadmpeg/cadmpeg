@@ -23,16 +23,12 @@ use crate::wire::Uuid;
 
 /// Maximum input accepted by the Rhino container scanner.
 ///
-/// Limit classification (§10 Phase 1): deployment ceiling. The platform's
-/// `max_input_bytes` policy limit is enforced first by `read_root`; this
-/// tighter codec-local cap bounds the addressable offset space the chunk walker
-/// indexes and is retained as dual enforcement behind the policy limit until
-/// per-profile evidence justifies migrating it wholesale.
+/// This codec-local cap bounds the addressable offset space indexed by the
+/// chunk walker independently of the platform input limit.
 pub(crate) const INPUT_CAP: u64 = 256 * 1024 * 1024;
 /// Maximum direct table records retained or described in one document.
 ///
-/// Limit classification (§10 Phase 1): algorithm limit. Bounds record-descriptor
-/// amplification from an attacker-controlled table body independently of the
+/// Bounds record-descriptor amplification from an attacker-controlled table body independently of the
 /// global `alloc_bytes` budget; kept as defense in depth.
 pub(crate) const TABLE_RECORD_CAP: usize = 1 << 20;
 
@@ -130,9 +126,7 @@ pub(crate) struct Table {
 
 /// The result of scanning a complete supported container.
 ///
-/// `data` borrows the session root view's window rather than copying it: the
-/// bytes already live in the decode arena, so scanning consumes the root view
-/// directly with no second buffer (§4.0, §10 Phase 1A).
+/// `data` borrows the root bytes from the decode arena without copying them.
 #[derive(Debug, Clone)]
 pub(crate) struct Scan<'a> {
     /// Complete input bytes, borrowed from the session root view.
@@ -166,10 +160,8 @@ impl Scan<'_> {
 /// Borrow the session root bytes, enforcing the codec-local input ceiling and
 /// charging the file-wide container scan as work.
 ///
-/// `read_root` already enforced the platform `max_input_bytes` policy limit;
-/// the tighter [`INPUT_CAP`] stays as dual enforcement (§10 Phase 1). The chunk
-/// walk both `inspect` and `decode` run is linear in the input, so its bytes are
-/// charged as work here, once, before scanning begins.
+/// The chunk walk is linear in the input, so its bytes are charged as work once
+/// before scanning begins.
 fn acquire<'a>(ctx: &DecodeContext<'_>, root: View<'a>) -> Result<&'a [u8], CodecError> {
     let data = root.window();
     if data.len() as u64 > INPUT_CAP {
@@ -721,9 +713,6 @@ pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
-///
-/// Consumes the session root view directly (§10 Phase 1A); `acquire` charges the
-/// scan as work and enforces the codec input ceiling.
 pub(crate) fn inspect(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -744,10 +733,7 @@ pub(crate) fn inspect(
     Ok(summarize(&scan(data)?))
 }
 
-/// Decode a Rhino stream according to the currently supported container depth.
-///
-/// Consumes the session root view directly (§10 Phase 1A); `inspect` and
-/// `decode` share the same `acquire`/`scan` container policy.
+/// Decode a Rhino stream according to the supported container depth.
 pub(crate) fn decode(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -775,8 +761,6 @@ pub(crate) fn decode(
     {
         return Ok(container_only_result(&scan));
     }
-    // The mesh decoder inflates compressed buffers through `ctx.begin_expand`
-    // against the same root address space the scan borrows (§10 Phase 1B).
     Ok(crate::decode::decode(
         &scan,
         crate::mesh::MeshExpand::new(ctx, root),

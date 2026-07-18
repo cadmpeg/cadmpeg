@@ -25,7 +25,7 @@ use crate::wire::Uuid;
 /// Platform decode context and root view threaded to the mesh decoder.
 ///
 /// Every compressed mesh buffer inflates through
-/// [`DecodeContext::begin_expand`] (§4.5, §10 Phase 1B): decompressed output is
+/// [`DecodeContext::begin_expand`]: decompressed output is
 /// charged to `decompressed_bytes` incrementally, bounded by the per-expand,
 /// cumulative, and per-entry decompression ceilings, and registered as a
 /// [`cadmpeg_ir::decode::SpaceOrigin::Transform`] address space only on
@@ -43,28 +43,18 @@ pub(crate) struct MeshExpand<'a> {
 }
 
 impl<'a> MeshExpand<'a> {
-    /// Bundles the platform decode context and session root view.
     pub(crate) fn new(ctx: &'a DecodeContext<'a>, root: View<'a>) -> Self {
         Self { ctx, root }
     }
 
-    /// Returns the session input bytes, identical to each mesh reader's backing
-    /// slice: the root view spans the entire input.
     pub(crate) fn data(self) -> &'a [u8] {
         self.root.window()
     }
 
-    /// Returns the threaded platform decode context. Leaf record decoders read
-    /// their count-framed bodies through this context so their allocation and
-    /// work charges accumulate against the caller's document-level budget
-    /// rather than a throwaway per-record context.
     pub(crate) fn ctx(self) -> &'a DecodeContext<'a> {
         self.ctx
     }
 
-    /// Returns the session root view spanning the whole input. Leaf decoders
-    /// derive their record window with `root.child(start, end)` using the same
-    /// absolute offsets they pass to the legacy chunk framing.
     pub(crate) fn root(self) -> View<'a> {
         self.root
     }
@@ -72,7 +62,7 @@ impl<'a> MeshExpand<'a> {
 
 /// Maps a platform charge refusal onto the mesh decoder's local error type.
 ///
-/// A refusal fuses the platform context (§4.7), so `ctx.finish` returns the
+/// A refusal fuses the platform context, so `ctx.finish` returns the
 /// original `ResourceLimit` verbatim even though this `Malformed` value is
 /// swallowed by the mesh decoder's per-object recovery. Mapping to `Malformed`
 /// here keeps that recovery well-typed without masking the resource outcome.
@@ -92,23 +82,16 @@ pub(crate) const CHANNEL_COLOR: u32 = 0x5248_0002;
 pub(crate) const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 /// Codec-owned curvature channel kind.
 pub(crate) const CHANNEL_CURVATURE: u32 = 0x5248_0004;
-/// Limit classification (§10 Phase 1): algorithm limit. Bounds vertex-count
-/// amplification from an attacker-controlled mesh header independently of the
+/// Bounds vertex-count amplification from an attacker-controlled mesh header independently of the
 /// platform allocation budget; kept as defense in depth.
 const MAX_MESH_VERTICES: usize = 1 << 24;
-/// Limit classification (§10 Phase 1): algorithm limit. Bounds face-count
-/// amplification independently of the platform allocation budget; kept as
+/// Bounds face-count amplification independently of the platform allocation budget; kept as
 /// defense in depth.
 const MAX_MESH_FACES: usize = 1 << 24;
-/// Limit classification (§10 Phase 1): deployment ceiling. Bounds one
-/// decompressed mesh buffer. The platform per-expand decompression envelope now
-/// bounds the same expansion first; this codec-local cap stays as dual
-/// enforcement until per-profile evidence justifies retiring it.
+/// Bounds one decompressed mesh buffer independently of the platform envelope.
 const MAX_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
-/// Limit classification (§10 Phase 1): deployment ceiling. Bounds the retained
-/// decompressed mesh bytes across one document. The platform cumulative
-/// decompression ceiling now bounds the same output first; this codec-local
-/// document budget stays as dual enforcement.
+/// Bounds retained decompressed mesh bytes across one document independently
+/// of the platform cumulative decompression ceiling.
 const MAX_DOCUMENT_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 
 /// Document-wide budget for retained decompressed mesh buffers.
@@ -216,7 +199,7 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
 /// Every decompressed buffer this reads is retained in the append-only session
 /// arena the instant it inflates, so `document_budget` records each buffer at
 /// retention and is never refunded when a channel is dropped or the whole mesh
-/// later fails (§10 Phase 1B). A refund would let the retained-byte total
+/// later fails. A refund would let the retained-byte total
 /// understate memory the arena cannot reclaim, so this decoder holds no budget
 /// checkpoint and neither do its callers.
 pub(crate) fn decode(
@@ -488,12 +471,9 @@ fn read_faces(
         .checked_add(quad_count)
         .filter(|count| *count <= MAX_MESH_FACES)
         .ok_or_else(|| error(reader.position(), "mesh triangle output budget exceeded"))?;
-    // Zero-floor production: the triangle count is derived from the decoded
-    // face stream (`faces` plus the quad split), not present as an input floor,
-    // so it reserves through `alloc_unfloored` behind the codec-local
-    // `MAX_MESH_FACES` cap enforced above. The reservation charges `AllocBytes`
-    // against the caller's document budget instead of an uncharged
-    // `Vec::with_capacity`.
+    // The triangle count is derived from the face stream, not bounded by a
+    // contiguous input field, so the `MAX_MESH_FACES` cap is its allocation
+    // floor.
     let mut result = expand
         .ctx()
         .alloc_unfloored::<[u32; 3]>(triangle_count)
@@ -656,10 +636,6 @@ fn read_counted_raw(
     Ok(Some(data))
 }
 
-// The mesh-buffer reader threads the platform expander alongside its reader,
-// declared/expected sizes, warning sink, and the per-mesh plus per-document
-// decompression budgets it dual-enforces (§10 Phase 1B); all are load-bearing.
-//
 // A compressed buffer returns as `Cow::Borrowed` over the arena bytes
 // `finalize` already retained, so a parse-only channel (vertices, normals)
 // reads them in place instead of copying them out again; a channel that lives
@@ -733,7 +709,7 @@ fn read_buffer<'a>(
             // The compressed body is a window into the session input; take the
             // decompression source from the root address space (not a detached
             // buffer) so `begin_expand` records a `Transform` origin whose input
-            // span is a real, registered parent extent (§4.5, §6.1).
+            // span is a real, registered parent extent.
             let source = expand
                 .root
                 .child(chunk.body.start, chunk.body.end)
@@ -860,9 +836,8 @@ fn inflate<'a>(
             .checked_add(consumed)
             .ok_or_else(|| error(base, "zlib input overflow"))?;
         let produced = (decoder.total_out() - before_out) as usize;
-        // The writer charges before it retains and rejects any output past the
-        // `Exact` size, so the codec's own "exceeds declared size" guard is now
-        // the platform contract; a refusal fuses the context.
+        // The writer charges before retaining and rejects output past the
+        // declared size; a refusal fuses the context.
         writer
             .write(&buffer[..produced])
             .map_err(|refusal| expansion_refused(base, &refusal))?;
@@ -1154,11 +1129,8 @@ fn uuid(reader: &mut BoundedReader<'_>) -> Result<Uuid, FramingError> {
 /// data that may arrive zlib-compressed downstream (so `count * element_size`
 /// legitimately exceeds `reader.remaining()`), and `face_count` is floored at
 /// consumption by `reader.take(bytes)` in `read_faces`. Every count-driven
-/// reservation in this module therefore routes through the budget-charged
-/// `alloc_unfloored`/`read_buffer` path rather than an uncharged
-/// `Vec::with_capacity`; a new sub-chunk parser MUST preserve that invariant
-/// because the `cap` bound alone does not floor the allocation against input
-/// size.
+/// reservation therefore routes through `alloc_unfloored` or `read_buffer`; the
+/// `cap` alone does not floor an allocation against input size.
 fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.i32()?;
     if value < 0 || value as usize > cap {
@@ -1170,7 +1142,7 @@ fn count(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryEr
 /// Reads an unsigned mesh count bounded by `cap`, sharing the deliberately
 /// unfloored contract documented on [`count`]: the `cap` bound does not floor
 /// the value against remaining input, so callers must consume it through
-/// budget-charged allocators, never a raw `Vec::with_capacity`.
+/// a budget-charged allocator.
 fn checked_u32(reader: &mut BoundedReader<'_>, cap: usize) -> Result<usize, GeometryError> {
     let value = reader.u32()? as usize;
     if value > cap {
@@ -1189,10 +1161,6 @@ mod tests {
 
     use super::*;
 
-    /// Runs `f` with a [`MeshExpand`] whose root spans `data`, matching the
-    /// production invariant that the mesh reader's backing slice is the session
-    /// root view. The arena and platform context live for the callback only;
-    /// the decoded result the callback returns is owned and outlives them.
     fn with_expand<R>(data: &[u8], f: impl FnOnce(MeshExpand<'_>) -> R) -> R {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();
@@ -1677,8 +1645,6 @@ mod tests {
         assert!(reader.bool().is_err());
     }
 
-    // Gate item 11 (§10 Phase 1): nested and cumulative expansion tests.
-
     #[test]
     fn nested_compressed_buffer_inflates_from_a_child_window() {
         // A compressed mesh buffer wrapped inside an outer anonymous chunk, read
@@ -1751,10 +1717,6 @@ mod tests {
         });
     }
 
-    /// A well-formed face stream (a triangle plus a quad, `vertices < 256` so
-    /// the index width is one byte) yields the expected triangle fan through
-    /// the platform-charged accumulator. The quad splits into two triangles, so
-    /// three triangles fill the exactly reserved capacity.
     #[test]
     fn read_faces_charges_triangle_accumulator() {
         let mut raw = 1_i32.to_le_bytes().to_vec();
@@ -1767,9 +1729,6 @@ mod tests {
         });
     }
 
-    /// A face stream truncated at the record boundary — the width header
-    /// declares two single-byte-indexed faces but only one face's bytes are
-    /// present — fails inside `reader.take` before any triangle is reserved.
     #[test]
     fn read_faces_truncated_at_record_boundary() {
         let mut raw = 1_i32.to_le_bytes().to_vec();

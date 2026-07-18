@@ -73,7 +73,7 @@ impl fmt::Display for LossCategory {
 
 /// Whether strict mode must refuse a decode or export that produces a loss.
 ///
-/// The consequence is a property of the loss *code* (§10 Phase 4A), not of a
+/// The consequence is a property of the loss *code*, not of a
 /// per-instance [`Severity`]: it states what the stable vocabulary entry means
 /// for a caller who demanded a faithful result. A code whose loss removes
 /// mandatory source semantics that cannot be reconstructed is [`Reject`]; a
@@ -95,7 +95,7 @@ pub enum StrictConsequence {
     Tolerate,
 }
 
-/// Stable, machine-readable vocabulary of loss kinds (§6.2, §10 Phase 4A).
+/// Stable, machine-readable vocabulary of loss kinds.
 ///
 /// Every [`LossNote`] carries one code. Gates, tests, and diffs key on the
 /// code, never on the human-readable message, so a reworded message never
@@ -113,10 +113,10 @@ pub enum StrictConsequence {
 #[non_exhaustive]
 pub enum LossCode {
     /// A committed record's transfer disposition failed accounting validation
-    /// against the ledger, native unknowns, or the report's losses (§6.2).
+    /// against the ledger, native unknowns, or the report's losses.
     TransferAccounting,
     /// Opaque retention degraded from recoverable to accounted because the
-    /// retained-byte budget was exhausted in salvage mode (§11.10).
+    /// retained-byte budget was exhausted in salvage mode.
     RetentionDegraded,
     /// A committed record was never resolved and was auto-dropped in salvage
     /// mode; the source span is accounted but not typed.
@@ -255,7 +255,7 @@ impl LossCode {
     }
 
     /// Whether the lost source content survives in retained/preserved records
-    /// and is reconstructable from them (§6.2). True for passthrough retention
+    /// and is reconstructable from them. True for passthrough retention
     /// and native-record preservation; false for irreversible approximations,
     /// reductions, and export-time omissions.
     pub fn reversible(self) -> bool {
@@ -298,7 +298,7 @@ impl fmt::Display for LossCode {
 /// One attributable instance of incomplete or approximate transfer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LossNote {
-    /// Stable machine-readable loss kind (§10 Phase 4A). Gates and tests key on
+    /// Stable machine-readable loss kind. Gates and tests key on
     /// this, never on [`message`](LossNote::message).
     pub code: LossCode,
     /// Affected subsystem.
@@ -312,9 +312,9 @@ pub struct LossNote {
     pub provenance: Option<Provenance>,
 }
 
-/// Versioned calibration identifiers recorded on every decode (§5.2).
+/// Versioned resource-profile identifiers recorded on every decode.
 ///
-/// Profiles and the acceptance envelope carry frozen version tags so an input
+/// Profiles and the acceptance envelope carry version tags so an input
 /// that begins failing after a constants update keeps a durable explanation
 /// instead of a mystery. The decode session sets these authoritatively at
 /// [`DecodeContext::finish`](crate::decode::DecodeContext::finish); the
@@ -372,18 +372,17 @@ pub struct DecodeReport {
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
     /// Whether opaque retention degraded from recoverable to accounted because
-    /// the retained-byte budget was exhausted in salvage mode (§11.10). Set by
+    /// the retained-byte budget was exhausted in salvage mode. Set by
     /// the decode session at `finish`; a paired loss note carries the detail.
     #[serde(default)]
     pub retention_degraded: bool,
-    /// Versioned calibration identifiers in force for this decode (§5.2), set
+    /// Versioned resource-profile identifiers in force for this decode, set
     /// by the decode session at `finish`.
     #[serde(default)]
     pub profile_versions: ProfileVersions,
     /// Validated source-fidelity ledger proving byte conservation over the
-    /// source container's physical spaces (§10 Phase 3C), when the codec has
-    /// adopted container accounting. `None` for codecs that have not, keeping
-    /// the field absent from serialized reports predating the accounting work.
+    /// source container's physical spaces, when the codec provides container
+    /// accounting.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_fidelity: Option<crate::source_fidelity::SourceFidelity>,
 }
@@ -576,9 +575,6 @@ mod tests {
 
     #[test]
     fn loss_code_serializes_under_its_stable_identifier() {
-        // The code is the stable key gates and diffs match on (§10 Phase 4A):
-        // lock the wire form to the `as_str` identifier so a rename is a
-        // deliberate, visible change rather than a silent one.
         let note = LossNote {
             code: LossCode::TopologyNotTransferred,
             category: LossCategory::Topology,
@@ -593,9 +589,6 @@ mod tests {
 
     #[test]
     fn loss_code_carries_reversibility_and_strict_consequence() {
-        // A dropped mandatory graph rejects under strict mode and is not
-        // recoverable from retained source; a passthrough omission tolerates
-        // and is reversible because its bytes survive as a native record.
         assert_eq!(
             LossCode::TopologyNotTransferred.strict_consequence(),
             StrictConsequence::Reject
@@ -606,19 +599,12 @@ mod tests {
             StrictConsequence::Tolerate
         );
         assert!(LossCode::PassthroughRecordOmitted.reversible());
-        // Salvage-mode degradations account bytes without retaining recoverable
-        // content (§11.10): budget-exhausted retention and auto-dropped
-        // unresolved records are not reconstructable from any retained record.
         assert!(!LossCode::RetentionDegraded.reversible());
         assert!(!LossCode::UnresolvedRecordDropped.reversible());
     }
 
     #[test]
     fn profile_versions_serialize_under_stable_keys() {
-        // The serialized shape is the durable explanation the feature exists to
-        // provide (§5.2): a report keeps a machine-readable record of the
-        // constants in force. Lock the wire keys and values so a downstream
-        // reader can diff two reports across a library update.
         let report = report_with(ProfileVersions {
             profile: "custom".to_string(),
             envelope: "envelope-v3".to_string(),

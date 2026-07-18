@@ -36,32 +36,19 @@ pub enum DecodeMode {
 /// derived from the input basis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ResourceLimits {
-    /// Maximum physical input bytes read at the root. Frozen at Phase 0B — the
-    /// one dimension whose charges are already real (§5.2).
+    /// Maximum physical input bytes read at the root.
     pub max_input_bytes: u64,
     /// Maximum cumulative decompressed bytes across all expansions.
-    /// **Provisional** until the Phase 1 decompression calibration (§5.2).
     pub max_decompressed_bytes_total: u64,
     /// Maximum decompressed bytes produced by any single expansion.
-    /// **Provisional** until the Phase 1 decompression calibration (§5.2).
     pub max_decompressed_bytes_per_expand: u64,
     /// Maximum cumulative committed heap bytes.
-    /// **Frozen** at Phase 2 (§5.2 alloc/work/depth freeze): the Phase 2
-    /// per-codec calibration measured the migrated charge sites well inside
-    /// this ceiling, so the value is unchanged and now load-bearing.
     pub max_alloc_bytes: u64,
     /// Maximum abstract work units.
-    /// **Frozen** at Phase 2 (§5.2 alloc/work/depth freeze); value unchanged by
-    /// calibration.
     pub max_work: u64,
     /// Maximum recursion depth.
-    /// **Frozen** at Phase 2 (§5.2 alloc/work/depth freeze); value unchanged by
-    /// calibration.
     pub max_depth: u32,
     /// Maximum bytes retained opaque in salvage mode.
-    /// **Frozen** at Phase 3 (§5.2 retained freeze): the multi-space fidelity
-    /// ledger's retained-byte charges measured well inside this ceiling, so the
-    /// value is unchanged and now load-bearing.
     pub max_retained_bytes: u64,
 }
 
@@ -95,23 +82,10 @@ impl ResourceLimits {
         }
     }
 
-    /// Version tag for the desktop profile's ceilings (§5.2). The §5.2
-    /// per-dimension freeze schedule is nearly complete: `max_input_bytes`
-    /// (Phase 0B), `max_alloc_bytes`/`max_work`/`max_depth` (Phase 2), and
-    /// `max_retained_bytes` (Phase 3) are frozen. `max_decompressed_bytes_*`
-    /// remains **provisional**: the Phase 1 gate deliberately declined the
-    /// decompression freeze pending report-only cumulative-charge calibration
-    /// (§5.2), so those two ceilings are not yet calibration-defended. Every
-    /// freeze so far left its ceiling value unchanged — the migrated charge sites
-    /// calibrated well inside them — so the tag stays `desktop-v1`; it advances
-    /// only when a ceiling *value* changes. The `desktop_version_pins_its_ceilings`
-    /// test pins the tag to its values so a ceiling cannot change without one.
+    /// Version tag for the desktop profile's exact ceiling values.
     pub const DESKTOP_VERSION: &'static str = "desktop-v1";
 
-    /// Version tag for the service profile's ceilings (§5.2), advanced whenever
-    /// a service ceiling changes. Provisional under the same per-dimension
-    /// freeze schedule as `DESKTOP_VERSION`, and pinned to its values by
-    /// `service_version_pins_its_ceilings`.
+    /// Version tag for the service profile's exact ceiling values.
     pub const SERVICE_VERSION: &'static str = "service-v1";
 
     /// The version tag of the named profile these ceilings match exactly, or
@@ -199,22 +173,7 @@ pub(crate) struct Envelope {
 }
 
 impl Envelope {
-    /// The platform default envelope. The `alloc_bytes` and `work` terms are
-    /// **frozen** at Phase 2 (§5.2): the per-codec calibration notes measured
-    /// the migrated charge sites (container framing plus graduated leaves) at
-    /// bytes-to-low-KiB cumulative `alloc_bytes` and tens-to-low-thousands
-    /// `work` units per fixture — orders of magnitude inside these constants —
-    /// so the freeze left every value unchanged. `retained_bytes` froze at
-    /// Phase 3, where the retained-byte charge sites became real — the
-    /// multi-space fidelity ledger charges blob retention against this dimension,
-    /// and the measured per-fixture retention sits far inside `base`, so the
-    /// freeze again left every value unchanged. The `decompressed_*` terms remain
-    /// **provisional**: the Phase 1 gate declined the decompression freeze
-    /// pending report-only cumulative-charge calibration (the in-tree harness
-    /// calibrates the process-wide peak-allocation oracle, not the cumulative
-    /// `decompressed_bytes` charge profile), so those two terms are the one
-    /// unfrozen dimension left in the §5.2 schedule. A false reject on a
-    /// legitimate file remains a calibration bug, not a contract.
+    /// The platform default envelope.
     pub(crate) const PLATFORM_DEFAULT: Envelope = Envelope {
         base: DimensionAmounts {
             alloc_bytes: 64 * MIB,
@@ -237,46 +196,13 @@ impl Envelope {
         },
     };
 
-    /// Version tag for the platform default envelope's calibration constants
-    /// (§5.2). No caller API overrides the envelope yet, so every decode runs
-    /// this version. `envelope-v3` records the Phase 3 freeze of the envelope's
-    /// `retained_bytes` term: it moved from a provisional starting point to a
-    /// frozen, calibration-defended value (its magnitude was unchanged — the
-    /// measured retention charges sit far inside it — but its status did).
-    /// `envelope-v2` before it recorded the Phase 2 freeze of `alloc_bytes` and
-    /// `work` on the same terms. The `decompressed_*` terms are not yet frozen —
-    /// the Phase 1 gate declined the decompression freeze pending report-only
-    /// cumulative-charge calibration (§5.2) — so the schedule is not complete;
-    /// the tag advances again when those terms freeze or any constant changes.
-    /// The `max_depth`
-    /// ceiling is not an envelope term; its Phase 2
-    /// freeze is recorded by `DESKTOP_VERSION`/`SERVICE_VERSION` and their
-    /// pinning tests, not here.
-    /// The tag advances when a `PLATFORM_DEFAULT` constant changes or when a
-    /// dimension's freeze status advances. This differs deliberately from the
-    /// profile ceiling tags (`DESKTOP_VERSION`/`SERVICE_VERSION`), which advance
-    /// on a ceiling *value* change only: the envelope carries no other durable
-    /// record of its own freeze status, whereas each ceiling freeze is pinned by
-    /// a `*_version_pins_its_ceilings` test that asserts the frozen value, so the
-    /// profile tag is left free to signal value drift. The
-    /// `envelope_version_pins_its_constants` test pins the tag to its values so
-    /// a constant cannot change without advancing the tag.
+    /// Version tag for the platform default envelope's exact constants.
     pub(crate) const VERSION: &'static str = "envelope-v3";
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // §5.2 durable record: each version tag certifies an exact set of
-    // calibration constants. `profile_version` decides the tag by structural
-    // equality against the live `desktop()`/`service()` values, so it cannot
-    // notice a ceiling that changed without its tag — the comparison and the
-    // constant move together and every report keeps claiming the old tag.
-    // These tests pin each tag to the values it names: changing any constant
-    // below without bumping the paired version string fails here. When a
-    // recalibration is intended, bump the version tag AND update the pinned
-    // value in the same commit.
 
     #[test]
     fn desktop_version_pins_its_ceilings() {

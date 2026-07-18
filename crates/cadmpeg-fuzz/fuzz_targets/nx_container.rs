@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for the Siemens NX `.prt` codec.
-//!
-//! Feeds arbitrary bytes through `NxCodec::detect`, `inspect`, and `decode`.
-//! Contract: no input may panic. Malformed input must surface as `CodecError`.
+//! No input may panic. Malformed input must return `CodecError`.
 
 #![no_main]
 

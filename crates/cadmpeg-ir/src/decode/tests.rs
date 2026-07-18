@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Unit tests for the decode ownership model.
 #![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
@@ -74,12 +73,10 @@ fn window_escape_is_refused_at_the_request_site() {
     let policy = desktop();
     let (_ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    // A child that would exceed the parent is refused, never clamped.
     assert!(root.child(100, 264).is_none());
     let parent = root.child(0, 157).unwrap();
     assert!(parent.child(0, 164).is_none());
 
-    // seek honors the stored lower bound.
     let mut child = root.child(100, 157).unwrap();
     assert_eq!(child.start(), 100);
     assert_eq!(child.seek(50), None, "seek below start is refused");
@@ -127,13 +124,9 @@ fn fuse_then_swallow_still_fails_at_finish() {
     assert!(matches!(first, Err(CodecError::ResourceLimit(_))));
     assert!(ctx.is_fused());
 
-    // Code that swallows the failure through Option starves rather than spins:
-    // every subsequent charge fails immediately.
     let swallowed = ctx.exact_vec::<u8>(root.counted(1, 1).unwrap()).ok();
     assert!(swallowed.is_none());
 
-    // finish refuses to return Ok from a fused context, returning the
-    // original resource error even though the decode result was Ok.
     match ctx.finish(Ok(dummy_result())) {
         Err(CodecError::ResourceLimit(limit)) => {
             assert_eq!(limit.dimension, ResourceDimension::AllocBytes);
@@ -159,12 +152,10 @@ fn depth_guard_recurses_to_the_limit_and_fuses_beyond() {
     let policy = tight(|limits| limits.max_depth = 8);
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    // Exactly the limit succeeds; guards release on unwind.
     assert_eq!(recurse(&ctx, 7).unwrap(), 8);
     assert_eq!(ctx.current_depth(), 0);
     assert!(!ctx.is_fused());
 
-    // One level too deep is unswallowable and fuses.
     match recurse(&ctx, 8) {
         Err(CodecError::ResourceLimit(limit)) => {
             assert_eq!(limit.dimension, ResourceDimension::Depth);
@@ -197,7 +188,6 @@ fn exact_vec_enforces_capacity_and_full_population() {
     let policy = desktop();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    // The count proof comes from the view; exact_vec accepts nothing else.
     let three = root.counted(3, 1).unwrap();
     let mut partial = ctx.exact_vec::<u32>(three).unwrap();
     assert!(partial.is_empty());
@@ -211,7 +201,6 @@ fn exact_vec_enforces_capacity_and_full_population() {
     assert!(full.push(4).is_err(), "push past capacity is refused");
     assert_eq!(full.finish_exact().unwrap(), vec![1, 2, 3]);
 
-    // Each element charged size_of::<u32>() = 4; two builders of three = 24.
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 24);
 }
 
@@ -244,9 +233,6 @@ fn read_counted_reads_and_charges() {
 
 #[test]
 fn read_counted_classifies_exhausted_input_as_truncated() {
-    // The floor is proven for two 4-byte elements, but the reader consumes
-    // eight bytes per element: the second read finds fewer bytes remaining
-    // than one element's minimum size, which is a truncation.
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -259,8 +245,6 @@ fn read_counted_classifies_exhausted_input_as_truncated() {
 
 #[test]
 fn read_counted_classifies_in_window_rejection_as_malformed() {
-    // The reader rejects a value while at least one more element's bytes are
-    // still present: an inconsistency wholly inside the view, malformed.
     let bytes: &[u8] = &[0x01, 0xFF, 0x02, 0x03, 0x04, 0x05];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -278,12 +262,10 @@ fn expand_exact_mismatch_is_rejected() {
     let policy = desktop();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    // Underrun: declared 10, produced 6, finalize rejects.
     let mut under = ctx.begin_expand(root, ExpandSpec::Exact(10)).unwrap();
     under.write(&[0u8; 6]).unwrap();
     assert!(under.finalize().is_err());
 
-    // Overrun: a write past the declared exact size is rejected per-write.
     let mut over = ctx.begin_expand(root, ExpandSpec::Exact(10)).unwrap();
     assert!(over.write(&[0u8; 12]).is_err());
 }
@@ -310,7 +292,6 @@ fn expand_finalize_registers_space_and_grows_input_basis() {
     assert_eq!(view.window().len(), 10);
     assert_eq!(ctx.spaces_len(), 2);
 
-    // The input basis grew by the finalized length, raising allowances.
     assert_eq!(ctx.input_basis(), 110);
     let alloc_after = ctx.allowance_of(ResourceDimension::AllocBytes);
     assert!(alloc_after > alloc_before, "allowance grows with the basis");
@@ -318,7 +299,6 @@ fn expand_finalize_registers_space_and_grows_input_basis() {
 
 #[test]
 fn derived_space_concats_multiple_extents_and_charges_alloc() {
-    // Two disjoint extents of the root are reassembled into one logical stream.
     let bytes: &[u8] = &[10, 11, 12, 13, 20, 21, 22, 23, 24, 25];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -328,8 +308,6 @@ fn derived_space_concats_multiple_extents_and_charges_alloc() {
     let second = root.child(6, 10).unwrap();
     let basis_before = ctx.input_basis();
 
-    // The builder assembles the output from the input extents itself, so the
-    // recorded segments cannot diverge from the bytes the space holds.
     let writer = ctx
         .begin_derived_space(&[first, second], DerivedKind::Concat)
         .unwrap();
@@ -341,11 +319,8 @@ fn derived_space_concats_multiple_extents_and_charges_alloc() {
     assert_eq!(view.window(), &[10, 11, 12, 13, 22, 23, 24, 25]);
     assert_eq!(ctx.spaces_len(), 2);
 
-    // Each extent charges alloc_bytes for the assembled copy.
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 8);
 
-    // Reassembling existing bytes does not grow the input basis: the source
-    // extents are already accounted for in their own spaces.
     assert_eq!(ctx.input_basis(), basis_before);
 
     match ctx.space_origin(space).unwrap() {
@@ -361,12 +336,6 @@ fn derived_space_concats_multiple_extents_and_charges_alloc() {
 
 #[test]
 fn derived_space_records_a_multi_input_transform() {
-    // A dictionary-preset decompression is a genuine multi-input transform:
-    // one extent is the dictionary, another the compressed data, and the
-    // finalized space records both inputs under a Transform origin. Its output
-    // is new decompressed content, so it is charged as decompressed_bytes under
-    // the decompression ceilings and grows the input basis — never routed
-    // through alloc_bytes, which would evade those ceilings.
     let bytes: &[u8] = &[0xAA, 0xBB, 0xCC, 0xDD, 0x01, 0x02, 0x03, 0x04];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -386,11 +355,8 @@ fn derived_space_records_a_multi_input_transform() {
     let (space, view) = writer.finalize().unwrap();
 
     assert_eq!(view.window(), &[1, 2, 3, 4, 5, 6]);
-    // Decompressed output is charged as decompressed_bytes, not alloc_bytes, so
-    // the calibrated per-expand and cumulative ceilings apply.
     assert_eq!(ctx.charged(ResourceDimension::DecompressedBytes), 6);
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 0);
-    // Finalizing new decompressed content grows the input basis.
     assert_eq!(ctx.input_basis(), basis_before + 6);
     match ctx.space_origin(space).unwrap() {
         SpaceOrigin::Transform { inputs, kind } => {
@@ -410,7 +376,6 @@ fn derived_space_registers_only_on_finalize_and_fuses_on_refusal() {
     let policy = desktop();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    // A writer dropped without finalizing registers no space.
     {
         let extent = root.child(0, 3).unwrap();
         let _abandoned = ctx
@@ -419,8 +384,6 @@ fn derived_space_registers_only_on_finalize_and_fuses_on_refusal() {
     }
     assert_eq!(ctx.spaces_len(), 1, "an unfinalized space never registers");
 
-    // An extent past the alloc allowance fuses the context during assembly: the
-    // first 4-byte extent fits the tight ceiling, the second pushes over it.
     let arena2 = DecodeArena::new();
     let tight = tight(|limits| limits.max_alloc_bytes = 4);
     let (ctx2, root2) = DecodeContext::from_root_bytes(bytes, &arena2, &tight).unwrap();
@@ -437,9 +400,6 @@ fn derived_space_registers_only_on_finalize_and_fuses_on_refusal() {
 
 #[test]
 fn register_slice_aliases_a_stored_entry_without_copying() {
-    // A stored archive entry becomes a Slice space that borrows the parent bytes
-    // and re-bases their coordinates to zero, charging nothing: the bytes were
-    // already accounted for when the parent space was admitted.
     let bytes: &[u8] = &[0, 1, 2, 3, 4, 5, 6, 7];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -452,12 +412,9 @@ fn register_slice_aliases_a_stored_entry_without_copying() {
 
     assert_eq!(space.index(), 1);
     assert_eq!(view.space(), space);
-    // The slice window is the parent subrange, re-based so offset zero is its
-    // first byte.
     assert_eq!(view.window(), &[2, 3, 4, 5]);
     assert_eq!(view.position(), 0);
     assert_eq!(view.start(), 0);
-    // Aliasing input neither charges the allocation budget nor grows the basis.
     assert_eq!(ctx.charged(ResourceDimension::AllocBytes), 0);
     assert_eq!(ctx.input_basis(), basis_before);
     match ctx.space_origin(space).unwrap() {
@@ -471,8 +428,6 @@ fn register_slice_aliases_a_stored_entry_without_copying() {
 
 #[test]
 fn register_slice_refuses_a_range_escaping_the_parent() {
-    // A slice past the parent window is refused at the request site, never
-    // clamped, and registers no space.
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -487,8 +442,6 @@ fn register_slice_refuses_a_range_escaping_the_parent() {
 
 #[test]
 fn derived_concat_refuses_transform_writes() {
-    // A Concat space assembles from its declared inputs; a caller cannot inject
-    // bytes unrelated to the recorded segments through `write`.
     let bytes: &[u8] = &[1, 2, 3, 4, 5, 6, 7, 8];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -502,8 +455,6 @@ fn derived_concat_refuses_transform_writes() {
         Err(CodecError::Malformed(_)) => {}
         other => panic!("expected Malformed refusal, got {other:?}"),
     }
-    // The refusal does not corrupt the assembled buffer: it still concatenates
-    // only the declared extent.
     let (space, view) = writer.finalize().unwrap();
     assert_eq!(view.window(), &[1, 2, 3, 4]);
     match ctx.space_origin(space).unwrap() {
@@ -525,7 +476,6 @@ fn transaction_rolls_back_position_but_not_charges() {
     let charged_before = ctx.charged(ResourceDimension::AllocBytes);
     let start = root.position();
 
-    // A transaction that charges the budget, then fails a read.
     let failed: Option<()> = root.transaction(|view| {
         let count = view.counted(4, 1)?;
         let _reserved = ctx.exact_vec::<u8>(count).ok()?;
@@ -539,7 +489,6 @@ fn transaction_rolls_back_position_but_not_charges() {
         "charges do not roll back"
     );
 
-    // A successful transaction commits the advance.
     let ok = root.transaction(|view| {
         let a = view.u32_le()?;
         let b = view.u32_le()?;
@@ -589,7 +538,6 @@ fn arena_borrows_stay_valid_across_later_allocations() {
 fn unresolved_tickets_fail_strict_and_auto_drop_in_salvage() {
     let bytes: &[u8] = &[0u8; 8];
 
-    // Strict: an unresolved committed ticket is a contract error at finish.
     let arena = DecodeArena::new();
     let policy = strict();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
@@ -608,8 +556,6 @@ fn unresolved_tickets_fail_strict_and_auto_drop_in_salvage() {
         other => panic!("expected strict unresolved-ticket error, got {other:?}"),
     }
 
-    // Salvage: unresolved tickets are auto-resolved as Dropped, and each
-    // drop surfaces as an accountable loss note on the result's report.
     let arena = DecodeArena::new();
     let policy = desktop();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
@@ -629,8 +575,6 @@ fn unresolved_tickets_fail_strict_and_auto_drop_in_salvage() {
 
 #[test]
 fn transfer_accounting_passes_trivially_without_tickets() {
-    // A codec that issues no tickets has an empty disposition table; the check
-    // must not manufacture a violation, so L0 codecs stay unaffected.
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();
     let policy = strict();
@@ -645,7 +589,6 @@ fn transfer_accounting_accepts_consistent_dispositions() {
     let policy = strict();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    // Typed naming an entity actually emitted into the IR model is consistent.
     let typed = ctx.commit_record(root.location(), RecordKind("body"));
     ctx.resolve(
         typed,
@@ -654,7 +597,6 @@ fn transfer_accounting_accepts_consistent_dispositions() {
         },
     );
 
-    // Retained naming a record actually held in the retained store is consistent.
     let retention = ctx.retain(&bytes[..8]).unwrap();
     let record = retention.range().unwrap().blob().as_str().to_owned();
     let retained = ctx.commit_record(root.location(), RecordKind("blob"));
@@ -665,15 +607,12 @@ fn transfer_accounting_accepts_consistent_dispositions() {
         },
     );
 
-    // Structural framing is unconstrained.
     let structural = ctx.commit_record(root.location(), RecordKind("header"));
     ctx.resolve(structural, RecordDisposition::Structural);
 
     assert!(ctx.finish(Ok(result_with_bodies(&["body/0"]))).is_ok());
 }
 
-/// Builds a single-space `source` ledger tiling `[0, length)` with one span of
-/// `class`, for the ledger-reconciliation tests.
 fn source_ledger(length: u64, class: crate::source_fidelity::SpanClass) -> DecodeResult {
     use crate::source_fidelity::{
         AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
@@ -706,11 +645,6 @@ fn source_ledger(length: u64, class: crate::source_fidelity::SpanClass) -> Decod
 
 #[test]
 fn transfer_accounting_accepts_disposition_tiled_by_the_ledger() {
-    // A ticket committed in the root (`source`) space at an offset the ledger
-    // tiles reconciles: its bytes are corroborated by the serialized §6.1
-    // ledger, not merely by the disposition table (§6.2). At L1 the span class
-    // is coarse (`Opaque`) yet backs a `Typed` disposition — only span
-    // existence is asserted, never class coherence.
     let bytes: &[u8] = &[0u8; 16];
     let arena = DecodeArena::new();
     let policy = strict();
@@ -730,10 +664,6 @@ fn transfer_accounting_accepts_disposition_tiled_by_the_ledger() {
 
 #[test]
 fn transfer_accounting_rejects_disposition_absent_from_the_ledger_in_strict() {
-    // The disposition table validates in isolation, but the ticket's byte
-    // location lies past the serialized ledger's tiling: the two artifacts claim
-    // disjoint accounts, the cross-artifact conservation §6.2 assigns the check
-    // forbids. The offset 32 falls outside a `source` ledger of length 16.
     let bytes: &[u8] = &[0u8; 64];
     let arena = DecodeArena::new();
     let policy = strict();
@@ -765,8 +695,6 @@ fn transfer_accounting_rejects_disposition_absent_from_the_ledger_in_strict() {
 
 #[test]
 fn transfer_accounting_ledger_violation_degrades_to_loss_in_salvage() {
-    // In salvage mode the same disjoint account never fails the decode: it is
-    // appended as an accountable loss note, matching the mode's discipline.
     let bytes: &[u8] = &[0u8; 64];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -820,8 +748,6 @@ fn result_with_unknown(id: &str) -> DecodeResult {
 
 #[test]
 fn transfer_accounting_accepts_preserved_when_unknown_is_emitted() {
-    // A Preserved disposition naming a record actually pushed into the native
-    // unknowns arena is consistent: §6.2 identity holds over the arena.
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();
     let policy = strict();
@@ -838,8 +764,6 @@ fn transfer_accounting_accepts_preserved_when_unknown_is_emitted() {
 
 #[test]
 fn transfer_accounting_rejects_preserved_unknown_absent_from_arena_in_strict() {
-    // A Preserved disposition naming an unknown id never pushed into the arena
-    // is an unaccounted emission; §6.2 requires each named record to resolve.
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();
     let policy = strict();
@@ -886,8 +810,6 @@ fn transfer_accounting_rejects_preserved_without_records_in_strict() {
 
 #[test]
 fn transfer_accounting_rejects_typed_output_absent_from_ir_in_strict() {
-    // A Typed disposition naming an entity id never emitted into the IR is a
-    // phantom emission; §6.2 requires each named span to resolve in the model.
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();
     let policy = strict();
@@ -961,7 +883,6 @@ fn transfer_accounting_rejects_dropped_without_loss_note_in_strict() {
     let policy = strict();
     let (ctx, root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
     let ticket = ctx.commit_record(root.location(), RecordKind("body"));
-    // The disposition claims a drop, but the loss never reaches the report.
     ctx.resolve(
         ticket,
         RecordDisposition::Dropped {
@@ -1015,8 +936,6 @@ fn transfer_accounting_rejects_shared_loss_note_for_multiple_drops() {
         message: "unhandled body variant".to_owned(),
         provenance: None,
     };
-    // Two records dropped under one key, but only one matching note reaches
-    // the report: the second drop must not borrow the first's accounting.
     let first = ctx.commit_record(root.location(), RecordKind("body"));
     let second = ctx.commit_record(root.location(), RecordKind("body"));
     ctx.resolve(first, RecordDisposition::Dropped { loss: loss.clone() });
@@ -1122,12 +1041,10 @@ fn allowance_is_the_smaller_of_ceiling_and_envelope() {
     let bytes: &[u8] = &[0u8; 64];
     let arena = DecodeArena::new();
 
-    // A tight absolute ceiling wins over the envelope term.
     let capped = tight(|limits| limits.max_alloc_bytes = 128);
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &capped).unwrap();
     assert_eq!(ctx.allowance_of(ResourceDimension::AllocBytes), 128);
 
-    // The input-bytes allowance is the absolute ceiling directly.
     let arena2 = DecodeArena::new();
     let policy = tight(|limits| limits.max_input_bytes = 4096);
     let (ctx2, _root) = DecodeContext::from_root_bytes(bytes, &arena2, &policy).unwrap();
@@ -1138,7 +1055,6 @@ fn allowance_is_the_smaller_of_ceiling_and_envelope() {
 fn finish_records_profile_and_envelope_versions_under_both_profiles() {
     let bytes: &[u8] = &[0u8; 8];
 
-    // Desktop (the default) profile: version tags present, no overrides.
     let arena = DecodeArena::new();
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &desktop()).unwrap();
     let report = ctx.finish(Ok(dummy_result())).unwrap().report;
@@ -1146,7 +1062,6 @@ fn finish_records_profile_and_envelope_versions_under_both_profiles() {
     assert_eq!(report.profile_versions.envelope, "envelope-v3");
     assert!(report.profile_versions.overrides.is_empty());
 
-    // Service profile: its own version tag, still no overrides.
     let arena = DecodeArena::new();
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &service()).unwrap();
     let report = ctx.finish(Ok(dummy_result())).unwrap().report;
@@ -1159,8 +1074,6 @@ fn finish_records_profile_and_envelope_versions_under_both_profiles() {
 fn finish_records_custom_ceiling_overrides_against_the_default() {
     let bytes: &[u8] = &[0u8; 8];
 
-    // A custom ceiling reports the `custom` profile and names the deviation
-    // from the desktop default; the envelope version is unchanged.
     let arena = DecodeArena::new();
     let policy = tight(|limits| limits.max_work = 10);
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
@@ -1172,9 +1085,6 @@ fn finish_records_custom_ceiling_overrides_against_the_default() {
         vec!["max_work=10".to_string()]
     );
 
-    // Strict mode does not change the versioned ceilings: the desktop version
-    // stands with no overrides, since mode is orthogonal policy, not a
-    // calibration constant.
     let arena = DecodeArena::new();
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &strict()).unwrap();
     let report = ctx.finish(Ok(dummy_result())).unwrap().report;
@@ -1186,9 +1096,6 @@ fn finish_records_custom_ceiling_overrides_against_the_default() {
 fn finish_records_every_deviating_dimension_in_sorted_order() {
     let bytes: &[u8] = &[0u8; 8];
 
-    // Two deviations set out of alphabetical order: the record names each one
-    // and sorts them, so the report reads deterministically regardless of the
-    // order the caller changed ceilings.
     let arena = DecodeArena::new();
     let policy = tight(|limits| {
         limits.max_work = 10;
@@ -1218,14 +1125,11 @@ fn retain_charges_dedups_and_yields_a_whole_blob_range() {
     assert_eq!(range.len(), 8);
     assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 8);
 
-    // Identical bytes in a distinct buffer deduplicate to the same blob and do
-    // not charge again.
     let payload_b = arena.alloc(vec![1u8, 2, 3, 4, 5, 6, 7, 8].into_boxed_slice());
     let again = ctx.retain(payload_b).unwrap();
     assert_eq!(again.range().unwrap().blob(), range.blob());
     assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 8);
 
-    // Distinct bytes are a new blob and charge again.
     let other = arena.alloc(vec![9u8; 4].into_boxed_slice());
     let _ = ctx.retain(other).unwrap();
     assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 12);
@@ -1249,11 +1153,9 @@ fn subranges_reference_one_blob_under_containment() {
     assert_eq!(head.len(), 40);
     assert_eq!(tail.len(), 60);
 
-    // Escaping or inverted subranges are refused.
     assert!(whole.subrange(0, 101).is_none());
     assert!(whole.subrange(60, 40).is_none());
 
-    // Serialized reference names the blob and its subrange.
     let serialized = tail.to_serialized();
     assert_eq!(serialized.blob, whole.blob().as_str());
     assert_eq!(serialized.range.start, 40);
@@ -1276,7 +1178,6 @@ fn strict_fails_with_resource_limit_on_retained_exhaustion() {
         }
         other => panic!("expected ResourceLimit, got {other:?}"),
     }
-    // The refusal fused the context: finish cannot return Ok.
     assert!(ctx.is_fused());
     assert!(ctx.finish(Ok(dummy_result())).is_err());
 }
@@ -1288,12 +1189,9 @@ fn salvage_degrades_retained_exhaustion_to_accounting() {
     let policy = tight(|limits| limits.max_retained_bytes = 8);
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
-    // A blob that fits is retained recoverably.
     let small = arena.alloc(vec![1u8; 8].into_boxed_slice());
     assert!(ctx.retain(small).unwrap().is_retained());
 
-    // The next blob exhausts the retained budget: it degrades to accounting
-    // rather than failing or fusing.
     let big = arena.alloc(vec![2u8; 16].into_boxed_slice());
     match ctx.retain(big).unwrap() {
         Retention::Accounted { digest } => assert_eq!(digest.len(), 64),
@@ -1302,7 +1200,6 @@ fn salvage_degrades_retained_exhaustion_to_accounting() {
     assert!(!ctx.is_fused(), "retention alone never fuses in salvage");
     assert!(ctx.retention_degraded());
 
-    // finish succeeds, flags the degradation, and records one loss note.
     let report = ctx.finish(Ok(dummy_result())).unwrap().report;
     assert!(report.retention_degraded);
     let notes: Vec<_> = report
@@ -1323,12 +1220,9 @@ fn retained_blobs_survive_context_teardown_without_recopy() {
 
     let payload = arena.alloc(vec![5u8; 12].into_boxed_slice());
     let _ = ctx.retain(payload).unwrap();
-    // Collect the egress before finishing; the borrows address the arena.
     let egress = ctx.retained_blobs();
     let recovered = egress[0].bytes;
 
-    // finish consumes the context; the arena outlives it, so the retained bytes
-    // remain readable with no copy at teardown.
     let _ = ctx.finish(Ok(dummy_result())).unwrap();
     assert_eq!(recovered, &[5u8; 12]);
 }

@@ -1,13 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for the `.sldprt` decode path under both policy modes.
 //!
-//! Complements `sldprt_container` (which decodes only under the default salvage
-//! policy) by driving the full decode in strict mode as well, exercising the
-//! Phase-4B typed-builder loss channel and the strict-mode semantic rejection
-//! from both entry points. Contract: no input may panic or abort in either
-//! mode; every surfaced loss carries a stable machine code (never an untyped or
-//! message-only loss); a successful strict decode never keeps a
-//! reject-consequence loss; and decode is deterministic within a mode.
+//! Neither mode may panic or abort. Losses have stable machine codes, a
+//! successful strict decode contains no reject-consequence loss, and repeated
+//! decodes in one mode produce the same ordered loss codes.
 #![no_main]
 
 use std::io::Cursor;
@@ -37,11 +33,8 @@ fuzz_target!(|data: &[u8]| {
 
         if let (Ok(a), Ok(b)) = (&first, &second) {
             for loss in &a.report.losses {
-                // Every loss the typed builder resolved carries a stable code.
                 assert!(!loss.code.as_str().is_empty());
                 if mode == DecodeMode::Strict {
-                    // A strict decode that returned Ok cannot keep a loss whose
-                    // consequence is Reject: those are refused, not tolerated.
                     assert_ne!(
                         loss.code.strict_consequence(),
                         StrictConsequence::Reject,

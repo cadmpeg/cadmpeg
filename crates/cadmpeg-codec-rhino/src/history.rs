@@ -17,21 +17,18 @@ const HISTORY_CLASS: Uuid = Uuid::from_canonical([
 ]);
 const VALUE_CAP: usize = 1 << 20;
 
-/// Semantic role of a history record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RecordType {
     HistoryParameters,
     FeatureParameters,
 }
 
-/// One bounded history parameter value.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryValue {
     pub(crate) id: i32,
     pub(crate) value: Value,
 }
 
-/// Built-in history parameter families.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Value {
     None,
@@ -51,7 +48,6 @@ pub(crate) enum Value {
     Opaque { type_code: i32, range: Range<usize> },
 }
 
-/// One polymorphic geometry object embedded in a history parameter.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EmbeddedGeometry {
     pub(crate) class_id: Uuid,
@@ -59,7 +55,6 @@ pub(crate) struct EmbeddedGeometry {
     pub(crate) userdata: Vec<UserdataDescriptor>,
 }
 
-/// Persistent construction data for one polyedge.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PolyEdge {
     pub(crate) segments: Vec<CurveProxy>,
@@ -67,7 +62,6 @@ pub(crate) struct PolyEdge {
     pub(crate) evaluation_mode: i32,
 }
 
-/// Persistent construction data for one curve-proxy segment.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct CurveProxy {
     pub(crate) curve: ObjectReference,
@@ -79,7 +73,6 @@ pub(crate) struct CurveProxy {
     pub(crate) trim_domain: Option<[f64; 2]>,
 }
 
-/// Persistent edge sequence on a `SubD` object.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct SubdEdgeChain {
     pub(crate) subd_id: Uuid,
@@ -87,7 +80,6 @@ pub(crate) struct SubdEdgeChain {
     pub(crate) orientations: Vec<u8>,
 }
 
-/// Persistent object selection stored in a history value.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ObjectReference {
     pub(crate) object_id: Uuid,
@@ -99,7 +91,6 @@ pub(crate) struct ObjectReference {
     pub(crate) osnap_mode: i32,
 }
 
-/// Evaluation location attached to a persistent object selection.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct EvaluationParameter {
     pub(crate) parameter_type: i32,
@@ -108,7 +99,6 @@ pub(crate) struct EvaluationParameter {
     pub(crate) intervals: [[f64; 2]; 3],
 }
 
-/// One nested instance-definition step in an object selection.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct InstanceReference {
     pub(crate) reference_id: Uuid,
@@ -119,7 +109,6 @@ pub(crate) struct InstanceReference {
     pub(crate) evaluation: Option<EvaluationParameter>,
 }
 
-/// A complete built-in history record.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct HistoryRecord {
     pub(crate) source_range: Range<usize>,

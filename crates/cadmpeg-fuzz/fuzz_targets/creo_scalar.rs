@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for Creo PSB scalar decoding.
-//!
-//! Builds a `ScalarCache` from arbitrary section bytes, then feeds arbitrary
-//! bytes through the migrated `scalar::decode` and `scalar::decode_in_lane`
-//! primitive decoders. Contract: no input may panic and every read stays
-//! within the caller-owned slice.
+//! No input may panic or read outside the input slice.
 
 #![no_main]
 

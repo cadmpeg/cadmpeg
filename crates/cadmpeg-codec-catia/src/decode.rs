@@ -44,7 +44,7 @@ use crate::variant::Variant;
 /// Number of whole-image linear passes the entity-decode phase makes over the
 /// file (variant discrimination, E5 record stream, native record decode,
 /// freeform surface scan). A charge multiplier, not a proven bound; work
-/// constants freeze after Phase 2 calibration (§5.2).
+/// accounting relies on keeping this synchronized with the passes below.
 const ENTITY_DECODE_DATA_PASSES: u32 = 4;
 
 /// Number of linear passes the entity-decode phase makes over the reconstructed
@@ -54,9 +54,8 @@ const ENTITY_DECODE_BREP_PASSES: u32 = 6;
 
 /// Decodes a `.CATPart` session root view into an IR document and decode report.
 ///
-/// Consumes the session root [`View`] directly (§10 Phase 1A). When the context
-/// is in container-only mode, the result contains source metadata and container
-/// diagnostics without entity decoding.
+/// Container-only mode returns source metadata and container diagnostics
+/// without entity decoding.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan_view(ctx, root)?;
 
@@ -122,10 +121,6 @@ fn finish_decode<'a>(
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
-    // L1 container accounting (§10 Phase 3C): the validated coarse ledger rides
-    // the decode report so byte conservation over the source spaces is provable
-    // from the result. The tiling is total by construction, so a defect here is
-    // a builder bug that panics rather than a decode-time `Malformed` failure.
     report.source_fidelity = Some(crate::ledger::container_ledger(scan));
     crate::tickets::account_records(ctx, root, &ir, &mut report);
     if !report.container_only {
@@ -141,16 +136,11 @@ fn finish_decode<'a>(
     ))
 }
 
-/// Enforce the §10 Phase-4 strict-mode contract: a decode that could only
-/// account mandatory geometry or topology as a loss (a [`LossCode`] whose
+/// Refuse a strict decode containing a loss whose
 /// [`strict_consequence`](LossCode::strict_consequence) is
-/// [`Reject`](StrictConsequence::Reject)) is not a faithful result, so strict
-/// mode refuses it with a classified error rather than returning a model that
-/// silently omits mandatory semantics. Salvage mode keeps the partial result and
-/// its loss note. The refusal is `Malformed`: the taxonomy carries no dedicated
-/// semantic-rejection variant, and `Malformed` is the platform's general
-/// cannot-produce-a-faithful-result classification (it is what a native-record
-/// conversion failure already maps to), never a `ResourceLimit` reason.
+/// [`Reject`](StrictConsequence::Reject). Salvage mode keeps the partial result
+/// and its loss note. The refusal is `Malformed`, never `ResourceLimit`, because
+/// the input cannot produce a faithful result under the selected mode.
 fn reject_unrepresentable_in_strict(
     ctx: &DecodeContext<'_>,
     report: &DecodeReport,
@@ -1730,7 +1720,6 @@ fn cross_vector(a: Vector3, b: Vector3) -> Vector3 {
     )
 }
 
-/// Counts of each typed analytic surface kind decoded.
 #[derive(Debug, Default)]
 struct TypedCounts {
     plane: usize,

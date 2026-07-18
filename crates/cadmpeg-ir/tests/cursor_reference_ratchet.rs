@@ -1,23 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Doc section 8.5 `Cursor`-reference ratchet.
+//! `Cursor`-reference ratchet.
 //!
-//! `cadmpeg_ir::cursor::Cursor` is the pre-migration byte reader that `View`
-//! supersedes. It is deliberately not `#[deprecated]` during migration — a
-//! workspace `-D warnings` build would turn its references red in one commit.
-//! Instead CI freezes each crate's domain-`cursor` reference count and requires
-//! it to decrease monotonically, mirroring the section 8.8 `window()` egress
-//! ratchet; the `#[deprecated]` attribute lands per crate at count zero.
+//! CI requires each crate's qualified domain-`cursor` reference count to
+//! decrease monotonically.
 //!
 //! Detection counts the qualified module path `cursor::` (as in
 //! `cadmpeg_ir::cursor::Cursor` or `crate::cursor::bounded_len`) in the `src`
 //! and `fuzz_targets` trees of every workspace crate. This is deliberately
-//! narrower than the bare `Cursor` substring an earlier form used: that form
-//! counted `std::io::Cursor` test drivers and prose mentions, which have no
-//! bearing on the domain reader `View` replaces, and it forced the ceiling
-//! *upward* every time a test added an in-memory `std::io::Cursor` — the exact
-//! "monotonically decreasing" violation this ratchet exists to prevent. The
-//! qualified path never matches `io::Cursor`, so the count tracks only real
-//! migration targets.
+//! narrower than the bare `Cursor` substring and excludes `std::io::Cursor`.
 //!
 //! The ceiling is enforced by **exact equality**, not `<=`: a crate whose count
 //! drops must lower its ceiling in the same commit, so the toml can never carry
@@ -26,8 +16,7 @@
 //! directory under `crates/` and fails any crate with no ceiling entry, so a
 //! new crate cannot escape the ratchet by omission. A reference spelled to
 //! dodge the `cursor::` path (a bare `Cursor` after a domain import) would
-//! bypass the count; no crate does this today, and that residual gap is held by
-//! review discipline.
+//! bypass the count.
 
 use std::collections::BTreeMap;
 use std::fs;

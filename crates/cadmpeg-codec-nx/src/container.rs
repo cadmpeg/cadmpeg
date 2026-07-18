@@ -113,10 +113,6 @@ impl Container {
             let Some(count) = u32_le(bytes, pos).map(|value| value as usize) else {
                 continue;
             };
-            // Limit classification (§10 Phase 1): historical guess. The active
-            // object-id table's plausible length window is an undocumented
-            // heuristic that gates a `count * 4` slice; the `bytes.get` below
-            // and the input already charged as work bound the actual read.
             if !(50..=70_000).contains(&count) {
                 continue;
             }
@@ -161,8 +157,6 @@ fn parse_extref_paths(payload: &[u8]) -> Vec<String> {
     let Some(count) = cursor.u32_le() else {
         return Vec::new();
     };
-    // Each path is at least a u16 length prefix; an implausible declared
-    // count fails here instead of reserving unbounded capacity.
     cursor
         .read_counted(u64::from(count), 2, |cursor| {
             let length = usize::from(cursor.u16_le()?);
@@ -221,11 +215,7 @@ pub fn scan_bytes(data: Vec<u8>) -> Result<Container, CodecError> {
     let footer_offset = u48_le(&data, 0x11);
 
     let mut entries = Vec::new();
-    // The HEADER directory begins at +25 (`0x19`). Scan forward from there for
-    // entries until the first non-entry byte; the region is contiguous.
     enumerate_region(&data, 0x19, Region::Header, &mut entries);
-    // The FOOTER region begins at the 48-bit offset with an ASCII `FOOTER` tag,
-    // then a `u32 LE` entry count; entries follow.
     let fo = footer_offset as usize;
     if fo + 10 <= data.len() && &data[fo..fo + 6] == b"FOOTER" {
         enumerate_region(&data, fo + 10, Region::Footer, &mut entries);
@@ -245,14 +235,6 @@ pub fn scan_bytes(data: Vec<u8>) -> Result<Container, CodecError> {
 /// first position that does not frame such an entry (the region is contiguous).
 fn enumerate_region(data: &[u8], from: usize, region: Region, out: &mut Vec<DirEntry>) {
     let mut o = from;
-    // The very first HEADER entry is the `/Root/` sentinel; a run of well-formed
-    // entries follows. Allow a bounded number of framing misses before giving up,
-    // because the 16-byte opaque payloads can contain bytes that briefly look like
-    // a length field.
-    // Limit classification (§10 Phase 1): algorithm limit. The bounded miss
-    // count is the nx directory-walk probe idiom (§2 principle 4) — a run of
-    // framing misses past this many bytes means the contiguous region ended.
-    // Kept as defense in depth; the work budget independently bounds the scan.
     let mut misses = 0usize;
     while o + 4 <= data.len() && misses < 64 {
         match try_entry(data, o, region) {
@@ -274,9 +256,6 @@ fn enumerate_region(data: &[u8], from: usize, region: Region, out: &mut Vec<DirE
 /// and the offset just past its payload.
 fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)> {
     let name_len = u32_le(data, o)? as usize;
-    // Limit classification (§10 Phase 1): format validity. A `/Root/...` entry
-    // path is between six and 128 bytes; the bound frames the name read and
-    // rejects a length field that is really opaque payload.
     if !(6..=128).contains(&name_len) {
         return None;
     }
@@ -288,7 +267,6 @@ fn try_entry(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)>
     }
     let name = String::from_utf8_lossy(raw).into_owned();
     let payload = name_end;
-    // Interpret the 16-byte payload as a file span when it lands within the file.
     let file_span = match (u64_le(data, payload), u64_le(data, payload + 8)) {
         (Some(off), Some(size)) => {
             let end = off.checked_add(size);

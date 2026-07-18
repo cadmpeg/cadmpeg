@@ -1,20 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Counted topology records in the zero-entity `a9 03` stream family.
-//!
-//! Migrated per doc section 10 Phase 2. [`parse`] takes the session
-//! [`DecodeContext`] and a [`View`] over the whole admitted image. The `a9 03`
-//! stream walk is the module's only hostile surface: its whole-window length is
-//! charged once as `work`, the zero-floor record stream accumulates through a
-//! [`DecodeContext::grow_vec`] so each admitted record is charged before it is
-//! reserved, and every retained `record.bytes` copy is charged against
-//! `retained_bytes` before it is taken. The record's downstream reference-lane
-//! decoders (`parse_face`, `parse_loop`, `parse_vertices`, `parse_side_pairs`,
-//! `counted_references`) then read only the already-charged, already-bounded
-//! record copy through the checked `cadmpeg_ir::le` accessors and the count
-//! atom capped at a single header byte, so no further untrusted allocation
-//! occurs. The parser is a pure `Option` probe (section 3.3): any framing
-//! inconsistency yields `Ok(None)`, never a committed error. There is no residual
-//! `View::window()` egress to callers — the window feeds only the internal walk.
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::codec::CodecError;
@@ -731,9 +716,8 @@ fn parse_loop(record: &ZeroEntityRecord) -> Option<ZeroEntityLoop> {
     if record.bytes.get(position) != Some(&0x01) {
         return None;
     }
-    // Bounded by `segment_count`, itself derived from the record's single count
-    // byte over the already-retained record copy; a plain `Vec` push stays
-    // lint-invisible per doc section 8.3 and needs no separate charge.
+    // `segment_count` comes from the record's single count byte, so this vector
+    // is bounded by the already-retained record copy.
     let mut reversed = Vec::new();
     for member in 0..segment_count {
         let mut code = 0u8;
@@ -767,9 +751,7 @@ fn counted_references(bytes: &[u8], position: usize) -> Option<(Vec<u32>, usize)
     let count = usize::from(bytes.get(position)?.checked_sub(0x80)?);
     let mut cursor = position + 1;
     // `count` is a single header byte (<= 127) over the already-retained,
-    // already-charged record copy, and each entry is validated to consume five
-    // bytes before it is pushed; a plain `Vec` push is lint-invisible (doc
-    // section 8.3) and needs no separate allocation charge.
+    // already-charged record copy, and each entry must consume five bytes.
     let mut references = Vec::new();
     for _ in 0..count {
         if bytes.get(cursor) != Some(&0x10) {

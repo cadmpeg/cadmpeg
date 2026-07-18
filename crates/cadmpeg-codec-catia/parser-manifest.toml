@@ -1,55 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-#
-# Per-module migration manifest for `cadmpeg-codec-catia` (doc section 8.6 /
-# 10 Phase 2). One `[[module]]` entry per source module that reads or shapes
-# untrusted `.CATPart` bytes. `status` is `migrated` or `legacy`; a `legacy`
-# entry states, in `legacy_reason`, the specific migrated-means obligation it
-# does not yet meet. `window_egress` lists the audited `View::window()` sites a
-# migrated module keeps, cross-referenced by the section 8.8 ratchet. `charges`
-# names the budget dimensions the module drives once migrated; `cost_model`
-# states the intended charge shape (never a flat unit per iteration).
-# `ledger_level` is the section 6.1 record-accounting level (0 pre-Phase-3).
-#
-# Ordering follows the doc Phase 2 rule: count-framed loops first (best
-# closure-to-effort ratio), then irregular marker probes and graph traversals.
-#
-# Migration state of the crate: the container boundary consumes the session
-# `View` per Phase 1A. `container` is now migrated: `scan_view` charges the
-# whole-image directory scan as work, `register_extent_spaces` charges the
-# per-extent graph footprint against `alloc_bytes`, `begin_derived_space`
-# charges the reconstructed `Concat` BREP copy, and every former
-# `Vec::with_capacity` directory accumulator is a lint-invisible `Vec::new`+push
-# capped by `MAX_EXTENTS_PER_DESCRIPTOR`/the file length, so the module carries
-# `#![deny(clippy::disallowed_methods)]`. `decode` stays legacy (it drives the
-# still-legacy leaves on raw slices). All three `CatiaNative::decode` leaf
-# parsers reached through `finish_decode` — `value_block` (`7C0B`), `catalog`
-# (`7C02`), and `object_graph` (`7C08`) — are migrated: each takes
-# `&DecodeContext` and the root `View`, charges its whole-image marker probe as
-# work, and routes every allocation through a charged builder (`grow_vec`,
-# `exact_vec` over a `View::counted` `BoundedCount`) or `charge_retained` for the
-# raw-byte copies that escape as `Vec<u8>`. `native` — whose `decode` now
-# delegates every hostile read to those three migrated leaves and only performs
-# one-to-one typed transformations of records they already charged — and
-# `variant` — a pure classifier with no hostile read — are migrated too. The
-# `zero_entity` (`a9 03`) counted-topology leaf is migrated as well: its `parse`
-# takes `&DecodeContext` and the root `View`, charges its stream walk as work,
-# accumulates the zero-floor record stream through `grow_vec`, and charges each
-# retained record copy through `charge_retained`.
-# The remaining leaf record parsers (`geometry`, `topology`, `b5`, `e5`,
-# and the `b5_transfer`/`decode` traversals) still read raw
-# `&[u8]` through the checked `cadmpeg_ir::{le,be,read}` free functions, thread
-# no `DecodeContext`, and so charge no work for their scans and size their
-# accumulators with bare `Vec::with_capacity`. Bringing each to the migrated bar
-# requires threading `&DecodeContext` and a `View` through its public entry and
-# every caller in `decode.rs`; that cross-module signature change is the
-# remaining Phase 2 work recorded here so the half-migrated state is auditable.
 
-# ===========================================================================
-# Count-framed record parsers (migrate first).
-# ===========================================================================
-
-# `7C0B` value blocks: a `windows(2)` marker scan whose payload copy is bounded
-# by a length validated against the buffer before the copy.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/value_block.rs"
 status = "migrated"
@@ -61,8 +11,6 @@ window_egress = ["value_block::parse -> View::window() feeds the `7C0B` marker p
 ledger_level = 0
 migrated_means = "Marker probe charges work proportional to bytes examined; the payload copy is charged as retained_bytes before it is taken (raw-byte egress routed through `charge_retained`, not faked); block accumulator is a `grow_vec` that charges before each reservation; `declared_len` is validated against the buffer so there is no unfloored allocation; module carries `#![deny(clippy::disallowed_methods)]`; truncation test `value_block_parser_rejects_payload_truncated_before_terminator` covers the record boundary; `catia_value_block` fuzz target reaches the committed path. No recursion, no floored count, so no DepthGuard/BoundedCount obligation."
 
-# `7C02` string catalogs: framed length-prefixed string table with a
-# `Vec::with_capacity` sized from a decoded entry count.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/catalog.rs"
 status = "migrated"
@@ -74,7 +22,6 @@ window_egress = ["catalog::parse -> View::window() feeds the `7C02` marker probe
 ledger_level = 0
 migrated_means = "Marker probe charges work proportional to bytes examined; the entry table is sized through a `View::child(at, end).counted(entry_count, 1)` `BoundedCount` proof and filled through an `exact_vec` builder, so a declared count that cannot physically fit the frame is refused before any capacity is reserved (replaces the former `Vec::with_capacity(count)`); entries are pushed into the exact builder and returned via `finish`; module carries `#![deny(clippy::disallowed_methods)]`; truncation test `catalog_parser_rejects_frame_truncated_at_entry_boundary` covers the framed `total_len` record boundary; `catia_catalog` fuzz target reaches the committed path. No recursion, so no DepthGuard obligation."
 
-# `7C08`/`7C09` outer object-ownership graph: nested count-framed records.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/object_graph.rs"
 status = "migrated"
@@ -90,8 +37,6 @@ window_egress = [
 ledger_level = 0
 migrated_means = "Every marker scan charges work proportional to bytes examined, and each `7C08` candidate charges its framed extent before the nested `7C09` walk; records, head tokens, payload fields, `0x3b` list items, alias rows, and `7CD9` markers accumulate through `grow_vec`, charging before each reservation; the two raw-byte copies that escape as `Vec<u8>` (the `0xe5` blob payload and the `7CD9` context window) are charged through `charge_retained` before `to_vec()` (raw-byte egress routed, not faked); alias rows are fixed-width reads with no untrusted-count allocation. The parser is a pure `Option` probe (section 3.3): any framing inconsistency returns `None` (NoMatch), never a committed error, so no `req_*` mirror and no `BoundedCount` proof applies — production is marker-delimited and conditional, not a floored count. No recursion, so no `DepthGuard` obligation. Module carries `#![deny(clippy::disallowed_methods)]`; truncation test `outer_object_graph_parser_rejects_frame_truncated_at_record_boundary` covers the framed `7C08` record boundary; the `catia_object_graph` fuzz target reaches `parse`, `surface_aliases`, and `markers_7cd9` under a default session."
 
-# Zero-entity `a9 03` counted topology: record walk plus face/loop/carrier and
-# edge/vertex table reconstruction.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/zero_entity.rs"
 status = "migrated"
@@ -103,8 +48,6 @@ window_egress = ["zero_entity::walk_records -> View::window() feeds the `a9 03` 
 ledger_level = 0
 migrated_means = "`parse` takes `&DecodeContext` and the root `View`; `walk_records` charges the whole-window scan as `work` up front, accumulates the zero-floor `a9 03` record stream through `grow_vec` (charging before each reservation, so an unbounded stream fuses on the alloc budget rather than needing a separate codec cap), and charges each retained `record.bytes` copy through `charge_retained` before it is taken (raw-byte egress routed, not faked). The downstream reference-lane decoders (`parse_face`, `parse_loop`, `parse_vertices`, `parse_side_pairs`, `counted_references`) read only the already-retained, already-charged record copy through the checked `cadmpeg_ir::le` accessors; their reference lanes are bounded by a single count header byte (<= 127) validated to consume five bytes per entry, so they use lint-invisible `Vec::new`+push (doc section 8.3) with no further untrusted-count allocation, and the former two `Vec::with_capacity` sites (`counted_references`, `parse_loop` senses) are removed. The parser is a pure `Option` probe (section 3.3): any framing inconsistency returns `Ok(None)`, never a committed error, so no `req_*` mirror and no `BoundedCount` proof applies. The `parse_carrier_runs`/`bind_face_runs` graph binding is a bounded pass over already-admitted records with no recursion, so no `DepthGuard` obligation. Module carries `#![deny(clippy::disallowed_methods)]`; truncation test `zero_entity_parser_rejects_record_truncated_at_declared_length` covers the `a9 03` record-length boundary; the `catia_zero_entity` fuzz target reaches `parse` under a default session."
 
-# Standard-nested / FBB counted topology spine: face boundaries from trim
-# packets, physical edge rows, `05 08 01` vertex table.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/topology.rs"
 status = "legacy"
@@ -116,7 +59,6 @@ cost_model = "work = bytes examined by the spine and edge-row scans plus nodes+e
 window_egress = []
 ledger_level = 0
 
-# `b5 03` short-frame object-id topology graph.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/b5.rs"
 status = "legacy"
@@ -128,9 +70,6 @@ cost_model = "work = bytes examined by the `b5 03` walk plus nodes+edges of the 
 window_egress = []
 ledger_level = 0
 
-# `b5 03` record-class table (Phase 4E generated source of truth): the named
-# class constants and the `CLASSES` table `b5.rs` dispatches against, plus the
-# doc/fuzz-dictionary generators. No hostile read.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/b5_record_class.rs"
 status = "migrated"
@@ -141,7 +80,6 @@ cost_model = "no budget charge; static class-code table and its Markdown/diction
 window_egress = []
 ledger_level = 0
 
-# E5 `0D 03` class-tagged record stream: bodies, faces, edges, geometry refs.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/e5.rs"
 status = "legacy"
@@ -153,11 +91,6 @@ cost_model = "work = bytes examined per class-tagged record plus nodes+edges of 
 window_egress = []
 ledger_level = 0
 
-# ===========================================================================
-# Irregular marker probes and graph traversals (migrate after count-framed).
-# ===========================================================================
-
-# Shared analytic/NURBS geometry record decoders.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/geometry.rs"
 status = "legacy"
@@ -169,7 +102,6 @@ cost_model = "work = bytes examined per carrier candidate scan; alloc_bytes = re
 window_egress = []
 ledger_level = 0
 
-# `V5_CFV2` container parsing and logical-stream reconstruction.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/container.rs"
 status = "migrated"
@@ -183,7 +115,6 @@ window_egress = [
 ledger_level = 0
 migrated_means = "The session path (`scan_view`) charges the whole-image directory scan as `work` before any walk, charges the per-extent runtime-graph footprint against `alloc_bytes` in `register_extent_spaces`, and defers the reconstructed BREP copy to `begin_derived_space`, which charges that copy against `alloc_bytes` (reason `derived_concat`) because a `Concat` derived space charges `alloc_bytes`, not `decompressed_bytes` (doc §4.5). Every directory accumulator that previously used `Vec::with_capacity` (the per-descriptor extent list, the reconstructed logical stream, the BREP extent-range list, the `Concat` segment list) is now a lint-invisible `Vec::new`+push/extend (doc section 8.3): each is floored and capped by a structural gate — extent counts by the `MAX_EXTENTS_PER_DESCRIPTOR` (64) constant and the `o + 4 + 20*k <= dirbuf.len()` buffer-fit check, the reconstructed length by the file length validated at descriptor admission — so no untrusted count drives a reservation and no `BoundedCount` proof is owed. The directory parser is a pure `Option` probe (section 3.3): any framing inconsistency returns `None`, never a committed error, so no `req_*` mirror applies. No recursion, so no `DepthGuard` obligation. Module carries `#![deny(clippy::disallowed_methods)]`; truncation test `container_directory_parser_rejects_frame_truncated_at_directory_boundary` covers the `dir_offset + b` directory-frame boundary; the `catia_container` and `catia_container_dir` fuzz targets reach the directory walk. The context-free `scan_bytes`/`parse_stream_directory`/`brep_stream` entries run the same bounded walk without a session for tests, census, and fuzzers."
 
-# `b5 03` object topology transfer into neutral IR.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/b5_transfer.rs"
 status = "legacy"
@@ -196,7 +127,6 @@ cost_model = "work = nodes+edges of the B5Graph transfer traversal; depth guards
 window_egress = []
 ledger_level = 0
 
-# CATIA-native retained ownership/design records.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/native.rs"
 status = "migrated"
@@ -208,7 +138,6 @@ window_egress = []
 ledger_level = 0
 migrated_means = "`CatiaNative::decode` takes `&DecodeContext` and the root `View` and threads them into the three migrated leaf parsers, so every hostile read and its allocation is charged at the leaf; `native` itself only maps already-charged, already-bounded typed records one-to-one into the native namespace, introducing no untrusted-count-driven growth; `load`/`store` route through the platform native-arena API. No recursion, so no `DepthGuard` obligation. Module carries `#![deny(clippy::disallowed_methods)]`; reached through the `catia_container` fuzz target and the `decode_retains_outer_object_graph_order_and_dependencies` decode test."
 
-# High-level CATPart-to-IR orchestration.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/decode.rs"
 status = "legacy"
@@ -220,12 +149,6 @@ cost_model = "work = per-record commit charge at each variant dispatch; alloc_by
 window_egress = []
 ledger_level = 0
 
-# ===========================================================================
-# Pure classifier (graduated).
-# ===========================================================================
-
-# `CATPart` storage-layout classification: a pure enum over upstream census
-# facts, no hostile read and no allocation, so it graduates now.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/variant.rs"
 status = "migrated"
@@ -236,13 +159,6 @@ cost_model = "no budget charge; a pure classifier mapping structural census fact
 window_egress = []
 ledger_level = 0
 
-# ---------------------------------------------------------------------------
-# L1 container accounting (doc section 10 Phase 3C). Not a byte parser: builds
-# the coarse source-fidelity ledger from already-scanned `ContainerScan` facts,
-# tiling the source space and serializing the reconstructed BREP stream as a
-# `Concat` over source extents. No hostile read, no `.window()` egress, and no
-# budget charge of its own; the container scan already charged the bytes. Emits
-# the serialized L1 ledger.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/ledger.rs"
 status = "migrated"
@@ -253,13 +169,6 @@ cost_model = "no budget charge; builds the L1 source-fidelity ledger from alread
 window_egress = []
 ledger_level = 1
 
-# ---------------------------------------------------------------------------
-# Record-ticket issuance (doc section 6.2 / 10 Phase 3D). Not a byte parser:
-# issues and resolves the decode's `RecordTicket`s at the section 3.3 commit
-# boundary from the root view location and the built `CadIr`, so
-# `Check::TransferAccounting` can prove per-record conservation against the L1
-# ledger. No hostile read, no `.window()` egress, and no budget charge of its
-# own. Emits the resolved disposition table.
 [[module]]
 path = "crates/cadmpeg-codec-catia/src/tickets.rs"
 status = "migrated"

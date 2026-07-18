@@ -53,25 +53,11 @@ struct DecodedBrep {
 }
 
 /// Decode a `.sldprt` session view into IR and diagnostics.
-///
-/// Consumes the session root view directly (§10 Phase 1A): [`container::scan_view`]
-/// charges the container scan as work, routes every block through the platform
-/// expander, and registers the physical container spans. The function retains the
-/// complete source image. Container framing or resource failures return
-/// [`CodecError`]; unsupported model records are reported through
-/// [`DecodeResult::report`] when a partial result can be represented.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan_view_retaining(ctx, root)?;
-    // §6.2 record accounting: commit one ticket per record-shaped unit the codec
-    // walks — every CRC-validated block, plus each tail-directory and cache-cell
-    // framing record — at the §3.3 commit boundary. Each ticket is resolved below
-    // at the point its outcome is decided, so no walked record is silently lost.
     let tickets = commit_record_tickets(ctx, root, &scan);
 
     if ctx.container_only() {
-        // Container-only is an operator-requested truncation, not a failed
-        // faithful decode, so strict rejection does not apply to it (§10
-        // Phase 4).
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
         resolve_record_tickets(ctx, tickets, None, &[]);
@@ -127,7 +113,7 @@ fn decode_result(
     ))
 }
 
-/// Enforce the §10 Phase-4 strict-mode contract: a decode that could only
+/// A decode that could only
 /// account mandatory geometry or topology as a loss — a [`LossCode`] whose
 /// [`strict_consequence`](LossCode::strict_consequence) is
 /// [`Reject`](StrictConsequence::Reject) — is not a faithful result, so strict
@@ -159,8 +145,6 @@ fn reject_unrepresentable_in_strict(
     Ok(())
 }
 
-/// One committed record ticket awaiting resolution, carried from the §3.3 commit
-/// boundary to the point its disposition is decided.
 struct PendingTicket {
     ticket: RecordTicket,
     /// Source offset of the block frame this ticket accounts for; `None` for a
@@ -170,10 +154,6 @@ struct PendingTicket {
     retained_digest: Option<String>,
 }
 
-/// Issue one ticket per record-shaped unit the container scan walked.
-///
-/// Blocks are content records; tail-directory entries and cache cells are
-/// container framing. Every ticket is resolved in [`resolve_record_tickets`].
 fn commit_record_tickets(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -211,7 +191,7 @@ fn commit_record_tickets(
     tickets
 }
 
-/// Resolve every committed record ticket at its decided outcome (§6.2).
+/// Resolve every committed record ticket at its decided outcome.
 ///
 /// The block whose Parasolid stream was lifted into the B-rep graph
 /// (`typed_offset`) resolves `Typed`, naming the IR entities transferred; every
@@ -220,7 +200,7 @@ fn commit_record_tickets(
 /// block is retained on the decode path, so a block that is neither typed nor
 /// retained is an invariant break, not framing: it is surfaced in debug builds
 /// rather than silently reclassified as `Structural` (which would conceal a lost
-/// content record, §6.2).
+/// content record).
 fn resolve_record_tickets(
     ctx: &DecodeContext<'_>,
     tickets: Vec<PendingTicket>,
@@ -931,11 +911,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let mut losses = Vec::new();
 
     if s.unknown_surface_faces > 0 {
-        // Census boundary: the opaque surface carrier already lives in the IR;
-        // this aggregate note accounts for the untyped support shape. The code
-        // is `GeometryNotTransferred` (Reject): the surface shape is a mandatory
-        // semantic the codec did not transfer, so even though topology decoded,
-        // strict mode refuses this decode (accountability is not tolerance).
         cadmpeg_ir::transfer::reduce(
             &mut losses,
             LossNote {
@@ -971,11 +946,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     if s.synthetic_body_grouping {
-        // Census boundary: the deterministic body/region/shell hierarchy that
-        // stands in for an absent body record is already in the IR arenas by the
-        // time this report is built, so there is no value left to gate — the
-        // note is an accountable census over content already present, not a
-        // `substitute` over a live value.
         cadmpeg_ir::transfer::reduce(
             &mut losses,
             LossNote {
@@ -1387,9 +1357,6 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         .filter(|b| b.family == "parasolid")
         .count();
 
-    // Omission boundary: mandatory B-rep geometry and topology never reached
-    // typed IR. Each drop resolves through the typed builder so no omission is
-    // recorded by a bare push.
     let mut losses = Vec::new();
     cadmpeg_ir::transfer::omit(
         &mut losses,

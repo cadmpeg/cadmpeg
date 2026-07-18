@@ -98,7 +98,6 @@ pub fn truncation_cases(bytes: &[u8], boundaries: &[Boundary]) -> Vec<SweepCase>
 
     lengths.sort_unstable();
     lengths.dedup();
-    // A truncation to the full length is the original fixture, not a truncation.
     lengths.retain(|&l| l < len);
 
     lengths
@@ -174,7 +173,6 @@ mod tests {
         assert!(lengths.contains(&99));
         assert!(lengths.contains(&100));
         assert!(lengths.contains(&101));
-        // Above threshold: no every-byte sweep, so length is bounded.
         assert!(lengths.len() < bytes.len());
     }
 
@@ -189,7 +187,6 @@ mod tests {
                 CaseKind::Mutation { .. } => None,
             })
             .collect();
-        // 0..=15, excluding the full length 16.
         assert_eq!(lengths, (0..16).collect::<Vec<_>>());
     }
 

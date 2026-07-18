@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for SolidWorks Parasolid entity scanning.
-//!
-//! Drives `cadmpeg_codec_sldprt::fuzzing::entity` to exercise entity facts
-//! scanning. Contract: no input may panic.
+//! No input may panic.
 
 #![no_main]
 

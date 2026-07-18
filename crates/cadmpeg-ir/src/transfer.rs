@@ -1,23 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed lossy construction at the named Phase-4B boundaries (§6.2, §10).
+//! Typed lossy value construction.
 //!
 //! Byte conservation proves no bytes vanished; per-record dispositions prove
 //! every committed record is accounted for. Neither makes a *value*
 //! substitution honest: a decoder that fills a missing axis with `Vector3::z()`
 //! or a writer that drops a hidden body can leave both ledgers balanced while
-//! silently losing meaning. [`Transfer`] closes that gap at the five boundaries
-//! §10 Phase 4B names — decoder record to entity, defaulted field, entity to
-//! writer, unsupported concept to omission, and resolver to fallback
-//! carrier/axis — by making the substituted or omitted value *unreadable*
+//! silently losing meaning. [`Transfer`] closes that gap by making a
+//! substituted or omitted value *unreadable*
 //! without surrendering the loss note that explains it.
 //!
-//! The mechanism is a resolution barrier, not a wrapper on every field
-//! (§12 rejects `Transfer<T>` on every IR slot). A [`Transfer`] is
-//! `#[must_use]` and its payload can only be extracted through
+//! The mechanism is a resolution barrier, not a wrapper on every field. A
+//! [`Transfer`] is `#[must_use]` and its payload can only be extracted through
 //! [`Transfer::resolve`], which takes a [`LossSink`] and pushes the note for a
 //! [`Fallback`](Transfer::Fallback) or [`Dropped`](Transfer::Dropped) outcome
-//! before returning the value. There is no `unwrap_or_default`: a graduated
-//! module that reaches for the value at all reaches through the sink, so a
+//! before returning the value. There is no `unwrap_or_default`: code that
+//! reaches for the value reaches through the sink, so a
 //! silent fallback or drop is not a discipline failure but a construction that
 //! does not typecheck. [`Builder`] threads one sink through a module so every
 //! boundary in it resolves into the same loss channel.
@@ -50,8 +47,7 @@ impl<S: LossSink + ?Sized> LossSink for &mut S {
     }
 }
 
-/// The value-level transfer outcome for one field or entity crossing a Phase-4B
-/// boundary (§6.2).
+/// The value-level transfer outcome for one field or entity.
 ///
 /// The payload is reachable only through [`resolve`](Transfer::resolve), which
 /// forwards a [`Fallback`](Transfer::Fallback) or [`Dropped`](Transfer::Dropped)
@@ -62,7 +58,7 @@ impl<S: LossSink + ?Sized> LossSink for &mut S {
 /// defaulted field or a resolver's substituted carrier/axis, and `Dropped`
 /// carries an unsupported concept omitted by a decoder or a writer. `Exact`,
 /// `fallback`, and `omitted` have ergonomic constructors; `Derived` is built by
-/// struct literal until a graduated module first computes one.
+/// struct literal.
 #[must_use = "a Transfer carries a possible loss; resolve it through a LossSink"]
 pub enum Transfer<T> {
     /// Read verbatim from the source with no substitution.
@@ -129,14 +125,11 @@ impl<T> Transfer<T> {
     }
 }
 
-/// The single construction path for a graduated module: one [`LossSink`]
-/// threaded through every Phase-4B boundary the module crosses.
-///
 /// Holding a `Builder` gives a decoder or writer exactly one way to read a
 /// [`Transfer`] — [`take`](Builder::take) — so every substitution and omission
 /// in the module drains into the same loss channel. A module that constructs
 /// entities only through a `Builder` cannot express a silent fallback, which is
-/// the property §10 Phase 4B requires before fanout.
+/// the enforced property.
 pub struct Builder<'s, S: LossSink> {
     sink: &'s mut S,
 }

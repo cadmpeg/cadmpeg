@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Self-contained tests: IR documents are built in code (via the IR crate's
-//! fixtures or inline), and expected STEP fragments are asserted inline. No test
-//! depends on an external STEP consumer.
 #![allow(clippy::unwrap_used)]
 
 use std::io::Cursor;
@@ -2174,8 +2171,6 @@ fn failed_face_bounds_do_not_duplicate_the_shared_surface() {
     ir.model.faces[0].surface = ir.model.faces[1].surface.clone();
     ir.model.faces[0].loops.clear();
     let output = export(&ir);
-    // Five face-owned surfaces remain after sharing, and the displaced carrier
-    // is retained once as standalone construction geometry.
     assert_eq!(output.matches("= PLANE(").count(), 6);
 }
 
@@ -2453,22 +2448,18 @@ fn presentation_reader_normalizes_invalid_layer_and_common_datum_inputs() {
     assert!(validation.is_ok(), "{:#?}", validation.findings);
 }
 
-/// Emit a single surface carrier in isolation and return the DATA lines joined.
 fn emit_surface_only(g: &SurfaceGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::surface(&mut e, g);
     e.into_lines().join("\n")
 }
 
-/// Emit a single curve carrier in isolation and return the DATA lines joined.
 fn emit_curve_only(g: &CurveGeometry) -> String {
     let mut e = crate::writer::Emitter::new();
     crate::geometry::curve(&mut e, g);
     e.into_lines().join("\n")
 }
 
-/// A one-face document whose single edge has no attributed curve, so the writer
-/// must omit that edge and record a loss.
 fn edgeless_doc() -> CadIr {
     use cadmpeg_ir::ids::{
         BodyId, CoedgeId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId, VertexId,
@@ -2573,7 +2564,6 @@ fn cube_has_valid_part21_envelope() {
     assert!(s.contains("FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));"));
     assert!(s.contains("\nDATA;\n"));
     assert!(s.trim_end().ends_with("END-ISO-10303-21;"));
-    // ENDSEC appears twice: once closing HEADER, once closing DATA.
     assert_eq!(s.matches("ENDSEC;").count(), 2);
 }
 
@@ -2582,16 +2572,13 @@ fn cube_emits_full_brep_hierarchy() {
     let s = export(&unit_cube());
     assert!(s.contains("MANIFOLD_SOLID_BREP"));
     assert!(s.contains("CLOSED_SHELL"));
-    // Six planar faces, twelve unique edges, eight vertices.
     assert_eq!(s.matches("ADVANCED_FACE").count(), 6);
     assert_eq!(s.matches("= PLANE(").count(), 6);
     assert_eq!(s.matches("EDGE_CURVE").count(), 12);
     assert_eq!(s.matches("VERTEX_POINT").count(), 8);
-    // 6 loops * 4 coedges = 24 oriented edges.
     assert_eq!(s.matches("ORIENTED_EDGE").count(), 24);
     assert_eq!(s.matches("= EDGE_LOOP(").count(), 6);
     assert_eq!(s.matches("FACE_OUTER_BOUND").count(), 6);
-    // Every line edge carries a LINE curve.
     assert_eq!(s.matches("= LINE(").count(), 12);
 }
 
@@ -2611,7 +2598,6 @@ fn cube_product_and_context_boilerplate_present() {
     ] {
         assert!(s.contains(kw), "missing {kw}");
     }
-    // mm document → millimetre SI length unit.
     assert!(s.contains("SI_UNIT(.MILLI.,.METRE.)"));
 }
 
@@ -2667,20 +2653,16 @@ fn reports_entity_counts_and_no_geometry_loss_for_cube() {
     assert_eq!(report.total_entities, buf_line_count(&buf));
     assert_eq!(report.entity_counts.get("ADVANCED_FACE"), Some(&6));
     assert_eq!(report.entity_counts.get("VERTEX_POINT"), Some(&8));
-    // The cube is fully representable: no error/blocking losses.
     assert_eq!(report.error_count(), 0);
 }
 
 fn buf_line_count(buf: &[u8]) -> usize {
-    // Count DATA-section instance lines: those starting with '#'.
     String::from_utf8_lossy(buf)
         .lines()
         .filter(|l| l.starts_with('#'))
         .count()
 }
 
-/// A minimal single-cylinder-surface document exercising analytic emission and
-/// interning of shared points/directions.
 fn cylinder_surface_doc() -> CadIr {
     let mut ir = CadIr::empty(Units::default());
     ir.model.surfaces.push(Surface {
@@ -2698,7 +2680,6 @@ fn cylinder_surface_doc() -> CadIr {
 
 #[test]
 fn analytic_surfaces_map_to_their_step_entities() {
-    // Build one doc per analytic kind and check the keyword appears.
     let cases: Vec<(SurfaceGeometry, &str)> = vec![
         (
             SurfaceGeometry::Cylinder {
@@ -2747,8 +2728,6 @@ fn analytic_surfaces_map_to_their_step_entities() {
             geometry: geom,
             source_object: None,
         });
-        // Surfaces alone aren't reachable from a shell, so they won't be emitted
-        // by the topology walk; emit directly via the geometry module instead.
         let s = emit_surface_only(&ir.model.surfaces[0].geometry);
         assert!(s.contains(kw), "missing {kw} in {s}");
     }
@@ -2869,9 +2848,7 @@ fn real_formatting_always_has_decimal_point() {
 
 #[test]
 fn edge_without_curve_is_reported_and_omitted() {
-    let _ = cylinder_surface_doc(); // keep helper exercised
-                                    // Build a tiny doc: one face on a plane, one loop, one coedge whose edge has
-                                    // no curve. The edge should be omitted and a loss recorded.
+    let _ = cylinder_surface_doc();
     let ir = edgeless_doc();
     let mut buf = Vec::new();
     let report = write_step(&ir, &mut buf, &StepWriteOptions::default()).unwrap();
@@ -2883,7 +2860,7 @@ fn edge_without_curve_is_reported_and_omitted() {
         },
         source_object: None,
     };
-    let _ = curve; // silence unused import path
+    let _ = curve;
     assert!(report
         .losses
         .iter()
@@ -2942,9 +2919,6 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
 
 #[test]
 fn face_on_unknown_surface_is_skipped_and_reported() {
-    // Turn the cube's first face onto an unknown (opaque) surface. That face
-    // cannot become an ADVANCED_FACE, so the writer must skip it and record one
-    // aggregated, counted loss — the remaining five faces still export.
     let mut ir = unit_cube();
     let target = ir.model.faces[0].surface.0.clone();
     for s in &mut ir.model.surfaces {
@@ -3171,7 +3145,6 @@ fn hidden_body_geometry_and_visibility_round_trip() {
         .iter()
         .any(|l| l.code == LossCode::HiddenBodyOmitted));
 
-    // An explicitly visible body exports unchanged.
     let mut ir = unit_cube();
     ir.model.bodies[0].visible = Some(true);
     let s = export(&ir);
@@ -3251,7 +3224,6 @@ fn face_appearance_binding_styles_the_advanced_face() {
     assert!(s.contains("COLOUR_RGB('',0.125,0.125,0.125)"));
     let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
     assert_eq!(styled.len(), 1);
-    // The styled item targets an ADVANCED_FACE instance.
     let target = styled[0]
         .rsplit_once(',')
         .map(|(_, tail)| tail.trim_end_matches(");").to_string())
@@ -3262,9 +3234,6 @@ fn face_appearance_binding_styles_the_advanced_face() {
     assert!(face_line.is_some(), "styled item must reference a face");
 }
 
-/// The soccer-ball case: a body carries a base color and one face overrides it.
-/// Every face must be styled (body color pushed down onto the faces that do not
-/// override it), and the overriding face must carry its own color.
 #[test]
 fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
@@ -3272,14 +3241,12 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
 
     let mut ir = unit_cube();
     let face_count = ir.model.faces.len();
-    // White body base color.
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color {
         r: 1.0,
         g: 1.0,
         b: 1.0,
         a: 1.0,
     });
-    // Black override on a single face, via an appearance binding.
     let face = ir.model.faces[0].id.clone();
     ir.model.appearances.push(Appearance {
         id: AppearanceId("test:appearance#black".to_string()),
@@ -3307,7 +3274,6 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     });
 
     let s = export(&ir);
-    // Both colors are present, and every face is styled.
     assert!(s.contains("COLOUR_RGB('',1.,1.,1.)"));
     assert!(s.contains("COLOUR_RGB('',0.,0.,0.)"));
     let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
@@ -3317,7 +3283,6 @@ fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     // face_count - 1 (the lone override plus every inherited face).
     let mut per_style: std::collections::BTreeMap<String, usize> = Default::default();
     for item in &styled {
-        // STYLED_ITEM('color',(#psa),#face)
         let psa = item
             .split_once(",(")
             .and_then(|(_, tail)| tail.split(')').next())

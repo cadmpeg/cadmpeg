@@ -2,7 +2,7 @@
 //! L1 coarse source-fidelity accounting for the NX SPLMSSTR container.
 //!
 //! [`ledger`] builds a complete coarse tiling of every physical space the
-//! decode produces and stores it as the serialized v2 sidecar (§6.1). Two
+//! decode produces and stores it as the serialized v2 sidecar. Two
 //! space families are tiled:
 //!
 //! - the root `source` space, whose directory framing is [`SpanClass::Structural`]
@@ -35,7 +35,7 @@ const PART_PATH: &str = "/Root/UG_PART/UG_PART";
 /// The tiling is complete by construction, so validation is an invariant guard,
 /// not input-dependent control flow; a failure is a decoder bug. The caller
 /// rides the result on [`DecodeReport::source_fidelity`](cadmpeg_ir::report::DecodeReport::source_fidelity),
-/// the platform's designated sidecar surface (§6.1), rather than a private
+/// the platform's designated sidecar surface, rather than a private
 /// native arena, so a consumer reading the standard slot sees the L1 ledger.
 pub(crate) fn ledger(scan: &Scan) -> SourceFidelity {
     let sidecar = build_sidecar(scan);

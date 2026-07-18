@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for CATIA zero-entity topology parsing.
-//!
-//! Feeds arbitrary bytes through `cadmpeg_codec_catia::zero_entity::parse`
-//! under a default decode session, exercising the migrated `a9 03` stream walk
-//! and its work, alloc, and retained-bytes charges. Contract: no input may
-//! panic.
+//! No input may panic.
 
 #![no_main]
 

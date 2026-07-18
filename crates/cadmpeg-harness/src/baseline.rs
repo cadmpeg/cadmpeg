@@ -254,8 +254,7 @@ pub fn regressions(baseline: &Baseline, current: &[RunResult]) -> Vec<Regression
 /// that makes a codec 50x slower or 100x hungrier stays green under them. Gating
 /// the *measured* value against its blessed value catches that class. The factor
 /// is deliberately loose so ordinary machine-to-machine variance and allocator
-/// noise do not trip it — only an order-of-magnitude regression does — matching
-/// doc §10's "significant regressions require explicit review".
+/// noise do not trip it.
 pub const PERF_REGRESSION_FACTOR: u64 = 4;
 
 /// Absolute wall-clock floor below which a ratio is not judged. A run measured
@@ -290,8 +289,7 @@ fn perf_exceeds(baseline: u64, current: u64, floor: u64) -> bool {
 /// Every measured performance value in `current` that regressed past the
 /// ratchet against its blessed baseline entry.
 ///
-/// This is the automated half of the doc §10 Phase 2 performance gate: the
-/// pass/fail oracles hold the absolute envelope, this holds each run to the
+/// The pass/fail oracles hold the absolute envelope; this holds each run to the
 /// order of magnitude it was blessed at. A regression here means the codec got
 /// dramatically slower or hungrier on a fixture without crossing the envelope,
 /// and requires an explicit re-bless (the reviewer's sign-off) to clear.
@@ -425,9 +423,6 @@ mod tests {
 
     #[test]
     fn a_class_flip_regresses_even_when_every_oracle_still_passes() {
-        // The blessed run classified `malformed`; a later run keeps every oracle
-        // green but returns `ok`. Without gating the class, the flip would ship
-        // silently — the exact gap this dimension closes.
         let baseline = baseline_from(&all_pass_result("rhino", "malformed"));
         let current = vec![all_pass_result("rhino", "ok")];
         let regs = regressions(&baseline, &current);
@@ -450,8 +445,6 @@ mod tests {
 
     #[test]
     fn an_order_of_magnitude_slowdown_inside_the_envelope_regresses() {
-        // Blessed at 300 ms; a 3 s run stays green under the 10 s wall-clock
-        // oracle yet is a 10x regression — the class the ratchet must catch.
         let baseline = baseline_with(&perf_result("nx", "ok", 300, 32 << 20));
         let current = vec![perf_result("nx", "ok", 3_000, 32 << 20)];
         let regs = perf_regressions(&baseline, &current);
@@ -470,8 +463,6 @@ mod tests {
 
     #[test]
     fn noise_under_the_floor_does_not_regress() {
-        // 2 ms blessed, 40 ms current: a 20x ratio, but both below the wall
-        // floor, so scheduler jitter cannot trip the ratchet.
         let baseline = baseline_with(&perf_result("nx", "ok", 2, 1 << 20));
         let current = vec![perf_result("nx", "ok", 40, 4 << 20)];
         assert!(perf_regressions(&baseline, &current).is_empty());
@@ -479,9 +470,6 @@ mod tests {
 
     #[test]
     fn a_pre_measurement_baseline_has_a_dormant_perf_ratchet() {
-        // Zero measured values (an old bless) are "not recorded": the ratchet
-        // stays dormant rather than treating every current value as infinite
-        // regression.
         let baseline = baseline_with(&perf_result("nx", "ok", 0, 0));
         let current = vec![perf_result("nx", "ok", 9_000, 900 << 20)];
         assert!(perf_regressions(&baseline, &current).is_empty());

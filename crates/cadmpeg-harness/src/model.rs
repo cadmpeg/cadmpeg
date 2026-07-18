@@ -9,9 +9,7 @@
 
 use cadmpeg_ir::{Confidence, DecodePolicy};
 
-/// Version tag for the acceptance envelope recorded alongside baselines, per
-/// the versioned-profile requirement (`envelope-v3`, the Phase 3 retained
-/// freeze completing the §5.2 schedule).
+/// Version tag for the acceptance envelope recorded alongside baselines.
 pub const ENVELOPE_VERSION: &str = "envelope-v3";
 
 /// One decode-platform entry point exercised by the sweep.

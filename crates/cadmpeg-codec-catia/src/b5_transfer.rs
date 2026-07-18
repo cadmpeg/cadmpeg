@@ -24,8 +24,7 @@ use crate::b5::{B5Graph, B5Loop, B5Surface};
 /// Transfer a complete B5 graph. Returns `false` without mutation when any
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
 ///
-/// Each referenced surface crosses the Phase-4B resolver-to-carrier boundary
-/// (§6.2, §10) through a [`Transfer`]: an analytic carrier the decoder can read
+/// Each referenced surface resolves through a [`Transfer`]: an analytic carrier the decoder can read
 /// verbatim resolves [`Exact`](Transfer::Exact), while a plane whose stored
 /// axes are not orthonormal or a revolution carrier the transfer cannot express
 /// resolves [`Fallback`](Transfer::Fallback) to an opaque `Unknown` surface. An
@@ -76,9 +75,6 @@ pub(crate) fn transfer(
         let Some(surface) = graph.surfaces.get(&surface_id) else {
             return false;
         };
-        // A carrier substitution resolves `Fallback` and yields its opaque
-        // value; a future `Dropped` branch would yield `None`, which is treated
-        // as an unresolved graph (`false`) rather than a panic on hostile input.
         let Some(geometry) = surface_builder.take(neutral_surface(surface, payload, surface_id))
         else {
             return false;
@@ -426,8 +422,8 @@ pub(crate) fn transfer(
     true
 }
 
-/// Resolve one B5 carrier across the Phase-4B resolver boundary. A readable
-/// analytic carrier is [`Exact`](Transfer::Exact); a plane whose stored axes are
+/// Resolve one B5 carrier. A readable analytic carrier is
+/// [`Exact`](Transfer::Exact); a plane whose stored axes are
 /// not orthonormal, or a revolution the transfer cannot express, substitutes an
 /// opaque `Unknown` carrier. That substitution drops the face's mandatory
 /// surface geometry irreversibly, so it carries the

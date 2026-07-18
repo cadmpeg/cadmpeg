@@ -2160,7 +2160,6 @@ fn parse_text_style(
     })
 }
 
-/// Installs built-in appearance, group membership, and light semantics.
 pub(crate) fn install(scan: &Scan<'_>, ir: &mut CadIr) {
     let scale = scan
         .metadata

@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for CATIA `7C08` outer object-graph parsing.
-//!
-//! Feeds arbitrary bytes through `cadmpeg_codec_catia::object_graph::parse`,
-//! `surface_aliases`, and `markers_7cd9` under a default decode session,
-//! exercising the migrated nested count-framed record walk and its work,
-//! alloc, and retained-bytes charges. Contract: no input may panic.
+//! No input may panic.
 
 #![no_main]
 

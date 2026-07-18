@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fuzzes Rhino hatch record decoding through the committed `hatch::decode` path.
+//! Fuzzes Rhino hatch record decoding.
 
 #![no_main]
 

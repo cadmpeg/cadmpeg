@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for SolidWorks Parasolid topology scanning.
-//!
-//! Drives `cadmpeg_codec_sldprt::fuzzing::topology` to exercise magic-guided
-//! binary parsing. Contract: no input may panic.
+//! No input may panic.
 
 #![no_main]
 

@@ -17,9 +17,6 @@ use zip::CompressionMethod;
 use crate::asm_header;
 use crate::container::{self, role};
 
-/// Run the container scan over `bytes` under a default context, invoking the
-/// closure with the scan. The arena, context, and root view are held for the
-/// closure's duration so the scan's borrows stay valid.
 fn with_scan<T>(bytes: &[u8], body: impl FnOnce(&DecodeContext<'_>, View<'_>) -> T) -> T {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
@@ -32,28 +29,25 @@ use crate::F3dCodec;
 /// followed by a couple of filler records and a `delta_state` history marker.
 fn synthetic_smbh() -> Vec<u8> {
     let mut b = Vec::new();
-    b.extend_from_slice(b"ASM BinaryFile8"); // 0..15 magic
-    b.extend_from_slice(&23100u32.to_le_bytes()); // 15..19 release word
-    b.extend_from_slice(&[0u8; 12]); // 19..31 zero
-    b.extend_from_slice(&7u64.to_le_bytes()); // 31..39 entity-count word
-    b.extend_from_slice(&3u64.to_le_bytes()); // 39..47 flags: history partition
-    push_u8_string(&mut b, "Autodesk Neutron"); // 0x07 tag at offset 47
+    b.extend_from_slice(b"ASM BinaryFile8");
+    b.extend_from_slice(&23100u32.to_le_bytes());
+    b.extend_from_slice(&[0u8; 12]);
+    b.extend_from_slice(&7u64.to_le_bytes());
+    b.extend_from_slice(&3u64.to_le_bytes());
+    push_u8_string(&mut b, "Autodesk Neutron");
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
-    push_tagged_f64(&mut b, 60.0); // scale
-    push_tagged_f64(&mut b, 1e-6); // resabs
-    push_tagged_f64(&mut b, 1e-10); // resnor
+    push_tagged_f64(&mut b, 60.0);
+    push_tagged_f64(&mut b, 1e-6);
+    push_tagged_f64(&mut b, 1e-10);
 
-    // Some active-model filler (no delta_state here).
     b.extend_from_slice(&[0x0d, 0x04, b'b', b'o', b'd', b'y', 0x11]);
     let active_len = b.len();
 
-    // History boundary: 0x11 0x0d 0x0b "delta_state" ... ([spec §4a](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#2-b-rep-streams-and-history-partition)).
     b.extend_from_slice(&[0x11, 0x0d, 0x0b]);
     b.extend_from_slice(b"delta_state");
     b.extend_from_slice(&[0u8; 16]);
 
-    // Sanity: the delta_state string starts at active_len + 3.
     assert_eq!(&b[active_len + 3..active_len + 3 + 11], b"delta_state");
     b
 }
@@ -64,23 +58,15 @@ fn push_u8_string(b: &mut Vec<u8>, s: &str) {
     b.extend_from_slice(s.as_bytes());
 }
 
-// ---- SAB record-stream fixtures ---------------------------------------------
-//
-// The helpers below assemble a minimal but genuine active model slice: an
-// `asmheader` at RecordTable index 0 followed by a single planar face bounded by
-// a closed three-coedge loop, with its edges, vertices, and points. Entity
-// references are RecordTable indices; `-1` is null. This exercises the framer,
-// topology graph builder, and analytic surface decode end to end.
-
 /// The three `0x07`-tagged strings + three `0x06`-tagged doubles of a
 /// `BinaryFile8` header, i.e. the bytes up to the start of the record stream.
 fn smbh_header_prefix() -> Vec<u8> {
     let mut b = Vec::new();
     b.extend_from_slice(b"ASM BinaryFile8");
-    b.extend_from_slice(&23100u32.to_le_bytes()); // release word
-    b.extend_from_slice(&[0u8; 12]); // zero region
-    b.extend_from_slice(&5u64.to_le_bytes()); // entity-count word
-    b.extend_from_slice(&3u64.to_le_bytes()); // flags: history partition
+    b.extend_from_slice(&23100u32.to_le_bytes());
+    b.extend_from_slice(&[0u8; 12]);
+    b.extend_from_slice(&5u64.to_le_bytes());
+    b.extend_from_slice(&3u64.to_le_bytes());
     push_u8_string(&mut b, "Autodesk Neutron");
     push_u8_string(&mut b, "ASM 231.6.3.65535 OSX");
     push_u8_string(&mut b, "Tue Mar 31 16:16:19 2026");
@@ -277,162 +263,137 @@ fn update_f3d_native<R>(
     update(&mut native)
 }
 
-/// Assemble the active slice: header prefix + records + `delta_state` boundary.
-/// `RecordTable` indices are the order below, starting at 0 (`asmheader`).
 fn synthetic_geometry_smbh() -> Vec<u8> {
     geometry_smbh_translated([0.0, 0.0, 0.0])
 }
 
-/// The [`synthetic_geometry_smbh`] fixture with every source point coordinate
-/// (the plane origin and the three vertex points) rigidly translated by `delta`,
-/// expressed in the same source (pre-scale) units as the fixture's `t_pos`
-/// operands. Surface normals and UV directions (`t_vec`) are left untouched, as a
-/// pure translation leaves them invariant. This is the byte-level construction a
-/// rigid-motion metamorphic property drives: `decode` of the translated bytes
-/// must translate the decoded geometry by the same rigid offset and leave every
-/// non-positional fact — topology, senses, counts, loss codes — unchanged.
 fn geometry_smbh_translated(delta: [f64; 3]) -> Vec<u8> {
     let shift = |p: [f64; 3]| [p[0] + delta[0], p[1] + delta[1], p[2] + delta[2]];
-    // Indices: 0 asmheader, 1 body, 2 region, 3 shell, 4 face, 5 loop,
-    // 6 plane, 7/8/9 coedges, 10/11/12 edges, 13/14/15 vertices,
-    // 16/17/18 points.
     let mut r = Vec::new();
 
-    // 0: asmheader
     t_ident(&mut r, "asmheader");
     push_u8_string(&mut r, "231.6.3.65535");
     t_end(&mut r);
 
-    // 1: body  (chunk3 = first_region)
     t_ident(&mut r, "body");
-    t_ref(&mut r, -1); // 0 attrib
-    t_long(&mut r, 42); // 1 native ASM body key
-    t_ref(&mut r, -1); // 2 null
-    t_ref(&mut r, 2); // 3 first_region
-    t_ref(&mut r, -1); // 4 wire
-    t_ref(&mut r, -1); // 5 transform
+    t_ref(&mut r, -1);
+    t_long(&mut r, 42);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, 2);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, -1);
     t_end(&mut r);
 
-    // 2: region  (chunk4 = first_shell, chunk5 = owner_body)
     t_ident(&mut r, "region");
-    t_ref(&mut r, -1); // 0 next
-    t_long(&mut r, -1); // 1 history
-    t_ref(&mut r, -1); // 2 null
-    t_ref(&mut r, -1); // 3 null
-    t_ref(&mut r, 3); // 4 first_shell
-    t_ref(&mut r, 1); // 5 owner_body
+    t_ref(&mut r, -1);
+    t_long(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, 3);
+    t_ref(&mut r, 1);
     t_end(&mut r);
 
-    // 3: shell  (chunk5 = first_face, chunk7 = owner_region)
     t_ident(&mut r, "shell");
-    t_ref(&mut r, -1); // 0 next
-    t_long(&mut r, -1); // 1 history
-    t_ref(&mut r, -1); // 2 null
-    t_ref(&mut r, -1); // 3 null
-    t_ref(&mut r, -1); // 4 null
-    t_ref(&mut r, 4); // 5 first_face
-    t_ref(&mut r, -1); // 6 wire
-    t_ref(&mut r, 2); // 7 owner_region
+    t_ref(&mut r, -1);
+    t_long(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, 4);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, 2);
     t_end(&mut r);
 
-    // 4: face  (chunk4 first_loop, chunk5 owner_shell, chunk7 surface, chunk8 sense)
     t_ident(&mut r, "face");
-    t_ref(&mut r, -1); // 0 attrib
-    t_long(&mut r, -1); // 1 history
-    t_ref(&mut r, -1); // 2 null
-    t_ref(&mut r, -1); // 3 next_face
-    t_ref(&mut r, 5); // 4 first_loop
-    t_ref(&mut r, 3); // 5 owner_shell
-    t_ref(&mut r, -1); // 6 null
-    t_ref(&mut r, 6); // 7 surface
-    r.push(0x0b); // 8 sense = forward
-    r.push(0x0b); // 9 sides = single
+    t_ref(&mut r, -1);
+    t_long(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, 5);
+    t_ref(&mut r, 3);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, 6);
+    r.push(0x0b);
+    r.push(0x0b);
     t_end(&mut r);
 
-    // 5: loop  (chunk4 first_coedge, chunk5 owner_face)
     t_ident(&mut r, "loop");
-    t_ref(&mut r, -1); // 0 attrib
-    t_long(&mut r, -1); // 1 history
-    t_ref(&mut r, -1); // 2 null
-    t_ref(&mut r, -1); // 3 next_loop
-    t_ref(&mut r, 7); // 4 first_coedge
-    t_ref(&mut r, 4); // 5 owner_face
+    t_ref(&mut r, -1);
+    t_long(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, 7);
+    t_ref(&mut r, 4);
     t_end(&mut r);
 
-    // 6: plane-surface  (origin, normal, uv-origin)
     t_subident(&mut r, "plane");
     t_ident(&mut r, "surface");
-    t_ref(&mut r, -1); // attrib
-    t_long(&mut r, -1); // history
-    t_ref(&mut r, -1); // null
-    t_pos(&mut r, shift([0.0, 0.0, 0.0])); // root
-    t_vec(&mut r, [0.0, 0.0, 1.0]); // normal
-    t_vec(&mut r, [1.0, 0.0, 0.0]); // UV reference direction
-    r.push(0x0b); // sense
+    t_ref(&mut r, -1);
+    t_long(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_pos(&mut r, shift([0.0, 0.0, 0.0]));
+    t_vec(&mut r, [0.0, 0.0, 1.0]);
+    t_vec(&mut r, [1.0, 0.0, 0.0]);
+    r.push(0x0b);
     t_end(&mut r);
 
-    // 7/8/9: coedges forming the ring 7 -> 8 -> 9 -> 7
     let coedges = [(7i64, 8, 9, 10), (8, 9, 7, 11), (9, 7, 8, 12)];
     for (_id, next, prev, edge) in coedges {
         t_ident(&mut r, "coedge");
-        t_ref(&mut r, -1); // 0 attrib
-        t_long(&mut r, -1); // 1 history
-        t_ref(&mut r, -1); // 2 null
-        t_ref(&mut r, next); // 3 next
-        t_ref(&mut r, prev); // 4 prev
-        t_ref(&mut r, -1); // 5 partner (open loop, none)
-        t_ref(&mut r, edge); // 6 edge
-        r.push(0x0b); // 7 sense = forward
-        t_ref(&mut r, 5); // 8 owner_loop
-        t_long(&mut r, 0); // 9 reserved
-        t_ref(&mut r, -1); // 10 pcurve
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, next);
+        t_ref(&mut r, prev);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, edge);
+        r.push(0x0b);
+        t_ref(&mut r, 5);
+        t_long(&mut r, 0);
+        t_ref(&mut r, -1);
         t_end(&mut r);
     }
 
-    // 10/11/12: edges  (start, end vertices), curve = null
     let edges = [(10i64, 13, 14), (11, 14, 15), (12, 15, 13)];
     for (_id, start, end) in edges {
         t_ident(&mut r, "edge");
-        t_ref(&mut r, -1); // 0 attrib
-        t_long(&mut r, -1); // 1 history
-        t_ref(&mut r, -1); // 2 null
-        t_ref(&mut r, start); // 3 start_vertex
-        t_dbl(&mut r, 0.0); // 4 t_start
-        t_ref(&mut r, end); // 5 end_vertex
-        t_dbl(&mut r, 1.0); // 6 t_end
-        t_ref(&mut r, -1); // 7 owner_coedge
-        t_ref(&mut r, -1); // 8 curve (degenerate: none)
-        r.push(0x0b); // 9 sense
-        push_u8_string(&mut r, "unknown"); // 10 continuity text
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, start);
+        t_dbl(&mut r, 0.0);
+        t_ref(&mut r, end);
+        t_dbl(&mut r, 1.0);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, -1);
+        r.push(0x0b);
+        push_u8_string(&mut r, "unknown");
         t_end(&mut r);
     }
 
-    // 13/14/15: vertices (owning_edge, index_flag, point)
     let verts = [(13i64, 10, 0, 16), (14, 10, 1, 17), (15, 12, 0, 18)];
     for (_id, edge, index_flag, point) in verts {
         t_ident(&mut r, "vertex");
-        t_ref(&mut r, -1); // 0 attrib
-        t_long(&mut r, -1); // 1 history
-        t_ref(&mut r, -1); // 2 null
-        t_ref(&mut r, edge); // 3 owning_edge
-        t_long(&mut r, index_flag); // 4 index_flag
-        t_ref(&mut r, point); // 5 point
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
+        t_ref(&mut r, edge);
+        t_long(&mut r, index_flag);
+        t_ref(&mut r, point);
         t_end(&mut r);
     }
 
-    // 16/17/18: points  (coordinates in cm; ×10 = mm)
     let points = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
     for p in points {
         t_ident(&mut r, "point");
-        t_ref(&mut r, -1); // attrib
-        t_long(&mut r, -1); // history
-        t_ref(&mut r, -1); // null
+        t_ref(&mut r, -1);
+        t_long(&mut r, -1);
+        t_ref(&mut r, -1);
         t_pos(&mut r, shift(p));
         t_end(&mut r);
     }
 
-    // History boundary: previous record's 0x11 + 0x0d 0x0b 'delta_state'.
-    t_ident(&mut r, "delta_state"); // 0x0d 0x0b 'delta_state'
+    t_ident(&mut r, "delta_state");
 
     let mut out = smbh_header_prefix();
     out.extend_from_slice(&r);
@@ -3533,83 +3494,72 @@ fn synthetic_partial_rb_blend_spl_sur_smbh() -> Vec<u8> {
     bytes
 }
 
-/// Two triangular faces sharing one edge: face 4 rests on a plane (analytic),
-/// face 5 on a `spline-surface` (undecoded → unknown-geometry carrier). The
-/// shared edge 16 is used by coedge 10 (face 4, forward) and coedge 13 (face 5,
-/// reversed), which must decode as mutually-referencing partners.
 fn synthetic_mixed_smbh() -> Vec<u8> {
     let mut r = Vec::new();
 
-    // 0: asmheader
     t_ident(&mut r, "asmheader");
     push_u8_string(&mut r, "231.6.3.65535");
     t_end(&mut r);
 
-    // 1: body
     t_ident(&mut r, "body");
-    t_ref(&mut r, -1); // 0 attrib
-    t_long(&mut r, -1); // 1 history
-    t_ref(&mut r, -1); // 2 null
-    t_ref(&mut r, 2); // 3 first_region
-    t_ref(&mut r, -1); // 4 wire
-    t_ref(&mut r, -1); // 5 transform
+    t_ref(&mut r, -1);
+    t_long(&mut r, -1);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, 2);
+    t_ref(&mut r, -1);
+    t_ref(&mut r, -1);
     t_end(&mut r);
 
-    // 2: region
     t_ident(&mut r, "region");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
     t_ref(&mut r, -1);
-    t_ref(&mut r, 3); // first_shell
-    t_ref(&mut r, 1); // owner_body
+    t_ref(&mut r, 3);
+    t_ref(&mut r, 1);
     t_end(&mut r);
 
-    // 3: shell (first_face = 4)
     t_ident(&mut r, "shell");
     t_ref(&mut r, -1);
     t_long(&mut r, -1);
     t_ref(&mut r, -1);
     t_ref(&mut r, -1);
     t_ref(&mut r, -1);
-    t_ref(&mut r, 4); // first_face
+    t_ref(&mut r, 4);
     t_ref(&mut r, -1);
-    t_ref(&mut r, 2); // owner_region
+    t_ref(&mut r, 2);
     t_end(&mut r);
 
-    // Face builder: next_face, first_loop, surface.
     let face = |r: &mut Vec<u8>, next: i64, first_loop: i64, surface: i64| {
         t_ident(r, "face");
-        t_ref(r, -1); // 0 attrib
-        t_long(r, -1); // 1 history
-        t_ref(r, -1); // 2 null
-        t_ref(r, next); // 3 next_face
-        t_ref(r, first_loop); // 4 first_loop
-        t_ref(r, 3); // 5 owner_shell
-        t_ref(r, -1); // 6 null
-        t_ref(r, surface); // 7 surface
-        r.push(0x0b); // 8 sense forward
-        r.push(0x0b); // 9 sides single
+        t_ref(r, -1);
+        t_long(r, -1);
+        t_ref(r, -1);
+        t_ref(r, next);
+        t_ref(r, first_loop);
+        t_ref(r, 3);
+        t_ref(r, -1);
+        t_ref(r, surface);
+        r.push(0x0b);
+        r.push(0x0b);
         t_end(r);
     };
-    face(&mut r, 5, 6, 8); // 4: plane face
-    face(&mut r, -1, 7, 9); // 5: spline face
+    face(&mut r, 5, 6, 8);
+    face(&mut r, -1, 7, 9);
 
-    // Loop builder: first_coedge, owner_face.
     let lp = |r: &mut Vec<u8>, first_coedge: i64, owner_face: i64| {
         t_ident(r, "loop");
         t_ref(r, -1);
         t_long(r, -1);
         t_ref(r, -1);
-        t_ref(r, -1); // next_loop
+        t_ref(r, -1);
         t_ref(r, first_coedge);
         t_ref(r, owner_face);
         t_end(r);
     };
-    lp(&mut r, 10, 4); // 6: loop of face 4
-    lp(&mut r, 13, 5); // 7: loop of face 5
+    lp(&mut r, 10, 4);
+    lp(&mut r, 13, 5);
 
-    // 8: plane-surface
     t_subident(&mut r, "plane");
     t_ident(&mut r, "surface");
     t_ref(&mut r, -1);
@@ -3621,7 +3571,6 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
     r.push(0x0b);
     t_end(&mut r);
 
-    // 9: spline-surface (undecoded carrier; only needs to frame cleanly)
     t_subident(&mut r, "spline");
     t_ident(&mut r, "surface");
     t_ref(&mut r, -1);
@@ -3631,31 +3580,28 @@ fn synthetic_mixed_smbh() -> Vec<u8> {
     r.push(0x0b);
     t_end(&mut r);
 
-    // Coedge builder: next, prev, partner, edge, sense_reversed, owner_loop.
     let ce =
         |r: &mut Vec<u8>, next: i64, prev: i64, partner: i64, edge: i64, rev: bool, owner: i64| {
             t_ident(r, "coedge");
-            t_ref(r, -1); // 0 attrib
-            t_long(r, -1); // 1 history
-            t_ref(r, -1); // 2 null
-            t_ref(r, next); // 3 next
-            t_ref(r, prev); // 4 prev
-            t_ref(r, partner); // 5 partner
-            t_ref(r, edge); // 6 edge
-            r.push(if rev { 0x0a } else { 0x0b }); // 7 sense
-            t_ref(r, owner); // 8 owner_loop
-            t_long(r, 0); // 9 reserved
-            t_ref(r, -1); // 10 pcurve
+            t_ref(r, -1);
+            t_long(r, -1);
+            t_ref(r, -1);
+            t_ref(r, next);
+            t_ref(r, prev);
+            t_ref(r, partner);
+            t_ref(r, edge);
+            r.push(if rev { 0x0a } else { 0x0b });
+            t_ref(r, owner);
+            t_long(r, 0);
+            t_ref(r, -1);
             t_end(r);
         };
-    // Loop of face 4: 10 -> 11 -> 12 -> 10; coedge 10 partners coedge 13.
-    ce(&mut r, 11, 12, 13, 16, false, 6); // 10 (shared edge, forward)
-    ce(&mut r, 12, 10, -1, 17, false, 6); // 11
-    ce(&mut r, 10, 11, -1, 18, false, 6); // 12
-                                          // Loop of face 5: 13 -> 14 -> 15 -> 13; coedge 13 partners coedge 10.
-    ce(&mut r, 14, 15, 10, 16, true, 7); // 13 (shared edge, reversed)
-    ce(&mut r, 15, 13, -1, 19, false, 7); // 14
-    ce(&mut r, 13, 14, -1, 20, false, 7); // 15
+    ce(&mut r, 11, 12, 13, 16, false, 6);
+    ce(&mut r, 12, 10, -1, 17, false, 6);
+    ce(&mut r, 10, 11, -1, 18, false, 6);
+    ce(&mut r, 14, 15, 10, 16, true, 7);
+    ce(&mut r, 15, 13, -1, 19, false, 7);
+    ce(&mut r, 13, 14, -1, 20, false, 7);
 
     // Edge builder: start_vertex, end_vertex.
     let edge = |r: &mut Vec<u8>, start: i64, end: i64| {
@@ -8980,10 +8926,6 @@ fn smb_only_is_reported_as_construction_snapshot() {
     });
 }
 
-/// Build an f3d whose one `.protein` asset is deflated at the top level and
-/// whose nested `AssetData` entries are themselves deflated, so decoding inflates
-/// the protein through the expander and then reads its nested archive over that
-/// inflated space — a nested source view, never a root-length argument.
 fn f3d_with_deflated_nested_protein(smbh: &[u8], guid: &str) -> Vec<u8> {
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
@@ -9021,12 +8963,6 @@ fn f3d_with_deflated_nested_protein(smbh: &[u8], guid: &str) -> Vec<u8> {
 
 #[test]
 fn nested_protein_archive_inflates_through_a_nested_source_view() {
-    // The `.protein` entry is deflated, so it is inflated through `begin_expand`
-    // into its own Transform space; its nested archive is then read over that
-    // space and its deflated `InstanceProperties.bin` inflated through a second,
-    // nested `begin_expand` — bounded by the entry's own extent, never the root
-    // length (§10 Phase 1B nested source views). The decoded appearance is
-    // identical to the stored-protein path.
     let guid = "11111111-2222-3333-4444-555555555555";
     let f3d = f3d_with_deflated_nested_protein(&synthetic_geometry_smbh(), guid);
     let result = F3dCodec
@@ -9041,11 +8977,6 @@ fn nested_protein_archive_inflates_through_a_nested_source_view() {
 
 #[test]
 fn compressed_entry_expansion_respects_the_decompression_ceiling() {
-    // A deflated entry whose inflated size exceeds the per-expand ceiling trips a
-    // `ResourceLimit` while the scan streams it through `begin_expand`, never a
-    // `Malformed` and never a panic: policy exhaustion is a resource outcome
-    // (§10 Phase 1 gate 9), and the expansion is bounded as it is produced,
-    // cumulatively (gate 11).
     let deflated = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     zip.start_file(
@@ -9076,9 +9007,6 @@ fn compressed_entry_expansion_respects_the_decompression_ceiling() {
 
 #[test]
 fn truncation_at_container_boundaries_never_panics() {
-    // Every prefix of a full archive must decode and inspect to `Ok` or a typed
-    // `Err`, never a panic, at container and entry boundaries alike (§10 Phase 1
-    // gate 8).
     let full = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     for cut in 0..=full.len() {
         let prefix = full[..cut].to_vec();
@@ -9089,12 +9017,6 @@ fn truncation_at_container_boundaries_never_panics() {
 
 #[test]
 fn truncation_at_act_record_boundaries_is_deterministic_and_never_panics() {
-    // Every prefix of the ACT bulk stream, framed in an otherwise valid archive,
-    // must decode without panicking and produce identical output across two
-    // runs (§10 Phase 2 migrated-means: truncation at the module's record
-    // boundaries, deterministic output). Exercises `act::decode`'s migrated
-    // count-framed table loop, marker scans, and budgeted accumulators against
-    // committed-then-truncated reads.
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let smbh = synthetic_geometry_smbh();
     let full_act = generated_act_bulkstream();
@@ -9129,13 +9051,6 @@ fn truncation_at_act_record_boundaries_is_deterministic_and_never_panics() {
 
 #[test]
 fn truncation_at_design_body_member_boundaries_is_deterministic_and_never_panics() {
-    // Every prefix of the Design bulk stream, framed in an otherwise valid
-    // archive, must decode without panicking and produce identical output across
-    // two runs (§10 Phase 2 migrated-means: truncation at the module's record
-    // boundaries, deterministic output). Exercises `design::decode_body_members`'
-    // migrated count-framed loop: the `BodiesRoot` prefix scan, the
-    // `View::counted` + `exact_vec` physical-floor reservation, and the
-    // per-record budgeted reads against committed-then-truncated bytes.
     let stored = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
     let smbh = synthetic_geometry_smbh();
     let full_design = generated_design_bulkstream();
@@ -17061,15 +16976,6 @@ mod fidelity {
     }
 }
 
-/// Every container entry the decode walks issues a record ticket that
-/// `finish` resolves, so `Check::TransferAccounting` (§6.2) passes in both
-/// decode modes over a geometry archive and a metadata-fallback archive alike.
-///
-/// The trait-level `decode` runs `finish`, which validates the resolved
-/// disposition table against the ledger and the report's losses; a `Malformed`
-/// error in strict mode or a degraded-loss report in salvage mode would mean an
-/// unresolved or inconsistent ticket. A successful decode in strict mode is the
-/// strongest per-record accounting assertion the engine offers.
 #[test]
 fn transfer_accounting_passes_in_both_modes() {
     fn options(mode: DecodeMode) -> DecodeOptions {
@@ -17082,19 +16988,12 @@ fn transfer_accounting_passes_in_both_modes() {
         }
     }
 
-    // The geometry fixture transfers a body, so its accounting validates in both
-    // modes. The metadata-fallback fixtures carry a blocking, Reject-consequence
-    // geometry/topology omission, so strict mode refuses them (that refusal is
-    // asserted in `strict_mode_rejects_metadata_fallback_geometry`); their
-    // accounting is validated in salvage mode, where the decode completes.
     let geometry = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     for mode in [DecodeMode::Strict, DecodeMode::Salvage] {
         let result = F3dCodec
             .decode(&mut Cursor::new(geometry.clone()), &options(mode))
             .unwrap_or_else(|e| panic!("{mode:?} decode failed transfer accounting: {e:?}"));
         if mode == DecodeMode::Strict {
-            // A strict decode never carries an auto-drop or accounting-violation
-            // loss note: those are the salvage-only degrade spellings.
             assert!(
                 !result
                     .report
@@ -17113,10 +17012,6 @@ fn transfer_accounting_passes_in_both_modes() {
     }
 }
 
-/// A metadata-fallback archive with a preview asset resolves its untransferred
-/// records honestly: the active B-rep stream drops against the blocking geometry
-/// loss and the preview drops against a distinct appended note, so no walked
-/// record is silently lost.
 #[test]
 fn metadata_fallback_drops_are_accounted() {
     let result = F3dCodec
@@ -17136,21 +17031,6 @@ fn metadata_fallback_drops_are_accounted() {
     );
 }
 
-/// Phase-4B strict/salvage loss-code pair for the geometry-transfer path. Every
-/// note the typed [`Builder`](cadmpeg_ir::transfer::Builder) resolves in
-/// `build_geometry_report` carries a stable [`LossCode`](cadmpeg_ir::report::LossCode);
-/// the code set is identical across strict and salvage mode and keyed on the
-/// machine code, never message text, so a reworded message never breaks the
-/// gate. The always-present `MaterialNotTransferred` omission proves the
-/// material boundary drains through the builder in both modes.
-///
-/// The geometry path here transfers a body, so its losses are accountable
-/// reductions and partial omissions over content that *was* transferred (spline
-/// carriers, faces on undecoded surfaces): every code is `Tolerate` or carried
-/// below `Blocking`, so strict mode completes rather than rejecting. The
-/// unrepresentable-mandatory case — a blocking geometry/topology omission — is
-/// the metadata fallback, whose strict refusal is asserted separately in
-/// `strict_mode_rejects_metadata_fallback_geometry`.
 #[test]
 fn geometry_transfer_loss_codes_match_across_modes() {
     use cadmpeg_ir::report::LossCode;
@@ -17189,15 +17069,6 @@ fn geometry_transfer_loss_codes_match_across_modes() {
     );
 }
 
-/// Strict-reject + salvage-loss-code pair for the metadata-fallback path
-/// (Phase 4D). A `.f3d` whose active B-rep stream is not a decodable SAB carries
-/// mandatory geometry and topology it could not represent at all: the report
-/// routes both through the typed builder as `Blocking`,
-/// [`Reject`](cadmpeg_ir::report::StrictConsequence::Reject)-consequence
-/// omissions. Strict mode refuses the decode with a classified `Malformed`
-/// naming the loss codes; salvage mode completes and surfaces the same stable
-/// codes in its report, so the refusal always has a salvage counterpart that
-/// names the loss (never message text).
 #[test]
 fn strict_mode_rejects_metadata_fallback_geometry() {
     use cadmpeg_ir::report::LossCode;
@@ -17214,8 +17085,6 @@ fn strict_mode_rejects_metadata_fallback_geometry() {
 
     let fixture = synthetic_f3d(true);
 
-    // Strict: the unrepresentable mandatory semantics are refused, and the error
-    // names the stable codes that forced the refusal.
     let error = F3dCodec
         .decode(
             &mut Cursor::new(fixture.clone()),
@@ -17235,8 +17104,6 @@ fn strict_mode_rejects_metadata_fallback_geometry() {
         "strict refusal must name the geometry and topology loss codes: {message}"
     );
 
-    // Salvage: the same fixture completes, and its report carries the identical
-    // Reject-consequence codes plus the tolerated material omission.
     let salvage_codes: std::collections::BTreeSet<LossCode> = F3dCodec
         .decode(&mut Cursor::new(fixture), &options(DecodeMode::Salvage))
         .expect("salvage mode completes the metadata fallback")
@@ -17257,25 +17124,9 @@ fn strict_mode_rejects_metadata_fallback_geometry() {
     }
 }
 
-/// Metamorphic property (Phase 4D, §9): rigid-motion equivariance of decode. A
-/// pure translation of every source point coordinate must translate the decoded
-/// geometry by the same rigid offset and leave every non-positional fact —
-/// topology counts, coedge senses, and the report's loss codes — bit-identical.
-///
-/// The transformation is applied at the byte level: [`geometry_smbh_translated`]
-/// rebuilds the fixture with the plane origin and the three vertex points shifted
-/// by a constant vector, so `decode` sees genuinely different bytes rather than a
-/// post-decode edit. Reader and writer cannot share a misconception that would
-/// survive this: a decoder that dropped, reordered, or mis-scaled a coordinate
-/// axis would break the constant-offset relation the assertion pins. The
-/// per-point offset is derived from the first point and required to be both
-/// non-zero (the translation took effect) and identical across every point (the
-/// motion is rigid, not per-point noise).
 #[test]
 fn decode_is_equivariant_under_rigid_translation() {
     let base = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
-    // A translation with a distinct component on every axis, so a dropped or
-    // transposed axis cannot coincidentally satisfy the constant-offset check.
     let delta = [2.5, -1.25, 4.0];
     let moved = f3d_with_smbh_and_protein(&geometry_smbh_translated(delta));
 
@@ -17287,7 +17138,6 @@ fn decode_is_equivariant_under_rigid_translation() {
     let original = decode(base);
     let translated = decode(moved);
 
-    // Non-positional structure is invariant under the motion.
     let om = &original.ir.model;
     let tm = &translated.ir.model;
     assert_eq!(om.bodies.len(), tm.bodies.len());
@@ -17319,7 +17169,6 @@ fn decode_is_equivariant_under_rigid_translation() {
         "translation is lossless, so the loss-code vector is unchanged"
     );
 
-    // Geometry is equivariant: every decoded point shifts by one rigid offset.
     let offset = [
         tm.points[0].position.x - om.points[0].position.x,
         tm.points[0].position.y - om.points[0].position.y,

@@ -118,10 +118,6 @@ fn find(data: &[u8], needle: &[u8], from: usize) -> Option<usize> {
 }
 
 fn scalars(data: &[u8], mut offset: usize, count: usize) -> Option<Vec<f64>> {
-    // `count` is a fixed caller-supplied width (10 at the single call site), not
-    // an untrusted `compact_int`; the loop pushes exactly `count` times. A plain
-    // `Vec::new` + `push` keeps the module clear of disallowed methods without a
-    // `BoundedCount` proof, since the bound is a compile-time constant.
     let mut values = Vec::new();
     while values.len() < count {
         let head = *data.get(offset)?;

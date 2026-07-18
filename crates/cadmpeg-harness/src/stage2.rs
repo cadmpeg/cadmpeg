@@ -1,88 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Stage-2 gating adoption: the §7 capability matrix, resolved per codec from
-//! its `parser-manifest.toml`.
-//!
-//! Stage-2 oracles gate **progressively, per codec**, as the capability each
-//! one tests lands — not as a Phase-4 big bang (doc §7, §10 Phase 4C). This
-//! module is the gating-adoption layer: it names the seven matrix rows, the
-//! capability that turns each one on, and — for the rows a codec adopts through
-//! its own migration state — derives adoption from the manifest, the single
-//! source of truth for what has landed.
-//!
-//! # The matrix
-//!
-//! | Capability reached | Newly gating oracle |
-//! |---|---|
-//! | shared session (0B, all codecs) | [`Stage2Oracle::NoBypass`] |
-//! | container migration (Phase 1) | [`Stage2Oracle::ResourceClassification`] |
-//! | commit-API migration (Phase 2) | [`Stage2Oracle::StrictTruncation`] |
-//! | budgeted leaf migration (Phase 2) | [`Stage2Oracle::BudgetEnforcement`] |
-//! | L1/L2 ledger (Phase 3C/3E) | [`Stage2Oracle::ByteAccounting`] |
-//! | ticket issuance (Phase 3D) | [`Stage2Oracle::DispositionValidation`] |
-//! | typed lossy builder (Phase 4B) | [`Stage2Oracle::NoSilentFallback`] |
-//!
-//! # What 4C turns on
-//!
-//! The first four rows are in force for every codec from 0B/Phase 1/Phase 2
-//! onward (all landed, doc §10), so [`CodecStage2Status`] reports them adopted
-//! unconditionally. Byte-accounting turns on when the codec's ledger lands
-//! (Phase 3C/3E, keyed on `ledger_level >= 1`). Phase 4C completes gating by
-//! turning on the **last two rows** per codec, keyed on the manifest:
-//!
-//! - **disposition validation** once the codec issues and resolves record
-//!   tickets (the `record_tickets` capability flag, Phase 3D);
-//! - **no silent fallback/drop** once the codec constructs lossy IR through the
-//!   platform typed builder (a module flagged `semantic_builder`, Phase 4B).
-//!
-//! Both later rows key on a manifest **capability flag**, not on a module
-//! basename. A codec adopts the typed builder wherever its Phase-4B boundaries
-//! live (the shared `cadmpeg_ir::transfer::{omit, reduce}` helpers called from
-//! `decode.rs` for f3d, `builder.rs` for creo/sldprt, `b5_transfer.rs` for
-//! catia, `decode.rs` for rhino); it issues record tickets wherever its commit
-//! boundary
-//! lives (a dedicated `tickets.rs` for catia, inside `decode.rs` for the codecs
-//! whose commit boundary is not factored out). Keying disposition validation on
-//! the `tickets.rs` basename under-gated every codec that issues tickets from
-//! another module, so the derivation reads the `record_tickets` flag the same
-//! way it reads `semantic_builder` — orthogonal to a module's resource-migration
-//! `status`. A migrated [`TICKET_MODULE`] entry stays a recognized signal for
-//! backward compatibility with manifests that predate the flag, but the flag is
-//! the source of truth. A row stays off where the capability is genuinely not
-//! adopted; the manifest is the single source of that truth, so a codec
-//! advancing (or a capability being withdrawn) moves the gate with it, never a
-//! hand-maintained list here.
-//!
-//! # Scope
-//!
-//! The rows this module resolves are adoption bookkeeping: which oracle a codec
-//! is accountable to, derived from its manifest. The runtime oracle that would
-//! judge one produced [`DecodeReport`](cadmpeg_ir::DecodeReport) against the
-//! corpus under subprocess isolation is not wired here, because the stage-1 wire
-//! protocol does not carry the decode report back from the child runner. Until
-//! that protocol carries it, the adoption matrix is the gate: the ratchet in
-//! `tests/stage2_gates.rs` pins each codec's gating rows to its manifest.
+//! Per-codec stage-2 oracle selection from parser manifests.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::execute::{ReportSummary, CODEC_IDS};
 
-/// The `src`-relative basename of the dedicated module a codec may add when it
-/// factors record-ticket issuance and resolution out of its commit boundary
-/// (doc §6.2 / §10 Phase 3D). A migrated entry with this basename is a
-/// recognized legacy signal that disposition validation has landed, retained for
-/// manifests that predate the [`RECORD_TICKETS_FLAG`] capability flag. It is not
-/// the source of truth: a codec that issues tickets from `decode.rs` sets the
-/// flag instead.
+/// Legacy manifest signal for record-ticket support.
 pub const TICKET_MODULE: &str = "tickets.rs";
 
 /// The manifest capability flag a codec sets on the module that issues and
-/// resolves record tickets (doc §6.2 / §10 Phase 3D), wherever that module
-/// lives. The source of truth for [`Capability::TicketIssuance`], orthogonal to
-/// the module's resource-migration `status`, mirroring `semantic_builder`.
+/// resolves record tickets.
 pub const RECORD_TICKETS_FLAG: &str = "record_tickets";
 
-/// The seven stage-2 oracle rows of the §7 capability matrix, in matrix order.
+/// The seven stage-2 oracle rows, in matrix order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Stage2Oracle {
     /// No decode bypasses the shared session; the root-input limit holds; no
@@ -91,18 +22,17 @@ pub enum Stage2Oracle {
     /// Container expansion is classified and a `ResourceLimit` is never
     /// reported as `Malformed`.
     ResourceClassification,
-    /// Post-commit truncations classify as `Truncated` in strict mode (§3.3).
+    /// Post-commit truncations classify as `Truncated` in strict mode.
     StrictTruncation,
     /// Allocation, work, and depth limits are enforced by the budgeted leaves.
     BudgetEnforcement,
     /// A successful salvage decode's source-fidelity ledger validates byte
-    /// conservation at the codec's adopted level (§6.1).
+    /// conservation at the codec's adopted level.
     ByteAccounting,
     /// A successful salvage decode's record dispositions account consistently
-    /// against the ledger and losses (§6.2).
+    /// against the ledger and losses.
     DispositionValidation,
-    /// No fallback or drop happens silently: every one carries a stable loss
-    /// code (§10 Phase 4B).
+    /// Every fallback or drop carries a stable loss code.
     NoSilentFallback,
 }
 
@@ -118,7 +48,7 @@ impl Stage2Oracle {
         Stage2Oracle::NoSilentFallback,
     ];
 
-    /// The capability whose landing turns this oracle on.
+    /// The capability required by this oracle.
     pub fn capability(self) -> Capability {
         match self {
             Stage2Oracle::NoBypass => Capability::SharedSession,
@@ -132,31 +62,26 @@ impl Stage2Oracle {
     }
 }
 
-/// The migration capability a stage-2 oracle keys on.
+/// A capability required by a stage-2 oracle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Capability {
-    /// The shared decode session (0B, every codec).
+    /// The shared decode session.
     SharedSession,
-    /// Container migration through the derived-space expander (Phase 1).
+    /// Container expansion through derived spaces.
     ContainerMigration,
-    /// Commit-API migration for post-commit truncation classification (Phase 2).
+    /// Post-commit truncation classification.
     CommitApiMigration,
-    /// Budgeted leaf migration enforcing alloc/work/depth (Phase 2).
+    /// Allocation, work, and depth enforcement in leaf parsers.
     BudgetedLeafMigration,
-    /// An L1/L2 source-fidelity ledger (Phase 3C/3E).
+    /// Source-fidelity ledger accounting.
     LedgerAccounting,
-    /// Record-ticket issuance and resolution (Phase 3D).
+    /// Record-ticket issuance and resolution.
     TicketIssuance,
-    /// Typed lossy construction at the named boundaries (Phase 4B).
+    /// Typed lossy construction.
     TypedLossyBuilder,
 }
 
 /// One codec's adopted stage-2 capabilities, resolved from its manifest.
-///
-/// The first four matrix rows are in force for every codec since 0B/Phase 1/
-/// Phase 2 landed, so they are not tracked here; [`Self::adopts`] reports them
-/// adopted unconditionally. The three fields below are the Phase-3+/4C rows the
-/// manifest drives per codec.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodecStage2Status {
     /// The codec id.
@@ -175,10 +100,6 @@ pub struct CodecStage2Status {
 
 impl CodecStage2Status {
     /// Whether the codec has adopted `capability`.
-    ///
-    /// The four pre-Phase-3 capabilities are adopted by every codec (their
-    /// phases all landed); the three later ones read from the manifest-derived
-    /// fields.
     pub fn adopts(&self, capability: Capability) -> bool {
         match capability {
             Capability::SharedSession
@@ -202,22 +123,19 @@ impl CodecStage2Status {
     /// Judge a successful decode's [`ReportSummary`] against the stage-2 report
     /// oracles this codec has adopted, returning every runtime violation.
     ///
-    /// This is the runtime half the stage-1 wire protocol previously could not
-    /// reach: the driver now carries a compact [`ReportSummary`] back from the
-    /// child, so the report-property oracles run in the parent. Two rows are
-    /// judgeable from the summary today:
+    /// Two rows are judgeable from the summary:
     ///
     /// - [`Stage2Oracle::ByteAccounting`], for a codec that adopts a ledger:
     ///   when a decode produces a source-fidelity ledger it must validate
-    ///   (byte conservation over the source spaces, §6.1). A run that produced
+    ///   (byte conservation over the source spaces). A run that produced
     ///   no ledger for this fixture is not judged.
     /// - [`Stage2Oracle::NoSilentFallback`], for a codec that adopts the typed
     ///   builder: a retention degradation must be paired with a loss note, so no
-    ///   drop is silent (§10 Phase 4B / §11.10).
+    ///   drop is silent.
     ///
     /// [`Stage2Oracle::DispositionValidation`] is adopted as a gating row but its
     /// per-record disposition accounting is not carried in the summary, so it is
-    /// not judged here yet.
+    /// not judged here.
     pub fn judge_report(&self, report: &ReportSummary) -> Vec<ReportViolation> {
         let mut out = Vec::new();
         if self.adopts(Capability::LedgerAccounting)
@@ -261,12 +179,10 @@ struct ManifestModule {
     /// The declared `ledger_level`, defaulting to 0 when absent.
     ledger_level: u8,
     /// The module declares `semantic_builder = true`: it constructs lossy IR
-    /// through the platform typed builder (doc §10 Phase 4B). Orthogonal to
-    /// `migrated`, which tracks resource-safety graduation.
+    /// through the platform typed builder.
     semantic_builder: bool,
     /// The module declares `record_tickets = true`: it issues and resolves
-    /// record tickets at the commit boundary (doc §10 Phase 3D). Orthogonal to
-    /// `migrated`, mirroring `semantic_builder`.
+    /// record tickets at the commit boundary.
     record_tickets: bool,
 }
 
@@ -351,8 +267,6 @@ pub fn status_from_manifest_text(codec_id: &str, text: &str) -> CodecStage2Statu
         .unwrap_or(0);
     let has_migrated =
         |basename: &str| modules.iter().any(|m| m.migrated && m.basename == basename);
-    // The `record_tickets` flag is the source of truth; a migrated `tickets.rs`
-    // is the recognized legacy signal for manifests predating the flag.
     let ticket_issuance = modules.iter().any(|m| m.record_tickets) || has_migrated(TICKET_MODULE);
     CodecStage2Status {
         codec_id: codec_id.to_string(),
@@ -405,7 +319,6 @@ mod tests {
             ticket_issuance: false,
             typed_lossy_builder: false,
         };
-        // The first four rows gate even with no manifest-derived capability.
         assert_eq!(
             status.gating_oracles(),
             vec![
@@ -489,9 +402,6 @@ ledger_level = 0
 
     #[test]
     fn semantic_builder_flag_adopts_regardless_of_module_name_or_status() {
-        // The typed builder lives in a `legacy`-status, non-`builder.rs` module
-        // (as in catia's `b5_transfer.rs` and rhino's `decode.rs`); the
-        // capability flag still turns the row on.
         let text = r#"
 [[module]]
 path = "crates/cadmpeg-codec-x/src/b5_transfer.rs"
@@ -508,9 +418,6 @@ semantic_builder = true
 
     #[test]
     fn record_tickets_flag_adopts_regardless_of_module_name_or_status() {
-        // A codec that issues and resolves tickets inside `decode.rs` (no
-        // dedicated `tickets.rs`) sets the flag; disposition validation gates
-        // for it even though its ticket module is `legacy` and misnamed.
         let text = r#"
 [[module]]
 path = "crates/cadmpeg-codec-x/src/decode.rs"
@@ -551,7 +458,6 @@ record_tickets = true
         let violations = status.judge_report(&summary(true, false, false, 0));
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].oracle, Stage2Oracle::ByteAccounting);
-        // A valid ledger, or no ledger for this fixture, is not a violation.
         assert!(status
             .judge_report(&summary(true, true, false, 0))
             .is_empty());
@@ -584,7 +490,6 @@ record_tickets = true
         let violations = status.judge_report(&summary(false, true, true, 0));
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].oracle, Stage2Oracle::NoSilentFallback);
-        // A degradation paired with a loss note is silent-free.
         assert!(status
             .judge_report(&summary(false, true, true, 1))
             .is_empty());

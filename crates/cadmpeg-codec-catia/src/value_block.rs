@@ -1,13 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Framed CATIA `7C0B` value blocks.
-//!
-//! Migrated per doc section 10 Phase 2. [`parse`] takes the session
-//! [`DecodeContext`] and a [`View`] over the whole file image. The `7C0B`
-//! marker probe is charged as `work` proportional to the bytes examined, and
-//! each retained block payload is charged against the `retained_bytes` budget
-//! before the copy, so the module drives an honest cost model with no unfloored
-//! allocation. The one residual `View::window()` egress feeds the marker scan;
-//! it is recorded in `parser-manifest.toml` under `window_egress`.
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::codec::CodecError;
@@ -34,8 +26,6 @@ pub struct ValueBlock {
 /// The whole-image marker scan is charged once as `work`; each admitted payload
 /// copy is charged against the `retained_bytes` budget before it is taken.
 pub fn parse<'a>(ctx: &DecodeContext<'a>, view: View<'a>) -> Result<Vec<ValueBlock>, CodecError> {
-    // Named `View::window()` egress: the `7C0B` marker probe examines the whole
-    // admitted image, whose length is charged as work below.
     let bytes = view.window();
     ctx.charge_work(
         bytes.len() as u64,

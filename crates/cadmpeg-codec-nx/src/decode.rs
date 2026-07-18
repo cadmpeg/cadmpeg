@@ -69,26 +69,13 @@ impl Scan {
 }
 
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
-///
-/// Consumes the session root [`View`] directly: no re-read, no `std::io::Cursor`
-/// adapter. [`container::scan_bytes`] frames the directory over the root image
-/// and [`parasolid::extract_streams`] registers the canonical part payload as a
-/// `Slice` span and inflates each embedded zlib stream through
-/// [`DecodeContext::begin_expand`] (§10 Phase 1A/1B).
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecError> {
-    // `read_root` already enforced the platform `max_input_bytes` policy limit.
-    // The directory enumeration is a linear pass over the whole image; charge
-    // its bytes as work once, before framing begins.
     let image = root.window();
     ctx.charge_work(
         image.len() as u64,
         "nx_container_scan",
         Some(root.location()),
     )?;
-    // `Container` retains an owned copy of the whole image for provenance and
-    // passthrough. The arena already holds the root, so this duplicate is
-    // input-proportional heap growth the arena charge does not cover; charge it
-    // against the allocation budget before it is retained.
     ctx.charge_alloc(
         image.len() as u64,
         "nx_container_image",
@@ -107,8 +94,6 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecEr
 /// decode successfully with no geometry, including an assembly whose geometry
 /// resides in external child parts.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
-    // The source space id, shared by every record ticket's location. `View` is
-    // `Copy`, so reading the location does not consume the root passed to `scan`.
     let source = root.location();
     let scan = scan(ctx, root)?;
 
@@ -149,30 +134,7 @@ fn decode_result(
     ))
 }
 
-/// Reject an entity decode in strict mode when the report carries a loss whose
-/// code removes mandatory, unreconstructable semantics (§10 Phase 4).
-///
-/// Phase 4 requires strict mode to refuse a decode that could only be completed
-/// by dropping semantics the target model treats as mandatory, rather than
-/// silently returning a partial model. The decision keys on
-/// [`LossCode::strict_consequence`] together with severity: a
-/// [`Reject`](StrictConsequence::Reject) code (untransferred topology, no
-/// transferred geometry) carried at [`Severity::Blocking`] marks mandatory,
-/// unreconstructable semantics strict mode cannot tolerate. The same Reject code
-/// at a lower severity is an accountable partial loss over content that *was*
-/// transferred (opaque intersection surfaces standing beside decoded carriers
-/// and topology); it, accountable approximations, retained passthrough, and
-/// operator-requested omissions [`Tolerate`](StrictConsequence::Tolerate) and
-/// pass through. Salvage
-/// mode never rejects; it returns the same report with the loss code recorded,
-/// so every strict rejection has a salvage counterpart that names the loss.
-///
-/// The refusal is surfaced as [`CodecError::Malformed`] with a `strict:` prefix:
-/// the error taxonomy (§3.1) has no dedicated semantic-refusal decode variant,
-/// and `Malformed` is the codebase's established spelling for a strict-mode
-/// refusal (it is a classified error the stage-2 salvage/strict oracles accept).
-/// Container-only decode never reaches here — the caller returns before entity
-/// decode — so an operator-requested skip is never a strict rejection.
+/// Reject strict decodes that omit mandatory, unreconstructable semantics.
 fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecError> {
     if mode != DecodeMode::Strict {
         return Ok(());
@@ -197,19 +159,7 @@ fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecEr
     )))
 }
 
-/// Issue and resolve one [`RecordTicket`](cadmpeg_ir::decode::RecordTicket) per
-/// inflated stream — the record-shaped unit this codec walks (§6.2, Phase 3D).
-///
-/// Every stream is committed at the §3.3 boundary the decoder already crosses
-/// and resolved at the point its outcome is decided: a stream that contributed
-/// surviving typed IR entities resolves [`RecordDisposition::Typed`] naming them
-/// (entity ids carry the stream-scoped `nx:s{index}:` prefix, so pruning of an
-/// inactive body is reflected as the loss it is); a stream that produced no
-/// surviving typed entity resolves [`RecordDisposition::Dropped`] with an
-/// accountable loss note pushed onto the report, so a skipped or preserved-only
-/// stream is never a silent loss. The tickets are issued in one final pass after
-/// the model is fully built and pruned, so a fallible emission path that abandons
-/// the geometry attempt leaves no unresolved ticket behind.
+/// Account for each inflated stream consumed by the decode.
 fn issue_stream_tickets(
     ctx: &DecodeContext<'_>,
     source: SourceLocation,
@@ -217,10 +167,6 @@ fn issue_stream_tickets(
     ir: &CadIr,
     report: &mut DecodeReport,
 ) {
-    // One pass over the model buckets every `nx:s{index}:` id by its stream
-    // index, so accounting is O(streams + entities) rather than rescanning the
-    // whole model per stream (which is O(streams x entities) over two
-    // input-proportional dimensions, an uncharged resource-growth surface).
     let mut outputs_by_stream = stream_output_buckets(ir);
     for (si, stream) in scan.streams.iter().enumerate() {
         let location = SourceLocation {
@@ -232,16 +178,6 @@ fn issue_stream_tickets(
         if !outputs.is_empty() {
             ctx.resolve(ticket, RecordDisposition::Typed { outputs });
         } else if stream.kind.is_parasolid() {
-            // The stream produced no typed IR entity, but its inflated bytes are
-            // preserved verbatim as the native unknown passthrough record
-            // `nx:container:parasolid#si` on every path (`try_decode_geometry`
-            // and `build_metadata_ir` both push it). Preserved content is not a
-            // loss; the platform's checkable dispositions name model entities
-            // (`Typed`) or retained-store blobs (`Retained`), and a native
-            // `UnknownRecord` is neither, so the disposition is `Structural`.
-            // Resolving `Dropped` with a `Geometry` loss here would substitute a
-            // loss for content the codec preserved, flipping loss-count and
-            // Geometry-category gates against a losslessly-preserved decode.
             ctx.resolve(ticket, RecordDisposition::Structural);
         } else {
             let loss = stream_drop_note(si, stream);
@@ -704,7 +640,6 @@ fn try_decode_geometry(
             &mut annotations,
         );
 
-        // Preserve the whole inflated stream verbatim so nothing is dropped.
         let mut unknown = unknown_stream(si, stream);
         unknown.links.extend(
             ir.model.surfaces[first_surface..]
@@ -1107,8 +1042,6 @@ fn surface_parameters(surface: &SurfaceGeometry, uv: [f64; 2]) -> Point2 {
     }
 }
 
-// The parameters are the per-stream lookup tables produced by the decode pass;
-// bundling them into a struct would only rename the same eight things.
 #[allow(clippy::too_many_arguments)]
 fn emit_topology(
     ir: &mut CadIr,
@@ -1489,14 +1422,6 @@ fn source_meta(scan: &Scan) -> SourceMeta {
 }
 
 fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> DecodeReport {
-    // The geometry report is pure loss-note emission: every entry describes
-    // content the codec did not transfer (an untransferred topology graph or
-    // intersection surface, an inferred deltas/Boolean gauge, the undecoded
-    // attribute serialization) or a carrier census. No value crosses a Phase-4B
-    // boundary here — the report vector is only accumulated — so the notes are
-    // pushed directly. The codec's one real resolver-to-fallback boundary, the
-    // intersection secondary support, is represented honestly in
-    // [`crate::intersection`] as an `Option` rather than a fabricated reference.
     let mut losses = Vec::new();
 
     losses.push(LossNote {
@@ -1655,11 +1580,6 @@ fn attach_native_object_model(
 }
 
 fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
-    // Pure loss-note emission (§6.2, §10): the no-geometry note, the assembly
-    // external-dependency note, and the operator-requested container-only note
-    // each describe content this decode did not carry into the model. No value
-    // crosses a boundary, so the notes are pushed directly onto the report
-    // vector.
     let mut losses = Vec::new();
 
     let assembly = scan

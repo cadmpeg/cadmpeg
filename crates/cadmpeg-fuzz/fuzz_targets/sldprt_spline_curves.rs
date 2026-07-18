@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Fuzz target for SolidWorks spline curve carrier scanning.
-//!
-//! Drives `cadmpeg_codec_sldprt::fuzzing::spline_curves` to exercise spline
-//! binary parsing. Contract: no input may panic.
+//! No input may panic.
 
 #![no_main]
 

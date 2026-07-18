@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Record-ticket issuance for the CATIA decode (doc §6.2, §10 Phase 3D).
+//! Record-ticket issuance for the CATIA decode.
 //!
-//! Phase 3D instruments the §3.3 commit boundary the codec already crosses:
-//! for every record-shaped unit the codec walks it issues a [`RecordTicket`]
+//! For every record-shaped unit the codec walks it issues a [`RecordTicket`]
 //! and resolves it with the disposition the outcome decides, so no record is
 //! silently lost. `Check::TransferAccounting` (run at
 //! [`DecodeContext::finish`](cadmpeg_ir::decode::DecodeContext::finish))
 //! validates the resolved table against the ledger and the report's losses.
 //!
-//! Issuance rides the codec's L1 coarse ledger (§6.1, [`crate::ledger`]), so
+//! Issuance uses the codec's L1 coarse ledger ([`crate::ledger`]), so
 //! the record units are the units that ledger tiles: the container framing —
 //! `Structural`, no semantic content — and the reconstructed record stream the
 //! decode commits to interpreting. When that stream reaches typed IR the ticket
@@ -16,8 +15,7 @@
 //! salvage path yields no typed entity — the metadata and container-only
 //! fallbacks preserve the payload as a native unknown but transfer no record —
 //! it resolves [`RecordDisposition::Dropped`] with an accountable loss note that
-//! also rides the report. Finer per-record dispositions inside the stream await
-//! the L2 refined ledger; at L1 the stream is one opaque span and one ticket.
+//! also rides the report. At L1 the stream is one opaque span and one ticket.
 
 use cadmpeg_ir::decode::{DecodeContext, RecordDisposition, RecordKind, View};
 use cadmpeg_ir::document::CadIr;
@@ -82,7 +80,7 @@ pub(crate) fn account_records(
 /// each named `Typed` output to resolve in the IR model, which these do by
 /// construction. Derived from [`Model::entity_ids`], which enumerates every
 /// arena from the `arena_registry!` declaration, so an entity emitted into any
-/// arena is named — never silently omitted from the `Typed` outputs (§6.2).
+/// arena is named rather than omitted from the `Typed` outputs.
 fn collect_entity_ids(ir: &CadIr) -> Vec<String> {
     let mut ids = ir.model.entity_ids();
     ids.sort();

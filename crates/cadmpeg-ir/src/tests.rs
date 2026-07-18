@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
-//! Unit tests for the IR: the worked cube validates clean, JSON round-trips,
-//! and each validation check actually fires when its invariant is broken.
 
 use crate::annotations::{ExactnessNote, Provenance};
 use crate::document::Model;
@@ -101,9 +99,6 @@ fn non_finite_body_transform_is_invalid() {
     }));
 }
 
-/// Replace the surface of the cube's first face with an unknown surface,
-/// optionally linking a preserved record, and return the face id and its
-/// surface id. Leaves every loop/coedge/edge of the face intact.
 fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<UnknownId>) -> String {
     let face = &ir.model.faces[0];
     let surface_id = face.surface.0.clone();
@@ -119,7 +114,6 @@ fn make_first_face_surface_unknown(ir: &mut crate::CadIr, record: Option<Unknown
 #[test]
 fn face_on_unknown_surface_validates_clean() {
     let mut ir = unit_cube();
-    // Preserve a raw record and point the unknown surface at it.
     let rec = UnknownId("synthetic:cube:unknown#0".into());
     ir.push_native_unknown(
         "synthetic",
@@ -137,9 +131,7 @@ fn face_on_unknown_surface_validates_clean() {
         "a face on an unknown surface is legal, got: {:?}",
         report.findings
     );
-    // The face and its topology stay in the graph.
     assert_eq!(ir.model.faces.len(), 6);
-    // The situation is surfaced as a count.
     assert_eq!(
         report.entity_counts.get("surfaces_unknown_geometry"),
         Some(&1)
@@ -165,7 +157,6 @@ fn unknown_surface_without_record_is_legal() {
 #[test]
 fn unknown_surface_dangling_record_is_flagged() {
     let mut ir = unit_cube();
-    // Link a record id that is not in the unknowns arena.
     make_first_face_surface_unknown(&mut ir, Some(UnknownId("missing".into())));
     let report = validate(&ir, Vec::new());
     assert!(report.findings.iter().any(|finding| {
@@ -1117,7 +1108,6 @@ fn every_cube_edge_has_two_opposite_sense_coedges() {
             "edge {} coedges should have opposite sense",
             edge.id
         );
-        // Partners point at each other.
         assert_eq!(coedges[0].radial_next, coedges[1].id);
         assert_eq!(coedges[1].radial_next, coedges[0].id);
     }
@@ -1195,7 +1185,6 @@ fn appearance_asset_and_binding_round_trip() {
 #[test]
 fn dangling_reference_is_flagged() {
     let mut ir = unit_cube();
-    // Point a coedge's edge at something that does not exist.
     ir.model.coedges[0].edge = EdgeId("does-not-exist".into());
     let report = validate(&ir, Vec::new());
     assert!(report
@@ -1226,8 +1215,6 @@ fn broken_loop_ring_is_flagged() {
 #[test]
 fn mismatched_partner_edge_is_flagged() {
     let mut ir = unit_cube();
-    // Force a coedge's partner to reference a coedge on a different edge by
-    // repointing the partner's edge. Find coedge[0]'s partner and change it.
     let partner_id: CoedgeId = ir.model.coedges[0].radial_next.clone();
     let other_edge = ir
         .model
@@ -2014,7 +2001,6 @@ fn byte_payloads_use_nonempty_base64_and_reject_invalid_text() {
 #[test]
 fn schema_generation_produces_definitions() {
     let schema = crate::cadir_json_schema();
-    // The schema must reference the entity types, not just be an empty object.
     let json = serde_json::to_string(&schema).unwrap();
     assert!(json.contains("Body"));
     assert!(json.contains("Coedge"));
@@ -2113,8 +2099,6 @@ fn edge_endpoint_mismatch_is_flagged() {
         report.findings
     );
 
-    // Displace one corner: the point no longer lies on its edges' curves at
-    // the stored parameter values.
     ir.model.points[0].position.z += 1.0;
     let report = validate(&ir, Vec::new());
     assert!(

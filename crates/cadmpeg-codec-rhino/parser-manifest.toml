@@ -1,37 +1,4 @@
 # SPDX-License-Identifier: Apache-2.0
-#
-# Per-module migration manifest for the Rhino `.3dm` decoder (doc section 8.6 /
-# 10 Phase 2). One `[[module]]` entry per parser module. `status` is `migrated`
-# or `legacy`; a `legacy` entry states, in `reason`, why the module has not yet
-# graduated. `input_spaces` names the address spaces the module reads;
-# `fuzz_targets` are the section 7 reachability targets that drive the committed
-# path; `charges` names the budget dimensions the module drives; `cost_model`
-# states the charge shape (never a flat unit per iteration). `window_egress`
-# lists the audited `View::window()` sites the module keeps (section 8.8
-# ratchet). `ledger_level` is the section 6.1 record-accounting level.
-#
-# Migration reality (recorded as a deviation for the integrator): this branch
-# predates the Phase 0B `clippy.toml` `disallowed-methods` list and the
-# crate-root `#![allow(clippy::disallowed_methods)]`. The Rhino decoder still
-# reads object-record bodies through the crate-local `BoundedReader`
-# (`chunks.rs`) over `&[u8]`, sizes collections with `Vec::with_capacity` from
-# decoded counts, and carries recursion depth as a plain `depth: usize`
-# parameter (`curves.rs` `MAX_CURVE_DEPTH`, `brep.rs`) rather than
-# `ctx.descend()`. The one platform surface already adopted is decompression:
-# every compressed mesh buffer inflates through `DecodeContext::begin_expand`
-# (`mesh.rs`, Phase 1B), charging `decompressed_bytes`. Ordering below follows
-# doc section 10 Phase 2: count-framed loops first, then irregular marker
-# probes and graph traversals.
-
-# ===========================================================================
-# Migrated modules
-# ===========================================================================
-
-# Pure wire primitives. Every read is over a proven fixed-size `[u8; 16]`
-# array; no untrusted count reaches an allocation, and no disallowed
-# accumulation method is present, so the module graduates with the deny lint
-# and has no `req_*`/`BoundedCount`/`read_counted` obligation. Reached
-# indirectly by every object-record fuzz target through `Uuid`/`scaled_coordinate`.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/wire.rs"
 status = "migrated"
@@ -42,13 +9,6 @@ cost_model = "no budget charge; fixed-size [u8; 16] transforms and a finite-scal
 window_egress = []
 ledger_level = 0
 
-# ===========================================================================
-# Legacy modules — count-framed loops (migrate first per doc section 10)
-# ===========================================================================
-
-# NURBS curve families. Count-framed knot/control-point loops sized by decoded
-# counts; also the crate's main recursion site (`MAX_CURVE_DEPTH`, embedded
-# pcurve/polycurve nesting) carried as a `depth: usize` parameter.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/curves.rs"
 status = "legacy"
@@ -60,8 +20,6 @@ cost_model = "target: alloc_bytes per reserved element via exact_vec; depth via 
 window_egress = []
 ledger_level = 0
 
-# NURBS and analytic surfaces. Count-framed knot/control-point grids sized by
-# decoded row/column counts.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/surfaces.rs"
 status = "legacy"
@@ -73,8 +31,6 @@ cost_model = "target: alloc_bytes per reserved grid element via exact_vec; work 
 window_egress = []
 ledger_level = 0
 
-# Mesh tessellation channels and compressed buffers. Vertex/face/channel loops
-# are count-framed; compression already routes through the platform expand path.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/mesh.rs"
 status = "legacy"
@@ -92,8 +48,6 @@ window_egress = [
 ]
 ledger_level = 0
 
-# B-rep topology. Count-framed vertex/edge/loop/face/trim tables plus a
-# trim-tree traversal.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/brep.rs"
 status = "legacy"
@@ -105,7 +59,6 @@ cost_model = "target: alloc_bytes per reserved topology element via exact_vec; w
 window_egress = []
 ledger_level = 0
 
-# SubD control net. Count-framed vertex/edge/face arrays with fragment tables.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/subd.rs"
 status = "legacy"
@@ -117,7 +70,6 @@ cost_model = "target: alloc_bytes per reserved control-net element via exact_vec
 window_egress = []
 ledger_level = 0
 
-# Extrusion profiles. Count-framed profile-curve and path arrays.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/extrusion.rs"
 status = "legacy"
@@ -129,20 +81,6 @@ cost_model = "target: alloc_bytes per reserved profile element via exact_vec; wo
 window_egress = []
 ledger_level = 0
 
-# Cage / morph control lattice. Count-framed point lattice, now migrated.
-# Reads the record body through a `View` on the caller's threaded platform
-# `DecodeContext` (routed via `MeshExpand`): knot
-# vectors and the control net are sized by `View::counted` proofs and reserved
-# through `ctx.exact_vec`; derived weights (no input floor) use
-# `alloc_unfloored` under the `MAX_CONTROL_POINTS` codec-local cap; committed
-# scalars use the `req_*` mirror; per-element `work` is charged; the module
-# carries `deny(clippy::disallowed_methods)`. Truncation at the control-net
-# boundary is tested. Residual raw-byte egress: the body is obtained as the raw
-# `&[u8]` file slice via `MeshExpand::data()` (which is `MeshExpand::root.window()`
-# in mesh.rs) and `chunk_at` locates the record body on that slice before the
-# `View` takes over. That whole-file `&[u8]` handoff is a real raw-byte egress
-# boundary and is named in `window_egress` below; the underlying `.window()`
-# call site lives in mesh.rs and is counted there by the source ratchet.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/cage.rs"
 status = "migrated"
@@ -155,7 +93,6 @@ window_egress = [
 ]
 ledger_level = 0
 
-# Space morph parameters. Count-framed sample tables.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/morph.rs"
 status = "legacy"
@@ -167,21 +104,6 @@ cost_model = "target: alloc_bytes per reserved sample via exact_vec; work per sa
 window_egress = []
 ledger_level = 0
 
-# Persistent polyedge-reference construction, now migrated. Reads the record
-# body and every child segment through a `View` on the caller's threaded
-# platform `DecodeContext` (routed via `MeshExpand`): the count-framed parameter
-# table and the segment list are sized by `View::counted` proofs and reserved
-# through `ctx.exact_vec`; committed scalars use the `req_*` mirror; per-element
-# `work` is charged (parameter reads plus fixed field reads per segment); the
-# module carries `deny(clippy::disallowed_methods)`. Residual: each child
-# segment record is located by the legacy `chunk_at`/`parse_class_wrapper`,
-# which take the raw `&[u8]` file slice; the segment class check runs on that
-# raw slice before the child `View` takes over the body. The body slice is the
-# whole record window obtained via `MeshExpand::data()` (which is
-# `MeshExpand::root.window()` in mesh.rs), so this is a real raw-byte egress
-# boundary named in `window_egress` below, not a typed-`Range`-only handoff; the
-# underlying `.window()` call site lives in mesh.rs and is counted there by the
-# source ratchet. Truncation at the segment child boundary is tested.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/polyedge.rs"
 status = "migrated"
@@ -194,21 +116,6 @@ window_egress = [
 ]
 ledger_level = 0
 
-# Hatch loops, now migrated. Reads the record body through a `View` on the
-# caller's threaded platform `DecodeContext` (routed via `MeshExpand`): the
-# count-framed boundary-loop table is sized by a `View::counted` proof and
-# reserved through `ctx.exact_vec`; the plane, pattern scalars, and per-loop
-# header fields commit through the `req_*` mirror; the parse-warning list
-# accumulates through a charged `ctx.grow_vec`; per-element `work` is charged (a
-# fixed header field count plus one unit per loop). Residual: each loop's curve
-# is located by the legacy `chunk_at`/`parse_class_wrapper` and re-read by the
-# still-legacy `curves::decode_2d`, all of which take the raw `&[u8]` file slice
-# and size their own accumulators off the platform budget. That body slice is
-# the whole record window obtained via `MeshExpand::data()` (which is
-# `MeshExpand::root.window()` in mesh.rs), so this is a real raw-byte egress
-# boundary named in `window_egress` below, not a typed-`Range`-only handoff; the
-# underlying `.window()` call site lives in mesh.rs and is counted there by the
-# source ratchet. Truncation at the loop child boundary is tested.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/hatch.rs"
 status = "migrated"
@@ -221,12 +128,7 @@ window_egress = [
 ]
 ledger_level = 0
 
-# ===========================================================================
-# Legacy modules — irregular marker probes and graph traversals
-# ===========================================================================
 
-# Object-record dispatch. Probes the object type marker and routes to the leaf
-# decoder; the entry point every object fuzz target drives.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/objects.rs"
 status = "legacy"
@@ -238,8 +140,6 @@ cost_model = "target: work per byte examined by the type-marker probe (not one u
 window_egress = []
 ledger_level = 0
 
-# Construction-history graph. Value tables keyed by parameter id; descendant
-# links form a document-level graph consumed downstream.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/history.rs"
 status = "legacy"
@@ -251,7 +151,6 @@ cost_model = "target: alloc_bytes per reserved value via exact_vec; work per par
 window_egress = []
 ledger_level = 0
 
-# User-presentation and render records. Large marker-driven module.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/presentation.rs"
 status = "legacy"
@@ -263,7 +162,6 @@ cost_model = "target: work per byte examined by each sub-record probe; alloc_byt
 window_egress = []
 ledger_level = 0
 
-# Dimension and leader annotations. Marker-driven field groups.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/dimensions.rs"
 status = "legacy"
@@ -275,7 +173,6 @@ cost_model = "target: work per byte examined by the field-group probe; alloc_byt
 window_egress = []
 ledger_level = 0
 
-# Text and generic annotations.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/annotations.rs"
 status = "legacy"
@@ -287,7 +184,6 @@ cost_model = "target: work per byte examined by the annotation-field probe"
 window_egress = []
 ledger_level = 0
 
-# Instance-reference and block records. Several probe sub-records.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/instances.rs"
 status = "legacy"
@@ -299,7 +195,6 @@ cost_model = "target: work per byte examined by each sub-record probe"
 window_egress = []
 ledger_level = 0
 
-# Document-wide settings and tables.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/settings.rs"
 status = "legacy"
@@ -311,7 +206,6 @@ cost_model = "target: work per byte examined by the setting-group probe; alloc_b
 window_egress = []
 ledger_level = 0
 
-# Nested detail viewports.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/detail.rs"
 status = "legacy"
@@ -323,7 +217,6 @@ cost_model = "target: work per byte examined by the viewport-field probe"
 window_egress = []
 ledger_level = 0
 
-# Curve-on-surface (pcurve) construction. Recursion partner of curves.rs.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/curve_on_surface.rs"
 status = "legacy"
@@ -335,7 +228,6 @@ cost_model = "target: depth via ctx.descend shared with curves.rs; work per read
 window_egress = []
 ledger_level = 0
 
-# Product/document metadata record.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/product.rs"
 status = "legacy"
@@ -347,7 +239,6 @@ cost_model = "target: work per metadata field read"
 window_egress = []
 ledger_level = 0
 
-# Document data / user tables.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/document_data.rs"
 status = "legacy"
@@ -359,7 +250,6 @@ cost_model = "target: work per byte examined by the user-table probe"
 window_egress = []
 ledger_level = 0
 
-# Named views / viewport table.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/views.rs"
 status = "legacy"
@@ -371,12 +261,7 @@ cost_model = "target: alloc_bytes per reserved viewport via exact_vec; work per 
 window_egress = []
 ledger_level = 0
 
-# ===========================================================================
-# Legacy modules — container, chunk framing, and space-neutral aggregation
-# ===========================================================================
 
-# Chunk framing, checksums, and the `BoundedReader` itself. The reader all leaf
-# modules borrow from.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/chunks.rs"
 status = "legacy"
@@ -388,7 +273,6 @@ cost_model = "target: work per chunk header examined; CRC over chunk length is b
 window_egress = []
 ledger_level = 0
 
-# Container scan and table-of-contents. Already `View`-based at the top.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/container.rs"
 status = "legacy"
@@ -402,7 +286,6 @@ window_egress = [
 ]
 ledger_level = 0
 
-# Top-level decode orchestration and object-to-IR assembly.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/decode.rs"
 status = "legacy"
@@ -416,7 +299,6 @@ cost_model = "retained_bytes charged against RETAINED_RECORD_CAP/RETAINED_DOCUME
 window_egress = []
 ledger_level = 0
 
-# Codec entry, format probe, and dispatch.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/lib.rs"
 status = "legacy"
@@ -428,7 +310,6 @@ cost_model = "target: work per byte examined by the magic probe"
 window_egress = []
 ledger_level = 0
 
-# Transfer-outcome aggregation for the object classes. No hostile-byte reads.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/accounting.rs"
 status = "legacy"
@@ -440,9 +321,6 @@ cost_model = "no budget charge; sums typed per-class outcome counters"
 window_egress = []
 ledger_level = 0
 
-# L2 source-fidelity sidecar builder. Projects the shared `accounting::partition`
-# tiling of the source image into a validated record-granular sidecar; no
-# untrusted-byte read path of its own.
 [[module]]
 path = "crates/cadmpeg-codec-rhino/src/fidelity.rs"
 status = "migrated"

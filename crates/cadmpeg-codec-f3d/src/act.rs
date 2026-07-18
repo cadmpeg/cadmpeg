@@ -10,21 +10,13 @@ use cadmpeg_ir::decode::{DecodeContext, View};
 
 use crate::container::{role, ContainerScan};
 
-/// Minimum encoded bytes of one `ACTTable` record: the `0x01` marker, the
-/// little-endian u32 record index, six zero bytes, and a length-prefixed UTF-16
-/// entity id whose smallest form is a four-byte zero count. The physical-floor
-/// proof for the count-framed table loop uses this as `min_element_size`.
+/// Minimum encoded bytes of one `ACTTable` record.
 const MIN_TABLE_ENTRY_BYTES: usize = 1 + 4 + 6 + 4;
 
-/// Upper bound on the `ACTTable` record count. A format fact retained as
-/// defense in depth alongside the budget: a hostile count still cannot reserve
-/// past this even before the physical-floor and allocation proofs apply.
+/// Upper bound on the `ACTTable` record count.
 const MAX_TABLE_ENTRIES: usize = 100_000;
 
-/// Auxiliary allocation charged per merged `ActEntity` graph node. The
-/// `by_key` merge map's growth tracks the untrusted table/channel record count,
-/// so it is charged against the input-proportional allocation allowance rather
-/// than left to the domain cap alone (doc section 4.4 element charging basis).
+/// Auxiliary allocation charged per merged `ActEntity` graph node.
 const ACT_ENTITY_GRAPH_BYTES: u64 = 128;
 
 /// The decoded ACT records recovered from one archive.
@@ -181,13 +173,9 @@ struct TableEntry {
     entity_id_offset: usize,
 }
 
-/// Decode the `ACTTable` count-framed record list and the GUID literals that
-/// follow it. Reserves the record list through [`DecodeContext::exact_vec`]
-/// under a physical-floor proof and charges work for the table search and the
-/// trailing GUID scan.
+/// Decode the `ACTTable` record list and the GUID literals that follow it.
 fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable, CodecError> {
     let empty = || (Vec::new(), Vec::new());
-    // The table search and the trailing GUID scan each examine the window once.
     ctx.charge_work(
         (win_len(base) as u64).saturating_mul(2),
         "act::decode_table",
@@ -208,13 +196,11 @@ fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable,
         return Ok(empty());
     }
     cursor += 4;
-    // Proof 1 — the records could physically fit in the unread window.
     let Some(bounded) =
         seek_rel(base, cursor).and_then(|view| view.counted(count as u64, MIN_TABLE_ENTRY_BYTES))
     else {
         return Ok(empty());
     };
-    // Proof 2 — the decode may commit the memory (charges alloc_bytes first).
     let mut indexed = ctx.exact_vec::<TableEntry>(bounded)?;
     for _ in 0..count {
         if byte_rel(base, cursor) != Some(1) {
@@ -482,12 +468,6 @@ fn lp_ascii(
     if !(1..=128).contains(&length) {
         return Ok(None);
     }
-    // Charge the bytes this probe examines (length header plus payload) before
-    // it reads and allocates. A whole-stream scan runs this probe at many
-    // positions; charging only the scan step (once per position) undercharges
-    // the per-position read by a large constant, so a hostile stream would
-    // evade the work freeze. Charging bytes-examined keeps work a faithful CPU
-    // proxy.
     ctx.charge_work((4 + length) as u64, "act::lp_ascii", Some(base.location()))?;
     let Some(mut view) = seek_rel(base, position) else {
         return Ok(None);
@@ -523,9 +503,6 @@ fn lp_utf16(
     let Some(byte_length) = count.checked_mul(2) else {
         return Ok(None);
     };
-    // Charge the bytes this probe examines (length header plus the UTF-16
-    // payload) before it reads, decodes, and allocates. See `lp_ascii` for why
-    // the per-position scan charge alone undercharges this probe.
     ctx.charge_work(
         (4 + byte_length) as u64,
         "act::lp_utf16",

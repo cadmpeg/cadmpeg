@@ -1,9 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Tests over synthetic byte fixtures. No real CAD file exists in this repo and
-//! none may be added, so every fixture is a hand-built `.prt` byte image whose
-//! bytes exercise the real SPLMSSTR container parse, the Parasolid zlib
-//! extraction/classification, and the analytic geometry decode, and fail if the
-//! code regresses.
 #![allow(clippy::unwrap_used)]
 
 use std::io::{Cursor, Write};
@@ -24,9 +19,6 @@ use crate::container;
 use crate::parasolid::{self, Stream, StreamKind};
 use crate::NxCodec;
 
-/// Extract streams over a byte image, driving the same context-based path
-/// [`crate::decode::scan`] runs: register the root space, frame the container,
-/// then inflate embedded streams through `begin_expand`.
 fn extract_streams(data: &[u8]) -> Vec<Stream> {
     let arena = cadmpeg_ir::decode::DecodeArena::new();
     let policy = cadmpeg_ir::decode::DecodePolicy::default();
@@ -42,7 +34,6 @@ fn be_f64(v: f64) -> [u8; 8] {
     v.to_be_bytes()
 }
 
-/// Write three big-endian doubles into `rec` starting at `at`.
 fn put_vec3(rec: &mut [u8], at: usize, xyz: [f64; 3]) {
     for (i, v) in xyz.iter().enumerate() {
         rec[at + 8 * i..at + 8 * i + 8].copy_from_slice(&be_f64(*v));
@@ -57,8 +48,6 @@ fn put_ref(rec: &mut [u8], at: usize, value: u16) {
     rec[at..at + 2].copy_from_slice(&value.to_be_bytes());
 }
 
-/// One fixed-length analytic record: a `00 <tag>` header then zeroed payload the
-/// caller fills at the documented offsets.
 fn record(tag: u8, len: usize) -> Vec<u8> {
     let mut r = vec![0u8; len];
     r[0] = 0x00;
@@ -142,38 +131,31 @@ fn om_numeric_expression_retains_identity_name_unit_and_value() {
     assert_eq!(expressions[0].value, 120.0);
 }
 
-/// A synthetic Parasolid partition stream: the `PS 00 00` header, a prologue with
-/// a `(partition)` subtype and a schema token, then one POINT, one PLANE, one
-/// CYLINDER, and one LINE record laid out back-to-back at their fixed lengths.
 fn partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00");
     s.extend_from_slice(b"XX: TRANSMIT FILE (partition) created by modeller version 3400176\x00");
     s.extend_from_slice(b"SCH_TEST_1_9999\x00");
 
-    // POINT (type 29): xyz at +16, metres.
     let mut pt = record(0x1d, 40);
-    put_vec3(&mut pt, 16, [0.0625, 0.0, 0.0127]); // 62.5, 0, 12.7 mm
+    put_vec3(&mut pt, 16, [0.0625, 0.0, 0.0127]);
     s.extend_from_slice(&pt);
 
-    // PLANE (type 50): origin +19, normal +43, x_axis +67.
     let mut pl = record(0x32, 91);
     pl[18] = b'+';
-    put_vec3(&mut pl, 19, [0.0762, 0.0, 0.0]); // 76.2 mm
+    put_vec3(&mut pl, 19, [0.0762, 0.0, 0.0]);
     put_vec3(&mut pl, 43, [0.0, 0.0, 1.0]);
     put_vec3(&mut pl, 67, [1.0, 0.0, 0.0]);
     s.extend_from_slice(&pl);
 
-    // CYLINDER (type 51): origin +19, axis +43, radius +67, x_axis +75.
     let mut cy = record(0x33, 99);
     cy[18] = b'+';
     put_vec3(&mut cy, 19, [0.0, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
-    put_f64(&mut cy, 67, 0.004_05); // 4.05 mm
+    put_f64(&mut cy, 67, 0.004_05);
     put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
     s.extend_from_slice(&cy);
 
-    // LINE (type 30): point +19, direction +43.
     let mut ln = record(0x1e, 67);
     ln[18] = b'+';
     put_vec3(&mut ln, 19, [0.01, 0.02, 0.03]);
@@ -183,9 +165,6 @@ fn partition_stream() -> Vec<u8> {
     s
 }
 
-/// A complete one-face Parasolid topology. Every ownership and geometry link is
-/// a small XMT reference, so this generated fixture exercises the codec's
-/// connected-B-rep path without depending on an external CAD file.
 fn topology_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00");
@@ -199,41 +178,41 @@ fn topology_partition_stream() -> Vec<u8> {
 
     let mut shell = record(13, 24);
     put_ref(&mut shell, 2, 3);
-    put_ref(&mut shell, 10, 2); // body
-    put_ref(&mut shell, 14, 4); // first face
+    put_ref(&mut shell, 10, 2);
+    put_ref(&mut shell, 14, 4);
     s.extend_from_slice(&shell);
 
     let mut face = record(14, 39);
     put_ref(&mut face, 2, 4);
-    put_f64(&mut face, 10, 0.000_2); // 0.2 mm
-    put_ref(&mut face, 22, 5); // loop
-    put_ref(&mut face, 24, 3); // shell
-    put_ref(&mut face, 26, 6); // plane
+    put_f64(&mut face, 10, 0.000_2);
+    put_ref(&mut face, 22, 5);
+    put_ref(&mut face, 24, 3);
+    put_ref(&mut face, 26, 6);
     face[28] = b'+';
     s.extend_from_slice(&face);
 
     let mut loop_ = record(15, 16);
     put_ref(&mut loop_, 2, 5);
-    put_ref(&mut loop_, 10, 7); // fin
-    put_ref(&mut loop_, 12, 4); // face
+    put_ref(&mut loop_, 10, 7);
+    put_ref(&mut loop_, 12, 4);
     s.extend_from_slice(&loop_);
 
     let mut fin = record(17, 23);
     put_ref(&mut fin, 2, 7);
-    put_ref(&mut fin, 6, 5); // loop
-    put_ref(&mut fin, 8, 7); // next (one-fin ring)
-    put_ref(&mut fin, 10, 7); // previous
-    put_ref(&mut fin, 12, 10); // vertex
-    put_ref(&mut fin, 16, 8); // edge
-    put_ref(&mut fin, 18, 9); // curve
+    put_ref(&mut fin, 6, 5);
+    put_ref(&mut fin, 8, 7);
+    put_ref(&mut fin, 10, 7);
+    put_ref(&mut fin, 12, 10);
+    put_ref(&mut fin, 16, 8);
+    put_ref(&mut fin, 18, 9);
     fin[22] = b'+';
     s.extend_from_slice(&fin);
 
     let mut edge = record(16, 32);
     put_ref(&mut edge, 2, 8);
-    put_f64(&mut edge, 10, 0.000_3); // 0.3 mm
-    put_ref(&mut edge, 18, 7); // fin
-    put_ref(&mut edge, 24, 9); // curve
+    put_f64(&mut edge, 10, 0.000_3);
+    put_ref(&mut edge, 18, 7);
+    put_ref(&mut edge, 24, 9);
     s.extend_from_slice(&edge);
 
     let mut plane = record(50, 91);
@@ -253,8 +232,8 @@ fn topology_partition_stream() -> Vec<u8> {
 
     let mut vertex = record(18, 28);
     put_ref(&mut vertex, 2, 10);
-    put_ref(&mut vertex, 16, 11); // point
-    put_f64(&mut vertex, 18, 0.000_1); // 0.1 mm
+    put_ref(&mut vertex, 16, 11);
+    put_f64(&mut vertex, 18, 0.000_1);
     s.extend_from_slice(&vertex);
 
     let mut point = record(29, 40);
@@ -1182,10 +1161,6 @@ fn trimmed_topology_partition_stream() -> Vec<u8> {
     put_ref(&mut trim, 19, 9);
     put_f64(&mut trim, 69, 0.25);
     put_f64(&mut trim, 77, 0.75);
-    // The closed edge's single vertex sits at the trim range's midpoint on the
-    // basis line so both trimmed endpoints fall inside the edge's stored
-    // 0.3 mm tolerance; the point record is the topology stream's last
-    // 40 bytes, before the trim record is appended.
     let point_vec = stream.len() - 40 + 16;
     put_vec3(&mut stream, point_vec, [0.000_5, 0.0, 0.0]);
     stream.extend(trim);
@@ -1280,7 +1255,6 @@ fn fully_extend_common_header(stream: &mut Vec<u8>, marker: [u8; 4]) {
 }
 
 fn zlib_compress(raw: &[u8]) -> Vec<u8> {
-    // Level 1 emits the `78 01` zlib header NX/Parasolid streams use.
     let mut e = ZlibEncoder::new(Vec::new(), Compression::new(1));
     e.write_all(raw).unwrap();
     e.finish().unwrap()
@@ -1292,29 +1266,23 @@ fn zlib_compress_at_level(raw: &[u8], level: u32) -> Vec<u8> {
     e.finish().unwrap()
 }
 
-/// Assemble a synthetic single-part `.prt`: the SPLMSSTR header, a HEADER
-/// directory with one `/Root/UG_PART/UG_PART` file entry, and a zlib-compressed
-/// Parasolid partition stream.
 fn single_part_prt() -> Vec<u8> {
     let mut f = Vec::new();
     f.extend_from_slice(MAGIC);
-    f.push(0x06); // version tag
-    f.extend_from_slice(&[0x11, 0x22, 0x33]); // u24 file tag
-    f.extend_from_slice(&[0, 0, 0, 0]); // +0x0c constant
-    f.push(0x00); // +0x10 constant
-    f.extend_from_slice(&[0, 0, 0, 0, 0, 0]); // +0x11 footer offset (0 → no footer)
-    f.extend_from_slice(&[0, 0]); // pad to 0x19
+    f.push(0x06);
+    f.extend_from_slice(&[0x11, 0x22, 0x33]);
+    f.extend_from_slice(&[0, 0, 0, 0]);
+    f.push(0x00);
+    f.extend_from_slice(&[0, 0, 0, 0, 0, 0]);
+    f.extend_from_slice(&[0, 0]);
     assert_eq!(f.len(), 0x19);
 
-    // HEADER directory: one file entry naming the canonical part stream.
     f.extend_from_slice(b"HEADER");
     let name = b"/Root/UG_PART/UG_PART";
     f.extend_from_slice(&(name.len() as u32).to_le_bytes());
     f.extend_from_slice(name);
-    // 16-byte payload: file_offset then size (both u64 LE) — point at the zlib blob.
     let blob = zlib_compress(&partition_stream());
-    // The blob will be appended after the directory; compute its offset now.
-    let dir_end = f.len() + 16; // after this entry's payload
+    let dir_end = f.len() + 16;
     let blob_off = dir_end as u64;
     f.extend_from_slice(&blob_off.to_le_bytes());
     f.extend_from_slice(&(blob.len() as u64).to_le_bytes());
@@ -1445,8 +1413,6 @@ fn large_xmt_headers(stream: &[u8]) -> Vec<u8> {
     out
 }
 
-/// A synthetic assembly `.prt`: SPLMSSTR header, an `ExternalReferences` file
-/// entry, and no embedded Parasolid stream.
 fn assembly_prt() -> Vec<u8> {
     let mut f = Vec::new();
     f.extend_from_slice(MAGIC);
@@ -1460,7 +1426,7 @@ fn assembly_prt() -> Vec<u8> {
     let name = b"/Root/UG_PART/ExternalReferences";
     f.extend_from_slice(&(name.len() as u32).to_le_bytes());
     f.extend_from_slice(name);
-    f.extend_from_slice(&[0u8; 16]); // opaque directory payload
+    f.extend_from_slice(&[0u8; 16]);
     f
 }
 
@@ -1601,7 +1567,6 @@ fn detect_high_on_magic() {
     assert_eq!(NxCodec.detect(MAGIC), Confidence::High);
     assert_eq!(NxCodec.detect(&single_part_prt()), Confidence::High);
     assert_eq!(NxCodec.detect(b"PK\x03\x04 not nx"), Confidence::No);
-    // A Creo/Granite .prt shares the extension but not the magic.
     assert_eq!(NxCodec.detect(b"\xe0\x02\xff\xfeGRANITE"), Confidence::No);
 }
 
@@ -1723,11 +1688,9 @@ fn decode_transfers_point_plane_cylinder_line() {
     assert!(result.report.geometry_transferred);
     assert_eq!(result.ir.model.points.len(), 1);
     assert_eq!(result.ir.model.vertices.len(), 1);
-    // Point coordinate is scaled metres → millimetres, byte-exact.
     let p = &result.ir.model.points[0].position;
     assert!((p.x - 62.5).abs() < 1e-6 && (p.z - 12.7).abs() < 1e-6);
 
-    // One plane, one cylinder decoded.
     let planes = result
         .ir
         .model
@@ -1763,7 +1726,6 @@ fn decode_transfers_point_plane_cylinder_line() {
         } if direction == Vector3::new(1.0, 0.0, 0.0)
     )));
 
-    // One line decoded, with a unit direction.
     let lines: Vec<_> = result
         .ir
         .model
@@ -1773,7 +1735,6 @@ fn decode_transfers_point_plane_cylinder_line() {
         .collect();
     assert_eq!(lines.len(), 1);
 
-    // No topology graph is fabricated; the loss is reported as blocking.
     assert!(result.ir.model.faces.is_empty() && result.ir.model.edges.is_empty());
     assert!(result
         .report
@@ -1782,7 +1743,6 @@ fn decode_transfers_point_plane_cylinder_line() {
         .any(|l| l.category == cadmpeg_ir::report::LossCategory::Topology
             && l.severity == cadmpeg_ir::report::Severity::Blocking));
 
-    // The Parasolid stream is preserved verbatim.
     let unknowns = result.ir.native_unknowns("nx").unwrap();
     assert_eq!(unknowns.len(), 1);
     assert_eq!(result.source_fidelity.retained_records[0].sha256.len(), 64);
@@ -1795,7 +1755,6 @@ fn decode_transfers_point_plane_cylinder_line() {
         Exactness::Derived
     );
 
-    // The preserved stream owns partial-decode carriers without fabricating topology.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
@@ -2771,13 +2730,10 @@ fn decode_tracks_fully_extended_geometry_header_shift() {
 
 #[test]
 fn cylinder_gate_rejects_denormal_radius() {
-    // A coincidental byte alignment can present a unit axis and a model-scale
-    // origin alongside a denormal (near-zero) double at the radius slot; the radius
-    // floor must reject it rather than emit a fabricated zero-radius cylinder.
     let mut cy = record(0x33, 99);
     put_vec3(&mut cy, 19, [0.003_175, 0.0, 0.0]);
     put_vec3(&mut cy, 43, [0.0, 0.0, 1.0]);
-    put_f64(&mut cy, 67, f64::from_bits(1)); // smallest positive subnormal
+    put_f64(&mut cy, 67, f64::from_bits(1));
     put_vec3(&mut cy, 75, [1.0, 0.0, 0.0]);
     assert!(crate::geometry::surfaces(&cy).is_empty());
 }
@@ -2872,7 +2828,6 @@ fn container_only_preserves_streams_without_geometry() {
     assert!(result.ir.model.points.is_empty());
 }
 
-/// Build decode options in the requested mode over the default limits.
 fn options_in(mode: cadmpeg_ir::decode::DecodeMode, container_only: bool) -> DecodeOptions {
     DecodeOptions {
         container_only,
@@ -2885,9 +2840,6 @@ fn options_in(mode: cadmpeg_ir::decode::DecodeMode, container_only: bool) -> Dec
 
 #[test]
 fn geometry_decode_passes_transfer_accounting_in_both_modes() {
-    // A strict decode returning `Ok` proves `Check::TransferAccounting` (§6.2)
-    // found every committed stream ticket resolved and every disposition valid
-    // against the model; salvage must equally succeed and add no violation note.
     for mode in [
         cadmpeg_ir::decode::DecodeMode::Strict,
         cadmpeg_ir::decode::DecodeMode::Salvage,
@@ -2928,11 +2880,6 @@ fn container_only_decode_passes_transfer_accounting_in_both_modes() {
         let mut cur = Cursor::new(single_part_prt());
         let result = NxCodec.decode(&mut cur, &options_in(mode, true)).unwrap();
         assert!(result.report.container_only);
-        // The single Parasolid stream is walked but not typed under
-        // container-only; its inflated bytes are preserved verbatim as the
-        // native unknown passthrough record, so its ticket resolves Structural,
-        // not Dropped. No per-record stream-scoped drop note is emitted for the
-        // preserved stream.
         assert_eq!(result.ir.native_unknowns("nx").unwrap().len(), 1);
         assert!(!result
             .report
@@ -3000,8 +2947,6 @@ fn extraction_uses_ug_part_bounds_and_all_standard_zlib_headers() {
     assert_eq!(streams[0].schema.as_deref(), Some("SCH_TEST_1_9999"));
 }
 
-/// Parse a container and inflate its streams, driving the same context path
-/// [`crate::decode::decode`] runs, and return the owned [`crate::decode::Scan`].
 fn scan_of(data: &[u8]) -> crate::decode::Scan {
     let arena = cadmpeg_ir::decode::DecodeArena::new();
     let policy = cadmpeg_ir::decode::DecodePolicy::default();
@@ -3018,11 +2963,8 @@ fn source_fidelity_tiles_every_physical_space() {
 
     assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(sidecar.capability, cadmpeg_ir::LedgerCapability::Accounted);
-    // The complete coarse tiling validates: origins form a DAG rooted at
-    // `source` and every space tiles `[0, length)` exactly.
     assert_eq!(sidecar.validate(), Ok(()));
 
-    // One space per inflated stream plus the root `source` space.
     assert_eq!(sidecar.spaces.len(), scan.streams.len() + 1);
 
     let source = sidecar
@@ -3032,8 +2974,6 @@ fn source_fidelity_tiles_every_physical_space() {
         .expect("source space present");
     assert_eq!(source.length, file.len() as u64);
 
-    // Spans tile the whole file with no gap or overlap, and at least one opaque
-    // payload span and one structural framing span exist.
     let mut cursor = 0u64;
     let mut saw_opaque = false;
     let mut saw_structural = false;
@@ -3054,8 +2994,6 @@ fn source_fidelity_tiles_every_physical_space() {
     assert!(saw_opaque, "catalogued payload should be one opaque span");
     assert!(saw_structural, "container framing should be structural");
 
-    // Every derived stream space names the canonical part path and tiles its
-    // inflated body with a single opaque span.
     for (ordinal, stream) in scan.streams.iter().enumerate() {
         let id = cadmpeg_ir::CanonicalSpaceId::stream("/Root/UG_PART/UG_PART", ordinal as u32);
         let space = sidecar
@@ -3074,8 +3012,6 @@ fn source_fidelity_tiles_every_physical_space() {
 #[test]
 fn source_fidelity_serialization_is_deterministic() {
     let file = prt_with_arrangements();
-    // Two independent decodes must serialize byte-identical canonical JSON,
-    // independent of registration order.
     let first = crate::accounting::build_sidecar(&scan_of(&file))
         .to_canonical_json()
         .unwrap();
@@ -3099,9 +3035,6 @@ fn decode_installs_validated_source_fidelity_sidecar() {
 
 #[test]
 fn source_fidelity_handles_container_without_streams() {
-    // An assembly `.prt` carries an external-reference entry and no inline
-    // Parasolid stream; the source space still tiles completely and the sidecar
-    // carries only the root space.
     let file = assembly_prt();
     let scan = scan_of(&file);
     assert!(scan.streams.is_empty());
@@ -3110,22 +3043,10 @@ fn source_fidelity_handles_container_without_streams() {
     assert_eq!(sidecar.validate(), Ok(()));
 }
 
-// ---------------------------------------------------------------------------
-// Phase 4 — semantic assurance (§9, §10 Phase 4).
-//
-// Strict-reject + salvage-loss-code pairs for every fallback-capable path, a
-// rigid-motion metamorphic property, and value-level record-family goldens over
-// the analytic carriers the codec claims.
-// ---------------------------------------------------------------------------
-
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::decode::DecodeMode;
 use cadmpeg_ir::report::Severity;
 
-/// A Parasolid partition stream carrying only the `PS` header and a schema
-/// string — no analytic records — so it classifies as a partition but yields no
-/// gate-passing carrier, driving the metadata-fallback (`build_container_report`)
-/// path.
 fn empty_partition_stream() -> Vec<u8> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00");
@@ -3135,10 +3056,6 @@ fn empty_partition_stream() -> Vec<u8> {
     s
 }
 
-/// The `partition_stream` geometry with every position field translated by `t`
-/// metres; directions, normals, axes, and the cylinder radius are motion
-/// invariants and stay fixed. Used to assert rigid-motion (translation)
-/// equivariance of the decode.
 fn translated_partition_stream(t: [f64; 3]) -> Vec<u8> {
     let mut s = Vec::new();
     s.extend_from_slice(b"PS\x00\x00");
@@ -3177,10 +3094,6 @@ fn translated_partition_stream(t: [f64; 3]) -> Vec<u8> {
 
 #[test]
 fn strict_rejects_carriers_without_topology_salvage_reports_the_loss() {
-    // Fallback-capable path: carriers decode but no connected B-rep ownership
-    // graph forms, so `build_geometry_report` emits a blocking
-    // `TopologyNotTransferred`. Strict mode refuses the partial model; salvage
-    // returns it with the stable loss code recorded.
     let file = single_part_prt();
 
     let strict = NxCodec.decode(
@@ -3216,9 +3129,6 @@ fn strict_rejects_carriers_without_topology_salvage_reports_the_loss() {
 
 #[test]
 fn strict_rejects_metadata_fallback_no_geometry_salvage_reports_the_loss() {
-    // Fallback-capable path: a Parasolid stream with no gate-passing carrier
-    // falls back to metadata IR with a blocking `GeometryNotTransferred`. Strict
-    // rejects; salvage records the code.
     let file = prt_with_partition(&empty_partition_stream());
 
     let err = NxCodec
@@ -3254,9 +3164,6 @@ fn strict_rejects_metadata_fallback_no_geometry_salvage_reports_the_loss() {
 
 #[test]
 fn strict_tolerates_assembly_external_dependency() {
-    // The assembly external-reference boundary is a `Tolerate` loss: geometry
-    // lives in child parts, not a decode gap. Strict must not reject it, and the
-    // salvage report names the stable code.
     let strict = NxCodec
         .decode(
             &mut Cursor::new(assembly_prt()),
@@ -3284,8 +3191,6 @@ fn strict_tolerates_assembly_external_dependency() {
 
 #[test]
 fn strict_accepts_fully_transferred_topology() {
-    // A complete connected B-rep carries no blocking Reject-coded loss, so strict
-    // mode accepts it — the strict-reject counterpart's negative control.
     let result = NxCodec
         .decode(
             &mut Cursor::new(topology_part_prt()),
@@ -3302,8 +3207,6 @@ fn strict_accepts_fully_transferred_topology() {
 
 #[test]
 fn strict_tolerates_container_only_request() {
-    // Container-only is an operator request, not an unrepresentable mandatory
-    // semantic; strict mode must return the metadata IR, never reject.
     let result = NxCodec
         .decode(
             &mut Cursor::new(single_part_prt()),
@@ -3315,10 +3218,6 @@ fn strict_tolerates_container_only_request() {
 
 #[test]
 fn decoded_geometry_is_translation_equivariant() {
-    // Metamorphic rigid-motion property (§9): translating every source position
-    // by `t` translates every decoded position by `t` (in millimetres) and
-    // leaves motion invariants — the cylinder radius and every direction/normal —
-    // byte-identical.
     let t = [0.5_f64, -0.25, 0.125];
     let base = NxCodec
         .decode(

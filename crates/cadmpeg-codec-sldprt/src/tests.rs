@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Tests over synthetic byte fixtures. No real CAD file exists in this repo and
-//! none may be added, so every fixture is a hand-built `.sldprt` byte image that
-//! exercises a real decode path and fails if the code regresses.
+//! Synthetic `.sldprt` byte-fixture tests.
 #![allow(clippy::unwrap_used)]
 
 use std::io::{Cursor, Write};
@@ -156,12 +154,6 @@ fn parasolid_with_body(description: &str, schema: &str, body: &[u8]) -> Vec<u8> 
     b.extend_from_slice(body);
     b
 }
-
-// ---- Parasolid record builders ----------------------------------------------
-//
-// Each helper emits one fixed-width record in the exact byte layout the decoder
-// parses ([spec §5](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#4-typed-topology-records), [§8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)), so the geometry test exercises the real record scanner
-// and chain walk rather than a mock.
 
 const MAGIC: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
 
@@ -1393,7 +1385,6 @@ fn synthetic_sldprt() -> Vec<u8> {
 fn detect_high_on_marker_after_header() {
     let f = synthetic_sldprt();
     assert_eq!(SldprtCodec.detect(&f), Confidence::High);
-    // A marker inside the leading 8-byte header region does not count.
     assert_eq!(
         SldprtCodec.detect(b"\x00\x01\x02\x03 no marker here"),
         Confidence::No
@@ -1409,7 +1400,6 @@ fn scan_classifies_blocks_cells_and_directory() {
     assert_eq!(scan.cache_cells.len(), 1);
     assert_eq!(scan.directory.len(), 1);
 
-    // Section names decode via nibble-swap; payload families are byte-derived.
     let png = &scan.blocks[0];
     assert_eq!(png.section.as_deref(), Some("PreviewPNG"));
     assert_eq!(png.family, "png-preview");
@@ -1537,8 +1527,6 @@ fn inspect_enumerates_every_structure() {
 
 #[test]
 fn decode_without_geometry_falls_back_to_metadata() {
-    // The Parasolid block frames but carries no topology records, so decode must
-    // preserve it as an unknown passthrough and report geometry as not transferred.
     let f = synthetic_sldprt();
     let mut cur = Cursor::new(f);
     let result = SldprtCodec
@@ -3749,19 +3737,11 @@ fn encoder_bakes_rigid_body_transform() {
         .all(|body| body.transform.is_none()));
 }
 
-/// Metamorphic property (§10 Phase 4): the encode/decode round trip is
-/// equivariant under rigid motion. Baking a rigid body transform into geometry
-/// and decoding must land every point and plane normal exactly where applying
-/// the same rotation and translation to the untransformed decode would, across
-/// a family of rotations and translations — not just the single case
-/// `encoder_bakes_rigid_body_transform` fixes.
 #[test]
 fn decode_encode_is_equivariant_under_rigid_motion() {
     use cadmpeg_ir::math::Point3;
     use cadmpeg_ir::transform::Transform;
 
-    // A quarter-turn about +Z with a translation, and a quarter-turn about +X
-    // with a different translation. Both are right-handed rigid motions.
     let motions = [
         (
             [
@@ -3794,7 +3774,6 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
             .for_each(|edge| edge.param_range = None);
     };
 
-    // The untransformed reference decode: the identity round trip.
     let mut base = cadmpeg_ir::examples::unit_cube();
     prepare(&mut base);
     base.model.bodies[0].transform = None;
@@ -3821,8 +3800,6 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
 
-        // Every point of the reference, moved by the rigid motion, must appear
-        // in the transformed decode: decode ∘ encode commutes with the motion.
         for reference_point in &reference_points {
             let expected = apply(*reference_point);
             assert!(
@@ -3834,7 +3811,6 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
                 "rigid motion not preserved for point {reference_point:?}"
             );
         }
-        // The motion is fully baked: no residual body transform survives.
         assert!(decoded
             .ir
             .model
@@ -3844,11 +3820,6 @@ fn decode_encode_is_equivariant_under_rigid_motion() {
     }
 }
 
-/// Decode-encode-decode fixpoint (§10 Phase 4): once a `.sldprt` has been
-/// decoded and re-encoded, decoding the re-encoded bytes reproduces the same
-/// typed IR. The `.sldprt` writer replays the retained source image verbatim,
-/// so the second decode is byte-identical to the first; the differential
-/// evidence is the equality of every decoded geometry and topology arena.
 #[test]
 fn decode_encode_decode_reaches_fixpoint() {
     let fixture = sldprt_with_body_and_history(&triangle_body());
@@ -4094,7 +4065,6 @@ fn decode_builds_valid_topology_and_plane() {
     assert_eq!(result.ir.model.points.len(), 3);
     assert_eq!(result.ir.model.surfaces.len(), 1);
 
-    // The plane decoded with its stored origin and unit normal.
     match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Plane {
             origin,
@@ -4108,7 +4078,6 @@ fn decode_builds_valid_topology_and_plane() {
         other => panic!("expected plane, got {other:?}"),
     }
 
-    // Coordinates converted metre → millimetre (×1000).
     let xs: Vec<f64> = result
         .ir
         .model
@@ -4118,7 +4087,6 @@ fn decode_builds_valid_topology_and_plane() {
         .collect();
     assert!(xs.contains(&1000.0));
 
-    // The loop ring closes and every reference resolves.
     let report = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
     assert!(report.is_ok(), "validation findings: {:?}", report.findings);
     assert_eq!(result.ir.model.loops[0].coedges.len(), 3);
@@ -4126,9 +4094,6 @@ fn decode_builds_valid_topology_and_plane() {
     assert!(result.ir.model.edges.iter().all(|e| e.curve.is_none()));
 }
 
-/// Strict-mode options: transfer accounting is a hard `Malformed` failure, so a
-/// successful decode proves every committed record ticket resolved to a
-/// disposition the ledger check accepts (§6.2).
 fn strict_options() -> DecodeOptions {
     use cadmpeg_ir::decode::{DecodeMode, DecodePolicy};
     DecodeOptions {
@@ -4142,9 +4107,6 @@ fn strict_options() -> DecodeOptions {
 
 #[test]
 fn transfer_accounting_passes_in_both_modes_for_geometry() {
-    // Geometry path: the selected Parasolid block resolves `Typed`; every other
-    // retained block resolves `Retained`. Strict mode fails the decode on any
-    // disposition the ledger rejects, so `Ok` is the accounting proof.
     let fixture = sldprt_with_body_and_history(&triangle_body());
     for options in [DecodeOptions::default(), strict_options()] {
         let result = SldprtCodec
@@ -4156,8 +4118,6 @@ fn transfer_accounting_passes_in_both_modes_for_geometry() {
 
 #[test]
 fn transfer_accounting_passes_in_both_modes_for_metadata_fallback() {
-    // The metadata fallback resolves every committed ticket in salvage mode;
-    // `Ok` is the accounting proof independent of the semantic loss it carries.
     let fixture = synthetic_sldprt();
     SldprtCodec
         .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
@@ -4166,9 +4126,6 @@ fn transfer_accounting_passes_in_both_modes_for_metadata_fallback() {
 
 #[test]
 fn strict_accepts_operator_requested_container_only() {
-    // Container-only is an operator-requested truncation, not a failed faithful
-    // decode, so strict mode accepts it even though the same file carries a
-    // reject-consequence geometry loss on the full path.
     let fixture = synthetic_sldprt();
     let mut options = strict_options();
     options.container_only = true;
@@ -4177,18 +4134,12 @@ fn strict_accepts_operator_requested_container_only() {
         .expect("strict container-only decode is accepted");
 }
 
-/// Strict mode rejects a metadata-only decode whose mandatory B-rep geometry
-/// could only be accounted as a loss; salvage keeps the partial result and
-/// surfaces the same stable loss codes. The two arms are the strict-reject and
-/// salvage-loss-code pair for the geometry fallback path (§10 Phase 4).
 #[test]
 fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     use cadmpeg_ir::report::{LossCode, StrictConsequence};
 
     let fixture = synthetic_sldprt();
 
-    // Salvage: the decode succeeds and every mandatory-semantics loss carries a
-    // reject-consequence code so the report explains the missing geometry.
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage decode keeps the partial result");
@@ -4209,8 +4160,6 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
         .iter()
         .any(|note| note.code.strict_consequence() == StrictConsequence::Reject));
 
-    // Strict: the same input is refused with a classified `Malformed` error
-    // naming the reject-consequence loss.
     let strict = SldprtCodec.decode(&mut Cursor::new(fixture), &strict_options());
     match strict {
         Err(cadmpeg_ir::CodecError::Malformed(message)) => {
@@ -4227,9 +4176,6 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
 fn strict_accepts_tolerable_gauge_substitution_geometry() {
     use cadmpeg_ir::report::{LossCode, StrictConsequence};
 
-    // The triangle body types fully but derives its body hierarchy, so its only
-    // loss is the tolerate-consequence gauge substitution. Strict accepts it,
-    // proving rejection keys on the loss code's consequence, not on presence.
     let fixture = sldprt_with_body_and_history(&triangle_body());
     let strict = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
@@ -5125,7 +5071,6 @@ fn semantic_writer_preserves_multiple_body_ownership() {
 fn edge_uses_decoded_line_curve() {
     use cadmpeg_ir::geometry::CurveGeometry;
 
-    // Point the first edge-use at a line carrier; the edge must gain a Line curve.
     let mut body = Vec::new();
     body.extend(plane_carrier(
         100,
@@ -14559,10 +14504,8 @@ fn semantic_writer_round_trips_all_supported_lanes_together() {
 fn face_on_untyped_surface_keeps_topology() {
     use cadmpeg_ir::geometry::SurfaceGeometry;
 
-    // Bridge points refs[4] at an attr with no carrier; the face survives with an
-    // unknown-geometry surface and the loss is counted.
     let mut body = Vec::new();
-    body.extend(bridge(10, 20, 999)); // 999 = no carrier
+    body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
     body.extend(coedge(30, 20, 31, 50, 0, 40, false));
     body.extend(coedge(31, 20, 32, 51, 0, 41, false));
@@ -14605,19 +14548,12 @@ fn face_on_untyped_surface_keeps_topology() {
     assert!(report.is_ok(), "findings: {:?}", report.findings);
 }
 
-/// A B-rep whose topology transfers completely but whose faces rest on an
-/// untyped support surface raises a `GeometryNotTransferred` census note. That
-/// code is `Reject`-consequence: the underlying surface shape is a mandatory
-/// semantic the codec did not transfer, so strict mode refuses the otherwise
-/// usable topology decode rather than return a model that silently omits it.
-/// Salvage keeps the partial model and surfaces the same stable code — the
-/// strict-reject / salvage-loss-code pair for the census boundary (§10 Phase 4).
 #[test]
 fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     use cadmpeg_ir::report::{LossCode, StrictConsequence};
 
     let mut body = Vec::new();
-    body.extend(bridge(10, 20, 999)); // 999 = no carrier
+    body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
     body.extend(coedge(30, 20, 31, 50, 0, 40, false));
     body.extend(coedge(31, 20, 32, 51, 0, 41, false));
@@ -14633,8 +14569,6 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
     body.extend(world_point(62, [0.0, 1.0, 0.0]));
     let fixture = sldprt_with_body(&body);
 
-    // Salvage: the topology decode succeeds and the census note carries the
-    // reject-consequence code.
     let salvaged = SldprtCodec
         .decode(&mut Cursor::new(fixture.clone()), &DecodeOptions::default())
         .expect("salvage keeps the topology decode");
@@ -14647,8 +14581,6 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .expect("untyped support surface raises a census note");
     assert_eq!(census.code.strict_consequence(), StrictConsequence::Reject);
 
-    // Strict: the same input is refused because the surface shape is a
-    // mandatory semantic that was not transferred, even though topology was.
     let error = SldprtCodec
         .decode(&mut Cursor::new(fixture), &strict_options())
         .expect_err("strict refuses the untyped-surface census");
@@ -15158,7 +15090,7 @@ fn compact_carrier_shapes_decode() {
 
     // A bad marker (not 2b/2d) rejects the candidate.
     let mut bad = cyl.clone();
-    bad[2 + 2 + 4 + 10] = 0x00; // clobber the marker byte
+    bad[2 + 2 + 4 + 10] = 0x00;
     assert!(parse_carrier(&bad, 0).is_none());
 }
 
@@ -15179,16 +15111,13 @@ fn container_ledger_tiles_every_physical_byte() {
     let scan = container::scan_bytes(&f);
     let ledger = crate::fidelity::container_ledger(&scan);
 
-    // L1 accounting: complete coarse tiling, no retained-byte requirement.
     assert_eq!(ledger.version, cadmpeg_ir::SOURCE_FIDELITY_VERSION);
     assert_eq!(ledger.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(ledger.capability, cadmpeg_ir::LedgerCapability::Accounted);
 
-    // Validation enforces exact tiling of [0, length) for every space, origin
-    // consistency, and acyclicity. A gap would fail here.
+    // Validation requires exact tiling, consistent origins, and an acyclic space graph.
     ledger.validate().expect("L1 ledger validates");
 
-    // The root space plus one decompressed child space per block.
     assert_eq!(ledger.spaces.len(), 1 + scan.blocks.len());
     let root = ledger
         .spaces
@@ -15196,8 +15125,6 @@ fn container_ledger_tiles_every_physical_byte() {
         .find(|s| s.id.is_source())
         .expect("root source space present");
     assert_eq!(root.length, f.len() as u64);
-    // The two compressed block payloads surface as opaque spans; framing is
-    // structural.
     assert_eq!(
         root.spans
             .iter()
@@ -15211,8 +15138,7 @@ fn container_ledger_tiles_every_physical_byte() {
         .iter()
         .any(|s| s.class == cadmpeg_ir::SpanClass::Structural && s.meaning == "outer-header"));
 
-    // Each block registers a Transform child space carrying one opaque payload
-    // span the whole length of the decompressed block.
+    // Decompressed blocks are Transform spaces, not physical source extents.
     for block in &scan.blocks {
         let child = ledger
             .spaces
@@ -15237,8 +15163,6 @@ fn container_ledger_serialization_is_deterministic() {
     let second_json = second.to_canonical_json().unwrap();
     assert_eq!(first_json, second_json);
 
-    // The public codec entry produces the same validated sidecar, and it
-    // round-trips through the v2 parser.
     let via_codec = SldprtCodec
         .source_fidelity(&mut Cursor::new(f.clone()))
         .expect("codec builds a validated sidecar");

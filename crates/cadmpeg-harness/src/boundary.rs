@@ -9,10 +9,6 @@
 //! record markers). This is deliberately a structural over-approximation — a
 //! marker byte pattern can occur inside payload — which is the correct bias for
 //! a sweep: extra truncation points cost time, never coverage.
-//!
-//! The signature tables live here because this batch cannot edit the codec
-//! crates. The end state is each codec crate exposing its own boundary set that
-//! these adapters call; see the crate's open items.
 
 /// What a boundary marks. Header and count positions additionally seed the
 /// single-byte mutation spot-checks.
