@@ -21066,13 +21066,13 @@ fn surface_of_revolution_circle_pcurve(
         return None;
     };
     (circle_radius.is_finite() && *circle_radius > 0.0).then_some(())?;
-    let (origin, axis, ref_direction, reference_radius, radius_slope) = match surface {
+    let (origin, axis, ref_direction) = match surface {
         SurfaceGeometry::Cylinder {
             origin,
             axis,
             ref_direction,
             radius,
-        } if radius.is_finite() && *radius > 0.0 => (*origin, *axis, *ref_direction, *radius, 0.0),
+        } if radius.is_finite() && *radius > 0.0 => (*origin, *axis, *ref_direction),
         SurfaceGeometry::Cone {
             origin,
             axis,
@@ -21085,10 +21085,27 @@ fn surface_of_revolution_circle_pcurve(
             && (*ratio - 1.0).abs() <= 1e-12
             && half_angle.is_finite() =>
         {
-            let slope = half_angle.tan();
-            slope
-                .is_finite()
-                .then_some((*origin, *axis, *ref_direction, *radius, slope))?
+            half_angle.tan().is_finite().then_some(())?;
+            (*origin, *axis, *ref_direction)
+        }
+        SurfaceGeometry::Sphere {
+            center,
+            axis,
+            ref_direction,
+            radius,
+        } if radius.is_finite() && *radius > 0.0 => (*center, *axis, *ref_direction),
+        SurfaceGeometry::Torus {
+            center,
+            axis,
+            ref_direction,
+            major_radius,
+            minor_radius,
+        } if major_radius.is_finite()
+            && minor_radius.is_finite()
+            && *major_radius > 0.0
+            && *minor_radius > 0.0 =>
+        {
+            (*center, *axis, *ref_direction)
         }
         _ => return None,
     };
@@ -21111,10 +21128,44 @@ fn surface_of_revolution_circle_pcurve(
         center.y - origin.y,
         center.z - origin.z,
     ];
-    let v = dot(center_relative, surface_axis);
-    let center_radial =
-        std::array::from_fn::<_, 3, _>(|index| center_relative[index] - v * surface_axis[index]);
-    let surface_radius = reference_radius + v * radius_slope;
+    let axial = dot(center_relative, surface_axis);
+    let center_radial = std::array::from_fn::<_, 3, _>(|index| {
+        center_relative[index] - axial * surface_axis[index]
+    });
+    let (v, surface_radius) = match surface {
+        SurfaceGeometry::Cylinder { radius, .. } => (axial, *radius),
+        SurfaceGeometry::Cone {
+            radius, half_angle, ..
+        } => (axial, radius + axial * half_angle.tan()),
+        SurfaceGeometry::Sphere { radius, .. } => {
+            let scale = radius.abs().max(circle_radius.abs()).max(1.0);
+            ((axial.mul_add(axial, circle_radius * circle_radius) - radius * radius).abs()
+                <= 1e-9 * scale * scale)
+                .then_some(())?;
+            let polar = axial.atan2(*circle_radius);
+            (polar, radius * polar.cos())
+        }
+        SurfaceGeometry::Torus {
+            major_radius,
+            minor_radius,
+            ..
+        } => {
+            let candidates = [*circle_radius, -*circle_radius]
+                .into_iter()
+                .filter_map(|ring| {
+                    let sine = axial / minor_radius;
+                    let cosine = (ring - major_radius) / minor_radius;
+                    ((sine.mul_add(sine, cosine * cosine) - 1.0).abs() <= 1e-9)
+                        .then_some((sine.atan2(cosine), ring))
+                })
+                .collect::<Vec<_>>();
+            let [candidate] = candidates.as_slice() else {
+                return None;
+            };
+            *candidate
+        }
+        _ => unreachable!(),
+    };
     let scale = surface_radius.abs().max(circle_radius.abs()).max(1.0);
     (dot(center_radial, center_radial).sqrt() <= 1e-9 * scale
         && surface_radius.abs() > 1e-12 * scale
@@ -21143,6 +21194,23 @@ mod native_pcurve_tests {
             origin: Point3::new(0.0, 0.0, 3.0),
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
+        }
+    }
+
+    fn assert_pcurve_matches_curve(
+        surface: &SurfaceGeometry,
+        curve: &CurveGeometry,
+        pcurve: &PcurveGeometry,
+        parameters: &[f64],
+    ) {
+        for parameter in parameters {
+            let uv = cadmpeg_ir::eval::pcurve_uv(pcurve, *parameter).expect("pcurve point");
+            let mapped =
+                cadmpeg_ir::eval::surface_point(surface, uv.u, uv.v).expect("surface point");
+            let expected = cadmpeg_ir::eval::curve_point(curve, *parameter).expect("curve point");
+            assert!((mapped.x - expected.x).abs() <= 1e-10);
+            assert!((mapped.y - expected.y).abs() <= 1e-10);
+            assert!((mapped.z - expected.z).abs() <= 1e-10);
         }
     }
 
@@ -21287,15 +21355,7 @@ mod native_pcurve_tests {
         assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
         assert!((origin.v - 5.0).abs() <= 1e-12);
         assert_eq!(*direction, Point2::new(-1.0, 0.0));
-        for parameter in [-2.0, 0.0, 1.25, 4.0] {
-            let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
-            let mapped =
-                cadmpeg_ir::eval::surface_point(&surface, uv.u, uv.v).expect("surface point");
-            let expected = cadmpeg_ir::eval::curve_point(&circle, parameter).expect("curve point");
-            assert!((mapped.x - expected.x).abs() <= 1e-10);
-            assert!((mapped.y - expected.y).abs() <= 1e-10);
-            assert!((mapped.z - expected.z).abs() <= 1e-10);
-        }
+        assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-2.0, 0.0, 1.25, 4.0]);
 
         let off_axis = CurveGeometry::Circle {
             center: Point3::new(1.1, 2.0, 8.0),
@@ -21341,16 +21401,7 @@ mod native_pcurve_tests {
             assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1e-12);
             assert!((origin.v - height).abs() <= 1e-12);
             assert_eq!(*direction, Point2::new(1.0, 0.0));
-            for parameter in [-1.0, 0.0, 2.0] {
-                let uv = cadmpeg_ir::eval::pcurve_uv(&pcurve, parameter).expect("pcurve point");
-                let mapped =
-                    cadmpeg_ir::eval::surface_point(&surface, uv.u, uv.v).expect("surface point");
-                let expected =
-                    cadmpeg_ir::eval::curve_point(&circle, parameter).expect("curve point");
-                assert!((mapped.x - expected.x).abs() <= 1e-10);
-                assert!((mapped.y - expected.y).abs() <= 1e-10);
-                assert!((mapped.z - expected.z).abs() <= 1e-10);
-            }
+            assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
         }
 
         let elliptical = SurfaceGeometry::Cone {
@@ -21368,6 +21419,74 @@ mod native_pcurve_tests {
             radius: 5.0,
         };
         assert!(surface_of_revolution_circle_pcurve(&elliptical, &circle).is_none());
+    }
+
+    #[test]
+    fn projects_sphere_latitude_circles_to_the_canonical_polar_chart() {
+        let surface = SurfaceGeometry::Sphere {
+            center: Point3::new(1.0, 2.0, 3.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 5.0,
+        };
+        for axial in [-3.0, 3.0] {
+            let circle = CurveGeometry::Circle {
+                center: Point3::new(1.0, 2.0, 3.0 + axial),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(0.0, 1.0, 0.0),
+                radius: 4.0,
+            };
+            let pcurve = surface_of_revolution_circle_pcurve(&surface, &circle)
+                .expect("sphere latitude pcurve");
+            let PcurveGeometry::Line { origin, direction } = &pcurve else {
+                panic!("sphere-circle pcurve: {pcurve:#?}");
+            };
+            assert!((origin.u - std::f64::consts::FRAC_PI_2).abs() <= 1e-12);
+            assert!((origin.v - axial.atan2(4.0)).abs() <= 1e-12);
+            assert_eq!(*direction, Point2::new(1.0, 0.0));
+            assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
+        }
+
+        let invalid_circle = CurveGeometry::Circle {
+            center: Point3::new(1.0, 2.0, 6.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.1,
+        };
+        assert!(surface_of_revolution_circle_pcurve(&surface, &invalid_circle).is_none());
+    }
+
+    #[test]
+    fn projects_torus_parallel_circles_with_signed_ring_branches() {
+        for (major_radius, minor_radius, polar, circle_radius, expected_phase) in [
+            (4.0, 1.0, std::f64::consts::FRAC_PI_2, 4.0, 0.0),
+            (1.0, 2.0, std::f64::consts::PI, 1.0, std::f64::consts::PI),
+        ] {
+            let surface = SurfaceGeometry::Torus {
+                center: Point3::new(0.0, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                major_radius,
+                minor_radius,
+            };
+            let circle = CurveGeometry::Circle {
+                center: Point3::new(0.0, 0.0, minor_radius * polar.sin()),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: circle_radius,
+            };
+            let pcurve = surface_of_revolution_circle_pcurve(&surface, &circle)
+                .expect("torus parallel pcurve");
+            let PcurveGeometry::Line { origin, direction } = &pcurve else {
+                panic!("torus-circle pcurve: {pcurve:#?}");
+            };
+            assert!((origin.u - expected_phase).sin().abs() <= 1e-12);
+            assert!(((origin.u - expected_phase).cos() - 1.0).abs() <= 1e-12);
+            assert!((origin.v - polar).sin().abs() <= 1e-12);
+            assert!(((origin.v - polar).cos() - 1.0).abs() <= 1e-12);
+            assert_eq!(*direction, Point2::new(1.0, 0.0));
+            assert_pcurve_matches_curve(&surface, &circle, &pcurve, &[-1.0, 0.0, 2.0]);
+        }
     }
 }
 
