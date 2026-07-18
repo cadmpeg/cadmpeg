@@ -931,6 +931,10 @@ impl<'a> ParameterExpressionParser<'a> {
     fn parse(mut self) -> Option<ParameterValue> {
         self.skip_space();
         self.take('=');
+        self.skip_space();
+        if let Some(value) = parse_parameter_literal(&self.input[self.offset..]) {
+            return Some(value);
+        }
         let value = self.comparison()?;
         self.skip_space();
         (self.offset == self.input.len()).then_some(value)
@@ -4941,6 +4945,37 @@ mod literal_tests {
     }
 
     #[test]
+    fn dimension_decorations_preserve_the_nominal_scalar() {
+        let aliases = std::collections::HashMap::new();
+        let values = std::collections::HashMap::new();
+        for (expression, expected, display) in [
+            ("2X<MOD-DIAM>1.2", 1.2, DimensionDisplay::Diameter),
+            ("6XR2", 2.0, DimensionDisplay::Radius),
+            ("<MOD-DIAM>15H7", 15.0, DimensionDisplay::Diameter),
+            ("3x &lt;MOD-RHO&gt;0.5", 0.5, DimensionDisplay::Radius),
+        ] {
+            assert_eq!(
+                parse_parameter_literal(expression),
+                Some(ParameterValue::Length(cadmpeg_ir::features::Length(
+                    expected
+                ))),
+                "{expression}"
+            );
+            assert_eq!(dimension_display(expression), Some(display), "{expression}");
+            assert_eq!(
+                ParameterExpressionParser::new(expression, &aliases, &values).parse(),
+                Some(ParameterValue::Length(cadmpeg_ir::features::Length(
+                    expected
+                ))),
+                "{expression}"
+            );
+        }
+        assert_eq!(parse_parameter_literal("x2"), None);
+        assert_eq!(parse_parameter_literal("15mmH7"), None);
+        assert_eq!(parse_parameter_literal("<MOD-DIAM>15H"), None);
+    }
+
+    #[test]
     fn solidworks_sign_function_is_three_way() {
         for (argument, expected) in [(-2, -1), (0, 0), (2, 1)] {
             assert_eq!(
@@ -5244,7 +5279,7 @@ fn parse_parameter_literal(expression: &str) -> Option<ParameterValue> {
 }
 
 fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
-    let expression = expression.trim();
+    let expression = strip_dimension_count(expression.trim());
     if strip_diameter_modifier(expression).is_some()
         || (expression.starts_with(['⌀', 'Ø']) && parse_length_mm(expression).is_some())
     {
@@ -5259,11 +5294,43 @@ fn dimension_display(expression: &str) -> Option<DimensionDisplay> {
 }
 
 fn parse_dimension_display_length(expression: &str) -> Option<f64> {
+    let expression = strip_dimension_count(expression.trim());
     let value = strip_diameter_modifier(expression)
         .or_else(|| strip_radius_modifier(expression))
         .unwrap_or(expression)
         .trim();
-    parse_dimension_length_mm(value).or_else(|| parse_length_mm(expression))
+    parse_dimension_length_mm(value)
+        .or_else(|| strip_dimension_fit(value).and_then(parse_dimension_length_mm))
+        .or_else(|| parse_length_mm(expression))
+}
+
+fn strip_dimension_count(expression: &str) -> &str {
+    let digit_count = expression.bytes().take_while(u8::is_ascii_digit).count();
+    let (count, rest) = expression.split_at(digit_count);
+    if !count.is_empty()
+        && count.parse::<u64>().is_ok_and(|count| count > 0)
+        && rest.starts_with(['X', 'x'])
+    {
+        rest[1..].trim_start()
+    } else {
+        expression
+    }
+}
+
+fn strip_dimension_fit(value: &str) -> Option<&str> {
+    let fit_start = value
+        .char_indices()
+        .find_map(|(offset, character)| character.is_ascii_alphabetic().then_some(offset))?;
+    let (nominal, fit) = value.split_at(fit_start);
+    let grade_start = fit
+        .char_indices()
+        .find_map(|(offset, character)| character.is_ascii_digit().then_some(offset))?;
+    let (position, grade) = fit.split_at(grade_start);
+    (!nominal.is_empty()
+        && !position.is_empty()
+        && position.bytes().all(|byte| byte.is_ascii_alphabetic())
+        && grade.bytes().all(|byte| byte.is_ascii_digit()))
+    .then_some(nominal)
 }
 
 fn strip_diameter_modifier(expression: &str) -> Option<&str> {
