@@ -39,6 +39,7 @@ pub(crate) enum DesignFeatureFamily {
     Chamfer,
     CircularPattern,
     Mirror,
+    OffsetFaces,
 }
 
 /// Return the canonical operation family while preserving `kind` verbatim on
@@ -51,6 +52,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
         "Circular Pattern" | "Réseau C" => Some(DesignFeatureFamily::CircularPattern),
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
+        "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),
         _ => None,
     }
 }
@@ -772,6 +774,19 @@ pub fn project_parameter_design_with_edge_identities(
                         }),
                     },
                 }
+            } else if family == Some(DesignFeatureFamily::OffsetFaces) {
+                project_offset_faces(scope, &parameters, face_operands).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else {
                 FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -1045,6 +1060,64 @@ pub fn project_parameter_design_with_edge_identities(
     assign_feature_ordinals(&mut features);
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
+}
+
+fn project_offset_faces(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::ids::HistoricalFaceId;
+
+    let [(_, distance)] = parameters else {
+        return None;
+    };
+    if distance.source_kind != "distance" {
+        return None;
+    }
+    let distance = design_length(distance)?;
+    let mut matching = operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == native_stream(&scope.id)
+                && operand.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    matching.sort_by_key(|operand| operand.scope_reference_ordinal);
+    if matching.is_empty() {
+        return None;
+    }
+    let faces = matching
+        .iter()
+        .map(|operand| operand.resolved_face_slot)
+        .collect::<Option<Vec<_>>>();
+    let feature_id = neutral_feature_id(scope);
+    let feature_key = feature_id
+        .0
+        .split_once('#')
+        .map_or(feature_id.0.as_str(), |(_, key)| key);
+    let faces = match (faces, scope.previous_history_state_id) {
+        (Some(faces), Some(previous_state_id)) if !faces.is_empty() => FaceSelection::Historical {
+            state: feature_input_topology_id(&feature_id, previous_state_id),
+            faces: faces
+                .into_iter()
+                .map(|face| {
+                    HistoricalFaceId(format!(
+                        "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
+                        feature_key.len(),
+                        feature_key
+                    ))
+                })
+                .collect(),
+            native: scope.id.clone(),
+        },
+        _ => FaceSelection::Native(scope.id.clone()),
+    };
+    Some(FeatureDefinition::MoveFace {
+        faces,
+        motion: FaceMotion::Offset { distance },
+    })
 }
 
 fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {
@@ -8814,7 +8887,7 @@ pub fn decode_edge_identity_operands(
     Ok(out)
 }
 
-/// Decode the face-recipe operand frames named by Extrude face groups.
+/// Decode face-recipe operand frames named by grouped and direct feature references.
 pub fn decode_face_operands(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
@@ -8863,6 +8936,36 @@ pub fn decode_face_operands(
                 continue;
             };
             let Some(header) = headers.get(&(stream, *record_index)) else {
+                continue;
+            };
+            if let Some(operand) =
+                parse_face_operand(bytes, scope, scope_reference_ordinal, header, recipes)
+            {
+                out.push(operand);
+            }
+        }
+    }
+    for scope in scopes.values().filter(|scope| {
+        design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
+    }) {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in scope.reference_members.iter().copied().enumerate() {
+            if !seen.insert((stream, scope.record_index, record_index)) {
+                continue;
+            }
+            let (Ok(scope_reference_ordinal), Some(header)) =
+                (u32::try_from(ordinal), headers.get(&(stream, record_index)))
+            else {
                 continue;
             };
             if let Some(operand) =
@@ -10338,11 +10441,14 @@ fn parse_face_operand(
         )
         .map(|(start, end)| {
             let program = recipe_program.get(start..end)?.to_vec();
-            let recipe_structure = program.get(3..).and_then(face_recipe_structure);
-            let local_topology_references = match &recipe_structure {
-                Some(structure) => face_recipe_local_topology_references(structure, node_count)?,
-                None => Vec::new(),
-            };
+            let (recipe_structure, local_topology_references) = program
+                .get(3..)
+                .and_then(face_recipe_structure)
+                .and_then(|structure| {
+                    face_recipe_local_topology_references(&structure, node_count)
+                        .map(|references| (Some(structure), references))
+                })
+                .unwrap_or((None, Vec::new()));
             Some(crate::records::DesignFaceRecipeNode {
                 byte_offset: u64::try_from(recipe_program_at.checked_add(start.checked_mul(4)?)?)
                     .ok()?,
@@ -13420,6 +13526,10 @@ mod relation_tests {
         assert_eq!(
             design_feature_family("Symétrie miroir"),
             Some(DesignFeatureFamily::Mirror)
+        );
+        assert_eq!(
+            design_feature_family("DécalerLesFaces"),
+            Some(DesignFeatureFamily::OffsetFaces)
         );
     }
 

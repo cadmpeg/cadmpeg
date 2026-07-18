@@ -1389,18 +1389,26 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                design::design_feature_family(&scope.kind)
-                    == Some(design::DesignFeatureFamily::Extrude)
-                    && usize::try_from(operand.scope_reference_ordinal)
-                        .ok()
-                        .and_then(|ordinal| scope.reference_members.get(ordinal))
-                        == Some(&operand.record_index)
+                matches!(
+                    design::design_feature_family(&scope.kind),
+                    Some(
+                        design::DesignFeatureFamily::Extrude
+                            | design::DesignFeatureFamily::OffsetFaces
+                    )
+                ) && usize::try_from(operand.scope_reference_ordinal)
+                    .ok()
+                    .and_then(|ordinal| scope.reference_members.get(ordinal))
+                    == Some(&operand.record_index)
             })
-            && face_group_members.contains(&(
-                native_stream,
-                operand.scope_record_index,
-                operand.record_index,
-            ))
+            && scope.is_some_and(|scope| {
+                design::design_feature_family(&scope.kind)
+                    == Some(design::DesignFeatureFamily::OffsetFaces)
+                    || face_group_members.contains(&(
+                        native_stream,
+                        operand.scope_record_index,
+                        operand.record_index,
+                    ))
+            })
             && header.is_some_and(|header| {
                 header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
             })
@@ -1438,6 +1446,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 .program
                                 .get(3..)
                                 .and_then(design::face_recipe_structure)
+                                .and_then(|structure| {
+                                    design::face_recipe_local_topology_references(
+                                        &structure,
+                                        operand.recipe_nodes.len(),
+                                    )
+                                    .map(|_| structure)
+                                })
                         && node.recipe_structure.as_ref().map_or_else(
                             || node.local_topology_references.is_empty(),
                             |structure| {
