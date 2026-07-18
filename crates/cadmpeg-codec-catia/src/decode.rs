@@ -625,10 +625,13 @@ fn transfer_zero_entity_topology(
 
     for (edge_index, pair) in edge_vertices.iter().enumerate() {
         let id = EdgeId(format!("catia:zero-entity:edge#{edge_index}"));
-        let direct = edges[edge_index]
-            .occurrences
-            .iter()
-            .find_map(|occurrence| crate::zero_entity::direct_support_curve(topology, *occurrence));
+        let direct = edges[edge_index].occurrences.iter().find_map(|occurrence| {
+            crate::zero_entity::direct_support_curve(
+                topology,
+                *occurrence,
+                edges[edge_index].endpoints,
+            )
+        });
         let direct_range = direct.as_ref().and_then(|curve| curve.parameter_range);
         let direct_tolerance = direct.as_ref().and_then(|curve| curve.cache_fit_tolerance);
         let direct_construction = direct.as_ref().and_then(|curve| curve.construction.clone());

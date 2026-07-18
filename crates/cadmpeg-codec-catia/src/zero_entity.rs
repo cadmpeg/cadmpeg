@@ -259,6 +259,7 @@ pub(crate) struct ZeroDirectCurve {
 pub(crate) fn direct_support_curve(
     topology: &ZeroEntityTopology,
     occurrence: ZeroResolvedOccurrence,
+    edge_endpoints: [[f64; 3]; 2],
 ) -> Option<ZeroDirectCurve> {
     let support = topology.supports.get(occurrence.support_index)?;
     let pcurve = support.pcurve.as_ref()?;
@@ -277,8 +278,11 @@ pub(crate) fn direct_support_curve(
         return Some(curve);
     }
     let curve = lift_pcurve(pcurve, surface)?;
-    let (geometry, parameter_range) =
+    let (mut geometry, mut parameter_range) =
         orient_direct_support_curve(pcurve, surface, curve, source_range, reversed)?;
+    if let (CurveGeometry::Nurbs(curve), Some(range)) = (&mut geometry, parameter_range) {
+        parameter_range = Some(orient_nurbs_to_endpoints(curve, range, edge_endpoints)?);
+    }
     Some(ZeroDirectCurve {
         geometry,
         parameter_range,
@@ -379,7 +383,7 @@ fn orient_direct_support_curve(
             if reversed {
                 reverse_nurbs_curve(curve)?;
             }
-            Some(source_range)
+            canonical_nurbs_interval(curve, source_range)
         }
         (SurfaceGeometry::Nurbs(_), CurveGeometry::Nurbs(curve)) => {
             let PcurveGeometry::Nurbs { control_points, .. } = pcurve else {
@@ -580,17 +584,63 @@ fn conic_scale(curve: &CurveGeometry) -> Option<f64> {
 
 fn orient_nurbs_interval(curve: &mut NurbsCurve, range: [f64; 2]) -> Option<[f64; 2]> {
     if range[0] < range[1] {
-        return Some(range);
+        return canonical_nurbs_interval(curve, range);
     }
     if range[0] <= range[1] {
         return None;
     }
     let domain = nurbs_curve_domain(curve)?;
     reverse_nurbs_curve(curve)?;
-    Some([
-        domain[0] + domain[1] - range[0],
-        domain[0] + domain[1] - range[1],
-    ])
+    canonical_nurbs_interval(
+        curve,
+        [
+            domain[0] + domain[1] - range[0],
+            domain[0] + domain[1] - range[1],
+        ],
+    )
+}
+
+fn canonical_nurbs_interval(curve: &NurbsCurve, mut range: [f64; 2]) -> Option<[f64; 2]> {
+    let domain = nurbs_curve_domain(curve)?;
+    for (value, boundary) in range.iter_mut().zip(domain) {
+        if (*value - boundary).abs() <= 1e-12 * (1.0 + boundary.abs()) {
+            *value = boundary;
+        }
+    }
+    (range[0].is_finite()
+        && range[1].is_finite()
+        && domain[0] <= range[0]
+        && range[0] < range[1]
+        && range[1] <= domain[1])
+        .then_some(range)
+}
+
+fn orient_nurbs_to_endpoints(
+    curve: &mut NurbsCurve,
+    range: [f64; 2],
+    endpoints: [[f64; 3]; 2],
+) -> Option<[f64; 2]> {
+    const TOLERANCE: f64 = 2e-3;
+
+    let expected = endpoints.map(|point| Point3::new(point[0], point[1], point[2]));
+    let geometry = CurveGeometry::Nurbs(curve.clone());
+    let evaluated = range.map(|parameter| cadmpeg_ir::eval::curve_point(&geometry, parameter));
+    let [Some(start), Some(end)] = evaluated else {
+        return None;
+    };
+    let forward = point_vector(expected[0], start)
+        .norm()
+        .max(point_vector(expected[1], end).norm());
+    if forward <= TOLERANCE {
+        return Some(range);
+    }
+    let reverse = point_vector(expected[1], start)
+        .norm()
+        .max(point_vector(expected[0], end).norm());
+    if reverse > TOLERANCE {
+        return None;
+    }
+    orient_nurbs_interval(curve, [range[1], range[0]])
 }
 
 fn nurbs_curve_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
@@ -615,6 +665,13 @@ fn reverse_nurbs_curve(curve: &mut NurbsCurve) -> Option<()> {
         .rev()
         .map(|knot| start + end - knot)
         .collect();
+    for knot in &mut curve.knots {
+        if (*knot - start).abs() <= 1e-12 * (1.0 + start.abs()) {
+            *knot = start;
+        } else if (*knot - end).abs() <= 1e-12 * (1.0 + end.abs()) {
+            *knot = end;
+        }
+    }
     Some(())
 }
 
@@ -2493,6 +2550,27 @@ mod occurrence_tests {
                 .1,
             Some([0.0, 1.0]),
         );
+    }
+
+    #[test]
+    fn direct_nurbs_range_snaps_to_domain_and_follows_physical_edge_order() {
+        let mut curve = NurbsCurve {
+            degree: 1,
+            knots: vec![0.02, 0.02, 1.79, 1.79],
+            control_points: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)],
+            weights: None,
+            periodic: false,
+        };
+        let range = canonical_nurbs_interval(&curve, [0.020000000000000018, 1.7899999999999998])
+            .expect("roundoff-equivalent native interval");
+        assert_eq!(range, [0.02, 1.79]);
+
+        let range =
+            orient_nurbs_to_endpoints(&mut curve, range, [[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+                .expect("physical edge orientation");
+        assert_eq!(range, [0.02, 1.79]);
+        assert_eq!(curve.control_points[0], Point3::new(1.0, 0.0, 0.0));
+        assert_eq!(curve.control_points[1], Point3::new(0.0, 0.0, 0.0));
     }
 
     #[test]
