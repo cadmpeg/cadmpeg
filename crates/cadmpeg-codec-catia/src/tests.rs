@@ -1702,9 +1702,30 @@ fn b2_topology_edge_run_stream() -> Vec<u8> {
 }
 
 fn a5_native_edge_run_stream(curve: u8, start: u8, end: u8) -> Vec<u8> {
+    assert!(curve >= 3);
     let mut bytes = a5_edge_block_stream();
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 5, 9, 0x84]);
-    bytes.extend_from_slice(&[0xb2, 0x03, 0x06, 0x04, 0x05, 0x82, 9, 4 * curve + 1, 0x88]);
+    bytes.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x06,
+        0x04,
+        0x05,
+        0x82,
+        4 * (curve - 2) + 1,
+        4 * (curve - 1) + 1,
+        0x88,
+    ]);
+    bytes.extend_from_slice(&[
+        0xb2,
+        0x03,
+        0x06,
+        0x04,
+        0x05,
+        0x82,
+        4 * (curve - 1) + 1,
+        4 * curve + 1,
+        0x84,
+    ]);
     let references = [curve, start, end, 2, 1];
     bytes.extend_from_slice(&[0xb2, 0x03, 0x5e, 0x06, 0x05]);
     bytes.extend(references.map(|value| 4 * value + 1));
@@ -4460,9 +4481,9 @@ fn consolidated_topology_edge_run_accepts_b_family_pcurves() {
 #[test]
 fn consolidated_native_edge_graph_uses_persistent_endpoint_incidence() {
     let mut bytes = Vec::new();
-    bytes.extend_from_slice(&a5_native_edge_run_stream(1, 10, 11));
-    bytes.extend_from_slice(&a5_native_edge_run_stream(2, 11, 12));
-    bytes.extend_from_slice(&a5_native_edge_run_stream(3, 12, 10));
+    bytes.extend_from_slice(&a5_native_edge_run_stream(3, 10, 11));
+    bytes.extend_from_slice(&a5_native_edge_run_stream(6, 11, 12));
+    bytes.extend_from_slice(&a5_native_edge_run_stream(9, 12, 10));
     let graph = crate::geometry::consolidated_native_edge_graph(&bytes).expect("native edge graph");
     assert_eq!(graph.vertex_identities, [10, 11, 12]);
     assert_eq!(
@@ -4481,10 +4502,12 @@ fn consolidated_native_edge_graph_uses_persistent_endpoint_incidence() {
 }
 
 #[test]
-fn consolidated_native_edge_graph_rejects_duplicate_curve_identities() {
-    let mut bytes = a5_native_edge_run_stream(1, 10, 11);
-    bytes.extend_from_slice(&a5_native_edge_run_stream(1, 20, 21));
-    assert!(crate::geometry::consolidated_native_edge_graph(&bytes).is_none());
+fn consolidated_native_edge_graph_treats_curve_references_as_run_local() {
+    let mut bytes = a5_native_edge_run_stream(3, 10, 11);
+    bytes.extend_from_slice(&a5_native_edge_run_stream(3, 20, 21));
+    let graph = crate::geometry::consolidated_native_edge_graph(&bytes).expect("native edge graph");
+    assert_eq!(graph.edges.len(), 2);
+    assert_eq!(graph.components, [vec![0], vec![1]]);
 }
 
 #[test]

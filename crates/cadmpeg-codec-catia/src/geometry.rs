@@ -1114,15 +1114,15 @@ pub struct B2EdgeNode {
     pub pos: usize,
     /// Width-coded header token following the payload length.
     pub header_token: u32,
-    /// Native curve-support identity.
+    /// Allocation-local curve-support reference terminating the use chain.
     pub curve_ref: u32,
     /// Native start-vertex identity.
     pub start_vertex_ref: u32,
     /// Native end-vertex identity.
     pub end_vertex_ref: u32,
-    /// Native start-parameter identity.
+    /// Allocation-local start-parameter selector.
     pub start_parameter_ref: u32,
-    /// Native end-parameter identity.
+    /// Allocation-local end-parameter selector.
     pub end_parameter_ref: u32,
     /// Terminal layout byte following the five references.
     pub tail: u8,
@@ -1581,8 +1581,8 @@ pub struct ConsolidatedTopologyEdgeRun {
     pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
-    /// Whether the two counted use-reference vectors reproduce the edge
-    /// node's endpoint-parameter/curve identity chain.
+    /// Whether the two counted use-reference vectors form the allocation chain
+    /// ending at the node's curve reference.
     pub identity_chain_consistent: bool,
 }
 
@@ -1738,10 +1738,15 @@ pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyE
                     uses.get(&use0.range.start)?.clone(),
                     uses.get(&use1.range.start)?.clone(),
                 ];
-                let identity_chain_consistent = uses[0].references.as_deref()
-                    == Some(&[node.end_parameter_ref, node.start_parameter_ref])
-                    && uses[1].references.as_deref()
-                        == Some(&[node.start_parameter_ref, node.curve_ref]);
+                let identity_chain_consistent = node
+                    .curve_ref
+                    .checked_sub(2)
+                    .zip(node.curve_ref.checked_sub(1))
+                    .is_some_and(|(first, second)| {
+                        uses[0].references.as_deref() == Some(&[first, second])
+                            && uses[1].references.as_deref() == Some(&[second, node.curve_ref])
+                    })
+                    && [node.start_parameter_ref, node.end_parameter_ref] == [2, 1];
                 Some(ConsolidatedTopologyEdgeRun {
                     edge: edges.get(&pcurve0.range.start)?.clone(),
                     uses,
@@ -1756,20 +1761,18 @@ pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyE
 }
 
 /// Build the native endpoint-incidence graph for all complete consolidated
-/// edge runs. A broken use/edge identity chain or duplicate curve identity
-/// invalidates the graph rather than silently accepting contradictory runs.
+/// edge runs. A broken use/edge allocation chain invalidates the graph.
 #[must_use]
 pub fn consolidated_native_edge_graph(data: &[u8]) -> Option<ConsolidatedNativeEdgeGraph> {
     let runs = consolidated_topology_edge_runs(data);
     if runs.is_empty() {
         return None;
     }
-    let mut curve_identities = std::collections::HashSet::new();
     let mut vertex_indices = HashMap::new();
     let mut vertex_identities = Vec::new();
     let mut edges = Vec::with_capacity(runs.len());
     for run in runs {
-        if !run.identity_chain_consistent || !curve_identities.insert(run.node.curve_ref) {
+        if !run.identity_chain_consistent {
             return None;
         }
         let vertices = [run.node.start_vertex_ref, run.node.end_vertex_ref].map(|identity| {
