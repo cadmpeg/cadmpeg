@@ -705,7 +705,8 @@ the selected endpoint or arc-center `pointid` coordinate. Solved coordinates
 propagate across that equality under the same unique-row and conflict rules as
 type zero.
 A two-item type-9 incidence with sense zero on one line and one point makes the
-point coincident with the line.
+point coincident with the line and maps to a neutral point-on-object
+constraint. Operand order does not change the line and point roles.
 A two-item sense-zero line incidence makes the lines perpendicular for type 5,
 parallel for type 7, and equal in length for type 8.
 A two-item type-6 incidence with sense zero on two arcs or circles makes their
@@ -718,7 +719,9 @@ respectively, because the analytic arc orientation is reversed. A two-item
 type-four incidence makes the referenced entities tangent at their selected
 endpoint loci.
 A two-item type-three incidence has one sense-zero point entity and one
-endpoint-selected entity; the point and endpoint loci coincide.
+endpoint-selected entity; the point and endpoint loci map to a neutral
+coincident-loci constraint. A sense-zero non-point entity does not satisfy this
+typed form.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. Other senses select a locus and do not define an entity-level

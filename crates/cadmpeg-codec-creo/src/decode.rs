@@ -9056,9 +9056,11 @@ fn section_skamp_constraints(
                     }
                     (3, [first, second])
                         if (first.sense == 0
+                            && section_skamp_is_point(definition, first)
                             && section_skamp_locus(definition, first).is_some()
                             && section_skamp_point_locus(definition, second).is_some())
                             || (second.sense == 0
+                                && section_skamp_is_point(definition, second)
                                 && section_skamp_locus(definition, second).is_some()
                                 && section_skamp_point_locus(definition, first).is_some()) =>
                     {
@@ -9129,11 +9131,17 @@ fn section_skamp_constraints(
                                 || (section_skamp_is_point(definition, first)
                                     && section_skamp_is_line(definition, second))) =>
                     {
-                        SketchConstraintDefinition::CoincidentLoci {
-                            loci: vec![
-                                section_skamp_locus(definition, first)?,
-                                section_skamp_locus(definition, second)?,
-                            ],
+                        let (line, point) = if section_skamp_is_line(definition, first) {
+                            (first, second)
+                        } else {
+                            (second, first)
+                        };
+                        SketchConstraintDefinition::PointOnObject {
+                            point: section_skamp_locus(definition, point)?,
+                            entity: SketchEntityId(format!(
+                                "creo:featdefs:sketch_entity#{}:{}",
+                                definition.id, line.entity_id
+                            )),
                         }
                     }
                     (14, [axis, first, second])
@@ -16390,17 +16398,41 @@ mod resolved_sketch_tests {
         );
         assert_eq!(
             constraints[9].0.definition,
-            SketchConstraintDefinition::CoincidentLoci {
-                loci: vec![
-                    SketchLocus::Entity(SketchEntityId(
-                        "creo:featdefs:sketch_entity#917:12".to_string()
-                    )),
-                    SketchLocus::Entity(SketchEntityId(
-                        "creo:featdefs:sketch_entity#917:14".to_string()
-                    )),
-                ],
+            SketchConstraintDefinition::PointOnObject {
+                point: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:14".to_string()
+                )),
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
             }
         );
+        let mut reversed_point_on_line = definition.clone();
+        reversed_point_on_line
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[9]
+            .items
+            .reverse();
+        assert_eq!(
+            section_skamp_constraints(&reversed_point_on_line, &SketchId("sketch".into()))[9]
+                .0
+                .definition,
+            constraints[9].0.definition
+        );
+        let mut nonpoint_type_three = definition.clone();
+        nonpoint_type_three
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[8]
+            .items[0]
+            .entity_id = 12;
+        assert!(matches!(
+            section_skamp_constraints(&nonpoint_type_three, &SketchId("sketch".into()))[8]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
         let first = SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string());
         let second = SketchEntityId("creo:featdefs:sketch_entity#917:15".to_string());
         assert_eq!(
