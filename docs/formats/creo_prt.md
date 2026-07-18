@@ -745,11 +745,11 @@ the axis and reflecting the perpendicular coordinate through the axis. A
 complete saved endpoint or center supplies a solved locus without introducing a
 section-point identity.
 A two-item type-seventeen incidence stores two endpoint or center loci that
-share one sketch coordinate. When exactly one of `u` and `v` is equal in the
-solved coordinates, including complete saved-locus coordinates, that coordinate
-selects the neutral same-coordinate axis.
-An incidence with both coordinates equal or neither coordinate equal retains
-its native form because the selected axis is not established.
+share one sketch coordinate. Flag `1` selects the section `u` coordinate and
+flag `2` selects the section `v` coordinate. This discriminator defines the
+neutral same-coordinate axis without requiring solved locus coordinates. When
+both loci are solved, their selected coordinates must agree. Other flag values
+and contradictory solved coordinates retain the native incidence.
 An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values
