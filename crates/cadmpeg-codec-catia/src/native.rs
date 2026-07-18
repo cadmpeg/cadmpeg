@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 51;
+pub const CATIA_NATIVE_VERSION: u32 = 52;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -538,6 +538,49 @@ fn validate_native_links(
     segments: &[CatiaFinjplSegment],
     value_blocks: &[CatiaValueBlock],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for catalog in catalogs {
+        let count_width = if catalog.declared_count <= 0x50 { 1 } else { 2 };
+        let Some(mut expected_offset) = catalog.byte_offset.checked_add(6 + count_width) else {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "catalog `{}` has an overflowing extent",
+                catalog.id
+            )));
+        };
+        let catalog_end = catalog.byte_offset.checked_add(catalog.byte_len);
+        if catalog.id != format!("catia:outer:catalog#{:010}", catalog.byte_offset) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "catalog `{}` has an invalid source identity",
+                catalog.id
+            )));
+        }
+        for (index, entry) in catalog.entries.iter().enumerate() {
+            let next_offset = catalog
+                .entries
+                .get(index + 1)
+                .map(|next| next.byte_offset)
+                .or(catalog_end);
+            let encoded_len = next_offset.and_then(|next| next.checked_sub(entry.byte_offset));
+            let value_len = u64::try_from(entry.value.len()).ok();
+            if entry.byte_offset != expected_offset
+                || entry.id != format!("catia:outer:catalog-entry#{:010}", entry.byte_offset)
+                || !encoded_len.zip(value_len).is_some_and(|(encoded, value)| {
+                    matches!(encoded.checked_sub(value), Some(1 | 5))
+                })
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "catalog entry `{}` has an invalid source extent",
+                    entry.id
+                )));
+            }
+            expected_offset = next_offset.expect("validated catalog end");
+        }
+        if Some(expected_offset) != catalog_end {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "catalog `{}` entries do not cover its frame",
+                catalog.id
+            )));
+        }
+    }
     for (index, segment) in segments.iter().enumerate() {
         let parsed = container::finjpl_segments(&segment.data, 0, segment.data.len());
         let expected_id = format!("catia:outer:finjpl#{index}");
@@ -565,6 +608,12 @@ fn validate_native_links(
         ));
     }
     for block in value_blocks {
+        if block.id != format!("catia:outer:value-block#{:010}", block.byte_offset) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` has an invalid source identity",
+                block.id
+            )));
+        }
         let Some(catalog) = catalogs.iter().find(|catalog| catalog.id == block.catalog) else {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` references missing catalog `{}`",
@@ -608,6 +657,30 @@ fn validate_native_links(
                 graph.id
             )));
         };
+        let mut expected_record_offset = graph.byte_offset.checked_add(6);
+        if graph.id != format!("catia:outer:object-graph#{:010}", graph.byte_offset) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` has an invalid source identity",
+                graph.id
+            )));
+        }
+        for record in &graph.records {
+            if Some(record.byte_offset) != expected_record_offset
+                || record.id != format!("catia:outer:object-record#{:010}", record.byte_offset)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "object record `{}` has an invalid source extent",
+                    record.id
+                )));
+            }
+            expected_record_offset = record.byte_offset.checked_add(record.byte_len);
+        }
+        if expected_record_offset != Some(graph_end) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "object graph `{}` records do not cover its frame",
+                graph.id
+            )));
+        }
         let mut candidates = catalogs
             .iter()
             .filter(|catalog| catalog.byte_offset == graph_end)
@@ -658,6 +731,12 @@ fn validate_native_links(
         _ => None,
     };
     for alias in aliases {
+        if alias.id != format!("catia:outer:alias-row#{:010}", alias.byte_offset) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "alias row `{}` has an invalid source identity",
+                alias.id
+            )));
+        }
         let expected = usize::from(alias.entity_record_ordinal)
             .checked_sub(1)
             .and_then(|index| {

@@ -5538,6 +5538,41 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
 }
 
 #[test]
+fn native_load_rejects_invalid_source_identities_and_extents() {
+    let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
+    let assert_rejected = |malformed: crate::native::CatiaNative| {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        malformed
+            .store(&mut namespace)
+            .expect("store malformed source identity");
+        assert!(matches!(
+            crate::native::CatiaNative::load(&namespace),
+            Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+        ));
+    };
+
+    let mut invalid_catalog_extent = native.clone();
+    invalid_catalog_extent.catalogs[0].byte_len += 1;
+    assert_rejected(invalid_catalog_extent);
+
+    let mut invalid_entry_offset = native.clone();
+    invalid_entry_offset.catalogs[0].entries[0].byte_offset += 1;
+    assert_rejected(invalid_entry_offset);
+
+    let mut invalid_record_offset = native.clone();
+    invalid_record_offset.object_graphs[0].records[0].byte_offset += 1;
+    assert_rejected(invalid_record_offset);
+
+    let mut invalid_value_id = native;
+    invalid_value_id.value_blocks[0].id = "catia:outer:value-block#wrong".to_string();
+    assert_rejected(invalid_value_id);
+
+    let mut invalid_alias_id = crate::native::CatiaNative::decode(&surface_alias_stream());
+    invalid_alias_id.alias_rows[0].id = "catia:outer:alias-row#wrong".to_string();
+    assert_rejected(invalid_alias_id);
+}
+
+#[test]
 fn native_load_restores_segment_source_order_and_validates_retained_views() {
     let mut bytes = Vec::new();
     for index in 0..12 {
