@@ -2429,6 +2429,51 @@ pub fn standard_mesh_missing_edge_assignments(
         .collect()
 }
 
+fn bounded_oriented_trail_orders(trails: &[Vec<usize>], limit: usize) -> Option<Vec<Vec<usize>>> {
+    fn visit(
+        trails: &[Vec<usize>],
+        limit: usize,
+        used: u64,
+        edges: &mut Vec<usize>,
+        orders: &mut Vec<Vec<usize>>,
+    ) -> bool {
+        if orders.len() > limit {
+            return false;
+        }
+        if used.count_ones() as usize == trails.len() {
+            orders.push(edges.clone());
+            return orders.len() <= limit;
+        }
+        for (index, trail) in trails.iter().enumerate() {
+            if used & (1 << index) != 0 {
+                continue;
+            }
+            for reversed in [false, true] {
+                if reversed && trail.len() == 1 {
+                    continue;
+                }
+                let before = edges.len();
+                if reversed {
+                    edges.extend(trail.iter().rev());
+                } else {
+                    edges.extend(trail);
+                }
+                if !visit(trails, limit, used | (1 << index), edges, orders) {
+                    return false;
+                }
+                edges.truncate(before);
+            }
+        }
+        true
+    }
+
+    if trails.len() > u64::BITS as usize {
+        return None;
+    }
+    let mut orders = Vec::new();
+    visit(trails, limit, 0, &mut Vec::new(), &mut orders).then_some(orders)
+}
+
 fn standard_mesh_missing_edge_assignments_impl(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
@@ -2742,36 +2787,6 @@ fn standard_mesh_missing_edge_assignments_impl(
             end: usize,
         }
 
-        fn order_trails(
-            trails: &[EndpointTrail],
-            used: u64,
-            edges: &mut Vec<usize>,
-            orders: &mut Vec<Vec<usize>>,
-        ) {
-            if used.count_ones() as usize == trails.len() {
-                orders.push(edges.clone());
-                return;
-            }
-            for (index, trail) in trails.iter().enumerate() {
-                if used & (1 << index) != 0 {
-                    continue;
-                }
-                for reversed in [false, true] {
-                    if reversed && trail.edges.len() == 1 {
-                        continue;
-                    }
-                    let before = edges.len();
-                    if reversed {
-                        edges.extend(trail.edges.iter().rev());
-                    } else {
-                        edges.extend(&trail.edges);
-                    }
-                    order_trails(trails, used | (1 << index), edges, orders);
-                    edges.truncate(before);
-                }
-            }
-        }
-
         if gaps.is_empty()
             || missing
                 .iter()
@@ -2918,9 +2933,14 @@ fn standard_mesh_missing_edge_assignments_impl(
         if trails.len() > u64::BITS as usize {
             return None;
         }
-        let mut orders = Vec::new();
-        order_trails(&trails, 0, &mut Vec::new(), &mut orders);
-        (orders.len() <= MAX_ASSIGNMENTS_PER_FACE).then(|| {
+        let orders = bounded_oriented_trail_orders(
+            &trails
+                .iter()
+                .map(|trail| trail.edges.clone())
+                .collect::<Vec<_>>(),
+            MAX_ASSIGNMENTS_PER_FACE,
+        )?;
+        Some(
             orders
                 .into_iter()
                 .map(|order| {
@@ -2937,8 +2957,8 @@ fn standard_mesh_missing_edge_assignments_impl(
                         })
                         .collect()
                 })
-                .collect()
-        })
+                .collect(),
+        )
     }
 
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
@@ -8875,22 +8895,22 @@ mod motif_tests {
     use cadmpeg_ir::topology::BodyKind;
 
     use super::{
-        bind_edge_port_candidates, canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
-        deduplicate_mesh_quotient_assignments, face_endpoint_candidates_close,
-        mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable,
-        mesh_candidates_equivalent, mesh_edge_points_compatible, mesh_face_endpoint_configurations,
-        motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
-        parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
-        possible_face_choices, possible_face_choices_with_limit, possible_face_equations,
-        propagate_edge_port_points, propagate_partial_edge_port_points,
-        prune_edge_candidates_by_port_domains, prune_mesh_endpoint_pair_support,
-        prune_mesh_endpoint_pair_support_with_limit, reconstruct_incidence,
-        reconstruct_incidence_candidates, resolve_edge_faces_from_runs, same_unordered_pair,
-        standard_face_count, unique_coordinate_bijection, unique_duplicate_face_assignment,
-        uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
-        FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget, MeshEdgeRun,
-        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
-        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        bind_edge_port_candidates, bounded_oriented_trail_orders, canonicalize_mesh_vertex_labels,
+        complete_duplicate_face_slots, deduplicate_mesh_quotient_assignments,
+        face_endpoint_candidates_close, mesh_assignment_can_merge,
+        mesh_assignment_endpoint_cycles_viable, mesh_candidates_equivalent,
+        mesh_edge_points_compatible, mesh_face_endpoint_configurations, motif_port_points,
+        parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
+        parse_trim_chain, parse_trim_record, parse_trim_record_layout, possible_face_choices,
+        possible_face_choices_with_limit, possible_face_equations, propagate_edge_port_points,
+        propagate_partial_edge_port_points, prune_edge_candidates_by_port_domains,
+        prune_mesh_endpoint_pair_support, prune_mesh_endpoint_pair_support_with_limit,
+        reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
+        same_unordered_pair, standard_face_count, unique_coordinate_bijection,
+        unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
+        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget,
+        MeshEdgeRun, MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch,
+        StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
         MAX_MESH_CONSTRAINT_OPERATIONS,
     };
 
@@ -8919,6 +8939,16 @@ mod motif_tests {
         assert!(records[0].strip_lengths.is_empty());
         assert!(records[0].fan_lengths.is_empty());
         assert!(parse_trim_chain(&bytes, bytes.len(), 2, 3).is_none());
+    }
+
+    #[test]
+    fn endpoint_trail_ordering_stops_when_its_result_limit_is_exceeded() {
+        let trails = (0..10).map(|edge| vec![edge]).collect::<Vec<_>>();
+        assert!(bounded_oriented_trail_orders(&trails, 16).is_none());
+        assert_eq!(
+            bounded_oriented_trail_orders(&[vec![0], vec![1]], 2),
+            Some(vec![vec![0, 1], vec![1, 0]])
+        );
     }
 
     #[test]
