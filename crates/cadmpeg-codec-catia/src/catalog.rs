@@ -35,12 +35,24 @@ pub struct CatalogEntry {
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
 #[must_use]
 pub fn parse(bytes: &[u8]) -> Vec<Catalog> {
-    bytes
+    let candidates = bytes
         .windows(2)
         .enumerate()
         .filter(|(_, marker)| *marker == [0x7c, 0x02])
         .filter_map(|(pos, _)| parse_candidate(bytes, pos))
-        .collect()
+        .collect::<Vec<_>>();
+    let mut catalogs = Vec::<Catalog>::new();
+    for catalog in candidates {
+        let catalog_end = catalog.pos + catalog.total_len;
+        if catalogs
+            .iter()
+            .any(|outer| outer.pos < catalog.pos && outer.pos + outer.total_len >= catalog_end)
+        {
+            continue;
+        }
+        catalogs.push(catalog);
+    }
+    catalogs
 }
 
 fn parse_candidate(bytes: &[u8], pos: usize) -> Option<Catalog> {
@@ -157,5 +169,38 @@ mod tests {
         let catalogs = parse(&bytes);
         assert_eq!(catalogs.len(), 1);
         assert_eq!(catalogs[0].entries[4].value, long);
+    }
+
+    #[test]
+    fn catalog_owns_catalog_shaped_bytes_inside_an_entry() {
+        let mut nested = vec![0x7c, 0x02, 0, 0, 0, 0, 0xd1, 0x80];
+        for entry in PREFIX {
+            nested.push(u8::try_from(entry.len() + 1).expect("fixture entry length"));
+            nested.extend_from_slice(entry.as_bytes());
+        }
+        for _ in 0..123 {
+            nested.push(1);
+        }
+        nested.push(79);
+        nested.extend(std::iter::repeat_n(b'x', 78));
+        assert_eq!(nested.len(), 257);
+        nested[2..6].copy_from_slice(&257u32.to_le_bytes());
+        assert!(std::str::from_utf8(&nested).is_ok());
+
+        let mut outer = vec![0x7c, 0x02, 0, 0, 0, 0, 0x86];
+        for entry in PREFIX {
+            outer.push(u8::try_from(entry.len() + 1).expect("fixture entry length"));
+            outer.extend_from_slice(entry.as_bytes());
+        }
+        outer.push(0);
+        outer.extend_from_slice(&257u32.to_le_bytes());
+        outer.extend_from_slice(&nested);
+        let outer_len = u32::try_from(outer.len()).expect("fixture catalog length");
+        outer[2..6].copy_from_slice(&outer_len.to_le_bytes());
+
+        let catalogs = parse(&outer);
+        assert_eq!(catalogs.len(), 1);
+        assert_eq!(catalogs[0].pos, 0);
+        assert_eq!(catalogs[0].entries.len(), 5);
     }
 }
