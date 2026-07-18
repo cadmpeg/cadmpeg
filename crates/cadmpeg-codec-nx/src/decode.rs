@@ -8322,6 +8322,9 @@ fn attach_native_object_model(
             extrude_payload_headers: &feature_extrude_payload_headers,
             extrude_payload_footers: &feature_extrude_payload_footers,
             operation_body_scalar_triples: &feature_operation_body_scalar_triples,
+            operation_body_members: &feature_operation_body_members,
+            operation_body_11_continuations: &feature_operation_body_11_continuations,
+            operation_body_reference_lanes: &feature_operation_body_reference_lanes,
             parameter_bindings: &feature_parameter_bindings,
             parameter_uses: &feature_parameter_uses,
             expressions: &expressions,
@@ -9340,6 +9343,9 @@ struct FeatureOperationSources<'a> {
     extrude_payload_headers: &'a [crate::native::FeatureExtrudePayloadHeader],
     extrude_payload_footers: &'a [crate::native::FeatureExtrudePayloadFooter],
     operation_body_scalar_triples: &'a [crate::native::FeatureOperationBodyScalarTriple],
+    operation_body_members: &'a [crate::native::FeatureOperationBodyMember],
+    operation_body_11_continuations: &'a [crate::native::FeatureOperationBody11Continuation],
+    operation_body_reference_lanes: &'a [crate::native::FeatureOperationBodyReferenceLane],
     parameter_bindings: &'a [crate::native::FeatureParameterBinding],
     parameter_uses: &'a [crate::native::FeatureParameterUse],
     expressions: &'a [crate::native::Expression],
@@ -9405,6 +9411,9 @@ fn attach_feature_operations(
         extrude_payload_headers,
         extrude_payload_footers,
         operation_body_scalar_triples,
+        operation_body_members,
+        operation_body_11_continuations,
+        operation_body_reference_lanes,
         parameter_bindings,
         parameter_uses,
         expressions,
@@ -9656,6 +9665,30 @@ fn attach_feature_operations(
     }
     for triples in operation_body_scalar_triples_by_operation.values_mut() {
         triples.sort_by_key(|triple| triple.body_reference_ordinal);
+    }
+    let mut operation_body_members_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyMember>>::new();
+    for member in operation_body_members {
+        operation_body_members_by_operation
+            .entry(member.operation_label.as_str())
+            .or_default()
+            .push(member);
+    }
+    let mut operation_body_11_continuations_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBody11Continuation>>::new();
+    for continuation in operation_body_11_continuations {
+        operation_body_11_continuations_by_operation
+            .entry(continuation.operation_label.as_str())
+            .or_default()
+            .push(continuation);
+    }
+    let mut operation_body_reference_lanes_by_operation =
+        BTreeMap::<&str, Vec<&crate::native::FeatureOperationBodyReferenceLane>>::new();
+    for lane in operation_body_reference_lanes {
+        operation_body_reference_lanes_by_operation
+            .entry(lane.operation_label.as_str())
+            .or_default()
+            .push(lane);
     }
     let mut bodies_by_object_index = BTreeMap::<u32, Vec<BodyId>>::new();
     for binding in body_bindings {
@@ -10006,6 +10039,45 @@ fn attach_feature_operations(
                     triple.body_reference_ordinal
                 ),
                 triple.id.clone(),
+            );
+        }
+        for member in operation_body_members_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!(
+                    "operation_body_member.{}.{}",
+                    member.body_reference_ordinal, member.ordinal
+                ),
+                member.id.clone(),
+            );
+        }
+        for continuation in operation_body_11_continuations_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!(
+                    "operation_body_11_continuation.{}",
+                    continuation.body_reference_ordinal
+                ),
+                continuation.id.clone(),
+            );
+        }
+        for lane in operation_body_reference_lanes_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!(
+                    "operation_body_reference_lane.{}",
+                    lane.body_reference_ordinal
+                ),
+                lane.id.clone(),
             );
         }
         if let Some(construction) = datum_csys_constructions_by_operation.get(label.id.as_str()) {
