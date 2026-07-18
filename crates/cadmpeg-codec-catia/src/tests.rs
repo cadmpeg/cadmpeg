@@ -6305,6 +6305,42 @@ fn decode_e5_stream_transfers_reference_closed_torus_topology() {
 }
 
 #[test]
+fn decode_e5_stream_binds_file_level_vertex_run() {
+    let mut stream = e5_torus_topology_stream();
+    let vertex_start = stream
+        .windows(3)
+        .position(|bytes| bytes == [0x05, 0x08, 0x01])
+        .expect("E5 vertex run");
+    let vertex_bytes = stream
+        .drain(vertex_start..vertex_start + 4 * 15)
+        .collect::<Vec<_>>();
+
+    stream.extend_from_slice(b"FINJPL  ");
+    stream.extend_from_slice(&0x0000_0080u32.to_be_bytes());
+    stream.extend_from_slice(&vertex_bytes);
+    let file = object_main_catpart(&stream);
+    let vertex_file_start = file
+        .windows(vertex_bytes.len())
+        .position(|bytes| bytes == vertex_bytes)
+        .expect("file-level E5 vertex run");
+
+    let record_range = crate::container::e5_record_stream(&file).expect("coherent E5 walk");
+    assert!(!record_range.contains(&vertex_file_start));
+    assert!(crate::geometry::e5_vertices(&file[record_range], 4).is_empty());
+    assert_eq!(crate::geometry::e5_vertices(&file, 4).len(), 4);
+    let scan = crate::container::scan_bytes(file.clone());
+    assert_eq!(scan.variant, Variant::E5Stream);
+
+    let result = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("E5 decode");
+    assert_eq!(result.ir.model.points.len(), 4);
+    assert_eq!(result.ir.model.vertices.len(), 4);
+    assert_eq!(result.ir.model.faces.len(), 1);
+    assert_eq!(result.ir.model.edges.len(), 4);
+}
+
+#[test]
 fn container_only_stops_before_geometry() {
     let f = standard_catpart();
     let mut cur = Cursor::new(f);

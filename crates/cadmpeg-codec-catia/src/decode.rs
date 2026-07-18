@@ -922,7 +922,7 @@ fn try_decode_e5(scan: &ContainerScan) -> Option<ProjectedDecode> {
         },
         |topology| topology.vertex_refs.len(),
     );
-    let points = geometry::e5_vertices(stream, vertex_count);
+    let points = geometry::e5_vertices(&scan.data, vertex_count);
     if let Some(topology) = &topology {
         append_e5_planes(stream, topology, &points, &mut surfaces);
     }
