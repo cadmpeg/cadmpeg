@@ -10,7 +10,7 @@ use std::{collections::HashMap, io::Cursor};
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::Annotations;
 
@@ -4144,6 +4144,45 @@ fn native_namespace_retains_resolved_consolidated_edge_supports_and_loci() {
         crate::native::CatiaNative::load(&namespace).expect("load resolved CATIA edge run"),
         native
     );
+}
+
+#[test]
+fn standard_decode_transfers_resolved_consolidated_cylinder_surface_curve() {
+    let mut records = b2_cylinder_stream();
+    for point in [
+        [1.0f32, 4.0, 3.0],
+        [2.0, 2.0 + 2.0 * 0.5f32.cos(), 3.0 + 2.0 * 0.5f32.sin()],
+    ] {
+        records.extend_from_slice(&[0x05, 0x08, 0x01]);
+        for value in point {
+            records.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    records.extend_from_slice(&a5_native_edge_run_stream(6, 139, 142));
+    let mut file = standard_catpart();
+    file.splice(16..16, records);
+    let file_len = u32::try_from(file.len()).expect("consolidated fixture length");
+    file[8..12].copy_from_slice(&be32(file_len));
+
+    let decoded = CatiaCodec
+        .decode(&mut Cursor::new(file), &DecodeOptions::default())
+        .expect("decode resolved consolidated edge");
+    let procedural = decoded
+        .ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|curve| curve.id.0.starts_with("catia:consolidated:construction#"))
+        .expect("resolved consolidated construction");
+    let ProceduralCurveDefinition::Intersection { context, .. } = &procedural.definition else {
+        panic!("two resolved support sides form an intersection");
+    };
+    assert!(context.sides.iter().all(|side| side.surface.is_some()));
+    let pcurve = context.sides[0].pcurve.as_ref().expect("cylinder pcurve");
+    let start = cadmpeg_ir::eval::pcurve_uv(pcurve, 0.0).expect("pcurve start");
+    let end = cadmpeg_ir::eval::pcurve_uv(pcurve, 1.0).expect("pcurve end");
+    assert_eq!([start.u, start.v], [0.0, 0.0]);
+    assert_eq!([end.u, end.v], [0.5, 1.0]);
 }
 
 #[test]

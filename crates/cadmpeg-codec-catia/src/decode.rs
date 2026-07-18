@@ -4796,6 +4796,192 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
     }
 
     append_a8_rolling_ball_pools(ir, annotations, data);
+    append_resolved_consolidated_surface_curves(ir, annotations, data);
+}
+
+fn append_resolved_consolidated_surface_curves(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    data: &[u8],
+) {
+    let standalone = geometry::b2_cylinders(data)
+        .into_iter()
+        .map(|cylinder| (cylinder.pos, cylinder))
+        .collect::<HashMap<_, _>>();
+    let embedded = geometry::b2_embedded_cylinders(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<HashMap<_, _>>();
+    let complete_runs = geometry::consolidated_topology_edge_runs(data)
+        .into_iter()
+        .filter(|run| run.edge.co_parametric && run.identity_chain_consistent)
+        .map(|run| (run.edge.pcurves[0].pos, run))
+        .collect::<HashMap<_, _>>();
+    let mut surface_ids = HashMap::<(bool, usize), SurfaceId>::new();
+
+    for resolved in geometry::resolve_consolidated_edge_blocks(data) {
+        let Some(run) = complete_runs.get(&resolved.block.pcurves[0].pos) else {
+            continue;
+        };
+        let mut sides: [IntcurveSupportSide; 2] = std::array::from_fn(|_| IntcurveSupportSide {
+            surface: None,
+            pcurve: None,
+            pcurve_parameter_range: None,
+        });
+        for (side, binding) in resolved.supports.iter().enumerate() {
+            let (embedded_carrier, carrier_pos, source_object, cylinder) = match binding {
+                Some(geometry::ConsolidatedSupportBinding::Cylinder { pos }) => {
+                    (false, *pos, None, standalone.get(pos))
+                }
+                Some(geometry::ConsolidatedSupportBinding::EmbeddedCylinder { pos, .. }) => {
+                    let value = embedded.get(pos);
+                    (
+                        true,
+                        *pos,
+                        value.map(|value| cgm_source("surface", value.object_id)),
+                        value.map(|value| &value.cylinder),
+                    )
+                }
+                Some(
+                    geometry::ConsolidatedSupportBinding::Circle { .. }
+                    | geometry::ConsolidatedSupportBinding::Cone { .. }
+                    | geometry::ConsolidatedSupportBinding::NurbsCarrier { .. },
+                )
+                | None => continue,
+            };
+            let Some(cylinder) = cylinder else {
+                continue;
+            };
+            let Some(carrier) = cylinder.geometry.clone() else {
+                continue;
+            };
+            let SurfaceGeometry::Cylinder { radius, .. } = carrier else {
+                continue;
+            };
+            if radius <= 0.0 || !radius.is_finite() {
+                continue;
+            }
+            let surface = if let Some(id) = surface_ids.get(&(embedded_carrier, carrier_pos)) {
+                id.clone()
+            } else {
+                let id = SurfaceId(format!(
+                    "catia:consolidated:cylinder#{}",
+                    ir.model.surfaces.len()
+                ));
+                annotate(
+                    annotations,
+                    &id,
+                    if embedded_carrier {
+                        "consolidated_b2_03_60_cylinder"
+                    } else {
+                        "consolidated_b2_03_28_cylinder"
+                    },
+                    carrier_pos as u64,
+                    "resolved_pcurve_support",
+                    Exactness::ByteExact,
+                );
+                ir.model.surfaces.push(Surface {
+                    id: id.clone(),
+                    geometry: cylinder
+                        .geometry
+                        .clone()
+                        .expect("resolved cylinder carrier"),
+                    source_object,
+                });
+                surface_ids.insert((embedded_carrier, carrier_pos), id.clone());
+                id
+            };
+
+            let pcurve = &resolved.block.pcurves[side];
+            let normalize = |value: [f64; 2]| [value[0] / radius, value[1]];
+            let points = pcurve
+                .points
+                .iter()
+                .copied()
+                .map(normalize)
+                .collect::<Vec<_>>();
+            let first = pcurve
+                .first_derivatives
+                .iter()
+                .copied()
+                .map(normalize)
+                .collect::<Vec<_>>();
+            let second = pcurve
+                .second_derivatives
+                .iter()
+                .copied()
+                .map(normalize)
+                .collect::<Vec<_>>();
+            let Some(geometry) =
+                quintic_jet_pcurve(pcurve.degree, &pcurve.knots, &points, &first, &second)
+            else {
+                continue;
+            };
+            sides[side] = IntcurveSupportSide {
+                surface: Some(surface),
+                pcurve: Some(geometry),
+                pcurve_parameter_range: None,
+            };
+        }
+        let resolved_side_count = sides.iter().filter(|side| side.surface.is_some()).count();
+        if resolved_side_count == 0 {
+            continue;
+        }
+        let curve_id = CurveId(format!(
+            "catia:consolidated:curve#{}",
+            ir.model.curves.len()
+        ));
+        annotate(
+            annotations,
+            &curve_id,
+            "consolidated_edge_run",
+            run.edge.pcurves[0].pos as u64,
+            "procedural_curve_cache",
+            Exactness::Unknown,
+        );
+        ir.model.curves.push(Curve {
+            id: curve_id.clone(),
+            geometry: CurveGeometry::Unknown { record: None },
+            source_object: None,
+        });
+        let procedural_id = ProceduralCurveId(format!(
+            "catia:consolidated:construction#{}",
+            ir.model.procedural_curves.len()
+        ));
+        annotate(
+            annotations,
+            &procedural_id,
+            "consolidated_edge_run",
+            run.edge.pcurves[0].pos as u64,
+            "resolved_surface_curve",
+            Exactness::Derived,
+        );
+        annotations
+            .derived(&procedural_id, "curve")
+            .derived(&procedural_id, "definition");
+        let context = IntcurveSupportContext {
+            sides,
+            parameter_range: resolved.block.parameters.range,
+            discontinuities: std::array::from_fn(|_| Vec::new()),
+        };
+        let definition = if resolved_side_count == 2 {
+            ProceduralCurveDefinition::Intersection {
+                context,
+                discontinuity_flag: false,
+            }
+        } else {
+            ProceduralCurveDefinition::SurfaceCurve {
+                family: SurfaceCurveFamily::Parametric,
+                context,
+            }
+        };
+        ir.model.procedural_curves.push(ProceduralCurve {
+            id: procedural_id,
+            curve: curve_id,
+            definition,
+            cache_fit_tolerance: None,
+        });
+    }
 }
 
 fn append_a8_rolling_ball_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
