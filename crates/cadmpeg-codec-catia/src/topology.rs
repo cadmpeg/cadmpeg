@@ -1092,6 +1092,7 @@ fn prune_incidence_choices(
 fn incidence_choice_components(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
+    boundary_domains: Option<&[MeshFaceBoundaryDomain]>,
 ) -> Vec<Vec<usize>> {
     let mut union = UnionFind::new(choices.len());
     let mut owner = HashMap::<(usize, usize), usize>::new();
@@ -1114,6 +1115,38 @@ fn incidence_choice_components(
                     std::collections::hash_map::Entry::Vacant(entry) => {
                         entry.insert(edge);
                     }
+                }
+            }
+        }
+    }
+    if let Some(domains) = boundary_domains {
+        for domain in domains {
+            let mut constrained = match domain {
+                MeshFaceBoundaryDomain::Ordered(assignments) => assignments
+                    .iter()
+                    .flat_map(|assignment| assignment.boundaries.iter().flatten())
+                    .map(|use_| use_.edge)
+                    .collect::<Vec<_>>(),
+                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.clone(),
+                MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+                    let mut edges = domain.missing_edges.clone();
+                    edges.extend(
+                        domain
+                            .cycles
+                            .iter()
+                            .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
+                    );
+                    edges
+                }
+            };
+            constrained.sort_unstable();
+            constrained.dedup();
+            let mut ambiguous = constrained
+                .into_iter()
+                .filter(|edge| choices[*edge].len() > 1);
+            if let Some(first) = ambiguous.next() {
+                for edge in ambiguous {
+                    union.union(first, edge);
                 }
             }
         }
@@ -1146,6 +1179,53 @@ struct IncidenceComponentSearch<'a> {
     budget: &'a MeshConstraintBudget,
     states: usize,
     exhausted: bool,
+}
+
+fn compact_boundary_domain_viable(
+    domain: &MeshFaceBoundaryDomain,
+    assignment: &[Option<[usize; 2]>],
+    selected: Option<(usize, [usize; 2])>,
+) -> bool {
+    let edges = match domain {
+        MeshFaceBoundaryDomain::Ordered(_) => return true,
+        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.clone(),
+        MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+            let mut edges = domain.missing_edges.clone();
+            edges.extend(
+                domain
+                    .cycles
+                    .iter()
+                    .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
+            );
+            edges
+        }
+    };
+    let Some(selected_pairs) = edges
+        .into_iter()
+        .map(|edge| {
+            selected
+                .filter(|(selected_edge, _)| *selected_edge == edge)
+                .map(|(_, pair)| pair)
+                .or(assignment[edge])
+                .map(|pair| (edge, pair))
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return true;
+    };
+    let mut edge_points = vec![[0; 2]; assignment.len()];
+    for (edge, pair) in selected_pairs {
+        edge_points[edge] = pair;
+    }
+    match domain {
+        MeshFaceBoundaryDomain::Ordered(_) => true,
+        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
+            incidence_cycles(edges, &edge_points).is_some_and(|cycles| cycles.len() == 1)
+        }
+        MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+            deferred_boundary_closes(domain, &edge_points)
+        }
+    }
 }
 
 impl IncidenceComponentSearch<'_> {
@@ -1185,29 +1265,33 @@ impl IncidenceComponentSearch<'_> {
         faces.sort_unstable();
         faces.dedup();
         let viable = faces.into_iter().all(|face| {
-            mesh_assignments.get(face).is_some_and(|domain| {
-                let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
-                    return true;
-                };
-                assignments.iter().any(|assignment| {
-                    mesh_assignment_endpoint_cycles_viable_where(
-                        assignment,
-                        self.choices,
-                        Some(self.budget),
-                        |candidate_edge, candidate_pair| {
-                            let selected = if candidate_edge == edge {
-                                Some(pair)
-                            } else {
-                                self.assignment[candidate_edge]
-                            };
-                            selected.is_none_or(|selected| {
-                                same_unordered_pair(selected, candidate_pair)
-                            })
-                        },
-                    )
-                    .unwrap_or(true)
+            mesh_assignments
+                .get(face)
+                .is_some_and(|domain| match domain {
+                    MeshFaceBoundaryDomain::Ordered(assignments) => {
+                        assignments.iter().any(|assignment| {
+                            mesh_assignment_endpoint_cycles_viable_where(
+                                assignment,
+                                self.choices,
+                                Some(self.budget),
+                                |candidate_edge, candidate_pair| {
+                                    let selected = if candidate_edge == edge {
+                                        Some(pair)
+                                    } else {
+                                        self.assignment[candidate_edge]
+                                    };
+                                    selected.is_none_or(|selected| {
+                                        same_unordered_pair(selected, candidate_pair)
+                                    })
+                                },
+                            )
+                            .unwrap_or(true)
+                        })
+                    }
+                    _ => {
+                        compact_boundary_domain_viable(domain, &self.assignment, Some((edge, pair)))
+                    }
                 })
-            })
         });
         viable && !self.budget.exhausted.get()
     }
@@ -1306,23 +1390,25 @@ impl IncidenceComponentSearch<'_> {
             return true;
         };
         let viable = faces.into_iter().all(|face| {
-            mesh_assignments.get(face).is_some_and(|domain| {
-                let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
-                    return true;
-                };
-                assignments.iter().any(|assignment| {
-                    mesh_assignment_endpoint_cycles_viable_where(
-                        assignment,
-                        self.choices,
-                        Some(self.budget),
-                        |edge, pair| {
-                            self.assignment[edge]
-                                .is_none_or(|selected| same_unordered_pair(selected, pair))
-                        },
-                    )
-                    .unwrap_or(true)
+            mesh_assignments
+                .get(face)
+                .is_some_and(|domain| match domain {
+                    MeshFaceBoundaryDomain::Ordered(assignments) => {
+                        assignments.iter().any(|assignment| {
+                            mesh_assignment_endpoint_cycles_viable_where(
+                                assignment,
+                                self.choices,
+                                Some(self.budget),
+                                |edge, pair| {
+                                    self.assignment[edge]
+                                        .is_none_or(|selected| same_unordered_pair(selected, pair))
+                                },
+                            )
+                            .unwrap_or(true)
+                        })
+                    }
+                    _ => compact_boundary_domain_viable(domain, &self.assignment, None),
                 })
-            })
         });
         viable && !self.budget.exhausted.get()
     }
@@ -1510,15 +1596,154 @@ impl IncidenceComponentSearch<'_> {
     }
 }
 
-fn unordered_boundary_domains_close(
+fn deferred_boundary_cycle_matches(
+    mesh: &MeshDeferredBoundaryCycle,
+    incidence: &[(usize, bool)],
+    missing: &HashSet<usize>,
+) -> bool {
+    if mesh.exact_uses.is_empty() {
+        return incidence.len() <= mesh.length
+            && incidence.iter().all(|(edge, _)| missing.contains(edge));
+    }
+    let expected = mesh
+        .exact_uses
+        .iter()
+        .map(|(use_, _)| use_.edge)
+        .collect::<Vec<_>>();
+    for reversed in [false, true] {
+        let mut actual = incidence.iter().map(|(edge, _)| *edge).collect::<Vec<_>>();
+        if reversed {
+            actual.reverse();
+        }
+        let Some(anchor) = actual.iter().position(|edge| *edge == expected[0]) else {
+            continue;
+        };
+        actual.rotate_left(anchor);
+        let mut positions = Vec::with_capacity(expected.len());
+        let mut after = 0usize;
+        let mut valid = true;
+        for edge in &expected {
+            let Some(offset) = actual[after..].iter().position(|actual| actual == edge) else {
+                valid = false;
+                break;
+            };
+            let position = after + offset;
+            positions.push(position);
+            after = position + 1;
+        }
+        if !valid || positions.len() != expected.len() {
+            continue;
+        }
+        for index in 0..expected.len() {
+            let left_position = positions[index];
+            let right_position = if index + 1 == expected.len() {
+                positions[0] + actual.len()
+            } else {
+                positions[index + 1]
+            };
+            let between = right_position - left_position - 1;
+            let (left, left_span) = mesh.exact_uses[index];
+            let right = mesh.exact_uses[(index + 1) % expected.len()].0;
+            let left_end = (left.start + left_span) % mesh.length;
+            let capacity = (right.start + mesh.length - left_end) % mesh.length;
+            if (capacity == 0 && between != 0)
+                || (capacity > 0 && !(1..=capacity).contains(&between))
+            {
+                valid = false;
+                break;
+            }
+            if (1..=between).any(|offset| {
+                let edge = actual[(left_position + offset) % actual.len()];
+                !missing.contains(&edge)
+            }) {
+                valid = false;
+                break;
+            }
+        }
+        if valid {
+            return true;
+        }
+    }
+    false
+}
+
+fn deferred_boundary_closes(domain: &MeshDeferredFaceBoundary, edge_points: &[[usize; 2]]) -> bool {
+    fn augment(
+        mesh: usize,
+        compatible: &[Vec<bool>],
+        seen: &mut [bool],
+        matched_mesh: &mut [Option<usize>],
+    ) -> bool {
+        for incidence in 0..compatible[mesh].len() {
+            if !compatible[mesh][incidence] || seen[incidence] {
+                continue;
+            }
+            seen[incidence] = true;
+            let previous = matched_mesh[incidence];
+            if previous.is_none()
+                || augment(
+                    previous.expect("occupied incidence match"),
+                    compatible,
+                    seen,
+                    matched_mesh,
+                )
+            {
+                matched_mesh[incidence] = Some(mesh);
+                return true;
+            }
+        }
+        false
+    }
+
+    let mut incident = domain.missing_edges.clone();
+    incident.extend(
+        domain
+            .cycles
+            .iter()
+            .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
+    );
+    incident.sort_unstable();
+    incident.dedup();
+    let Some(incidence) = incidence_cycles(&incident, edge_points) else {
+        return false;
+    };
+    if incidence.len() != domain.cycles.len() {
+        return false;
+    }
+    let missing = domain.missing_edges.iter().copied().collect::<HashSet<_>>();
+    let compatible = domain
+        .cycles
+        .iter()
+        .map(|mesh| {
+            incidence
+                .iter()
+                .map(|candidate| deferred_boundary_cycle_matches(mesh, candidate, &missing))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut matched_mesh = vec![None; incidence.len()];
+    (0..domain.cycles.len()).all(|mesh| {
+        augment(
+            mesh,
+            &compatible,
+            &mut vec![false; incidence.len()],
+            &mut matched_mesh,
+        )
+    })
+}
+
+fn boundary_domains_close(
     domains: Option<&[MeshFaceBoundaryDomain]>,
     edge_points: &[[usize; 2]],
 ) -> bool {
     domains.is_none_or(|domains| {
         domains.iter().all(|domain| match domain {
-            MeshFaceBoundaryDomain::Ordered(_) | MeshFaceBoundaryDomain::DeferredValidation => true,
+            MeshFaceBoundaryDomain::Ordered(_) => true,
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
                 incidence_cycles(edges, edge_points).is_some_and(|cycles| cycles.len() == 1)
+            }
+            MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+                deferred_boundary_closes(domain, edge_points)
             }
         })
     })
@@ -1536,7 +1761,7 @@ where
     F: Fn(&[[usize; 2]]) -> bool,
 {
     const MAX_PAIR_SOLUTIONS: usize = 256;
-    let components = incidence_choice_components(choices, edge_faces);
+    let components = incidence_choice_components(choices, edge_faces, mesh_assignments);
     let mut face_edges = vec![Vec::new(); face_count];
     for (edge, faces) in edge_faces.iter().copied().enumerate() {
         for (rank, face) in faces.into_iter().enumerate() {
@@ -1564,9 +1789,8 @@ where
     }
     if components.is_empty() {
         let pairs = fixed.into_iter().collect::<Option<Vec<_>>>()?;
-        return (unordered_boundary_domains_close(mesh_assignments, &pairs)
-            && solution_valid(&pairs))
-        .then_some(vec![pairs]);
+        return (boundary_domains_close(mesh_assignments, &pairs) && solution_valid(&pairs))
+            .then_some(vec![pairs]);
     }
     let component_count = components.len();
     let mut combined = vec![fixed.clone()];
@@ -1598,8 +1822,7 @@ where
                     .into_iter()
                     .collect::<Option<Vec<_>>>()
                     .is_some_and(|pairs| {
-                        unordered_boundary_domains_close(mesh_assignments, &pairs)
-                            && solution_valid(&pairs)
+                        boundary_domains_close(mesh_assignments, &pairs) && solution_valid(&pairs)
                     })
             })
         };
@@ -2300,7 +2523,7 @@ pub struct MeshFaceCoverage {
 enum MeshFaceAssignmentDomain {
     Ordered(Vec<Vec<MeshEdgePlacementCandidate>>),
     UnorderedFullCycle(Vec<usize>),
-    DeferredValidation,
+    DeferredValidation(MeshFaceCoverage),
 }
 
 /// One admissible placement of an unmatched physical edge within a recovered
@@ -2350,7 +2573,19 @@ pub struct MeshBoundaryEdgeCandidate {
 enum MeshFaceBoundaryDomain {
     Ordered(Vec<MeshFaceBoundaryAssignment>),
     UnorderedFullCycle(Vec<usize>),
-    DeferredValidation,
+    DeferredValidation(MeshDeferredFaceBoundary),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MeshDeferredFaceBoundary {
+    cycles: Vec<MeshDeferredBoundaryCycle>,
+    missing_edges: Vec<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MeshDeferredBoundaryCycle {
+    length: usize,
+    exact_uses: Vec<(MeshBoundaryEdgeCandidate, usize)>,
 }
 
 /// One complete choice of all unmatched placements on a face, expressed as
@@ -3260,7 +3495,7 @@ fn standard_mesh_missing_edge_assignment_domains(
                 return Some(MeshFaceAssignmentDomain::UnorderedFullCycle(edges));
             }
             if defer_validation && edge_candidates.is_some() {
-                return Some(MeshFaceAssignmentDomain::DeferredValidation);
+                return Some(MeshFaceAssignmentDomain::DeferredValidation(face.clone()));
             }
             let cycle_assignments = edge_candidates.and_then(|candidates| {
                 endpoint_cycle_assignments(
@@ -3351,7 +3586,7 @@ fn standard_mesh_missing_edge_assignments_impl(
     .map(|domain| match domain {
         MeshFaceAssignmentDomain::Ordered(assignments) => Some(assignments),
         MeshFaceAssignmentDomain::UnorderedFullCycle(_)
-        | MeshFaceAssignmentDomain::DeferredValidation => None,
+        | MeshFaceAssignmentDomain::DeferredValidation(_) => None,
     })
     .collect()
 }
@@ -3401,7 +3636,7 @@ fn standard_mesh_boundary_assignments_impl(
         .map(|domain| match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => Some(assignments),
             MeshFaceBoundaryDomain::UnorderedFullCycle(_)
-            | MeshFaceBoundaryDomain::DeferredValidation => None,
+            | MeshFaceBoundaryDomain::DeferredValidation(_) => None,
         })
         .collect()
 }
@@ -3442,8 +3677,38 @@ fn standard_mesh_boundary_domains_impl(
             MeshFaceAssignmentDomain::UnorderedFullCycle(edges) => {
                 Some(MeshFaceBoundaryDomain::UnorderedFullCycle(edges))
             }
-            MeshFaceAssignmentDomain::DeferredValidation => {
-                Some(MeshFaceBoundaryDomain::DeferredValidation)
+            MeshFaceAssignmentDomain::DeferredValidation(coverage) => {
+                let mut cycles = cycle_lengths[face]
+                    .iter()
+                    .copied()
+                    .map(|length| MeshDeferredBoundaryCycle {
+                        length,
+                        exact_uses: Vec::new(),
+                    })
+                    .collect::<Vec<_>>();
+                for run in runs.iter().filter(|run| run.face == face) {
+                    let length = cycles[run.cycle].length;
+                    cycles[run.cycle].exact_uses.push((
+                        MeshBoundaryEdgeCandidate {
+                            edge: run.edge,
+                            start: run.start,
+                            end: (run.start + run.segment_count) % length,
+                            reversed: Some(run.reversed),
+                        },
+                        run.segment_count,
+                    ));
+                }
+                for cycle in &mut cycles {
+                    cycle
+                        .exact_uses
+                        .sort_unstable_by_key(|(use_, _)| use_.start);
+                }
+                Some(MeshFaceBoundaryDomain::DeferredValidation(
+                    MeshDeferredFaceBoundary {
+                        cycles,
+                        missing_edges: coverage.missing_edges,
+                    },
+                ))
             }
             MeshFaceAssignmentDomain::Ordered(assignments) => assignments
                 .into_iter()
@@ -9587,7 +9852,7 @@ mod motif_tests {
         ];
         let edge_faces = [[0, 0], [0, 0], [0, 0], [0, 0]];
         assert_eq!(
-            super::incidence_choice_components(&choices, &edge_faces),
+            super::incidence_choice_components(&choices, &edge_faces, None),
             vec![vec![0, 1], vec![2]]
         );
     }
@@ -9707,6 +9972,44 @@ mod motif_tests {
         .expect("connected cycle solution");
 
         assert_eq!(solutions, vec![vec![[0, 1], [1, 2], [2, 3], [0, 3]]]);
+    }
+
+    #[test]
+    fn deferred_boundary_enforces_anchored_gap_capacities() {
+        let domain = super::MeshDeferredFaceBoundary {
+            cycles: vec![super::MeshDeferredBoundaryCycle {
+                length: 6,
+                exact_uses: vec![
+                    (
+                        MeshBoundaryEdgeCandidate {
+                            edge: 0,
+                            start: 0,
+                            end: 1,
+                            reversed: Some(false),
+                        },
+                        1,
+                    ),
+                    (
+                        MeshBoundaryEdgeCandidate {
+                            edge: 3,
+                            start: 3,
+                            end: 4,
+                            reversed: Some(false),
+                        },
+                        1,
+                    ),
+                ],
+            }],
+            missing_edges: vec![1, 2, 4, 5],
+        };
+        let valid = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [0, 5]];
+        let overfilled_first_gap = [[0, 1], [1, 2], [2, 3], [4, 5], [3, 4], [0, 5]];
+
+        assert!(super::deferred_boundary_closes(&domain, &valid));
+        assert!(!super::deferred_boundary_closes(
+            &domain,
+            &overfilled_first_gap
+        ));
     }
 
     #[test]
