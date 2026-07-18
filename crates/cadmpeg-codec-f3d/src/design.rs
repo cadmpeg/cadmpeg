@@ -3970,19 +3970,19 @@ fn transition_profile_selection(
     let topology = state.topology.as_ref()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
     let tolerance = linear_tolerance.max(1.0e-7);
-    unique_complete_selection(inserted_faces.iter().map(|face| {
+    unique_resolved_selection(inserted_faces.iter().map(|face| {
         let points = historical_face_points(*face, topology)?;
         selection_containing_points(sketch, entities, &points, tolerance)
     }))
 }
 
-fn unique_complete_selection<T: PartialEq>(
+fn unique_resolved_selection<T: PartialEq>(
     selections: impl IntoIterator<Item = Option<T>>,
 ) -> Option<T> {
-    let mut selections = selections.into_iter();
-    let first = selections.next()??;
+    let mut selections = selections.into_iter().flatten();
+    let first = selections.next()?;
     selections
-        .all(|selection| selection.as_ref() == Some(&first))
+        .all(|selection| selection == first)
         .then_some(first)
 }
 
@@ -15740,20 +15740,21 @@ mod relation_tests {
     }
 
     #[test]
-    fn transition_profile_requires_every_inserted_face_to_resolve_identically() {
+    fn transition_profile_requires_every_cap_face_to_resolve_identically() {
         assert_eq!(
-            super::unique_complete_selection([Some(3), Some(3), Some(3)]),
+            super::unique_resolved_selection([Some(3), Some(3), Some(3)]),
             Some(3)
         );
         assert_eq!(
-            super::unique_complete_selection([Some(3), None, Some(3)]),
-            None
+            super::unique_resolved_selection([Some(3), None, Some(3)]),
+            Some(3)
         );
-        assert_eq!(super::unique_complete_selection([Some(3), Some(4)]), None);
+        assert_eq!(super::unique_resolved_selection([Some(3), Some(4)]), None);
         assert_eq!(
-            super::unique_complete_selection(std::iter::empty::<Option<u32>>()),
+            super::unique_resolved_selection(std::iter::empty::<Option<u32>>()),
             None
         );
+        assert_eq!(super::unique_resolved_selection([None::<u32>, None]), None);
     }
 
     #[test]
