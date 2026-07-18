@@ -279,6 +279,8 @@ A bare integer Keywords dimension bound to a unique driving angular scalar denot
 
 A bare `0` or `1` Keywords dimension bound to a unique driving angular scalar denotes milliradians rather than a Boolean. The scalar supplies its evaluated angle in radians and native identity while the original expression remains unchanged.
 
+An otherwise untyped bare Keywords integer, including `0` and `1`, is a dimensionless integer. The case-insensitive literals `true` and `false` are Boolean values.
+
 A uniquely owned feature-input scalar is the evaluated value of the same-named Keywords dimension. Length-valued feature scalars store metres and angular feature scalars store radians. Keywords dimension text remains the parameter expression; its unitless numeric spelling does not replace the evaluated scalar. Feature operation semantics use the evaluated scalar converted to millimetres or radians.
 
 A `Config-N-ResolvedFeatures` lane supplies the evaluated parameter state for configuration slot `N`. Scalars from configuration-scoped lanes do not replace the document-level parameter value or its native identity. Every evaluable document expression and every scalar resolved in the scoped lane contributes its typed value to that configuration's parameter state.
