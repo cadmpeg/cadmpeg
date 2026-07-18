@@ -1764,6 +1764,22 @@ fn extend_related_design_records(
             ))
         })
         .collect::<std::collections::HashSet<_>>();
+    native.design_edge_identity_operands = crate::design::decode_edge_identity_operands(
+        scan,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+    )?;
+    let identity_member_groups = native
+        .design_edge_identity_operands
+        .iter()
+        .filter_map(|operand| {
+            Some((
+                crate::design::native_stream(&operand.id)?.to_owned(),
+                operand.group_record_index,
+            ))
+        })
+        .collect::<std::collections::HashSet<_>>();
     native.design_construction_operand_groups.retain(|group| {
         let Some(stream) = crate::design::native_stream(&group.id) else {
             return true;
@@ -1773,6 +1789,7 @@ fn extend_related_design_records(
             .copied();
         !matches!(kind, Some("Congé" | "Chanfrein"))
             || identified_groups.contains(&(stream.to_owned(), group.record_index))
+            || identity_member_groups.contains(&(stream.to_owned(), group.record_index))
     });
     native.design_fillet_radius_groups = crate::design::decode_fillet_radius_groups(
         &native.design_parameter_scopes,
@@ -1835,12 +1852,6 @@ fn extend_related_design_records(
         &mut native.design_extrude_selection_members,
         &native.asm_histories,
     );
-    native.design_edge_identity_operands = crate::design::decode_edge_identity_operands(
-        scan,
-        &native.design_parameter_scopes,
-        &native.design_construction_operand_groups,
-        &native.design_record_headers,
-    )?;
     crate::history::bind_edge_identity_history(
         &mut native.design_edge_identity_operands,
         &native.design_construction_operand_identities,

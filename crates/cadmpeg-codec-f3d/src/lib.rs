@@ -975,7 +975,27 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
-        if !operand_identity_groups.contains(&(native_stream, group.record_index)) {
+        let mut identity_members = native
+            .design_edge_identity_operands
+            .iter()
+            .filter(|operand| {
+                design_stream(&operand.id) == native_stream
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.group_record_index == group.record_index
+            })
+            .collect::<Vec<_>>();
+        identity_members.sort_by_key(|operand| operand.group_member_ordinal);
+        let has_exact_identity_members = identity_members.len() == group.members.len()
+            && identity_members
+                .iter()
+                .enumerate()
+                .all(|(ordinal, operand)| {
+                    usize::try_from(operand.group_member_ordinal) == Ok(ordinal)
+                        && group.members.get(ordinal) == Some(&operand.record_index)
+                });
+        if !operand_identity_groups.contains(&(native_stream, group.record_index))
+            && !has_exact_identity_members
+        {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
