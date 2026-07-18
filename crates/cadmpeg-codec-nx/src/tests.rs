@@ -2605,7 +2605,7 @@ fn offset_only_indexed_om_section() -> Vec<u8> {
     bytes.extend_from_slice(&[0; 16]);
     bytes.extend_from_slice(&2u32.to_le_bytes());
     let metadata = bytes.len();
-    bytes.extend_from_slice(&[0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0, 0, 0, 0, 0, 1, 0, 0]);
     let first = bytes.len();
     bytes.extend_from_slice(b"\x04\x01\x0eNX 2027.3102\0hostglobalvariables");
     let second = bytes.len();
@@ -7561,7 +7561,10 @@ fn om_offset_only_index_bounds_storage_blocks() {
     let sections = crate::om::indexed_sections(&bytes);
     assert_eq!(sections.len(), 1);
     assert_eq!(sections[0].base, 0);
-    assert_eq!(sections[0].control.as_ref().unwrap().bytes, &[0, 0, 0, 0]);
+    assert_eq!(
+        sections[0].control.as_ref().unwrap().bytes,
+        &[0, 0, 0, 0, 0, 1, 0, 0]
+    );
     assert_eq!(sections[0].records.len(), 2);
     assert_eq!(
         sections[0].column_storage.unwrap(),
@@ -7643,10 +7646,18 @@ fn native_catalog_separates_offset_only_blocks_from_object_records() {
     assert_eq!(blocks[1].role, crate::native::DataBlockRole::Column);
     assert!(blocks[0].byte_len > 0);
     let control_values = crate::native::data_block_control_values(&container);
-    assert_eq!(control_values.len(), 1);
+    assert_eq!(control_values.len(), 2);
     assert_eq!(control_values[0].data_block, blocks[0].id);
     assert_eq!(control_values[0].ordinal, 0);
     assert_eq!(control_values[0].value, 0);
+    assert_eq!(control_values[1].value, 1);
+    let classes = crate::native::data_block_control_class_references(&container);
+    assert_eq!(classes.len(), 1);
+    assert_eq!(classes[0].data_block, blocks[0].id);
+    assert_eq!(classes[0].ordinal, 0);
+    assert_eq!(classes[0].class_ordinal, 0);
+    assert_eq!(classes[0].class_name, "UGS::ModlFeature");
+    assert_eq!(classes[0].class_definition, "nx:om-entry-0:class#8");
     assert!(crate::native::string_values(&container).is_empty());
     assert!(crate::native::object_references(&container).is_empty());
     let expressions = crate::native::expressions(&container);

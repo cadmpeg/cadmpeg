@@ -10956,15 +10956,7 @@ pub fn data_block_control_class_references(
             let Some(control) = section.control else {
                 return Vec::new();
             };
-            let registry = container
-                .om_sections()
-                .into_iter()
-                .filter(|(candidate, _)| std::ptr::eq(*candidate, entry))
-                .flat_map(|(_, section)| section.types)
-                .map(|definition| (definition.offset, definition))
-                .collect::<BTreeMap<_, _>>()
-                .into_values()
-                .collect::<Vec<_>>();
+            let registry = section.types;
             let Some(ordinals) = crate::om::offset_store_control_class_ordinals(
                 control.bytes,
                 registry.len(),
