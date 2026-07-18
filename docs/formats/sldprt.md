@@ -366,13 +366,11 @@ An `moLineRef_w` declaration has two direction layouts. When two consecutive `c7
 
 An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That preceding object identifies the repeated neutral feature. The sole structurally valid `moLineRef_w` declaration before the next feature object supplies the linear-pattern direction. A missing or multiply addressed preceding object, or zero or multiple direction references, leaves the corresponding linear-pattern input unresolved.
 
-A parameterless, propertyless `Feature` history record with type `Directional` or `Direccional` is a directional scene-light tree node rather than a modeling operation.
+Built-in reference-plane history records have native class `moRefPlane_c` and no dimensions or extra attributes. Within that class, source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes.
 
-Built-in reference-plane history records have no dimensions or extra attributes. Source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes. Names, element tags, and type strings do not affect the role.
+Among classless, parameterless, propertyless history records, `Feature` source ID `1` is the annotations container, `Sketch` source ID `5` is the model origin, and `Feature` source ID `6` is the lights-and-cameras container. Later source IDs are positions in an optional-node sequence rather than role codes.
 
-Dimensionless, attribute-free `Feature` history records use reserved source IDs for non-modeling tree roles. Source ID `6` is the lights-and-cameras container, `12` is the ambient light, `13`, `14`, and `15` are the built-in directional lights, and `19` is the exploded-views container. Display names and type strings do not affect these roles.
-
-`moFixedRefPlnData_c` stores a constructed reference-plane frame. The record body begins with eight zero bytes. Three f64 values at body offsets `+8`, `+16`, and `+24` store origin `(y,z,x)` in metres. The normal is `(0, f64@+32, f64@+40)`. Byte `+48` is `1`. The in-plane u-axis is `(f64@+73, f64@+81, f64@+89)`. Both vectors are unit length and mutually orthogonal. The frame belongs to the immediately preceding feature object and precedes the next feature object.
+`moFixedRefPlnData_c` stores a 97-byte constructed reference-plane frame. Three f64 values at offsets `+0`, `+8`, and `+16` store xyz origin coordinates in metres. Three f64 values at `+24`, `+32`, and `+40` store the unit normal. Byte `+48` is `1`. Unit in-plane u- and v-axes occupy the unaligned f64 triples at `+49`, `+57`, `+65` and `+73`, `+81`, `+89`. The three basis vectors are pairwise orthogonal. The frame belongs to the immediately preceding feature object and precedes the next feature object.
 
 Each `PMISemanticDataDB` dimension uses `cadText` value `<dimension-name>@<feature-name>` to identify its owning history parameter. The binding is valid when the feature name is unique and all records for the same owner and dimension name encode the same value. `Linear`, `Diameter`, and `Radial` values are f64 metres. These values supply history dimensions when the Keywords record omits them; an explicit Keywords dimension has precedence.
 

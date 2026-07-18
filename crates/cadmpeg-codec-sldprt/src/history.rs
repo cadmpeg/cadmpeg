@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `SolidWorks` Keywords XML feature history.
 
-use crate::classification::{classify, native_object_class, FeatureClass, NativeClassKind};
+use crate::classification::{
+    classify, native_object_class, principal_plane, FeatureClass, NativeClassKind,
+};
 use crate::container::ContainerScan;
 use crate::records::{Configuration, Feature, FeatureContent, FeatureHistory, HistoryContent};
 use cadmpeg_ir::annotations::Annotations;
@@ -1768,15 +1770,11 @@ mod history_reference_tests {
     }
 
     #[test]
-    fn reserved_feature_manager_nodes_use_source_identity() {
+    fn structurally_stable_feature_manager_nodes_use_source_identity() {
         let cases = [
             ("1", FeatureTreeNodeRole::Annotations),
             ("5", FeatureTreeNodeRole::ModelOrigin),
-            ("7", FeatureTreeNodeRole::DesignBinder),
-            ("8", FeatureTreeNodeRole::Notes),
-            ("9", FeatureTreeNodeRole::SolidBodies),
-            ("10", FeatureTreeNodeRole::SurfaceBodies),
-            ("11", FeatureTreeNodeRole::Materials),
+            ("6", FeatureTreeNodeRole::LightsAndCameras),
         ];
 
         for (source_id, expected) in cases {
@@ -1787,6 +1785,24 @@ mod history_reference_tests {
             }
             assert_eq!(feature_tree_node_role(&node), Some(expected));
         }
+
+        let ambiguous = feature("node", Some("12"), 0);
+        assert_eq!(feature_tree_node_role(&ambiguous), None);
+
+        let mut reference_plane = feature("node", Some("5"), 0);
+        reference_plane.input_class = Some("moRefPlane_c".into());
+        assert_eq!(feature_tree_node_role(&reference_plane), None);
+    }
+
+    #[test]
+    fn principal_plane_requires_the_reference_plane_native_class() {
+        let mut plane = feature("plane", Some("2"), 0);
+        assert_eq!(principal_plane(&plane), None);
+        plane.input_class = Some("moRefPlane_c".into());
+        assert_eq!(
+            principal_plane(&plane),
+            Some(cadmpeg_ir::features::PrincipalPlane::Front)
+        );
     }
 
     #[test]
@@ -3124,37 +3140,22 @@ fn project_definition(
 
 fn feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
     reserved_feature_tree_node_role(feature)
-        .or_else(|| directional_light_tree_node_role(feature))
         .or_else(|| native_object_class(feature.input_class.as_deref()?).tree_node)
 }
 
-fn directional_light_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
-    (feature.xml_tag.eq_ignore_ascii_case("Feature")
-        && feature.parameters.is_empty()
-        && feature.properties.is_empty()
-        && matches!(feature.kind.as_str(), "Directional" | "Direccional"))
-    .then_some(FeatureTreeNodeRole::DirectionalLight)
-}
-
 fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
-    let builtin_shape = feature.xml_tag.eq_ignore_ascii_case("Feature")
-        || feature.source_id.as_deref() == Some("5")
-            && feature.xml_tag.eq_ignore_ascii_case("Sketch");
-    if !builtin_shape || !feature.parameters.is_empty() || !feature.properties.is_empty() {
+    if feature.input_class.is_some()
+        || !feature.parameters.is_empty()
+        || !feature.properties.is_empty()
+    {
         return None;
     }
-    match feature.source_id.as_deref()? {
-        "1" => Some(FeatureTreeNodeRole::Annotations),
-        "5" => Some(FeatureTreeNodeRole::ModelOrigin),
-        "6" => Some(FeatureTreeNodeRole::LightsAndCameras),
-        "7" => Some(FeatureTreeNodeRole::DesignBinder),
-        "8" => Some(FeatureTreeNodeRole::Notes),
-        "9" => Some(FeatureTreeNodeRole::SolidBodies),
-        "10" => Some(FeatureTreeNodeRole::SurfaceBodies),
-        "11" => Some(FeatureTreeNodeRole::Materials),
-        "12" => Some(FeatureTreeNodeRole::AmbientLight),
-        "13" | "14" | "15" => Some(FeatureTreeNodeRole::DirectionalLight),
-        "19" => Some(FeatureTreeNodeRole::ExplodedViews),
+    match (feature.xml_tag.as_str(), feature.source_id.as_deref()?) {
+        (tag, "1") if tag.eq_ignore_ascii_case("Feature") => Some(FeatureTreeNodeRole::Annotations),
+        (tag, "5") if tag.eq_ignore_ascii_case("Sketch") => Some(FeatureTreeNodeRole::ModelOrigin),
+        (tag, "6") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        }
         _ => None,
     }
 }
@@ -3234,20 +3235,6 @@ fn is_helix(feature: &Feature) -> bool {
 
 fn is_offset_plane(feature: &Feature) -> bool {
     classify(feature) == Some(FeatureClass::ReferencePlane) && feature.parameters.contains_key("D1")
-}
-
-fn principal_plane(feature: &Feature) -> Option<cadmpeg_ir::features::PrincipalPlane> {
-    use cadmpeg_ir::features::PrincipalPlane;
-
-    if !feature.parameters.is_empty() || !feature.properties.is_empty() {
-        return None;
-    }
-    match feature.source_id.as_deref()? {
-        "2" => Some(PrincipalPlane::Front),
-        "3" => Some(PrincipalPlane::Top),
-        "4" => Some(PrincipalPlane::Right),
-        _ => None,
-    }
 }
 
 fn project_extrude(

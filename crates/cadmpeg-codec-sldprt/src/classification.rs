@@ -3,7 +3,7 @@
 
 use crate::records::Feature;
 use crate::records::{FeatureInputClassRole, FeatureInputRelationFamily};
-use cadmpeg_ir::features::FeatureTreeNodeRole;
+use cadmpeg_ir::features::{FeatureTreeNodeRole, PrincipalPlane};
 
 /// Semantic family established by native record identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -350,6 +350,22 @@ pub(crate) fn classify(feature: &Feature) -> Option<FeatureClass> {
     let mut classes = evidence.into_iter().flatten();
     let first = classes.next()?;
     classes.all(|class| class == first).then_some(first)
+}
+
+/// Classify a built-in principal plane from its native class and reserved identity.
+pub(crate) fn principal_plane(feature: &Feature) -> Option<PrincipalPlane> {
+    if native_object_class(feature.input_class.as_deref()?).kind != NativeClassKind::ReferencePlane
+        || !feature.parameters.is_empty()
+        || !feature.properties.is_empty()
+    {
+        return None;
+    }
+    match feature.source_id.as_deref()? {
+        "2" => Some(PrincipalPlane::Front),
+        "3" => Some(PrincipalPlane::Top),
+        "4" => Some(PrincipalPlane::Right),
+        _ => None,
+    }
 }
 
 fn classify_input_class(class: Option<&str>) -> Option<FeatureClass> {

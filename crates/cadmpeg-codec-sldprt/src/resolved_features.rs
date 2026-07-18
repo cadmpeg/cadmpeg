@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed views over `SolidWorks` `ResolvedFeatures` sketch records.
 
-use crate::classification::{native_object_class, NativeClassKind};
+use crate::classification::{native_object_class, principal_plane, NativeClassKind};
 use crate::records::{
     FeatureInputBodySelection, FeatureInputClass, FeatureInputClassRole,
     FeatureInputComponentPathEntry, FeatureInputEdgeSelection, FeatureInputLane, FeatureInputName,
@@ -5334,6 +5334,7 @@ pub(crate) fn enrich_history_reference_planes(
             let feature = &histories[history_index].features[feature_index];
             if native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
                 != NativeClassKind::ReferencePlane
+                || principal_plane(feature).is_some()
                 || feature.properties.contains_key("Origin")
                 || feature.properties.contains_key("Normal")
                 || feature.properties.contains_key("UAxis")

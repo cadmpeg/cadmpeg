@@ -7528,12 +7528,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
             role: FeatureTreeNodeRole::SolidBodies
         }
     ));
-    assert!(matches!(
-        definitions[3],
-        FeatureDefinition::TreeNode {
-            role: FeatureTreeNodeRole::DirectionalLight
-        }
-    ));
+    assert!(matches!(definitions[3], FeatureDefinition::Native { .. }));
     assert!(matches!(definitions[4], FeatureDefinition::Native { .. }));
     assert!(matches!(
         definitions[5],
@@ -7562,7 +7557,7 @@ fn decode_types_non_modeling_feature_tree_nodes() {
 }
 
 #[test]
-fn decode_types_reserved_tree_nodes_independently_of_localized_names() {
+fn decode_leaves_position_allocated_tree_nodes_untyped() {
     use cadmpeg_ir::features::{FeatureDefinition, FeatureTreeNodeRole};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -7582,27 +7577,15 @@ fn decode_types_reserved_tree_nodes_independently_of_localized_names() {
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let roles = decoded
-        .ir
-        .model
-        .features
-        .iter()
-        .map(|feature| match feature.definition {
-            FeatureDefinition::TreeNode { role } => role,
-            ref definition => panic!("expected tree node, got {definition:?}"),
-        })
-        .collect::<Vec<_>>();
     assert_eq!(
-        roles,
-        [
-            FeatureTreeNodeRole::LightsAndCameras,
-            FeatureTreeNodeRole::AmbientLight,
-            FeatureTreeNodeRole::DirectionalLight,
-            FeatureTreeNodeRole::DirectionalLight,
-            FeatureTreeNodeRole::DirectionalLight,
-            FeatureTreeNodeRole::ExplodedViews,
-        ]
+        decoded.ir.model.features[0].definition,
+        FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::LightsAndCameras,
+        }
     );
+    assert!(decoded.ir.model.features[1..]
+        .iter()
+        .all(|feature| matches!(feature.definition, FeatureDefinition::Native { .. })));
 }
 
 #[test]
@@ -12105,6 +12088,15 @@ fn semantic_writer_round_trips_principal_reference_planes() {
         0x42,
         "Contents/Keywords",
         br#"<Keywords><Feature Name="Vorne" Type="Ebene" id="2"/><Feature Name="Oben" Type="Ebene" id="3"/><Feature Name="Rechts" Type="Ebene" id="4"/><Feature Name="Plane2" Type="Plane" id="39"/><Feature Name="Reserved-shaped custom record" Type="Ebene" id="2" NativeRole="custom"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[
+            ("moRefPlane_c", "Vorne", 2),
+            ("moRefPlane_c", "Oben", 3),
+            ("moRefPlane_c", "Rechts", 4),
+        ]),
     ));
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
