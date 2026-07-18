@@ -5447,6 +5447,108 @@ pub fn project_dimension_constraints(
     constraints
 }
 
+/// Attach single-locus offset dimensions to uniquely matching typed offset
+/// relations and remove their redundant native annotation constraints.
+pub(crate) fn bind_offset_dimension_parameters(
+    constraints: &mut Vec<cadmpeg_ir::sketches::SketchConstraint>,
+    parameters: &[DesignParameter],
+) {
+    use cadmpeg_ir::sketches::SketchConstraintDefinition as Definition;
+
+    let parameter_values = parameters
+        .iter()
+        .filter_map(|parameter| {
+            Some((neutral_parameter_id(parameter), design_length(parameter)?.0))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut bindings = Vec::new();
+    for (dimension_index, dimension) in constraints.iter().enumerate() {
+        let Definition::Native {
+            native_kind,
+            entities,
+            parameter: Some(parameter),
+            operands,
+            ..
+        } = &dimension.definition
+        else {
+            continue;
+        };
+        let [entity] = entities.as_slice() else {
+            continue;
+        };
+        if !native_kind.starts_with("Linear Dimension")
+            || operands.len() != 2
+            || operands[0].native_kind != "null_locus"
+            || operands[1].native_kind != "curve"
+        {
+            continue;
+        }
+        let Some(parameter_value) = parameter_values.get(parameter).copied() else {
+            continue;
+        };
+        let candidates = constraints
+            .iter()
+            .enumerate()
+            .filter_map(|(offset_index, constraint)| {
+                if constraint.sketch != dimension.sketch {
+                    return None;
+                }
+                let Definition::Offset {
+                    pairs,
+                    distance,
+                    parameter: None,
+                    parameter_factor: None,
+                } = &constraint.definition
+                else {
+                    return None;
+                };
+                (pairs.iter().any(|pair| &pair.source == entity)
+                    && scalar_close(distance.0, parameter_value.abs()))
+                .then_some(offset_index)
+            })
+            .collect::<Vec<_>>();
+        if let [offset_index] = candidates.as_slice() {
+            bindings.push((
+                dimension_index,
+                *offset_index,
+                parameter.clone(),
+                parameter_value,
+            ));
+        }
+    }
+    let offset_counts = bindings.iter().fold(HashMap::new(), |mut counts, binding| {
+        *counts.entry(binding.1).or_insert(0usize) += 1;
+        counts
+    });
+    bindings.retain(|binding| offset_counts.get(&binding.1) == Some(&1));
+    for (_, offset_index, parameter, parameter_value) in &bindings {
+        let Definition::Offset {
+            parameter: driving_parameter,
+            parameter_factor,
+            ..
+        } = &mut constraints[*offset_index].definition
+        else {
+            unreachable!("offset binding index was selected from typed offsets")
+        };
+        *driving_parameter = Some(parameter.clone());
+        *parameter_factor = Some(if parameter_value.is_sign_positive() {
+            1.0
+        } else {
+            -1.0
+        });
+    }
+    let removed = bindings
+        .into_iter()
+        .map(|(dimension, _, _, _)| dimension)
+        .collect::<HashSet<_>>();
+    let mut index = 0usize;
+    constraints.retain(|_| {
+        let keep = !removed.contains(&index);
+        index += 1;
+        keep
+    });
+}
+
 fn repeated_linear_dimension(
     candidates: &[cadmpeg_ir::sketches::SketchConstraintDefinition],
     parameter: cadmpeg_ir::features::ParameterId,
@@ -6135,24 +6237,22 @@ fn directional_point_dimension(
     let scale = 1.0 + expected;
     let first_locus = SketchLocus::Entity(first.id.clone());
     let second_locus = SketchLocus::Entity(second.id.clone());
-    if (first_position.v - second_position.v).abs() <= scale * 1.0e-9
-        && ((first_position.u - second_position.u).abs() - expected).abs() <= scale * 1.0e-9
-    {
-        Some(Definition::HorizontalDistance {
+    let horizontal =
+        ((first_position.u - second_position.u).abs() - expected).abs() <= scale * 1.0e-9;
+    let vertical =
+        ((first_position.v - second_position.v).abs() - expected).abs() <= scale * 1.0e-9;
+    match (horizontal, vertical) {
+        (true, false) => Some(Definition::HorizontalDistance {
             first: first_locus,
             second: second_locus,
             parameter,
-        })
-    } else if (first_position.u - second_position.u).abs() <= scale * 1.0e-9
-        && ((first_position.v - second_position.v).abs() - expected).abs() <= scale * 1.0e-9
-    {
-        Some(Definition::VerticalDistance {
+        }),
+        (false, true) => Some(Definition::VerticalDistance {
             first: first_locus,
             second: second_locus,
             parameter,
-        })
-    } else {
-        None
+        }),
+        (false, false) | (true, true) => None,
     }
 }
 
@@ -18602,6 +18702,23 @@ mod relation_tests {
             } if first_id == &first.id && second_id == &second.id && parameter_id == &parameter
         ));
         assert!(directional_point_dimension(&[&first, &second], 3.0, parameter).is_none());
+
+        let diagonal = entity("generated:point#diagonal", Point2::new(7.0, 14.0));
+        assert!(matches!(
+            directional_point_dimension(
+                &[&first, &diagonal],
+                3.0,
+                cadmpeg_ir::features::ParameterId("generated:parameter#horizontal".into()),
+            ),
+            Some(SketchConstraintDefinition::HorizontalDistance { .. })
+        ));
+        let square = entity("generated:point#square", Point2::new(6.0, 18.0));
+        assert!(directional_point_dimension(
+            &[&first, &square],
+            2.0,
+            cadmpeg_ir::features::ParameterId("generated:parameter#ambiguous".into()),
+        )
+        .is_none());
     }
 
     #[test]

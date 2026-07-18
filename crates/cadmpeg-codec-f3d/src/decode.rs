@@ -859,6 +859,10 @@ pub fn decode(
                     &native.sketch_curve_identities,
                     &ir.model.sketch_entities,
                 ));
+            crate::design::bind_offset_dimension_parameters(
+                &mut ir.model.sketch_constraints,
+                &native.design_parameters,
+            );
             ir.model
                 .sketch_constraints
                 .sort_by_key(|constraint| constraint.id.clone());
@@ -1131,6 +1135,10 @@ pub fn decode(
             &native.sketch_curve_identities,
             &ir.model.sketch_entities,
         ));
+    crate::design::bind_offset_dimension_parameters(
+        &mut ir.model.sketch_constraints,
+        &native.design_parameters,
+    );
     ir.model
         .sketch_constraints
         .sort_by_key(|constraint| constraint.id.clone());
