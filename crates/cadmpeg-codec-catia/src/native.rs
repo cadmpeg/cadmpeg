@@ -13,7 +13,7 @@ use crate::object_graph::{
 use crate::value_block;
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 44;
+pub const CATIA_NATIVE_VERSION: u32 = 45;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -450,6 +450,98 @@ fn extents_overlap(first_start: u64, first_len: u64, second_start: u64, second_l
         .is_some_and(|(first_end, second_end)| first_start < second_end && second_start < first_end)
 }
 
+fn validate_native_links(
+    aliases: &[CatiaAliasRow],
+    catalogs: &[CatiaCatalog],
+    graphs: &[CatiaObjectGraph],
+    segments: &[CatiaFinjplSegment],
+    external_references: &[CatiaExternalReference],
+    value_blocks: &[CatiaValueBlock],
+) -> Result<(), cadmpeg_ir::NativeConvertError> {
+    for block in value_blocks {
+        let Some(catalog) = catalogs.iter().find(|catalog| catalog.id == block.catalog) else {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` references missing catalog `{}`",
+                block.id, block.catalog
+            )));
+        };
+        if block.byte_offset.checked_add(block.byte_len) != Some(catalog.byte_offset) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` is not adjacent to catalog `{}`",
+                block.id, block.catalog
+            )));
+        }
+        let mut adjacent_graphs = graphs.iter().filter(|graph| {
+            graph.byte_offset.checked_add(graph.byte_len) == Some(block.byte_offset)
+        });
+        let adjacent_graph = adjacent_graphs.next();
+        if adjacent_graphs.next().is_some()
+            || block.object_graph.as_deref() != adjacent_graph.map(|graph| graph.id.as_str())
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` has an invalid adjacent graph link",
+                block.id
+            )));
+        }
+    }
+    for reference in external_references {
+        let Some(segment) = segments
+            .iter()
+            .find(|segment| segment.id == reference.segment)
+        else {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "external reference `{}` names missing segment `{}`",
+                reference.id, reference.segment
+            )));
+        };
+        if segment.family != "project-flags"
+            || !extents_overlap(
+                reference.byte_offset,
+                1,
+                segment.byte_offset,
+                segment.byte_len,
+            )
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "external reference `{}` lies outside project-flags segment `{}`",
+                reference.id, reference.segment
+            )));
+        }
+    }
+    let maximum_records = graphs
+        .iter()
+        .map(|graph| graph.records.len())
+        .max()
+        .unwrap_or(0);
+    let mut primary_graphs = graphs
+        .iter()
+        .filter(|graph| graph.records.len() == maximum_records);
+    let primary_graph = match (primary_graphs.next(), primary_graphs.next()) {
+        (Some(graph), None) => Some(graph),
+        _ => None,
+    };
+    for alias in aliases {
+        let expected = usize::from(alias.entity_record_ordinal)
+            .checked_sub(1)
+            .and_then(|index| {
+                let graph = primary_graph?;
+                let record = graph.records.get(index)?;
+                Some((graph.id.as_str(), record.id.as_str()))
+            });
+        let stored = alias
+            .object_graph
+            .as_deref()
+            .zip(alias.object_record.as_deref());
+        if stored != expected {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "alias row `{}` has an invalid graph-record link",
+                alias.id
+            )));
+        }
+    }
+    Ok(())
+}
+
 impl CatiaNative {
     /// Decode CATIA-native records directly from the complete file image.
     #[must_use]
@@ -695,6 +787,14 @@ impl CatiaNative {
                 Vec::new()
             };
         let alias_rows: Vec<CatiaAliasRow> = namespace.arena_as("alias_rows")?;
+        validate_native_links(
+            &alias_rows,
+            &catalogs,
+            &graphs,
+            &finjpl_segments,
+            &external_references,
+            &value_blocks,
+        )?;
         Ok(Self {
             version: namespace.version,
             alias_rows,
