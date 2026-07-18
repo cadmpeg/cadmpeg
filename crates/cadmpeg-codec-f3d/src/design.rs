@@ -4640,7 +4640,7 @@ pub fn project_dimension_constraints(
                         .iter()
                         .map(|locus| ("locus", Some(locus.role), locus.geometry_record_index))
                         .collect::<Vec<_>>();
-                    operands.push(("owner", Some(group.owner_role), group.owner_reference));
+                    operands.push(("owner", group.owner_role, group.owner_reference));
                     operands.extend(
                         group
                             .return_members
@@ -4650,7 +4650,7 @@ pub fn project_dimension_constraints(
                     native_definition(
                         scope,
                         &parameter.source_kind,
-                        Some(u64::from(group.state)),
+                        Some(group.state),
                         &operands,
                         parameter_id,
                     )
@@ -7909,6 +7909,31 @@ fn parse_dimension_locus_group(
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusGroup> {
+    parse_fixed_dimension_locus_group(
+        bytes,
+        start,
+        companion_record_index,
+        geometry_indices,
+        sketch_entities,
+    )
+    .or_else(|| {
+        parse_entity_genesis_dimension_locus_group(
+            bytes,
+            start,
+            companion_record_index,
+            geometry_indices,
+            sketch_entities,
+        )
+    })
+}
+
+fn parse_fixed_dimension_locus_group(
+    bytes: &[u8],
+    start: usize,
+    companion_record_index: u32,
+    geometry_indices: &HashSet<u32>,
+    sketch_entities: &HashSet<u32>,
+) -> Option<DesignDimensionLocusGroup> {
     let (class_tag, after_tag) = lp_ascii(bytes, start)?;
     if after_tag != start.checked_add(7)?
         || class_tag.len() != 3
@@ -8002,14 +8027,108 @@ fn parse_dimension_locus_group(
         loci,
         owner_reference,
         owner_reference_offset,
-        owner_role,
-        owner_role_offset,
-        state,
+        owner_role: Some(owner_role),
+        owner_role_offset: Some(owner_role_offset),
+        entity_genesis: None,
+        state: u64::from(state),
         state_offset,
         constraint_kinds,
-        unknown_constraint_bits: unknown_constraint_bits as u32,
+        unknown_constraint_bits,
         return_members,
         return_member_offsets,
+        next_class_tag,
+        next_record_index: u32_at(bytes, next_after_tag)?,
+        next_byte_offset: next_byte_offset as u64,
+    })
+}
+
+/// Parse the variable-width dimension-locus dialect shared with modern sketch
+/// relations. Dimensional loci use only the ordered member and return runs;
+/// auxiliary-reference payloads belong to pattern and text relations instead.
+fn parse_entity_genesis_dimension_locus_group(
+    bytes: &[u8],
+    start: usize,
+    companion_record_index: u32,
+    geometry_indices: &HashSet<u32>,
+    sketch_entities: &HashSet<u32>,
+) -> Option<DesignDimensionLocusGroup> {
+    let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+    if after_tag != start.checked_add(7)?
+        || class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let record_index = u32_at(bytes, after_tag)?;
+    let parsed = parse_sketch_relation(bytes.get(start..)?, sketch_entities)?;
+    let entity_genesis = parsed.entity_genesis?;
+    if parsed.members.is_empty()
+        || !parsed.auxiliary_references.is_empty()
+        || parsed.text_glyph_transforms.is_some()
+        || parsed.members.len() != parsed.return_members.len()
+        || parsed
+            .members
+            .iter()
+            .chain(&parsed.return_members)
+            .any(|record_index| !geometry_indices.contains(record_index))
+    {
+        return None;
+    }
+    let mut members = parsed.members.clone();
+    let mut returns = parsed.return_members.clone();
+    members.sort_unstable();
+    returns.sort_unstable();
+    if members != returns {
+        return None;
+    }
+    for (offset, role) in parsed.member_offsets.iter().zip(&parsed.member_roles) {
+        let offset = start.checked_add(*offset)?;
+        if bytes.get(offset + 4..offset + 10) != Some(&[0; 6])
+            || u32_at(bytes, offset + 10) != Some(*role)
+        {
+            return None;
+        }
+    }
+    let parsed_end = start.checked_add(parsed.parsed_end)?;
+    let next_byte_offset = next_indexed_record_offset(bytes, parsed_end)?;
+    let (next_class_tag, next_after_tag) = lp_ascii(bytes, next_byte_offset)?;
+    let loci = parsed
+        .members
+        .iter()
+        .zip(parsed.member_offsets.iter().zip(&parsed.member_roles))
+        .map(
+            |(geometry_record_index, (offset, role))| DesignDimensionLocus {
+                geometry_record_index: *geometry_record_index,
+                geometry_reference_offset: start.saturating_add(*offset) as u64,
+                role: *role,
+                role_offset: start.saturating_add(offset.saturating_add(10)) as u64,
+            },
+        )
+        .collect();
+    let (constraint_kinds, unknown_constraint_bits) = decode_constraint_kinds(parsed.state);
+    Some(DesignDimensionLocusGroup {
+        id: String::new(),
+        companion_record_index,
+        byte_offset: start as u64,
+        class_tag,
+        record_index,
+        frame_length: u64::try_from(next_byte_offset.checked_sub(start)?).ok()?,
+        loci,
+        owner_reference: parsed.owner_reference,
+        owner_reference_offset: start.saturating_add(parsed.owner_reference_offset) as u64,
+        owner_role: None,
+        owner_role_offset: None,
+        entity_genesis: Some(entity_genesis),
+        state: parsed.state,
+        state_offset: start.saturating_add(parsed.state_offset) as u64,
+        constraint_kinds,
+        unknown_constraint_bits,
+        return_members: parsed.return_members,
+        return_member_offsets: parsed
+            .return_member_offsets
+            .into_iter()
+            .map(|offset| start.saturating_add(offset) as u64)
+            .collect(),
         next_class_tag,
         next_record_index: u32_at(bytes, next_after_tag)?,
         next_byte_offset: next_byte_offset as u64,
@@ -14428,7 +14547,7 @@ mod relation_tests {
         assert_eq!(group.record_index, 249);
         assert_eq!(group.frame_length, 101);
         assert_eq!(group.owner_reference, 172);
-        assert_eq!(group.owner_role, 1);
+        assert_eq!(group.owner_role, Some(1));
         assert_eq!(group.state, 0);
         assert_eq!(group.loci[0].geometry_record_index, 175);
         assert_eq!(group.loci[0].role, 2);
@@ -17478,8 +17597,9 @@ mod relation_tests {
             }],
             owner_reference: 100,
             owner_reference_offset: 185,
-            owner_role: 0,
-            owner_role_offset: 195,
+            owner_role: Some(0),
+            owner_role_offset: Some(195),
+            entity_genesis: None,
             state: 0,
             state_offset: 199,
             constraint_kinds: Vec::new(),
@@ -20260,6 +20380,35 @@ mod relation_tests {
         }
         out.extend_from_slice(&[0u8; 4]);
         out
+    }
+
+    #[test]
+    fn entity_genesis_dimension_group_preserves_variable_width_frame() {
+        let mut bytes =
+            genesis_relation_record(&[(354, 2), (376, 0)], 4, &[], 201, 0x10, &[376, 354]);
+        let frame_length = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"287");
+        bytes.extend_from_slice(&388u32.to_le_bytes());
+
+        let group = parse_dimension_locus_group(
+            &bytes,
+            0,
+            383,
+            &HashSet::from([354, 376]),
+            &HashSet::from([201]),
+        )
+        .expect("EntityGenesis dimension locus frame");
+        assert_eq!(group.frame_length, frame_length as u64);
+        assert_eq!(group.entity_genesis, Some(4));
+        assert_eq!(group.owner_reference, 201);
+        assert_eq!(group.owner_role, None);
+        assert_eq!(group.state, 0x10);
+        assert_eq!(group.loci[0].role, 2);
+        assert_eq!(group.loci[1].role, 0);
+        assert_eq!(group.return_members, [376, 354]);
+        assert_eq!(group.next_class_tag, "287");
+        assert_eq!(group.next_record_index, 388);
     }
 
     #[test]

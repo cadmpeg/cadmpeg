@@ -1855,7 +1855,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 && sketch_geometry_indices.contains(&(native_stream, locus.geometry_record_index))
         });
         let owner_start = loci_start.saturating_add((count as u64).saturating_mul(15));
-        let returns_start = owner_start.saturating_add(24);
+        let returns_start = group.entity_genesis.map_or_else(
+            || owner_start.saturating_add(24),
+            |_| group.state_offset.saturating_add(13),
+        );
         let returns_valid = group.return_members.len() == count
             && group.return_member_offsets.len() == count
             && group
@@ -1878,8 +1881,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let mut return_members = group.return_members.clone();
         locus_members.sort_unstable();
         return_members.sort_unstable();
-        let (expected_kinds, expected_unknown) =
-            design::decode_constraint_kinds(u64::from(group.state));
+        let (expected_kinds, expected_unknown) = design::decode_constraint_kinds(group.state);
         let owner_is_sketch = entities_by_suffix
             .get(&(native_stream, u64::from(group.owner_reference)))
             .is_some_and(|entity| entity.object_kind == Some(records::DesignObjectKind::Sketch));
@@ -1901,14 +1903,22 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && dimension_companion
             && (1..=64).contains(&count)
             && loci_offsets_valid
-            && group.owner_reference_offset == owner_start.saturating_add(2)
-            && group.owner_role_offset == owner_start.saturating_add(12)
-            && group.state_offset == owner_start.saturating_add(16)
+            && if group.entity_genesis.is_some() {
+                group.owner_reference_offset == owner_start.saturating_add(58)
+                    && group.owner_role.is_none()
+                    && group.owner_role_offset.is_none()
+                    && group.state_offset == group.owner_reference_offset.saturating_add(10)
+            } else {
+                group.owner_reference_offset == owner_start.saturating_add(2)
+                    && group.owner_role_offset == Some(owner_start.saturating_add(12))
+                    && group.owner_role.is_some()
+                    && group.state_offset == owner_start.saturating_add(16)
+            }
             && owner_is_sketch
             && returns_valid
             && locus_members == return_members
             && group.constraint_kinds == expected_kinds
-            && u64::from(group.unknown_constraint_bits) == expected_unknown
+            && group.unknown_constraint_bits == expected_unknown
             && group.next_byte_offset
                 == returns_start
                     .saturating_add((count as u64).saturating_mul(11))

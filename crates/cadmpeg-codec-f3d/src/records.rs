@@ -616,18 +616,21 @@ pub struct DesignDimensionLocusGroup {
     pub owner_reference: u32,
     /// Byte offset of `owner_reference`.
     pub owner_reference_offset: u64,
-    /// Source role code following the owner reference.
-    pub owner_role: u32,
-    /// Byte offset of `owner_role`.
-    pub owner_role_offset: u64,
+    /// Source role code following the owner reference. `EntityGenesis` frames do
+    /// not carry an owner role.
+    pub owner_role: Option<u32>,
+    /// Byte offset of `owner_role`, when present.
+    pub owner_role_offset: Option<u64>,
+    /// `EntityGenesis` origin bitfield, when the frame uses that dialect.
+    pub entity_genesis: Option<u64>,
     /// Source constraint-state mask.
-    pub state: u32,
+    pub state: u64,
     /// Byte offset of `state`.
     pub state_offset: u64,
     /// Constraint kinds selected by `state`.
     pub constraint_kinds: Vec<SketchConstraintKind>,
     /// Bits in `state` outside the defined constraint mask.
-    pub unknown_constraint_bits: u32,
+    pub unknown_constraint_bits: u64,
     /// Ordered return geometry records.
     pub return_members: Vec<u32>,
     /// Byte offsets parallel to `return_members`.
