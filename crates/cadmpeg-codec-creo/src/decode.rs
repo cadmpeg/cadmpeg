@@ -17973,6 +17973,47 @@ mod resolved_sketch_tests {
     }
 
     #[test]
+    fn axis_containing_plane_torus_components_support_edges_and_vertices() {
+        let plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        });
+        let torus = CarrierEquation::Torus(TorusEquation {
+            center: [0.0, 0.0, 0.0],
+            axis: [0.0, 0.0, 1.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            major_radius: 3.0,
+            minor_radius: 1.0,
+        });
+        let candidates = axis_containing_plane_torus_circle_candidates(plane, torus);
+        assert_eq!(candidates.len(), 2);
+        assert!(resolve_curve_candidates(candidates.clone(), None).is_none());
+        assert!(matches!(
+            select_unique_curve_candidate(candidates, [[4.0, 0.0, 0.0], [3.0, 0.0, 1.0]]),
+            Some((CurveGeometry::Circle { center, radius, .. }, "axis_containing_plane_torus_meridian_circle"))
+                if (center.x - 3.0).abs() < 1e-12
+                    && center.y.abs() < 1e-12
+                    && center.z.abs() < 1e-12
+                    && (radius - 1.0).abs() < 1e-12
+        ));
+
+        let tangent_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [4.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        assert_eq!(
+            solve_carriers(&[plane, torus, tangent_plane]),
+            Some([4.0, 0.0, 0.0])
+        );
+
+        let offset_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.5, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        });
+        assert!(axis_containing_plane_torus_circle_candidates(offset_plane, torus).is_empty());
+    }
+
+    #[test]
     fn coaxial_cone_components_respect_axis_orientation_and_coincidence() {
         let first = CarrierEquation::Cone(ConeEquation {
             origin: [0.0, 0.0, 0.0],
@@ -23288,6 +23329,52 @@ fn meridian_circle_intersections(
         .collect()
 }
 
+fn axis_containing_plane_torus_circle_candidates(
+    first: CarrierEquation,
+    second: CarrierEquation,
+) -> Vec<(CurveGeometry, &'static str)> {
+    let ((CarrierEquation::Plane(plane), CarrierEquation::Torus(torus))
+    | (CarrierEquation::Torus(torus), CarrierEquation::Plane(plane))) = (first, second)
+    else {
+        return Vec::new();
+    };
+    let (Some(normal), Some(axis)) = (normalized(plane.normal), normalized(torus.axis)) else {
+        return Vec::new();
+    };
+    let scale = torus.major_radius.max(torus.minor_radius).max(1.0);
+    let center_offset: [f64; 3] =
+        std::array::from_fn(|index| torus.center[index] - plane.origin[index]);
+    if dot(normal, axis).abs() > 1e-10
+        || dot(normal, center_offset).abs() > 1e-9 * scale
+        || !torus.major_radius.is_finite()
+        || !torus.minor_radius.is_finite()
+        || torus.major_radius <= 1e-12 * scale
+        || torus.minor_radius <= 1e-12 * scale
+    {
+        return Vec::new();
+    }
+    let Some(radial) = normalized(cross(normal, axis)) else {
+        return Vec::new();
+    };
+    [-1.0, 1.0]
+        .into_iter()
+        .map(|sense| {
+            let center: [f64; 3] = std::array::from_fn(|index| {
+                torus.center[index] + sense * torus.major_radius * radial[index]
+            });
+            (
+                CurveGeometry::Circle {
+                    center: Point3::new(center[0], center[1], center[2]),
+                    axis: Vector3::new(normal[0], normal[1], normal[2]),
+                    ref_direction: Vector3::new(axis[0], axis[1], axis[2]),
+                    radius: torus.minor_radius,
+                },
+                "axis_containing_plane_torus_meridian_circle",
+            )
+        })
+        .collect()
+}
+
 fn coaxial_sphere_torus_circle_candidates(
     first: CarrierEquation,
     second: CarrierEquation,
@@ -23416,6 +23503,7 @@ fn multi_component_intersection_candidates(
     candidates.extend(coaxial_sphere_torus_circle_candidates(first, second));
     candidates.extend(coaxial_tori_circle_candidates(first, second));
     candidates.extend(axis_normal_plane_torus_circle_candidates(first, second));
+    candidates.extend(axis_containing_plane_torus_circle_candidates(first, second));
     candidates
 }
 

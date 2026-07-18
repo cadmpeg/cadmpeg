@@ -956,6 +956,14 @@ interval is the ordered pair of its endpoint parameters.
 
 A plane normal to a torus axis at axial offset `z` intersects the torus in circles of radii `R ± sqrt(r² - z²)`. At `|z| = r` the two roots coincide in one contact circle. At `|z| < r` the edge's paired solved endpoint orbits select one circle when exactly one positive-radius candidate contains both endpoints. A zero-radius horn-torus root is a point and does not define a curve.
 
+A plane containing a torus axis intersects the torus in its two meridian
+circles. Their centers are `C ± R radial`, where
+`radial = normalize(plane_normal × torus_axis)`; each circle has radius `r`,
+lies in the plane, and contains the torus axis direction. The edge's paired
+solved endpoints select one meridian circle when exactly one candidate contains
+both endpoints. A parallel plane not containing the torus center does not use
+this construction.
+
 A cylinder coaxial with a torus intersects it in one tangent circle when the cylinder radius equals the torus outer radius `R + r` or its positive inner radius `|R - r|`. The circle lies in the torus central plane, has the common axis, and has the cylinder radius. A cylinder radius strictly between the torus radial extrema produces two circles at axial offsets `±sqrt(r² - (Rc - R)²)` from the torus center. The edge's paired solved endpoint orbits select one circle when exactly one candidate contains both endpoints. Radii outside the torus radial interval do not intersect it.
 
 A sphere whose center lies on a torus axis reduces their intersection to two circles in the axial meridian plane: one centered on the axis with the sphere radius and one centered at the torus major radius with the tube radius. External tangency or non-concentric internal tangency of those meridian circles produces one point with positive radial coordinate and therefore one model-space circle about the torus axis. A strict secant produces two meridian points and therefore two model-space circles. The edge's paired solved endpoint orbits select one circle when exactly one candidate contains both endpoints.
