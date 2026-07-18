@@ -6952,13 +6952,15 @@ impl MeshSelectionSearch<'_> {
 
     #[cfg(test)]
     fn propagate_forced_face_equations(&self, quotient: &mut MeshQuotient) -> bool {
-        self.propagate_forced_face_equations_from(quotient, None)
+        let budget = MeshConstraintBudget::new(usize::MAX);
+        self.propagate_forced_face_equations_from(quotient, None, &budget)
     }
 
     fn propagate_forced_face_equations_from(
         &self,
         quotient: &mut MeshQuotient,
         changed_edges: Option<&HashSet<usize>>,
+        budget: &MeshConstraintBudget,
     ) -> bool {
         const MAX_FACE_EQUATION_OPTIONS: usize = 4_096;
 
@@ -6966,6 +6968,7 @@ impl MeshSelectionSearch<'_> {
             quotient: &MeshQuotient,
             assignment: &MeshFaceBoundaryAssignment,
             edge_candidates: &[Vec<[usize; 2]>],
+            budget: &MeshConstraintBudget,
         ) -> Option<HashSet<[usize; 2]>> {
             fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
                 use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
@@ -6999,6 +7002,9 @@ impl MeshSelectionSearch<'_> {
             nodes.dedup();
             let mut common = None::<HashSet<[usize; 2]>>;
             for mask in 0..combinations {
+                if !budget.charge() {
+                    return None;
+                }
                 let mut variable = 0usize;
                 let directions = assignment
                     .boundaries
@@ -7068,6 +7074,7 @@ impl MeshSelectionSearch<'_> {
         fn unconditional_corner_equations(
             quotient: &mut MeshQuotient,
             assignments: &[MeshFaceBoundaryAssignment],
+            budget: &MeshConstraintBudget,
         ) -> Option<HashSet<[usize; 2]>> {
             fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> Option<Vec<usize>> {
                 let directions = use_
@@ -7087,6 +7094,9 @@ impl MeshSelectionSearch<'_> {
 
             let mut common = None::<HashSet<[usize; 2]>>;
             for assignment in assignments {
+                if !budget.charge() {
+                    return None;
+                }
                 let mut forced = HashSet::new();
                 for boundary in &assignment.boundaries {
                     if boundary.is_empty() {
@@ -7140,6 +7150,9 @@ impl MeshSelectionSearch<'_> {
             .collect::<VecDeque<_>>();
         let mut queued = queue.iter().copied().collect::<HashSet<_>>();
         while let Some(face) = queue.pop_front() {
+            if !budget.charge() {
+                return false;
+            }
             queued.remove(&face);
             if self.selected[face].is_some() {
                 continue;
@@ -7178,9 +7191,11 @@ impl MeshSelectionSearch<'_> {
                     let equations: Vec<[usize; 2]> = if structural_option_bound
                         .is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS)
                     {
-                        let Some(common) =
-                            unconditional_corner_equations(quotient, &self.assignments[face])
-                        else {
+                        let Some(common) = unconditional_corner_equations(
+                            quotient,
+                            &self.assignments[face],
+                            budget,
+                        ) else {
                             return false;
                         };
                         common.into_iter().collect()
@@ -7191,6 +7206,7 @@ impl MeshSelectionSearch<'_> {
                                 quotient,
                                 assignment,
                                 self.edge_candidates,
+                                budget,
                             ) else {
                                 continue;
                             };
@@ -7356,9 +7372,10 @@ impl MeshSelectionSearch<'_> {
         &self,
         quotient: &MeshQuotient,
         changed_edges: &HashSet<usize>,
+        budget: &MeshConstraintBudget,
     ) -> Option<MeshQuotient> {
         let mut measured = quotient.clone();
-        if !self.propagate_forced_face_equations_from(&mut measured, Some(changed_edges)) {
+        if !self.propagate_forced_face_equations_from(&mut measured, Some(changed_edges), budget) {
             return None;
         }
         if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
@@ -7407,7 +7424,10 @@ impl MeshSelectionSearch<'_> {
         }
         let mut measured = quotient.clone();
         if !prepared {
-            if !self.propagate_forced_face_equations_from(&mut measured, None) {
+            if !self.propagate_forced_face_equations_from(&mut measured, None, budget) {
+                if budget.exhausted.get() {
+                    self.exhausted = true;
+                }
                 return;
             }
             if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
@@ -7656,7 +7676,7 @@ impl MeshSelectionSearch<'_> {
             self.selected[face] = Some((assignment_index, directions));
             if self.selected_orientable() {
                 if let Some(next_quotient) =
-                    self.prepare_selected_branch(&next_quotient, &changed_edges)
+                    self.prepare_selected_branch(&next_quotient, &changed_edges, budget)
                 {
                     if branching {
                         if self.states >= MAX_SELECTION_STATES {
@@ -7669,6 +7689,8 @@ impl MeshSelectionSearch<'_> {
                     // `prepare_selected_branch` has already applied the recursive
                     // entry preflight to this quotient.
                     self.search_from_state(&next_quotient, true, budget);
+                } else if budget.exhausted.get() {
+                    self.exhausted = true;
                 }
             }
             self.selected[face] = None;
