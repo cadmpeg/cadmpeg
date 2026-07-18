@@ -5743,6 +5743,14 @@ pub(crate) fn project_compact_sketch_profiles(
                 "sldprt:model:sketch#compact:{lane_key}:{}",
                 native_feature.ordinal
             ));
+            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+                features[feature_index].definition =
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
+                        sketch: Some(sketch_id),
+                    };
+                continue;
+            }
             let sketch = Sketch {
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
@@ -6070,6 +6078,14 @@ pub(crate) fn project_marker_backed_sketches(
                 "sldprt:model:sketch#markers:{lane_key}:{}",
                 native_feature.ordinal
             ));
+            if sketches.iter().any(|sketch| sketch.id == sketch_id) {
+                features[feature_index].definition =
+                    cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
+                        sketch: Some(sketch_id),
+                    };
+                continue;
+            }
             let sketch = Sketch {
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
@@ -13131,12 +13147,14 @@ mod profile_join_tests {
         };
         let mut sketches = Vec::new();
         let mut entities = Vec::new();
+        let histories = vec![history];
+        let lanes = vec![lane];
         project_marker_backed_sketches(
             &mut features,
             &mut sketches,
             &mut entities,
-            &[history],
-            &[lane],
+            &histories,
+            &lanes,
         );
 
         assert_eq!(sketches.len(), 1);
@@ -13156,6 +13174,28 @@ mod profile_join_tests {
                 sketch: Some(_),
                 ..
             }
+        ));
+        let expected_sketch = sketches[0].id.clone();
+        let mut configured_features = features.clone();
+        configured_features[1].definition = FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: None,
+        };
+        project_marker_backed_sketches(
+            &mut configured_features,
+            &mut sketches,
+            &mut entities,
+            &histories,
+            &lanes,
+        );
+        assert_eq!(sketches.len(), 1);
+        assert_eq!(entities.len(), 2);
+        assert!(matches!(
+            &configured_features[1].definition,
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } if sketch == &expected_sketch
         ));
     }
 

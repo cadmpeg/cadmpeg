@@ -2132,6 +2132,90 @@ mod history_reference_tests {
             );
         }
     }
+
+    #[test]
+    fn configuration_sketch_state_reuses_projected_neutral_sketch() {
+        use cadmpeg_ir::features::{
+            ConfigurationFeatureState, DesignConfiguration, Feature as NeutralFeature,
+            FeatureDefinition, SketchSpace,
+        };
+        use cadmpeg_ir::sketches::{Sketch, SketchId};
+
+        let native_feature = feature("sketch-native", Some("7"), 0);
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![native_feature],
+        };
+        let feature_id = cadmpeg_ir::features::FeatureId("sketch".into());
+        let unresolved = FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: None,
+        };
+        let mut ir = cadmpeg_ir::CadIr::empty(cadmpeg_ir::units::Units::default());
+        ir.model.features.push(NeutralFeature {
+            id: feature_id.clone(),
+            ordinal: 0,
+            name: Some("sketch-native".into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: unresolved.clone(),
+            native_ref: Some("sketch-native".into()),
+        });
+        let sketch_id = SketchId("projected-sketch".into());
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: Some("sketch-native".into()),
+            configuration: Some("0".into()),
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: Some("lane".into()),
+        });
+        ir.model.configurations.push(DesignConfiguration {
+            id: cadmpeg_ir::features::ConfigurationId("configuration".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Default".into(),
+            material: None,
+            properties: BTreeMap::new(),
+            bodies: Vec::new(),
+            parameter_values: BTreeMap::new(),
+            feature_states: BTreeMap::from([(
+                feature_id.clone(),
+                ConfigurationFeatureState {
+                    suppressed: false,
+                    dependencies: Vec::new(),
+                    outputs: Vec::new(),
+                    definition: unresolved,
+                },
+            )]),
+            native_ref: None,
+        });
+        let lane = feature_input_lane("lane", Some("0"));
+
+        project_configuration_sketch_states(&mut ir, &[history], &[lane]);
+
+        assert_eq!(ir.model.sketches.len(), 1);
+        assert!(matches!(
+            &ir.model.configurations[0].feature_states[&feature_id].definition,
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            } if sketch == &sketch_id
+        ));
+    }
 }
 
 /// Bind a uniquely identified native sketch history node to solved sketch geometry.
@@ -4949,8 +5033,6 @@ pub(crate) fn project_configuration_design_states(
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
 ) {
-    use cadmpeg_ir::features::ConfigurationFeatureState;
-
     for (configuration_index, lane_index) in
         configuration_lane_assignments(&ir.model.configurations, lanes)
     {
@@ -5008,7 +5090,7 @@ pub(crate) fn project_configuration_design_states(
             .map(|feature| {
                 (
                     feature.id,
-                    ConfigurationFeatureState {
+                    cadmpeg_ir::features::ConfigurationFeatureState {
                         suppressed: feature.suppressed,
                         dependencies: feature.dependencies,
                         outputs: feature.outputs,
@@ -5017,6 +5099,89 @@ pub(crate) fn project_configuration_design_states(
                 )
             })
             .collect();
+    }
+}
+
+/// Apply sketch ownership projection to configuration-local feature snapshots.
+pub(crate) fn project_configuration_sketch_states(
+    ir: &mut cadmpeg_ir::CadIr,
+    histories: &[FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    for (configuration_index, lane_index) in
+        configuration_lane_assignments(&ir.model.configurations, lanes)
+    {
+        let scoped_lanes = &lanes[lane_index..=lane_index];
+        let states = &ir.model.configurations[configuration_index].feature_states;
+        let mut features = ir
+            .model
+            .features
+            .iter()
+            .filter_map(|feature| {
+                let state = states.get(&feature.id)?;
+                let mut feature = feature.clone();
+                feature.suppressed = state.suppressed;
+                feature.dependencies.clone_from(&state.dependencies);
+                feature.outputs.clone_from(&state.outputs);
+                feature.definition.clone_from(&state.definition);
+                Some(feature)
+            })
+            .collect::<Vec<_>>();
+        let mut parameters = ir.model.parameters.clone();
+        for parameter in &mut parameters {
+            if let Some(value) = ir.model.configurations[configuration_index]
+                .parameter_values
+                .get(&parameter.id)
+            {
+                parameter.value = Some(value.clone());
+            }
+        }
+        crate::resolved_features::bind_sketch_profiles(
+            &mut features,
+            &mut ir.model.sketches,
+            &ir.model.sketch_entities,
+            &parameters,
+            histories,
+            scoped_lanes,
+            &ir.annotations,
+        );
+        crate::resolved_features::project_compact_sketch_profiles(
+            &mut features,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
+            histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::project_marker_backed_sketches(
+            &mut features,
+            &mut ir.model.sketches,
+            &mut ir.model.sketch_entities,
+            histories,
+            scoped_lanes,
+        );
+        bind_unique_sketch_feature(&mut features, &ir.model.sketches, histories);
+        crate::resolved_features::project_adjacent_extrusion_profiles(
+            &mut features,
+            histories,
+            scoped_lanes,
+        );
+        crate::resolved_features::bind_sweep_adjacent_profiles(
+            &mut features,
+            histories,
+            scoped_lanes,
+        );
+        for feature in features {
+            let Some(state) = ir.model.configurations[configuration_index]
+                .feature_states
+                .get_mut(&feature.id)
+            else {
+                continue;
+            };
+            state.suppressed = feature.suppressed;
+            state.dependencies = feature.dependencies;
+            state.outputs = feature.outputs;
+            state.definition = feature.definition;
+        }
     }
 }
 
@@ -5766,6 +5931,11 @@ fn sync_configuration_design_state(
         &native.feature_input_lanes,
         &native.pmi_dimensions,
     );
+    project_configuration_sketch_states(
+        &mut current_projection,
+        &native.feature_histories,
+        &native.feature_input_lanes,
+    );
     let current_parameter_hash =
         configuration_parameter_value_hash(&current_projection.model.configurations);
     let current_feature_hash =
@@ -5799,6 +5969,11 @@ fn sync_configuration_design_state(
         &native.feature_histories,
         &native.feature_input_lanes,
         &native.pmi_dimensions,
+    );
+    project_configuration_sketch_states(
+        &mut projected,
+        &native.feature_histories,
+        &native.feature_input_lanes,
     );
     if configuration_parameter_value_hash(&projected.model.configurations)
         != configuration_parameter_value_hash(&ir.model.configurations)

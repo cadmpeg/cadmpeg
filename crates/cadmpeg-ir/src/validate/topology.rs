@@ -2495,6 +2495,11 @@ fn check_configuration_feature_definitions(ir: &CadIr, ids: &IdSets, findings: &
         let mut projection = CadIr::empty(ir.units.clone());
         projection.model.features.clone_from(&ir.model.features);
         projection.model.parameters.clone_from(&ir.model.parameters);
+        projection.model.sketches.clone_from(&ir.model.sketches);
+        projection
+            .model
+            .spatial_sketches
+            .clone_from(&ir.model.spatial_sketches);
         for feature in &mut projection.model.features {
             let Some(state) = configuration.feature_states.get(&feature.id) else {
                 continue;

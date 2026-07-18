@@ -1554,6 +1554,11 @@ fn build_geometry_ir(
     ir.model.sketches = sketches;
     ir.model.sketch_entities = sketch_entities;
     ir.model.sketch_constraints = sketch_constraints;
+    crate::history::project_configuration_sketch_states(
+        &mut ir,
+        &histories,
+        &native.feature_input_lanes,
+    );
     stamp_sketch_baseline(&mut ir, &native);
 
     ir.model.bodies = brep.bodies;
@@ -2154,7 +2159,9 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
+    crate::history::project_configuration_sketch_states(&mut ir, &histories, &lanes);
     stamp_feature_baseline(&mut ir);
+    stamp_configuration_baseline(&mut ir);
     let native = crate::native::SldprtNative {
         version: crate::native::SLDPRT_NATIVE_VERSION,
         feature_histories: histories.clone(),
@@ -2226,18 +2233,6 @@ fn project_design_history(
         source.attributes.insert(
             "sldprt_native_history_sha256".into(),
             crate::history::history_hash(histories),
-        );
-        source.attributes.insert(
-            "sldprt_neutral_configuration_sha256".into(),
-            crate::history::configuration_hash(&ir.model.configurations),
-        );
-        source.attributes.insert(
-            "sldprt_configuration_parameter_values_sha256".into(),
-            crate::history::configuration_parameter_value_hash(&ir.model.configurations),
-        );
-        source.attributes.insert(
-            "sldprt_configuration_feature_states_sha256".into(),
-            crate::history::configuration_feature_state_hash(&ir.model.configurations),
         );
         source.attributes.insert(
             "sldprt_native_configuration_sha256".into(),
