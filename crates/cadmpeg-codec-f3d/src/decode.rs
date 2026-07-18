@@ -890,7 +890,9 @@ pub fn decode(
             apply_appearance_base_colors(&mut ir);
             ir.model.appearance_bindings.sort_by(|a, b| a.id.cmp(&b.id));
             if !ir.model.appearances.is_empty() {
-                if ir.model.appearance_bindings.is_empty() {
+                if decoded_materials.has_topology_assignments
+                    && ir.model.appearance_bindings.is_empty()
+                {
                     if let Some(loss) = report
                         .losses
                         .iter_mut()

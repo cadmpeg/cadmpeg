@@ -333,6 +333,12 @@ pub struct DecodedMaterials {
     pub bindings: Vec<AppearanceBinding>,
     /// Per-face appearance assignments awaiting the BREP face-attribute join.
     pub face_assignments: Vec<FaceAppearanceAssignment>,
+    /// Whether the document serializes any body or face appearance assignment.
+    ///
+    /// Protein assets form a document-local appearance catalog and need not be
+    /// assigned to topology. This distinguishes an unassigned catalog from an
+    /// assignment that failed to resolve.
+    pub has_topology_assignments: bool,
 }
 
 /// Decode `.protein` assets and Design and ACT assignments without ASM body
@@ -419,7 +425,8 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         }
     }
     let mut bindings = bind_bodies(&out, &assignments, &act_channels, &object_types, body_keys);
-    for over in decode_body_appearance_overrides(reader, scan)? {
+    let body_overrides = decode_body_appearance_overrides(reader, scan)?;
+    for over in &body_overrides {
         let Some(body) = body_keys
             .iter()
             .find_map(|(body, key)| (*key == over.asm_body_key).then_some(body.clone()))
@@ -456,10 +463,13 @@ pub fn decode_with_bodies<S: std::hash::BuildHasher>(
         });
     }
     let face_assignments = decode_face_appearance_assignments(reader, scan)?;
+    let has_topology_assignments =
+        !assignments.is_empty() || !body_overrides.is_empty() || !face_assignments.is_empty();
     Ok(DecodedMaterials {
         appearances: out,
         bindings,
         face_assignments,
+        has_topology_assignments,
     })
 }
 
