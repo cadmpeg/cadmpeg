@@ -3059,6 +3059,45 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
 }
 
 #[test]
+fn nx_text_payload_projects_semantic_text_and_font_family() {
+    let feature = cadmpeg_ir::features::FeatureId("feature#text".to_string());
+    let annotation = crate::decode::text_semantic_annotation(
+        "TEXT",
+        &feature,
+        "nx:text#1",
+        7,
+        &["plate label", "Arial"],
+    )
+    .unwrap();
+    assert_eq!(annotation.object, feature.0);
+    assert_eq!(
+        annotation.kind,
+        cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
+    );
+    assert_eq!(annotation.text, ["plate label"]);
+    assert_eq!(annotation.parameters["font_family"], "Arial");
+    assert_eq!(annotation.native_ref, "nx:text#1");
+    assert_eq!(annotation.order, 7);
+
+    assert!(crate::decode::text_semantic_annotation(
+        "BLOCK",
+        &feature,
+        "nx:block#1",
+        0,
+        &["10", "20"],
+    )
+    .is_none());
+    assert!(crate::decode::text_semantic_annotation(
+        "TEXT",
+        &feature,
+        "nx:text#2",
+        0,
+        &["ambiguous", "Arial", "extra"],
+    )
+    .is_none());
+}
+
+#[test]
 fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
     use cadmpeg_ir::features::{
         BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, EdgeSelection, FaceSelection,

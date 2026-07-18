@@ -40,6 +40,9 @@ use cadmpeg_ir::ids::{
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
+use cadmpeg_ir::semantic_annotations::{
+    SemanticAnnotation, SemanticAnnotationId, SemanticAnnotationKind,
+};
 use cadmpeg_ir::tessellation::{Tessellation, TessellationChannel};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
@@ -10507,6 +10510,19 @@ fn attach_feature_operations(
         if !source_content.is_empty() {
             annotations.derived(&id, "source_content");
         }
+        if let Some(annotation) = text_semantic_annotation(
+            &label.value,
+            &id,
+            &label.id,
+            u32::try_from(ir.model.semantic_annotations.len()).unwrap_or(u32::MAX),
+            &operation_payload_strings,
+        ) {
+            annotations
+                .note(&annotation.id.0, stream, label.source_offset)
+                .tag("TEXT_SEMANTIC_ANNOTATION");
+            annotations.exactness(&annotation.id.0, Exactness::Derived);
+            ir.model.semantic_annotations.push(annotation);
+        }
         ir.model.features.push(Feature {
             id: id.clone(),
             ordinal: base_ordinal + ordinal as u64,
@@ -10526,6 +10542,39 @@ fn attach_feature_operations(
             last_body_writer.insert(canonical_body(*body), id);
         }
     }
+}
+
+pub(crate) fn text_semantic_annotation(
+    operation_kind: &str,
+    feature: &FeatureId,
+    native_ref: &str,
+    order: u32,
+    payload_strings: &[&str],
+) -> Option<SemanticAnnotation> {
+    if operation_kind != "TEXT" {
+        return None;
+    }
+    let [text, font_family] = payload_strings else {
+        return None;
+    };
+    if text.is_empty() || font_family.is_empty() {
+        return None;
+    }
+    Some(SemanticAnnotation {
+        id: SemanticAnnotationId(format!("{}:semantic-text", feature.0)),
+        object: feature.0.clone(),
+        kind: SemanticAnnotationKind::Text,
+        runtime_type: "TEXT".to_string(),
+        order,
+        text: vec![(*text).to_string()],
+        references: BTreeMap::new(),
+        value: None,
+        format: None,
+        position: None,
+        parameters: BTreeMap::from([("font_family".to_string(), (*font_family).to_string())]),
+        assets: Vec::new(),
+        native_ref: native_ref.to_string(),
+    })
 }
 
 pub(crate) fn parameter_owner_dependencies(
