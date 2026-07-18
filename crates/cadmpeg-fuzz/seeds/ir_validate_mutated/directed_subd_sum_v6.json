@@ -1,5 +1,5 @@
-{
-  "ir_version": "5",
+{
+  "ir_version": "6",
   "units": {
     "length": "millimeter"
   },
@@ -191,11 +191,14 @@
     ],
     "procedural_curves": [],
     "features": [],
+    "feature_input_topologies": [],
     "configurations": [],
     "parameters": [],
     "sketches": [],
     "sketch_entities": [],
     "sketch_constraints": [],
+    "spatial_sketches": [],
+    "spatial_sketch_entities": [],
     "tessellations": [],
     "appearances": [],
     "appearance_bindings": [],

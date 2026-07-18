@@ -216,7 +216,7 @@ Validation does not prove that an edge lies on its curve, a pcurve lies on its s
 
 ## Version policy and JSON Schema
 
-Readers accept exactly `ir_version: "5"`. The `model.subds` arena is required in version 5 JSON, including when it is empty. Version 5 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. Version 5 adds typed feature-input topology states and historical selections. Version 4 adds explicit sketch-region profile references; version 3 loop references retain no implicit region semantics.
+Readers accept exactly `ir_version: "6"`. The `model.subds` arena is required in version 6 JSON, including when it is empty. Version 6 requires the fields and invariants defined by this specification; removing or renaming a field, changing a field's type, changing units, changing parameterization, or changing an invariant requires a new IR version. Version 6 adds signed extrusion-direction semantics and separate model-space spatial-sketch arenas. Version 5 adds typed feature-input topology states and historical selections. Version 4 adds explicit sketch-region profile references; version 3 loop references retain no implicit region semantics.
 
 Native namespaces use their own integer versions. A native-only semantic change increments that namespace version without changing the neutral IR version. JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`.
 
@@ -238,7 +238,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "5",
+  "ir_version": "6",
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
   "model": {
