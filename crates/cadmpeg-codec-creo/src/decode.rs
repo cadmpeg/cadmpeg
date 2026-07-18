@@ -18443,6 +18443,26 @@ mod resolved_sketch_tests {
                 "plane_cone_hyperbola"
             )) if major_radius > 0.0 && minor_radius > 0.0
         ));
+        let rotated_ellipse_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 2.0],
+            normal: [-0.2, -0.3, 1.0],
+        });
+        for (plane, expected_tag) in [
+            (rotated_ellipse_plane, "plane_cone_ellipse"),
+            (cone_parabola_plane, "plane_cone_parabola"),
+            (cone_hyperbola_plane, "plane_cone_hyperbola"),
+        ] {
+            let (geometry, tag) =
+                carrier_intersection_curve(plane, elliptical_cone).expect("elliptical cone conic");
+            assert_eq!(tag, expected_tag);
+            for parameter in [-1.0, 0.0, 1.0] {
+                let point =
+                    cadmpeg_ir::eval::curve_point(&geometry, parameter).expect("conic point");
+                let point = [point.x, point.y, point.z];
+                assert!(point_on_carrier(point, plane));
+                assert!(point_on_carrier(point, elliptical_cone));
+            }
+        }
         let cone_degenerate_plane = CarrierEquation::Plane(PlaneEquation {
             origin: [0.0, 0.0, -2.0],
             normal: [1.0, 0.0, 0.0],
@@ -19044,39 +19064,106 @@ fn plane_cone_conic(
 ) -> Option<(CurveGeometry, &'static str)> {
     let normal = normalized(plane.normal)?;
     let axis = normalized(cone.axis)?;
+    let x_axis = normalized(cone.ref_direction)?;
     let slope = cone.half_angle.tan();
-    if slope <= 1e-12 || !slope.is_finite() || cone.radius < 0.0 {
+    if slope <= 1e-12
+        || !slope.is_finite()
+        || cone.radius < 0.0
+        || cone.ratio <= 0.0
+        || !cone.ratio.is_finite()
+        || dot(axis, x_axis).abs() > 1e-10
+    {
         return None;
     }
+    let y_axis = cross(axis, x_axis);
     let alignment = dot(normal, axis);
-    let u = normalized(std::array::from_fn(|index| {
+    let plane_u = normalized(std::array::from_fn(|index| {
         axis[index] - alignment * normal[index]
     }))?;
-    let v = normalized(cross(normal, u))?;
+    let plane_v = normalized(cross(normal, plane_u))?;
     let relative: [f64; 3] = std::array::from_fn(|index| plane.origin[index] - cone.origin[index]);
-    let axial = dot(relative, axis);
-    let axis_u = dot(axis, u);
-    let cone_factor = 1.0 + slope * slope;
-    let quadratic_u = 1.0 - cone_factor * axis_u * axis_u;
-    let quadratic_v = 1.0;
-    let linear_u =
-        2.0 * (dot(relative, u) - cone_factor * axial * axis_u - cone.radius * slope * axis_u);
-    let linear_v = 2.0 * dot(relative, v);
-    let constant = dot(relative, relative)
-        - cone_factor * axial * axial
-        - 2.0 * cone.radius * slope * axial
-        - cone.radius * cone.radius;
+    let coordinates = |vector: [f64; 3]| {
+        [
+            dot(vector, x_axis),
+            dot(vector, y_axis) / cone.ratio,
+            dot(vector, axis),
+        ]
+    };
+    let origin = coordinates(relative);
+    let u_coordinates = coordinates(plane_u);
+    let v_coordinates = coordinates(plane_v);
+    let origin_radius = cone.radius + slope * origin[2];
+    let quadratic = |first: [f64; 3], second: [f64; 3]| {
+        first[0].mul_add(
+            second[0],
+            first[1] * second[1] - slope * slope * first[2] * second[2],
+        )
+    };
+    let linear = |direction: [f64; 3]| {
+        2.0 * (origin[0].mul_add(
+            direction[0],
+            origin[1] * direction[1] - origin_radius * slope * direction[2],
+        ))
+    };
+    let quadratic_uu = quadratic(u_coordinates, u_coordinates);
+    let quadratic_uv = quadratic(u_coordinates, v_coordinates);
+    let quadratic_vv = quadratic(v_coordinates, v_coordinates);
+    let linear_u_source = linear(u_coordinates);
+    let linear_v_source = linear(v_coordinates);
+    let constant = origin[0].mul_add(
+        origin[0],
+        origin[1] * origin[1] - origin_radius * origin_radius,
+    );
+    let angle = 0.5 * (2.0 * quadratic_uv).atan2(quadratic_uu - quadratic_vv);
+    let (sine, cosine) = angle.sin_cos();
+    let first_direction =
+        std::array::from_fn::<_, 3, _>(|index| cosine * plane_u[index] + sine * plane_v[index]);
+    let second_direction =
+        std::array::from_fn::<_, 3, _>(|index| -sine * plane_u[index] + cosine * plane_v[index]);
+    let first_quadratic = quadratic_uu * cosine * cosine
+        + 2.0 * quadratic_uv * cosine * sine
+        + quadratic_vv * sine * sine;
+    let second_quadratic = quadratic_uu * sine * sine - 2.0 * quadratic_uv * cosine * sine
+        + quadratic_vv * cosine * cosine;
+    let first_linear = linear_u_source * cosine + linear_v_source * sine;
+    let second_linear = -linear_u_source * sine + linear_v_source * cosine;
+    let opposite_signs = first_quadratic.is_sign_negative() != second_quadratic.is_sign_negative();
+    let keep_first = if opposite_signs {
+        first_quadratic.is_sign_negative()
+    } else {
+        first_quadratic.abs() <= second_quadratic.abs()
+    };
+    let (quadratic_u, quadratic_v, linear_u, linear_v, principal_u, principal_v) = if keep_first {
+        (
+            first_quadratic,
+            second_quadratic,
+            first_linear,
+            second_linear,
+            first_direction,
+            second_direction,
+        )
+    } else {
+        (
+            second_quadratic,
+            first_quadratic,
+            second_linear,
+            first_linear,
+            second_direction,
+            first_direction,
+        )
+    };
     let coefficient_scale = quadratic_u
         .abs()
+        .max(quadratic_v.abs())
         .max(linear_u.abs())
         .max(linear_v.abs())
         .max(constant.abs())
         .max(1.0);
     let point = |u_parameter: f64, v_parameter: f64| {
         Point3::new(
-            plane.origin[0] + u_parameter * u[0] + v_parameter * v[0],
-            plane.origin[1] + u_parameter * u[1] + v_parameter * v[1],
-            plane.origin[2] + u_parameter * u[2] + v_parameter * v[2],
+            plane.origin[0] + u_parameter * principal_u[0] + v_parameter * principal_v[0],
+            plane.origin[1] + u_parameter * principal_u[1] + v_parameter * principal_v[1],
+            plane.origin[2] + u_parameter * principal_u[2] + v_parameter * principal_v[2],
         )
     };
     let axis_vector = Vector3::new(normal[0], normal[1], normal[2]);
@@ -19091,7 +19178,7 @@ fn plane_cone_conic(
         if opening.abs() <= 1e-12 || !opening.is_finite() {
             return None;
         }
-        let direction = u.map(|value| value * opening.signum());
+        let direction = principal_u.map(|value| value * opening.signum());
         return Some((
             CurveGeometry::Parabola {
                 vertex: point(vertex_u, vertex_v),
@@ -19119,9 +19206,9 @@ fn plane_cone_conic(
         let u_radius = (-shifted_constant / quadratic_u).sqrt();
         let v_radius = (-shifted_constant / quadratic_v).sqrt();
         let (major_direction, major_radius, minor_radius) = if u_radius >= v_radius {
-            (u, u_radius, v_radius)
+            (principal_u, u_radius, v_radius)
         } else {
-            (v, v_radius, u_radius)
+            (principal_v, v_radius, u_radius)
         };
         return Some((
             CurveGeometry::Ellipse {
@@ -19140,13 +19227,13 @@ fn plane_cone_conic(
     }
     let (major_direction, major_radius, minor_radius) = if shifted_constant > 0.0 {
         (
-            u,
+            principal_u,
             (shifted_constant / -quadratic_u).sqrt(),
             (shifted_constant / quadratic_v).sqrt(),
         )
     } else {
         (
-            v,
+            principal_v,
             (-shifted_constant / quadratic_v).sqrt(),
             (-shifted_constant / -quadratic_u).sqrt(),
         )
@@ -23499,10 +23586,7 @@ fn carrier_intersection_curve(
             let axis = normalized(cone.axis)?;
             let alignment = dot(normal, axis);
             let slope = cone.half_angle.tan();
-            if !circular_cone(cone) && (alignment.abs() - 1.0).abs() > 1e-10 {
-                return None;
-            }
-            if slope.abs() > 1e-12 {
+            if circular_cone(cone) && slope.abs() > 1e-12 {
                 let apex: [f64; 3] = std::array::from_fn(|index| {
                     cone.origin[index] - (cone.radius / slope) * axis[index]
                 });

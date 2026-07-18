@@ -1001,8 +1001,12 @@ absolute local radius and minor-frame radius equal to that radius times the
 ratio. Intersecting two independent planes produces a model-space line; direct
 substitution into this equation yields a quadratic. One retained root defines
 a topological vertex, while two roots remain ambiguous without another
-selector. Circular-cone tangent, oblique-conic, coaxial-surface, and
-surface-of-revolution reductions require `ratio = 1`.
+selector. Substituting an arbitrary plane chart into the cone equation produces
+a symmetric two-variable quadratic. Orthogonal diagonalization gives its
+principal directions; the eigenvalue signs and completed-square constant
+define an ellipse, parabola, or hyperbola with exact model-space frame and
+radii or focal distance. Circular-cone tangent, apex-generator,
+coaxial-surface, and surface-of-revolution reductions require `ratio = 1`.
 
 ## 6. Features and datums
 
