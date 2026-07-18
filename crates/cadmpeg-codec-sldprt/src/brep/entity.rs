@@ -529,10 +529,10 @@ fn disc1e_disc04_face_root_body(by_attr: &HashMap<u16, &EntityRecord>) -> Vec<Bo
     let Some(shell) = follows(disc_1c, 0x001a, 2) else {
         return Vec::new();
     };
-    let Some(disc_18) = follows(shell, 0x0018, 1) else {
+    let Some(disc_16) = follows(shell, 0x0016, 1) else {
         return Vec::new();
     };
-    let Some(disc_14) = follows(disc_18, 0x0014, 2) else {
+    let Some(disc_14) = follows(disc_16, 0x0014, 2) else {
         return Vec::new();
     };
     let Some(disc_12) = follows(disc_14, 0x0012, 2) else {
@@ -1703,7 +1703,7 @@ mod tests {
             flo2(10, 0x1e, [3, 1, 11, 1, 1, 1]),
             flo2(11, 0x1c, [3, 10, 12, 1, 1, 1]),
             flo2(12, 0x1a, [3, 11, 13, 1, 1, 1]),
-            record(13, 0x18, [3, 12, 14, 1, 1, 1]),
+            record(13, 0x16, [3, 12, 14, 1, 1, 1]),
             flo2(14, 0x14, [3, 13, 15, 1, 1, 1]),
             flo2(15, 0x12, [3, 14, 16, 1, 1, 1]),
             flo2(16, 0x10, [3, 15, 17, 1, 1, 1]),
