@@ -157,7 +157,7 @@ fn annotate(
     annotations.exactness(id, exactness);
 }
 
-fn standard_source(kind: &str, tag: u32) -> SourceObjectAssociation {
+fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
     SourceObjectAssociation {
         format: "catia".to_string(),
         object_id: format!("cgm-{kind}:{tag:06x}"),
@@ -4548,7 +4548,7 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<ProjectedDecode>
             ir.model.surfaces.push(Surface {
                 id,
                 geometry: geometry.clone(),
-                source_object: None,
+                source_object: (*object_id != 0).then(|| cgm_source("surface", *object_id)),
             });
         }
     }
@@ -4650,7 +4650,7 @@ fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBui
         ir.model.surfaces.push(Surface {
             id,
             geometry: surface.geometry.clone(),
-            source_object: None,
+            source_object: Some(cgm_source("surface", surface.object_id)),
         });
     }
 
@@ -4990,7 +4990,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
             surfaces.push(Surface {
                 id,
                 geometry: SurfaceGeometry::Unknown { record: None },
-                source_object: Some(standard_source("carrier", *tag)),
+                source_object: Some(cgm_source("carrier", *tag)),
             });
             continue;
         };
@@ -5026,7 +5026,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                 surfaces.push(Surface {
                     id,
                     geometry: geom,
-                    source_object: Some(standard_source("carrier", prefix.target)),
+                    source_object: Some(cgm_source("carrier", prefix.target)),
                 });
             }
             None => {
@@ -5048,7 +5048,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                     geometry: SurfaceGeometry::Unknown {
                         record: Some(UnknownId("catia:payload:unknown#brep-stream".to_string())),
                     },
-                    source_object: Some(standard_source("carrier", prefix.target)),
+                    source_object: Some(cgm_source("carrier", prefix.target)),
                 });
             }
         }
@@ -5084,7 +5084,7 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
             position: *p,
             source_object: vertex_roster
                 .as_ref()
-                .map(|roster| standard_source("vertex", roster[i])),
+                .map(|roster| cgm_source("vertex", roster[i])),
         });
         let vertex_id = VertexId(format!("catia:standard:v#{i}"));
         annotate(
@@ -7132,7 +7132,7 @@ fn build_standard_edge_curve(
     ir.model.curves.push(Curve {
         id: id.clone(),
         geometry,
-        source_object: Some(standard_source("edge-support", support.tag)),
+        source_object: Some(cgm_source("edge-support", support.tag)),
     });
     if matches!(&support.geometry, geometry::StandardCurveGeometry::Bspline) {
         let sides = support.faces.map(|face| {
@@ -7429,7 +7429,7 @@ fn attach_standard_circles(
                 ref_direction: cadmpeg_ir::geometry::derive_reference_direction(axis),
                 radius: circle.radius,
             },
-            source_object: Some(standard_source("edge-support", circle.tag)),
+            source_object: Some(cgm_source("edge-support", circle.tag)),
         });
     }
 }
@@ -7676,7 +7676,7 @@ fn attach_standard_lines(
                     direction.z / denom.sqrt(),
                 ),
             },
-            source_object: Some(standard_source("edge-support", line.tag)),
+            source_object: Some(cgm_source("edge-support", line.tag)),
         });
     }
 }

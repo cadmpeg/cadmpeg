@@ -6556,6 +6556,13 @@ fn decode_float_packed_stream_transfers_a8_nurbs() {
         result.ir.model.surfaces[0].geometry,
         SurfaceGeometry::Nurbs(_)
     ));
+    assert_eq!(
+        result.ir.model.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| (source.format.as_str(), source.object_id.as_str())),
+        Some(("catia", "cgm-surface:decafbad"))
+    );
 }
 
 #[test]
@@ -6622,6 +6629,13 @@ fn decode_inner_no_directory_transfers_a8_nurbs() {
         result.ir.model.surfaces[0].geometry,
         SurfaceGeometry::Nurbs(_)
     ));
+    assert_eq!(
+        result.ir.model.surfaces[0]
+            .source_object
+            .as_ref()
+            .map(|source| (source.format.as_str(), source.object_id.as_str())),
+        Some(("catia", "cgm-surface:decafbad"))
+    );
 }
 
 #[test]
