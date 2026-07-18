@@ -49,20 +49,23 @@ const SPATIAL_VERTEX_PREFIX: &[u8] = &[
 ];
 
 pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureInputLane> {
-    scan.blocks
-        .iter()
-        .filter_map(|block| {
-            let section = block.section.as_deref()?;
+    scan.sections()
+        .filter_map(|source| {
+            let section = source.name()?;
             if !section.to_ascii_lowercase().contains("resolvedfeatures") {
                 return None;
             }
-            let parent = format!("sldprt:feature-input:resolved-features#{}", block.offset);
-            let classes = class_declarations(&block.payload, &parent);
-            let names = object_names(&block.payload, &parent);
-            let scalars = named_scalars(&block.payload, &parent, &names);
+            let parent = format!(
+                "sldprt:feature-input:resolved-features#{}",
+                source.ordinal()
+            );
+            let payload = source.payload();
+            let classes = class_declarations(payload, &parent);
+            let names = object_names(payload, &parent);
+            let scalars = named_scalars(payload, &parent, &names);
             let relation_bindings = relation_bindings(&parent, &classes, &scalars);
             let references = reference_cells(&scalars);
-            let sketch_entities = sketch_input_entities(&block.payload, &parent);
+            let sketch_entities = sketch_input_entities(payload, &parent);
             for entity in &sketch_entities {
                 crate::annotations::note(
                     annotations,
@@ -85,7 +88,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
             Some(FeatureInputLane {
                 id,
                 configuration: configuration(section),
-                native_payload: block.payload.clone(),
+                native_payload: payload.to_vec(),
                 classes,
                 names,
                 scalars,
@@ -17976,23 +17979,26 @@ pub fn sketches(
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut constraints = Vec::new();
-    for block in &scan.blocks {
-        let Some(section) = block.section.as_deref() else {
+    for source in scan.sections() {
+        let Some(section) = source.name() else {
             continue;
         };
         if !section.to_ascii_lowercase().contains("resolvedfeatures") {
             continue;
         }
-        let native_ref = format!("sldprt:feature-input:resolved-features#{}", block.offset);
-        for (stream_ordinal, payload) in block.ps_streams.iter().enumerate() {
-            let stream_offset = block.ps_stream_offsets[stream_ordinal];
+        let native_ref = format!(
+            "sldprt:feature-input:resolved-features#{}",
+            source.ordinal()
+        );
+        for (stream_ordinal, payload) in source.ps_streams().iter().enumerate() {
+            let stream_offset = source.ps_stream_offsets()[stream_ordinal];
             let Some(header) = crate::parasolid::stream_header(payload) else {
                 continue;
             };
             let brep = crate::brep::decode(payload, &header, section);
             project_brep(
                 &brep,
-                block.offset,
+                source.ordinal(),
                 stream_ordinal,
                 stream_offset,
                 section,

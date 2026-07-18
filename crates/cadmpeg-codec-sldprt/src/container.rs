@@ -168,8 +168,12 @@ pub struct CompoundStream {
     pub start_sector: u32,
     /// Exact stream bytes.
     pub payload: Vec<u8>,
+    /// Inflated semantic bytes when the stream uses the `__ZLB` wrapper.
+    pub decoded_payload: Option<Vec<u8>>,
     /// Every Parasolid stream carried by this compound stream.
     pub ps_streams: Vec<Vec<u8>>,
+    /// Raw compound-stream offset of each entry in `ps_streams`.
+    pub ps_stream_offsets: Vec<usize>,
 }
 
 /// Complete result of an outer-container scan.
@@ -186,6 +190,68 @@ pub struct ContainerScan {
     pub cache_cells: Vec<CacheCell>,
     /// Named streams when the source uses the Compound File Binary envelope.
     pub compound_streams: Vec<CompoundStream>,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum Section<'a> {
+    Block(&'a Block),
+    Compound(&'a CompoundStream),
+}
+
+impl<'a> Section<'a> {
+    pub(crate) fn name(self) -> Option<&'a str> {
+        match self {
+            Self::Block(block) => block.section.as_deref(),
+            Self::Compound(stream) => Some(&stream.path),
+        }
+    }
+
+    pub(crate) fn display_name(self) -> String {
+        self.name().map_or_else(
+            || match self {
+                Self::Block(block) => format!("block@{}", block.offset),
+                Self::Compound(_) => unreachable!("compound streams are named"),
+            },
+            str::to_string,
+        )
+    }
+
+    pub(crate) fn ordinal(self) -> usize {
+        match self {
+            Self::Block(block) => block.offset,
+            Self::Compound(stream) => stream.directory_id as usize,
+        }
+    }
+
+    pub(crate) fn payload(self) -> &'a [u8] {
+        match self {
+            Self::Block(block) => &block.payload,
+            Self::Compound(stream) => stream.decoded_payload.as_deref().unwrap_or(&stream.payload),
+        }
+    }
+
+    pub(crate) fn ps_streams(self) -> &'a [Vec<u8>] {
+        match self {
+            Self::Block(block) => &block.ps_streams,
+            Self::Compound(stream) => &stream.ps_streams,
+        }
+    }
+
+    pub(crate) fn ps_stream_offsets(self) -> &'a [usize] {
+        match self {
+            Self::Block(block) => &block.ps_stream_offsets,
+            Self::Compound(stream) => &stream.ps_stream_offsets,
+        }
+    }
+}
+
+impl ContainerScan {
+    pub(crate) fn sections(&self) -> impl Iterator<Item = Section<'_>> {
+        self.blocks
+            .iter()
+            .map(Section::Block)
+            .chain(self.compound_streams.iter().map(Section::Compound))
+    }
 }
 
 /// The outer header magic length (`file_id` + `version`).
@@ -241,7 +307,9 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
             .unwrap_or_default()
             .into_iter()
             .map(|stream| {
-                let ps_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes)
+                let located_streams = crate::parasolid::extract_streams_with_offsets(&stream.bytes);
+                let ps_stream_offsets = located_streams.iter().map(|(offset, _)| *offset).collect();
+                let ps_streams = located_streams
                     .into_iter()
                     .map(|(_, payload)| payload)
                     .collect();
@@ -250,7 +318,9 @@ pub fn scan_bytes(bytes: &[u8]) -> ContainerScan {
                     directory_id: stream.directory_id,
                     start_sector: stream.start_sector,
                     payload: stream.bytes,
+                    decoded_payload: stream.decoded_bytes,
                     ps_streams,
+                    ps_stream_offsets,
                 }
             })
             .collect();

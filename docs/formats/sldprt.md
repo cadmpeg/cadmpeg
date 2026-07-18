@@ -27,6 +27,14 @@ regular FAT. In both allocation modes, the chain contains exactly
 `ceil(stream_size / sector_size)` sectors and the final sector is truncated to
 the directory entry's stream size.
 
+Compound streams whose names end in `__ZLB` use a nested semantic-payload
+wrapper. The wrapper is the 16-byte magic
+`23 1d d5 71 da 81 48 a2 a8 58 98 b2 1b 89 ef 99`, followed by the
+uncompressed byte count as u32 LE, the complete zlib-member byte count as u32
+LE, that zlib member, and an 8-byte trailer. The zlib member expands to exactly
+the declared uncompressed byte count. Decoders retain the wrapper bytes and
+apply semantic parsers to the inflated bytes.
+
 ### 1.1 Outer header and block frame
 
 The file starts with an 8-byte header: `file_id` (u32), then `version` (u32 **big-endian**, value `0x00000004`). The rest is a sequence of compressed blocks.

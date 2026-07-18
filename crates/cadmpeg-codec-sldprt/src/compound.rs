@@ -9,6 +9,10 @@ const END_OF_CHAIN: u32 = 0xffff_fffe;
 const FAT_SECTOR: u32 = 0xffff_fffd;
 const DIFAT_SECTOR: u32 = 0xffff_fffc;
 const NO_STREAM: u32 = 0xffff_ffff;
+const MAX_DECODED_STREAM: usize = 512 * 1024 * 1024;
+const WRAPPED_PAYLOAD_MAGIC: [u8; 16] = [
+    0x23, 0x1d, 0xd5, 0x71, 0xda, 0x81, 0x48, 0xa2, 0xa8, 0x58, 0x98, 0xb2, 0x1b, 0x89, 0xef, 0x99,
+];
 
 #[derive(Debug, Clone)]
 pub(crate) struct Stream {
@@ -16,6 +20,7 @@ pub(crate) struct Stream {
     pub(crate) directory_id: u32,
     pub(crate) start_sector: u32,
     pub(crate) bytes: Vec<u8>,
+    pub(crate) decoded_bytes: Option<Vec<u8>>,
 }
 
 #[derive(Clone)]
@@ -258,11 +263,31 @@ impl<'a> CompoundFile<'a> {
                 path,
                 directory_id: u32::try_from(id).ok()?,
                 start_sector: entry.start_sector,
+                decoded_bytes: decode_wrapped_payload(&payload),
                 bytes: payload,
             });
         }
         Some(streams)
     }
+}
+
+fn decode_wrapped_payload(payload: &[u8]) -> Option<Vec<u8>> {
+    use std::io::Read;
+
+    if payload.get(..16)? != WRAPPED_PAYLOAD_MAGIC {
+        return None;
+    }
+    let uncompressed_size = le_u32(payload, 16)? as usize;
+    let compressed_size = le_u32(payload, 20)? as usize;
+    if uncompressed_size == 0 || uncompressed_size > MAX_DECODED_STREAM || compressed_size == 0 {
+        return None;
+    }
+    let member = payload.get(24..24usize.checked_add(compressed_size)?)?;
+    let mut decoder = flate2::read::ZlibDecoder::new(member);
+    let mut decoded = Vec::with_capacity(uncompressed_size.min(1 << 20));
+    decoder.read_to_end(&mut decoded).ok()?;
+    (decoded.len() == uncompressed_size && decoder.total_in() as usize == compressed_size)
+        .then_some(decoded)
 }
 
 fn parse_directory(bytes: &[u8], major_version: u16) -> Option<Vec<DirectoryEntry>> {
@@ -394,6 +419,8 @@ fn le_u64(bytes: &[u8], offset: usize) -> Option<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::Write;
+
     use super::*;
 
     const SECTOR_SIZE: usize = 512;
@@ -439,6 +466,31 @@ mod tests {
             .notes
             .iter()
             .any(|note| note.contains("active Parasolid B-rep candidate: Store/Large")));
+    }
+
+    #[test]
+    fn exposes_inflated_zlb_bytes_as_the_semantic_section_payload() {
+        let mut file = fixture();
+        let semantic = b"semantic payload";
+        let mut encoder =
+            flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder
+            .write_all(semantic)
+            .expect("compress fixture payload");
+        let compressed = encoder.finish().expect("finish fixture payload");
+        let mut wrapped = WRAPPED_PAYLOAD_MAGIC.to_vec();
+        wrapped.extend_from_slice(&(semantic.len() as u32).to_le_bytes());
+        wrapped.extend_from_slice(&(compressed.len() as u32).to_le_bytes());
+        wrapped.extend_from_slice(&compressed);
+        wrapped.extend_from_slice(&[0; 8]);
+        sector_mut(&mut file, 2)[..wrapped.len()].copy_from_slice(&wrapped);
+
+        let scan = crate::container::scan_bytes(&file);
+        let section = scan
+            .sections()
+            .find(|section| section.name() == Some("Store/Large"))
+            .expect("compound semantic section");
+        assert_eq!(section.payload(), semantic);
     }
 
     fn fixture() -> Vec<u8> {

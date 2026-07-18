@@ -37,26 +37,23 @@ const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
 ];
 
 pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
-    scan.blocks
-        .iter()
-        .filter_map(|block| {
-            let text = xml_text(&block.payload)?;
+    scan.sections()
+        .filter_map(|section| {
+            let source = section.ordinal();
+            let text = xml_text(section.payload())?;
             let doc = roxmltree::Document::parse(&text).ok()?;
             let root = doc.root_element();
             if !root.tag_name().name().contains("Keywords") {
                 return None;
             }
-            let stream = block
-                .section
-                .clone()
-                .unwrap_or_else(|| format!("block@{}", block.offset));
-            let parent = format!("sldprt:history:feature-history#{}", block.offset);
+            let stream = section.display_name();
+            let parent = format!("sldprt:history:feature-history#{source}");
             let configurations = root
                 .children()
                 .filter(|node| node.is_element() && node.tag_name().name() == "Configuration")
                 .enumerate()
                 .map(|(ordinal, node)| {
-                    let id = format!("sldprt:history:configuration#{}:{ordinal}", block.offset);
+                    let id = format!("sldprt:history:configuration#{source}:{ordinal}");
                     crate::annotations::note(
                         annotations,
                         id.clone(),
@@ -101,7 +98,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                 .map(|(ordinal, node)| {
                     (
                         node.range().start,
-                        format!("sldprt:history:feature#{}:{ordinal}", block.offset),
+                        format!("sldprt:history:feature#{source}:{ordinal}"),
                     )
                 })
                 .collect::<HashMap<_, _>>();
@@ -222,7 +219,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
                 .map(|(ordinal, node)| {
                     (
                         node.range().start,
-                        format!("sldprt:history:configuration#{}:{ordinal}", block.offset),
+                        format!("sldprt:history:configuration#{source}:{ordinal}"),
                     )
                 })
                 .collect::<HashMap<_, _>>();
