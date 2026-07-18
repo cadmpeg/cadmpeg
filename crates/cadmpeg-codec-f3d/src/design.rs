@@ -37,6 +37,8 @@ pub(crate) enum DesignFeatureFamily {
     Extrude,
     Fillet,
     Chamfer,
+    CircularPattern,
+    Mirror,
 }
 
 /// Return the canonical operation family while preserving `kind` verbatim on
@@ -47,6 +49,8 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Extrude" | "Extrusion" => Some(DesignFeatureFamily::Extrude),
         "Fillet" | "Congé" => Some(DesignFeatureFamily::Fillet),
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
+        "Circular Pattern" | "Réseau C" => Some(DesignFeatureFamily::CircularPattern),
+        "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
         _ => None,
     }
 }
@@ -520,8 +524,8 @@ pub fn project_parameter_design_with_edge_identities(
 ) {
     use cadmpeg_ir::features::{
         Angle, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection, Feature,
-        FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, ProfileRef,
-        RadiusSpec, SketchSpace,
+        FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternForm,
+        PatternKind, ProfileRef, RadiusSpec, SketchSpace,
     };
     use std::collections::BTreeMap;
 
@@ -754,6 +758,20 @@ pub fn project_parameter_design_with_edge_identities(
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 })
+            } else if matches!(
+                family,
+                Some(DesignFeatureFamily::CircularPattern | DesignFeatureFamily::Mirror)
+            ) {
+                FeatureDefinition::Pattern {
+                    seeds: Vec::new(),
+                    pattern: PatternKind::Unresolved {
+                        form: Some(if family == Some(DesignFeatureFamily::CircularPattern) {
+                            PatternForm::Circular
+                        } else {
+                            PatternForm::Mirror
+                        }),
+                    },
+                }
             } else {
                 FeatureDefinition::Native {
                     kind: scope.kind.clone(),
@@ -13395,7 +13413,14 @@ mod relation_tests {
             design_feature_family("Chanfrein"),
             Some(DesignFeatureFamily::Chamfer)
         );
-        assert_eq!(design_feature_family("Réseau C"), None);
+        assert_eq!(
+            design_feature_family("Réseau C"),
+            Some(DesignFeatureFamily::CircularPattern)
+        );
+        assert_eq!(
+            design_feature_family("Symétrie miroir"),
+            Some(DesignFeatureFamily::Mirror)
+        );
     }
 
     #[test]
