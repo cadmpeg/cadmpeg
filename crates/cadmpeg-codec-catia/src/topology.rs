@@ -2472,6 +2472,110 @@ fn bounded_oriented_trail_orders(trails: &[Vec<usize>], limit: usize) -> Option<
     visit(trails, limit, 0, &mut Vec::new(), &mut orders).then_some(orders)
 }
 
+fn bounded_endpoint_cycle_orders(
+    missing: &[usize],
+    edge_candidates: &[Vec<[usize; 2]>],
+    limit: usize,
+) -> Option<Vec<Vec<usize>>> {
+    struct Search<'a> {
+        missing: &'a [usize],
+        transitions: &'a HashMap<usize, Vec<(usize, usize)>>,
+        limit: usize,
+        operations_left: usize,
+        orders: HashSet<Vec<usize>>,
+    }
+
+    impl Search<'_> {
+        fn walk(
+            &mut self,
+            first_point: usize,
+            current_point: usize,
+            used: u64,
+            order: &mut Vec<usize>,
+        ) -> bool {
+            let Some(operations_left) = self.operations_left.checked_sub(1) else {
+                return false;
+            };
+            self.operations_left = operations_left;
+            if order.len() == self.missing.len() {
+                if current_point == first_point {
+                    self.orders.insert(order.clone());
+                }
+                return self.orders.len() <= self.limit;
+            }
+            let Some(transition_count) = self.transitions.get(&current_point).map(Vec::len) else {
+                return true;
+            };
+            for index in 0..transition_count {
+                let (rank, next_point) = self.transitions[&current_point][index];
+                let Some(operations_left) = self.operations_left.checked_sub(1) else {
+                    return false;
+                };
+                self.operations_left = operations_left;
+                if used & (1 << rank) != 0 {
+                    continue;
+                }
+                order.push(self.missing[rank]);
+                if !self.walk(first_point, next_point, used | (1 << rank), order) {
+                    return false;
+                }
+                order.pop();
+            }
+            true
+        }
+    }
+
+    if missing.is_empty()
+        || missing.len() > u64::BITS as usize
+        || missing
+            .iter()
+            .any(|&edge| edge_candidates.get(edge).is_none_or(Vec::is_empty))
+    {
+        return None;
+    }
+    let mut missing = missing.to_vec();
+    missing.sort_unstable();
+    let first_edge = missing[0];
+    let mut transitions = HashMap::<usize, Vec<(usize, usize)>>::new();
+    for (rank, &edge) in missing.iter().enumerate().skip(1) {
+        for &[left, right] in &edge_candidates[edge] {
+            transitions.entry(left).or_default().push((rank, right));
+            if left != right {
+                transitions.entry(right).or_default().push((rank, left));
+            }
+        }
+    }
+    for values in transitions.values_mut() {
+        values.sort_unstable();
+        values.dedup();
+    }
+    let mut search = Search {
+        missing: &missing,
+        transitions: &transitions,
+        limit,
+        operations_left: limit.saturating_mul(16),
+        orders: HashSet::new(),
+    };
+    let mut first_pairs = edge_candidates[first_edge].clone();
+    for pair in &mut first_pairs {
+        pair.sort_unstable();
+    }
+    first_pairs.sort_unstable();
+    first_pairs.dedup();
+    for [first_point, current_point] in first_pairs {
+        let mut order = vec![first_edge];
+        if !search.walk(first_point, current_point, 1, &mut order) {
+            return None;
+        }
+    }
+    if search.orders.is_empty() {
+        return None;
+    }
+    let mut orders = search.orders.into_iter().collect::<Vec<_>>();
+    orders.sort_unstable();
+    Some(orders)
+}
+
 fn standard_mesh_missing_edge_assignments_impl(
     bytes: &[u8],
     edge_faces: &[[usize; 2]],
@@ -2959,6 +3063,49 @@ fn standard_mesh_missing_edge_assignments_impl(
         )
     }
 
+    fn endpoint_cycle_assignments(
+        face: usize,
+        gaps: &[MeshBoundaryGap],
+        cycle_lengths: &[usize],
+        missing: &[usize],
+        rows: &[EdgeRow],
+        edge_candidates: &[Vec<[usize; 2]>],
+    ) -> Option<Vec<Vec<MeshEdgePlacementCandidate>>> {
+        let [gap] = gaps else {
+            return None;
+        };
+        if cycle_lengths.len() != 1
+            || gap.start != 0
+            || gap.cycle != 0
+            || gap.length != cycle_lengths[0]
+            || gap.length != missing.len()
+            || missing.iter().any(|&edge| rows[edge].handles.len() != 2)
+        {
+            return None;
+        }
+        bounded_endpoint_cycle_orders(missing, edge_candidates, MAX_ASSIGNMENTS_PER_FACE).map(
+            |orders| {
+                orders
+                    .into_iter()
+                    .map(|order| {
+                        order
+                            .into_iter()
+                            .enumerate()
+                            .map(|(offset, edge)| MeshEdgePlacementCandidate {
+                                edge,
+                                face,
+                                cycle: 0,
+                                start: offset,
+                                end: (offset + 1) % gap.length,
+                                segment_count: 1,
+                            })
+                            .collect()
+                    })
+                    .collect()
+            },
+        )
+    }
+
     let (face_start, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, _) = parse_edge_tables(bytes, after_faces)?;
     if edge_candidates.is_some_and(|candidates| candidates.len() != edge_rows.len()) {
@@ -3046,18 +3193,29 @@ fn standard_mesh_missing_edge_assignments_impl(
         }
         let assignment_results = coverage.iter().map(|face| {
             let cycle_lengths = cycles[face.face].iter().map(Vec::len).collect::<Vec<_>>();
-            let assignments = singleton_edge_points
-                .as_ref()
-                .and_then(|edge_points| {
-                    endpoint_trail_assignments(
-                        face.face,
-                        &face.gaps,
-                        &cycle_lengths,
-                        &face.missing_edges,
-                        &edge_rows,
-                        edge_points,
-                        &corner_points,
-                    )
+            let cycle_assignments = edge_candidates.and_then(|candidates| {
+                endpoint_cycle_assignments(
+                    face.face,
+                    &face.gaps,
+                    &cycle_lengths,
+                    &face.missing_edges,
+                    &edge_rows,
+                    candidates,
+                )
+            });
+            let assignments = cycle_assignments
+                .or_else(|| {
+                    singleton_edge_points.as_ref().and_then(|edge_points| {
+                        endpoint_trail_assignments(
+                            face.face,
+                            &face.gaps,
+                            &cycle_lengths,
+                            &face.missing_edges,
+                            &edge_rows,
+                            edge_points,
+                            &corner_points,
+                        )
+                    })
                 })
                 .or_else(|| {
                     enumerate_face(
@@ -8887,22 +9045,23 @@ mod motif_tests {
     use cadmpeg_ir::topology::BodyKind;
 
     use super::{
-        bind_edge_port_candidates, bounded_oriented_trail_orders, canonicalize_mesh_vertex_labels,
-        complete_duplicate_face_slots, deduplicate_mesh_quotient_assignments,
-        face_endpoint_candidates_close, mesh_assignment_can_merge,
-        mesh_assignment_endpoint_cycles_viable, mesh_candidates_equivalent,
-        mesh_edge_points_compatible, mesh_face_endpoint_configurations, motif_port_points,
-        parse_edge_tables_at, parse_edge_tables_scoped_at, parse_fbb_edge_tables_width,
-        parse_trim_chain, parse_trim_record, parse_trim_record_layout, possible_face_choices,
-        possible_face_choices_with_limit, possible_face_equations, propagate_edge_port_points,
-        propagate_partial_edge_port_points, prune_edge_candidates_by_port_domains,
-        prune_mesh_endpoint_pair_support, prune_mesh_endpoint_pair_support_with_limit,
-        reconstruct_incidence, reconstruct_incidence_candidates, resolve_edge_faces_from_runs,
-        same_unordered_pair, standard_face_count, unique_coordinate_bijection,
-        unique_duplicate_face_assignment, uses_canonical_edge_direction_gauge, Boundary, CoedgeUse,
-        EdgeBoundaryLayout, EdgeRow, FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget,
-        MeshEdgeRun, MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch,
-        StandardTopology, TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
+        bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,
+        canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
+        deduplicate_mesh_quotient_assignments, face_endpoint_candidates_close,
+        mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable,
+        mesh_candidates_equivalent, mesh_edge_points_compatible, mesh_face_endpoint_configurations,
+        motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
+        parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
+        possible_face_choices, possible_face_choices_with_limit, possible_face_equations,
+        propagate_edge_port_points, propagate_partial_edge_port_points,
+        prune_edge_candidates_by_port_domains, prune_mesh_endpoint_pair_support,
+        prune_mesh_endpoint_pair_support_with_limit, reconstruct_incidence,
+        reconstruct_incidence_candidates, resolve_edge_faces_from_runs, same_unordered_pair,
+        standard_face_count, unique_coordinate_bijection, unique_duplicate_face_assignment,
+        uses_canonical_edge_direction_gauge, Boundary, CoedgeUse, EdgeBoundaryLayout, EdgeRow,
+        FaceTopology, MeshBoundaryEdgeCandidate, MeshConstraintBudget, MeshEdgeRun,
+        MeshFaceBoundaryAssignment, MeshQuotient, MeshSelectionSearch, StandardTopology,
+        TrimRecord, UnionFind, EDGE_DELIMITER, MAX_FACE_EQUATION_CACHE_ENTRIES,
         MAX_MESH_CONSTRAINT_OPERATIONS,
     };
 
@@ -8940,6 +9099,23 @@ mod motif_tests {
         assert_eq!(
             bounded_oriented_trail_orders(&[vec![0], vec![1]], 2),
             Some(vec![vec![0, 1], vec![1, 0]])
+        );
+    }
+
+    #[test]
+    fn endpoint_cycle_ordering_quotients_rotation_and_reversal() {
+        let candidates = vec![vec![[0, 1]], vec![[1, 2]], vec![[0, 2]]];
+        assert_eq!(
+            bounded_endpoint_cycle_orders(&[2, 0, 1], &candidates, 4),
+            Some(vec![vec![0, 1, 2]])
+        );
+    }
+
+    #[test]
+    fn endpoint_cycle_ordering_stops_at_its_result_limit() {
+        let candidates = vec![vec![[0, 0]]; 8];
+        assert!(
+            bounded_endpoint_cycle_orders(&(0..8).collect::<Vec<_>>(), &candidates, 16).is_none()
         );
     }
 
