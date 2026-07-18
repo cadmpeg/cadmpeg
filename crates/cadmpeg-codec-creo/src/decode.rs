@@ -18835,6 +18835,44 @@ mod resolved_sketch_tests {
             solve_carriers(&[torus_tangent_sphere, torus, torus_sphere_plane]),
             Some([3.0, 0.0, 0.0])
         );
+        let outer_tangent_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [7.0, 0.0, 0.0],
+            normal: [1.0, 0.0, 0.0],
+        });
+        let oblique_tangent_plane = CarrierEquation::Plane(PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, -1.0],
+        });
+        assert_eq!(
+            solve_carriers(&[torus, outer_tangent_plane, oblique_tangent_plane]),
+            Some([7.0, 0.0, 0.0])
+        );
+        let axial_plane = PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 1.0, 0.0],
+        };
+        let equatorial_plane = PlaneEquation {
+            origin: [0.0, 0.0, 0.0],
+            normal: [0.0, 0.0, 1.0],
+        };
+        let mut secant_points = intersect_two_planes_with_torus(
+            axial_plane,
+            equatorial_plane,
+            match torus {
+                CarrierEquation::Torus(torus) => torus,
+                _ => unreachable!(),
+            },
+        );
+        secant_points.sort_by(|left, right| left[0].total_cmp(&right[0]));
+        assert_eq!(
+            secant_points,
+            vec![
+                [-7.0, 0.0, 0.0],
+                [-3.0, 0.0, 0.0],
+                [3.0, 0.0, 0.0],
+                [7.0, 0.0, 0.0]
+            ]
+        );
         assert!(carrier_intersection_curve(sphere, torus).is_none());
         let second_torus = CarrierEquation::Torus(TorusEquation {
             center: [0.0, 0.0, 0.0],
@@ -18987,25 +19025,35 @@ fn solve_planes(planes: &[PlaneEquation]) -> Option<[f64; 3]> {
     None
 }
 
-fn intersect_two_planes_with_cylinder(
+fn plane_intersection_line(
     first: PlaneEquation,
     second: PlaneEquation,
-    cylinder: CylinderEquation,
-) -> Vec<[f64; 3]> {
+) -> Option<([f64; 3], [f64; 3])> {
     let direction = cross(first.normal, second.normal);
     let denominator = dot(direction, direction);
     if denominator <= 1e-18 {
-        return Vec::new();
+        return None;
     }
     let first_distance = dot(first.normal, first.origin);
     let second_distance = dot(second.normal, second.origin);
     let second_cross_direction = cross(second.normal, direction);
     let direction_cross_first = cross(direction, first.normal);
-    let line_origin: [f64; 3] = std::array::from_fn(|index| {
+    let origin = std::array::from_fn(|index| {
         (first_distance * second_cross_direction[index]
             + second_distance * direction_cross_first[index])
             / denominator
     });
+    Some((origin, normalized(direction)?))
+}
+
+fn intersect_two_planes_with_cylinder(
+    first: PlaneEquation,
+    second: PlaneEquation,
+    cylinder: CylinderEquation,
+) -> Vec<[f64; 3]> {
+    let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
+        return Vec::new();
+    };
     let Some(axis) = normalized(cylinder.axis) else {
         return Vec::new();
     };
@@ -19048,22 +19096,11 @@ fn intersect_two_planes_with_sphere(
     second: PlaneEquation,
     sphere: SphereEquation,
 ) -> Vec<[f64; 3]> {
-    let direction = cross(first.normal, second.normal);
-    let denominator = dot(direction, direction);
-    if denominator <= 1e-18 {
+    let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
         return Vec::new();
-    }
-    let first_distance = dot(first.normal, first.origin);
-    let second_distance = dot(second.normal, second.origin);
-    let second_cross_direction = cross(second.normal, direction);
-    let direction_cross_first = cross(direction, first.normal);
-    let line_origin: [f64; 3] = std::array::from_fn(|index| {
-        (first_distance * second_cross_direction[index]
-            + second_distance * direction_cross_first[index])
-            / denominator
-    });
+    };
     let relative: [f64; 3] = std::array::from_fn(|index| line_origin[index] - sphere.center[index]);
-    let quadratic = denominator;
+    let quadratic = dot(direction, direction);
     let linear = 2.0 * dot(relative, direction);
     let constant = dot(relative, relative) - sphere.radius * sphere.radius;
     let discriminant = linear.mul_add(linear, -4.0 * quadratic * constant);
@@ -19093,16 +19130,16 @@ fn intersect_two_planes_with_cone(
     second: PlaneEquation,
     cone: ConeEquation,
 ) -> Vec<[f64; 3]> {
-    let direction = cross(first.normal, second.normal);
-    let denominator = dot(direction, direction);
+    let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
+        return Vec::new();
+    };
     let Some(axis) = normalized(cone.axis) else {
         return Vec::new();
     };
     let Some(x_axis) = normalized(cone.ref_direction) else {
         return Vec::new();
     };
-    if denominator <= 1e-18
-        || dot(axis, x_axis).abs() > 1e-10
+    if dot(axis, x_axis).abs() > 1e-10
         || !cone.ratio.is_finite()
         || cone.ratio <= 0.0
         || !(0.0..std::f64::consts::FRAC_PI_2).contains(&cone.half_angle)
@@ -19110,15 +19147,6 @@ fn intersect_two_planes_with_cone(
         return Vec::new();
     }
     let y_axis = cross(axis, x_axis);
-    let first_distance = dot(first.normal, first.origin);
-    let second_distance = dot(second.normal, second.origin);
-    let second_cross_direction = cross(second.normal, direction);
-    let direction_cross_first = cross(direction, first.normal);
-    let line_origin: [f64; 3] = std::array::from_fn(|index| {
-        (first_distance * second_cross_direction[index]
-            + second_distance * direction_cross_first[index])
-            / denominator
-    });
     let relative = std::array::from_fn(|index| line_origin[index] - cone.origin[index]);
     let axial = dot(relative, axis);
     let axial_direction = dot(direction, axis);
@@ -19164,6 +19192,153 @@ fn intersect_two_planes_with_cone(
             std::array::from_fn(|index| line_origin[index] + parameter * direction[index])
         })
         .filter(|point: &[f64; 3]| point.iter().all(|value| value.is_finite()))
+        .collect()
+}
+
+fn polynomial_value(coefficients: &[f64], parameter: f64) -> f64 {
+    coefficients.iter().rev().fold(0.0, |value, coefficient| {
+        value.mul_add(parameter, *coefficient)
+    })
+}
+
+fn real_polynomial_roots(coefficients: &[f64]) -> Vec<f64> {
+    let scale = coefficients
+        .iter()
+        .copied()
+        .map(f64::abs)
+        .fold(0.0, f64::max);
+    if scale == 0.0 || !scale.is_finite() {
+        return Vec::new();
+    }
+    let mut coefficients = coefficients
+        .iter()
+        .map(|coefficient| coefficient / scale)
+        .collect::<Vec<_>>();
+    while coefficients.len() > 1
+        && coefficients
+            .last()
+            .is_some_and(|value| value.abs() <= 1e-14)
+    {
+        coefficients.pop();
+    }
+    let degree = coefficients.len() - 1;
+    if degree == 0 {
+        return Vec::new();
+    }
+    if degree == 1 {
+        return vec![-coefficients[0] / coefficients[1]];
+    }
+    let derivative = coefficients
+        .iter()
+        .enumerate()
+        .skip(1)
+        .map(|(power, coefficient)| *coefficient * power as f64)
+        .collect::<Vec<_>>();
+    let leading = coefficients[degree].abs();
+    let bound = 1.0
+        + coefficients[..degree]
+            .iter()
+            .copied()
+            .map(f64::abs)
+            .fold(0.0, f64::max)
+            / leading;
+    let mut boundaries = vec![-bound];
+    boundaries.extend(
+        real_polynomial_roots(&derivative)
+            .into_iter()
+            .filter(|root| root.is_finite() && *root > -bound && *root < bound),
+    );
+    boundaries.push(bound);
+    boundaries.sort_by(f64::total_cmp);
+    let value_tolerance = 1e-11;
+    let mut roots = boundaries
+        .iter()
+        .copied()
+        .filter(|parameter| polynomial_value(&coefficients, *parameter).abs() <= value_tolerance)
+        .collect::<Vec<_>>();
+    for interval in boundaries.windows(2) {
+        let (mut lower, mut upper) = (interval[0], interval[1]);
+        let mut lower_value = polynomial_value(&coefficients, lower);
+        let upper_value = polynomial_value(&coefficients, upper);
+        if lower_value * upper_value >= 0.0 {
+            continue;
+        }
+        for _ in 0..80 {
+            let midpoint = 0.5 * (lower + upper);
+            let midpoint_value = polynomial_value(&coefficients, midpoint);
+            if lower_value * midpoint_value <= 0.0 {
+                upper = midpoint;
+            } else {
+                lower = midpoint;
+                lower_value = midpoint_value;
+            }
+        }
+        roots.push(0.5 * (lower + upper));
+    }
+    roots.sort_by(f64::total_cmp);
+    roots.dedup_by(|left, right| {
+        (*left - *right).abs() <= 1e-8 * left.abs().max(right.abs()).max(1.0)
+    });
+    roots
+}
+
+fn intersect_two_planes_with_torus(
+    first: PlaneEquation,
+    second: PlaneEquation,
+    torus: TorusEquation,
+) -> Vec<[f64; 3]> {
+    let Some((line_origin, direction)) = plane_intersection_line(first, second) else {
+        return Vec::new();
+    };
+    let Some(axis) = normalized(torus.axis) else {
+        return Vec::new();
+    };
+    if torus.major_radius <= 0.0 || torus.minor_radius <= 0.0 {
+        return Vec::new();
+    }
+    let relative: [f64; 3] = std::array::from_fn(|index| line_origin[index] - torus.center[index]);
+    let squared_distance = [dot(relative, relative), 2.0 * dot(relative, direction), 1.0];
+    let axial = [dot(relative, axis), dot(direction, axis)];
+    let axial_squared = [
+        axial[0] * axial[0],
+        2.0 * axial[0] * axial[1],
+        axial[1] * axial[1],
+    ];
+    let mut shifted_distance = squared_distance;
+    shifted_distance[0] +=
+        torus.major_radius * torus.major_radius - torus.minor_radius * torus.minor_radius;
+    let mut polynomial = [0.0; 5];
+    for (left_power, left) in shifted_distance.into_iter().enumerate() {
+        for (right_power, right) in shifted_distance.into_iter().enumerate() {
+            polynomial[left_power + right_power] += left * right;
+        }
+    }
+    let radial_scale = 4.0 * torus.major_radius * torus.major_radius;
+    for power in 0..=2 {
+        polynomial[power] -= radial_scale * (squared_distance[power] - axial_squared[power]);
+    }
+    let coordinate_scale = torus
+        .center
+        .into_iter()
+        .chain(line_origin)
+        .map(f64::abs)
+        .fold(
+            torus.major_radius.max(torus.minor_radius).max(1.0),
+            f64::max,
+        );
+    real_polynomial_roots(&polynomial)
+        .into_iter()
+        .map(|parameter| {
+            std::array::from_fn(|index| {
+                let coordinate = line_origin[index] + parameter * direction[index];
+                if coordinate.abs() <= 1e-14 * coordinate_scale {
+                    0.0
+                } else {
+                    coordinate
+                }
+            })
+        })
+        .filter(|point| point_on_carrier(*point, CarrierEquation::Torus(torus)))
         .collect()
 }
 
@@ -19639,14 +19814,7 @@ fn solve_carriers(carriers: &[CarrierEquation]) -> Option<[f64; 3]> {
                     }
                 } else if let ([first, second], [torus]) = (planes.as_slice(), tori.as_slice()) {
                     if cylinders.is_empty() && cones.is_empty() && spheres.is_empty() {
-                        for (section_plane, cutting_plane) in [(*first, *second), (*second, *first)]
-                        {
-                            candidates.extend(intersect_plane_with_carrier_components(
-                                cutting_plane,
-                                CarrierEquation::Plane(section_plane),
-                                CarrierEquation::Torus(*torus),
-                            ));
-                        }
+                        candidates.extend(intersect_two_planes_with_torus(*first, *second, *torus));
                     }
                 } else if let ([plane], [cylinder], [torus]) =
                     (planes.as_slice(), cylinders.as_slice(), tori.as_slice())
