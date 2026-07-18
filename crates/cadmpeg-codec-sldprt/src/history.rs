@@ -1887,6 +1887,47 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn deleting_configuration_removes_its_uniquely_owned_lane() {
+        let mut native = native_with_configuration_lanes(
+            vec![
+                native_configuration("kept-native", 0, Some(1)),
+                native_configuration("deleted-native", 1, Some(2)),
+            ],
+            vec![
+                feature_input_lane("kept-lane", Some("1")),
+                feature_input_lane("deleted-lane", Some("2")),
+            ],
+        );
+
+        sync_neutral_configurations(
+            &[design_configuration(
+                "kept",
+                0,
+                Some(1),
+                Some("kept-native"),
+            )],
+            &mut native,
+        );
+
+        let native = native.unwrap();
+        assert_eq!(native.feature_input_lanes.len(), 1);
+        assert_eq!(native.feature_input_lanes[0].id, "kept-lane");
+
+        let mut native = native_with_configuration_lanes(
+            vec![native_configuration("deleted-native", 0, Some(1))],
+            vec![
+                feature_input_lane("global-lane", None),
+                feature_input_lane("deleted-lane", Some("1")),
+            ],
+        );
+        sync_neutral_configurations(&[], &mut native);
+        let native = native.unwrap();
+        assert!(native.feature_histories[0].configurations.is_empty());
+        assert_eq!(native.feature_input_lanes.len(), 1);
+        assert_eq!(native.feature_input_lanes[0].id, "global-lane");
+    }
+
+    #[test]
     fn configuration_lane_follows_effective_index_changes() {
         for (previous_ordinal, previous_source, previous_lane, ordinal, source, expected) in [
             (2, Some(7), "7", 3, None, "3"),
@@ -6072,12 +6113,7 @@ fn sync_neutral_configurations(
     configurations: &[DesignConfiguration],
     native: &mut Option<crate::native::SldprtNative>,
 ) {
-    if configurations.is_empty() {
-        if let Some(native) = native {
-            for history in &mut native.feature_histories {
-                history.configurations.clear();
-            }
-        }
+    if configurations.is_empty() && native.is_none() {
         return;
     }
     if native.is_none() {
@@ -6105,41 +6141,31 @@ fn sync_neutral_configurations(
                 .unwrap_or_else(|| format!("sldprt:generated:configuration#{}", configuration.id.0))
         })
         .collect::<std::collections::HashSet<_>>();
+    let previous_index_owners = native_configuration_index_owners(&native.feature_histories);
+    let deleted_ids = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.configurations)
+        .filter(|configuration| !desired_ids.contains(&configuration.id))
+        .map(|configuration| configuration.id.clone())
+        .collect::<HashSet<_>>();
+    native.feature_input_lanes.retain(|lane| {
+        let Some(index) = lane
+            .configuration
+            .as_deref()
+            .and_then(|configuration| configuration.parse::<u32>().ok())
+        else {
+            return true;
+        };
+        previous_index_owners
+            .get(&index)
+            .and_then(Option::as_deref)
+            .is_none_or(|owner| !deleted_ids.contains(owner))
+    });
     for history in &mut native.feature_histories {
         history
             .configurations
             .retain(|configuration| desired_ids.contains(&configuration.id));
-    }
-    let mut previous_index_owners = BTreeMap::<u32, Option<String>>::new();
-    for configuration in native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.configurations)
-        .filter(|configuration| configuration.source_index.is_some())
-    {
-        let index = configuration.source_index.expect("filtered above");
-        previous_index_owners
-            .entry(index)
-            .and_modify(|owner| *owner = None)
-            .or_insert_with(|| Some(configuration.id.clone()));
-    }
-    let explicit_indices = previous_index_owners
-        .keys()
-        .copied()
-        .collect::<HashSet<_>>();
-    for configuration in native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.configurations)
-        .filter(|configuration| configuration.source_index.is_none())
-    {
-        if explicit_indices.contains(&configuration.ordinal) {
-            continue;
-        }
-        previous_index_owners
-            .entry(configuration.ordinal)
-            .and_modify(|owner| *owner = None)
-            .or_insert_with(|| Some(configuration.id.clone()));
     }
     let mut lane_configuration_remaps = HashMap::<String, String>::new();
     for configuration in configurations {
@@ -6197,6 +6223,40 @@ fn sync_neutral_configurations(
             .sort_by_key(|configuration| configuration.ordinal);
     }
     synchronize_history_content_order(native);
+}
+
+fn native_configuration_index_owners(
+    histories: &[FeatureHistory],
+) -> BTreeMap<u32, Option<String>> {
+    let configurations = histories
+        .iter()
+        .flat_map(|history| &history.configurations)
+        .collect::<Vec<_>>();
+    let mut owners = BTreeMap::<u32, Option<String>>::new();
+    for configuration in configurations
+        .iter()
+        .filter(|configuration| configuration.source_index.is_some())
+    {
+        let index = configuration.source_index.expect("filtered above");
+        owners
+            .entry(index)
+            .and_modify(|owner| *owner = None)
+            .or_insert_with(|| Some(configuration.id.clone()));
+    }
+    let explicit_indices = owners.keys().copied().collect::<HashSet<_>>();
+    for configuration in configurations
+        .into_iter()
+        .filter(|configuration| configuration.source_index.is_none())
+    {
+        if explicit_indices.contains(&configuration.ordinal) {
+            continue;
+        }
+        owners
+            .entry(configuration.ordinal)
+            .and_modify(|owner| *owner = None)
+            .or_insert_with(|| Some(configuration.id.clone()));
+    }
+    owners
 }
 
 fn synchronize_feature_input_names(
