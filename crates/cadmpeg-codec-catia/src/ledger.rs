@@ -2,7 +2,7 @@
 //! L1 coarse source-fidelity tiling for the `V5_CFV2` container.
 //!
 //! [`container_ledger`] turns a parsed [`ContainerScan`] into a validated v2
-//! [`SourceFidelity`] sidecar at [`LedgerLevel::L1`]: every physical byte of
+//! [`SourceFidelity`] sidecar: every physical byte of
 //! the root input is covered by one span, container framing classed
 //! [`SpanClass::Structural`], catalogued stream extents and everything else
 //! [`SpanClass::Opaque`]. The reconstructed BREP logical stream is serialized
@@ -28,8 +28,8 @@
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
-    SerializedOrigin, SerializedRange, SourceFidelity, SpaceExtent, SpanClass,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
+    SerializedRange, SourceFidelity, SpaceExtent, SpanClass,
 };
 
 use crate::container::{self, ContainerScan, InnerDir};
@@ -62,7 +62,7 @@ pub(crate) fn container_ledger(scan: &ContainerScan<'_>) -> SourceFidelity {
     if let Some(stream) = brep_stream_space(scan) {
         spaces.push(stream);
     }
-    let sidecar = SourceFidelity::new(LedgerLevel::L1, LedgerCapability::Accounted, spaces);
+    let sidecar = SourceFidelity::new(LedgerCapability::Accounted, spaces);
     sidecar
         .validate()
         .expect("catia source-fidelity ledger tiles completely and derives a valid origin DAG");

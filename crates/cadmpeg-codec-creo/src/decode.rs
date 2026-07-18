@@ -693,7 +693,7 @@ fn build_ir(
         let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
         else {
             let loss = builder::incomplete_frame_note(frame.surface_id, frame.offset as u64);
-            cadmpeg_ir::transfer::omit(&mut dropped_losses, loss.clone());
+            dropped_losses.push(loss.clone());
             ctx.resolve(frame_ticket, RecordDisposition::Dropped { loss });
             continue;
         };
@@ -871,7 +871,7 @@ fn build_ir(
             } else {
                 let loss =
                     builder::unplaced_sketch_note(&sketch.id, sketch.feature_id, offset as u64);
-                cadmpeg_ir::transfer::omit(&mut dropped_losses, loss.clone());
+                dropped_losses.push(loss.clone());
                 ctx.resolve(sketch_ticket, RecordDisposition::Dropped { loss });
             }
         }

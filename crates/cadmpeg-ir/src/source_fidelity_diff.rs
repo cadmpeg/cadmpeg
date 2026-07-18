@@ -8,9 +8,7 @@
 //! covers every serialized field: origins, full span metadata, flat accounting,
 //! annotations, and retained records cannot disappear behind the summary.
 
-use crate::source_fidelity::{
-    AddressSpaceLedger, LedgerCapability, LedgerLevel, SourceFidelity, SpanClass,
-};
+use crate::source_fidelity::{AddressSpaceLedger, LedgerCapability, SourceFidelity, SpanClass};
 
 /// Per-class byte totals for one space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
@@ -78,9 +76,6 @@ pub struct FidelityDiff {
     /// Schema-version transition, when it changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<(String, String)>,
-    /// Ledger-level transition, when it changed.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub level: Option<(LedgerLevel, LedgerLevel)>,
     /// Capability transition, when it changed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability: Option<(LedgerCapability, LedgerCapability)>,
@@ -102,7 +97,6 @@ impl FidelityDiff {
     /// Returns whether the two sidecars are materially identical.
     pub fn is_empty(&self) -> bool {
         self.version.is_none()
-            && self.level.is_none()
             && self.capability.is_none()
             && self.added_spaces.is_empty()
             && self.removed_spaces.is_empty()
@@ -121,7 +115,6 @@ impl FidelityDiff {
 pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> FidelityDiff {
     let version =
         (left.version != right.version).then(|| (left.version.clone(), right.version.clone()));
-    let level = (left.level != right.level).then_some((left.level, right.level));
     let capability =
         (left.capability != right.capability).then_some((left.capability, right.capability));
 
@@ -156,7 +149,6 @@ pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> Fi
 
     FidelityDiff {
         version,
-        level,
         capability,
         added_spaces,
         removed_spaces,
@@ -187,7 +179,6 @@ mod tests {
 
     fn source(spans: Vec<LedgerSpan>, length: u64) -> SourceFidelity {
         SourceFidelity::new(
-            LedgerLevel::L2,
             LedgerCapability::Accounted,
             vec![AddressSpaceLedger {
                 id: CanonicalSpaceId::source(),
@@ -237,23 +228,6 @@ mod tests {
         let diff = diff_source_fidelity(&a, &b);
         assert_eq!(diff.added_spaces, vec!["stream:s#0".to_string()]);
         assert!(diff.removed_spaces.is_empty());
-    }
-
-    #[test]
-    fn level_transition_is_reported() {
-        let a = SourceFidelity::new(
-            LedgerLevel::L1,
-            LedgerCapability::Accounted,
-            vec![AddressSpaceLedger {
-                id: CanonicalSpaceId::source(),
-                length: 4,
-                origin: SerializedOrigin::Root,
-                spans: vec![span(0, 4, SpanClass::Opaque, "aa")],
-            }],
-        );
-        let b = source(vec![span(0, 4, SpanClass::Opaque, "aa")], 4);
-        let diff = diff_source_fidelity(&a, &b);
-        assert_eq!(diff.level, Some((LedgerLevel::L1, LedgerLevel::L2)));
     }
 
     #[test]

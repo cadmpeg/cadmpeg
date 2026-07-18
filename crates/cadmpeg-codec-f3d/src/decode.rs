@@ -118,8 +118,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             native.act_guids = act.guids;
             native.act_root_components = act.root_components;
             if !native.lost_edge_references.is_empty() {
-                cadmpeg_ir::transfer::omit(
-                    &mut report.losses,
+                report.losses.push(
                     LossNote {
                         code: LossCode::AttributesNotTransferred,
                         category: LossCategory::Attribute,
@@ -372,7 +371,7 @@ fn account_records(
             }
             role::PARAMESH | role::PREVIEW | role::IMAGE => {
                 let loss = untransferred_asset_loss(role_label, &entry.name);
-                cadmpeg_ir::transfer::omit(&mut report.losses, loss.clone());
+                report.losses.push(loss.clone());
                 RecordDisposition::Dropped { loss }
             }
             _ => RecordDisposition::Structural,
@@ -781,100 +780,82 @@ fn source_and_tolerances(scan: &ContainerScan, active: &BrepFacts) -> (SourceMet
 
 /// Build the loss report for a successful geometry decode.
 fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
-    use cadmpeg_ir::transfer::{omit, reduce};
-
     let s = &decoded.stats;
     let mut losses: Vec<LossNote> = Vec::new();
 
     if s.nurbs_surfaces > 0 {
-        reduce(
-            &mut losses,
-            LossNote {
-                code: LossCode::ProceduralReduced,
-                category: LossCategory::Geometry,
-                severity: Severity::Info,
-                message: format!(
-                    "{} spline surface record(s) were decoded into NURBS carriers from their inline \
+        losses.push(LossNote {
+            code: LossCode::ProceduralReduced,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "{} spline surface record(s) were decoded into NURBS carriers from their inline \
                      cached B-spline block.",
-                    s.nurbs_surfaces
-                ),
-                provenance: None,
-            },
-        );
+                s.nurbs_surfaces
+            ),
+            provenance: None,
+        });
     }
     if s.nurbs_curves > 0 {
-        reduce(
-            &mut losses,
-            LossNote {
-                code: LossCode::ProceduralReduced,
-                category: LossCategory::Geometry,
-                severity: Severity::Info,
-                message: format!(
-                    "{} procedural curve record(s) were decoded into NURBS carriers from their \
+        losses.push(LossNote {
+            code: LossCode::ProceduralReduced,
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "{} procedural curve record(s) were decoded into NURBS carriers from their \
                      inline cached 3D B-spline block.",
-                    s.nurbs_curves
-                ),
-                provenance: None,
-            },
-        );
+                s.nurbs_curves
+            ),
+            provenance: None,
+        });
     }
     if s.unknown_surface_faces > 0 {
-        omit(
-            &mut losses,
-            LossNote {
-                code: LossCode::GeometryNotTransferred,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: format!(
-                    "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into \
+        losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} face(s) rest on spline/procedural surfaces whose shape was not decoded into \
                      a typed carrier (no inline cached B-spline block — the cache is reached \
                      through a subtype reference, or the record is a procedural form this codec \
                      does not evaluate); the face, its loops, and trims are emitted with an \
                      unknown-geometry surface linking to the preserved record bytes. Topology is \
                      transferred; the underlying surface shape is not.",
-                    s.unknown_surface_faces
-                ),
-                provenance: None,
-            },
-        );
+                s.unknown_surface_faces
+            ),
+            provenance: None,
+        });
     }
     if s.procedural_curve_edges > 0 {
-        omit(
-            &mut losses,
-            LossNote {
-                code: LossCode::GeometryNotTransferred,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: format!(
-                    "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable \
+        losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} edge(s) reference a procedural intcurve/spline 3D curve with no decodable \
                      inline B-spline cache; the edge was emitted with its vertices and parameter \
                      range but no attributed curve carrier.",
-                    s.procedural_curve_edges
-                ),
-                provenance: None,
-            },
-        );
+                s.procedural_curve_edges
+            ),
+            provenance: None,
+        });
     }
     if s.undecoded_pcurve_refs > 0 {
-        omit(
-            &mut losses,
-            LossNote {
-                code: LossCode::PcurveOmitted,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: format!(
-                    "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
+        losses.push(LossNote {
+            code: LossCode::PcurveOmitted,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} coedge(s) carry an explicit UV pcurve reference with no decodable 2D \
                      carrier on the face surface's parameterization; those coedges were emitted \
                      without a pcurve.",
-                    s.undecoded_pcurve_refs
-                ),
-                provenance: None,
-            },
-        );
+                s.undecoded_pcurve_refs
+            ),
+            provenance: None,
+        });
     }
     if s.partial_procedural_supports > 0 {
-        reduce(
-            &mut losses,
+        losses.push(
             LossNote {
                 code: LossCode::CarrierSummary,
                 category: LossCategory::Geometry,
@@ -888,37 +869,31 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         );
     }
     if s.other_records > 0 {
-        omit(
-            &mut losses,
-            LossNote {
-                code: LossCode::AttributesNotTransferred,
-                category: LossCategory::Attribute,
-                severity: Severity::Warning,
-                message: format!(
-                    "{} active-slice application/refinement record(s) were not transferred: {}.",
-                    s.other_records,
-                    s.other_record_kinds
-                        .iter()
-                        .map(|(name, count)| format!("{name}={count}"))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ),
-                provenance: None,
-            },
-        );
-    }
-    omit(
-        &mut losses,
-        LossNote {
-            code: LossCode::MaterialNotTransferred,
-            category: LossCategory::Material,
+        losses.push(LossNote {
+            code: LossCode::AttributesNotTransferred,
+            category: LossCategory::Attribute,
             severity: Severity::Warning,
-            message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
-                      transferred."
-                .to_string(),
+            message: format!(
+                "{} active-slice application/refinement record(s) were not transferred: {}.",
+                s.other_records,
+                s.other_record_kinds
+                    .iter()
+                    .map(|(name, count)| format!("{name}={count}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
             provenance: None,
-        },
-    );
+        });
+    }
+    losses.push(LossNote {
+        code: LossCode::MaterialNotTransferred,
+        category: LossCategory::Material,
+        severity: Severity::Warning,
+        message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
+                      transferred."
+            .to_string(),
+        provenance: None,
+    });
 
     DecodeReport {
         retention_degraded: false,
@@ -994,56 +969,44 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     let brep_count = scan.breps.len();
 
     let mut losses: Vec<LossNote> = Vec::new();
-    cadmpeg_ir::transfer::omit(
-        &mut losses,
-        LossNote {
-            code: LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Blocking,
-            message: format!(
-                "ASM BREP geometry was not transferred: the active stream is not a decodable \
+    losses.push(LossNote {
+        code: LossCode::GeometryNotTransferred,
+        category: LossCategory::Geometry,
+        severity: Severity::Blocking,
+        message: format!(
+            "ASM BREP geometry was not transferred: the active stream is not a decodable \
                  BinaryFile4/BinaryFile8 SAB (or its framing failed). {brep_count} BREP stream(s) \
                  were located, but no surfaces, curves, or points were produced."
-            ),
-            provenance: None,
-        },
-    );
-    cadmpeg_ir::transfer::omit(
-        &mut losses,
-        LossNote {
-            code: LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
-            severity: Severity::Blocking,
-            message: "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was \
+        ),
+        provenance: None,
+    });
+    losses.push(LossNote {
+        code: LossCode::TopologyNotTransferred,
+        category: LossCategory::Topology,
+        severity: Severity::Blocking,
+        message: "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was \
                       not built for this stream."
-                .to_string(),
-            provenance: None,
-        },
-    );
-    cadmpeg_ir::transfer::omit(
-        &mut losses,
-        LossNote {
-            code: LossCode::MaterialNotTransferred,
-            category: LossCategory::Material,
-            severity: Severity::Warning,
-            message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
+            .to_string(),
+        provenance: None,
+    });
+    losses.push(LossNote {
+        code: LossCode::MaterialNotTransferred,
+        category: LossCategory::Material,
+        severity: Severity::Warning,
+        message: "Materials/appearances (.protein assets, ACT/design assignments) were not \
                       transferred."
-                .to_string(),
-            provenance: None,
-        },
-    );
+            .to_string(),
+        provenance: None,
+    });
 
     if container::select_active_brep(scan).is_none() {
-        cadmpeg_ir::transfer::omit(
-            &mut losses,
-            LossNote {
-                code: LossCode::MissingGeometryStream,
-                category: LossCategory::Geometry,
-                severity: Severity::Error,
-                message: "no ASM BREP stream (.smb/.smbh) was found in the container".to_string(),
-                provenance: None,
-            },
-        );
+        losses.push(LossNote {
+            code: LossCode::MissingGeometryStream,
+            category: LossCategory::Geometry,
+            severity: Severity::Error,
+            message: "no ASM BREP stream (.smb/.smbh) was found in the container".to_string(),
+            provenance: None,
+        });
     }
 
     DecodeReport {

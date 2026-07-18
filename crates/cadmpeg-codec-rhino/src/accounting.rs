@@ -6,10 +6,7 @@
 //! the native byte-census and the platform source-fidelity sidecar can never
 //! diverge: [`install`] projects it into the `rhino` native namespace (byte spans
 //! plus retained record bytes for recovery), and [`crate::fidelity::ledger`]
-//! projects it into a source-fidelity sidecar whose
-//! [`LedgerLevel`](cadmpeg_ir::LedgerLevel) is `L2` when every table reaches
-//! record granularity, or `L1` when any table is emitted as one undissected
-//! record stream.
+//! projects it into a source-fidelity sidecar.
 
 use std::ops::Range;
 

@@ -15112,7 +15112,6 @@ fn container_ledger_tiles_every_physical_byte() {
     let ledger = crate::fidelity::container_ledger(&scan);
 
     assert_eq!(ledger.version, cadmpeg_ir::SOURCE_FIDELITY_VERSION);
-    assert_eq!(ledger.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(ledger.capability, cadmpeg_ir::LedgerCapability::Accounted);
 
     // Validation requires exact tiling, consistent origins, and an acyclic space graph.

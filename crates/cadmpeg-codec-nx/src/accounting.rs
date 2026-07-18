@@ -12,7 +12,7 @@
 //!   by a [`SerializedTransformKind::Decompress`] transform of the compressed
 //!   member's source extent and tiled by a single opaque span.
 //!
-//! The ledger is [`LedgerLevel::L1`] and [`LedgerCapability::Accounted`]: every
+//! The ledger is [`LedgerCapability::Accounted`]: every
 //! byte of every space is classified, but opaque spans carry only digests, not
 //! retained bytes. [`ledger`] validates the sidecar before returning it, so
 //! an accounting-enabled result never carries a ledger that violates the
@@ -20,9 +20,8 @@
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
-    SerializedOrigin, SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent,
-    SpanClass,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
+    SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass,
 };
 
 use crate::decode::Scan;
@@ -49,7 +48,7 @@ pub(crate) fn ledger(scan: &Scan) -> SourceFidelity {
 pub(crate) fn build_sidecar(scan: &Scan) -> SourceFidelity {
     let mut spaces = vec![source_space(scan)];
     spaces.extend(stream_spaces(scan));
-    SourceFidelity::new(LedgerLevel::L1, LedgerCapability::Accounted, spaces)
+    SourceFidelity::new(LedgerCapability::Accounted, spaces)
 }
 
 /// Tile the root `source` space: catalogued payloads opaque, all else structural.

@@ -107,7 +107,7 @@ impl SldprtCodec {
     /// Build the validated L1 source-fidelity sidecar for a `.sldprt` container.
     ///
     /// Scans the outer container and produces the v2 [`SourceFidelity`] at
-    /// [`LedgerLevel::L1`](cadmpeg_ir::LedgerLevel::L1): complete coarse tiling
+    /// Complete source tiling
     /// of the root `source` space plus one `Transform` child space per block
     /// (see [`fidelity`]). The ledger is validated before it is returned, so an
     /// accounting-enabled result never carries an incompletely tiled or

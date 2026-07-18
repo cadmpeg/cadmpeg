@@ -191,7 +191,6 @@ fn decode_emits_validated_l1_source_fidelity_ledger() {
     let (ctx, root) = DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
     let decoded = crate::decode::decode(&ctx, root).unwrap();
     let sidecar = decoded.source_fidelity;
-    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(sidecar.validate(), Ok(()));
 }
 
@@ -16866,8 +16865,7 @@ mod fidelity {
     use crate::container;
     use crate::fidelity::{build_ledger, build_validated_ledger};
     use cadmpeg_ir::source_fidelity::{
-        CanonicalSpaceId, LedgerCapability, LedgerLevel, SerializedOrigin, SerializedTransformKind,
-        SpanClass,
+        CanonicalSpaceId, LedgerCapability, SerializedOrigin, SerializedTransformKind, SpanClass,
     };
 
     /// The root space's spans must tile `[0, length)` with no gap or overlap,
@@ -16879,7 +16877,6 @@ mod fidelity {
         with_scan(&f3d, |ctx, root| {
             let scan = container::scan(ctx, root).unwrap();
             let sidecar = build_validated_ledger(&scan).unwrap();
-            assert_eq!(sidecar.level, LedgerLevel::L1);
             assert_eq!(sidecar.capability, LedgerCapability::Accounted);
 
             let source = sidecar

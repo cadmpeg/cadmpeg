@@ -14,11 +14,9 @@
 //! rooted at the `source` space; [`SourceFidelity::validate`] rejects cycles,
 //! dangling references, and ranges that fall outside the space they index.
 //!
-//! The schema carries the accounting-vs-recovery distinction: a
-//! [`LedgerLevel`] states how completely the ledger tiles, and a
 //! [`LedgerCapability`] states whether every opaque span additionally resolves
-//! to retained bytes. The two are orthogonal — retention can be refused while
-//! classification still succeeds.
+//! to retained bytes. Retention can be refused while classification still
+//! succeeds.
 
 use std::collections::BTreeMap;
 
@@ -34,29 +32,10 @@ use crate::unknown::UnknownRecord;
 /// Serialized schema version written into every v2 sidecar.
 pub const SOURCE_FIDELITY_VERSION: &str = "2";
 
-/// How completely a ledger tiles its spaces.
-///
-/// Levels only ratchet up, and every level above [`LedgerLevel::L0`] tiles
-/// completely: a partial ledger violates the conservation invariant and is not
-/// a level.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum LedgerLevel {
-    /// No ledger.
-    L0,
-    /// Complete coarse tiling: container framing structural, every unrefined
-    /// payload one opaque span.
-    L1,
-    /// Complete refined tiling at record or field granularity.
-    L2,
-}
-
 /// Whether opaque spans additionally resolve to retained bytes.
 ///
-/// Orthogonal to [`LedgerLevel`]: `max_retained_bytes` can refuse the retention
-/// recovery needs while classification still succeeds.
+/// `max_retained_bytes` can refuse the retention recovery needs while
+/// classification still succeeds.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -280,15 +259,9 @@ pub enum FidelityError {
         /// The repeated canonical id.
         id: String,
     },
-    /// L0 carries address spaces despite declaring no ledger.
-    #[error("ledger level L0 must not carry address spaces")]
-    SpacesAtLevelZero,
-    /// An accounted ledger has no root source space.
-    #[error("ledger level {level:?} requires the source address space")]
-    MissingSourceSpace {
-        /// The nonzero ledger level.
-        level: LedgerLevel,
-    },
+    /// A nonempty ledger has no root source space.
+    #[error("a nonempty ledger requires the source address space")]
+    MissingSourceSpace,
     /// A space carries the wrong origin for its id class.
     #[error("space {id} has an origin inconsistent with its id")]
     OriginIdMismatch {
@@ -455,8 +428,6 @@ pub struct RetainedSourceRecord {
 pub struct SourceFidelity {
     /// The schema version; always [`SOURCE_FIDELITY_VERSION`] when written.
     pub version: String,
-    /// How completely the sidecar tiles its spaces.
-    pub level: LedgerLevel,
     /// Whether opaque spans resolve to retained bytes.
     pub capability: LedgerCapability,
     /// The address spaces, in canonical (id-ascending) order.
@@ -477,7 +448,6 @@ impl Default for SourceFidelity {
     fn default() -> Self {
         Self {
             version: SOURCE_FIDELITY_VERSION.into(),
-            level: LedgerLevel::L0,
             capability: LedgerCapability::Accounted,
             spaces: Vec::new(),
             byte_ledger: ByteLedger::default(),
@@ -494,14 +464,9 @@ impl SourceFidelity {
     /// Ordering is independent of the order spaces were supplied, so repeat
     /// decodes serialize identically. Call [`SourceFidelity::validate`] to
     /// enforce the conservation invariant.
-    pub fn new(
-        level: LedgerLevel,
-        capability: LedgerCapability,
-        spaces: Vec<AddressSpaceLedger>,
-    ) -> Self {
+    pub fn new(capability: LedgerCapability, spaces: Vec<AddressSpaceLedger>) -> Self {
         let mut sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
-            level,
             capability,
             spaces,
             ..SourceFidelity::default()
@@ -665,16 +630,8 @@ impl SourceFidelity {
             self.validate_retention(space)?;
         }
 
-        match self.level {
-            LedgerLevel::L0 if !self.spaces.is_empty() => {
-                return Err(FidelityError::SpacesAtLevelZero);
-            }
-            LedgerLevel::L1 | LedgerLevel::L2
-                if !lengths.contains_key(&CanonicalSpaceId::source()) =>
-            {
-                return Err(FidelityError::MissingSourceSpace { level: self.level });
-            }
-            LedgerLevel::L0 | LedgerLevel::L1 | LedgerLevel::L2 => {}
+        if !self.spaces.is_empty() && !lengths.contains_key(&CanonicalSpaceId::source()) {
+            return Err(FidelityError::MissingSourceSpace);
         }
 
         self.validate_acyclic()?;
@@ -929,14 +886,14 @@ impl SourceFidelity {
     /// recoverability, so migration downgrades that capability to accounted.
     /// The result is canonical but not validated; call
     /// [`SourceFidelity::validate`] to enforce the invariant.
-    pub fn from_json_any(s: &str, v1_level: LedgerLevel) -> Result<Self, serde_json::Error> {
+    pub fn from_json_any(s: &str) -> Result<Self, serde_json::Error> {
         let value: serde_json::Value = serde_json::from_str(s)?;
         let version = value.get("version").and_then(serde_json::Value::as_str);
         match version {
             Some(v) if v == SOURCE_FIDELITY_VERSION => serde_json::from_value(value),
             Some(v) if v == v1::SOURCE_FIDELITY_VERSION_V1 => {
                 let ledger: v1::ByteLedgerV1 = serde_json::from_value(value)?;
-                Ok(migrate_v1(ledger, v1_level))
+                Ok(migrate_v1(ledger))
             }
             other => Err(<serde_json::Error as serde::de::Error>::custom(format!(
                 "unsupported source-fidelity version: {other:?}"
@@ -951,7 +908,7 @@ impl SourceFidelity {
 /// origin. Each v1 span keeps its range, class, and digest; a v1 retained
 /// record id becomes a full-extent [`RetainedRef`], matching the v1
 /// one-record-per-span containment.
-pub fn migrate_v1(ledger: v1::ByteLedgerV1, level: LedgerLevel) -> SourceFidelity {
+pub fn migrate_v1(ledger: v1::ByteLedgerV1) -> SourceFidelity {
     let spans = ledger
         .spans
         .into_iter()
@@ -979,7 +936,7 @@ pub fn migrate_v1(ledger: v1::ByteLedgerV1, level: LedgerLevel) -> SourceFidelit
         origin: SerializedOrigin::Root,
         spans,
     };
-    SourceFidelity::new(level, LedgerCapability::Accounted, vec![space])
+    SourceFidelity::new(LedgerCapability::Accounted, vec![space])
 }
 
 /// The prior single-stream sidecar schema, retained for migration.
@@ -1079,15 +1036,10 @@ mod tests {
             spans: vec![span(0, 4, SpanClass::Opaque)],
         };
         let a = SourceFidelity::new(
-            LedgerLevel::L2,
             LedgerCapability::Accounted,
             vec![entry.clone(), source.clone()],
         );
-        let b = SourceFidelity::new(
-            LedgerLevel::L2,
-            LedgerCapability::Accounted,
-            vec![source, entry],
-        );
+        let b = SourceFidelity::new(LedgerCapability::Accounted, vec![source, entry]);
         assert_eq!(a, b);
         assert_eq!(a.spaces[0].id, CanonicalSpaceId::entry("a"));
         assert_eq!(a.spaces[1].id, CanonicalSpaceId::source());
@@ -1097,7 +1049,6 @@ mod tests {
     #[test]
     fn validate_accepts_a_tiled_dag() {
         let sidecar = SourceFidelity::new(
-            LedgerLevel::L2,
             LedgerCapability::Accounted,
             vec![
                 root_space(8, vec![span(0, 8, SpanClass::Opaque)]),
@@ -1119,30 +1070,8 @@ mod tests {
     }
 
     #[test]
-    fn validate_rejects_nonzero_level_without_source_space() {
-        let sidecar = SourceFidelity::new(LedgerLevel::L1, LedgerCapability::Accounted, Vec::new());
-        assert_eq!(
-            sidecar.validate(),
-            Err(FidelityError::MissingSourceSpace {
-                level: LedgerLevel::L1
-            })
-        );
-    }
-
-    #[test]
-    fn validate_rejects_level_zero_with_spaces() {
-        let sidecar = SourceFidelity::new(
-            LedgerLevel::L0,
-            LedgerCapability::Accounted,
-            vec![root_space(0, Vec::new())],
-        );
-        assert_eq!(sidecar.validate(), Err(FidelityError::SpacesAtLevelZero));
-    }
-
-    #[test]
     fn validate_rejects_tiling_gap() {
         let sidecar = SourceFidelity::new(
-            LedgerLevel::L1,
             LedgerCapability::Accounted,
             vec![root_space(10, vec![span(0, 4, SpanClass::Opaque)])],
         );
@@ -1156,7 +1085,6 @@ mod tests {
     fn validate_rejects_dangling_reference() {
         let sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
-            level: LedgerLevel::L1,
             capability: LedgerCapability::Accounted,
             spaces: vec![AddressSpaceLedger {
                 id: CanonicalSpaceId::entry("a"),
@@ -1178,7 +1106,6 @@ mod tests {
     #[test]
     fn validate_rejects_out_of_bounds_range() {
         let sidecar = SourceFidelity::new(
-            LedgerLevel::L1,
             LedgerCapability::Accounted,
             vec![
                 root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
@@ -1203,7 +1130,6 @@ mod tests {
     fn validate_rejects_origin_cycle() {
         let sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
-            level: LedgerLevel::L1,
             capability: LedgerCapability::Accounted,
             spaces: vec![
                 root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
@@ -1238,7 +1164,6 @@ mod tests {
     fn validate_rejects_origin_id_mismatch() {
         let sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
-            level: LedgerLevel::L1,
             capability: LedgerCapability::Accounted,
             spaces: vec![AddressSpaceLedger {
                 id: CanonicalSpaceId::entry("a"),
@@ -1257,7 +1182,6 @@ mod tests {
     #[test]
     fn validate_rejects_recoverable_without_retained_bytes() {
         let sidecar = SourceFidelity::new(
-            LedgerLevel::L2,
             LedgerCapability::Recoverable,
             vec![root_space(4, vec![span(0, 4, SpanClass::Opaque)])],
         );
@@ -1270,7 +1194,6 @@ mod tests {
     #[test]
     fn validate_rejects_recoverable_with_short_retained_range() {
         let sidecar = SourceFidelity::new(
-            LedgerLevel::L2,
             LedgerCapability::Recoverable,
             vec![root_space(
                 4,
@@ -1300,7 +1223,6 @@ mod tests {
     fn recoverable_sidecar(data: Vec<u8>) -> SourceFidelity {
         let digest = crate::hash::sha256_hex(&data);
         let mut sidecar = SourceFidelity::new(
-            LedgerLevel::L2,
             LedgerCapability::Recoverable,
             vec![root_space(
                 4,
@@ -1356,7 +1278,6 @@ mod tests {
     #[test]
     fn validate_rejects_non_root_without_reference() {
         let sidecar = SourceFidelity::new(
-            LedgerLevel::L1,
             LedgerCapability::Accounted,
             vec![
                 root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
@@ -1377,7 +1298,6 @@ mod tests {
     #[test]
     fn canonical_json_round_trips() {
         let sidecar = SourceFidelity::new(
-            LedgerLevel::L2,
             LedgerCapability::Accounted,
             vec![root_space(4, vec![span(0, 4, SpanClass::Typed)])],
         );
@@ -1389,11 +1309,7 @@ mod tests {
 
     #[test]
     fn from_json_rejects_wrong_version() {
-        let sidecar = SourceFidelity::new(
-            LedgerLevel::L0,
-            LedgerCapability::Accounted,
-            vec![root_space(0, vec![])],
-        );
+        let sidecar = SourceFidelity::new(LedgerCapability::Accounted, vec![root_space(0, vec![])]);
         let mut value: serde_json::Value =
             serde_json::from_str(&sidecar.to_canonical_json().expect("serialize"))
                 .expect("parse value");
@@ -1426,7 +1342,7 @@ mod tests {
                 },
             ],
         };
-        let migrated = migrate_v1(v1, LedgerLevel::L2);
+        let migrated = migrate_v1(v1);
         assert_eq!(migrated.version, SOURCE_FIDELITY_VERSION);
         assert_eq!(migrated.spaces.len(), 1);
         assert_eq!(migrated.capability, LedgerCapability::Accounted);
@@ -1454,7 +1370,7 @@ mod tests {
             }],
         };
         let json = serde_json::to_string(&v1).expect("serialize v1");
-        let loaded = SourceFidelity::from_json_any(&json, LedgerLevel::L2).expect("migrate");
+        let loaded = SourceFidelity::from_json_any(&json).expect("migrate");
         assert_eq!(loaded.version, SOURCE_FIDELITY_VERSION);
         assert_eq!(loaded.validate(), Ok(()));
     }

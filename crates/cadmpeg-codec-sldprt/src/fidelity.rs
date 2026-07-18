@@ -2,7 +2,7 @@
 //! L1 container accounting for the `.sldprt` outer container.
 //!
 //! [`container_ledger`] turns a completed [`ContainerScan`] into a v2
-//! source-fidelity sidecar ([`SourceFidelity`]) at [`LedgerLevel::L1`]: complete
+//! source-fidelity sidecar ([`SourceFidelity`]) with complete
 //! *coarse* tiling. The root `source` space is tiled so every physical byte is
 //! classified — outer header and every block/cache-cell/directory frame as
 //! `Structural`, each compressed block payload as one `Opaque` span, and any
@@ -21,9 +21,8 @@
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
-    SerializedOrigin, SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent,
-    SpanClass,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
+    SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass,
 };
 
 use crate::container::{
@@ -59,7 +58,7 @@ pub fn container_ledger(scan: &ContainerScan) -> SourceFidelity {
         spaces.push(block_space(source, block, index as u32));
     }
 
-    SourceFidelity::new(LedgerLevel::L1, LedgerCapability::Accounted, spaces)
+    SourceFidelity::new(LedgerCapability::Accounted, spaces)
 }
 
 /// Priority of a preserved-payload claim: it must win any overlap against

@@ -1,25 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Typed lossy value construction.
+//! Loss-recording value resolution.
 //!
-//! Byte conservation proves no bytes vanished; per-record dispositions prove
-//! every committed record is accounted for. Neither makes a *value*
-//! substitution honest: a decoder that fills a missing axis with `Vector3::z()`
-//! or a writer that drops a hidden body can leave both ledgers balanced while
-//! silently losing meaning. [`Transfer`] closes that gap by making a
-//! substituted or omitted value *unreadable*
-//! without surrendering the loss note that explains it.
-//!
-//! The mechanism is a resolution barrier, not a wrapper on every field. A
-//! [`Transfer`] is `#[must_use]` and its payload can only be extracted through
-//! [`Transfer::resolve`], which takes a [`LossSink`] and pushes the note for a
-//! [`Fallback`](Transfer::Fallback) or [`Dropped`](Transfer::Dropped) outcome
-//! before returning the value. There is no `unwrap_or_default`: code that
-//! reaches for the value reaches through the sink, so a
-//! silent fallback or drop is not a discipline failure but a construction that
-//! does not typecheck. [`Builder`] threads one sink through a module so every
-//! boundary in it resolves into the same loss channel.
+//! [`Transfer`] is used at selected construction boundaries where a fallback or
+//! omission must add its [`LossNote`] before yielding a value. It does not
+//! account for construction paths that do not use this type.
 
-use crate::provenance::Exactness;
 use crate::report::LossNote;
 
 /// A channel that collects the loss notes emitted when lossy [`Transfer`]s
@@ -52,24 +37,15 @@ impl<S: LossSink + ?Sized> LossSink for &mut S {
 /// The payload is reachable only through [`resolve`](Transfer::resolve), which
 /// forwards a [`Fallback`](Transfer::Fallback) or [`Dropped`](Transfer::Dropped)
 /// note to a [`LossSink`] as it hands the value back (or, for `Dropped`,
-/// records the note and yields nothing). The four variants map onto the named
-/// boundaries: [`Exact`](Transfer::Exact) and [`Derived`](Transfer::Derived)
-/// carry a faithful record-to-entity or computed value, `Fallback` carries a
+/// records the note and yields nothing). [`Exact`](Transfer::Exact) carries a
+/// faithful record-to-entity value, `Fallback` carries a
 /// defaulted field or a resolver's substituted carrier/axis, and `Dropped`
 /// carries an unsupported concept omitted by a decoder or a writer. `Exact`,
-/// `fallback`, and `omitted` have ergonomic constructors; `Derived` is built by
-/// struct literal.
+/// `fallback`, and `omitted` have ergonomic constructors.
 #[must_use = "a Transfer carries a possible loss; resolve it through a LossSink"]
 pub enum Transfer<T> {
     /// Read verbatim from the source with no substitution.
     Exact(T),
-    /// Computed deterministically; carries the resulting exactness.
-    Derived {
-        /// The computed value.
-        value: T,
-        /// How the value relates to its byte-exact inputs.
-        exactness: Exactness,
-    },
     /// A value was supplied in place of an absent, unresolved, or
     /// unrepresentable source field; the note explains the substitution.
     Fallback {
@@ -103,8 +79,8 @@ impl<T> Transfer<T> {
 
     /// Extracts the value, recording any loss into `sink`.
     ///
-    /// This is the only accessor: an [`Exact`](Transfer::Exact) or
-    /// [`Derived`](Transfer::Derived) value passes through untouched, a
+    /// This is the only accessor: an [`Exact`](Transfer::Exact) value passes
+    /// through untouched, a
     /// [`Fallback`](Transfer::Fallback) value passes through *after* its note is
     /// recorded, and a [`Dropped`](Transfer::Dropped) outcome records its note
     /// and yields [`None`]. A silent fallback or drop is therefore unwritable —
@@ -112,7 +88,6 @@ impl<T> Transfer<T> {
     pub fn resolve(self, sink: &mut impl LossSink) -> Option<T> {
         match self {
             Transfer::Exact(value) => Some(value),
-            Transfer::Derived { value, .. } => Some(value),
             Transfer::Fallback { value, note } => {
                 sink.record_loss(note);
                 Some(value)
@@ -125,11 +100,7 @@ impl<T> Transfer<T> {
     }
 }
 
-/// Holding a `Builder` gives a decoder or writer exactly one way to read a
-/// [`Transfer`] — [`take`](Builder::take) — so every substitution and omission
-/// in the module drains into the same loss channel. A module that constructs
-/// entities only through a `Builder` cannot express a silent fallback, which is
-/// the enforced property.
+/// Resolves several [`Transfer`] values into one loss sink.
 pub struct Builder<'s, S: LossSink> {
     sink: &'s mut S,
 }
@@ -144,30 +115,6 @@ impl<'s, S: LossSink> Builder<'s, S> {
     pub fn take<T>(&mut self, transfer: Transfer<T>) -> Option<T> {
         transfer.resolve(self.sink)
     }
-
-    /// Records a standalone loss that is not tied to a value crossing the
-    /// boundary (for example an aggregate census note).
-    pub fn record_loss(&mut self, note: LossNote) {
-        self.sink.record_loss(note);
-    }
-}
-
-/// Record an omission: a source concept that produced no typed IR entity.
-///
-/// The note drains through [`Transfer::omitted`], which records it and yields
-/// [`None`] — the omission cannot be reached without surrendering the note, so
-/// it is never silent.
-pub fn omit<S: LossSink>(sink: &mut S, note: LossNote) {
-    let omitted: Option<()> = Builder::new(sink).take(Transfer::omitted(note));
-    debug_assert!(omitted.is_none(), "an omission transfer yields no value");
-}
-
-/// Record an accountable reduction or informational census: the form was
-/// transferred, but only approximately (a solved carrier), or the note reports
-/// a count with no content lost. The value already lives in the IR, so the note
-/// is a standalone census threaded through the shared sink.
-pub fn reduce<S: LossSink>(sink: &mut S, note: LossNote) {
-    Builder::new(sink).record_loss(note);
 }
 
 #[cfg(test)]
@@ -186,17 +133,9 @@ mod tests {
     }
 
     #[test]
-    fn exact_and_derived_record_no_loss() {
+    fn exact_records_no_loss() {
         let mut sink: Vec<LossNote> = Vec::new();
         assert_eq!(Transfer::exact(7).resolve(&mut sink), Some(7));
-        assert_eq!(
-            Transfer::Derived {
-                value: 9,
-                exactness: Exactness::Derived,
-            }
-            .resolve(&mut sink),
-            Some(9)
-        );
         assert!(sink.is_empty());
     }
 
@@ -217,22 +156,6 @@ mod tests {
         assert_eq!(value, None);
         assert_eq!(sink.len(), 1);
         assert_eq!(sink[0].code, LossCode::UnsupportedObjectFamily);
-    }
-
-    #[test]
-    fn omit_records_the_note_through_the_typed_builder() {
-        let mut losses: Vec<LossNote> = Vec::new();
-        omit(&mut losses, note(LossCode::GeometryNotTransferred));
-        assert_eq!(losses.len(), 1);
-        assert_eq!(losses[0].code, LossCode::GeometryNotTransferred);
-    }
-
-    #[test]
-    fn reduce_records_the_census_note() {
-        let mut losses: Vec<LossNote> = Vec::new();
-        reduce(&mut losses, note(LossCode::ProceduralReduced));
-        assert_eq!(losses.len(), 1);
-        assert_eq!(losses[0].code, LossCode::ProceduralReduced);
     }
 
     #[test]

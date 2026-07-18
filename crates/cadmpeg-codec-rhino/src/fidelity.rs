@@ -11,14 +11,6 @@
 //! uncompressed in the root stream, so record granularity is reached without
 //! any transform.
 //!
-//! The declared [`LedgerLevel`] tracks the coarsest table in the partition. When
-//! every table is dissected to record granularity the sidecar is
-//! [`LedgerLevel::L2`] (complete *refined* tiling). A table whose records the
-//! scanner does not retain individually (e.g. the user table) is emitted as one
-//! undissected `TableRecordStream` `Opaque` span — coarse (L1) granularity — and
-//! caps the whole sidecar at [`LedgerLevel::L1`], since the level is a single
-//! scalar and one coarse table means not every payload is refined.
-//!
 //! The tiling is total and canonical by construction: [`partition`] walks the
 //! scan in archive order and yields a gap-free ascending partition of the whole
 //! image, so [`SourceFidelity::new`] returns byte-identical sidecars for repeat
@@ -29,11 +21,11 @@
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::{
-    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerLevel, LedgerSpan,
-    SerializedOrigin, SerializedRange, SourceFidelity,
+    AddressSpaceLedger, CanonicalSpaceId, LedgerCapability, LedgerSpan, SerializedOrigin,
+    SerializedRange, SourceFidelity,
 };
 
-use crate::accounting::{partition, TileRole};
+use crate::accounting::partition;
 use crate::container::Scan;
 
 /// Owner label attributed to every span this codec emits.
@@ -43,27 +35,11 @@ const OWNER: &str = "rhino";
 ///
 /// The returned sidecar is canonicalized and has passed
 /// [`SourceFidelity::validate`]; its single `source` space tiles `[0, length)`
-/// exactly. The declared level is [`LedgerLevel::L2`] when every table is
-/// dissected to record granularity, or [`LedgerLevel::L1`] when any table is
-/// emitted as a single undissected record stream. The tiling is total by
-/// construction, so a validation failure would be a builder defect and panics
-/// rather than being serialized.
+/// exactly. A validation failure is a builder defect and panics rather than
+/// being serialized.
 pub(crate) fn ledger(scan: &Scan<'_>) -> SourceFidelity {
     let data = scan.data;
     let tiles = partition(scan);
-    // A table whose records the scanner does not retain individually is emitted
-    // as one undissected `TableRecordStream` span, which is coarse (L1)
-    // granularity. The level is a single scalar for the whole sidecar, so one
-    // such table caps the ledger at L1; only a partition that reaches record
-    // granularity everywhere earns L2.
-    let level = if tiles
-        .iter()
-        .any(|tile| matches!(tile.role, TileRole::TableRecordStream { .. }))
-    {
-        LedgerLevel::L1
-    } else {
-        LedgerLevel::L2
-    };
     let spans = tiles
         .into_iter()
         .map(|tile| LedgerSpan {
@@ -84,7 +60,7 @@ pub(crate) fn ledger(scan: &Scan<'_>) -> SourceFidelity {
         origin: SerializedOrigin::Root,
         spans,
     };
-    let sidecar = SourceFidelity::new(level, LedgerCapability::Accounted, vec![source]);
+    let sidecar = SourceFidelity::new(LedgerCapability::Accounted, vec![source]);
     sidecar
         .validate()
         .expect("Rhino source-fidelity ledger tiles the source space completely");

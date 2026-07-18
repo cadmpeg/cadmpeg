@@ -1493,7 +1493,6 @@ fn near_budget_user_table_keeps_count_without_record_descriptors() {
 
     // An undissected `TableRecordStream` caps source fidelity at L1.
     let sidecar = crate::fidelity::ledger(&scan);
-    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(sidecar.validate(), Ok(()));
 }
 
@@ -2295,7 +2294,6 @@ fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
     assert_eq!(opaque[0].id, "rhino:source:opaque#comment");
 
     let sidecar = &result.source_fidelity;
-    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L2);
     assert_eq!(sidecar.capability, cadmpeg_ir::LedgerCapability::Accounted);
     assert_eq!(sidecar.spaces.len(), 1);
     assert_eq!(sidecar.spaces[0].id, cadmpeg_ir::CanonicalSpaceId::source());

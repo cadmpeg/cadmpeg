@@ -2961,7 +2961,6 @@ fn source_fidelity_tiles_every_physical_space() {
     let scan = scan_of(&file);
     let sidecar = crate::accounting::build_sidecar(&scan);
 
-    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(sidecar.capability, cadmpeg_ir::LedgerCapability::Accounted);
     assert_eq!(sidecar.validate(), Ok(()));
 
@@ -3026,7 +3025,6 @@ fn decode_installs_validated_source_fidelity_sidecar() {
     let mut cur = Cursor::new(prt_with_arrangements());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
     let sidecar = result.source_fidelity;
-    assert_eq!(sidecar.level, cadmpeg_ir::LedgerLevel::L1);
     assert_eq!(sidecar.validate(), Ok(()));
 }
 

@@ -919,53 +919,43 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     let mut losses = Vec::new();
 
     if s.unknown_surface_faces > 0 {
-        cadmpeg_ir::transfer::reduce(
-            &mut losses,
-            LossNote {
-                code: LossCode::GeometryNotTransferred,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: format!(
-                    "{} face(s) rest on a support surface this codec does not type (offset, \
+        losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} face(s) rest on a support surface this codec does not type (offset, \
                      swept, blended, intersection, or spline-on-surface); the face, its loops, \
                      and trims are emitted with an unknown-geometry surface linking to the \
                      preserved record bytes. Topology is transferred; the underlying surface \
                      shape is not.",
-                    s.unknown_surface_faces
-                ),
-                provenance: None,
-            },
-        );
+                s.unknown_surface_faces
+            ),
+            provenance: None,
+        });
     }
     if s.unknown_curve_edges > 0 {
-        cadmpeg_ir::transfer::reduce(
-            &mut losses,
-            LossNote {
-                code: LossCode::GeometryNotTransferred,
-                category: LossCategory::Geometry,
-                severity: Severity::Warning,
-                message: format!(
-                    "{} edge(s) reference an untyped support curve; topology references an \
+        losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} edge(s) reference an untyped support curve; topology references an \
                      opaque curve carrier linked to the retained partition.",
-                    s.unknown_curve_edges
-                ),
-                provenance: None,
-            },
-        );
+                s.unknown_curve_edges
+            ),
+            provenance: None,
+        });
     }
     if s.synthetic_body_grouping {
-        cadmpeg_ir::transfer::reduce(
-            &mut losses,
-            LossNote {
-                code: LossCode::TopologyGaugeSubstituted,
-                category: LossCategory::Topology,
-                severity: Severity::Warning,
-                message:
-                    "No body record was available; one body/region/shell hierarchy was derived."
-                        .to_string(),
-                provenance: None,
-            },
-        );
+        losses.push(LossNote {
+            code: LossCode::TopologyGaugeSubstituted,
+            category: LossCategory::Topology,
+            severity: Severity::Warning,
+            message: "No body record was available; one body/region/shell hierarchy was derived."
+                .to_string(),
+            provenance: None,
+        });
     }
     DecodeReport {
         retention_degraded: false,
@@ -1365,60 +1355,47 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
         .count();
 
     let mut losses = Vec::new();
-    cadmpeg_ir::transfer::omit(
-        &mut losses,
-        LossNote {
-            code: LossCode::GeometryNotTransferred,
-            category: LossCategory::Geometry,
-            severity: Severity::Blocking,
-            message: format!(
-                "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
+    losses.push(LossNote {
+        code: LossCode::GeometryNotTransferred,
+        category: LossCategory::Geometry,
+        severity: Severity::Blocking,
+        message: format!(
+            "Parasolid B-rep geometry was not transferred: no partition/deltas stream resolved \
                  into a topology graph. {} block(s) were CRC-validated and enumerated, {} of them \
                  Parasolid-family.",
-                scan.blocks.len(),
-                parasolid_blocks
-            ),
-            provenance: None,
-        },
-    );
-    cadmpeg_ir::transfer::omit(
-        &mut losses,
-        LossNote {
-            code: LossCode::TopologyNotTransferred,
-            category: LossCategory::Topology,
-            severity: Severity::Blocking,
-            message:
-                "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
+            scan.blocks.len(),
+            parasolid_blocks
+        ),
+        provenance: None,
+    });
+    losses.push(LossNote {
+        code: LossCode::TopologyNotTransferred,
+        category: LossCategory::Topology,
+        severity: Severity::Blocking,
+        message: "B-rep topology graph (body/region/shell/face/loop/coedge/edge/vertex) was not \
                       built for this file."
-                    .to_string(),
-            provenance: None,
-        },
-    );
-    cadmpeg_ir::transfer::omit(
-        &mut losses,
-        LossNote {
-            code: LossCode::MaterialNotTransferred,
-            category: LossCategory::Material,
-            severity: Severity::Warning,
-            message: "Materials/appearances, tessellation, and document/feature metadata were not \
+            .to_string(),
+        provenance: None,
+    });
+    losses.push(LossNote {
+        code: LossCode::MaterialNotTransferred,
+        category: LossCategory::Material,
+        severity: Severity::Warning,
+        message: "Materials/appearances, tessellation, and document/feature metadata were not \
                       transferred."
-                .to_string(),
-            provenance: None,
-        },
-    );
+            .to_string(),
+        provenance: None,
+    });
 
     if container::select_active_parasolid(scan).is_none() {
-        cadmpeg_ir::transfer::omit(
-            &mut losses,
-            LossNote {
-                code: LossCode::MissingGeometryStream,
-                category: LossCategory::Geometry,
-                severity: Severity::Error,
-                message: "no Parasolid partition/deltas stream was located in the container"
-                    .to_string(),
-                provenance: None,
-            },
-        );
+        losses.push(LossNote {
+            code: LossCode::MissingGeometryStream,
+            category: LossCategory::Geometry,
+            severity: Severity::Error,
+            message: "no Parasolid partition/deltas stream was located in the container"
+                .to_string(),
+            provenance: None,
+        });
     }
 
     DecodeReport {

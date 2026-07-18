@@ -12,7 +12,7 @@
 //! [`SerializedOrigin::Transform`] when compressed, each tiled by a single
 //! opaque span covering its unrefined payload.
 //!
-//! This is [`LedgerLevel::L1`] with [`LedgerCapability::Accounted`]: every byte
+//! This uses [`LedgerCapability::Accounted`]: every byte
 //! is classified and digested, but opaque spans carry no retained bytes. Spans
 //! and spaces are emitted in registration order and the returned sidecar is
 //! canonicalized, so two decodes of the same archive serialize identically.
@@ -21,7 +21,7 @@
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::source_fidelity::{
-    AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerCapability, LedgerLevel, LedgerSpan,
+    AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerCapability, LedgerSpan,
     SerializedOrigin, SerializedRange, SerializedTransformKind, SourceFidelity, SpaceExtent,
     SpanClass,
 };
@@ -44,7 +44,7 @@ pub fn build_ledger(scan: &ContainerScan<'_>) -> SourceFidelity {
             spaces.push(space);
         }
     }
-    SourceFidelity::new(LedgerLevel::L1, LedgerCapability::Accounted, spaces)
+    SourceFidelity::new(LedgerCapability::Accounted, spaces)
 }
 
 /// Builds and validates the L1 fidelity sidecar.

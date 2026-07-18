@@ -114,9 +114,9 @@ pub use sketches::{
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
 pub use source_fidelity::{
-    migrate_v1, AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerCapability, LedgerLevel,
-    LedgerSpan, RetainedRef, RetainedSourceRecord, SerializedOrigin, SerializedRange,
-    SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass, SOURCE_FIDELITY_VERSION,
+    migrate_v1, AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerCapability, LedgerSpan,
+    RetainedRef, RetainedSourceRecord, SerializedOrigin, SerializedRange, SerializedTransformKind,
+    SourceFidelity, SpaceExtent, SpanClass, SOURCE_FIDELITY_VERSION,
 };
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{

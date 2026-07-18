@@ -3780,7 +3780,7 @@ mod tickets {
 }
 
 mod ledger {
-    use cadmpeg_ir::{LedgerCapability, LedgerLevel, SerializedOrigin, SpanClass};
+    use cadmpeg_ir::{LedgerCapability, SerializedOrigin, SpanClass};
 
     use super::{
         fbb_only_catpart, standard_catpart, tetrahedron_topology_catpart, with_scan,
@@ -3799,7 +3799,6 @@ mod ledger {
         for fixture in fixtures {
             with_scan(&fixture, |scan| {
                 let sidecar = container_ledger(scan);
-                assert_eq!(sidecar.level, LedgerLevel::L1);
                 assert_eq!(sidecar.capability, LedgerCapability::Accounted);
                 for space in &sidecar.spaces {
                     let mut cursor = 0u64;
