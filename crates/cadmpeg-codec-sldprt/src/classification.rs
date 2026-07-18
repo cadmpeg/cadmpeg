@@ -207,6 +207,9 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
 
         "moDetailCabinet_c" => tree_node_class(FeatureTreeNodeRole::Annotations),
         "moCommentsFolder_c" => tree_node_class(FeatureTreeNodeRole::Comments),
+        "moCosmeticThread_c" | "moDerivedCosmeticThread_c" => {
+            tree_node_class(FeatureTreeNodeRole::CosmeticThread)
+        }
         "moDocsFolder_c" => tree_node_class(FeatureTreeNodeRole::DesignBinder),
         "moEqnFolder_c" => tree_node_class(FeatureTreeNodeRole::Equations),
         "moFavoriteFolder_c" => tree_node_class(FeatureTreeNodeRole::Favorites),
@@ -526,6 +529,17 @@ mod tests {
         let markup = native_object_class("moInkMarkupFolder_c");
         assert_eq!(markup.role, FeatureInputClassRole::Auxiliary);
         assert_eq!(markup.tree_node, Some(FeatureTreeNodeRole::Markups));
+
+        for class in ["moCosmeticThread_c", "moDerivedCosmeticThread_c"] {
+            let thread = native_object_class(class);
+            assert_eq!(thread.role, FeatureInputClassRole::Auxiliary, "{class}");
+            assert_eq!(thread.feature, None, "{class}");
+            assert_eq!(
+                thread.tree_node,
+                Some(FeatureTreeNodeRole::CosmeticThread),
+                "{class}"
+            );
+        }
 
         let origin = native_object_class("moOriginProfileFeature_c");
         assert_eq!(origin.kind, NativeClassKind::OriginProfileFeature);

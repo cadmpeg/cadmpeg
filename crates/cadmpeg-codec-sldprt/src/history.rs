@@ -3163,6 +3163,7 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::Annotations => "Annotations",
         FeatureTreeNodeRole::AmbientLight => "Ambient",
         FeatureTreeNodeRole::Comments => "Comments",
+        FeatureTreeNodeRole::CosmeticThread => "Cosmetic Thread",
         FeatureTreeNodeRole::DesignBinder => "Design Binder",
         FeatureTreeNodeRole::DissectedProfile => "Profile Selection",
         FeatureTreeNodeRole::DirectionalLight => "Directional",

@@ -786,6 +786,8 @@ pub enum FeatureTreeNodeRole {
     AmbientLight,
     /// Comment container.
     Comments,
+    /// Non-geometric cosmetic-thread annotation.
+    CosmeticThread,
     /// Design-binder container.
     DesignBinder,
     /// Profile-selection handle generated from a dissectable sketch.
