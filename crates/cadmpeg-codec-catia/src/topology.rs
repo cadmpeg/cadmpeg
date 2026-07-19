@@ -6552,7 +6552,7 @@ impl MeshQuotient {
             edge_candidates: &[Vec<[usize; 2]>],
             output: &mut Vec<(Vec<Vec<bool>>, MeshQuotient)>,
             seen: &mut HashSet<MeshOrientationSignature>,
-            oriented_edges: &HashSet<usize>,
+            oriented: &mut HashSet<usize>,
             limit: usize,
             budget: Option<&MeshConstraintBudget>,
         ) {
@@ -6563,9 +6563,6 @@ impl MeshQuotient {
                 return;
             }
             if boundary_index == boundaries.len() {
-                if !uses_canonical_edge_direction_gauge(boundaries, directions, oriented_edges) {
-                    return;
-                }
                 let canonical_directions = directions
                     .iter()
                     .map(|boundary| {
@@ -6615,13 +6612,15 @@ impl MeshQuotient {
                     edge_candidates,
                     output,
                     seen,
-                    oriented_edges,
+                    oriented,
                     limit,
                     budget,
                 );
                 *boundary_directions = directions.pop().unwrap_or_default();
                 return;
             }
+            let edge = boundary[at].edge;
+            let first = oriented.insert(edge);
             let mut advance = |reversed: bool, mut quotient: MeshQuotient| {
                 if at > 0 {
                     let Some(previous_end) =
@@ -6654,18 +6653,22 @@ impl MeshQuotient {
                     edge_candidates,
                     output,
                     seen,
-                    oriented_edges,
+                    oriented,
                     limit,
                     budget,
                 );
                 boundary_directions.pop();
             };
-            match boundary[at].reversed {
-                Some(reversed) => advance(reversed, quotient),
-                None => {
+            match (boundary[at].reversed, first) {
+                (Some(reversed), _) => advance(reversed, quotient),
+                (None, true) => advance(false, quotient),
+                (None, false) => {
                     advance(false, quotient.clone());
                     advance(true, quotient);
                 }
+            }
+            if first {
+                oriented.remove(&edge);
             }
         }
 
@@ -6783,6 +6786,7 @@ impl MeshQuotient {
         }
         let mut output = Vec::new();
         let mut seen = HashSet::new();
+        let mut oriented = oriented_edges.clone();
         walk(
             &assignment.boundaries,
             0,
@@ -6793,7 +6797,7 @@ impl MeshQuotient {
             edge_candidates,
             &mut output,
             &mut seen,
-            oriented_edges,
+            &mut oriented,
             limit,
             budget,
         );
