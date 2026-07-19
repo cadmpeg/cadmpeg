@@ -762,15 +762,15 @@ pub struct SurfaceFeaturePayloadBranch {
     pub offset: usize,
     /// Serialized `16` or `40` branch mode.
     pub mode: u8,
-    /// Count including the terminal result reference.
+    /// Count including the terminal reference.
     pub declared_count: u8,
     /// Whether the count is repeated before the zero lane.
     pub witnessed: bool,
-    /// Ordered input references.
+    /// Ordered nonterminal references.
     pub members: Vec<PayloadObjectReference>,
-    /// Terminal result reference.
-    pub result: PayloadObjectReference,
-    /// Opaque bytes separating this result from the next branch or terminator.
+    /// Terminal reference.
+    pub terminal: PayloadObjectReference,
+    /// Opaque bytes separating the terminal from the next branch or terminator.
     pub suffix: Vec<u8>,
 }
 
@@ -1911,7 +1911,7 @@ fn surface_feature_branch_paths(
     let Some((object_index, width)) = payload.get(cursor..).and_then(payload_object_index) else {
         return Vec::new();
     };
-    let result = PayloadObjectReference {
+    let terminal = PayloadObjectReference {
         offset: payload_offset + cursor,
         object_index,
     };
@@ -1942,7 +1942,7 @@ fn surface_feature_branch_paths(
                 declared_count,
                 witnessed,
                 members: members.clone(),
-                result,
+                terminal,
                 suffix: suffix.to_vec(),
             };
             continuation.insert(0, branch);

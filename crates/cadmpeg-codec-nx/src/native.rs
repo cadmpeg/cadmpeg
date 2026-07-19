@@ -5219,7 +5219,7 @@ pub struct FeatureSurfaceConstructionReference {
 /// One resolved reference within a surface-construction branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceBranchReference {
-    /// Zero-based member order, or the declared count minus one for the result.
+    /// Zero-based member order, or the declared count minus one for the terminal.
     pub ordinal: u32,
     /// Serialized object index.
     pub object_index: u32,
@@ -5245,15 +5245,15 @@ pub struct FeatureSurfaceConstructionBranch {
     pub header_code: u8,
     /// Serialized `16` or `40` branch mode.
     pub mode: u8,
-    /// Count including the terminal result reference.
+    /// Count including the terminal reference.
     pub declared_count: u8,
     /// Whether the payload repeats the declared count before its zero lane.
     pub witnessed: bool,
-    /// Ordered input references.
+    /// Ordered nonterminal references.
     pub members: Vec<FeatureSurfaceBranchReference>,
-    /// Terminal result reference.
-    pub result: FeatureSurfaceBranchReference,
-    /// Opaque bytes separating the result from the next branch or terminator.
+    /// Terminal reference.
+    pub terminal: FeatureSurfaceBranchReference,
+    /// Opaque bytes separating the terminal from the next branch or terminator.
     pub suffix: Vec<u8>,
     /// Absolute file offset of the branch mode byte.
     pub source_offset: u64,
@@ -8659,7 +8659,7 @@ pub fn feature_surface_construction_branches(
                     .enumerate()
                     .map(|(ordinal, reference)| resolve(ordinal, reference))
                     .collect::<Vec<_>>();
-                let result = resolve(members.len(), branch.result);
+                let terminal = resolve(members.len(), branch.terminal);
                 FeatureSurfaceConstructionBranch {
                     id: format!(
                         "nx:feature-history:surface-construction-branch#{section_key}-{operation_ordinal:010}-{ordinal:010}"
@@ -8672,7 +8672,7 @@ pub fn feature_surface_construction_branches(
                     declared_count: branch.declared_count,
                     witnessed: branch.witnessed,
                     members,
-                    result,
+                    terminal,
                     suffix: branch.suffix,
                     source_offset: entry_offset + branch.offset as u64,
                 }

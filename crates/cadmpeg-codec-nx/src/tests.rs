@@ -7724,12 +7724,12 @@ fn om_surface_feature_branches_require_one_complete_counted_group() {
     assert_eq!(group.branches[0].declared_count, 4);
     assert!(group.branches[0].witnessed);
     assert_eq!(group.branches[0].members.len(), 3);
-    assert_eq!(group.branches[0].result.object_index, 7159);
+    assert_eq!(group.branches[0].terminal.object_index, 7159);
     assert_eq!(group.branches[0].suffix, [0x81, 0x58, 0x01, 0x02]);
     assert_eq!(group.branches[1].declared_count, 5);
     assert!(!group.branches[1].witnessed);
     assert_eq!(group.branches[1].members.len(), 4);
-    assert_eq!(group.branches[1].result.object_index, 7164);
+    assert_eq!(group.branches[1].terminal.object_index, 7164);
     assert_eq!(group.branches[1].suffix, [0x81, 0x1c]);
 
     let studio_payload = [

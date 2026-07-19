@@ -10925,12 +10925,12 @@ fn attach_feature_operations(
                 );
             }
             source_properties.insert(
-                format!("surface_construction_branch.{}.result", branch.ordinal),
+                format!("surface_construction_branch.{}.terminal", branch.ordinal),
                 branch
-                    .result
+                    .terminal
                     .data_block
                     .clone()
-                    .unwrap_or_else(|| branch.result.object_index.to_string()),
+                    .unwrap_or_else(|| branch.terminal.object_index.to_string()),
             );
         }
         for (ordinal, block_use) in sketch_named_point_uses_by_operation
