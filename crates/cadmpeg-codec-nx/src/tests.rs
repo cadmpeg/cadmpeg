@@ -7751,6 +7751,38 @@ fn om_offset_store_control_values_require_complete_zero_prefixed_words() {
 }
 
 #[test]
+fn om_offset_store_index_rows_require_complete_exact_frames() {
+    let first =
+        b"\x2d\x02\x0b\x2a\x93\x8a\x03\x80\x18\x20\x20\x41\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
+    let second = b"\x2d\x02\x0b\x83\xb6\x93\x8a\x07\x80\x18\x20\x80\x4d\x41\x00\x47\x04\x04\x01\xc0\x44\x04\x00";
+    let mut bytes = b"prefix".to_vec();
+    bytes.extend_from_slice(first);
+    bytes.extend_from_slice(b"gap");
+    bytes.extend_from_slice(second);
+
+    let rows = crate::om::offset_store_index_rows(&bytes);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].offset, 6);
+    assert_eq!(rows[0].first_index, 42);
+    assert_eq!(rows[0].flag, 3);
+    assert_eq!(rows[0].indices, [(24, 13), (32, 15), (32, 16), (65, 17)]);
+    assert_eq!(rows[1].first_index, 950);
+    assert_eq!(rows[1].flag, 7);
+    assert_eq!(rows[1].indices, [(24, 38), (32, 40), (77, 41), (65, 43)]);
+
+    let mut null = first.to_vec();
+    null[3] = 0xff;
+    assert!(crate::om::offset_store_index_rows(&null).is_empty());
+    let mut other_flag = first.to_vec();
+    other_flag[6] = 0x04;
+    assert!(crate::om::offset_store_index_rows(&other_flag).is_empty());
+    let mut overlong = first.to_vec();
+    overlong.insert(12, 0x01);
+    assert!(crate::om::offset_store_index_rows(&overlong).is_empty());
+    assert!(crate::om::offset_store_index_rows(&first[..first.len() - 1]).is_empty());
+}
+
+#[test]
 fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
     let encode = |values: &[u32]| {
         values

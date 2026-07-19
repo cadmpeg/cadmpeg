@@ -143,6 +143,72 @@ pub struct OffsetStoreAbrReferenceLane {
     pub slots: Vec<(Option<u32>, usize)>,
 }
 
+/// One self-framed index row in contiguous offset-store column storage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetStoreIndexRow {
+    /// Byte offset of the opening `2d 02 0b` discriminator.
+    pub offset: usize,
+    /// First non-null compact index.
+    pub first_index: u32,
+    /// Byte offset of the first compact index.
+    pub first_index_offset: usize,
+    /// Serialized row flag.
+    pub flag: u8,
+    /// Four ordered non-null compact indices after the row flag.
+    pub indices: [(u32, usize); 4],
+}
+
+/// Decode complete self-framed index rows from contiguous column storage.
+pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
+    const PREFIX: [u8; 3] = [0x2d, 0x02, 0x0b];
+    const MIDDLE: [u8; 2] = [0x93, 0x8a];
+    const SUFFIX: [u8; 9] = [0x00, 0x47, 0x04, 0x04, 0x01, 0xc0, 0x44, 0x04, 0x00];
+    let mut rows = Vec::new();
+    for start in 0..bytes.len().saturating_sub(PREFIX.len()) {
+        if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            continue;
+        }
+        let first_index_offset = start + PREFIX.len();
+        let Some((CompactIndex::Value(first_index), first_width)) =
+            bytes.get(first_index_offset..).and_then(compact_index)
+        else {
+            continue;
+        };
+        let marker = first_index_offset + first_width;
+        if bytes.get(marker..marker + 2) != Some(&MIDDLE[..2]) {
+            continue;
+        }
+        let Some(flag @ (0x03 | 0x07)) = bytes.get(marker + 2).copied() else {
+            continue;
+        };
+        let mut at = marker + 3;
+        let mut indices = Vec::new();
+        for _ in 0..4 {
+            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
+            else {
+                indices.clear();
+                break;
+            };
+            indices.push((index, at));
+            at += width;
+        }
+        let Ok(indices) = indices.try_into() else {
+            continue;
+        };
+        if bytes.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+            continue;
+        }
+        rows.push(OffsetStoreIndexRow {
+            offset: start,
+            first_index,
+            first_index_offset,
+            flag,
+            indices,
+        });
+    }
+    rows
+}
+
 /// Decode fixed-width `ABR` block-reference lanes from contiguous column storage.
 pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrReferenceLane> {
     const SLOT_COUNT: usize = 16;

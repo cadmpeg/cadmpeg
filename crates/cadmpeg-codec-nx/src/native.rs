@@ -10037,6 +10037,31 @@ pub struct DataBlockAbrReferenceLane {
     pub source_offset: u64,
 }
 
+/// Self-framed index row in contiguous offset-store column storage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockIndexRow {
+    /// Globally unique row identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Zero-based row order within the section's column storage.
+    pub ordinal: u32,
+    /// First non-null compact index.
+    pub first_index: u32,
+    /// Serialized `03` or `07` row flag.
+    pub flag: u8,
+    /// Four ordered non-null compact indices after the row flag.
+    pub indices: [u32; 4],
+    /// Directory entry containing the offset-only store.
+    pub source_entry: String,
+    /// Absolute file offset of the opening discriminator.
+    pub source_offset: u64,
+    /// Absolute file offset of the first compact index.
+    pub first_index_source_offset: u64,
+    /// Four ordered absolute file offsets of the compact indices.
+    pub index_source_offsets: [u64; 4],
+}
+
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreHeader {
@@ -11345,6 +11370,43 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
                     },
                 )
                 .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Decode complete index rows from offset-store column storage.
+pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(storage) = section.column_storage else {
+                return Vec::new();
+            };
+            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+                return Vec::new();
+            };
+            let source_base =
+                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
+            crate::om::offset_store_index_rows(storage)
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, row)| DataBlockIndexRow {
+                    id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
+                    section_ordinal: section_ordinal as u32,
+                    ordinal: ordinal as u32,
+                    first_index: row.first_index,
+                    flag: row.flag,
+                    indices: row.indices.map(|(index, _)| index),
+                    source_entry: entry.name.clone(),
+                    source_offset: source_base + row.offset as u64,
+                    first_index_source_offset: source_base + row.first_index_offset as u64,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                })
+                .collect()
         })
         .collect()
 }
