@@ -10760,6 +10760,23 @@ pub struct ExternalReferenceEmptyRecord {
     pub closing_marker: bool,
 }
 
+/// Exact adjacent reference pair in an EXTREFSTREAM handle-set tail.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalReferenceTailReferencePair {
+    /// Globally unique pair identity.
+    pub id: String,
+    /// Owning record in the native `external_reference_records` arena.
+    pub handle_set_record: String,
+    /// Zero-based pair order within the bounded tail.
+    pub ordinal: u32,
+    /// Persistent handle from the `e0 + u32 BE` token.
+    pub persistent_handle: u32,
+    /// Low 28 bits of the following four-byte `0xC?` reference.
+    pub tagged_reference: u32,
+    /// Absolute file offset of the `e0` marker.
+    pub source_offset: u64,
+}
+
 /// One external-reference record slot resolved through its same-stream string table.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalReferenceRecordStringUse {
@@ -11072,6 +11089,47 @@ pub fn external_reference_empty_records(
                 indexed_record: record.id.clone(),
                 closing_marker,
             })
+        })
+        .collect()
+}
+
+/// Decode exact adjacent reference pairs from bounded handle-set tails.
+pub fn external_reference_tail_reference_pairs(
+    container: &Container,
+    records: &[ExternalReferenceRecord],
+) -> Vec<ExternalReferenceTailReferencePair> {
+    records
+        .iter()
+        .flat_map(|record| {
+            let Some(start) = usize::try_from(record.source_offset)
+                .ok()
+                .and_then(|start| start.checked_add(usize::try_from(record.prefix_byte_len).ok()?))
+            else {
+                return Vec::new();
+            };
+            let Some(length) = usize::try_from(record.tail_byte_len).ok() else {
+                return Vec::new();
+            };
+            let Some(end) = start.checked_add(length) else {
+                return Vec::new();
+            };
+            let Some(bytes) = container.data.get(start..end) else {
+                return Vec::new();
+            };
+            crate::container::parse_extref_reference_pairs(bytes)
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, (offset, persistent_handle, tagged_reference))| {
+                    ExternalReferenceTailReferencePair {
+                        id: format!("{}-tail-reference-pair#{ordinal}", record.id),
+                        handle_set_record: record.id.clone(),
+                        ordinal: ordinal as u32,
+                        persistent_handle,
+                        tagged_reference,
+                        source_offset: (start + offset) as u64,
+                    }
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -12439,6 +12497,7 @@ pub fn persistent_handles(
     references: &[ObjectReference],
     control_references: &[DataBlockControlReference],
     external: &[ExternalReferenceRecord],
+    external_tail_pairs: &[ExternalReferenceTailReferencePair],
 ) -> Vec<PersistentHandle> {
     let mut groups = BTreeMap::<u32, (Vec<String>, u32, Vec<String>, Vec<String>)>::new();
     for reference in references
@@ -12467,6 +12526,12 @@ pub fn persistent_handles(
             if !external_records.contains(&record.id) {
                 external_records.push(record.id.clone());
             }
+        }
+    }
+    for pair in external_tail_pairs {
+        let external_records = &mut groups.entry(pair.persistent_handle).or_default().2;
+        if !external_records.contains(&pair.handle_set_record) {
+            external_records.push(pair.handle_set_record.clone());
         }
     }
     groups

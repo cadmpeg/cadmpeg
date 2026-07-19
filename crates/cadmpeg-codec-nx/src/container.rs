@@ -432,6 +432,31 @@ pub(crate) fn parse_extref_empty_record(bytes: &[u8]) -> Option<bool> {
     }
 }
 
+/// Decode exact adjacent persistent-handle and tagged-reference pairs.
+pub(crate) fn parse_extref_reference_pairs(bytes: &[u8]) -> Vec<(usize, u32, u32)> {
+    let mut pairs = Vec::new();
+    let mut at = 0usize;
+    while at + 9 <= bytes.len() {
+        if bytes[at] == 0xe0 && bytes[at + 5] & 0xf0 == 0xc0 {
+            let handle = u32::from_be_bytes(
+                bytes[at + 1..at + 5]
+                    .try_into()
+                    .expect("four-byte persistent handle"),
+            );
+            let tagged_reference = u32::from_be_bytes(
+                bytes[at + 5..at + 9]
+                    .try_into()
+                    .expect("four-byte tagged reference"),
+            ) & 0x0fff_ffff;
+            pairs.push((at, handle, tagged_reference));
+            at += 9;
+        } else {
+            at += 1;
+        }
+    }
+    pairs
+}
+
 /// A parsed SPLMSSTR container and its directory entries.
 #[derive(Debug, Clone)]
 pub struct Container {

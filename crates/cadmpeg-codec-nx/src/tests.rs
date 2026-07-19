@@ -16653,6 +16653,19 @@ fn external_reference_empty_record_parser_requires_the_complete_form() {
 }
 
 #[test]
+fn external_reference_tail_pairs_require_adjacent_complete_tokens() {
+    let bytes = [
+        0xff, 0xe0, 0x12, 0x34, 0x56, 0x78, 0xca, 0xbc, 0xde, 0xf0, 0xe0, 0x00, 0x00, 0x00, 0x01,
+        0x00,
+    ];
+    assert_eq!(
+        crate::container::parse_extref_reference_pairs(&bytes),
+        vec![(1, 0x1234_5678, 0x0abc_def0)]
+    );
+    assert!(crate::container::parse_extref_reference_pairs(&bytes[10..]).is_empty());
+}
+
+#[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = crate::native::ObjectReference {
         id: "nx:test:reference#0".into(),
@@ -16686,13 +16699,25 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         source_offset: 20,
     };
 
-    let handles = crate::native::persistent_handles(&[reference], &[control], &[external]);
+    let tail_pair = crate::native::ExternalReferenceTailReferencePair {
+        id: "nx:test:tail-pair#0".into(),
+        handle_set_record: external.id.clone(),
+        ordinal: 0,
+        persistent_handle: 0x5060_7080,
+        tagged_reference: 7,
+        source_offset: 30,
+    };
 
-    assert_eq!(handles.len(), 1);
+    let handles =
+        crate::native::persistent_handles(&[reference], &[control], &[external], &[tail_pair]);
+
+    assert_eq!(handles.len(), 2);
     assert_eq!(handles[0].records, ["nx:test:om-record#0"]);
     assert_eq!(handles[0].occurrence_count, 2);
     assert_eq!(handles[0].data_blocks, ["nx:test:control-block#0"]);
     assert_eq!(handles[0].external_records, ["nx:test:external-record#6"]);
+    assert_eq!(handles[1].value, 0x5060_7080);
+    assert_eq!(handles[1].external_records, ["nx:test:external-record#6"]);
 }
 
 #[test]
