@@ -2582,7 +2582,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
         if point.persistent_id == 0
-            || !sketch_point_identities.insert((design_stream(&point.id), point.persistent_id))
+            || !sketch_point_identities.insert((
+                design_stream(&point.id),
+                point.owner_reference,
+                point.persistent_id,
+            ))
         {
             findings.push(Finding {
                 check: Check::NativeLinks,
@@ -2605,6 +2609,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         if curve.primary_id == 0
             || !sketch_curve_identities.insert((
                 design_stream(&curve.id),
+                curve.owner_reference,
                 curve.primary_id,
                 curve.secondary_id,
             ))
@@ -2628,8 +2633,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let mut sketch_surface_identities = HashSet::new();
     for surface in &native.sketch_surfaces {
         if surface.persistent_id == 0
-            || !sketch_surface_identities
-                .insert((design_stream(&surface.id), surface.persistent_id))
+            || !sketch_surface_identities.insert((
+                design_stream(&surface.id),
+                surface.owner_reference,
+                surface.persistent_id,
+            ))
         {
             findings.push(Finding {
                 check: Check::NativeLinks,

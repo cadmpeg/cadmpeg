@@ -4027,39 +4027,39 @@ pub(crate) fn neutral_spatial_sketch_id(
 }
 
 fn neutral_spatial_sketch_curve_id(
-    native_ref: &str,
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     primary_id: u64,
     secondary_id: u64,
 ) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    let sketch = identity_key_component(&sketch.0);
     cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
         "f3d:model:spatial-sketch-entity#{}:{}c{primary_id}:{secondary_id}",
-        stream.len(),
-        stream,
+        sketch.len(),
+        sketch,
     ))
 }
 
 fn neutral_spatial_sketch_point_id(
-    native_ref: &str,
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    let sketch = identity_key_component(&sketch.0);
     cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
         "f3d:model:spatial-sketch-entity#{}:{}p{persistent_id}",
-        stream.len(),
-        stream,
+        sketch.len(),
+        sketch,
     ))
 }
 
 fn neutral_spatial_sketch_surface_id(
-    native_ref: &str,
+    sketch: &cadmpeg_ir::sketches::SpatialSketchId,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
-    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    let sketch = identity_key_component(&sketch.0);
     cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
         "f3d:model:spatial-sketch-entity#{}:{}s{persistent_id}",
-        stream.len(),
-        stream,
+        sketch.len(),
+        sketch,
     ))
 }
 
@@ -4556,13 +4556,10 @@ pub fn project_spatial_sketch_design(
                     _ => return None,
                 }
             };
+            let sketch = neutral_spatial_sketch_id(placement);
             Some(SpatialSketchEntity {
-                id: neutral_spatial_sketch_curve_id(
-                    &curve.id,
-                    curve.primary_id,
-                    curve.secondary_id,
-                ),
-                sketch: neutral_spatial_sketch_id(placement),
+                id: neutral_spatial_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
+                sketch,
                 construction: false,
                 native_ref: Some(curve.id.clone()),
                 geometry_ref: None,
@@ -4581,7 +4578,7 @@ pub fn project_spatial_sketch_design(
         let sketch = neutral_spatial_sketch_id(placement);
         let depth = sketch_point_depth(point)?;
         Some(SpatialSketchEntity {
-            id: neutral_spatial_sketch_point_id(&point.id, point.persistent_id),
+            id: neutral_spatial_sketch_point_id(&sketch, point.persistent_id),
             sketch,
             construction: false,
             native_ref: Some(point.id.clone()),
@@ -4599,9 +4596,10 @@ pub fn project_spatial_sketch_design(
         let scope = native_stream(&surface.id)?;
         let owner = surface.owner_reference?;
         let placement = placements_by_suffix.get(&(scope, owner))?;
+        let sketch = neutral_spatial_sketch_id(placement);
         Some(SpatialSketchEntity {
-            id: neutral_spatial_sketch_surface_id(&surface.id, surface.persistent_id),
-            sketch: neutral_spatial_sketch_id(placement),
+            id: neutral_spatial_sketch_surface_id(&sketch, surface.persistent_id),
+            sketch,
             construction: false,
             native_ref: Some(surface.id.clone()),
             geometry_ref: None,
@@ -18940,18 +18938,13 @@ fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeo
         displacement.y / length,
         displacement.z / length,
     );
-    let parallel_error = Vector3::new(
-        displacement_direction.y * direction.z - displacement_direction.z * direction.y,
-        displacement_direction.z * direction.x - displacement_direction.x * direction.z,
-        displacement_direction.x * direction.y - displacement_direction.y * direction.x,
-    )
-    .norm();
-    if (direction.norm() - 1.0).abs() > 1.0e-9
-        || (stored_normal.norm() - 1.0).abs() > 1.0e-9
-        || parallel_error > 1.0e-9
-    {
+    if (direction.norm() - 1.0).abs() > 1.0e-9 || (stored_normal.norm() - 1.0).abs() > 1.0e-9 {
         return None;
     }
+    // Start plus displacement carries the bounded line and is corroborated by
+    // the persistent endpoint records. Imported sketches can retain a stale
+    // auxiliary unit direction, so derive the neutral tangent from the exact
+    // displacement just as the normal is orthogonalized below.
     let direction = displacement_direction;
     // The stored line normal is an auxiliary orientation vector. Imported
     // legacy sketches can retain a small component along the line direction;
@@ -20434,7 +20427,7 @@ mod relation_tests {
 
     #[test]
     fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
-        use cadmpeg_ir::sketches::SketchId;
+        use cadmpeg_ir::sketches::{SketchId, SpatialSketchId};
 
         let sketch = SketchId("f3d:model:sketch#Design/A@10".into());
         let other_sketch = SketchId("f3d:model:sketch#Design/A@11".into());
@@ -20449,6 +20442,17 @@ mod relation_tests {
         assert_ne!(curve, neutral_sketch_curve_id(&sketch, 42, 1));
         assert_ne!(point, neutral_sketch_point_id(&other_sketch, 42));
         assert_ne!(curve, neutral_sketch_curve_id(&other_sketch, 42, 0));
+
+        let spatial = SpatialSketchId("f3d:model:spatial-sketch#Design/A@10".into());
+        let other_spatial = SpatialSketchId("f3d:model:spatial-sketch#Design/A@11".into());
+        assert_ne!(
+            super::neutral_spatial_sketch_point_id(&spatial, 42),
+            super::neutral_spatial_sketch_point_id(&other_spatial, 42)
+        );
+        assert_ne!(
+            super::neutral_spatial_sketch_curve_id(&spatial, 42, 0),
+            super::neutral_spatial_sketch_curve_id(&other_spatial, 42, 0)
+        );
     }
 
     #[test]
@@ -25349,6 +25353,16 @@ mod relation_tests {
             panic!("expected line");
         };
         assert!((direction.y + 1.0).abs() <= 1.0e-12);
+
+        bytes[133 + 6 * 8..133 + 7 * 8].copy_from_slice(&0.6f64.to_le_bytes());
+        bytes[133 + 7 * 8..133 + 8 * 8].copy_from_slice(&0.8f64.to_le_bytes());
+        let SketchCurveGeometry::Line { direction, .. } =
+            super::decode_line(&bytes).expect("line with stale auxiliary direction")
+        else {
+            panic!("expected line");
+        };
+        assert!((direction.x).abs() <= 1.0e-12);
+        assert!((direction.y + 1.0).abs() <= 1.0e-12);
     }
 
     #[test]
@@ -26248,7 +26262,7 @@ mod relation_tests {
                 },
                 ..
             }) if entity == &super::neutral_spatial_sketch_curve_id(
-                "f3d:Design/BulkStream.dat:curve#108",
+                &sketches[0].id,
                 7,
                 0,
             ) && direction == &Vector3::new(0.0, 1.0, 0.0)

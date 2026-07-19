@@ -9021,9 +9021,12 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
         assert!(native.sketch_points.len() >= 2);
         assert!(native.sketch_curve_identities.len() >= 2);
         native.sketch_points[1].persistent_id = native.sketch_points[0].persistent_id;
+        native.sketch_points[1].owner_reference = native.sketch_points[0].owner_reference;
         native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
         native.sketch_curve_identities[1].secondary_id =
             native.sketch_curve_identities[0].secondary_id;
+        native.sketch_curve_identities[1].owner_reference =
+            native.sketch_curve_identities[0].owner_reference;
         (
             native.sketch_points[1].id.clone(),
             native.sketch_curve_identities[1].id.clone(),
@@ -9039,6 +9042,39 @@ fn validation_rejects_duplicate_sketch_geometry_persistent_identities() {
     assert!(findings.iter().any(|finding| {
         finding.check == cadmpeg_ir::Check::NativeLinks
             && finding.entity.as_deref() == Some(curve_id.as_str())
+            && finding.message.contains("persistent identity")
+    }));
+}
+
+#[test]
+fn validation_accepts_sketch_geometry_persistent_identities_reused_by_another_owner() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("generated F3D decode");
+    let mut ir = decoded.ir;
+    let (point_id, curve_id) = {
+        let mut native = f3d_native_mut(&mut ir);
+        assert!(native.sketch_points.len() >= 2);
+        assert!(native.sketch_curve_identities.len() >= 2);
+        native.sketch_points[1].persistent_id = native.sketch_points[0].persistent_id;
+        native.sketch_points[0].owner_reference = Some(100);
+        native.sketch_points[1].owner_reference = Some(101);
+        native.sketch_curve_identities[1].primary_id = native.sketch_curve_identities[0].primary_id;
+        native.sketch_curve_identities[1].secondary_id =
+            native.sketch_curve_identities[0].secondary_id;
+        native.sketch_curve_identities[0].owner_reference = Some(100);
+        native.sketch_curve_identities[1].owner_reference = Some(101);
+        (
+            native.sketch_points[1].id.clone(),
+            native.sketch_curve_identities[1].id.clone(),
+        )
+    };
+
+    assert!(!crate::validate_native(&ir).iter().any(|finding| {
+        finding.check == cadmpeg_ir::Check::NativeLinks
+            && (finding.entity.as_deref() == Some(point_id.as_str())
+                || finding.entity.as_deref() == Some(curve_id.as_str()))
             && finding.message.contains("persistent identity")
     }));
 }
