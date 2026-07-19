@@ -29130,22 +29130,25 @@ fn build_ir(
         let schema_class = feature_schema_class(scan, operation.feature_id);
         let definition = schema_class.map_or_else(
             || {
-                current_operation
-                    .and_then(|operation| {
-                        named_feature_definition(scan, &ir, operation.feature_id, &operation.kind)
+                current_feature_recipe(&scan.feature_operations, operation.feature_id)
+                    .map(|_| {
+                        schema_feature_definition(
+                            scan,
+                            &ir,
+                            operation.feature_id,
+                            0,
+                            &operation.kind,
+                        )
                     })
                     .or_else(|| {
-                        current_feature_recipe(&scan.feature_operations, operation.feature_id).map(
-                            |_| {
-                                schema_feature_definition(
-                                    scan,
-                                    &ir,
-                                    operation.feature_id,
-                                    0,
-                                    &operation.kind,
-                                )
-                            },
-                        )
+                        current_operation.and_then(|operation| {
+                            named_feature_definition(
+                                scan,
+                                &ir,
+                                operation.feature_id,
+                                &operation.kind,
+                            )
+                        })
                     })
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: current_operation
