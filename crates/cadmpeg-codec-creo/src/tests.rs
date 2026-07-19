@@ -5699,6 +5699,56 @@ fn decode_promotes_unnamed_depdb_recipe_into_feature_history() {
 }
 
 #[test]
+fn mdlstatus_operation_precedes_depdb_body_context_for_the_same_feature() {
+    let mdlstatus = b"Rundung ID 8051\0Rundung ID 8053\0".to_vec();
+    let depdb = b"\xe3K\xc3\xb6rper ID 8051\0\xe3\
+        \xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0"
+        .to_vec();
+    let data = build_prt("c", &[("MdlStatus", mdlstatus), ("DEPDB_DATA", depdb)]);
+    let scan = container::scan_bytes(data.clone());
+
+    let operation = scan
+        .feature_operations
+        .iter()
+        .find(|operation| operation.feature_id == 8051)
+        .expect("current feature operation");
+    assert_eq!(operation.kind, "Rundung");
+    assert_eq!(operation.recipe, None);
+    assert!(scan.feature_operation_states.iter().any(|state| {
+        state.feature_id == 8051 && state.kind == "Körper" && state.offset != operation.offset
+    }));
+    let recipe = scan
+        .feature_operations
+        .iter()
+        .find(|operation| operation.feature_id == 8053)
+        .expect("DEPDB recipe operation");
+    assert_eq!(
+        recipe.recipe,
+        Some(crate::feature::FeatureRecipe::ProtrudeExtrude)
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#8051")
+        .expect("round feature");
+    assert_eq!(feature.name.as_deref(), Some("Rundung ID 8051"));
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet { .. }
+    ));
+    let states = &result.ir.native.namespace("creo").unwrap().arenas["feature_operation_states"];
+    let body_context = states
+        .iter()
+        .find(|state| state.fields["feature_id"] == 8051 && state.fields["family"] == "Körper")
+        .expect("retained DEPDB body context");
+    assert_eq!(body_context.fields["current"], false);
+}
+
+#[test]
 fn scan_partitions_multiple_depdb_recipe_rows() {
     let depdb = b"\xf7\x50\x9f\x75\x83\x95\xf6\x9f\x73Profile 1\0\xf6\0protextrude\0\
         \xf7\x50\x9f\x77\x83\x94\xf6\x9f\x75Profile 2\0\xf6\0cutextrude\0"
