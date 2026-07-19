@@ -505,10 +505,11 @@ fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<S
 mod marker_tests {
     use super::{
         angled_reference_plane_frame, append_spatial_vertex, arc_angle_relation_kind,
-        bind_indexed_curve_vertices, compact_body_component_path_at, compact_body_path_at,
-        compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
-        compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
-        compact_component_plane_frame, compact_edge_component_path_at, compact_edge_selection_at,
+        bind_indexed_curve_vertices, bounded_profile_axis_endpoints,
+        compact_body_component_path_at, compact_body_path_at, compact_body_retention_mode,
+        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
+        compact_bounded_curve_tangent, compact_combine_operation_at, compact_component_plane_frame,
+        compact_edge_component_path_at, compact_edge_selection_at,
         compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
@@ -4429,10 +4430,13 @@ mod marker_tests {
             Some(4),
             Some([0.01, 0.01]),
         ));
-        assert_eq!(
-            profile_roster_construction_axis(&lane, "profile-native", &sketch),
-            None
-        );
+        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+        assert!(!bounded_profile_axis_endpoints(
+            "profile-native",
+            &markers,
+            &HashSet::from(["profile-point", "opposite-profile-point"]),
+            [&lane.sketch_entities[0], &lane.sketch_entities[1]],
+        ));
         lane.sketch_entities.pop();
 
         lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
@@ -4496,6 +4500,21 @@ mod marker_tests {
             .push(marker("axis-start", 450, None, Some([0.0, 0.0])));
         lane.sketch_entities
             .push(marker("axis-end", 460, None, Some([0.0, 0.02])));
+        assert_eq!(
+            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            Some(cadmpeg_ir::features::RevolutionAxis {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            })
+        );
+
+        lane.sketch_entities.truncate(4);
+        lane.sketch_entities[0].coordinates_m = Some([0.0, 0.0]);
+        lane.sketch_entities[1].coordinates_m = Some([-0.01, 0.01]);
+        lane.sketch_entities
+            .push(marker("selected-axis-end", 50, None, Some([0.0, 0.02])));
+        lane.native_payload[126..130].copy_from_slice(&1u32.to_le_bytes());
+        lane.native_payload[curve + 58..curve + 60].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(
             profile_roster_construction_axis(&lane, "profile-native", &sketch),
             Some(cadmpeg_ir::features::RevolutionAxis {
@@ -5735,8 +5754,42 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         .collect::<Vec<_>>();
     if let [start, end] = unreferenced_points.as_slice() {
         let endpoints = [*start, *end];
-        if bounded_profile_axis_endpoints(profile_native, markers, endpoints) {
+        if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
             return Some(endpoints);
+        }
+    }
+    let selected_endpoint = unreferenced_points
+        .iter()
+        .copied()
+        .filter(|marker| {
+            usize::try_from(marker.offset).ok().is_some_and(|offset| {
+                lane.native_payload.get(offset + 76..offset + 80) == Some(&1u32.to_le_bytes())
+            })
+        })
+        .collect::<Vec<_>>();
+    if let [end] = selected_endpoint.as_slice() {
+        let mut owned = markers
+            .iter()
+            .copied()
+            .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
+            .collect::<Vec<_>>();
+        owned.sort_unstable_by_key(|marker| marker.offset);
+        if let Some(start) = owned
+            .windows(2)
+            .find_map(|pair| (pair[1].id == end.id).then_some(pair[0]))
+            .filter(|marker| {
+                marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+            })
+        {
+            let endpoints = [start, *end];
+            if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
+            {
+                return Some(endpoints);
+            }
         }
     }
     let [candidate] = curve_candidates.as_slice() else {
@@ -5747,12 +5800,14 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         return None;
     };
     let endpoints = [*start, *end];
-    bounded_profile_axis_endpoints(profile_native, markers, endpoints).then_some(endpoints)
+    bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
+        .then_some(endpoints)
 }
 
 fn bounded_profile_axis_endpoints(
     profile_native: &str,
     markers: &[&SketchInputEntity],
+    curve_endpoints: &HashSet<&str>,
     endpoints: [&SketchInputEntity; 2],
 ) -> bool {
     const TOLERANCE_M: f64 = 1.0e-9;
@@ -5777,7 +5832,9 @@ fn bounded_profile_axis_endpoints(
             && matches!(
                 marker.kind,
                 SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-            ))
+            )
+            && (curve_endpoints.contains(marker.id.as_str())
+                || endpoints.iter().any(|endpoint| endpoint.id == marker.id)))
         .then_some(marker.coordinates_m)
         .flatten()
     }) {
