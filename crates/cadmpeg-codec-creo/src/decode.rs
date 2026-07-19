@@ -3956,6 +3956,20 @@ pub(crate) fn resolved_section_points(
                 }
         })
         .collect::<Vec<_>>();
+    let point_symmetric_constraints = definition
+        .relations
+        .iter()
+        .filter(|table| feature_skamp_table_complete(table))
+        .flat_map(|table| &table.skamps)
+        .filter_map(|skamp| section_skamp_point_symmetry(definition, skamp))
+        .filter(|(center, first, second)| {
+            !ambiguous_point_ids.contains(center)
+                && [first, second].into_iter().all(|point| match point {
+                    SectionPointSource::Point(point_id) => !ambiguous_point_ids.contains(point_id),
+                    SectionPointSource::Value(_) => true,
+                })
+        })
+        .collect::<Vec<_>>();
     let signed_dimension_candidates = definition
         .relations
         .iter()
@@ -4082,6 +4096,15 @@ pub(crate) fn resolved_section_points(
             SectionSymmetryAxis::Value(value) => equation.rhs += 2.0 * value,
         }
         equations.push(equation);
+    }
+    for &(center, first, second) in &point_symmetric_constraints {
+        for coordinate in 0..2 {
+            let mut equation = SectionCoordinateEquation::default();
+            equation.add_source(first, coordinate, 1.0);
+            equation.add_source(second, coordinate, 1.0);
+            equation.add_point(center, coordinate, -2.0);
+            equations.push(equation);
+        }
     }
     let stored_coordinates = points
         .into_iter()
@@ -4577,6 +4600,20 @@ fn section_skamp_axis_symmetry(
         section_skamp_selected_point(definition, first_item)?,
         section_skamp_selected_point(definition, second_item)?,
         coordinate,
+    ))
+}
+
+fn section_skamp_point_symmetry(
+    definition: &crate::feature::FeatureDefinition,
+    skamp: &crate::feature::FeatureSkamp,
+) -> Option<(u32, SectionPointSource, SectionPointSource)> {
+    let (14, [center, first, second]) = (skamp.kind, skamp.items.as_slice()) else {
+        return None;
+    };
+    Some((
+        section_skamp_point_entity_id(definition, center)?,
+        section_skamp_selected_point(definition, first)?,
+        section_skamp_selected_point(definition, second)?,
     ))
 }
 
@@ -16941,6 +16978,16 @@ mod resolved_sketch_tests {
                 ],
                 offset: 96,
             }];
+        point_symmetry
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+            .push(crate::feature::FeatureSectionPoint {
+                point_id: 4,
+                u: Some(2.0),
+                v: Some(3.0),
+            });
         synchronize_skamp_count(&mut point_symmetry);
         assert_eq!(
             section_skamp_constraints(&point_symmetry, &SketchId("sketch".into()))[0]
@@ -16958,6 +17005,7 @@ mod resolved_sketch_tests {
                 )),
             }
         );
+        assert_eq!(resolved_section_points(&point_symmetry)[&3], [4.0, 4.0]);
 
         assert!(matches!(
             constraints[0].0.definition,
