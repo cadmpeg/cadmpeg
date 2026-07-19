@@ -9198,6 +9198,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         reference_member_offsets: vec![184, 195],
         solid_primitive: None,
         direct_face_operation: None,
+        move_operation: None,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,

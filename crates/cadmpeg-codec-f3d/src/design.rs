@@ -19,13 +19,13 @@ use crate::records::{
     DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
     DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
-    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObject, DesignObjectKind,
-    DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-    DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader, DesignSketchPlacement,
-    DesignSolidPrimitive, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand,
+    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignMoveOperation, DesignObject,
+    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
+    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
+    DesignSketchPlacement, DesignSolidPrimitive, DesignTopologyRecipeEntry,
+    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
+    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -43,6 +43,7 @@ pub(crate) enum DesignFeatureFamily {
     Chamfer,
     CircularPattern,
     Mirror,
+    Move,
     OffsetFaces,
     Thicken,
     Coil,
@@ -60,6 +61,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
         "Circular Pattern" | "Réseau C" => Some(DesignFeatureFamily::CircularPattern),
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
+        "Move" => Some(DesignFeatureFamily::Move),
         "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),
         "Thicken" => Some(DesignFeatureFamily::Thicken),
         "SpirePrimitive" => Some(DesignFeatureFamily::Coil),
@@ -931,6 +933,19 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     }
                 })
+            } else if family == Some(DesignFeatureFamily::Move) {
+                project_move(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else if family == Some(DesignFeatureFamily::Thicken) {
                 project_thicken(scope, face_operands, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -1330,6 +1345,68 @@ fn project_thicken(
         faces,
         thickness: Some(Length(*thickness * 10.0)),
         side: None,
+    })
+}
+
+fn project_move(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+
+    let operation = scope.move_operation.as_ref()?;
+    let matching = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+                && group.role == 0x0000_0004_0000_0000
+                && !group.members.is_empty()
+        })
+        .collect::<Vec<_>>();
+    let [group] = matching.as_slice() else {
+        return None;
+    };
+    Some(FeatureDefinition::MoveBody {
+        bodies: BodySelection::Native(group.id.clone()),
+        translation: Vector3::new(
+            operation.transform[0][3] * 10.0,
+            operation.transform[1][3] * 10.0,
+            operation.transform[2][3] * 10.0,
+        ),
+        rotation: matrix_axis_angle(&operation.transform),
+        copies: 0,
+    })
+}
+
+fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::AxisAngle> {
+    use cadmpeg_ir::features::{Angle, AxisAngle};
+
+    let trace = transform[0][0] + transform[1][1] + transform[2][2];
+    let angle = ((trace - 1.0) * 0.5).clamp(-1.0, 1.0).acos();
+    if angle.abs() <= 1.0e-12 {
+        return None;
+    }
+    let (x, y, z) = if (std::f64::consts::PI - angle).abs() <= 1.0e-8 {
+        let x = ((transform[0][0] + 1.0) * 0.5).max(0.0).sqrt();
+        let y = ((transform[1][1] + 1.0) * 0.5).max(0.0).sqrt()
+            * (transform[0][1] + transform[1][0]).signum();
+        let z = ((transform[2][2] + 1.0) * 0.5).max(0.0).sqrt()
+            * (transform[0][2] + transform[2][0]).signum();
+        (x, y, z)
+    } else {
+        let scale = 2.0 * angle.sin();
+        (
+            (transform[2][1] - transform[1][2]) / scale,
+            (transform[0][2] - transform[2][0]) / scale,
+            (transform[1][0] - transform[0][1]) / scale,
+        )
+    };
+    let norm = x.hypot(y).hypot(z);
+    (norm > 1.0e-12).then_some(AxisAngle {
+        origin: Point3::new(0.0, 0.0, 0.0),
+        direction: Vector3::new(x / norm, y / norm, z / norm),
+        angle: Angle(angle),
     })
 }
 
@@ -13052,6 +13129,7 @@ pub fn decode_parameter_scopes(
             }
             scope.solid_primitive = exact_solid_primitive(bytes, &scope);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &scope);
+            scope.move_operation = exact_move_operation(bytes, &scope);
             scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(bytes, &scope);
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
             scope.fixed_chamfer_parameters = exact_fixed_chamfer_parameters(bytes, &scope);
@@ -13364,6 +13442,50 @@ fn exact_direct_face_operation(
         }
         _ => None,
     }
+}
+
+fn exact_move_operation(bytes: &[u8], scope: &DesignParameterScope) -> Option<DesignMoveOperation> {
+    if design_feature_family(&scope.kind) != Some(DesignFeatureFamily::Move) {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for record_index in &scope.reference_members {
+        for (start, paired) in indexed_record_pairs(bytes, *record_index) {
+            let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+            if class_tag != "349"
+                || u32_at(bytes, after_tag) != Some(*record_index)
+                || !matches!(paired.checked_sub(start)?, 254 | 274)
+                || bytes.get(start + 11..start + 43) != Some(&[0; 32])
+                || bytes.get(start + 47) != Some(&0)
+            {
+                continue;
+            }
+            let form = u32_at(bytes, start + 43)?;
+            if !matches!(form, 1 | 5) {
+                continue;
+            }
+            let transform: [[f64; 4]; 4] = f64s_at(bytes, start + 48, 16)?
+                .chunks_exact(4)
+                .map(|row| row.try_into().expect("four-value matrix row"))
+                .collect::<Vec<[f64; 4]>>()
+                .try_into()
+                .ok()?;
+            if !valid_sketch_transform(&transform) {
+                continue;
+            }
+            candidates.push(DesignMoveOperation {
+                transform,
+                transform_offset: (start + 48) as u64,
+                transform_record_index: *record_index,
+                form,
+                form_offset: (start + 43) as u64,
+            });
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn exact_fixed_extrude_parameters(
@@ -14163,6 +14285,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Thicken)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
         let scope_group_start = out.len();
@@ -15709,6 +15832,7 @@ fn parse_parameter_scope(
         reference_member_offsets: reference_member_offsets.clone(),
         solid_primitive: None,
         direct_face_operation: None,
+        move_operation: None,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
@@ -21163,6 +21287,23 @@ mod relation_tests {
     }
 
     #[test]
+    fn move_matrix_decomposes_to_translation_and_axis_angle() {
+        let angle = std::f64::consts::PI / 3.0;
+        let transform = [
+            [angle.cos(), 0.0, angle.sin(), -14.0],
+            [0.0, 1.0, 0.0, 2.0],
+            [-angle.sin(), 0.0, angle.cos(), 9.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let rotation = super::matrix_axis_angle(&transform).expect("nonidentity rotation");
+        assert!((rotation.angle.0 - angle).abs() <= 1.0e-12);
+        assert!((rotation.direction.x - 0.0).abs() <= 1.0e-12);
+        assert!((rotation.direction.y - 1.0).abs() <= 1.0e-12);
+        assert!((rotation.direction.z - 0.0).abs() <= 1.0e-12);
+        assert_eq!(super::matrix_axis_angle(&super::identity_matrix()), None);
+    }
+
+    #[test]
     fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -22012,6 +22153,7 @@ mod relation_tests {
             reference_member_offsets: vec![1085, 1096, 1107],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -22230,6 +22372,7 @@ mod relation_tests {
             reference_member_offsets: vec![1085],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -22589,6 +22732,7 @@ mod relation_tests {
             reference_member_offsets: vec![1085],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -26356,6 +26500,7 @@ mod relation_tests {
             reference_member_offsets: vec![185, 196],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -26472,6 +26617,7 @@ mod relation_tests {
             reference_member_offsets: Vec::new(),
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -26635,6 +26781,7 @@ mod relation_tests {
             reference_member_offsets: vec![185],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -27140,6 +27287,7 @@ mod relation_tests {
             reference_member_offsets: vec![byte_offset + 85],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -27800,6 +27948,7 @@ mod relation_tests {
             reference_member_offsets: vec![185, 196],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -28005,6 +28154,7 @@ mod relation_tests {
             reference_member_offsets: vec![byte_offset + 85],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -28112,6 +28262,7 @@ mod relation_tests {
                 reference_member_offsets: Vec::new(),
                 solid_primitive: None,
                 direct_face_operation: None,
+                move_operation: None,
                 fixed_extrude_parameters: None,
                 fixed_fillet_parameters: None,
                 fixed_chamfer_parameters: None,
@@ -28604,6 +28755,7 @@ mod relation_tests {
             reference_member_offsets: vec![0],
             solid_primitive: None,
             direct_face_operation: None,
+            move_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,

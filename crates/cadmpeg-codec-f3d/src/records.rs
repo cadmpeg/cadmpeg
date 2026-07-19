@@ -839,6 +839,21 @@ pub enum DesignDirectFaceOperation {
     },
 }
 
+/// Exact rigid transform carried by a Move feature scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignMoveOperation {
+    /// Row-major model-space rigid transform in source centimetres.
+    pub transform: [[f64; 4]; 4],
+    /// Byte offset of the first matrix scalar.
+    pub transform_offset: u64,
+    /// Indexed class-349 record carrying `transform`.
+    pub transform_record_index: u32,
+    /// Source transform-form discriminator.
+    pub form: u32,
+    /// Byte offset of `form`.
+    pub form_offset: u64,
+}
+
 /// Exact fixed scalar lanes carried by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignFixedExtrudeParameters {
@@ -1008,6 +1023,9 @@ pub struct DesignParameterScope {
     /// Exact fixed-form construction carried by a direct-face scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub direct_face_operation: Option<DesignDirectFaceOperation>,
+    /// Exact rigid transform carried by a Move scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_operation: Option<DesignMoveOperation>,
     /// Exact fixed scalar lanes carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
