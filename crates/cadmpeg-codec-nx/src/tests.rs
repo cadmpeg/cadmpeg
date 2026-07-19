@@ -4642,14 +4642,39 @@ fn nx_thicken_symmetric_offsets_require_identical_support_sets() {
 
 #[test]
 fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
-    use cadmpeg_ir::features::{FeatureDefinition, RadiusForm, RadiusSpec};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, RadiusForm, RadiusSpec};
     use cadmpeg_ir::geometry::{
-        BlendCrossSection, BlendRadiusLaw, ProceduralSurface, ProceduralSurfaceDefinition,
+        BlendCrossSection, BlendRadiusLaw, BlendSupport, ProceduralSurface,
+        ProceduralSurfaceDefinition,
     };
     use cadmpeg_ir::ids::{BodyId, ProceduralSurfaceId, SurfaceId};
 
     let mut ir = cadmpeg_ir::document::CadIr::empty(cadmpeg_ir::units::Units::default());
     let output = BodyId("nx:s4:body#3".into());
+    let support_a = SurfaceId("support-a".into());
+    let support_b = SurfaceId("support-b".into());
+    let support_c = SurfaceId("support-c".into());
+    assert_eq!(
+        crate::decode::blend_support_bipartition(vec![
+            [support_a.clone(), support_b.clone()],
+            [support_b.clone(), support_c.clone()],
+        ]),
+        Some((
+            vec![support_a.clone(), support_c.clone()],
+            vec![support_b.clone()],
+        ))
+    );
+    assert!(crate::decode::blend_support_bipartition(vec![
+        [support_a.clone(), support_b.clone()],
+        [support_b.clone(), support_c.clone()],
+        [support_c, support_a],
+    ])
+    .is_none());
+    assert!(crate::decode::blend_support_bipartition(vec![
+        [SurfaceId("a".into()), SurfaceId("b".into())],
+        [SurfaceId("c".into()), SurfaceId("d".into())],
+    ])
+    .is_none());
     let make_blend = |ordinal: u32, radius: BlendRadiusLaw| ProceduralSurface {
         id: ProceduralSurfaceId(format!("nx:s4:blend-construction#{ordinal}")),
         surface: SurfaceId(format!("nx:s4:blend-surf#{ordinal}")),
@@ -4686,6 +4711,41 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             },
             ..
         }
+    ));
+
+    let mut face_blend_ir = ir.clone();
+    let first_support = SurfaceId("nx:s4:blend-support#a".into());
+    let second_support = SurfaceId("nx:s4:blend-support#b".into());
+    for procedural in &mut face_blend_ir.model.procedural_surfaces {
+        let ProceduralSurfaceDefinition::Blend { supports, .. } = &mut procedural.definition else {
+            unreachable!()
+        };
+        *supports = [
+            Some(BlendSupport {
+                surface: first_support.clone(),
+                reversed: false,
+            }),
+            Some(BlendSupport {
+                surface: second_support.clone(),
+                reversed: true,
+            }),
+        ];
+    }
+    attach_test_body_surface(&mut face_blend_ir, &output, first_support);
+    attach_test_body_surface(&mut face_blend_ir, &output, second_support);
+    let (definition, _) =
+        crate::decode::blend_feature_definition(&face_blend_ir, std::slice::from_ref(&output))
+            .expect("complete blend supports");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::FaceBlend {
+            first_faces: FaceSelection::Resolved { ref faces, .. },
+            second_faces: FaceSelection::Resolved {
+                faces: ref second,
+                ..
+            },
+            radius: RadiusSpec::Constant { .. },
+        } if faces.len() == 1 && second.len() == 1 && faces != second
     ));
 
     ir.model.procedural_surfaces.push(make_blend(

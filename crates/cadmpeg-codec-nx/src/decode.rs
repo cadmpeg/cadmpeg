@@ -11048,11 +11048,13 @@ pub(crate) fn blend_feature_definition(
     let body_surfaces = body_surface_ids(ir, body)?;
     let mut surfaces = Vec::new();
     let mut laws = Vec::new();
+    let mut support_pairs = Vec::new();
     for procedural in &ir.model.procedural_surfaces {
         if !body_surfaces.contains(&procedural.surface) {
             continue;
         }
         let ProceduralSurfaceDefinition::Blend {
+            supports,
             radius,
             cross_section,
             ..
@@ -11065,6 +11067,7 @@ pub(crate) fn blend_feature_definition(
         }
         surfaces.push(procedural.surface.clone());
         laws.push(radius);
+        support_pairs.push(supports);
     }
     if laws.is_empty() {
         return None;
@@ -11107,13 +11110,107 @@ pub(crate) fn blend_feature_definition(
                 radius: Length(radii[0]),
             },
         );
+    let face_blend = support_pairs
+        .iter()
+        .map(|supports| {
+            let [Some(first), Some(second)] = supports else {
+                return None;
+            };
+            (first.surface != second.surface)
+                .then_some([first.surface.clone(), second.surface.clone()])
+        })
+        .collect::<Option<Vec<_>>>()
+        .and_then(blend_support_bipartition)
+        .and_then(|(first, second)| {
+            let (first_faces, _) = support_face_projection(
+                ir,
+                &first,
+                format!("{}:blend-first-support-surfaces", body.0),
+            );
+            let (second_faces, _) = support_face_projection(
+                ir,
+                &second,
+                format!("{}:blend-second-support-surfaces", body.0),
+            );
+            match (&first_faces, &second_faces) {
+                (FaceSelection::Resolved { .. }, FaceSelection::Resolved { .. }) => {
+                    Some(FeatureDefinition::FaceBlend {
+                        first_faces,
+                        second_faces,
+                        radius: radius.clone(),
+                    })
+                }
+                _ => None,
+            }
+        });
     Some((
-        FeatureDefinition::Fillet {
+        face_blend.unwrap_or(FeatureDefinition::Fillet {
             edges: EdgeSelection::Unresolved,
             radius,
-        },
+        }),
         surfaces,
     ))
+}
+
+/// Split an unordered rolling-ball support graph into two deterministic face
+/// sets. Face blending is symmetric, so each connected component starts with
+/// its lowest surface identity on the first side. The support graph must be
+/// complete bipartite: odd cycles and missing cross-pairs cannot be represented
+/// by one neutral face-blend operation.
+pub(crate) fn blend_support_bipartition(
+    pairs: Vec<[SurfaceId; 2]>,
+) -> Option<(Vec<SurfaceId>, Vec<SurfaceId>)> {
+    let mut adjacent = BTreeMap::<SurfaceId, BTreeSet<SurfaceId>>::new();
+    for [first, second] in pairs {
+        if first == second {
+            return None;
+        }
+        adjacent
+            .entry(first.clone())
+            .or_default()
+            .insert(second.clone());
+        adjacent.entry(second).or_default().insert(first);
+    }
+    let mut sides = BTreeMap::<SurfaceId, bool>::new();
+    for seed in adjacent.keys() {
+        if sides.contains_key(seed) {
+            continue;
+        }
+        sides.insert(seed.clone(), false);
+        let mut pending = vec![seed.clone()];
+        while let Some(surface) = pending.pop() {
+            let side = sides[&surface];
+            for neighbor in &adjacent[&surface] {
+                match sides.get(neighbor) {
+                    Some(neighbor_side) if *neighbor_side == side => return None,
+                    Some(_) => {}
+                    None => {
+                        sides.insert(neighbor.clone(), !side);
+                        pending.push(neighbor.clone());
+                    }
+                }
+            }
+        }
+    }
+    let (first, second): (Vec<_>, Vec<_>) = sides
+        .into_iter()
+        .partition(|(_, second_side)| !*second_side);
+    let first = first
+        .into_iter()
+        .map(|(surface, _)| surface)
+        .collect::<Vec<_>>();
+    let second = second
+        .into_iter()
+        .map(|(surface, _)| surface)
+        .collect::<Vec<_>>();
+    if first.iter().any(|surface| {
+        second
+            .iter()
+            .any(|other| !adjacent[surface].contains(other))
+    }) {
+        return None;
+    }
+    Some((first, second))
 }
 
 pub(crate) fn offset_surface_feature_definition(
