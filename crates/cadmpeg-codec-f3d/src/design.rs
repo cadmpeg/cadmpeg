@@ -2022,35 +2022,11 @@ fn resolved_edge_group(
     };
     let state = feature_input_topology_id(feature_id, previous_state_id);
     let lost_selection = || unmatched_selection(Some(previous_state_id));
-    let combined_edges = matched_operands
+    let exact_slots = matched_operands
         .iter()
-        .enumerate()
-        .map(|(index, operand)| {
-            let recipe = resolved_edge_operand(operand);
-            let identity = identity_matches
-                .as_ref()
-                .and_then(|identities| identities[index].resolved_edge_slot);
-            match (recipe, identity) {
-                (Some(recipe), Some(identity)) if recipe != identity => None,
-                (recipe, identity) => Some(recipe.or(identity)),
-            }
-        })
-        .collect::<Option<Vec<_>>>();
-    let Some(combined_edges) = combined_edges else {
-        return unmatched_selection(Some(previous_state_id));
-    };
-    let established_edges = combined_edges.iter().flatten().copied().collect::<Vec<_>>();
-    let exact_slots = combined_edges
-        .iter()
-        .copied()
+        .map(|operand| resolved_edge_operand(operand))
         .collect::<Option<Vec<_>>>()
-        .or_else(|| {
-            unique_edge_group_assignment(&matched_operands).filter(|assignment| {
-                established_edges
-                    .iter()
-                    .all(|identity| assignment.contains(identity))
-            })
-        });
+        .or_else(|| unique_edge_group_assignment(&matched_operands));
     let transition_slots = || {
         treatment_radius
             .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
@@ -2072,19 +2048,29 @@ fn resolved_edge_group(
             })
             .or_else(|| scope_partition_edge_group_candidates(group, groups, operands))
     };
-    let resolved_slots = exact_slots.or_else(|| {
-        transition_state_id.and_then(|_| {
-            transition_slots().filter(|assignment| {
-                established_edges
-                    .iter()
-                    .all(|identity| assignment.contains(identity))
-            })
-        })
-    });
+    let resolved_slots =
+        exact_slots.or_else(|| transition_state_id.and_then(|_| transition_slots()));
     let Some(resolved_slots) = resolved_slots else {
         if !group.lost_edge_references.is_empty() {
             return lost_selection();
         }
+        let combined_edges = matched_operands
+            .iter()
+            .enumerate()
+            .map(|(index, operand)| {
+                let recipe = resolved_edge_operand(operand);
+                let identity = identity_matches
+                    .as_ref()
+                    .and_then(|identities| identities[index].resolved_edge_slot);
+                match (recipe, identity) {
+                    (Some(recipe), Some(identity)) if recipe != identity => None,
+                    (recipe, identity) => Some(recipe.or(identity)),
+                }
+            })
+            .collect::<Option<Vec<_>>>();
+        let Some(combined_edges) = combined_edges else {
+            return unmatched_selection(Some(previous_state_id));
+        };
         let partial_members = matched_operands
             .iter()
             .zip(combined_edges)
