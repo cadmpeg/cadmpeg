@@ -5292,6 +5292,31 @@ pub struct FeatureDraftConstructionPayload {
     pub block_source_offsets: Vec<u64>,
 }
 
+/// Exact logical payload reconstructed from the ordered draft construction graph.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDraftConstructionGraphPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `DRAFT` operation label.
+    pub operation_label: String,
+    /// Counted index lane establishing the common offset store.
+    pub index_lane: String,
+    /// Ordered construction-reference records.
+    pub construction_references: [String; 4],
+    /// Ordered source blocks.
+    pub data_blocks: [String; 4],
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: [u64; 4],
+    /// Exact source-block lengths.
+    pub block_byte_lengths: [u64; 4],
+    /// Absolute source-block offsets.
+    pub block_source_offsets: [u64; 4],
+}
+
 /// Complete identity frame in a reconstructed draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDraftConstructionIdentityFrame {
@@ -8986,6 +9011,61 @@ pub fn feature_draft_construction_payloads(
                 block_payload_offsets,
                 block_byte_lengths,
                 block_source_offsets,
+            })
+        })
+        .collect()
+}
+
+/// Reconstruct ordered logical payloads from complete draft construction graphs.
+pub fn feature_draft_construction_graph_payloads(
+    container: &Container,
+    lanes: &[FeatureDraftConstructionIndexLane],
+    references: &[FeatureDraftConstructionReference],
+) -> Vec<FeatureDraftConstructionGraphPayload> {
+    let blocks = offset_data_block_bytes(container);
+    lanes
+        .iter()
+        .filter_map(|lane| {
+            let lane_blocks = lane.data_blocks.as_ref()?;
+            let store = lane_blocks.first()?.rsplit_once(":block#")?.0;
+            let mut graph = references
+                .iter()
+                .filter(|reference| reference.operation_label == lane.operation_label)
+                .collect::<Vec<_>>();
+            graph.sort_by_key(|reference| reference.ordinal);
+            if graph
+                .iter()
+                .enumerate()
+                .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+            {
+                return None;
+            }
+            let graph: [&FeatureDraftConstructionReference; 4] = graph.try_into().ok()?;
+            let data_blocks = graph
+                .each_ref()
+                .map(|reference| reference.data_block.clone())
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?;
+            if data_blocks.iter().any(|block| {
+                block
+                    .rsplit_once(":block#")
+                    .is_none_or(|(prefix, _)| prefix != store)
+            }) {
+                return None;
+            }
+            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, key) = lane.id.rsplit_once('#')?;
+            Some(FeatureDraftConstructionGraphPayload {
+                id: format!("nx:feature-history:draft-construction-graph-payload#{key}"),
+                operation_label: lane.operation_label.clone(),
+                index_lane: lane.id.clone(),
+                construction_references: graph.each_ref().map(|reference| reference.id.clone()),
+                data_blocks: data_blocks.try_into().ok()?,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets: starts.try_into().ok()?,
+                block_byte_lengths: lengths.try_into().ok()?,
+                block_source_offsets: sources.try_into().ok()?,
             })
         })
         .collect()
