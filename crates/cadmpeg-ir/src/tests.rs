@@ -9,7 +9,7 @@ use crate::examples::unit_cube;
 use crate::features::ExtrudeDirection;
 use crate::geometry::{
     Curve, CurveGeometry, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SurfaceGeometry,
+    ProceduralSurfaceDefinition, SplineSurfaceParameters, SurfaceGeometry,
 };
 use crate::ids::{
     CoedgeId, CurveId, EdgeId, ProceduralCurveId, ProceduralSurfaceId, SubdId, UnknownId,
@@ -118,7 +118,9 @@ fn procedural_surface_carrier_requires_its_exact_owner() {
         id: construction.clone(),
         surface: surface.clone(),
         definition: ProceduralSurfaceDefinition::Exact {
-            parameter_ranges: [[0.0, 1.0], [0.0, 1.0]],
+            parameters: SplineSurfaceParameters::OrderedRanges {
+                ranges: [[0.0, 1.0], [0.0, 1.0]],
+            },
             extension: 0,
             revision_form: None,
         },
@@ -2102,6 +2104,63 @@ fn periodic_curve_parameter_domain_is_checked() {
 
     ir.model.edges[0].param_range = Some([-std::f64::consts::PI, std::f64::consts::PI]);
     assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
+}
+
+#[test]
+fn periodic_nurbs_parameters_preserve_phase_and_wrap_for_evaluation() {
+    let nurbs = crate::geometry::NurbsCurve {
+        degree: 1,
+        knots: vec![0.0, 0.0, 1.0, 2.0, 2.0],
+        control_points: vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+        ],
+        weights: None,
+        periodic: true,
+    };
+    let geometry = CurveGeometry::Nurbs(nurbs.clone());
+    assert_eq!(
+        crate::eval::curve_point(&geometry, 0.5),
+        crate::eval::curve_point(&geometry, 2.5)
+    );
+
+    let mut ir = unit_cube();
+    let curve_id = ir.model.edges[0].curve.clone().unwrap();
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = geometry;
+    ir.model.edges[0].param_range = Some([0.5, 2.5]);
+    assert!(!validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
+
+    ir.model.edges[0].param_range = Some([0.5, 2.500_001]);
+    assert!(validate(&ir, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding.check == Check::ParameterDomain));
+
+    let CurveGeometry::Nurbs(nurbs) = &mut ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry
+    else {
+        unreachable!()
+    };
+    nurbs.periodic = false;
+    ir.model.edges[0].param_range = Some([0.5, 2.5]);
+    assert!(validate(&ir, Vec::new())
         .findings
         .iter()
         .any(|finding| finding.check == Check::ParameterDomain));

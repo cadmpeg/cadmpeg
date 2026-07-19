@@ -375,18 +375,22 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
         }
-        if let ProceduralSurfaceDefinition::Exact {
-            parameter_ranges, ..
-        } = &procedural.definition
-        {
-            if parameter_ranges
-                .iter()
-                .any(|range| !range.iter().all(|value| value.is_finite()) || range[0] > range[1])
-            {
+        if let ProceduralSurfaceDefinition::Exact { parameters, .. } = &procedural.definition {
+            let valid = match parameters {
+                crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
+                    ranges.iter().all(|range| {
+                        range.iter().all(|value| value.is_finite()) && range[0] <= range[1]
+                    })
+                }
+                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
+                    values.iter().flatten().all(|value| value.is_finite())
+                }
+            };
+            if !valid {
                 bounds_err(
                     findings,
                     &procedural.id.0,
-                    "exact spline surface parameter ranges are invalid",
+                    "exact spline surface parameter fields are invalid",
                 );
             }
         }
@@ -464,14 +468,21 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         if let ProceduralSurfaceDefinition::Loft {
             sections,
-            parameter_ranges,
+            parameters,
             bridge,
             ..
         } = &procedural.definition
         {
-            let ranges_valid = parameter_ranges
-                .iter()
-                .all(|range| range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]);
+            let parameters_valid = match parameters {
+                crate::geometry::SplineSurfaceParameters::OrderedRanges { ranges } => {
+                    ranges.iter().all(|range| {
+                        range[0].is_finite() && range[1].is_finite() && range[0] <= range[1]
+                    })
+                }
+                crate::geometry::SplineSurfaceParameters::RevisionValues { values } => {
+                    values.iter().flatten().all(|value| value.is_finite())
+                }
+            };
             let sections_valid =
                 sections
                     .iter()
@@ -500,7 +511,7 @@ pub(super) fn check_bounds(ir: &CadIr, findings: &mut Vec<Finding>) {
                 crate::geometry::LoftBridgeToken::Double(value) => value.is_finite(),
                 _ => true,
             });
-            if !ranges_valid || !sections_valid || !bridge_valid {
+            if !parameters_valid || !sections_valid || !bridge_valid {
                 bounds_err(
                     findings,
                     &procedural.id.0,

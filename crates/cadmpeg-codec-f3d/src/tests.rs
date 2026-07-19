@@ -12568,7 +12568,7 @@ fn nurbs_surface_block_decodes_to_carrier() {
 
 #[test]
 fn generated_exact_spline_surfaces_decode_and_write_source_less() {
-    use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
+    use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SplineSurfaceParameters};
 
     for name in ["exact_spl_sur", "exactsur"] {
         let result = F3dCodec
@@ -12582,7 +12582,9 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
         assert_eq!(
             procedural.definition,
             ProceduralSurfaceDefinition::Exact {
-                parameter_ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                parameters: SplineSurfaceParameters::OrderedRanges {
+                    ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                },
                 extension: 7,
                 revision_form: None,
             }
@@ -12601,7 +12603,9 @@ fn generated_exact_spline_surfaces_decode_and_write_source_less() {
         assert_eq!(
             round_trip.ir.model.procedural_surfaces[0].definition,
             ProceduralSurfaceDefinition::Exact {
-                parameter_ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                parameters: SplineSurfaceParameters::OrderedRanges {
+                    ranges: [[-2.0, 3.0], [-4.0, 5.0]],
+                },
                 extension: 7,
                 revision_form: None,
             }
@@ -13129,7 +13133,9 @@ fn generated_taper_surface_family_decodes_and_writes_source_less() {
 
 #[test]
 fn generated_loft_surface_decodes_full_nested_graph() {
-    use cadmpeg_ir::geometry::{LoftBridgeToken, ProceduralSurfaceDefinition};
+    use cadmpeg_ir::geometry::{
+        LoftBridgeToken, ProceduralSurfaceDefinition, SplineSurfaceParameters,
+    };
 
     for name in ["loft_spl_sur", "loftsur"] {
         let result = F3dCodec
@@ -13141,7 +13147,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         let ProceduralSurfaceDefinition::Loft {
             sections,
             revision_form: _,
-            parameter_ranges,
+            parameters,
             closures,
             singularities,
             mode,
@@ -13150,7 +13156,12 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         else {
             panic!("expected loft surface")
         };
-        assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+        assert_eq!(
+            parameters,
+            &SplineSurfaceParameters::OrderedRanges {
+                ranges: [[-1.0, 2.0], [-3.0, 4.0]],
+            }
+        );
         assert_eq!(*closures, [1, 2]);
         assert_eq!(*singularities, [3, 4]);
         assert_eq!(*mode, 2);
@@ -13203,7 +13214,7 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         let ProceduralSurfaceDefinition::Loft {
             sections,
             revision_form: _,
-            parameter_ranges,
+            parameters,
             closures,
             singularities,
             mode,
@@ -13212,7 +13223,12 @@ fn generated_loft_surface_decodes_full_nested_graph() {
         else {
             panic!("expected round-trip loft surface")
         };
-        assert_eq!(*parameter_ranges, [[-1.0, 2.0], [-3.0, 4.0]]);
+        assert_eq!(
+            parameters,
+            &SplineSurfaceParameters::OrderedRanges {
+                ranges: [[-1.0, 2.0], [-3.0, 4.0]],
+            }
+        );
         assert_eq!((*closures, *singularities, *mode), ([1, 2], [3, 4], 2));
         assert_eq!(bridge.len(), 5);
         assert!(sections.iter().all(|section| {

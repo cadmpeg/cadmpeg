@@ -297,20 +297,35 @@ pub struct ProceduralSurface {
     pub record_bounds: Option<[Option<f64>; 4]>,
 }
 
+/// Parameter fields carried by exact and loft spline-surface constructions.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SplineSurfaceParameters {
+    /// Ordered semantic U and V intervals in the legacy layout.
+    OrderedRanges {
+        /// Ordered U and V intervals.
+        ranges: [[f64; 2]; 2],
+    },
+    /// Four optional native scalar fields in a revision-gated layout.
+    RevisionValues {
+        /// Values in serialized field order; `None` is a false presence flag.
+        values: [Option<f64>; 4],
+    },
+}
+
 /// Neutral semantics for a procedural surface.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProceduralSurfaceDefinition {
-    /// Exact native NURBS surface with retained parameter intervals.
+    /// Exact native NURBS surface with retained parameter fields.
     Exact {
-        /// Ordered native U and V intervals.
-        parameter_ranges: [[f64; 2]; 2],
+        /// Legacy ordered ranges or revision-native scalar values.
+        parameters: SplineSurfaceParameters,
         /// Native ASM extension integer following the intervals.
         extension: i64,
         /// Revision-gated form fields; absent from the pre-revision layout.
-        /// The revision layout stores the shared tail first, then four
-        /// optional parameter values (`support_bounds`) and the extension
-        /// as an enum.
+        /// The revision layout stores the shared tail before `parameters`
+        /// and the extension as an enum.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         revision_form: Option<RevisionSurfaceForm>,
     },
@@ -349,8 +364,8 @@ pub enum ProceduralSurfaceDefinition {
     Loft {
         /// Two ordered loft sections.
         sections: [LoftSection; 2],
-        /// Two ordered native parameter intervals.
-        parameter_ranges: [[f64; 2]; 2],
+        /// Legacy ordered ranges or revision-native scalar values.
+        parameters: SplineSurfaceParameters,
         /// Two ordered native closure enums.
         closures: [i64; 2],
         /// Two ordered native singularity enums.

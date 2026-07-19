@@ -674,9 +674,17 @@ pub(super) fn check_parameter_domains(ir: &CadIr, findings: &mut Vec<Finding>) {
                     valid &= sweep <= tau + 1.0e-9 && (full_period || (0.0..tau).contains(&start));
                 }
                 CurveGeometry::Nurbs(nurbs) => {
-                    if let (Some(first), Some(last)) = (nurbs.knots.first(), nurbs.knots.last()) {
-                        valid &= start >= *first && end <= *last;
-                    }
+                    valid &= crate::eval::nurbs_curve_parameter_domain(nurbs).is_some_and(
+                        |[lower, upper]| {
+                            if nurbs.periodic {
+                                let period = upper - lower;
+                                let tolerance = 1.0e-9_f64.max(period.abs() * 1.0e-9);
+                                end - start <= period + tolerance
+                            } else {
+                                start >= lower && end <= upper
+                            }
+                        },
+                    );
                 }
                 _ => {}
             }

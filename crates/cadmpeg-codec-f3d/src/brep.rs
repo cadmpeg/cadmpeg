@@ -1587,11 +1587,11 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             ProceduralSurfaceDefinition::TSpline { construction }
                         }
                         nurbs::DecodedProceduralSurfaceDefinition::Exact {
-                            parameter_ranges,
+                            parameters,
                             extension,
                             revision_form,
                         } => ProceduralSurfaceDefinition::Exact {
-                            parameter_ranges,
+                            parameters,
                             extension,
                             revision_form,
                         },
@@ -1765,7 +1765,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                             ProceduralSurfaceDefinition::Loft {
                                 sections,
                                 revision_form: embedded.revision_form,
-                                parameter_ranges: embedded.parameter_ranges,
+                                parameters: embedded.parameters,
                                 closures: embedded.closures,
                                 singularities: embedded.singularities,
                                 mode: embedded.mode,

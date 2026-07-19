@@ -11,7 +11,8 @@
 //! parabolas, and hyperbolas) evaluate to `None`.
 
 use crate::geometry::{
-    CurveGeometry, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
+    CurveGeometry, NurbsCurve, NurbsSurface, PcurveGeometry, ProceduralSurfaceDefinition,
+    SurfaceGeometry,
 };
 use crate::math::{Point2, Point3, Vector3};
 use crate::CadIr;
@@ -115,6 +116,35 @@ pub fn nurbs_curve_point(
         weight_sum += value * weight;
     }
     (weight_sum != 0.0).then(|| Point3::new(x / weight_sum, y / weight_sum, z / weight_sum))
+}
+
+/// Effective knot domain of a structurally evaluable NURBS curve.
+pub fn nurbs_curve_parameter_domain(curve: &NurbsCurve) -> Option<[f64; 2]> {
+    let degree = usize::try_from(curve.degree).ok()?;
+    let count = curve.control_points.len();
+    if count <= degree || curve.knots.len() < count.checked_add(degree)?.checked_add(1)? {
+        return None;
+    }
+    let lower = *curve.knots.get(degree)?;
+    let upper = *curve.knots.get(count)?;
+    (lower.is_finite() && upper.is_finite() && lower < upper).then_some([lower, upper])
+}
+
+/// Map a NURBS parameter onto its evaluable knot branch.
+///
+/// Periodic parameters retain their serialized phase outside this operation
+/// and are interpreted modulo the positive knot-domain period.
+pub fn map_nurbs_curve_parameter(curve: &NurbsCurve, parameter: f64) -> Option<f64> {
+    let [lower, upper] = nurbs_curve_parameter_domain(curve)?;
+    if !parameter.is_finite() {
+        return None;
+    }
+    if curve.periodic {
+        let period = upper - lower;
+        Some(lower + (parameter - lower).rem_euclid(period))
+    } else {
+        (lower..=upper).contains(&parameter).then_some(parameter)
+    }
 }
 
 /// Evaluate a possibly-rational B-spline curve over 2D `(u, v)` poles.
@@ -323,13 +353,16 @@ pub fn curve_point(geometry: &CurveGeometry, t: f64) -> Option<Point3> {
             ],
         )),
         CurveGeometry::Degenerate { point } => Some(*point),
-        CurveGeometry::Nurbs(nurbs) => nurbs_curve_point(
-            nurbs.degree,
-            &nurbs.knots,
-            &nurbs.control_points,
-            nurbs.weights.as_deref(),
-            t,
-        ),
+        CurveGeometry::Nurbs(nurbs) => {
+            let parameter = map_nurbs_curve_parameter(nurbs, t)?;
+            nurbs_curve_point(
+                nurbs.degree,
+                &nurbs.knots,
+                &nurbs.control_points,
+                nurbs.weights.as_deref(),
+                parameter,
+            )
+        }
         CurveGeometry::Parabola { .. }
         | CurveGeometry::Hyperbola { .. }
         | CurveGeometry::Procedural { .. }

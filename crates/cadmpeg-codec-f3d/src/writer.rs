@@ -5932,7 +5932,7 @@ fn native_procedural_surface_definition(
             bytes.push(0x10);
         }
         ProceduralSurfaceDefinition::Exact {
-            parameter_ranges,
+            parameters,
             extension,
             revision_form,
         } => {
@@ -5944,7 +5944,11 @@ fn native_procedural_surface_definition(
             native_surface_base(bytes, "spline")?;
             bytes.push(0x0f);
             native_ident(bytes, "exact_spl_sur")?;
-            if let Some(form) = revision_form {
+            if let (
+                Some(form),
+                cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionValues { values },
+            ) = (revision_form, parameters)
+            {
                 if form.revision <= 0 {
                     return Err(CodecError::Malformed(
                         "revision-gated exact_spl_sur requires a positive revision".into(),
@@ -5957,16 +5961,28 @@ fn native_procedural_surface_definition(
                     solved_cache,
                     procedural.cache_fit_tolerance,
                 )?;
-                for bound in &form.support_bounds {
-                    native_optional_f64(bytes, *bound);
+                for value in values {
+                    native_optional_f64(bytes, *value);
                 }
                 native_enum(bytes, *extension);
                 bytes.push(0x10);
                 return Ok(true);
             }
+            let cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges } =
+                parameters
+            else {
+                return Err(CodecError::Malformed(
+                    "exact spline parameter fields conflict with its revision form".into(),
+                ));
+            };
+            if revision_form.is_some() {
+                return Err(CodecError::Malformed(
+                    "exact spline ordered ranges cannot carry a revision form".into(),
+                ));
+            }
             native_nurbs_surface(bytes, solved_cache)?;
             native_f64(bytes, cache_fit_tolerance / 10.0);
-            for range in parameter_ranges {
+            for range in ranges {
                 for value in range {
                     native_f64(bytes, *value);
                 }
@@ -6149,7 +6165,7 @@ fn native_procedural_surface_definition(
         ProceduralSurfaceDefinition::Loft {
             sections,
             revision_form,
-            parameter_ranges,
+            parameters,
             closures,
             singularities,
             mode,
@@ -6160,7 +6176,7 @@ fn native_procedural_surface_definition(
             procedural,
             sections,
             revision_form.as_ref(),
-            parameter_ranges,
+            parameters,
             closures,
             singularities,
             *mode,
@@ -8186,7 +8202,7 @@ fn encode_native_loft(
     procedural: &cadmpeg_ir::geometry::ProceduralSurface,
     sections: &[cadmpeg_ir::geometry::LoftSection; 2],
     revision_form: Option<&cadmpeg_ir::geometry::LoftRevisionForm>,
-    parameter_ranges: &[[f64; 2]; 2],
+    parameters: &cadmpeg_ir::geometry::SplineSurfaceParameters,
     closures: &[i64; 2],
     singularities: &[i64; 2],
     mode: i64,
@@ -8194,6 +8210,12 @@ fn encode_native_loft(
     solved_cache: &NurbsSurface,
 ) -> Result<(), CodecError> {
     if let Some(form) = revision_form {
+        let cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionValues { values } = parameters
+        else {
+            return Err(CodecError::Malformed(
+                "revision-gated loft requires revision-native parameter values".into(),
+            ));
+        };
         if form.revision <= 0 {
             return Err(CodecError::Malformed(
                 "revision-gated loft requires a positive serializer revision".into(),
@@ -8203,12 +8225,11 @@ fn encode_native_loft(
         bytes.push(0x0f);
         native_ident(bytes, "loft_spl_sur")?;
         native_i64(bytes, form.revision);
-        for (section, range) in sections.iter().zip(parameter_ranges) {
-            native_loft_section(bytes, target, section, Some(*range))?;
+        for section in sections {
+            native_loft_section(bytes, target, section, None)?;
         }
-        for range in parameter_ranges {
-            native_optional_f64(bytes, Some(range[0]));
-            native_optional_f64(bytes, Some(range[1]));
+        for value in values {
+            native_optional_f64(bytes, *value);
         }
         for flag in form.flags {
             bytes.push(native_bool(flag));
@@ -8235,12 +8256,17 @@ fn encode_native_loft(
         return Ok(());
     }
     native_surface_base(bytes, "spline")?;
+    let cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges { ranges } = parameters else {
+        return Err(CodecError::Malformed(
+            "legacy loft requires ordered parameter ranges".into(),
+        ));
+    };
     bytes.push(0x0f);
     native_ident(bytes, "loft_spl_sur")?;
-    for (section, range) in sections.iter().zip(parameter_ranges) {
+    for (section, range) in sections.iter().zip(ranges) {
         native_loft_section(bytes, target, section, Some(*range))?;
     }
-    for range in parameter_ranges {
+    for range in ranges {
         native_f64(bytes, range[0]);
         native_f64(bytes, range[1]);
     }

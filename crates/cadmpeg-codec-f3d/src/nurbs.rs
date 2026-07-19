@@ -687,10 +687,10 @@ pub struct DecodedProceduralSurface {
 
 /// Source-native procedural semantics before embedded geometry is assigned IR ids.
 pub enum DecodedProceduralSurfaceDefinition {
-    /// Exact NURBS construction and retained native U/V intervals.
+    /// Exact NURBS construction and retained native parameter fields.
     Exact {
-        /// Ordered U and V intervals.
-        parameter_ranges: [[f64; 2]; 2],
+        /// Legacy ordered ranges or revision-native scalar values.
+        parameters: cadmpeg_ir::geometry::SplineSurfaceParameters,
         /// Native ASM extension integer.
         extension: i64,
         /// Revision-gated form fields.
@@ -1302,7 +1302,7 @@ pub(crate) struct EmbeddedLoftSectionEntry {
 pub struct EmbeddedLoft {
     pub(crate) sections: [Vec<EmbeddedLoftSectionEntry>; 2],
     pub(crate) revision_form: Option<cadmpeg_ir::geometry::LoftRevisionForm>,
-    pub(crate) parameter_ranges: [[f64; 2]; 2],
+    pub(crate) parameters: cadmpeg_ir::geometry::SplineSurfaceParameters,
     pub(crate) closures: [i64; 2],
     pub(crate) singularities: [i64; 2],
     pub(crate) mode: i64,
@@ -2023,16 +2023,10 @@ fn decode_revision_loft(
         decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
         decode_revision_loft_section(span, &mut position, int_width, active_bytes, tables)?,
     ];
-    let parameter_ranges = [
-        [
-            take_optional_range_value(span, &mut position)??,
-            take_optional_range_value(span, &mut position)??,
-        ],
-        [
-            take_optional_range_value(span, &mut position)??,
-            take_optional_range_value(span, &mut position)??,
-        ],
-    ];
+    let mut parameter_values = [None; 4];
+    for value in &mut parameter_values {
+        *value = take_optional_range_value(span, &mut position)?;
+    }
     let mut flags = [false; 4];
     for flag in &mut flags {
         *flag = take_bool(span, &mut position)?;
@@ -2054,7 +2048,9 @@ fn decode_revision_loft(
                 discontinuities,
                 tail_flag,
             }),
-            parameter_ranges,
+            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionValues {
+                values: parameter_values,
+            },
             closures: [0, 0],
             singularities: [0, 0],
             mode: 0,
@@ -2151,7 +2147,9 @@ fn decode_loft_spl_sur(
         definition: DecodedProceduralSurfaceDefinition::Loft(EmbeddedLoft {
             sections,
             revision_form: None,
-            parameter_ranges,
+            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+                ranges: parameter_ranges,
+            },
             closures,
             singularities,
             mode,
@@ -4065,14 +4063,13 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
         let extension = take_tagged_int(span, &mut position, 0x15, int_width)?;
         return Some(DecodedProceduralSurface {
             definition: DecodedProceduralSurfaceDefinition::Exact {
-                parameter_ranges: [
-                    [bounds[0].unwrap_or(0.0), bounds[1].unwrap_or(0.0)],
-                    [bounds[2].unwrap_or(0.0), bounds[3].unwrap_or(0.0)],
-                ],
+                parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::RevisionValues {
+                    values: bounds,
+                },
                 extension,
                 revision_form: Some(cadmpeg_ir::geometry::RevisionSurfaceForm {
                     revision,
-                    support_bounds: bounds,
+                    support_bounds: [None; 4],
                     reference_endpoints: [None; 2],
                     second_endpoints: [None; 2],
                     flags: Vec::new(),
@@ -4107,7 +4104,9 @@ fn decode_exact_spl_sur(record_bytes: &[u8], int_width: usize) -> Option<Decoded
     let _ = name;
     Some(DecodedProceduralSurface {
         definition: DecodedProceduralSurfaceDefinition::Exact {
-            parameter_ranges,
+            parameters: cadmpeg_ir::geometry::SplineSurfaceParameters::OrderedRanges {
+                ranges: parameter_ranges,
+            },
             extension,
             revision_form: None,
         },
