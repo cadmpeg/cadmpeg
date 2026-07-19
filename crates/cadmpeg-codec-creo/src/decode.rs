@@ -9820,12 +9820,11 @@ fn section_skamp_constraints(
 }
 
 fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -> BTreeSet<u32> {
-    let segments = section_segment_rows(definition);
-    let mut ids = unique_section_segment_external_ids(segments);
+    let mut ids = unique_section_segment_external_ids(definition);
     let Some(order) = &definition.order_table else {
         return ids;
     };
-    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(segments);
+    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
     ids.extend(
         definition
@@ -9843,6 +9842,43 @@ fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -
             }),
     );
     ids
+}
+
+fn section_segment_external_id_counts(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<u32, usize> {
+    definition
+        .segments
+        .as_ref()
+        .map_or_else(BTreeMap::new, |table| {
+            table
+                .rows
+                .iter()
+                .map(|row| row.external_id)
+                .chain(table.opaque_rows.iter().map(|row| row.external_id))
+                .fold(BTreeMap::new(), |mut counts, external_id| {
+                    *counts.entry(external_id).or_insert(0) += 1;
+                    counts
+                })
+        })
+}
+
+fn unique_section_segment_external_ids(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeSet<u32> {
+    section_segment_external_id_counts(definition)
+        .into_iter()
+        .filter_map(|(external_id, count)| (count == 1).then_some(external_id))
+        .collect()
+}
+
+fn ambiguous_section_segment_external_ids(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeSet<u32> {
+    section_segment_external_id_counts(definition)
+        .into_iter()
+        .filter_map(|(external_id, count)| (count > 1).then_some(external_id))
+        .collect()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -9957,34 +9993,6 @@ fn unresolved_saved_section_entity(
         },
         offset,
     )
-}
-
-fn unique_section_segment_external_ids<'a>(
-    segments: impl IntoIterator<Item = &'a crate::feature::FeatureSegment>,
-) -> BTreeSet<u32> {
-    segments
-        .into_iter()
-        .fold(BTreeMap::new(), |mut counts, segment| {
-            *counts.entry(segment.external_id).or_insert(0usize) += 1;
-            counts
-        })
-        .into_iter()
-        .filter_map(|(external_id, count)| (count == 1).then_some(external_id))
-        .collect()
-}
-
-fn ambiguous_section_segment_external_ids<'a>(
-    segments: impl IntoIterator<Item = &'a crate::feature::FeatureSegment>,
-) -> BTreeSet<u32> {
-    segments
-        .into_iter()
-        .fold(BTreeMap::new(), |mut counts, segment| {
-            *counts.entry(segment.external_id).or_insert(0usize) += 1;
-            counts
-        })
-        .into_iter()
-        .filter_map(|(external_id, count)| (count > 1).then_some(external_id))
-        .collect()
 }
 
 fn unique_saved_section_internal_ids(
@@ -10276,8 +10284,8 @@ fn transfer_resolved_sketches(
             continue;
         };
         let segments = section_segment_rows(definition);
-        let unique_segment_ids = unique_section_segment_external_ids(segments);
-        let ambiguous_segment_ids = ambiguous_section_segment_external_ids(segments);
+        let unique_segment_ids = unique_section_segment_external_ids(definition);
+        let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
         let points = resolved_section_points(definition);
         let solved = definition
             .trim_entities
@@ -10439,6 +10447,41 @@ fn transfer_resolved_sketches(
                         crate::feature::FeatureSegmentKind::Point => "point",
                     }
                     .to_string(),
+                },
+            });
+        }
+        for segment in definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.opaque_rows)
+        {
+            let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            let suffix = if unique_external_id {
+                segment.external_id.to_string()
+            } else {
+                format!("opaque:offset:{}", segment.offset)
+            };
+            let id = SketchEntityId(format!(
+                "creo:featdefs:sketch_entity#{}:{suffix}",
+                definition.id
+            ));
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                segment.offset as u64,
+                "opaque_section_segment",
+                Exactness::ByteExact,
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Native {
+                    native_kind: format!("segment_type:{}", segment.kind),
                 },
             });
         }
@@ -15872,12 +15915,7 @@ mod resolved_sketch_tests {
             saved_section_external_id(
                 definition.order_table.as_ref().expect("order table"),
                 &unique_saved_section_internal_ids(&definition),
-                &ambiguous_section_segment_external_ids(
-                    definition
-                        .segments
-                        .iter()
-                        .flat_map(|segments| &segments.rows)
-                ),
+                &ambiguous_section_segment_external_ids(&definition),
                 3,
             ),
             Some(42)
@@ -17338,12 +17376,7 @@ mod resolved_sketch_tests {
             .expect("segments")
             .rows
             .push(duplicate_line);
-        let unique_ids = unique_section_segment_external_ids(
-            duplicate_entity
-                .segments
-                .iter()
-                .flat_map(|segments| &segments.rows),
-        );
+        let unique_ids = unique_section_segment_external_ids(&duplicate_entity);
         assert!(!unique_ids.contains(&12));
         assert_eq!(
             section_segment_identity_suffix(
@@ -17367,6 +17400,41 @@ mod resolved_sketch_tests {
                 ..
             } if native_kind == "creo:skamp:1"
         ));
+        let opaque_segment = crate::feature::FeatureOpaqueSegment {
+            kind: 25,
+            directions: [None; 3],
+            point_ids: [Some(1), Some(2)],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 99,
+            offset: 600,
+        };
+        let mut opaque_entity = definition.clone();
+        opaque_entity
+            .segments
+            .as_mut()
+            .expect("segments")
+            .opaque_rows
+            .push(opaque_segment.clone());
+        assert!(unique_section_segment_external_ids(&opaque_entity).contains(&99));
+        assert!(section_entity_external_ids(&opaque_entity).contains(&99));
+
+        let mut opaque_collision = definition.clone();
+        opaque_collision
+            .segments
+            .as_mut()
+            .expect("segments")
+            .opaque_rows
+            .push(crate::feature::FeatureOpaqueSegment {
+                external_id: 12,
+                ..opaque_segment
+            });
+        assert!(!unique_section_segment_external_ids(&opaque_collision).contains(&12));
+        assert!(ambiguous_section_segment_external_ids(&opaque_collision).contains(&12));
+        assert!(!section_entity_external_ids(&opaque_collision).contains(&12));
         let mut equivalent_skamp = definition.clone();
         let mut redundant = equivalent_skamp
             .relations
