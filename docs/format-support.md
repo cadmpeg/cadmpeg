@@ -149,6 +149,8 @@ Entity provenance and domain status measure different properties. `byte_exact`, 
 - **Presentation and metadata: Complete.** Global metadata, standard and definition colors, line fonts, text fonts and templates, views, visibility, drawings, notes, leaders, dimensions, symbols, witness geometry, sectioned areas, drawing properties, and admitted Type 406 property forms retain typed identity and links. Neutral appearance transfers where the common IR defines it; drawing and PMI semantics remain native.
 - **Recovery and retention: Complete.** `native.iges` retains physical cards, generic entity records, typed domain arenas, raw token values and spans, links, and source identities. `SourceFidelity` retains exact opaque byte records with source range, length, bytes, and SHA-256. Its byte ledger classifies Global values and delimiters, Directory fields and reserved bytes, Parameter tokens, delimiters, comments, back-pointers, card framing, line endings, Terminate counts, and post-Terminate bytes with exact nonoverlapping source coverage.
 
+- **Blend-family detail:** `FACE_BLEND` uses the same owned circular-carrier support projection as `BLEND`; incomplete support graphs retain unresolved face selections instead of changing family.
+
 ### Write and round trip
 
 - **Native write: None.** Writing is outside the envelope.

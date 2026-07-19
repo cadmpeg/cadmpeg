@@ -4699,9 +4699,12 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     attach_test_body_surface(&mut ir, &output, second.surface.clone());
     ir.model.procedural_surfaces.push(second);
 
-    let (definition, surfaces) =
-        crate::decode::blend_feature_definition(&ir, std::slice::from_ref(&output))
-            .expect("one circular constant-radius blend result");
+    let (definition, surfaces) = crate::decode::blend_feature_definition(
+        &ir,
+        std::slice::from_ref(&output),
+        crate::decode::NxBlendFamily::Edge,
+    )
+    .expect("one circular constant-radius blend result");
     assert_eq!(surfaces.len(), 2);
     assert!(matches!(
         definition,
@@ -4710,6 +4713,20 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
                 radius: cadmpeg_ir::features::Length(5.0)
             },
             ..
+        }
+    ));
+    let (definition, _) = crate::decode::blend_feature_definition(
+        &ir,
+        std::slice::from_ref(&output),
+        crate::decode::NxBlendFamily::Face,
+    )
+    .expect("face blend retains unresolved supports");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::FaceBlend {
+            first_faces: FaceSelection::Unresolved,
+            second_faces: FaceSelection::Unresolved,
+            radius: RadiusSpec::Constant { .. },
         }
     ));
 
@@ -4733,9 +4750,12 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     }
     attach_test_body_surface(&mut face_blend_ir, &output, first_support);
     attach_test_body_surface(&mut face_blend_ir, &output, second_support);
-    let (definition, _) =
-        crate::decode::blend_feature_definition(&face_blend_ir, std::slice::from_ref(&output))
-            .expect("complete blend supports");
+    let (definition, _) = crate::decode::blend_feature_definition(
+        &face_blend_ir,
+        std::slice::from_ref(&output),
+        crate::decode::NxBlendFamily::Edge,
+    )
+    .expect("complete blend supports");
     assert!(matches!(
         definition,
         FeatureDefinition::FaceBlend {
@@ -4754,8 +4774,12 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             signed_radius: 17.0,
         },
     ));
-    let (definition, _) =
-        crate::decode::blend_feature_definition(&ir, std::slice::from_ref(&output)).unwrap();
+    let (definition, _) = crate::decode::blend_feature_definition(
+        &ir,
+        std::slice::from_ref(&output),
+        crate::decode::NxBlendFamily::Edge,
+    )
+    .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Fillet {
@@ -4770,7 +4794,9 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
     let conflicting = make_blend(2, BlendRadiusLaw::Constant { signed_radius: 7.0 });
     attach_test_body_surface(&mut ir, &output, conflicting.surface.clone());
     ir.model.procedural_surfaces.push(conflicting);
-    let (definition, _) = crate::decode::blend_feature_definition(&ir, &[output]).unwrap();
+    let (definition, _) =
+        crate::decode::blend_feature_definition(&ir, &[output], crate::decode::NxBlendFamily::Edge)
+            .unwrap();
     assert!(matches!(
         definition,
         FeatureDefinition::Fillet {
@@ -4780,7 +4806,10 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
             ..
         }
     ));
-    assert!(crate::decode::blend_feature_definition(&ir, &[]).is_none());
+    assert!(
+        crate::decode::blend_feature_definition(&ir, &[], crate::decode::NxBlendFamily::Edge,)
+            .is_none()
+    );
 
     let conic = ProceduralSurface {
         id: ProceduralSurfaceId("nx:s4:blend-construction#3".into()),
@@ -4800,9 +4829,12 @@ fn nx_blend_feature_requires_one_output_image_and_circular_result_carriers() {
         conic.surface.clone(),
     );
     ir.model.procedural_surfaces.push(conic);
-    assert!(
-        crate::decode::blend_feature_definition(&ir, &[BodyId("nx:s4:body#3".into())]).is_none()
-    );
+    assert!(crate::decode::blend_feature_definition(
+        &ir,
+        &[BodyId("nx:s4:body#3".into())],
+        crate::decode::NxBlendFamily::Edge,
+    )
+    .is_none());
 }
 
 #[test]

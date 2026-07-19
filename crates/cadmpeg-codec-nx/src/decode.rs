@@ -10701,9 +10701,13 @@ fn attach_feature_operations(
                 );
             }
         }
-        let blend_projection = (label.value == "BLEND")
-            .then(|| blend_feature_definition(ir, &outputs))
-            .flatten();
+        let blend_family = match label.value.as_str() {
+            "BLEND" => Some(NxBlendFamily::Edge),
+            "FACE_BLEND" => Some(NxBlendFamily::Face),
+            _ => None,
+        };
+        let blend_projection =
+            blend_family.and_then(|family| blend_feature_definition(ir, &outputs, family));
         if let Some((_, surfaces)) = &blend_projection {
             for (surface_ordinal, surface) in surfaces.iter().enumerate() {
                 source_properties.insert(
@@ -11038,9 +11042,20 @@ fn body_surface_ids(ir: &CadIr, body_id: &BodyId) -> Option<BTreeSet<SurfaceId>>
     )
 }
 
+/// Neutral operand family named by an NX rolling-ball blend operation.
+#[derive(Clone, Copy)]
+pub(crate) enum NxBlendFamily {
+    /// Edge-selected `BLEND` operation.
+    Edge,
+    /// Face-selected `FACE_BLEND` operation.
+    Face,
+}
+
+/// Project complete owned rolling-ball carriers into their named blend family.
 pub(crate) fn blend_feature_definition(
     ir: &CadIr,
     outputs: &[BodyId],
+    family: NxBlendFamily,
 ) -> Option<(FeatureDefinition, Vec<SurfaceId>)> {
     let [body] = outputs else {
         return None;
@@ -11143,13 +11158,18 @@ pub(crate) fn blend_feature_definition(
                 _ => None,
             }
         });
-    Some((
-        face_blend.unwrap_or(FeatureDefinition::Fillet {
+    let unresolved = match family {
+        NxBlendFamily::Edge => FeatureDefinition::Fillet {
             edges: EdgeSelection::Unresolved,
             radius,
-        }),
-        surfaces,
-    ))
+        },
+        NxBlendFamily::Face => FeatureDefinition::FaceBlend {
+            first_faces: FaceSelection::Unresolved,
+            second_faces: FaceSelection::Unresolved,
+            radius,
+        },
+    };
+    Some((face_blend.unwrap_or(unresolved), surfaces))
 }
 
 /// Split an unordered rolling-ball support graph into two deterministic face
