@@ -900,6 +900,8 @@ Each expression table is one equations feature; equations features follow their 
 
 A source-native feature definition retains every resolved parameter use as `parameter_name -> exact_expression_text` when all referenced expression records exist and their names are unique within the operation. A missing expression record or duplicate parameter name rejects the definition-level parameter map atomically without rejecting the exact parameter-use relations. Typed neutral feature definitions retain their operation-specific parameter fields instead of this source-native map.
 
+The `Container` label identifies an object-model grouping record, not a modeling operation. Its bounded native record and payload remain retained, and it does not create a neutral feature. Later feature ordinals retain their physical label positions.
+
 The `SIMPLE HOLE` payload template is the unique payload string beginning `Hole_` and is underscore-delimited. `Hole_GeneralHole_Simple_Through_StartChamfer_EndChamfer` identifies a general simple hole extending through all material, with chamfer treatments at its entry and exit. The six tokens form one atomic template; a missing or additional `Hole_` string or missing, reordered, or unknown token does not produce a typed hole template. Neutral projection retains through-all extent and the typed native template retains both chamfer tokens.
 
 The operation labels `HOLE PACKAGE`, `RIB`, `CHAMFER`, and `THICKEN_SHEET` identify their corresponding construction families. Neutral projection preserves the family as a hole, rib, edge chamfer, or face-thickening operation. Undeclared operands, sidedness, draft, Boolean state, and dimensions outside the rules below remain unresolved.

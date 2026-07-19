@@ -9932,6 +9932,10 @@ fn records_by_operation<'a, T>(
     grouped
 }
 
+pub(crate) fn projects_neutral_feature(label: &str) -> bool {
+    label != "Container"
+}
+
 fn attach_feature_operations(
     ir: &mut CadIr,
     sources: &FeatureOperationSources<'_>,
@@ -10071,6 +10075,7 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let feature_ids_by_operation = labels
         .iter()
+        .filter(|label| projects_neutral_feature(&label.value))
         .map(|label| {
             let key = label
                 .id
@@ -10378,6 +10383,9 @@ fn attach_feature_operations(
         .map(|parameter| (parameter.id.clone(), parameter.owner.clone()))
         .collect::<BTreeMap<_, _>>();
     for (ordinal, label) in labels.iter().enumerate() {
+        if !projects_neutral_feature(&label.value) {
+            continue;
+        }
         let id = feature_ids_by_operation
             .get(label.id.as_str())
             .expect("every operation label owns one neutral feature identity")

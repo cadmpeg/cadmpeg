@@ -3326,6 +3326,12 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
 }
 
 #[test]
+fn nx_container_record_is_not_a_modeling_feature() {
+    assert!(!crate::decode::projects_neutral_feature("Container"));
+    assert!(crate::decode::projects_neutral_feature("EXTRUDE"));
+}
+
+#[test]
 fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube();
     let dimensions = [10.0, 20.0, 30.0];
@@ -17242,7 +17248,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     };
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
-    for (ordinal, kind) in ["DELETE", "DELETE", "Container"].into_iter().enumerate() {
+    for (ordinal, kind) in ["DELETE", "DELETE"].into_iter().enumerate() {
         ir.model.features.push(Feature {
             id: FeatureId(format!("test:feature#{ordinal}")),
             ordinal: ordinal as u64,
@@ -17373,13 +17379,10 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
 
     assert_eq!(losses.len(), 6);
     assert_eq!(losses[0].category, LossCategory::Feature);
-    assert!(losses[0]
-        .message
-        .contains("10 NX feature history operation"));
+    assert!(losses[0].message.contains("9 NX feature history operation"));
     assert_eq!(losses[1].category, LossCategory::Feature);
     assert!(losses[1].message.contains("1 NX design configuration"));
     assert_eq!(losses[2].category, LossCategory::Feature);
-    assert!(losses[2].message.contains("Container (1)"));
     assert!(losses[2].message.contains("DELETE (2)"));
     assert_eq!(losses[3].category, LossCategory::Feature);
     assert!(losses[3].message.contains("datum coordinate system (1)"));
@@ -17405,7 +17408,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         profiles: Vec::new(),
         native_ref: None,
     });
-    ir.model.features[3].definition = FeatureDefinition::Sketch {
+    ir.model.features[2].definition = FeatureDefinition::Sketch {
         space: cadmpeg_ir::features::SketchSpace::Planar,
         sketch: Some(sketch_id),
     };
