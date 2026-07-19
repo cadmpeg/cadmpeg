@@ -37,6 +37,7 @@ use std::io::{Read, Write};
 use crate::container::ContainerScan;
 
 const SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
+const LEGACY_SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x07, 0x00, 0x01];
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const NAME_MARKER: &[u8] = &[0x04, 0x80, 0xff, 0xfe, 0xff];
 const SCALAR_HEADER: &[u8] = &[
@@ -241,10 +242,8 @@ fn spatial_vertex_offsets(payload: &[u8]) -> Vec<usize> {
 
 fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity> {
     let lane_key = parent.rsplit_once('#').map_or(parent, |(_, key)| key);
-    payload
-        .windows(SKETCH_MARKER.len())
-        .enumerate()
-        .filter_map(|(offset, bytes)| (bytes == SKETCH_MARKER).then_some(offset))
+    (0..payload.len().saturating_sub(SKETCH_MARKER.len() - 1))
+        .filter(|offset| sketch_marker_at(payload, *offset))
         .filter_map(|offset| {
             let code = u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?);
             Some((offset, code))
@@ -268,6 +267,17 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             }
         })
         .collect()
+}
+
+fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
+    sketch_marker_prefix_at(payload, offset)
+        && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
+}
+
+fn sketch_marker_prefix_at(payload: &[u8], offset: usize) -> bool {
+    let marker = payload.get(offset..offset + SKETCH_MARKER.len());
+    marker == Some(SKETCH_MARKER) || marker == Some(LEGACY_SKETCH_MARKER)
 }
 
 pub(crate) fn relation_bindings(
@@ -343,11 +353,8 @@ pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
         88
     } else if marker_coordinates(payload, offset).is_some() {
         let search_start = offset.checked_add(SKETCH_MARKER.len())?;
-        let next = payload
-            .get(search_start..)?
-            .windows(SKETCH_MARKER.len())
-            .position(|bytes| bytes == SKETCH_MARKER)?
-            .checked_add(search_start)?;
+        let next = (search_start..payload.len().saturating_sub(SKETCH_MARKER.len() - 1))
+            .find(|next| sketch_marker_prefix_at(payload, *next))?;
         match next.checked_sub(offset)? {
             142 | 146 => 138,
             152 | 156 => 148,
@@ -421,10 +428,10 @@ mod marker_tests {
         principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
         resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
-        sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
         CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -2370,6 +2377,26 @@ mod marker_tests {
         payload[138..142].copy_from_slice(&41u32.to_le_bytes());
         payload[142..147].copy_from_slice(super::SKETCH_MARKER);
         assert_eq!(marker_local_id(&payload, 0), Some(41));
+    }
+
+    #[test]
+    fn legacy_sketch_prefix_uses_the_shared_entity_body() {
+        let mut payload = vec![0; 142 + LEGACY_SKETCH_MARKER.len()];
+        payload[..5].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&2u32.to_le_bytes());
+        payload[64..66].copy_from_slice(&[0x1e, 0x00]);
+        payload[66..74].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[74..82].copy_from_slice(&(-2.5f64).to_le_bytes());
+        payload[138..142].copy_from_slice(&41u32.to_le_bytes());
+        payload[142..].copy_from_slice(LEGACY_SKETCH_MARKER);
+
+        let entities = sketch_input_entities(&payload, "lane");
+
+        assert_eq!(entities.len(), 1);
+        assert_eq!(entities[0].coordinates_m, Some([1.25, -2.5]));
+        assert_eq!(entities[0].local_id, Some(41));
     }
 
     #[test]
