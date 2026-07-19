@@ -15985,6 +15985,13 @@ pub(crate) fn edge_recipe_local_topology_references(
 fn edge_recipe_structure_tail(
     program: &[i32],
 ) -> Option<crate::records::DesignEdgeRecipeStructure> {
+    edge_recipe_minus_one_delimited_structure(program)
+        .or_else(|| edge_recipe_zero_delimited_structure(program))
+}
+
+fn edge_recipe_minus_one_delimited_structure(
+    program: &[i32],
+) -> Option<crate::records::DesignEdgeRecipeStructure> {
     let runs = program
         .split(|word| *word == -1)
         .filter(|run| !run.is_empty())
@@ -16011,6 +16018,66 @@ fn edge_recipe_structure_tail(
     Some(crate::records::DesignEdgeRecipeStructure {
         root: runs[0][0],
         sides: sides.clone(),
+    })
+}
+
+fn edge_recipe_zero_delimited_structure(
+    program: &[i32],
+) -> Option<crate::records::DesignEdgeRecipeStructure> {
+    let runs = program
+        .split(|word| *word == -1)
+        .filter(|run| !run.is_empty())
+        .collect::<Vec<_>>();
+    let [root, first, second] = runs.as_slice() else {
+        return None;
+    };
+    let [root] = **root else {
+        return None;
+    };
+    Some(crate::records::DesignEdgeRecipeStructure {
+        root,
+        sides: [
+            edge_recipe_zero_delimited_side(first)?,
+            edge_recipe_zero_delimited_side(second)?,
+        ],
+    })
+}
+
+fn edge_recipe_zero_delimited_side(words: &[i32]) -> Option<DesignTopologyRecipeSide> {
+    let field_count = std::num::NonZeroU32::new(u32::try_from(*words.first()?).ok()?)?;
+    if !matches!(field_count.get(), 3 | 4) {
+        return None;
+    }
+    let scalar_count = usize::try_from(field_count.get()).ok()?.checked_sub(1)?;
+    let header_value = *words.get(1)?;
+    if words.get(2) != Some(&0) {
+        return None;
+    }
+    let mut scalars = Vec::with_capacity(scalar_count);
+    let mut cursor = 3;
+    for _ in 0..scalar_count {
+        scalars.push(*words.get(cursor)?);
+        if words.get(cursor + 1) != Some(&0) {
+            return None;
+        }
+        cursor += 2;
+    }
+    let payload_entry_count = u32::try_from(*words.get(cursor + 1)?).ok()?;
+    if words.get(cursor) != Some(&0) {
+        return None;
+    }
+    let entries = words.get(cursor + 2..)?;
+    if entries.len() != usize::try_from(payload_entry_count).ok()?.checked_mul(8)? {
+        return None;
+    }
+    Some(DesignTopologyRecipeSide {
+        field_count,
+        header_value,
+        first: scalars[0],
+        second: scalars[1],
+        third: scalars.get(2).copied(),
+        payload_entry_count,
+        entries: edge_recipe_entries(entries)?,
     })
 }
 
@@ -24391,6 +24458,27 @@ mod relation_tests {
         assert_eq!(extended.sides[1].field_count.get(), 4);
         assert!(extended.sides[0].entries.is_empty());
         assert!(extended.sides[1].entries.is_empty());
+        let zero_delimited = super::edge_recipe_structure(&[
+            -1, -1, 2, 0, 0, 1, 0, 2, -1, 3, 1, 0, 0, 0, 2, 0, 0, 0, -1, 4, 1, 0, 3, 0, 4, 0, 0, 0,
+            0, 1, 2, 3, 2, 1, 2, 1, 1, 1, -1,
+        ])
+        .expect("recipe structure with zero-delimited side fields");
+        assert_eq!(zero_delimited.root, 2);
+        assert_eq!(zero_delimited.sides[0].field_count.get(), 3);
+        assert_eq!(zero_delimited.sides[0].header_value, 1);
+        assert_eq!(zero_delimited.sides[0].first, 0);
+        assert_eq!(zero_delimited.sides[0].second, 2);
+        assert!(zero_delimited.sides[0].entries.is_empty());
+        assert_eq!(zero_delimited.sides[1].field_count.get(), 4);
+        assert_eq!(zero_delimited.sides[1].first, 3);
+        assert_eq!(zero_delimited.sides[1].second, 4);
+        assert_eq!(zero_delimited.sides[1].third, Some(0));
+        assert_eq!(zero_delimited.sides[1].entries.len(), 1);
+        assert_eq!(zero_delimited.sides[1].entries[0].selector, 2);
+        assert_eq!(
+            zero_delimited.sides[1].entries[0].boundary_edge_count.get(),
+            3
+        );
         let face = super::face_recipe_structure(&[
             0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0, 0, -1,
         ])
