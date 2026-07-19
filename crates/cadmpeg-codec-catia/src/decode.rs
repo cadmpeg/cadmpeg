@@ -4583,11 +4583,12 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan) -> Option<ProjectedDecode>
 }
 
 fn freeform_surface_carriers(data: &[u8]) -> Vec<(usize, u32, SurfaceGeometry, &'static str)> {
-    let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> = geometry::a8_surfaces(data)
-        .into_iter()
-        .chain(geometry::a5_surfaces(data))
-        .map(|surface| (surface.pos, surface.object_id, surface.geometry, "freeform"))
-        .collect();
+    let mut surfaces: Vec<(usize, u32, SurfaceGeometry, &str)> =
+        geometry::resolved_a8_surfaces(data)
+            .into_iter()
+            .chain(geometry::a5_surfaces(data))
+            .map(|surface| (surface.pos, surface.object_id, surface.geometry, "freeform"))
+            .collect();
     surfaces.extend(
         geometry::b2_cylinders(data)
             .into_iter()
@@ -4619,7 +4620,7 @@ fn freeform_surface_carriers(data: &[u8]) -> Vec<(usize, u32, SurfaceGeometry, &
 }
 
 fn append_freeform_surface_pools(ir: &mut CadIr, annotations: &mut AnnotationBuilder, data: &[u8]) {
-    let mut surfaces = geometry::a8_surfaces(data);
+    let mut surfaces = geometry::resolved_a8_surfaces(data);
     surfaces.extend(geometry::a5_surfaces(data));
     let mut carrier_ids = Vec::with_capacity(surfaces.len());
     for surface in &surfaces {

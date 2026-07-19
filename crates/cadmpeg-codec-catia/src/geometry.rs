@@ -12,7 +12,7 @@
 //! before returning a carrier.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     ops::Range,
 };
 
@@ -3925,6 +3925,26 @@ pub fn standard_lines(brep: &[u8], face_count: usize) -> Vec<StandardLine> {
 /// not become carriers.
 pub fn a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
     scan_surfaces(data, *b"\xa8\x03\x34", 3, a8_surface)
+}
+
+/// Decode every complete common-form object-stream NURBS surface, including
+/// parameter records whose pole grids occupy a uniquely bounded external
+/// allocation.
+#[must_use]
+pub fn resolved_a8_surfaces(data: &[u8]) -> Vec<A8Surface> {
+    let mut surfaces = a8_surfaces(data);
+    let inline_positions = surfaces
+        .iter()
+        .map(|surface| surface.pos)
+        .collect::<HashSet<_>>();
+    surfaces.extend(
+        a8_surface_headers(data)
+            .into_iter()
+            .filter(|header| !inline_positions.contains(&header.pos))
+            .filter_map(|header| a8_surface_from_external_grid(data, &header)),
+    );
+    surfaces.sort_by_key(|surface| surface.pos);
+    surfaces
 }
 
 /// Decode every structurally complete `a8 03 34` parameter lattice, including

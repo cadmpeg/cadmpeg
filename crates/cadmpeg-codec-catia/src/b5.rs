@@ -372,16 +372,9 @@ pub fn parse(bytes: &[u8]) -> Option<B5Graph> {
             },
         );
     }
-    for surface in crate::geometry::a8_surfaces(bytes) {
+    for surface in crate::geometry::resolved_a8_surfaces(bytes) {
         if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
             surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
-        }
-    }
-    for header in a8_headers.values().filter(|header| header.poles_elided) {
-        if let Some(surface) = crate::geometry::a8_surface_from_external_grid(bytes, header) {
-            if let SurfaceGeometry::Nurbs(nurbs) = surface.geometry {
-                surfaces.insert(surface.object_id, B5Surface::Nurbs(nurbs));
-            }
         }
     }
     for record in &records {
