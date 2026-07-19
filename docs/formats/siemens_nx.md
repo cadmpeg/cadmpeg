@@ -1058,11 +1058,12 @@ type-81 record in the same stream has that xmt.
 
 The type-81 discriminator selects an attribute class when its value plus one
 equals the XMT of exactly one type-79 attribute definition in the same stream.
-The relation retains the serialized discriminator, matched definition XMT,
-type-81 instance, topology ownership relation, and type-79 definition. A
-missing, overflowing, or multiply declared definition XMT leaves the class
-unresolved. Definition declaration order and type-81 reference values do not
-participate in class selection.
+Every matched instance retains the serialized discriminator, matched
+definition XMT, type-81 instance, and type-79 definition independently of
+topology ownership. A topology-owned matched instance additionally retains its
+topology ownership relation. A missing, overflowing, or multiply declared
+definition XMT leaves the class unresolved. Definition declaration order and
+type-81 reference values do not participate in class selection.
 
 A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
 text[length], 00`. The length is nonzero, xmt is non-null, and every text byte

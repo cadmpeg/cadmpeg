@@ -7241,6 +7241,10 @@ fn attach_native_object_model(
         &parasolid_entity_51_records,
         &parasolid_entity_54_string_records,
     );
+    let parasolid_attribute_class_uses = crate::native::parasolid_attribute_class_uses(
+        &parasolid_entity_51_records,
+        &parasolid_attribute_definitions,
+    );
     let parasolid_topology_attribute_list_references =
         crate::native::parasolid_topology_attribute_list_references(
             &scan.streams,
@@ -7249,8 +7253,7 @@ fn attach_native_object_model(
     let parasolid_topology_attribute_class_uses =
         crate::native::parasolid_topology_attribute_class_uses(
             &parasolid_topology_attribute_list_references,
-            &parasolid_entity_51_records,
-            &parasolid_attribute_definitions,
+            &parasolid_attribute_class_uses,
         );
     let om_record_areas = crate::native::om_record_areas(&scan.container);
     let feature_operation_labels = crate::native::feature_operation_labels(&scan.container);
@@ -7710,6 +7713,7 @@ fn attach_native_object_model(
         && parasolid_entity_54_string_records.is_empty()
         && parasolid_entity_51_numeric_uses.is_empty()
         && parasolid_entity_51_string_uses.is_empty()
+        && parasolid_attribute_class_uses.is_empty()
         && parasolid_topology_attribute_list_references.is_empty()
         && om_record_areas.is_empty()
         && feature_operation_labels.is_empty()
@@ -8122,6 +8126,17 @@ fn attach_native_object_model(
             .note(&value_use.id, source_stream, value_use.inflated_offset)
             .tag("ENTITY_51_NUMERIC_USE");
         annotations.exactness(&value_use.id, Exactness::ByteExact);
+    }
+    for class_use in &parasolid_attribute_class_uses {
+        let entity = parasolid_entity_51_records
+            .iter()
+            .find(|entity| entity.id == class_use.entity_51_record)
+            .expect("class use owns a type-81 entity");
+        let source_stream = annotations.stream(format!("nx:s{}", class_use.stream_ordinal));
+        annotations
+            .note(&class_use.id, source_stream, entity.inflated_offset)
+            .tag("ATTRIBUTE_CLASS_USE");
+        annotations.exactness(&class_use.id, Exactness::Derived);
     }
     for reference in &parasolid_topology_attribute_list_references {
         let source_stream = annotations.stream(format!("nx:s{}", reference.stream_ordinal));
@@ -8651,6 +8666,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "parasolid_entity_51_numeric_uses",
             &parasolid_entity_51_numeric_uses,
+        )?;
+    }
+    if !parasolid_attribute_class_uses.is_empty() {
+        namespace.set_arena(
+            "parasolid_attribute_class_uses",
+            &parasolid_attribute_class_uses,
         )?;
     }
     if !parasolid_topology_attribute_list_references.is_empty() {

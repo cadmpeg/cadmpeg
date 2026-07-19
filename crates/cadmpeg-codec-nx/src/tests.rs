@@ -9032,10 +9032,19 @@ fn topology_attribute_class_uses_resolve_instance_discriminators_by_xmt() {
         inflated_offset: 300,
     };
 
-    let uses = crate::native::parasolid_topology_attribute_class_uses(
-        std::slice::from_ref(&reference),
+    let instance_uses = crate::native::parasolid_attribute_class_uses(
         std::slice::from_ref(&entity),
         std::slice::from_ref(&definition),
+    );
+    assert_eq!(instance_uses.len(), 1);
+    assert_eq!(instance_uses[0].entity_51_record, entity.id);
+    assert_eq!(instance_uses[0].class_discriminator, 0x21);
+    assert_eq!(instance_uses[0].definition_xmt, 34);
+    assert_eq!(instance_uses[0].attribute_definition, definition.id);
+
+    let uses = crate::native::parasolid_topology_attribute_class_uses(
+        std::slice::from_ref(&reference),
+        &instance_uses,
     );
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].class_discriminator, 0x21);
@@ -9044,10 +9053,14 @@ fn topology_attribute_class_uses_resolve_instance_discriminators_by_xmt() {
 
     let mut invalid = entity;
     invalid.discriminator = 0x20;
+    assert!(crate::native::parasolid_attribute_class_uses(
+        std::slice::from_ref(&invalid),
+        std::slice::from_ref(&definition),
+    )
+    .is_empty());
     assert!(crate::native::parasolid_topology_attribute_class_uses(
         &[reference],
-        &[invalid],
-        &[definition],
+        &crate::native::parasolid_attribute_class_uses(&[invalid], &[definition]),
     )
     .is_empty());
 }
