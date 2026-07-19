@@ -13034,40 +13034,34 @@ fn schema_feature_definition(
                 })
             } else {
                 None
-            }
-            .or_else(|| {
-                (recipe == Some(crate::feature::FeatureRecipeKind::Extrude)).then(|| {
-                    (
-                        profile.unwrap_or(ProfileRef::Unresolved),
-                        None,
-                        Extent::Unresolved,
-                    )
-                })
-            });
-        if let Some((profile, direction, extent)) = construction {
-            let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
-            return IrFeatureDefinition::Extrude {
-                profile,
-                direction,
-                extent,
-                op: section_sweep_boolean_operation(
-                    feature_recipe_effect(scan, feature_id),
-                    kind,
-                    output_kind.is_some(),
-                    preceding_features_establish_body(ir),
-                ),
-                draft: None,
-                reverse_draft: None,
-                direction_source: None,
-                solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
-                face_maker: None,
-                inner_wire_taper: None,
-                first_offset: None,
-                second_offset: None,
-                length_along_profile_normal: None,
-                allow_multi_profile_faces: None,
             };
-        }
+        let (profile, direction, extent) = construction.unwrap_or((
+            profile.unwrap_or(ProfileRef::Unresolved),
+            None,
+            Extent::Unresolved,
+        ));
+        let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
+        return IrFeatureDefinition::Extrude {
+            profile,
+            direction,
+            extent,
+            op: section_sweep_boolean_operation(
+                feature_recipe_effect(scan, feature_id),
+                kind,
+                output_kind.is_some(),
+                preceding_features_establish_body(ir),
+            ),
+            draft: None,
+            reverse_draft: None,
+            direction_source: None,
+            solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
+            face_maker: None,
+            inner_wire_taper: None,
+            first_offset: None,
+            second_offset: None,
+            length_along_profile_normal: None,
+            allow_multi_profile_faces: None,
+        };
     }
     if schema_class == 923 {
         let placed = placed_planes(scan);
@@ -13161,6 +13155,16 @@ fn named_feature_definition(
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
     }
+    if kind == "Protrusion" {
+        return Some(unresolved_extrude_feature_definition_with_op(
+            section_sweep_boolean_operation(
+                feature_recipe_effect(scan, feature_id),
+                kind,
+                false,
+                preceding_features_establish_body(ir),
+            ),
+        ));
+    }
     if let Some(role) = match kind {
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
         "Cross Section" | "Querschnitt" => Some(FeatureTreeNodeRole::CrossSections),
@@ -13201,11 +13205,15 @@ fn named_feature_definition(
 }
 
 fn unresolved_extrude_feature_definition() -> IrFeatureDefinition {
+    unresolved_extrude_feature_definition_with_op(BooleanOp::Unresolved)
+}
+
+fn unresolved_extrude_feature_definition_with_op(op: BooleanOp) -> IrFeatureDefinition {
     IrFeatureDefinition::Extrude {
         profile: ProfileRef::Unresolved,
         direction: None,
         extent: Extent::Unresolved,
-        op: BooleanOp::Unresolved,
+        op,
         draft: None,
         reverse_draft: None,
         direction_source: None,

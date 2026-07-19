@@ -1137,6 +1137,8 @@ surface-of-revolution reductions require `ratio = 1`.
 `Merge <decimal-ordinal>` identifies a surface-merge operation.
 `Extrude <decimal-ordinal>` identifies an extrusion operation.
 `Boundary Blend <decimal-ordinal>` identifies a boundary-surface operation.
+`Protrusion` identifies a linear extrusion operation; absent section operands
+leave its profile, direction, and extent unresolved without changing its family.
 The German operation-family names `Bezugsebene`, `Rundung`,
 and `Schräge` denote the same datum-plane, round, and draft families as
 `Datum Plane`, `Round`, and `Draft`, respectively. `Annotation Feature` is a
@@ -1409,6 +1411,8 @@ A class-916 or class-917 section sweep with one complete section transform and
 parallel generated cap-plane equations is a linear extrusion even when its
 current feature-state record omits the recipe discriminator. A stored
 rotational recipe excludes this classification.
+Without complete placement or cap equations, the same non-rotational class
+remains a linear extrusion with unresolved profile, direction, and extent.
 Within the generating feature, a complete plane `local_sys` supplies the cap
 support point and normal. A held-coordinate outline for the same surface takes
 precedence.

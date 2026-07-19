@@ -1392,17 +1392,20 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
         .iter()
         .find(|feature| feature.id.0 == "creo:model:feature#4")
         .expect("feature 4");
-    let cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. } = &feature.definition
-    else {
-        panic!("native protrusion feature");
-    };
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude { .. }
+    ));
     assert_eq!(
-        parameters["generated_entity.7.source_section_entity_id"],
+        feature.source_properties["native_parameter.generated_entity.7.source_section_entity_id"],
         "1"
     );
-    assert_eq!(parameters["generated_entity.7.entry_class"], "200");
     assert_eq!(
-        parameters["generated_entity.9.source_section_entity_id"],
+        feature.source_properties["native_parameter.generated_entity.7.entry_class"],
+        "200"
+    );
+    assert_eq!(
+        feature.source_properties["native_parameter.generated_entity.9.source_section_entity_id"],
         "2"
     );
     let tables = &result.ir.native.namespace("creo").unwrap().arenas["feature_entity_tables"];
@@ -1734,7 +1737,12 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
     assert_eq!(feature.name.as_deref(), Some("Protrusion id 4"));
     assert!(matches!(
         &feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Protrusion"
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            direction: None,
+            extent: cadmpeg_ir::features::Extent::Unresolved,
+            ..
+        }
     ));
     assert_eq!(
         feature
@@ -1749,6 +1757,30 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
         .features
         .iter()
         .all(|feature| feature.id.as_str() != "creo:model:feature#9"));
+}
+
+#[test]
+fn decode_types_named_protrusion_without_section_operands() {
+    let data = build_prt("c", &[("MdlStatus", b"Protrusion id 4\0".to_vec())]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("protrusion feature");
+
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            direction: None,
+            extent: cadmpeg_ir::features::Extent::Unresolved,
+            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            ..
+        }
+    ));
 }
 
 #[test]
