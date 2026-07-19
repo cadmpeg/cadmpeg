@@ -4305,30 +4305,31 @@ pub struct FeatureInputBlockIdentityGroup {
     pub source_offsets: Vec<u64>,
 }
 
-/// Exact reuse of one feature input block by a column index-row slot.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputIndexRowUse {
-    /// Globally unique use identity.
-    pub id: String,
-    /// Feature input binding that resolves to the shared block.
-    pub input_block: String,
-    /// Owning feature operation label.
-    pub operation_label: String,
-    /// Input slot in the operation header.
-    pub input_slot: u8,
-    /// Column index row containing the shared block.
-    pub index_row: String,
-    /// Zero-based slot in the row's four-block lane.
-    pub row_slot: u8,
-    /// Exact shared target in the native `data_blocks` arena.
-    pub data_block: String,
-    /// Absolute file offset of the row's compact block index.
-    pub source_offset: u64,
+/// Serialized column-row grammar carrying a reused feature input block.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ColumnIndexRowKind {
+    /// `2d 02 0b ... 93 8a` index row.
+    Index,
+    /// `02 0b ... 93 8c` linked-index row.
+    LinkedIndex,
+    /// `02 01 01 01 16` target-index row.
+    TargetIndex,
 }
 
-/// Exact reuse of one feature input block by a linked column-row slot.
+impl ColumnIndexRowKind {
+    const fn id_component(self) -> &'static str {
+        match self {
+            Self::Index => "index",
+            Self::LinkedIndex => "linked-index",
+            Self::TargetIndex => "target-index",
+        }
+    }
+}
+
+/// Exact reuse of one feature input block by any column-row slot.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct FeatureInputLinkedIndexRowUse {
+pub struct FeatureInputColumnRowUse {
     /// Globally unique use identity.
     pub id: String,
     /// Feature input binding that resolves to the shared block.
@@ -4337,9 +4338,11 @@ pub struct FeatureInputLinkedIndexRowUse {
     pub operation_label: String,
     /// Input slot in the operation header.
     pub input_slot: u8,
-    /// Linked column row containing the shared block.
-    pub linked_index_row: String,
-    /// Zero-based slot in the row's target-plus-three-block lane.
+    /// Serialized grammar of the referenced column row.
+    pub row_kind: ColumnIndexRowKind,
+    /// Native row identity in its grammar-specific arena.
+    pub column_row: String,
+    /// Zero-based slot in the row's four-block lane.
     pub row_slot: u8,
     /// Exact shared target in the native `data_blocks` arena.
     pub data_block: String,
@@ -6374,18 +6377,50 @@ pub fn feature_input_block_identity_groups(
         .collect()
 }
 
-/// Join feature inputs to every index-row slot addressing the same block.
-pub fn feature_input_index_row_uses(
+/// Join feature inputs to every column-row slot addressing the same block.
+pub fn feature_input_column_row_uses(
     inputs: &[FeatureInputBlock],
-    rows: &[DataBlockIndexRow],
-) -> Vec<FeatureInputIndexRowUse> {
-    let mut slots_by_block = BTreeMap::<&str, Vec<(&DataBlockIndexRow, usize)>>::new();
-    for row in rows {
+    index_rows: &[DataBlockIndexRow],
+    linked_rows: &[DataBlockLinkedIndexRow],
+    target_rows: &[DataBlockTargetIndexRow],
+) -> Vec<FeatureInputColumnRowUse> {
+    let mut slots_by_block = BTreeMap::<&str, Vec<(&str, ColumnIndexRowKind, usize, u64)>>::new();
+    for row in index_rows {
         for (slot, data_block) in row.data_blocks.iter().enumerate() {
-            slots_by_block
-                .entry(data_block)
-                .or_default()
-                .push((row, slot));
+            slots_by_block.entry(data_block).or_default().push((
+                row.id.as_str(),
+                ColumnIndexRowKind::Index,
+                slot,
+                row.index_source_offsets[slot],
+            ));
+        }
+    }
+    for row in linked_rows {
+        for (slot, data_block) in row.data_blocks.iter().enumerate() {
+            slots_by_block.entry(data_block).or_default().push((
+                row.id.as_str(),
+                ColumnIndexRowKind::LinkedIndex,
+                slot,
+                if slot == 0 {
+                    row.target_index_source_offset
+                } else {
+                    row.index_source_offsets[slot - 1]
+                },
+            ));
+        }
+    }
+    for row in target_rows {
+        for (slot, data_block) in row.data_blocks.iter().enumerate() {
+            slots_by_block.entry(data_block).or_default().push((
+                row.id.as_str(),
+                ColumnIndexRowKind::TargetIndex,
+                slot,
+                if slot == 0 {
+                    row.target_index_source_offset
+                } else {
+                    row.index_source_offsets[slot - 1]
+                },
+            ));
         }
     }
     inputs
@@ -6395,64 +6430,24 @@ pub fn feature_input_index_row_uses(
                 .get(input.data_block.as_str())
                 .into_iter()
                 .flatten()
-                .map(|(row, slot)| FeatureInputIndexRowUse {
-                    id: format!(
-                        "nx:feature-history:input-index-row-use#{}-{:010}-{slot:010}",
-                        input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
-                        row.ordinal,
-                    ),
-                    input_block: input.id.clone(),
-                    operation_label: input.operation_label.clone(),
-                    input_slot: input.input_slot,
-                    index_row: row.id.clone(),
-                    row_slot: *slot as u8,
-                    data_block: input.data_block.clone(),
-                    source_offset: row.index_source_offsets[*slot],
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect()
-}
-
-/// Join feature inputs to every linked-row slot addressing the same block.
-pub fn feature_input_linked_index_row_uses(
-    inputs: &[FeatureInputBlock],
-    rows: &[DataBlockLinkedIndexRow],
-) -> Vec<FeatureInputLinkedIndexRowUse> {
-    let mut slots_by_block = BTreeMap::<&str, Vec<(&DataBlockLinkedIndexRow, usize)>>::new();
-    for row in rows {
-        for (slot, data_block) in row.data_blocks.iter().enumerate() {
-            slots_by_block
-                .entry(data_block)
-                .or_default()
-                .push((row, slot));
-        }
-    }
-    inputs
-        .iter()
-        .flat_map(|input| {
-            slots_by_block
-                .get(input.data_block.as_str())
-                .into_iter()
-                .flatten()
-                .map(|(row, slot)| FeatureInputLinkedIndexRowUse {
-                    id: format!(
-                        "nx:feature-history:input-linked-index-row-use#{}-{:010}-{slot:010}",
-                        input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
-                        row.ordinal,
-                    ),
-                    input_block: input.id.clone(),
-                    operation_label: input.operation_label.clone(),
-                    input_slot: input.input_slot,
-                    linked_index_row: row.id.clone(),
-                    row_slot: *slot as u8,
-                    data_block: input.data_block.clone(),
-                    source_offset: if *slot == 0 {
-                        row.target_index_source_offset
-                    } else {
-                        row.index_source_offsets[*slot - 1]
+                .enumerate()
+                .map(
+                    |(ordinal, (row, row_kind, slot, source_offset))| FeatureInputColumnRowUse {
+                        id: format!(
+                            "nx:feature-history:input-column-row-use#{}-{}-{ordinal:010}",
+                            input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
+                            row_kind.id_component(),
+                        ),
+                        input_block: input.id.clone(),
+                        operation_label: input.operation_label.clone(),
+                        input_slot: input.input_slot,
+                        row_kind: *row_kind,
+                        column_row: (*row).to_string(),
+                        row_slot: *slot as u8,
+                        data_block: input.data_block.clone(),
+                        source_offset: *source_offset,
                     },
-                })
+                )
                 .collect::<Vec<_>>()
         })
         .collect()

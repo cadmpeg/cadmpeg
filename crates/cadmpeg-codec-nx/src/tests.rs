@@ -5125,8 +5125,10 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
 }
 
 #[test]
-fn feature_input_index_row_uses_preserve_every_shared_slot() {
-    use crate::native::{feature_input_index_row_uses, DataBlockIndexRow, FeatureInputBlock};
+fn feature_input_column_row_uses_preserve_index_row_slots() {
+    use crate::native::{
+        feature_input_column_row_uses, ColumnIndexRowKind, DataBlockIndexRow, FeatureInputBlock,
+    };
 
     let input = FeatureInputBlock {
         id: "input#0000000001".into(),
@@ -5157,12 +5159,13 @@ fn feature_input_index_row_uses_preserve_every_shared_slot() {
         index_source_offsets: [108, 109, 110, 111],
     };
 
-    let uses = feature_input_index_row_uses(&[input], &[row]);
+    let uses = feature_input_column_row_uses(&[input], &[row], &[], &[]);
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
     assert_eq!(uses[0].input_slot, 2);
-    assert_eq!(uses[0].index_row, "row#3");
+    assert_eq!(uses[0].row_kind, ColumnIndexRowKind::Index);
+    assert_eq!(uses[0].column_row, "row#3");
     assert_eq!(uses[0].row_slot, 0);
     assert_eq!(uses[0].source_offset, 108);
     assert_eq!(uses[1].row_slot, 1);
@@ -5170,9 +5173,10 @@ fn feature_input_index_row_uses_preserve_every_shared_slot() {
 }
 
 #[test]
-fn feature_input_linked_index_row_uses_preserve_target_and_trailing_slots() {
+fn feature_input_column_row_uses_preserve_linked_row_slots() {
     use crate::native::{
-        feature_input_linked_index_row_uses, DataBlockLinkedIndexRow, FeatureInputBlock,
+        feature_input_column_row_uses, ColumnIndexRowKind, DataBlockLinkedIndexRow,
+        FeatureInputBlock,
     };
 
     let input = FeatureInputBlock {
@@ -5207,16 +5211,65 @@ fn feature_input_linked_index_row_uses_preserve_target_and_trailing_slots() {
         index_source_offsets: [112, 113, 114],
     };
 
-    let uses = feature_input_linked_index_row_uses(&[input], &[row]);
+    let uses = feature_input_column_row_uses(&[input], &[], &[row], &[]);
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
     assert_eq!(uses[0].input_slot, 2);
-    assert_eq!(uses[0].linked_index_row, "linked-row#3");
+    assert_eq!(uses[0].row_kind, ColumnIndexRowKind::LinkedIndex);
+    assert_eq!(uses[0].column_row, "linked-row#3");
     assert_eq!(uses[0].row_slot, 0);
     assert_eq!(uses[0].source_offset, 107);
     assert_eq!(uses[1].row_slot, 3);
     assert_eq!(uses[1].source_offset, 114);
+}
+
+#[test]
+fn feature_input_column_row_uses_preserve_target_row_slots() {
+    use crate::native::{
+        feature_input_column_row_uses, ColumnIndexRowKind, DataBlockTargetIndexRow,
+        FeatureInputBlock,
+    };
+
+    let input = FeatureInputBlock {
+        id: "input#0000000001".into(),
+        operation_label: "operation#1".into(),
+        input_slot: 2,
+        object_index: 4,
+        data_block: "block#4".into(),
+        source_offset: 10,
+    };
+    let row = DataBlockTargetIndexRow {
+        id: "target-row#3".into(),
+        section_ordinal: 0,
+        ordinal: 3,
+        target_index: 4,
+        indices: [5, 6, 4],
+        data_blocks: [
+            "block#4".into(),
+            "block#5".into(),
+            "block#6".into(),
+            "block#4".into(),
+        ],
+        source_entry: "entry".into(),
+        opening_data_block: "opening-block".into(),
+        opening_block_offset: 8,
+        source_offset: 100,
+        target_index_source_offset: 105,
+        index_source_offsets: [110, 111, 112],
+    };
+
+    let uses = feature_input_column_row_uses(&[input], &[], &[], &[row]);
+    assert_eq!(uses.len(), 2);
+    assert_eq!(uses[0].input_block, "input#0000000001");
+    assert_eq!(uses[0].operation_label, "operation#1");
+    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
+    assert_eq!(uses[0].column_row, "target-row#3");
+    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(uses[0].source_offset, 105);
+    assert_eq!(uses[1].row_slot, 3);
+    assert_eq!(uses[1].source_offset, 112);
 }
 
 #[test]
