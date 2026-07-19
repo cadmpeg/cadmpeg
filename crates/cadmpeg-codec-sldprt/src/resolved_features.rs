@@ -638,22 +638,23 @@ mod marker_tests {
         explicit_reference_plane_frame, fixed_reference_plane_frame, indexed_profile_vertex,
         inline_surface_reference_at, legacy_coordinate_roster_curve_endpoint_markers,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
-        legacy_extended_profile_curve_kind, legacy_feature_input_section,
-        legacy_reference_axis_triads, legacy_single_face_reference_path_at, marker_coordinates,
-        marker_is_geometry_locus, marker_is_selected_construction_line, marker_local_id,
-        marker_local_links, marker_object_index, matrix_reference_plane_frame,
-        minimal_reference_plane_frame, mirror_pattern_component_path_at,
-        mirror_surface_component_path_at, named_scalars, native_scalar_matches_discrete_parameter,
-        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
-        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
-        principal_sketch_frame, profile_roster_construction_axis, reconcile_reference_plane_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
-        roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
-        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, tangent_bounded_curve, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle,
-        BooleanOp, CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
+        legacy_feature_input_section, legacy_reference_axis_triads,
+        legacy_single_face_reference_path_at, marker_coordinates, marker_is_geometry_locus,
+        marker_is_selected_construction_line, marker_local_id, marker_local_links,
+        marker_object_index, matrix_reference_plane_frame, minimal_reference_plane_frame,
+        mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, profile_roster_construction_axis,
+        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
+        resolve_scalar_operand_markers, revolution_line_reference_inputs, revolution_operation,
+        revolution_temporary_axis, roster_curve_endpoint_markers,
+        sketch_block_identity_normalization_origin, sketch_block_record_origin,
+        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        tangent_bounded_curve, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
+        CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
         FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
         NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
@@ -3093,6 +3094,22 @@ mod marker_tests {
                 .collect::<Vec<_>>(),
             vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
         );
+
+        payload[curve_offset + 56..curve_offset + 58].copy_from_slice(&1u16.to_le_bytes());
+        payload[curve_offset + 58..curve_offset + 60].copy_from_slice(&2u16.to_le_bytes());
+        payload[curve_offset + 84..curve_offset + 84 + LEGACY_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(
+            legacy_coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.coordinates_m)
+                .collect::<Vec<_>>(),
+            vec![Some([3.0, 4.0]), Some([5.0, 6.0])]
+        );
+        assert!(legacy_coordinate_roster_undetailed_line(
+            &payload,
+            curve_offset
+        ));
     }
 
     #[test]
@@ -12506,18 +12523,23 @@ pub(crate) fn project_marker_backed_sketches(
                                     };
                                     let (start, end) = (project(start)?, project(end)?);
                                     let offset = usize::try_from(marker.offset).ok()?;
-                                    let [tu, tv] = compact_bounded_curve_tangent(
+                                    if let Some([tu, tv]) =
+                                        compact_bounded_curve_tangent(&lane.native_payload, offset)
+                                    {
+                                        let (tu, tv) = transform
+                                            .apply_axes(quantize(Point2::new(tu, tv), QUANTUM))?;
+                                        return tangent_bounded_curve(
+                                            start,
+                                            end,
+                                            [tu as f64 * QUANTUM, tv as f64 * QUANTUM],
+                                            QUANTUM,
+                                        );
+                                    }
+                                    legacy_coordinate_roster_undetailed_line(
                                         &lane.native_payload,
                                         offset,
-                                    )?;
-                                    let (tu, tv) = transform
-                                        .apply_axes(quantize(Point2::new(tu, tv), QUANTUM))?;
-                                    tangent_bounded_curve(
-                                        start,
-                                        end,
-                                        [tu as f64 * QUANTUM, tv as f64 * QUANTUM],
-                                        QUANTUM,
                                     )
+                                    .then_some(SketchGeometry::Line { start, end })
                                 })()
                                 .unwrap_or_else(|| {
                                     SketchGeometry::Native {
@@ -18174,6 +18196,9 @@ fn legacy_coordinate_roster_curve_endpoint_markers<'a>(
         })
         .collect::<Vec<_>>();
     coordinates.sort_unstable_by_key(|marker| marker.offset);
+    let Some(endpoint_offset) = legacy_coordinate_roster_endpoint_offset(payload, offset) else {
+        return Vec::new();
+    };
     let endpoint = |relative: usize| {
         let index = usize::from(u16::from_le_bytes(
             payload
@@ -18183,7 +18208,8 @@ fn legacy_coordinate_roster_curve_endpoint_markers<'a>(
         ));
         coordinates.get(index).copied()
     };
-    let (Some(first), Some(second)) = (endpoint(64), endpoint(66)) else {
+    let (Some(first), Some(second)) = (endpoint(endpoint_offset), endpoint(endpoint_offset + 2))
+    else {
         return Vec::new();
     };
     (first.id != second.id)
@@ -18192,10 +18218,34 @@ fn legacy_coordinate_roster_curve_endpoint_markers<'a>(
 }
 
 fn legacy_coordinate_roster_curve_layout(payload: &[u8], offset: usize) -> bool {
-    (payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
+    legacy_coordinate_roster_endpoint_offset(payload, offset).is_some()
+}
+
+fn legacy_coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Option<usize> {
+    if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) != Some(LEGACY_SKETCH_MARKER) {
+        return None;
+    }
+    if legacy_coordinate_roster_selected_axis_endpoint_indices(payload, offset).is_some() {
+        return Some(64);
+    }
+    if payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00]) {
+        return None;
+    }
+    if compact_indexed_curve_endpoint_indices(payload, offset).is_some() {
+        Some(56)
+    } else if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
+        Some(64)
+    } else {
+        None
+    }
+}
+
+fn legacy_coordinate_roster_undetailed_line(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
-        && wide_indexed_curve_endpoint_indices(payload, offset).is_some())
-        || legacy_coordinate_roster_selected_axis_endpoint_indices(payload, offset).is_some()
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && compact_indexed_curve_endpoint_indices(payload, offset).is_some()
+        && compact_bounded_curve_tangent(payload, offset).is_none()
 }
 
 fn legacy_coordinate_roster_selected_axis_endpoint_indices(
