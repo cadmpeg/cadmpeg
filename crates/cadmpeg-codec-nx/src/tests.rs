@@ -2239,8 +2239,7 @@ fn nx_native_feature_parameters_require_unique_resolved_names() {
             &[],
             None,
             None,
-            None,
-            None,
+            crate::decode::HoleProjection::default(),
             parameters,
         ),
         cadmpeg_ir::features::FeatureDefinition::Native {
@@ -3830,6 +3829,43 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
+    let expected_directions = std::collections::BTreeMap::from([
+        ("hole-a".into(), Vector3::new(0.0, 1.0, 0.0)),
+        ("hole-b".into(), Vector3::new(0.0, 1.0, 0.0)),
+    ]);
+    assert_eq!(
+        crate::decode::hole_directions_for_operations(&ir, &operations, &outputs),
+        expected_directions
+    );
+    assert_eq!(
+        crate::decode::hole_directions_for_operations(
+            &ir,
+            &operations,
+            &std::collections::BTreeMap::new(),
+        ),
+        expected_directions
+    );
+    let mut opposite_axis = ir.clone();
+    let SurfaceGeometry::Cylinder { axis, .. } = &mut opposite_axis.model.surfaces[1].geometry
+    else {
+        unreachable!()
+    };
+    *axis = Vector3::new(0.0, -1.0, 0.0);
+    for curve in opposite_axis
+        .model
+        .curves
+        .iter_mut()
+        .filter(|curve| curve.id.0.starts_with("bore-curve-1-"))
+    {
+        let CurveGeometry::Circle { axis, .. } = &mut curve.geometry else {
+            unreachable!()
+        };
+        *axis = Vector3::new(0.0, -1.0, 0.0);
+    }
+    assert_eq!(
+        crate::decode::hole_directions_for_operations(&opposite_axis, &operations, &outputs),
+        expected_directions
+    );
     assert_eq!(
         crate::decode::simple_hole_diameters(
             &ir,
@@ -3870,6 +3906,15 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
         &outputs,
     )
     .is_empty());
+    let mut nonparallel = ir.clone();
+    let SurfaceGeometry::Cylinder { axis, .. } = &mut nonparallel.model.surfaces[1].geometry else {
+        unreachable!()
+    };
+    *axis = Vector3::new(0.0, 0.0, 1.0);
+    assert!(
+        crate::decode::hole_directions_for_operations(&nonparallel, &operations, &outputs)
+            .is_empty()
+    );
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;
     assert!(crate::decode::hole_diameters_for_operations(&sheet, &operations, &outputs).is_empty());

@@ -10032,6 +10032,10 @@ fn attach_feature_operations(
         simple_hole_construction_groups,
         &hole_outputs,
     );
+    let simple_hole_direction_operations =
+        simple_hole_diameters.keys().cloned().collect::<Vec<_>>();
+    let simple_hole_directions =
+        hole_directions_for_operations(ir, &simple_hole_direction_operations, &hole_outputs);
     let hole_package_operations = labels
         .iter()
         .filter(|label| label.value == "HOLE PACKAGE")
@@ -10049,6 +10053,13 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let hole_package_diameters =
         hole_diameters_for_operations(ir, &hole_package_operations, &hole_package_outputs);
+    let hole_package_direction_operations =
+        hole_package_diameters.keys().cloned().collect::<Vec<_>>();
+    let hole_package_directions = hole_directions_for_operations(
+        ir,
+        &hole_package_direction_operations,
+        &hole_package_outputs,
+    );
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
@@ -10740,11 +10751,17 @@ fn attach_feature_operations(
                             &operation_payload_strings,
                             projected_block_dimensions,
                             block_placement,
-                            simple_hole_diameters
-                                .get(label.id.as_str())
-                                .or_else(|| hole_package_diameters.get(label.id.as_str()))
-                                .copied(),
-                            simple_hole_chamfers.get(label.id.as_str()).copied(),
+                            HoleProjection {
+                                diameter: simple_hole_diameters
+                                    .get(label.id.as_str())
+                                    .or_else(|| hole_package_diameters.get(label.id.as_str()))
+                                    .copied(),
+                                direction: simple_hole_directions
+                                    .get(label.id.as_str())
+                                    .or_else(|| hole_package_directions.get(label.id.as_str()))
+                                    .copied(),
+                                chamfer: simple_hole_chamfers.get(label.id.as_str()).copied(),
+                            },
                             native_parameters,
                         )
                     })
@@ -11578,10 +11595,20 @@ pub(crate) fn non_boolean_feature_definition(
         payload_strings,
         block_dimensions,
         block_placement,
-        hole_diameter,
-        None,
+        HoleProjection {
+            diameter: hole_diameter,
+            ..HoleProjection::default()
+        },
         BTreeMap::new(),
     )
+}
+
+/// Permutation-invariant hole properties derived from one complete body partition.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct HoleProjection {
+    diameter: Option<Length>,
+    direction: Option<Vector3>,
+    chamfer: Option<HoleKind>,
 }
 
 pub(crate) fn non_boolean_feature_definition_with_parameters(
@@ -11589,8 +11616,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
     payload_strings: &[&str],
     block_dimensions: Option<[f64; 3]>,
     block_placement: Option<Transform>,
-    hole_diameter: Option<Length>,
-    hole_chamfer: Option<HoleKind>,
+    hole: HoleProjection,
     native_parameters: BTreeMap<String, String>,
 ) -> FeatureDefinition {
     let simple_hole_template = unique_simple_hole_template(payload_strings);
@@ -11656,8 +11682,8 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             profile_filter: None,
             face: None,
             position: None,
-            direction: None,
-            kind: hole_chamfer.unwrap_or_else(|| {
+            direction: hole.direction,
+            kind: hole.chamfer.unwrap_or_else(|| {
                 if simple_hole_template.is_some() {
                     HoleKind::Unresolved {
                         form: Some(HoleForm::Chamfer),
@@ -11670,7 +11696,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
                     HoleKind::Simple
                 }
             }),
-            exit_kind: hole_chamfer.or_else(|| {
+            exit_kind: hole.chamfer.or_else(|| {
                 simple_hole_template
                     .is_some()
                     .then_some(HoleKind::Unresolved {
@@ -11681,7 +11707,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
                         countersink_angle: None,
                     })
             }),
-            diameter: hole_diameter,
+            diameter: hole.diameter,
             extent: simple_hole_template
                 .is_some()
                 .then_some(cadmpeg_ir::features::Extent::ThroughAll),
@@ -11695,7 +11721,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             profile_filter: None,
             face: None,
             position: None,
-            direction: None,
+            direction: hole.direction,
             kind: HoleKind::Unresolved {
                 form: None,
                 counterbore_diameter: None,
@@ -11704,7 +11730,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
                 countersink_angle: None,
             },
             exit_kind: None,
-            diameter: hole_diameter,
+            diameter: hole.diameter,
             extent: None,
             bottom: None,
             taper_angle: None,
@@ -11898,6 +11924,65 @@ pub(crate) fn hole_diameters_for_operations(
         );
     }
     diameters
+}
+
+/// Derive one canonical model-space direction per operation when every bore
+/// in an already matched body partition has one common axis direction.
+pub(crate) fn hole_directions_for_operations(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> BTreeMap<String, Vector3> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return BTreeMap::new();
+    }
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
+    };
+
+    let angular_tolerance = ir.tolerances.angular.max(1e-12);
+    let mut directions = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            return BTreeMap::new();
+        };
+        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
+            return BTreeMap::new();
+        };
+        if bores.len() != operations.len() {
+            return BTreeMap::new();
+        }
+        let Some((_, first_axis, first_radius)) = bores.first().copied() else {
+            return BTreeMap::new();
+        };
+        let Some(mut direction) = unit_vector(first_axis) else {
+            return BTreeMap::new();
+        };
+        let Some(leading) = [direction.x, direction.y, direction.z]
+            .into_iter()
+            .find(|component| component.abs() > angular_tolerance)
+        else {
+            return BTreeMap::new();
+        };
+        if leading < 0.0 {
+            direction = Vector3::new(-direction.x, -direction.y, -direction.z);
+        }
+        if bores.iter().any(|(_, axis, radius)| {
+            radius.to_bits() != first_radius.to_bits()
+                || unit_vector(*axis).is_none_or(|axis| {
+                    (1.0 - dot_vector(direction, axis).abs()) > angular_tolerance
+                })
+        }) {
+            return BTreeMap::new();
+        }
+        directions.extend(
+            operations
+                .into_iter()
+                .map(|operation| (operation, direction)),
+        );
+    }
+    directions
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
