@@ -17549,7 +17549,9 @@ pub fn decode_sketch_curve_identities(
                     .get(geometry_shift..)
                     .expect("invariant: geometry_shift (0 or 52) is <= payload.len() (checked >= 133 by the at + 133 <= bytes.len() loop guard)");
                 let (geometry, owner_scan_from) =
-                    if let Some((geometry, end)) = decode_sketch_nurbs(geometry_payload) {
+                    if let Some((geometry, end)) = decode_legacy_sketch_nurbs(geometry_payload) {
+                        (Some(geometry), geometry_shift + end)
+                    } else if let Some((geometry, end)) = decode_sketch_nurbs(geometry_payload) {
                         (Some(geometry), geometry_shift + end)
                     } else if let Some(geometry) = decode_circular_arc(geometry_payload) {
                         (Some(geometry), geometry_shift + 133 + 12 * 8)
@@ -17868,6 +17870,103 @@ fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
     if (weight_count != 0 && point_count != weight_count)
         || u32_at(payload, points_at + 4)? as usize != point_count
+        || u32_at(payload, points_at + 8)? != 8
+        || knot_count != point_count.checked_add(degree as usize + 1)?
+    {
+        return None;
+    }
+    let coordinates = f64s_at(payload, points_at + 12, point_count.checked_mul(3)?)?;
+    if knots.windows(2).any(|pair| pair[0] > pair[1])
+        || weights
+            .iter()
+            .any(|weight| !weight.is_finite() || *weight <= 0.0)
+        || coordinates.iter().any(|value| !value.is_finite())
+        || !fit_tolerance.is_finite()
+    {
+        return None;
+    }
+    let control_points = coordinates
+        .chunks_exact(3)
+        .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
+        .collect();
+    Some((
+        SketchCurveGeometry::Nurbs {
+            carrier_reference,
+            subtype_class_tag,
+            subtype_record_index: u32_at(payload, base + 15)?,
+            degree,
+            fit_tolerance: fit_tolerance * 10.0,
+            scalar_width: 8,
+            knots,
+            weights,
+            control_points,
+        },
+        points_at + 12 + point_count * 24,
+    ))
+}
+
+fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
+    let base = 133usize;
+    let prefix = payload.get(base..base + 8)?;
+    let carrier_reference = (prefix != [0xff; 8]).then(|| {
+        u64::from_le_bytes(
+            prefix
+                .try_into()
+                .expect("invariant: prefix is an eight-byte slice"),
+        )
+    });
+    if u32_at(payload, base + 8) != Some(3)
+        || payload.get(base + 19..base + 27) != Some(&[0; 8])
+        || payload.get(base + 27) != Some(&1)
+        || payload.get(base + 32..base + 42) != Some(&[0; 10])
+        || payload.get(base + 50..base + 55) != Some(&[0; 5])
+        || payload.get(base + 55) != Some(&1)
+        || payload.get(base + 60..base + 66) != Some(&[0; 6])
+        || payload.get(base + 66) != Some(&1)
+        || payload.get(base + 71..base + 77) != Some(&[0; 6])
+        || payload.get(base + 77) != Some(&1)
+        || payload.get(base + 80..base + 88) != Some(&[0; 8])
+        || payload.get(base + 88).is_none_or(|value| *value > 1)
+        || payload.get(base + 89).is_none_or(|value| *value > 1)
+        || payload.get(base + 94..base + 102)
+            != Some(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e])
+    {
+        return None;
+    }
+    let subtype_class_tag = std::str::from_utf8(payload.get(base + 12..base + 15)?)
+        .ok()?
+        .to_string();
+    if !subtype_class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    let degree = u32_at(payload, base + 90)?;
+    let fit_tolerance = f64_at(payload, base + 42)?;
+    let knot_count = usize::try_from(u32_at(payload, base + 102)?).ok()?;
+    let knot_capacity = usize::try_from(u32_at(payload, base + 106)?).ok()?;
+    if degree == 0
+        || knot_capacity < knot_count
+        || u32_at(payload, base + 110)? != 8
+        || knot_capacity > 100_000
+    {
+        return None;
+    }
+    let knots = f64s_at(payload, base + 114, knot_count)?;
+    let weights_at = base + 114 + knot_count * 8;
+    let weight_count = usize::try_from(u32_at(payload, weights_at)?).ok()?;
+    let weight_capacity = usize::try_from(u32_at(payload, weights_at + 4)?).ok()?;
+    if weight_capacity < weight_count
+        || u32_at(payload, weights_at + 8)? != 8
+        || weight_capacity > 100_000
+    {
+        return None;
+    }
+    let weights = f64s_at(payload, weights_at + 12, weight_count)?;
+    let points_at = weights_at + 12 + weight_count * 8;
+    let point_count = usize::try_from(u32_at(payload, points_at)?).ok()?;
+    let point_capacity = usize::try_from(u32_at(payload, points_at + 4)?).ok()?;
+    if (weight_count != 0 && point_count != weight_count)
+        || point_capacity < point_count
+        || point_capacity > 100_000
         || u32_at(payload, points_at + 8)? != 8
         || knot_count != point_count.checked_add(degree as usize + 1)?
     {
@@ -24114,6 +24213,71 @@ mod relation_tests {
             panic!("expected line");
         };
         assert!((direction.y + 1.0).abs() <= 1.0e-12);
+    }
+
+    #[test]
+    fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
+        fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
+            bytes.push(1);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+        }
+
+        let mut bytes = vec![0u8; 133];
+        bytes.extend_from_slice(&[0xff; 8]);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"285");
+        bytes.extend_from_slice(&1200u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.push(1);
+        bytes.extend_from_slice(&1201u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&0.000_01f64.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.push(0);
+        marked_reference(&mut bytes, 1202);
+        marked_reference(&mut bytes, 1203);
+        marked_reference(&mut bytes, 1204);
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0x95, 0xd6, 0x26, 0xe8, 0x0b, 0x2e, 0x11, 0x3e]);
+        for (values, capacity) in [
+            (vec![0.0f64, 0.0, 0.0, 1.0, 1.0, 1.0], 8u32),
+            (vec![1.0f64, 1.0, 1.0], 8),
+            (vec![0.0f64, 0.0, 0.0, 0.5, 0.75, 0.0, 1.0, 0.0, 0.0], 8),
+        ] {
+            let count = u32::try_from(if values.len() == 9 {
+                values.len() / 3
+            } else {
+                values.len()
+            })
+            .expect("test count");
+            bytes.extend_from_slice(&count.to_le_bytes());
+            bytes.extend_from_slice(&capacity.to_le_bytes());
+            bytes.extend_from_slice(&8u32.to_le_bytes());
+            for value in values {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+
+        let (geometry, end) = super::decode_legacy_sketch_nurbs(&bytes).expect("legacy NURBS");
+        let SketchCurveGeometry::Nurbs {
+            degree,
+            fit_tolerance,
+            knots,
+            weights,
+            control_points,
+            ..
+        } = geometry
+        else {
+            panic!("expected NURBS");
+        };
+        assert_eq!(end, bytes.len());
+        assert_eq!(degree, 2);
+        assert_eq!(knots, [0.0, 0.0, 0.0, 1.0, 1.0, 1.0]);
+        assert_eq!(weights, [1.0; 3]);
+        assert_eq!(control_points[1], Point3::new(5.0, 7.5, 0.0));
+        assert!((fit_tolerance - 0.000_1).abs() <= f64::EPSILON);
     }
 
     #[test]
