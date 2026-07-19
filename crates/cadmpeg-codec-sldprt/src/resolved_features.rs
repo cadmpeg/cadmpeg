@@ -1344,6 +1344,12 @@ mod marker_tests {
         ]);
         payload.extend([0; 4]);
         assert_eq!(compact_reference_plane_source(&payload), Some(2));
+        payload[start + 50] = 3;
+        payload[start + 54] = 0xff;
+        assert_eq!(compact_reference_plane_source(&payload), Some(2));
+        payload[start + 50] = 1;
+        assert_eq!(compact_reference_plane_source(&payload), None);
+        payload[start + 50] = 3;
         payload[start + 59] ^= 1;
         assert_eq!(compact_reference_plane_source(&payload), None);
     }
@@ -9694,16 +9700,19 @@ fn compact_declared_reference_plane_source(payload: &[u8]) -> Option<u32> {
         .windows(67)
         .filter_map(|bytes| {
             let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+            let trailer = bytes.get(47..63)?;
             (source != 0
                 && bytes.get(8..12) == Some(&[0, 0, 3, 0])
                 && bytes.get(12..39)?.iter().all(|byte| *byte == 0)
                 && bytes.get(39..47) == Some(&1.0f64.to_le_bytes())
-                && bytes.get(47..63)
-                    == Some(&[
-                        0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0xf9, 0xff, 0xff, 0xff, 0x00,
-                        0x00, 0x00, 0x00, 0x65,
-                    ]))
-            .then_some(source)
+                && trailer[..3] == [0; 3]
+                && matches!(trailer[3], 2..=4)
+                && trailer[4..7] == [0; 3]
+                && matches!(trailer[7], 0xf9 | 0xfb | 0xff)
+                && trailer[8..11] == [0xff; 3]
+                && trailer[11..15] == [0; 4]
+                && trailer[15] >= 0x65)
+                .then_some(source)
         })
         .collect::<HashSet<_>>();
     let mut matches = matches.into_iter();
