@@ -12987,52 +12987,75 @@ fn schema_feature_definition(
             ),
         };
     }
-    if section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id)) {
+    let recipe = feature_recipe(scan, feature_id);
+    if section_sweep_allows_linear_extrusion(schema_class, recipe) {
         let transforms = scan
             .feature_section_transforms
             .iter()
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        if let [transform] = transforms.as_slice() {
-            let profile =
-                unique_feature_definition(&scan.feature_definitions, transform.definition_id).map(
-                    |definition| {
-                        section_profile_ref(
-                            ir,
-                            definition.id,
-                            feature_sketch_record_id_in_scan(scan, definition),
-                        )
-                    },
-                );
-            if let Some(profile) = profile {
-                let cap_origins = feature_plane_equations(scan, feature_id);
-                if let Some((extent, direction)) =
-                    extrusion_extent_and_direction(transform.origin, transform.normal, cap_origins)
-                {
-                    let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
-                    return IrFeatureDefinition::Extrude {
+        let profile = if let [transform] = transforms.as_slice() {
+            unique_feature_definition(&scan.feature_definitions, transform.definition_id).map(
+                |definition| {
+                    section_profile_ref(
+                        ir,
+                        definition.id,
+                        feature_sketch_record_id_in_scan(scan, definition),
+                    )
+                },
+            )
+        } else {
+            None
+        };
+        let construction =
+            if let ([transform], Some(profile)) = (transforms.as_slice(), profile.clone()) {
+                extrusion_extent_and_direction(
+                    transform.origin,
+                    transform.normal,
+                    feature_plane_equations(scan, feature_id),
+                )
+                .map(|(extent, direction)| {
+                    (
                         profile,
-                        direction: Some(Vector3::new(direction[0], direction[1], direction[2])),
+                        Some(Vector3::new(direction[0], direction[1], direction[2])),
                         extent,
-                        op: section_sweep_boolean_operation(
-                            feature_recipe_effect(scan, feature_id),
-                            kind,
-                            output_kind.is_some(),
-                            preceding_features_establish_body(ir),
-                        ),
-                        draft: None,
-                        reverse_draft: None,
-                        direction_source: None,
-                        solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
-                        face_maker: None,
-                        inner_wire_taper: None,
-                        first_offset: None,
-                        second_offset: None,
-                        length_along_profile_normal: None,
-                        allow_multi_profile_faces: None,
-                    };
-                }
+                    )
+                })
+            } else {
+                None
             }
+            .or_else(|| {
+                (recipe == Some(crate::feature::FeatureRecipeKind::Extrude)).then(|| {
+                    (
+                        profile.unwrap_or(ProfileRef::Unresolved),
+                        None,
+                        Extent::Unresolved,
+                    )
+                })
+            });
+        if let Some((profile, direction, extent)) = construction {
+            let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
+            return IrFeatureDefinition::Extrude {
+                profile,
+                direction,
+                extent,
+                op: section_sweep_boolean_operation(
+                    feature_recipe_effect(scan, feature_id),
+                    kind,
+                    output_kind.is_some(),
+                    preceding_features_establish_body(ir),
+                ),
+                draft: None,
+                reverse_draft: None,
+                direction_source: None,
+                solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
+                face_maker: None,
+                inner_wire_taper: None,
+                first_offset: None,
+                second_offset: None,
+                length_along_profile_normal: None,
+                allow_multi_profile_faces: None,
+            };
         }
     }
     if schema_class == 923 {
@@ -13073,7 +13096,9 @@ fn section_sweep_allows_linear_extrusion(
     schema_class: u32,
     recipe: Option<crate::feature::FeatureRecipeKind>,
 ) -> bool {
-    matches!(schema_class, 916 | 917) && recipe != Some(crate::feature::FeatureRecipeKind::Revolve)
+    recipe == Some(crate::feature::FeatureRecipeKind::Extrude)
+        || (matches!(schema_class, 916 | 917)
+            && recipe != Some(crate::feature::FeatureRecipeKind::Revolve))
 }
 
 fn preceding_features_establish_body(ir: &CadIr) -> bool {
@@ -14680,6 +14705,7 @@ mod resolved_sketch_tests {
         assert!(section_sweep_allows_linear_extrusion(916, None));
         assert!(section_sweep_allows_linear_extrusion(917, None));
         assert!(section_sweep_allows_linear_extrusion(917, Some(Extrude)));
+        assert!(section_sweep_allows_linear_extrusion(0, Some(Extrude)));
         assert!(!section_sweep_allows_linear_extrusion(917, Some(Revolve)));
         assert!(!section_sweep_allows_linear_extrusion(923, None));
     }

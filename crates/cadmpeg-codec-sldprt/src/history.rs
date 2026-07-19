@@ -4755,7 +4755,8 @@ pub fn sync_neutral_features(
                     | Extent::SymmetricAngle { .. }
                     | Extent::TwoSidedAngles { .. }
                     | Extent::TwoSidedExtents { .. }
-                    | Extent::SymmetricExtent { .. } => {
+                    | Extent::SymmetricExtent { .. }
+                    | Extent::Unresolved => {
                         return Err(CodecError::NotImplemented(format!(
                             "SLDPRT feature {} uses an unsupported extrusion extent",
                             feature.id
@@ -7145,6 +7146,7 @@ fn profile_source(
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match profile {
+        ProfileRef::Unresolved => None,
         ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(

@@ -2879,6 +2879,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     _ => {}
                 }
                 let valid_magnitude = match extent {
+                    Extent::Unresolved => true,
                     Extent::Blind { length } | Extent::Symmetric { length } => {
                         length.0.is_finite() && length.0 != 0.0
                     }

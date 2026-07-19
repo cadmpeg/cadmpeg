@@ -1947,7 +1947,7 @@ fn profile_ref(properties: &[&PropertyRecord], sketches: &HashMap<&str, SketchId
         (!target.is_empty()).then_some((property, target))
     });
     let Some((property, target)) = property_and_target else {
-        return ProfileRef::Native("unresolved FCStd profile".into());
+        return ProfileRef::Unresolved;
     };
     sketches.get(target).cloned().map_or_else(
         || ProfileRef::Native(property.id.clone()),
@@ -1971,7 +1971,7 @@ fn revolution_definition(
     sketches: &HashMap<&str, SketchId>,
 ) -> Option<FeatureDefinition> {
     let profile = profile_ref(properties, sketches);
-    if matches!(&profile, ProfileRef::Native(value) if value == "unresolved FCStd profile") {
+    if matches!(&profile, ProfileRef::Unresolved) {
         return None;
     }
     let mut axis = revolution_axis(properties)?;
@@ -3295,7 +3295,7 @@ fn hole_definition(
     properties_by_owner: &HashMap<&str, Vec<&PropertyRecord>>,
 ) -> Option<FeatureDefinition> {
     let profile = profile_ref(properties, sketches);
-    if matches!(profile, ProfileRef::Native(ref value) if value == "unresolved FCStd profile") {
+    if matches!(profile, ProfileRef::Unresolved) {
         return None;
     }
     let filter_bits = integer_property(properties, "BaseProfileType").unwrap_or(6);

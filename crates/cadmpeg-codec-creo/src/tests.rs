@@ -2339,6 +2339,31 @@ fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
 }
 
 #[test]
+fn decode_retains_recipe_proven_extrusion_with_unresolved_operands() {
+    let mdlstatus = b"\xe3icon\0cutextrude\0K\xc3\xb6rper id 40\0".to_vec();
+    let data = build_prt("c", &[("MdlStatus", mdlstatus)]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .expect("extrusion feature");
+
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            direction: None,
+            extent: cadmpeg_ir::features::Extent::Unresolved,
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn scan_decodes_featdefs_records_and_parameter_frames() {
     let mut payload = b"feat_defs_40\0local_sys\0\xf9\x04\x03".to_vec();
     for _ in 0..3 {

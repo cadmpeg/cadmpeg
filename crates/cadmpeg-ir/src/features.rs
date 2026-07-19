@@ -1544,6 +1544,8 @@ pub struct AxisAngle {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Extent {
+    /// A termination exists semantically but its construction is unresolved.
+    Unresolved,
     /// Fixed depth or angle in one direction.
     Blind {
         /// Fixed travel distance.
@@ -1930,6 +1932,8 @@ pub enum BinderOffsetJoin {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
 pub enum ProfileRef {
+    /// A profile is required by the operation but its source is unresolved.
+    Unresolved,
     /// Opaque reference into a native feature-input record; no neutral geometry given.
     Native(String),
     /// Solved neutral sketch profile.
