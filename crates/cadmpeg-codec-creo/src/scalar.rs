@@ -495,13 +495,16 @@ fn decode_local_system_slots(
             cursor += 1;
             continue;
         }
-        let (value, next) =
-            if matches!(variant, LocalSystemVariant::PositionalPlane) && values.len() == 9 {
-                decode_in_row_lane(body, cursor, cache)
-                    .or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))?
-            } else {
-                decode_in_row_lane(body, cursor, cache)?
-            };
+        let row = decode_in_row_lane(body, cursor, cache);
+        let (value, next) = match (variant, values.len()) {
+            (LocalSystemVariant::PositionalPlane, 9) => {
+                row.or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))?
+            }
+            (LocalSystemVariant::PositionalPlane, 10 | 11) => {
+                row.or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))?
+            }
+            _ => row?,
+        };
         values.push(value);
         cursor = next;
     }
@@ -662,6 +665,24 @@ mod tests {
                 f64::from_be_bytes([0x40, 0x14, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8]),
                 f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
                 f64::from_be_bytes([0xbf, 0x11, 0x9e, 0xed, 0x48, 0x6f, 0x9e, 0]),
+            ])
+        );
+    }
+
+    #[test]
+    fn positional_plane_origin_yz_fall_back_to_the_second_coordinate_lane() {
+        let body = [
+            0x0f, 0x18, 0xe5, 0x0f, 0x18, 0xe5, 0x0f, 0x9f, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8,
+            0x2d, 0x1e, 0, 0, 0, 0, 0, 0x65, 0xad, 0x53, 0xd5, 0xa1, 0x38, 0xce, 0xd8,
+        ];
+
+        assert_eq!(
+            decode_positional_plane_local_system_slots(&body, &ScalarCache::default())
+                .map(|slots| [slots[9], slots[10], slots[11]]),
+            Some([
+                f64::from_be_bytes([0x40, 0x14, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8]),
+                f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
+                f64::from_be_bytes([0xbf, 0xd9, 0x53, 0xd5, 0xa1, 0x38, 0xce, 0xd8]),
             ])
         );
     }
