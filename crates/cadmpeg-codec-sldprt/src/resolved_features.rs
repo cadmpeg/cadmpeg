@@ -422,11 +422,11 @@ mod marker_tests {
         explicit_reference_plane_frame, fixed_reference_plane_frame, legacy_feature_input_section,
         legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
-        minimal_reference_plane_frame, named_scalars, native_scalar_matches_discrete_parameter,
-        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
-        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
-        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        minimal_reference_plane_frame, mirror_pattern_component_path_at, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
@@ -2948,6 +2948,52 @@ mod marker_tests {
     }
 
     #[test]
+    fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
+        let marker = 12;
+        let mut payload = vec![0; marker];
+        payload[..4].copy_from_slice(&4u32.to_le_bytes());
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0, 0]);
+        for (index, (instance, signature)) in [
+            (
+                0x803e_u16,
+                [0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a],
+            ),
+            (
+                0x8263,
+                [0x34, 0x80, 0x37, 0, 50, 0, 0, 0, 0xf9, 0x83, 0xd9, 0x4a],
+            ),
+            (
+                0x803e,
+                [0x34, 0x80, 0x37, 0, 37, 0, 0, 0, 0x7a, 0x83, 0xd9, 0x4a],
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if index == 2 {
+                payload.extend([0; 8]);
+            }
+            payload.extend(instance.to_le_bytes());
+            payload.extend([0, 0]);
+            payload.extend(signature);
+            payload.extend([2u32, 1, 3][index].to_le_bytes());
+        }
+        payload.extend([0; 32]);
+
+        let path = mirror_pattern_component_path_at(&payload, marker).unwrap();
+        assert_eq!(path.len(), 3);
+        assert_eq!(path.last().unwrap().local_id, 3);
+        assert_eq!(
+            &path.last().unwrap().type_signature[4..8],
+            &37u32.to_le_bytes()
+        );
+
+        payload[4] = 1;
+        assert!(mirror_pattern_component_path_at(&payload, marker).is_none());
+    }
+
+    #[test]
     fn component_path_type_identities_name_ordered_features() {
         let feature = |id: &str, source_id: &str| Feature {
             id: id.into(),
@@ -3236,6 +3282,8 @@ pub(crate) fn bind_pattern_inputs(
     )>::new();
     let mut linear_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
+    let mut mirror_assignments =
+        Vec::<(usize, cadmpeg_ir::features::FeatureId, Point3, Vector3)>::new();
 
     for lane in lanes {
         let mut starts = history_features
@@ -3244,6 +3292,70 @@ pub(crate) fn bind_pattern_inputs(
             .collect::<Vec<_>>();
         starts.sort_unstable_by_key(|(offset, _)| *offset);
         for (start_index, (_, feature)) in starts.iter().enumerate() {
+            if feature.input_class.as_deref() == Some("moMirrorPattern_c") {
+                let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
+                    continue;
+                };
+                if !matches!(
+                    model_features[model_index].definition,
+                    FeatureDefinition::Pattern {
+                        ref seeds,
+                        pattern: PatternKind::Unresolved { .. },
+                    } if seeds.is_empty()
+                ) {
+                    continue;
+                }
+                let start = usize::try_from(starts[start_index].0).ok();
+                let end = starts
+                    .get(start_index + 1)
+                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                    .unwrap_or(lane.native_payload.len());
+                let Some(start) = start.filter(|start| *start < end) else {
+                    continue;
+                };
+                let object = &lane.native_payload[start..end];
+                let Ok(Some((origin, normal, _))) = explicit_reference_plane_frame(object) else {
+                    continue;
+                };
+                let mut terminals = (0..object
+                    .len()
+                    .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+                    .filter(|offset| {
+                        object.get(*offset..*offset + COMPACT_EDGE_VECTOR_MARKER.len())
+                            == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+                    })
+                    .filter_map(|offset| mirror_pattern_component_path_at(object, offset))
+                    .filter_map(|components| {
+                        let component = components.last()?;
+                        let source =
+                            u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
+                        let mut matches = history_features.iter().filter(|candidate| {
+                            candidate
+                                .source_id
+                                .as_deref()
+                                .and_then(|value| value.parse::<u32>().ok())
+                                == Some(source)
+                        });
+                        let feature = matches.next()?;
+                        matches.next().is_none().then(|| feature.id.clone())
+                    })
+                    .collect::<Vec<_>>();
+                terminals.sort();
+                terminals.dedup();
+                let [terminal] = terminals.as_slice() else {
+                    continue;
+                };
+                let Some(&seed_index) = model_by_native.get(terminal.as_str()) else {
+                    continue;
+                };
+                mirror_assignments.push((
+                    model_index,
+                    model_features[seed_index].id.clone(),
+                    origin,
+                    normal,
+                ));
+                continue;
+            }
             if feature.input_class.as_deref() == Some("moLPattern_c") {
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
@@ -3411,6 +3523,34 @@ pub(crate) fn bind_pattern_inputs(
         {
             if slot.is_none() {
                 *slot = Some(*direction);
+            }
+        }
+    }
+    let mut mirrors_by_pattern = HashMap::<usize, Vec<_>>::new();
+    for (index, seed, origin, normal) in mirror_assignments {
+        let candidates = mirrors_by_pattern.entry(index).or_default();
+        if !candidates.contains(&(seed.clone(), origin, normal)) {
+            candidates.push((seed, origin, normal));
+        }
+    }
+    for (index, candidates) in mirrors_by_pattern {
+        let [(seed, origin, normal)] = candidates.as_slice() else {
+            continue;
+        };
+        if !model_features[index].dependencies.contains(seed) {
+            model_features[index].dependencies.push(seed.clone());
+        }
+        if let FeatureDefinition::Pattern {
+            seeds,
+            pattern: slot @ PatternKind::Unresolved { .. },
+        } = &mut model_features[index].definition
+        {
+            if seeds.is_empty() {
+                seeds.push(seed.clone());
+                *slot = PatternKind::Mirror {
+                    plane_origin: *origin,
+                    plane_normal: *normal,
+                };
             }
         }
     }
@@ -4757,6 +4897,27 @@ fn edge_selection_vectors_in_interval(
 const COMPACT_EDGE_VECTOR_MARKER: [u8; 16] = [
     0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54, 0x7d, 0xc3, 0x94, 0x25, 0xad, 0x49, 0xb2, 0x54,
 ];
+
+fn mirror_pattern_component_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    let header = marker.checked_sub(12)?;
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker - 8..marker)? != [0; 8]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let cell_count = usize::try_from(u32::from_le_bytes(
+        payload.get(header..header + 4)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| (2..=65).contains(count))?;
+    let (components, _) =
+        compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1)?;
+    Some(components)
+}
 
 fn compact_edge_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {
     for marker in 12..=payload
