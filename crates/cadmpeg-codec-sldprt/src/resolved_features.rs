@@ -8889,6 +8889,45 @@ mod idless_history_binding_tests {
     }
 
     #[test]
+    fn dissectable_profile_owns_its_block_object_sequence() {
+        let mut profile = feature(0, "sketch");
+        profile.input_class = Some("moProfileFeature_c".into());
+        profile
+            .properties
+            .insert("DissectableChildren".into(), "23,27".into());
+        let mut definition_a = feature(1, "block");
+        definition_a.input_class = Some("moSketchBlockDef_c".into());
+        definition_a.source_id = Some("23".into());
+        let mut instance = feature(2, "block instance");
+        instance.input_class = Some("moSketchBlockInst_c".into());
+        instance.source_id = Some("25".into());
+        let mut definition_b = feature(3, "block");
+        definition_b.input_class = Some("moSketchBlockDef_c".into());
+        definition_b.source_id = Some("27".into());
+        let objects = [&definition_a, &instance, &definition_b];
+        assert!(dissectable_profile_owns_objects(
+            &profile,
+            objects.iter().copied()
+        ));
+
+        definition_b.input_class = Some("moRefPlane_c".into());
+        let objects = [&definition_a, &instance, &definition_b];
+        assert!(!dissectable_profile_owns_objects(
+            &profile,
+            objects.iter().copied()
+        ));
+        definition_b.input_class = Some("moSketchBlockDef_c".into());
+        let objects = [&definition_a, &instance, &definition_b];
+        profile
+            .properties
+            .insert("DissectableChildren".into(), "23,23".into());
+        assert!(!dissectable_profile_owns_objects(
+            &profile,
+            objects.iter().copied()
+        ));
+    }
+
+    #[test]
     fn exact_idless_startup_binds_from_the_native_class_roster() {
         let mut features = vec![
             feature(10, "localized plane"),
@@ -12763,25 +12802,49 @@ pub(crate) fn project_adjacent_extrusion_profiles(
                     .push(ProfileVote::Missing);
             }
         }
+        let mut associations = Vec::new();
         for pair in objects.windows(2) {
             let [(first_name, first), (second_name, second)] = pair else {
                 continue;
             };
             let first_kind = object_kind(first_name, first);
             let second_kind = object_kind(second_name, second);
-            let (profile, extrusion, strength) = match (first_kind, second_kind) {
+            let association = match (first_kind, second_kind) {
                 (NativeClassKind::ProfileFeature, NativeClassKind::Extrusion)
                     if !is_dissectable(second) =>
                 {
-                    (*first, *second, 0)
+                    Some((*first, *second, 0))
                 }
                 (NativeClassKind::Extrusion, NativeClassKind::ProfileFeature)
                     if is_dissectable(first) || is_dissected_profile_feature(second) =>
                 {
-                    (*second, *first, 1)
+                    Some((*second, *first, 1))
                 }
-                _ => continue,
+                _ => None,
             };
+            associations.extend(association);
+        }
+        for extrusion_index in 1..objects.len() {
+            let (extrusion_name, extrusion) = objects[extrusion_index];
+            if object_kind(extrusion_name, extrusion) != NativeClassKind::Extrusion {
+                continue;
+            }
+            let Some(profile) = (0..extrusion_index).rev().find_map(|profile_index| {
+                let (profile_name, profile) = objects[profile_index];
+                (object_kind(profile_name, profile) == NativeClassKind::ProfileFeature
+                    && dissectable_profile_owns_objects(
+                        profile,
+                        objects[profile_index + 1..extrusion_index]
+                            .iter()
+                            .map(|(_, feature)| *feature),
+                    ))
+                .then_some(profile)
+            }) else {
+                continue;
+            };
+            associations.push((profile, extrusion, 2));
+        }
+        for (profile, extrusion, strength) in associations {
             let Some(vote) = profiles
                 .get_mut(&extrusion.id)
                 .and_then(|votes| votes.last_mut())
@@ -12864,6 +12927,49 @@ fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
                 .as_deref()
                 .and_then(|source| source.parse::<u32>().ok())
                 .is_some_and(|source| source != 0))
+}
+
+fn dissectable_profile_owns_objects<'a>(
+    profile: &crate::records::Feature,
+    objects: impl IntoIterator<Item = &'a crate::records::Feature>,
+) -> bool {
+    let Some(encoded) = profile.properties.get("DissectableChildren") else {
+        return false;
+    };
+    let children = encoded
+        .split(',')
+        .map(str::trim)
+        .map(str::parse::<u32>)
+        .collect::<Result<HashSet<_>, _>>();
+    let Ok(children) = children else {
+        return false;
+    };
+    if children.is_empty() || children.contains(&0) || children.len() != encoded.split(',').count()
+    {
+        return false;
+    }
+    let mut definitions = HashSet::new();
+    for feature in objects {
+        let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
+        if !matches!(
+            kind,
+            NativeClassKind::SketchBlockDefinition | NativeClassKind::SketchBlockInstance
+        ) {
+            return false;
+        }
+        let Some(source) = feature
+            .source_id
+            .as_deref()
+            .and_then(|source| source.parse::<u32>().ok())
+            .filter(|source| *source != 0)
+        else {
+            return false;
+        };
+        if kind == NativeClassKind::SketchBlockDefinition && !definitions.insert(source) {
+            return false;
+        }
+    }
+    definitions == children
 }
 
 fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {

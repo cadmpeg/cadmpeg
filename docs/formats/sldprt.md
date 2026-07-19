@@ -264,7 +264,7 @@ A compact `moCombineBodies_c` object carries its target and tool as the first an
 
 The compact Combine operation is a little-endian u32 at feature-name marker offset `+ 117 + 2 × name-code-unit-count`. Twelve zero bytes precede it; six zero bytes and `ff ff ff ff` follow it. Values `0`, `1`, and `2` mean join, subtract, and intersect respectively.
 
-An extrusion object immediately following a `moProfileFeature_c` object consumes that profile feature. A compact extrusion without `DissectableChildren` also consumes a `moProfileFeature_c` object immediately following it. The profile feature is an ordered dependency of the extrusion. These adjacency forms are independent of the `DissectableChildren` property used by explicitly linked extrusion objects.
+An extrusion object immediately following a `moProfileFeature_c` object consumes that profile feature. A profile feature may instead be followed by a sequence containing only sketch-block definition and sketch-block instance objects and then the extrusion. In that form, the profile feature's `DissectableChildren` identifiers are exactly the distinct object identifiers of the intervening sketch-block definitions; the extrusion consumes the profile feature containing those blocks. A compact extrusion without `DissectableChildren` also consumes a `moProfileFeature_c` object immediately following it. The profile feature is an ordered dependency of the extrusion. These adjacency forms are independent of the `DissectableChildren` property used by explicitly linked extrusion objects.
 
 The inline extrusion operation trailer establishes the extrusion object family independently of its class token. This applies when a repeated token is shared by more than one declared extrusion class.
 
