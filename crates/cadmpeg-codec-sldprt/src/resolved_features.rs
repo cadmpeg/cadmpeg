@@ -411,14 +411,15 @@ mod marker_tests {
         component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
-        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
-        legacy_feature_input_section, legacy_reference_axis_triads, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
-        matrix_reference_plane_frame, minimal_reference_plane_frame, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
-        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
-        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        cosmetic_thread_cylinder_reference_at, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, legacy_feature_input_section,
+        legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
+        minimal_reference_plane_frame, named_scalars, native_scalar_matches_discrete_parameter,
+        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
+        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
+        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
@@ -2871,6 +2872,24 @@ mod marker_tests {
     }
 
     #[test]
+    fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
+        let class_offset = 9;
+        let marker = class_offset + 115;
+        let mut payload = vec![0; marker - 12];
+        let actual_marker = selection_vector_tail(&mut payload, &[3]);
+        assert_eq!(actual_marker, marker);
+        let (actual_marker, components) =
+            cosmetic_thread_cylinder_reference_at(&payload, class_offset).unwrap();
+        assert_eq!(actual_marker, marker);
+        assert_eq!(components.last().unwrap().local_id, 3);
+
+        assert_eq!(
+            cosmetic_thread_cylinder_reference_at(&payload, class_offset + 1),
+            None
+        );
+    }
+
+    #[test]
     fn component_path_type_identities_name_ordered_features() {
         let feature = |id: &str, source_id: &str| Feature {
             id: id.into(),
@@ -4534,6 +4553,16 @@ fn compact_surface_selections(
                         .map(|ids| (marker, ids))
                 })
                 .collect(),
+            NativeClassKind::CosmeticThread => lane
+                .classes
+                .iter()
+                .filter(|class| class.name == "moCylinderRef_w")
+                .filter_map(|class| usize::try_from(class.offset).ok())
+                .filter(|offset| (start..end).contains(offset))
+                .filter_map(|offset| {
+                    cosmetic_thread_cylinder_reference_at(&lane.native_payload, offset)
+                })
+                .collect(),
             _ => continue,
         };
         let [(offset, components)] = candidates.as_slice() else {
@@ -4552,6 +4581,16 @@ fn compact_surface_selections(
         });
     }
     result
+}
+
+fn cosmetic_thread_cylinder_reference_at(
+    payload: &[u8],
+    class_offset: usize,
+) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let marker = class_offset.checked_add(115)?;
+    compact_edge_component_path_at(payload, marker)
+        .or_else(|| compact_termination_reference_path_at(payload, marker))
+        .map(|components| (marker, components))
 }
 
 pub(crate) fn compact_surface_selection_at(
@@ -9393,6 +9432,7 @@ pub(crate) fn project_compact_surface_selections(
         };
         let slot = match &mut feature.definition {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
+            FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
                 extent:
                     cadmpeg_ir::features::Extent::ToFace { face }

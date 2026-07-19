@@ -270,9 +270,8 @@ pub enum FeatureDefinition {
     },
     /// Non-geometric thread annotation attached to a cylindrical face.
     CosmeticThread {
-        /// Cylindrical face carrying the annotation, when resolved.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        face: Option<FaceSelection>,
+        /// Cylindrical face carrying the annotation.
+        face: FaceSelection,
         /// Nominal thread diameter, when resolved.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         diameter: Option<Length>,

@@ -2207,7 +2207,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 diameter,
                 extent,
             } => {
-                face_selections.extend(face);
+                face_selections.push(face);
                 let extent_valid = extent.is_none_or(|extent| match extent {
                     CosmeticThreadExtent::Blind { length } => positive_feature_length(length),
                     CosmeticThreadExtent::Through => true,

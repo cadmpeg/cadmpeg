@@ -222,7 +222,7 @@ A feature-input class declaration is `ff ff 01 00`, a little-endian u16 byte len
 
 A repeated class instance stores a little-endian u16 class token immediately before its feature-name marker. The token is scoped to the `ResolvedFeatures` lane. Repeated instances with the same token have the same declared class.
 
-An `moCosmeticThread_c` or `moDerivedCosmeticThread_c` feature is a non-geometric thread annotation. Its `D1` length scalar is the axial blind length and its diameter-displayed `D2` length scalar is the nominal thread diameter. Both scalar payloads use native meters.
+An `moCosmeticThread_c` or `moDerivedCosmeticThread_c` feature is a non-geometric thread annotation. Its `D1` length scalar is the axial blind length and its diameter-displayed `D2` length scalar is the nominal thread diameter. Both scalar payloads use native meters. A directly declared `moCylinderRef_w` child carries the attached cylindrical face in the component-path vector whose duplicated marker starts 115 bytes after the class declaration.
 
 A compact `moDeleteBody_c` object ends with a little-endian u32 schema word `11000`, two zero u32 words, a u32 selection count, that many ordered u32 regeneration-input-local body identifiers, the sentinel `ff ff ff ff`, and three zero u32 words. The object ends after those zero words or one additional zero u32 word. The ordered identifiers are the persistent body selection consumed by the delete/keep operation. When another instance of the same declared class follows, its lane-scoped u16 repeated-class token lies between the selection terminator and the next feature-name marker.
 

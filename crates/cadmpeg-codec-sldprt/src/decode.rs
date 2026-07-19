@@ -899,7 +899,7 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
                 diameter,
                 extent,
             } => {
-                face.as_ref().is_none_or(incomplete_face_selection)
+                incomplete_face_selection(face)
                     || diameter.is_none()
                     || extent.is_none()
             }

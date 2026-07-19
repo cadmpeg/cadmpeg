@@ -2326,7 +2326,7 @@ mod history_reference_tests {
         assert_eq!(
             projected[0].definition,
             FeatureDefinition::CosmeticThread {
-                face: None,
+                face: FaceSelection::Unresolved,
                 diameter: Some(Length(8.0)),
                 extent: Some(CosmeticThreadExtent::Blind {
                     length: Length(16.0),
@@ -3602,7 +3602,7 @@ fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             .properties
             .get("Face")
             .cloned()
-            .map(FaceSelection::Native),
+            .map_or(FaceSelection::Unresolved, FaceSelection::Native),
         diameter: feature
             .parameters
             .get("D2")
@@ -7030,6 +7030,7 @@ fn validate_compact_surface_selection_edits(
         };
         let slot = match &feature.definition {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
+            FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
             FeatureDefinition::Extrude {
                 extent:
                     cadmpeg_ir::features::Extent::ToFace { face }
@@ -8310,9 +8311,9 @@ pub fn sync_neutral_features(
                     None => {}
                 }
                 let mut properties = feature.source_properties.clone();
-                if let Some(FaceSelection::Native(value)) = face {
-                    properties.insert("Face".into(), value.clone());
-                } else if face.is_some() {
+                if let Some(value) = face_selection_value(face) {
+                    properties.insert("Face".into(), value);
+                } else if !matches!(face, FaceSelection::Unresolved) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes cosmetic-thread face selection",
                         feature.id
