@@ -1876,12 +1876,29 @@ mod marker_tests {
         payload[30..34].copy_from_slice(&[1, 0, 0, 1]);
         payload[92] = 1;
         assert!(compact_extrusion_through_all_at(&payload, 0));
+        payload[8] = 1;
+        assert!(compact_extrusion_through_all_at(&payload, 0));
+        payload[8] = 0;
 
         payload[18] = 0;
         assert!(!compact_extrusion_through_all_at(&payload, 0));
         payload[18] = 1;
         payload[103] = 1;
         assert!(!compact_extrusion_through_all_at(&payload, 0));
+
+        let declaration = b"\xff\xff\x01\x00\x0b\x00moEndSpec_c";
+        let mut direct = vec![0; declaration.len() + 102];
+        direct[..declaration.len()].copy_from_slice(declaration);
+        let body = declaration.len();
+        direct[body + 2..body + 6].copy_from_slice(&1u32.to_le_bytes());
+        direct[body + 16..body + 20].copy_from_slice(&1u32.to_le_bytes());
+        direct[body + 28..body + 32].copy_from_slice(&[1, 0, 0, 1]);
+        direct[body + 88..body + 92].copy_from_slice(&[0, 0, 1, 0]);
+        direct[body + 98..body + 102].copy_from_slice(&[0xff, 0xff, 1, 0]);
+        assert!(compact_extrusion_through_all_at(&direct, body - 2));
+
+        direct[body + 6..body + 10].copy_from_slice(&1u32.to_le_bytes());
+        assert!(compact_extrusion_through_all_at(&direct, body - 2));
     }
 
     #[test]
@@ -11372,24 +11389,29 @@ fn compact_extrusion_two_direction_header(payload: &[u8], offset: usize, code: u
 
 fn compact_extrusion_traversal_tail_at(payload: &[u8], offset: usize) -> bool {
     payload.get(offset + 22..offset + 30) == Some(&[0, 0, 0, 0, 0, 0, 0, 0])
-        && compact_extrusion_traversal_body_at(payload, offset)
+        && compact_extrusion_traversal_body_from(payload, offset + 30)
 }
 
 /// Shared traversal run from `+30`: the `[1, 0, 0, 1]` marker and the fixed
 /// zero fill through the `+90` word.
 fn compact_extrusion_traversal_body_at(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset + 30..offset + 34) == Some(&[1, 0, 0, 1])
+    compact_extrusion_traversal_body_from(payload, offset + 30)
+}
+
+fn compact_extrusion_traversal_body_from(payload: &[u8], start: usize) -> bool {
+    payload.get(start..start + 4) == Some(&[1, 0, 0, 1])
         && payload
-            .get(offset + 34..offset + 90)
+            .get(start + 4..start + 60)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && payload.get(offset + 90..offset + 94) == Some(&[0, 0, 1, 0])
+        && payload.get(start + 60..start + 64) == Some(&[0, 0, 1, 0])
         && payload
-            .get(offset + 94..offset + 100)
+            .get(start + 64..start + 70)
             .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
-        && payload
-            .get(offset + 100..offset + 102)
-            .is_some_and(|bytes| bytes == [0, 0] || bytes[1] & 0x80 != 0)
-        && payload.get(offset + 102..offset + 104) == Some(&[0, 0])
+        && payload.get(start + 70..start + 74).is_some_and(|bytes| {
+            bytes == [0, 0, 0, 0]
+                || (bytes[1] & 0x80 != 0 && bytes[2..4] == [0, 0])
+                || bytes == [0xff, 0xff, 1, 0]
+        })
 }
 
 pub(crate) fn compact_extrusion_mid_plane_at(payload: &[u8], offset: usize) -> bool {
@@ -11590,7 +11612,13 @@ fn compact_end_spec_identity_at(payload: &[u8], offset: usize) -> bool {
 
 fn compact_extrusion_end_spec_header(payload: &[u8], offset: usize, code: u32) -> bool {
     compact_end_spec_identity_at(payload, offset)
-        && payload.get(offset + 2..offset + 12) == Some(&[0, 0, 1, 0, 0, 0, 0, 0, 0, 0])
+        && payload.get(offset + 2..offset + 4) == Some(&[0, 0])
+        && payload.get(offset + 4..offset + 8) == Some(&1u32.to_le_bytes())
+        && payload
+            .get(offset + 8..offset + 12)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|word| word <= 1)
         && payload
             .get(offset + 12..offset + 16)
             .and_then(|bytes| bytes.try_into().ok())
