@@ -2685,6 +2685,12 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
         b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
     definition.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
     definition.extend_from_slice(&[25, 0, 0, 0, 8, 9, 0xf6, 0, 0, 0xf6, 0xf6, 43, 0xe2, 0xe3]);
+    definition.extend_from_slice(
+        b"dimtab_ptr\0\xf8\x01\xf7\x58\xfb\xe2\
+          \xe0\x01type\0\x02\xe0\x01value\0\xe4\
+          \xe0\x01direct\0\x00\xe0\x01aux_value\0\x0f\
+          \xe0\x01ext_id\0\x2a\xe0\x00relat_ptr\0",
+    );
     let mut payload = definition.clone();
     payload.extend_from_slice(&definition);
     let data = build_prt("c", &[("FeatDefs", payload)]);
@@ -2730,6 +2736,19 @@ fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
             .iter()
             .filter(|entity| entity.sketch == sketch.id)
             .all(|entity| entity.id.0.contains(&format!("#{identity_scope}:"))));
+        let parameters = result
+            .ir
+            .model
+            .parameters
+            .iter()
+            .filter(|parameter| parameter.native_ref.as_deref() == sketch.native_ref.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(
+            parameters[0].owner,
+            cadmpeg_ir::features::FeatureId(format!("creo:model:sketch_feature#{identity_scope}"))
+        );
+        assert!(parameters[0].id.0.contains(&format!("#{identity_scope}:")));
     }
     assert_eq!(
         result
@@ -3307,7 +3326,7 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
     let [parameter, repeated] = result.ir.model.parameters.as_slice() else {
         panic!("two repeated dimensions");
     };
-    assert_eq!(parameter.owner.as_str(), "creo:model:feature#40");
+    assert_eq!(parameter.owner.as_str(), "creo:model:sketch_feature#917");
     assert_eq!(parameter.name, "d917_42_1");
     assert_eq!(repeated.name, "d917_42_2");
     assert_ne!(parameter.id, repeated.id);
@@ -3318,13 +3337,27 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             cadmpeg_ir::features::Angle(1.0)
         ))
     );
+    let model_feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#40")
+        .expect("model feature");
     assert!(matches!(
-        &result.ir.model.features[0].definition,
+        &model_feature.definition,
         cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. }
             if parameters.get("dimension_count").map(String::as_str) == Some("2")
     ));
+    let sketch_feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:sketch_feature#917")
+        .expect("sketch feature");
     assert_eq!(
-        result.ir.model.features[0].source_content,
+        sketch_feature.source_content,
         [
             cadmpeg_ir::features::FeatureSourceContent::Parameter(parameter.id.clone()),
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),

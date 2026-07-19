@@ -953,12 +953,13 @@ that selects it require exactly one `dimtab_ptr` row with that `ext_id`.
 Every row is a neutral parameter. An undecoded value leaves its expression and
 typed value unresolved without removing its identity. Repeated local identifiers use
 occurrence-qualified parameter identities and names in source order, but no
-constraint binds through that ambiguous identifier. Neutral parameter identity includes the
-feature-definition identifier, owning model-feature identifier, and `ext_id`;
-different definitions may reuse the same local `ext_id`. Repeated stored
-feature-definition identifiers use source-offset-qualified native definition
-and sketch identities; their parameter rows use occurrence-qualified identities
-in source order. In positional dimension rows, a bare
+constraint binds through that ambiguous identifier. Neutral parameter identity
+includes the owning sketch-snapshot identity and `ext_id`; different snapshots
+may reuse the same local `ext_id`. The parameter is owned by that snapshot's
+sketch history feature. Repeated stored feature-definition identifiers use
+source-offset-qualified native definition and sketch identities; repeated
+parameter rows within one snapshot use occurrence-qualified identities in source
+order. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
 The positional `value` lane uses the positive DICT lattice `5b..a3`; the first
@@ -2046,8 +2047,9 @@ vector defines zero azimuth. The operation's angular extent trims the carrier.
 A profile vertex on the axis is a rotational singularity and does not define a
 circle.
 
-Every bounded feature definition containing section entities is an ordered
-planar sketch history node. Its sketch, entity, constraint, profile, and
+Every bounded feature definition containing section design records is an
+ordered planar sketch history node, including definitions containing dimensions
+or constraints without geometry. Its sketch, entity, constraint, profile, and
 standalone history-feature identities share the definition identity: the
 numeric feature-definition identifier when unique, otherwise the bounded
 record's source-offset-qualified identifier. A section with exactly one

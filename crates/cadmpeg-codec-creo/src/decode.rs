@@ -2816,20 +2816,22 @@ fn transfer_curve_expression_features(
     }
 }
 
+fn feature_definition_has_sketch_design(definition: &crate::feature::FeatureDefinition) -> bool {
+    definition.variables.is_some()
+        || definition.segments.is_some()
+        || definition.trim_entities.is_some()
+        || definition.trim_vertices.is_some()
+        || definition.order_table.is_some()
+        || definition.section_3d.is_some()
+        || definition.saved_section.is_some()
+        || definition.dimensions.is_some()
+        || definition.relations.is_some()
+}
+
 fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
     scan.feature_definitions
         .iter()
-        .filter(|definition| {
-            definition.variables.is_some()
-                || definition.segments.is_some()
-                || definition.trim_entities.is_some()
-                || definition.trim_vertices.is_some()
-                || definition.order_table.is_some()
-                || definition.section_3d.is_some()
-                || definition.saved_section.is_some()
-                || definition.dimensions.is_some()
-                || definition.relations.is_some()
-        })
+        .filter(|definition| feature_definition_has_sketch_design(definition))
         .map(|definition| CreoSketchRecord {
             id: feature_sketch_record_id_in_scan(scan, definition),
             definition_id: definition.id,
@@ -3335,6 +3337,13 @@ fn sketch_section_curve_id(sketch: &SketchId, suffix: impl std::fmt::Display) ->
 
 fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
     format!("{}:point#{point}", sketch_native_ref(sketch))
+}
+
+fn sketch_feature_id(sketch: &SketchId) -> IrFeatureId {
+    IrFeatureId(format!(
+        "creo:model:sketch_feature#{}",
+        sketch_identity_scope(sketch)
+    ))
 }
 
 fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinitionRecord> {
@@ -9192,17 +9201,13 @@ fn section_dimension_constraints(
                     .filter(|candidate| candidate.relation_id == relation.relation_id)
                     .count()
                     == 1;
-            let dimension = definition
-                .owner_feature_id
-                .zip(definition.dimensions.as_ref())
-                .and_then(|(owner, dimensions)| {
-                    resolved_feature_dimension_parameter(
-                        definition.id,
-                        owner,
-                        dimensions,
-                        usize::try_from(relation.dimension_id).ok()?,
-                    )
-                });
+            let dimension = definition.dimensions.as_ref().and_then(|dimensions| {
+                resolved_feature_dimension_parameter(
+                    sketch,
+                    dimensions,
+                    usize::try_from(relation.dimension_id).ok()?,
+                )
+            });
             let parameter = dimension.as_ref().map(|(_, parameter)| parameter.clone());
             let typed = (|| {
                 unique_relation_id.then_some(())?;
@@ -10247,7 +10252,11 @@ fn resolved_segment_profile_chains(
 }
 
 fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
-    for definition in &scan.feature_definitions {
+    for definition in scan
+        .feature_definitions
+        .iter()
+        .filter(|definition| feature_definition_has_sketch_design(definition))
+    {
         let unique_definition =
             unique_feature_definition(&scan.feature_definitions, definition.id).is_some();
         let transform = unique_definition
@@ -10650,9 +10659,6 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             &sketch_id,
             &generated_saved_geometries,
         ));
-        if entities.is_empty() {
-            continue;
-        }
         if let Some(transform) = transform {
             for segment in segments {
                 let Some(section_geometry) =
@@ -10851,13 +10857,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             profiles,
             native_ref: Some(sketch_native_ref(&sketch_id)),
         });
-        if unique_definition && owned_section_feature_id(scan, definition.id).is_some() {
-            continue;
-        }
-        let feature_id = IrFeatureId(format!(
-            "creo:model:sketch_feature#{}",
-            sketch_identity_scope(&sketch_id)
-        ));
+        let feature_id = sketch_feature_id(&sketch_id);
         annotate(
             annotations,
             &feature_id.0,
@@ -11546,39 +11546,35 @@ fn transfer_resolved_extrusion_vertex_orbit_curves(
     transferred
 }
 
-fn feature_dimension_parameter_id(
-    definition_id: u32,
-    owner_feature_id: u32,
-    external_id: u32,
-) -> ParameterId {
+fn feature_dimension_parameter_id(sketch: &SketchId, external_id: u32) -> ParameterId {
     ParameterId(format!(
-        "creo:featdefs:parameter#{definition_id}:{owner_feature_id}:{external_id}"
+        "creo:featdefs:parameter#{}:{external_id}",
+        sketch_identity_scope(sketch),
     ))
 }
 
 fn feature_dimension_parameter_row_id(
-    definition_id: u32,
-    owner_feature_id: u32,
+    sketch: &SketchId,
     external_id: u32,
     occurrence: Option<usize>,
 ) -> ParameterId {
     occurrence.map_or_else(
-        || feature_dimension_parameter_id(definition_id, owner_feature_id, external_id),
+        || feature_dimension_parameter_id(sketch, external_id),
         |occurrence| {
             ParameterId(format!(
-                "creo:featdefs:parameter#{definition_id}:{owner_feature_id}:{external_id}:{}",
+                "creo:featdefs:parameter#{}:{external_id}:{}",
+                sketch_identity_scope(sketch),
                 occurrence + 1
             ))
         },
     )
 }
 
-fn resolved_feature_dimension_parameter(
-    definition_id: u32,
-    owner_feature_id: u32,
-    table: &crate::feature::FeatureDimensionTable,
+fn resolved_feature_dimension_parameter<'a>(
+    sketch: &SketchId,
+    table: &'a crate::feature::FeatureDimensionTable,
     ordinal: usize,
-) -> Option<(&crate::feature::FeatureDimension, ParameterId)> {
+) -> Option<(&'a crate::feature::FeatureDimension, ParameterId)> {
     feature_dimension_table_complete(table).then_some(())?;
     let dimension = table.rows.get(ordinal)?;
     (table
@@ -11590,11 +11586,7 @@ fn resolved_feature_dimension_parameter(
         .then(|| {
             (
                 dimension,
-                feature_dimension_parameter_id(
-                    definition_id,
-                    owner_feature_id,
-                    dimension.external_id,
-                ),
+                feature_dimension_parameter_id(sketch, dimension.external_id),
             )
         })
 }
@@ -11625,38 +11617,42 @@ fn feature_skamp_table_complete(table: &crate::feature::FeatureRelationTable) ->
 }
 
 fn feature_dimension_parameter_layout(
-    keys: &[(u32, u32, u32)],
+    keys: &[(SketchId, u32)],
 ) -> Option<Vec<(u32, String, Option<usize>)>> {
     let mut name_counts = BTreeMap::new();
     let mut local_counts = BTreeMap::new();
-    for &(owner_feature_id, _, external_id) in keys {
+    for (sketch, external_id) in keys {
         *name_counts
-            .entry((owner_feature_id, external_id))
+            .entry((sketch.clone(), *external_id))
             .or_insert(0usize) += 1;
     }
-    for &key in keys {
-        *local_counts.entry(key).or_insert(0usize) += 1;
+    for key in keys {
+        *local_counts.entry(key.clone()).or_insert(0usize) += 1;
     }
-    let mut next_ordinals = BTreeMap::<u32, u32>::new();
+    let mut next_ordinals = BTreeMap::<SketchId, u32>::new();
     let mut local_occurrences = BTreeMap::new();
     keys.iter()
-        .map(|&(owner_feature_id, definition_id, external_id)| {
-            let ordinal = next_ordinals.entry(owner_feature_id).or_default();
+        .map(|key @ (sketch, external_id)| {
+            let ordinal = next_ordinals.entry(sketch.clone()).or_default();
             let assigned = *ordinal;
             *ordinal = ordinal.checked_add(1)?;
-            let key = (owner_feature_id, definition_id, external_id);
-            let occurrence = (local_counts[&key] > 1).then(|| {
-                let occurrence = local_occurrences.entry(key).or_insert(0usize);
+            let occurrence = (local_counts[key] > 1).then(|| {
+                let occurrence = local_occurrences.entry(key.clone()).or_insert(0usize);
                 let assigned = *occurrence;
                 *occurrence += 1;
                 assigned
             });
-            let name = if name_counts[&(owner_feature_id, external_id)] == 1 {
+            let name = if name_counts[&(sketch.clone(), *external_id)] == 1 {
                 format!("d{external_id}")
             } else if let Some(occurrence) = occurrence {
-                format!("d{definition_id}_{external_id}_{}", occurrence + 1)
+                format!(
+                    "d{}_{}_{}",
+                    sketch_identity_scope(sketch),
+                    external_id,
+                    occurrence + 1
+                )
             } else {
-                format!("d{definition_id}_{external_id}")
+                format!("d{}_{}", sketch_identity_scope(sketch), external_id)
             };
             Some((assigned, name, occurrence))
         })
@@ -11676,10 +11672,8 @@ fn transfer_feature_dimensions(
         .collect::<BTreeSet<_>>();
     let mut candidates = Vec::new();
     for definition in &scan.feature_definitions {
-        let Some(owner_feature_id) = definition.owner_feature_id else {
-            continue;
-        };
-        let owner = IrFeatureId(format!("creo:model:feature#{owner_feature_id}"));
+        let sketch = model_sketch_id(scan, definition);
+        let owner = sketch_feature_id(&sketch);
         if !feature_ids.contains(&owner) {
             continue;
         }
@@ -11690,29 +11684,24 @@ fn transfer_feature_dimensions(
             continue;
         }
         for (source_ordinal, dimension) in table.rows.iter().enumerate() {
-            candidates.push((owner_feature_id, definition, source_ordinal, dimension));
+            candidates.push((sketch.clone(), definition, source_ordinal, dimension));
         }
     }
-    candidates.sort_by_key(|(owner, definition, source_ordinal, _)| {
-        (*owner, definition.offset, definition.id, *source_ordinal)
+    candidates.sort_by_key(|(_, definition, source_ordinal, _)| {
+        (definition.offset, definition.id, *source_ordinal)
     });
     let keys = candidates
         .iter()
-        .map(|(owner, definition, _, dimension)| (*owner, definition.id, dimension.external_id))
+        .map(|(sketch, _, _, dimension)| (sketch.clone(), dimension.external_id))
         .collect::<Vec<_>>();
     let Some(layout) = feature_dimension_parameter_layout(&keys) else {
         return;
     };
-    for ((owner_feature_id, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
+    for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
-        let owner = IrFeatureId(format!("creo:model:feature#{owner_feature_id}"));
-        let id = feature_dimension_parameter_row_id(
-            definition.id,
-            owner_feature_id,
-            dimension.external_id,
-            occurrence,
-        );
+        let owner_id = sketch_feature_id(&sketch);
+        let id = feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence);
         annotate(
             annotations,
             &id.0,
@@ -11750,7 +11739,7 @@ fn transfer_feature_dimensions(
         });
         ir.model.parameters.push(DesignParameter {
             id: id.clone(),
-            owner: owner.clone(),
+            owner: owner_id.clone(),
             ordinal,
             name,
             expression,
@@ -11765,7 +11754,7 @@ fn transfer_feature_dimensions(
             .model
             .features
             .iter_mut()
-            .find(|feature| feature.id == owner)
+            .find(|feature| feature.id == owner_id)
         {
             feature
                 .source_content
@@ -16580,38 +16569,43 @@ mod resolved_sketch_tests {
 
     #[test]
     fn dimension_identity_includes_its_feature_definition() {
+        let sketch_917 = SketchId("creo:model:sketch#917".to_string());
+        let sketch_1104 = SketchId("creo:model:sketch#1104".to_string());
+        let sketch_1200 = SketchId("creo:model:sketch#1200".to_string());
         assert_ne!(
-            feature_dimension_parameter_id(917, 40, 3),
-            feature_dimension_parameter_id(1104, 40, 3)
+            feature_dimension_parameter_id(&sketch_917, 3),
+            feature_dimension_parameter_id(&sketch_1104, 3)
         );
         assert_eq!(
-            feature_dimension_parameter_id(917, 40, 3).0,
-            "creo:featdefs:parameter#917:40:3"
+            feature_dimension_parameter_id(&sketch_917, 3).0,
+            "creo:featdefs:parameter#917:3"
         );
         assert_eq!(
             feature_dimension_parameter_layout(&[
-                (40, 917, 3),
-                (40, 1104, 3),
-                (40, 1104, 4),
-                (41, 1200, 3),
+                (sketch_917.clone(), 3),
+                (sketch_1104.clone(), 3),
+                (sketch_1104.clone(), 4),
+                (sketch_1200, 3),
             ]),
             Some(vec![
-                (0, "d917_3".to_string(), None),
-                (1, "d1104_3".to_string(), None),
-                (2, "d4".to_string(), None),
+                (0, "d3".to_string(), None),
+                (0, "d3".to_string(), None),
+                (1, "d4".to_string(), None),
                 (0, "d3".to_string(), None),
             ])
         );
         assert_eq!(
-            feature_dimension_parameter_layout(&[(40, 917, 3), (40, 917, 3)]),
+            feature_dimension_parameter_layout(
+                &[(sketch_917.clone(), 3), (sketch_917.clone(), 3),]
+            ),
             Some(vec![
                 (0, "d917_3_1".to_string(), Some(0)),
                 (1, "d917_3_2".to_string(), Some(1)),
             ])
         );
         assert_ne!(
-            feature_dimension_parameter_row_id(917, 40, 3, Some(0)),
-            feature_dimension_parameter_row_id(917, 40, 3, Some(1))
+            feature_dimension_parameter_row_id(&sketch_917, 3, Some(0)),
+            feature_dimension_parameter_row_id(&sketch_917, 3, Some(1))
         );
         let dimension = crate::feature::FeatureDimension {
             dimension_type: 2,
@@ -16647,14 +16641,13 @@ mod resolved_sketch_tests {
         };
         assert_eq!(
             resolved_feature_dimension_parameter(
-                definition.id,
-                definition.owner_feature_id.expect("dimension owner"),
+                &sketch_917,
                 definition.dimensions.as_ref().expect("dimension table"),
                 0,
             ),
             Some((
                 &dimension,
-                ParameterId("creo:featdefs:parameter#917:40:3".to_string())
+                ParameterId("creo:featdefs:parameter#917:3".to_string())
             ))
         );
         let unresolved_dimension = crate::feature::FeatureDimension {
@@ -16667,10 +16660,10 @@ mod resolved_sketch_tests {
             ..table.clone()
         };
         assert_eq!(
-            resolved_feature_dimension_parameter(917, 40, &unresolved_table, 0),
+            resolved_feature_dimension_parameter(&sketch_917, &unresolved_table, 0),
             Some((
                 &unresolved_dimension,
-                ParameterId("creo:featdefs:parameter#917:40:4".to_string())
+                ParameterId("creo:featdefs:parameter#917:4".to_string())
             ))
         );
         let incomplete_table = crate::feature::FeatureDimensionTable {
@@ -16678,15 +16671,14 @@ mod resolved_sketch_tests {
             ..unresolved_table
         };
         assert_eq!(
-            resolved_feature_dimension_parameter(917, 40, &incomplete_table, 0),
+            resolved_feature_dimension_parameter(&sketch_917, &incomplete_table, 0),
             None
         );
         table.rows.push(dimension);
         definition.dimensions = Some(table);
         assert_eq!(
             resolved_feature_dimension_parameter(
-                definition.id,
-                definition.owner_feature_id.expect("dimension owner"),
+                &sketch_917,
                 definition.dimensions.as_ref().expect("dimension table"),
                 0,
             ),
@@ -16694,8 +16686,7 @@ mod resolved_sketch_tests {
         );
         assert_eq!(
             resolved_feature_dimension_parameter(
-                definition.id,
-                definition.owner_feature_id.expect("dimension owner"),
+                &sketch_917,
                 definition.dimensions.as_ref().expect("dimension table"),
                 1,
             ),
@@ -17807,7 +17798,7 @@ mod resolved_sketch_tests {
                 second: SketchLocus::End(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
                 )),
-                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
         let mut incidence_oriented_distance = distance_definition.clone();
@@ -17855,7 +17846,7 @@ mod resolved_sketch_tests {
                 second: SketchLocus::End(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
                 )),
-                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
         let mut incomplete_skamps = incidence_oriented_distance.clone();
@@ -18017,7 +18008,7 @@ mod resolved_sketch_tests {
                 second: SketchLocus::End(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
                 )),
-                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
         let mut duplicate_relation_id = distance_definition.clone();
@@ -18168,7 +18159,7 @@ mod resolved_sketch_tests {
             .definition,
             SketchConstraintDefinition::Radius {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
         let duplicate = radius_definition.segments.as_ref().expect("segments").rows[1].clone();
@@ -18261,7 +18252,7 @@ mod resolved_sketch_tests {
                 second: SketchLocus::Entity(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:13".to_string(),
                 )),
-                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
         let mut incomplete_triples = incidence_distance.clone();
@@ -18296,7 +18287,7 @@ mod resolved_sketch_tests {
                 second: SketchLocus::Entity(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:13".to_string(),
                 )),
-                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
         let mut partially_resolved_incidence = incidence_distance.clone();
@@ -18319,7 +18310,7 @@ mod resolved_sketch_tests {
                 entities: vec![SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
                 )],
-                parameter: Some(ParameterId("creo:featdefs:parameter#917:40:42".to_string())),
+                parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string())),
                 operands: vec![SketchNativeOperand {
                     native_kind: "relat_ptr".to_string(),
                     object_index: 8,
@@ -18381,7 +18372,7 @@ mod resolved_sketch_tests {
             SketchConstraintDefinition::Angle {
                 first: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
                 second: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
-                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
         let mut ambiguous_angle = angular_dimension.clone();
@@ -18412,7 +18403,7 @@ mod resolved_sketch_tests {
             SketchConstraintDefinition::Native {
                 native_kind: "creo:relation:99".to_string(),
                 entities: Vec::new(),
-                parameter: Some(ParameterId("creo:featdefs:parameter#917:40:42".to_string(),)),
+                parameter: Some(ParameterId("creo:featdefs:parameter#917:42".to_string(),)),
                 operands: vec![SketchNativeOperand {
                     native_kind: "relat_ptr".to_string(),
                     object_index: 8,
