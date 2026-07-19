@@ -14121,7 +14121,21 @@ fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFram
         .windows(2)
         .filter_map(|pair| {
             let start = pair[0];
-            matches!(pair[1].checked_sub(start)?, 104 | 105).then_some(())?;
+            let frame_length = pair[1].checked_sub(start)?;
+            matches!(frame_length, 100 | 104 | 105).then_some(())?;
+            if frame_length == 100 {
+                let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+                if after_tag != start + 7
+                    || class_tag.len() != 3
+                    || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+                    || bytes.get(start + 11..start + 19) != Some(&[0; 8])
+                    || bytes.get(start + 19..start + 24) != Some(&[1, 1, 0, 0, 0])
+                    || bytes.get(start + 29..start + 35) != Some(&[0; 6])
+                    || bytes.get(start + 36..start + 40) != Some(&[0; 4])
+                {
+                    return None;
+                }
+            }
             let value = f64_at(bytes, start + 40)?;
             value.is_finite().then_some(FixedScalarFrame {
                 owner_record_index: (bytes.get(start + 24) == Some(&1))
@@ -14403,7 +14417,7 @@ fn exact_path_feature_construction(
                 operation_offset: u64::try_from(start + 29).ok()?,
             })
         }
-        DesignFeatureFamily::Sweep if scope.frame_length == 499 => {
+        DesignFeatureFamily::Sweep => {
             let lanes = scope
                 .reference_members
                 .iter()
@@ -23135,10 +23149,11 @@ mod relation_tests {
         let sweep_scalar_start = bytes.len();
         for (ordinal, value) in sweep_values.into_iter().enumerate() {
             let record_index = 80 + ordinal as u32;
-            let mut scalar = vec![0; 104];
+            let mut scalar = vec![0; 100];
             scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
             scalar[4..7].copy_from_slice(b"277");
             scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+            scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
             scalar[24] = 1;
             scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
             scalar[35] = ordinal as u8;
@@ -23161,7 +23176,7 @@ mod relation_tests {
                 values: sweep_values,
                 record_indexes: [80, 81, 82, 83, 84, 85],
                 value_offsets: std::array::from_fn(|ordinal| {
-                    (sweep_scalar_start + ordinal * 115 + 40) as u64
+                    (sweep_scalar_start + ordinal * 111 + 40) as u64
                 }),
             })
         );
