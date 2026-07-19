@@ -7715,6 +7715,8 @@ fn attach_native_object_model(
         &feature_input_blocks,
     );
     let feature_sketch_references = crate::native::feature_sketch_references(&scan.container);
+    let feature_projected_curve_references =
+        crate::native::feature_projected_curve_references(&scan.container);
     let feature_extrude_profile_references =
         crate::native::feature_extrude_profile_references(&scan.container);
     let feature_extrude_payload_headers =
@@ -7989,6 +7991,7 @@ fn attach_native_object_model(
         && feature_datum_plane_payloads.is_empty()
         && feature_datum_csys_block_uses.is_empty()
         && feature_sketch_references.is_empty()
+        && feature_projected_curve_references.is_empty()
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
         && feature_extrude_payload_footers.is_empty()
@@ -8774,6 +8777,7 @@ fn attach_native_object_model(
             datum_plane_csys_identity_uses: &feature_datum_plane_csys_identity_uses,
             sketch_datum_csys_dependencies: &feature_sketch_datum_csys_dependencies,
             sketch_references: &feature_sketch_references,
+            projected_curve_references: &feature_projected_curve_references,
             sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
             sketch_preceding_named_point_uses: &feature_sketch_preceding_named_point_uses,
             sketch_point_uses: &feature_sketch_point_uses,
@@ -9194,6 +9198,12 @@ fn attach_native_object_model(
     }
     if !feature_sketch_references.is_empty() {
         namespace.set_arena("feature_sketch_references", &feature_sketch_references)?;
+    }
+    if !feature_projected_curve_references.is_empty() {
+        namespace.set_arena(
+            "feature_projected_curve_references",
+            &feature_projected_curve_references,
+        )?;
     }
     if !feature_extrude_profile_references.is_empty() {
         namespace.set_arena(
@@ -9866,6 +9876,7 @@ struct FeatureOperationSources<'a> {
     datum_plane_csys_identity_uses: &'a [crate::native::FeatureDatumPlaneCsysIdentityUse],
     sketch_datum_csys_dependencies: &'a [crate::native::FeatureSketchDatumCsysDependency],
     sketch_references: &'a [crate::native::FeatureSketchReference],
+    projected_curve_references: &'a [crate::native::FeatureProjectedCurveReference],
     sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
     sketch_preceding_named_point_uses: &'a [crate::native::FeatureSketchPrecedingNamedPointUse],
     sketch_point_uses: &'a [crate::native::FeatureSketchPointUse],
@@ -9957,6 +9968,7 @@ fn attach_feature_operations(
         datum_plane_csys_identity_uses,
         sketch_datum_csys_dependencies,
         sketch_references,
+        projected_curve_references,
         sketch_named_point_block_uses,
         sketch_preceding_named_point_uses,
         sketch_point_uses,
@@ -10111,6 +10123,10 @@ fn attach_feature_operations(
             .or_default()
             .push(reference);
     }
+    let projected_curve_references_by_operation =
+        records_by_operation(projected_curve_references, |reference| {
+            &reference.operation_label
+        });
     let mut sketch_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchNamedPointBlockUse>>::new();
     for block_use in sketch_named_point_block_uses {
@@ -10804,6 +10820,19 @@ fn attach_feature_operations(
         {
             source_properties.insert(
                 format!("sketch_reference.{}", reference.ordinal),
+                reference
+                    .data_block
+                    .clone()
+                    .unwrap_or_else(|| reference.object_index.to_string()),
+            );
+        }
+        for reference in projected_curve_references_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("projected_curve_reference.{}", reference.ordinal),
                 reference
                     .data_block
                     .clone()

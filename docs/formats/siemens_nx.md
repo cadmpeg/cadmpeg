@@ -912,6 +912,8 @@ The operation labels `Pattern Feature`, `Pattern Geometry`, and `Geometry Instan
 
 The operation labels `CPROJ` and `CPROJ_CMB` identify projected-curve constructions. Neutral projection retains unresolved source-path, target-face, direction, and directionality fields.
 
+A `CPROJ` payload contains at most one construction-reference field framed as `01 02, reference, reference, 80 57 00 02 01, reference, ff 01 02 02 7d`. Each reference uses the canonical `f0 + u8` or `f1 + u16 BE` object-index form and resolves only when exactly one offset-only store contains the addressed block. The three references retain serialized order. A missing suffix, null or noncanonical reference, or multiple complete fields rejects the field atomically without rejecting the bounded operation record.
+
 The `TRIMMED_SH` operation label identifies a surface-trim construction. When the operation has exactly one transferred output body and that body is a sheet containing exactly one completely owned face, that face is the input-face selection. Other output shapes leave the input faces unresolved. The trim path and retained region remain unresolved.
 
 The `EXTEND_SHEET` operation label identifies a surface-extension construction. When the operation has exactly one transferred output body and that body is a sheet containing exactly one completely owned face, that face is the input-face selection. Other output shapes leave the input faces unresolved. The distance and continuation law remain unresolved.

@@ -716,9 +716,9 @@ pub struct OperationPayloadString<'a> {
     pub value: &'a str,
 }
 
-/// One variable-width object index in the ordered sketch reference field.
+/// One canonical variable-width object index in an operation payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SketchPayloadReference {
+pub struct PayloadObjectReference {
     /// Absolute offset of the width marker.
     pub offset: usize,
     /// Decoded object index.
@@ -731,7 +731,14 @@ pub struct SketchPayloadReferenceField {
     /// Effective count encoded by the nonempty flag and optional count byte.
     pub declared_count: u8,
     /// Ordered pre-separator references followed by the terminal reference.
-    pub references: Vec<SketchPayloadReference>,
+    pub references: Vec<PayloadObjectReference>,
+}
+
+/// Exact three-reference construction field in a `CPROJ` payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectedCurvePayloadReferenceField {
+    /// Two leading construction references followed by the terminal reference.
+    pub references: [PayloadObjectReference; 3],
 }
 
 /// One object index in an extrusion profile-reference field.
@@ -1531,7 +1538,7 @@ fn sketch_reference_field(
     let mut references = Vec::with_capacity(leading_count + 1);
     for _ in 0..leading_count {
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-        references.push(SketchPayloadReference {
+        references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
             object_index,
         });
@@ -1542,7 +1549,7 @@ fn sketch_reference_field(
     }
     at += 2;
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-    references.push(SketchPayloadReference {
+    references.push(PayloadObjectReference {
         offset: record.payload_offset + at,
         object_index,
     });
@@ -1565,6 +1572,55 @@ fn payload_object_index(bytes: &[u8]) -> Option<(u32, usize)> {
         }
         _ => None,
     }
+}
+
+/// Decode the unique exactly framed three-reference construction field in a
+/// bounded `CPROJ` payload.
+pub fn projected_curve_payload_references(
+    record: OperationRecord<'_>,
+) -> Option<ProjectedCurvePayloadReferenceField> {
+    const MIDDLE: [u8; 5] = [0x80, 0x57, 0x00, 0x02, 0x01];
+    const SUFFIX: [u8; 5] = [0xff, 0x01, 0x02, 0x02, 0x7d];
+    if record.label.value != "CPROJ" {
+        return None;
+    }
+    let decode_field = |start: usize| {
+        let mut at = start + 2;
+        let mut references = Vec::with_capacity(3);
+        for _ in 0..2 {
+            let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+            references.push(PayloadObjectReference {
+                offset: record.payload_offset + at,
+                object_index,
+            });
+            at += width;
+        }
+        (record.payload.get(at..at + MIDDLE.len()) == Some(&MIDDLE)).then_some(())?;
+        at += MIDDLE.len();
+        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+        references.push(PayloadObjectReference {
+            offset: record.payload_offset + at,
+            object_index,
+        });
+        at += width;
+        (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
+        Some(ProjectedCurvePayloadReferenceField {
+            references: references.try_into().ok()?,
+        })
+    };
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len().saturating_sub(2) {
+        if record.payload.get(start..start + 2) != Some(&[0x01, 0x02]) {
+            continue;
+        }
+        if let Some(field) = decode_field(start) {
+            matches.push(field);
+        }
+    }
+    let [field] = matches.as_slice() else {
+        return None;
+    };
+    Some(field.clone())
 }
 
 /// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.

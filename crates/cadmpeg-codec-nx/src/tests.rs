@@ -7434,6 +7434,54 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
 }
 
 #[test]
+fn om_projected_curve_references_require_one_complete_field() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "CPROJ",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload =
+        b"\0\x01\x02\xf1\x02\xc8\xf1\x02\xc9\x80\x57\x00\x02\x01\xf1\x02\xca\xff\x01\x02\x02\x7d\0";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let field = crate::om::projected_curve_payload_references(record).expect("complete field");
+    assert_eq!(
+        field
+            .references
+            .map(|reference| (reference.object_index, reference.offset)),
+        [(712, 203), (713, 206), (714, 214)]
+    );
+
+    let mut malformed = payload.to_vec();
+    malformed[17] = 0x00;
+    assert!(
+        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+
+    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(
+        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
@@ -7452,7 +7500,7 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     };
     let field = crate::om::sketch_payload_references(record).unwrap();
     assert_eq!(field.declared_count, 5);
-    let references: [crate::om::SketchPayloadReference; 5] = field.references.try_into().unwrap();
+    let references: [crate::om::PayloadObjectReference; 5] = field.references.try_into().unwrap();
     assert_eq!(
         references.map(|reference| reference.object_index),
         [255, 256, 257, 258, 259]

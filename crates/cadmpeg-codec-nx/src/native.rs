@@ -5162,6 +5162,24 @@ pub struct FeatureSketchReference {
     pub source_offset: u64,
 }
 
+/// Ordered construction reference carried by a bounded projected-curve payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureProjectedCurveReference {
+    /// Globally unique projected-curve reference identity.
+    pub id: String,
+    /// Owning `CPROJ` operation label.
+    pub operation_label: String,
+    /// Zero-based order in the exact three-reference field.
+    pub ordinal: u32,
+    /// Serialized object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
 /// Ordered profile reference carried by a bounded extrusion payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureExtrudeProfileReference {
@@ -8381,6 +8399,50 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
                     source_offset: entry_offset + reference.offset as u64,
                 }
             }));
+        }
+    }
+    references
+}
+
+/// Decode and resolve the exact ordered construction-reference field in
+/// projected-curve payloads without assigning semantic roles to its slots.
+pub fn feature_projected_curve_references(
+    container: &Container,
+) -> Vec<FeatureProjectedCurveReference> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut references = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(decoded) = crate::om::projected_curve_payload_references(record) else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            references.extend(decoded.references.into_iter().enumerate().map(
+                |(ordinal, reference)| FeatureProjectedCurveReference {
+                    id: format!(
+                        "nx:feature-history:projected-curve-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    ordinal: ordinal as u32,
+                    object_index: reference.object_index,
+                    data_block: unique_offset_data_block(&indexed, reference.object_index),
+                    source_offset: entry_offset + reference.offset as u64,
+                },
+            ));
         }
     }
     references
