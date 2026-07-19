@@ -449,11 +449,12 @@ mod marker_tests {
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
         plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        sketch_block_identity_normalization_origin, sketch_block_record_origin,
-        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
+        revolution_line_reference_frame, sketch_block_identity_normalization_origin,
+        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_SKETCH_MARKER,
+        NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -3316,6 +3317,61 @@ mod marker_tests {
         assert_eq!(feature.id, "other");
         assert_eq!(component.local_id, Some(1));
     }
+
+    #[test]
+    fn revolution_line_reference_frame_uses_placed_line_after_native_handles() {
+        let mut payload = vec![0; 240];
+        let handles = 96;
+        payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
+        for (index, value) in [0.012, -0.034, 0.056, 0.0, 1.0, 0.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = handles + 16 + index * 8;
+            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        payload[handles + 64..handles + 68].copy_from_slice(CLASS_MARKER);
+        assert_eq!(
+            revolution_line_reference_frame(&payload, 32, payload.len()),
+            Some((Point3::new(12.0, -34.0, 56.0), Vector3::new(0.0, 1.0, 0.0)))
+        );
+
+        payload[handles + 8..handles + 12].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        payload[handles + 12..handles + 16].copy_from_slice(&[0; 4]);
+        payload[handles + 16..handles + 20].copy_from_slice(&7000u32.to_le_bytes());
+        payload[handles + 64..handles + 68].copy_from_slice(&[0; 4]);
+        for (index, value) in [0.012, -0.034, 0.056, 0.1, 0.2, 0.3, 0.0, 0.0, -1.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = handles + 20 + index * 8;
+            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        payload[handles + 92..handles + 96].copy_from_slice(CLASS_MARKER);
+        assert_eq!(
+            revolution_line_reference_frame(&payload, 32, payload.len()),
+            Some((Point3::new(12.0, -34.0, 56.0), Vector3::new(0.0, 0.0, -1.0)))
+        );
+
+        payload.fill(0);
+        payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
+        for (index, value) in [0.012, -0.034, 0.056, 0.1, 0.2, 0.0, 1.0, 0.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = handles + 16 + index * 8;
+            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        payload[handles + 80..handles + 84].copy_from_slice(CLASS_MARKER);
+        assert_eq!(
+            revolution_line_reference_frame(&payload, 32, payload.len()),
+            Some((Point3::new(12.0, -34.0, 56.0), Vector3::new(0.0, 1.0, 0.0)))
+        );
+    }
 }
 
 pub(crate) fn named_scalars(
@@ -3521,6 +3577,238 @@ fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3
         direction.y / norm,
         direction.z / norm,
     ))
+}
+
+fn revolution_line_reference_frame(
+    payload: &[u8],
+    class_offset: usize,
+    object_end: usize,
+) -> Option<(Point3, Vector3)> {
+    const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let search_start = class_offset.checked_add(24)?;
+    let search_end = object_end.min(class_offset.checked_add(320)?);
+    let scalar = |offset: usize| {
+        let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+        (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
+    };
+    let mut candidates = Vec::new();
+    for handle_start in search_start..search_end.saturating_sub(64) {
+        if payload.get(handle_start..handle_start + 4) != Some(HANDLE.as_slice()) {
+            continue;
+        }
+        for handle_count in [2usize, 3] {
+            let handles_end = handle_start.checked_add(handle_count * HANDLE.len())?;
+            if (0..handle_count).any(|index| {
+                let offset = handle_start + index * HANDLE.len();
+                payload.get(offset..offset + HANDLE.len()) != Some(HANDLE.as_slice())
+            }) || payload.get(handles_end..handles_end + 4) != Some(&[0; 4])
+            {
+                continue;
+            }
+            let address = u32::from_le_bytes(
+                payload
+                    .get(handles_end + 4..handles_end + 8)?
+                    .try_into()
+                    .ok()?,
+            );
+            if address == 0 {
+                continue;
+            }
+            for frame_gap in [0usize, 4] {
+                if payload
+                    .get(handles_end + 8..handles_end + 8 + frame_gap)
+                    .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
+                {
+                    continue;
+                }
+                let frame = handles_end + 8 + frame_gap;
+                let Some((x, y, z)) = scalar(frame)
+                    .zip(scalar(frame + 8))
+                    .zip(scalar(frame + 16))
+                    .map(|((x, y), z)| (x, y, z))
+                else {
+                    continue;
+                };
+                for scalar_count in [6usize, 8, 9] {
+                    let direction_offset = frame + (scalar_count - 3) * 8;
+                    let Some((dx, dy, dz)) = scalar(direction_offset)
+                        .zip(scalar(direction_offset + 8))
+                        .zip(scalar(direction_offset + 16))
+                        .map(|((x, y), z)| (x, y, z))
+                    else {
+                        continue;
+                    };
+                    let record_end = frame + scalar_count * 8;
+                    let Some(next_class) = (record_end..=record_end + 24)
+                        .find(|offset| payload.get(*offset..*offset + 4) == Some(CLASS_MARKER))
+                    else {
+                        continue;
+                    };
+                    if payload
+                        .get(record_end..next_class)
+                        .is_some_and(|bytes| bytes.iter().any(|byte| *byte != 0))
+                    {
+                        continue;
+                    }
+                    let norm = (dx * dx + dy * dy + dz * dz).sqrt();
+                    if (norm - 1.0).abs() > 1.0e-9 {
+                        continue;
+                    }
+                    let candidate = (
+                        Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
+                        Vector3::new(dx / norm, dy / norm, dz / norm),
+                    );
+                    let ranked = (scalar_count, candidate);
+                    if !candidates.contains(&ranked) {
+                        candidates.push(ranked);
+                    }
+                }
+            }
+        }
+    }
+    let rank = candidates.iter().map(|candidate| candidate.0).max()?;
+    let mut candidates = candidates
+        .into_iter()
+        .filter_map(|(candidate_rank, candidate)| (candidate_rank == rank).then_some(candidate))
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(origin, direction)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
+            direction.x.to_bits(),
+            direction.y.to_bits(),
+            direction.z.to_bits(),
+        ]
+    });
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
+}
+
+/// Add placed axes carried by revolution line-reference declarations.
+pub(crate) fn enrich_history_revolution_axes(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let snapshot = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut frames = HashMap::<String, Vec<Option<(Point3, Vector3)>>>::new();
+    for lane in lanes {
+        let mut objects = snapshot
+            .iter()
+            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
+            .collect::<Vec<_>>();
+        objects.sort_unstable_by_key(|(offset, _)| *offset);
+        for &(start, feature) in &objects {
+            if !matches!(
+                feature.input_class.as_deref(),
+                Some("moRevolution_c" | "moRevCut_c")
+            ) {
+                continue;
+            }
+            let mut declarations = lane.classes.iter().filter(|class| {
+                Some(class.name.as_str()) == feature.input_class.as_deref()
+                    && class.offset < start
+                    && start - class.offset <= 64
+            });
+            let Some(declaration) = declarations
+                .next()
+                .filter(|_| declarations.next().is_none())
+            else {
+                continue;
+            };
+            let scope_end = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    matches!(class.name.as_str(), "moRevolution_c" | "moRevCut_c")
+                        && class.offset > declaration.offset
+                })
+                .map(|class| class.offset)
+                .min()
+                .unwrap_or(u64::MAX);
+            let Some(end) = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    class.name == "moRevEndSpec_c"
+                        && class.offset > declaration.offset
+                        && class.offset < scope_end
+                })
+                .map(|class| class.offset)
+                .min()
+                .and_then(|offset| usize::try_from(offset).ok())
+            else {
+                continue;
+            };
+            let mut candidates = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    class.name == "moLineRef_w"
+                        && class.offset > declaration.offset
+                        && usize::try_from(class.offset).is_ok_and(|offset| offset < end)
+                })
+                .filter_map(|class| {
+                    revolution_line_reference_frame(
+                        &lane.native_payload,
+                        usize::try_from(class.offset).ok()?,
+                        end,
+                    )
+                })
+                .collect::<Vec<_>>();
+            candidates.sort_by_key(|(origin, direction)| {
+                [
+                    origin.x.to_bits(),
+                    origin.y.to_bits(),
+                    origin.z.to_bits(),
+                    direction.x.to_bits(),
+                    direction.y.to_bits(),
+                    direction.z.to_bits(),
+                ]
+            });
+            candidates.dedup();
+            frames
+                .entry(feature.id.clone())
+                .or_default()
+                .push((candidates.as_slice().len() == 1).then(|| candidates[0]));
+        }
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        if feature.properties.contains_key("AxisOrigin")
+            || feature.properties.contains_key("AxisDirection")
+        {
+            continue;
+        }
+        let Some(votes) = frames.get(&feature.id) else {
+            continue;
+        };
+        let Some(Some(first)) = votes.first() else {
+            continue;
+        };
+        if !votes.iter().all(|vote| vote.as_ref() == Some(first)) {
+            continue;
+        }
+        feature.properties.insert(
+            "AxisOrigin".into(),
+            format!("{}mm,{}mm,{}mm", first.0.x, first.0.y, first.0.z),
+        );
+        feature.properties.insert(
+            "AxisDirection".into(),
+            format!("{},{},{}", first.1.x, first.1.y, first.1.z),
+        );
+    }
 }
 
 /// Bind pattern operands carried by adjacent feature-input objects.
