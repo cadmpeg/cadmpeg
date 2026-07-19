@@ -2845,22 +2845,49 @@ fn project_fixed_loft(
         .iter()
         .filter(|group| group.role == 0x4_0000_0000)
         .count();
-    let section_role = match operation {
-        DesignExtrudeOperation::Join if body_count == 1 => 0x41_0000_0000,
-        DesignExtrudeOperation::NewBody if body_count == 0 => 0x5_0000_0000,
+    let (profiles, guides) = match operation {
+        DesignExtrudeOperation::Join if body_count == 1 => (
+            groups
+                .iter()
+                .filter(|group| group.role == 0x41_0000_0000)
+                .map(|group| ProfileRef::Native(group.id.clone()))
+                .collect::<Vec<_>>(),
+            Vec::new(),
+        ),
+        DesignExtrudeOperation::NewBody if body_count == 0 => {
+            let guided_profiles = groups
+                .iter()
+                .filter(|group| group.role == 0x43_0000_0000)
+                .map(|group| ProfileRef::Native(group.id.clone()))
+                .collect::<Vec<_>>();
+            if guided_profiles.is_empty() {
+                (
+                    groups
+                        .iter()
+                        .filter(|group| group.role == 0x5_0000_0000)
+                        .map(|group| ProfileRef::Native(group.id.clone()))
+                        .collect::<Vec<_>>(),
+                    Vec::new(),
+                )
+            } else {
+                (
+                    guided_profiles,
+                    groups
+                        .iter()
+                        .filter(|group| group.role == 0x5_0000_0000)
+                        .map(|group| cadmpeg_ir::features::PathRef::Native(group.id.clone()))
+                        .collect::<Vec<_>>(),
+                )
+            }
+        }
         _ => return None,
     };
-    let profiles = groups
-        .iter()
-        .filter(|group| group.role == section_role)
-        .map(|group| ProfileRef::Native(group.id.clone()))
-        .collect::<Vec<_>>();
-    if profiles.len() != 2 || profiles.len() + body_count != groups.len() {
+    if profiles.len() != 2 || profiles.len() + guides.len() + body_count != groups.len() {
         return None;
     }
     Some(FeatureDefinition::Loft {
         profiles,
-        guides: Vec::new(),
+        guides,
         op: fixed_boolean_operation(*operation),
         closed: false,
     })
