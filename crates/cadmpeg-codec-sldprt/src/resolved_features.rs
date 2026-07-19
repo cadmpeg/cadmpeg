@@ -3630,6 +3630,66 @@ mod marker_tests {
     }
 
     #[test]
+    fn revolution_line_reference_inputs_decode_extended_two_handle_layouts() {
+        let mut declared = vec![0; 280];
+        let handles = 112;
+        let source = handles - 48;
+        declared[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
+        declared[source + 4..source + 8].copy_from_slice(&0x49ab_4bc9u32.to_le_bytes());
+        declared[source + 8..source + 10].copy_from_slice(&0x8120u16.to_le_bytes());
+        declared[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+        declared[source + 20..source + 24].copy_from_slice(&2u32.to_le_bytes());
+        declared[source + 24..source + 28].copy_from_slice(&1u32.to_le_bytes());
+        declared[source + 32..source + 36].copy_from_slice(&308u32.to_le_bytes());
+        for offset in [handles, handles + 4] {
+            declared[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        }
+        for (index, value) in [0.0, 0.0, 0.0, 0.064, 0.0, 0.0, 0.0, 1.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = handles + 8 + index * 8;
+            declared[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        declared[handles + 89..handles + 93].copy_from_slice(CLASS_MARKER);
+        assert_eq!(
+            revolution_line_reference_inputs(&declared, 32, declared.len(), &HashSet::from([42])),
+            Some((42, Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)))
+        );
+
+        let mut nested = vec![0; 300];
+        let handles = 132;
+        let source = handles - 44;
+        nested[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
+        nested[source + 4..source + 8].copy_from_slice(&0x4890_6465u32.to_le_bytes());
+        nested[source + 8..source + 10].copy_from_slice(&0x80b6u16.to_le_bytes());
+        nested[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+        nested[source + 16..source + 20].copy_from_slice(&7u32.to_le_bytes());
+        nested[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
+        nested[source + 28..source + 32].copy_from_slice(&126u32.to_le_bytes());
+        for offset in [handles, handles + 4] {
+            nested[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        }
+        nested[handles + 12..handles + 16].copy_from_slice(&3800u32.to_le_bytes());
+        for (index, value) in [0.056, -0.051, -0.008, 0.0, 1.0, 0.0, 0.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = handles + 24 + index * 8;
+            nested[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        nested[handles + 85..handles + 89].copy_from_slice(&103u32.to_le_bytes());
+        assert_eq!(
+            revolution_line_reference_inputs(&nested, 32, nested.len(), &HashSet::from([42])),
+            Some((
+                42,
+                Point3::new(56.0, -51.0, -8.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            ))
+        );
+    }
+
+    #[test]
     fn indexed_profile_construction_line_places_a_revolution_axis() {
         let mut payload = vec![0; 300];
         for offset in [0, 100, 200] {
@@ -4238,17 +4298,12 @@ fn revolution_line_reference_inputs(
                 .and_then(|bytes| bytes.try_into().ok())
                 .map(u32::from_le_bytes)
                 .is_some_and(|address| address != 0)
+            && payload.get(handle_start + 8..handle_start + 24) == Some(&[0; 16])
         {
             let source_offset = handle_start - 44;
             if let Some(source) = source_cell(source_offset) {
                 let handles_end = handle_start + 8;
                 let frame_gap = 16;
-                if payload
-                    .get(handles_end..handles_end + frame_gap)
-                    .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
-                {
-                    continue;
-                }
                 let frame = handles_end + frame_gap;
                 let Some((x, y, z, dx, dy, dz)) = scalar(frame)
                     .zip(scalar(frame + 8))
@@ -4275,6 +4330,7 @@ fn revolution_line_reference_inputs(
                 let norm = (dx * dx + dy * dy + dz * dz).sqrt();
                 if (norm - 1.0).abs() <= 1.0e-9 {
                     candidates.push((
+                        handle_start,
                         6,
                         (
                             source,
@@ -4312,7 +4368,7 @@ fn revolution_line_reference_inputs(
                     && next_class_after_zeros(compact_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(compact_frame, 9) {
-                        candidates.push((9, (source, axis.0, axis.1)));
+                        candidates.push((handle_start, 9, (source, axis.0, axis.1)));
                     }
                 }
                 let addressed_frame = handles_end + 24;
@@ -4328,9 +4384,72 @@ fn revolution_line_reference_inputs(
                     && next_class_after_zeros(addressed_end, 24).is_some()
                 {
                     if let Some(axis) = axis_record(addressed_frame, 8) {
-                        candidates.push((8, (source, axis.0, axis.1)));
+                        candidates.push((handle_start, 8, (source, axis.0, axis.1)));
                     }
                 }
+            }
+        }
+        if handle_start >= object_start + 48
+            && payload.get(handle_start + 4..handle_start + 8) == Some(HANDLE.as_slice())
+            && payload.get(handle_start - 32..handle_start - 28) == Some(&[0; 4])
+            && payload
+                .get(handle_start - 28..handle_start - 24)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_some_and(|variant| variant != 0)
+            && payload.get(handle_start - 24..handle_start - 20) == Some(&1u32.to_le_bytes())
+            && payload.get(handle_start - 20..handle_start - 16) == Some(&[0; 4])
+            && payload
+                .get(handle_start - 16..handle_start - 12)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_some_and(|address| address != 0)
+            && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
+        {
+            let source_offset = handle_start - 48;
+            let frame = handle_start + 8;
+            let record_end = frame + 8 * 8;
+            if let Some(source) = source_cell(source_offset) {
+                if next_class_after_zeros(record_end, 24).is_some() {
+                    if let Some(axis) = axis_record(frame, 8) {
+                        candidates.push((handle_start, 8, (source, axis.0, axis.1)));
+                    }
+                }
+            }
+        }
+        if handle_start >= object_start + 44
+            && payload.get(handle_start + 4..handle_start + 8) == Some(HANDLE.as_slice())
+            && payload
+                .get(handle_start - 28..handle_start - 24)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_some_and(|variant| variant != 0)
+            && payload.get(handle_start - 24..handle_start - 20) == Some(&1u32.to_le_bytes())
+            && payload.get(handle_start - 20..handle_start - 16) == Some(&[0; 4])
+            && payload
+                .get(handle_start - 16..handle_start - 12)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_some_and(|address| address != 0)
+            && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
+            && payload.get(handle_start + 8..handle_start + 12) == Some(&[0; 4])
+            && payload
+                .get(handle_start + 12..handle_start + 16)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_some_and(|address| address != 0)
+            && payload.get(handle_start + 16..handle_start + 24) == Some(&[0; 8])
+            && payload
+                .get(handle_start + 80..handle_start + 88)
+                .is_some_and(|cell| cell.iter().any(|byte| *byte != 0))
+        {
+            let source_offset = handle_start - 44;
+            if let (Some(source), Some(axis)) = (
+                source_cell(source_offset),
+                axis_record(handle_start + 24, 7),
+            ) {
+                candidates.push((handle_start, 7, (source, axis.0, axis.1)));
+                continue;
             }
         }
         for handle_count in [2usize, 3] {
@@ -4409,7 +4528,7 @@ fn revolution_line_reference_inputs(
                         Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
                         Vector3::new(dx / norm, dy / norm, dz / norm),
                     );
-                    let ranked = (scalar_count, candidate);
+                    let ranked = (handle_start, scalar_count, candidate);
                     if !candidates.contains(&ranked) {
                         candidates.push(ranked);
                     }
@@ -4417,10 +4536,21 @@ fn revolution_line_reference_inputs(
             }
         }
     }
-    let rank = candidates.iter().map(|candidate| candidate.0).max()?;
+    let ranks = candidates.iter().fold(
+        HashMap::<usize, usize>::new(),
+        |mut ranks, (handle, rank, _)| {
+            ranks
+                .entry(*handle)
+                .and_modify(|current| *current = (*current).max(*rank))
+                .or_insert(*rank);
+            ranks
+        },
+    );
     let mut candidates = candidates
         .into_iter()
-        .filter_map(|(candidate_rank, candidate)| (candidate_rank == rank).then_some(candidate))
+        .filter_map(|(handle, rank, candidate)| {
+            (ranks.get(&handle) == Some(&rank)).then_some(candidate)
+        })
         .collect::<Vec<_>>();
     candidates.sort_by_key(|(source, origin, direction)| {
         (
