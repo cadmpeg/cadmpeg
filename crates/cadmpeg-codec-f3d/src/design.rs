@@ -3044,12 +3044,22 @@ fn project_surface_patch(
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, SurfaceBoundary};
 
-    if scope.kind != "SurfacePatch"
-        || scope.frame_length != 354
-        || scope.reference_members.len() != 4
-    {
+    if scope.kind != "SurfacePatch" {
         return None;
     }
+    let (boundary_count, boundary_role) =
+        if scope.frame_length == 339 && scope.reference_members.len() == 3 {
+            (1, 0x0000_0041_0000_0000)
+        } else {
+            let boundary_count = scope.reference_members.len().checked_sub(1)? / 3;
+            if boundary_count == 0
+                || scope.reference_members.len() != boundary_count * 3 + 1
+                || scope.frame_length != 354 + 44 * u64::try_from(boundary_count - 1).ok()?
+            {
+                return None;
+            }
+            (boundary_count, 0x0000_0004_0000_0000)
+        };
     let stream = native_stream(&scope.id)?;
     let groups = construction_groups
         .iter()
@@ -3058,18 +3068,29 @@ fn project_surface_patch(
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
-    let [boundary] = groups.as_slice() else {
-        return None;
-    };
-    if boundary.scope_reference_ordinal != 0
-        || boundary.record_index != scope.reference_members[0]
-        || boundary.role != 0x0000_0004_0000_0000
-        || boundary.members.as_slice() != &scope.reference_members[1..2]
-    {
+    if groups.len() != boundary_count {
         return None;
     }
+    let mut groups = groups;
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    for (ordinal, boundary) in groups.iter().enumerate() {
+        let reference_ordinal = ordinal * 3;
+        if boundary.scope_reference_ordinal != u32::try_from(reference_ordinal).ok()?
+            || boundary.record_index != scope.reference_members[reference_ordinal]
+            || boundary.role != boundary_role
+            || boundary.members.as_slice()
+                != &scope.reference_members[reference_ordinal + 1..reference_ordinal + 2]
+        {
+            return None;
+        }
+    }
+    let boundary = if let [boundary] = groups.as_slice() {
+        boundary.id.clone()
+    } else {
+        scope.id.clone()
+    };
     Some(FeatureDefinition::FilledSurface {
-        boundary: SurfaceBoundary::Path(PathRef::Native(boundary.id.clone())),
+        boundary: SurfaceBoundary::Path(PathRef::Native(boundary)),
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: None,
         merge_result: None,
@@ -29994,6 +30015,36 @@ mod relation_tests {
                 continuity: None,
                 merge_result: None,
             }) if native == &patch_group.id && faces.is_empty()
+        ));
+
+        patch_scope.frame_length = 398;
+        patch_scope.reference_members = vec![100, 200, 300, 101, 201, 301, 102];
+        let mut second_patch_group = group(101, 3, vec![201]);
+        second_patch_group.role = 0x0000_0004_0000_0000;
+        assert!(matches!(
+            super::project_surface_patch(
+                &patch_scope,
+                &[patch_group.clone(), second_patch_group]
+            ),
+            Some(FeatureDefinition::FilledSurface {
+                boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
+                    cadmpeg_ir::features::PathRef::Native(ref native)
+                ),
+                ..
+            }) if native == &patch_scope.id
+        ));
+
+        patch_scope.frame_length = 339;
+        patch_scope.reference_members = vec![100, 200, 300];
+        patch_group.role = 0x0000_0041_0000_0000;
+        assert!(matches!(
+            super::project_surface_patch(&patch_scope, std::slice::from_ref(&patch_group)),
+            Some(FeatureDefinition::FilledSurface {
+                boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
+                    cadmpeg_ir::features::PathRef::Native(ref native)
+                ),
+                ..
+            }) if native == &patch_group.id
         ));
 
         let mut fill_scope = scope.clone();

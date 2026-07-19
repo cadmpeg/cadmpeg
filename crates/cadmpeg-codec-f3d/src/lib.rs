@@ -637,7 +637,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && group.extrude_face_role.is_none()
                     }
                     Some(design::DesignFeatureFamily::SurfacePatch) => {
-                        group.role == 0x0000_0004_0000_0000
+                        ((scope.frame_length == 339 && group.role == 0x0000_0041_0000_0000)
+                            || (scope.frame_length != 339 && group.role == 0x0000_0004_0000_0000))
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
