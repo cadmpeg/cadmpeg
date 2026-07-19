@@ -13604,6 +13604,13 @@ fn exact_work_point_position(
             }
             let frame_length = paired.checked_sub(start)?;
             let position_at = match frame_length {
+                197 if bytes.get(start + 15..start + 42) == Some(&[0; 27])
+                    && u32_at(bytes, start + 66) == Some(1)
+                    && f64s_at(bytes, start + 70, 3) == Some(vec![-1.0; 3])
+                    && u32_at(bytes, start + 94) == Some(1) =>
+                {
+                    start + 42
+                }
                 208 if bytes.get(start + 15..start + 42) == Some(&[0; 27])
                     && u32_at(bytes, start + 66) == Some(7)
                     && f64s_at(bytes, start + 70, 3) == Some(vec![-1.0; 3])
@@ -21142,6 +21149,13 @@ mod relation_tests {
             byte_offset: 0,
         };
         let scope = parse_parameter_scope(&bytes, &header).expect("WorkPoint scope");
+        assert_eq!(
+            exact_work_point_position(&bytes, &scope),
+            Some(([1.25, -2.5, 3.75], position_at as u64))
+        );
+        bytes[point_at + 66..point_at + 70].copy_from_slice(&1u32.to_le_bytes());
+        bytes[point_at + 94..point_at + 98].copy_from_slice(&1u32.to_le_bytes());
+        bytes.drain(point_at + 197..point_at + 208);
         assert_eq!(
             exact_work_point_position(&bytes, &scope),
             Some(([1.25, -2.5, 3.75], position_at as u64))
