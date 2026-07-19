@@ -7615,7 +7615,10 @@ fn prune_mesh_endpoint_pair_support_with_limit(
                 .unwrap_or(true)
             });
             if budget.exhausted.get() {
-                return false;
+                // Pair-support pruning is optional. Every removal made before
+                // exhaustion was proved locally; the independently bounded
+                // quotient search can continue from that sound partial result.
+                return true;
             }
             if face.is_empty() {
                 return false;
@@ -7663,7 +7666,8 @@ fn prune_mesh_endpoint_pair_support_with_limit(
                 })
             });
             if budget.exhausted.get() {
-                return false;
+                // Do not turn incomplete propagation into a contradiction.
+                return true;
             }
             if edge_candidates[edge].is_empty() {
                 return false;
@@ -12201,7 +12205,7 @@ mod motif_tests {
     }
 
     #[test]
-    fn mesh_endpoint_pair_support_declines_when_its_work_budget_is_exhausted() {
+    fn mesh_endpoint_pair_support_does_not_treat_budget_exhaustion_as_a_contradiction() {
         let mut assignments = vec![vec![MeshFaceBoundaryAssignment {
             boundaries: vec![vec![MeshBoundaryEdgeCandidate {
                 edge: 0,
@@ -12212,7 +12216,7 @@ mod motif_tests {
         }]];
         let mut candidates = vec![vec![[0, 0]]];
 
-        assert!(!prune_mesh_endpoint_pair_support_with_limit(
+        assert!(prune_mesh_endpoint_pair_support_with_limit(
             &mut assignments,
             &mut candidates,
             0,
