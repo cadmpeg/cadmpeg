@@ -10689,6 +10689,26 @@ pub struct ExternalReference {
     pub source_offset: u64,
 }
 
+/// Externally bounded record retained from an EXTREFSTREAM index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalReferenceIndexedRecord {
+    /// Globally unique indexed-record identity.
+    pub id: String,
+    /// Record type from the external-reference directory.
+    pub record_id: u32,
+    /// Exact serialized record length.
+    pub byte_len: u64,
+    /// SHA-256 of the exact serialized record bytes.
+    pub sha256: String,
+    /// Specialized handle-set record when that complete grammar resolves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decoded_record: Option<String>,
+    /// Directory entry containing the external-reference stream.
+    pub source_entry: String,
+    /// Absolute file offset of the indexed record.
+    pub source_offset: u64,
+}
+
 /// Indexed EXTREFSTREAM record prefix with its exact handle membership set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExternalReferenceRecord {
@@ -10964,6 +10984,47 @@ pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenc
                 source_entry: entry.name.clone(),
                 source_offset: entry_offset + record.offset as u64,
             }
+        })
+        .collect()
+}
+
+/// Retain all indexed records and link uniquely decoded handle-set records.
+pub fn external_reference_indexed_records(
+    container: &Container,
+    decoded: &[ExternalReferenceRecord],
+) -> Vec<ExternalReferenceIndexedRecord> {
+    let mut decoded_by_key = BTreeMap::<(&str, u32), Option<&ExternalReferenceRecord>>::new();
+    for record in decoded {
+        decoded_by_key
+            .entry((record.source_entry.as_str(), record.record_id))
+            .and_modify(|value| *value = None)
+            .or_insert(Some(record));
+    }
+    container
+        .external_reference_indexed_records()
+        .into_iter()
+        .filter_map(|(entry, record)| {
+            let entry_offset = entry.file_span?.0;
+            let source_offset = entry_offset.checked_add(record.offset as u64)?;
+            let start = usize::try_from(source_offset).ok()?;
+            let bytes = container
+                .data
+                .get(start..start.checked_add(record.byte_len)?)?;
+            Some(ExternalReferenceIndexedRecord {
+                id: format!(
+                    "nx:external-reference-indexed-record:{}#{}",
+                    entry.name, record.record_id
+                ),
+                record_id: record.record_id,
+                byte_len: record.byte_len as u64,
+                sha256: sha256_hex(bytes),
+                decoded_record: decoded_by_key
+                    .get(&(entry.name.as_str(), record.record_id))
+                    .and_then(|record| *record)
+                    .map(|record| record.id.clone()),
+                source_entry: entry.name.clone(),
+                source_offset,
+            })
         })
         .collect()
 }

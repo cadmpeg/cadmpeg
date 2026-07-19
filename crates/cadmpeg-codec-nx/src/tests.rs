@@ -16515,6 +16515,11 @@ fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
     payload.extend_from_slice(b"\x01\x01\x00\x00\x00\x09\x00child.prt");
 
     let records = crate::container::parse_extref_records(&payload);
+    let indexed = crate::container::parse_extref_record_index(&payload).expect("record index");
+    assert_eq!(indexed.len(), 1);
+    assert_eq!(indexed[0].record_id, 6);
+    assert_eq!(indexed[0].offset, 41);
+    assert_eq!(indexed[0].byte_len, 41);
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].record_id, 6);
     assert_eq!(records[0].declared_count, 2);
@@ -16529,6 +16534,12 @@ fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
         .expect("closing duplicate");
     payload[duplicate + 1] = 0x10;
     assert!(crate::container::parse_extref_records(&payload).is_empty());
+    assert_eq!(
+        crate::container::parse_extref_record_index(&payload)
+            .expect("opaque indexed record")
+            .len(),
+        1
+    );
 }
 
 #[test]

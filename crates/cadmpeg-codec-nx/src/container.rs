@@ -200,6 +200,27 @@ impl Container {
             .collect()
     }
 
+    /// Retain every record boundary from each valid EXTREFSTREAM index.
+    pub(crate) fn external_reference_indexed_records(
+        &self,
+    ) -> Vec<(&DirEntry, ExtrefIndexedRecord)> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.name.contains("ExternalReferences"))
+            .filter_map(|entry| {
+                let (offset, size) = entry.file_span?;
+                let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+                let payload = self.data.get(offset..offset.checked_add(size)?)?;
+                Some(
+                    parse_extref_record_index(payload)?
+                        .into_iter()
+                        .map(move |record| (entry, record)),
+                )
+            })
+            .flatten()
+            .collect()
+    }
+
     /// Extract active NX object identifiers from `/Root/FastLoad/RMFastLoad`.
     pub fn rmfastload_object_ids(&self) -> Vec<u32> {
         let Some((offset, size)) = self
@@ -262,6 +283,14 @@ pub(crate) struct ExtrefRecord {
     pub tail_byte_len: usize,
 }
 
+/// One externally bounded record from a validated EXTREFSTREAM index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ExtrefIndexedRecord {
+    pub record_id: u32,
+    pub offset: usize,
+    pub byte_len: usize,
+}
+
 fn find(bytes: &[u8], needle: &[u8]) -> Option<usize> {
     bytes
         .windows(needle.len())
@@ -294,39 +323,9 @@ pub(crate) fn parse_extref_string_table(payload: &[u8]) -> Option<(usize, Vec<(u
 }
 
 pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
-    if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
-        return Vec::new();
-    }
-    let Some((string_table, _)) = parse_extref_string_table(payload) else {
+    let Some(index) = parse_extref_record_index(payload) else {
         return Vec::new();
     };
-    let mut directory = Vec::new();
-    let mut at = 25usize;
-    loop {
-        let Some(record_id) = u32_le(payload, at) else {
-            return Vec::new();
-        };
-        at += 4;
-        if record_id == 0 {
-            break;
-        }
-        let Some(offset) = u32_le(payload, at) else {
-            return Vec::new();
-        };
-        at += 4;
-        let offset = offset as usize;
-        if offset >= string_table {
-            return Vec::new();
-        }
-        directory.push((record_id, offset));
-    }
-    if directory.is_empty()
-        || !directory.windows(2).all(|pair| pair[0].1 < pair[1].1)
-        || at > directory[0].1
-    {
-        return Vec::new();
-    }
-
     let parse_record = |record_id, offset, end| -> Option<ExtrefRecord> {
         let bytes = payload.get(offset..end)?;
         (bytes.get(..4) == Some(&[1, 0, 0, 0]) && bytes.get(6) == Some(&1)).then_some(())?;
@@ -372,16 +371,56 @@ pub(crate) fn parse_extref_records(payload: &[u8]) -> Vec<ExtrefRecord> {
         })
     };
 
+    index
+        .into_iter()
+        .filter_map(|record| {
+            let end = record.offset.checked_add(record.byte_len)?;
+            parse_record(record.record_id, record.offset, end)
+        })
+        .collect()
+}
+
+pub(crate) fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefIndexedRecord>> {
+    if !payload.starts_with(b"EXTREFSTREAM") || payload.get(24) != Some(&0) {
+        return None;
+    }
+    let (string_table, _) = parse_extref_string_table(payload)?;
+    let mut directory = Vec::new();
+    let mut record_ids = std::collections::BTreeSet::new();
+    let mut at = 25usize;
+    loop {
+        let record_id = u32_le(payload, at)?;
+        at += 4;
+        if record_id == 0 {
+            break;
+        }
+        record_ids.insert(record_id).then_some(())?;
+        let offset = u32_le(payload, at)?;
+        at += 4;
+        let offset = offset as usize;
+        if offset >= string_table {
+            return None;
+        }
+        directory.push((record_id, offset));
+    }
+    if directory.is_empty()
+        || !directory.windows(2).all(|pair| pair[0].1 < pair[1].1)
+        || at > directory[0].1
+    {
+        return None;
+    }
     let mut records = Vec::with_capacity(directory.len());
     for (index, (record_id, offset)) in directory.iter().copied().enumerate() {
         let end = directory
             .get(index + 1)
             .map_or(string_table, |(_, offset)| *offset);
-        if let Some(record) = parse_record(record_id, offset, end) {
-            records.push(record);
-        }
+        records.push(ExtrefIndexedRecord {
+            record_id,
+            offset,
+            byte_len: end.checked_sub(offset)?,
+        });
     }
-    records
+    Some(records)
 }
 
 /// A parsed SPLMSSTR container and its directory entries.
