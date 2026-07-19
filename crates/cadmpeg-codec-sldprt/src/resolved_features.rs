@@ -496,10 +496,10 @@ fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<S
 mod marker_tests {
     use super::{
         angled_reference_plane_frame, append_spatial_vertex, arc_angle_relation_kind,
-        compact_body_component_path_at, compact_body_path_at, compact_body_retention_mode,
-        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
-        compact_bounded_curve_tangent, compact_combine_operation_at, compact_component_plane_frame,
-        compact_edge_component_path_at, compact_edge_selection_at,
+        bind_indexed_curve_vertices, compact_body_component_path_at, compact_body_path_at,
+        compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
+        compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
+        compact_component_plane_frame, compact_edge_component_path_at, compact_edge_selection_at,
         compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
@@ -2791,6 +2791,66 @@ mod marker_tests {
             compact_bounded_curve_tangent(&payload, 0),
             Some([-1.0, 0.0])
         );
+
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[detail + 23..detail + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&payload, 0),
+            Some([7, 11])
+        );
+
+        let entity = |id: &str,
+                      offset: u64,
+                      object_index: Option<u32>,
+                      coordinates_m: Option<[f64; 2]>,
+                      kind: SketchInputKind| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("profile".into()),
+            ordinal: 0,
+            offset,
+            object_index,
+            local_id: None,
+            kind,
+            state_value: Some(1.0),
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let mut lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload.clone(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![
+                entity("curve", 0, None, None, SketchInputKind::Arc),
+                entity(
+                    "start",
+                    1,
+                    Some(7),
+                    Some([0.0, 0.0]),
+                    SketchInputKind::LineOrCircle,
+                ),
+                entity(
+                    "end",
+                    2,
+                    Some(11),
+                    Some([1.0, 0.0]),
+                    SketchInputKind::LineOrCircle,
+                ),
+            ],
+        };
+        bind_indexed_curve_vertices(&mut lane);
+        assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
+        assert_eq!(lane.sketch_entities[2].kind, SketchInputKind::Point);
 
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -5848,6 +5908,7 @@ pub(crate) fn bind_scalar_operands(
                 scalar.feature_ref = Some(feature_id.to_string());
             }
         }
+        bind_indexed_curve_vertices(lane);
         let mut marker_ids = HashMap::<(String, u32), Vec<(String, bool)>>::new();
         for entity in &lane.sketch_entities {
             if let (Some(feature), Some(local_id)) = (&entity.feature_ref, entity.local_id) {
@@ -5925,6 +5986,29 @@ pub(crate) fn bind_scalar_operands(
         lane.body_selections = compact_body_selections(histories, lane);
         lane.edge_selections = compact_edge_selections(histories, lane);
         lane.surface_selections = compact_surface_selections(histories, lane);
+    }
+}
+
+fn bind_indexed_curve_vertices(lane: &mut FeatureInputLane) {
+    let endpoints = lane
+        .sketch_entities
+        .iter()
+        .filter_map(|curve| {
+            let feature = curve.feature_ref.as_ref()?;
+            let offset = usize::try_from(curve.offset).ok()?;
+            let indices = wide_indexed_curve_endpoint_indices(&lane.native_payload, offset)
+                .or_else(|| compact_indexed_curve_endpoint_indices(&lane.native_payload, offset))?;
+            Some(indices.map(|index| (feature.clone(), index)))
+        })
+        .flatten()
+        .collect::<HashSet<_>>();
+    for marker in &mut lane.sketch_entities {
+        let Some(key) = marker.feature_ref.clone().zip(marker.object_index) else {
+            continue;
+        };
+        if marker.coordinates_m.is_some() && endpoints.contains(&key) {
+            marker.kind = SketchInputKind::Point;
+        }
     }
 }
 
@@ -17004,8 +17088,7 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
     let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
     let supported_prefix = prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER;
     let supported_locus = marker_is_geometry_locus(payload, offset)
-        || (prefix == LEGACY_EXTENDED_SKETCH_MARKER
-            && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]));
+        || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]);
     if !supported_prefix
         || !matches!(
             u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?),
