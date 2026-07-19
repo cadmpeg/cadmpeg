@@ -382,13 +382,31 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     const GEOMETRY_PREFIX: [u8; 12] = [
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x80, 0xbf,
     ];
-    if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX
-        || payload.get(offset + 64..offset + 66)? != [0x1e, 0x00]
-    {
+    if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX {
         return None;
     }
-    let first = f64::from_le_bytes(payload.get(offset + 66..offset + 74)?.try_into().ok()?);
-    let second = f64::from_le_bytes(payload.get(offset + 74..offset + 82)?.try_into().ok()?);
+    let coordinate_offset = if payload.get(offset + 64..offset + 66)? == [0x1e, 0x00] {
+        offset.checked_add(66)?
+    } else if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())? == LEGACY_SKETCH_MARKER
+        && marker_is_geometry_locus(payload, offset)
+        && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
+    {
+        offset.checked_add(58)?
+    } else {
+        return None;
+    };
+    let first = f64::from_le_bytes(
+        payload
+            .get(coordinate_offset..coordinate_offset + 8)?
+            .try_into()
+            .ok()?,
+    );
+    let second = f64::from_le_bytes(
+        payload
+            .get(coordinate_offset + 8..coordinate_offset + 16)?
+            .try_into()
+            .ok()?,
+    );
     (first.is_finite() && second.is_finite()).then_some([first, second])
 }
 
@@ -2419,6 +2437,31 @@ mod marker_tests {
         payload[64..66].copy_from_slice(&[0x1e, 0x00]);
         payload[5] = 0;
         assert_eq!(marker_coordinates(&payload, 0), None);
+    }
+
+    #[test]
+    fn legacy_geometry_marker_coordinates_use_the_compact_body_offsets() {
+        let mut payload = vec![0; 74];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[56..58].copy_from_slice(&[0x1e, 0x00]);
+        payload[58..66].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[66..74].copy_from_slice(&(-2.5f64).to_le_bytes());
+
+        assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+        let entities = sketch_input_entities(&payload, "lane");
+        assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
+
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        assert_eq!(marker_coordinates(&payload, 0), None);
+        let entities = sketch_input_entities(&payload, "lane");
+        assert_eq!(
+            entities[0].kind,
+            SketchInputKind::Relation(SketchRelationKind::Distance)
+        );
     }
 
     #[test]
