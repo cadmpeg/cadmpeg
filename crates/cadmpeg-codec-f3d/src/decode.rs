@@ -408,17 +408,26 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         unprojected_sketch_points: native
             .sketch_points
             .iter()
-            .filter(|point| !projected_sketch_entity_refs.contains(point.id.as_str()))
+            .filter(|point| {
+                point.owner_reference.is_some()
+                    && !projected_sketch_entity_refs.contains(point.id.as_str())
+            })
             .count(),
         unprojected_sketch_curves: native
             .sketch_curve_identities
             .iter()
-            .filter(|curve| !projected_sketch_entity_refs.contains(curve.id.as_str()))
+            .filter(|curve| {
+                curve.owner_reference.is_some()
+                    && !projected_sketch_entity_refs.contains(curve.id.as_str())
+            })
             .count(),
         unprojected_sketch_surfaces: native
             .sketch_surfaces
             .iter()
-            .filter(|surface| !projected_sketch_entity_refs.contains(surface.id.as_str()))
+            .filter(|surface| {
+                surface.owner_reference.is_some()
+                    && !projected_sketch_entity_refs.contains(surface.id.as_str())
+            })
             .count(),
         unprojected_sketch_texts: native
             .sketch_texts
@@ -2895,6 +2904,14 @@ mod tests {
                 unresolved_edge_selections: 1,
             }
         );
+
+        native.sketch_points[0].owner_reference = None;
+        native.sketch_curve_identities[0].owner_reference = None;
+        let ownerless = design_projection_gaps(&ir, &native);
+        assert_eq!(ownerless.unprojected_sketch_points, 0);
+        assert_eq!(ownerless.unprojected_sketch_curves, 0);
+        native.sketch_points[0].owner_reference = Some(1);
+        native.sketch_curve_identities[0].owner_reference = Some(1);
 
         ir.model.sketches.push(Sketch {
             id: SketchId("sketch".into()),

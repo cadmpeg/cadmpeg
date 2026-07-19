@@ -16885,12 +16885,9 @@ fn parse_member_run_head_placement(
     let head_end = next_indexed_record_offset(bytes, head_at + 11).unwrap_or(bytes.len());
     let frame_length = head_end.checked_sub(head_at)?;
     let (transform, transform_offset) = match frame_length {
-        34 if bytes.get(head_at + 11..head_at + 34)
-            == Some(
-                &[
-                    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                ][..],
-            ) =>
+        34 if bytes.get(head_at + 11..head_at + 21) == Some(&[0u8; 10][..])
+            && bytes.get(head_at + 21..head_at + 24) == Some(&[1, 0, 1][..])
+            && bytes.get(head_at + 28..head_at + 34) == Some(&[0u8; 6][..]) =>
         {
             (identity_matrix(), None)
         }
@@ -25270,8 +25267,9 @@ mod relation_tests {
         bytes.extend_from_slice(b"283");
         bytes.extend_from_slice(&200u32.to_le_bytes());
         bytes.extend_from_slice(&[0; 10]);
-        bytes.extend_from_slice(&[1, 0, 1, 3]);
-        bytes.extend_from_slice(&[0; 9]);
+        bytes.extend_from_slice(&[1, 0, 1]);
+        bytes.extend_from_slice(&173u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"284");
         bytes.extend_from_slice(&201u32.to_le_bytes());
