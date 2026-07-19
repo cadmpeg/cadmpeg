@@ -4598,6 +4598,41 @@ pub fn project_spatial_sketch_constraints(
                 return None;
             }
             let definition = match relation.constraint_kinds[0] {
+                SketchConstraintKind::Coincident => {
+                    let [first, second] = member_entities.as_slice() else {
+                        return None;
+                    };
+                    let (
+                        SpatialSketchGeometry::Point {
+                            position: first_position,
+                        },
+                        SpatialSketchGeometry::Point {
+                            position: second_position,
+                        },
+                    ) = (&first.geometry, &second.geometry)
+                    else {
+                        return None;
+                    };
+                    let scale = 1.0
+                        + first_position
+                            .x
+                            .abs()
+                            .max(first_position.y.abs())
+                            .max(first_position.z.abs())
+                            .max(second_position.x.abs())
+                            .max(second_position.y.abs())
+                            .max(second_position.z.abs());
+                    if (first_position.x - second_position.x).abs() > scale * 1.0e-9
+                        || (first_position.y - second_position.y).abs() > scale * 1.0e-9
+                        || (first_position.z - second_position.z).abs() > scale * 1.0e-9
+                    {
+                        return None;
+                    }
+                    Definition::Coincident {
+                        first: first.id.clone(),
+                        second: second.id.clone(),
+                    }
+                }
                 SketchConstraintKind::SplineGroup if members.len() >= 2 => {
                     Definition::SplineGroup { entities: members }
                 }
@@ -25166,24 +25201,29 @@ mod relation_tests {
         midpoint_relation.constraint_kinds = vec![SketchConstraintKind::Midpoint];
         midpoint_relation.members = vec![106, 101];
         midpoint_relation.return_members = vec![101, 106];
+        let mut coincident_point = point.clone();
+        coincident_point.id = "f3d:Design/BulkStream.dat:point#107".into();
+        coincident_point.record_index = 107;
+        coincident_point.byte_offset = 107;
+        coincident_point.persistent_id = 6;
+        let mut coincident_relation = relation.clone();
+        coincident_relation.id = "f3d:Design/BulkStream.dat:relation#107".into();
+        coincident_relation.record_index = 107;
+        coincident_relation.state = 0x40;
+        coincident_relation.constraint_kinds = vec![SketchConstraintKind::Coincident];
+        coincident_relation.members = vec![106, 107];
+        coincident_relation.return_members = vec![106, 107];
 
-        let relations = [relation.clone(), midpoint_relation.clone()];
-        let (planar_sketches, planar_entities) = project_sketch_design(
-            &[placement.clone()],
-            std::slice::from_ref(&point),
-            &curves,
-            1.0e-6,
-        );
+        let points = [point, coincident_point];
+        let relations = [relation, midpoint_relation, coincident_relation];
+        let (planar_sketches, planar_entities) =
+            project_sketch_design(&[placement.clone()], &points, &curves, 1.0e-6);
         assert!(planar_sketches.is_empty());
         assert!(planar_entities.is_empty());
-        let (sketches, entities) = project_spatial_sketch_design(
-            &[placement.clone()],
-            std::slice::from_ref(&point),
-            &curves,
-            &relations,
-        );
+        let (sketches, entities) =
+            project_spatial_sketch_design(&[placement.clone()], &points, &curves, &relations);
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 5);
+        assert_eq!(entities.len(), 6);
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
             SpatialSketchGeometry::Line { start, end }
@@ -25199,7 +25239,7 @@ mod relation_tests {
         let constraints = project_spatial_sketch_constraints(
             &[placement],
             &relations,
-            &[point],
+            &points,
             &curves,
             &entities,
         );
@@ -25214,6 +25254,13 @@ mod relation_tests {
             constraints.get(1),
             Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
                 definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Midpoint { .. },
+                ..
+            })
+        ));
+        assert!(matches!(
+            constraints.get(2),
+            Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
+                definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Coincident { .. },
                 ..
             })
         ));

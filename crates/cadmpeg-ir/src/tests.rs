@@ -2976,6 +2976,19 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             position: Point3::new(0.5, 0.5, 0.5),
         },
     });
+    let coincident_point =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#coincident-point".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: coincident_point.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point {
+            position: Point3::new(0.5, 0.5, 0.5),
+        },
+    });
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
@@ -2983,6 +2996,17 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::SplineGroup {
                 entities: vec![line.clone(), circle.clone()],
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#coincident".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::Coincident {
+                first: point.clone(),
+                second: coincident_point,
             },
             native_ref: None,
         });

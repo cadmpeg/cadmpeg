@@ -227,6 +227,13 @@ pub struct SpatialSketchConstraint {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpatialSketchConstraintDefinition {
+    /// Two model-space sketch points occupy the same solved position.
+    Coincident {
+        /// First coincident point.
+        first: SpatialSketchEntityId,
+        /// Second coincident point.
+        second: SpatialSketchEntityId,
+    },
     /// A model-space point lies at the midpoint of a bounded line.
     Midpoint {
         /// Point constrained to the midpoint.

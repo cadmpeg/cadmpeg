@@ -389,11 +389,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
         let entities = match &constraint.definition {
             SpatialConstraint::SplineGroup { entities } => entities.clone(),
+            SpatialConstraint::Coincident { first, second }
+            | SpatialConstraint::Tangent { first, second } => {
+                vec![first.clone(), second.clone()]
+            }
             SpatialConstraint::Midpoint { point, entity } => {
                 vec![point.clone(), entity.clone()]
-            }
-            SpatialConstraint::Tangent { first, second } => {
-                vec![first.clone(), second.clone()]
             }
         };
         let distinct = entities.iter().collect::<HashSet<_>>();
@@ -416,6 +417,22 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         match &constraint.definition {
+            SpatialConstraint::Coincident { first, second }
+                if !matches!(
+                    spatial_geometry.get(first),
+                    Some(SpatialSketchGeometry::Point { .. })
+                ) || !matches!(
+                    spatial_geometry.get(second),
+                    Some(SpatialSketchGeometry::Point { .. })
+                ) =>
+            {
+                finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    &constraint.id.0,
+                    "spatial coincidence requires two points",
+                );
+            }
             SpatialConstraint::Midpoint { point, entity }
                 if !matches!(
                     spatial_geometry.get(point),
