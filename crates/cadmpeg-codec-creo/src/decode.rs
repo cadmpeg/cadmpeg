@@ -12231,6 +12231,10 @@ fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Ve
             &scan.feature_operations,
             feature_id,
         ))
+        .chain(feature_entity_dependencies(
+            &scan.feature_entity_tables,
+            feature_id,
+        ))
         .filter_map(|dependency| {
             let id = IrFeatureId(format!("creo:model:feature#{dependency}"));
             ir.model
@@ -12238,6 +12242,48 @@ fn feature_dependencies(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Ve
                 .iter()
                 .any(|feature| feature.id == id)
                 .then_some(id)
+        })
+        .fold(Vec::new(), |mut dependencies, dependency| {
+            if !dependencies.contains(&dependency) {
+                dependencies.push(dependency);
+            }
+            dependencies
+        })
+}
+
+fn feature_entity_dependencies(
+    tables: &[crate::feature::FeatureEntityTable],
+    feature_id: u32,
+) -> Vec<u32> {
+    let producers = tables
+        .iter()
+        .filter_map(|table| table.feature_id.map(|owner| (owner, table)))
+        .flat_map(|(owner, table)| {
+            table
+                .entries
+                .iter()
+                .filter(|entry| entry.source_entity_id.is_some())
+                .map(move |entry| (entry.entity_id, owner))
+        })
+        .fold(
+            BTreeMap::<u32, BTreeSet<u32>>::new(),
+            |mut owners, (entity, owner)| {
+                owners.entry(entity).or_default().insert(owner);
+                owners
+            },
+        );
+    tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id) && table.table_class_id == 100)
+        .flat_map(|table| table.entries.iter())
+        .filter_map(|entry| {
+            let owners = producers.get(&entry.entity_id)?;
+            let mut owners = owners.iter().copied();
+            let owner = owners.next()?;
+            if owners.next().is_some() {
+                return None;
+            }
+            (owner != feature_id).then_some(owner)
         })
         .fold(Vec::new(), |mut dependencies, dependency| {
             if !dependencies.contains(&dependency) {
@@ -13758,6 +13804,41 @@ mod resolved_sketch_tests {
             ),
             vec![sketch, parent]
         );
+    }
+
+    #[test]
+    fn class_100_entity_reference_depends_on_its_unique_generator() {
+        let entry =
+            |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+                entity_id,
+                class_id,
+                source_entity_id,
+                prefixed: true,
+                offset: 0,
+                end_offset: 0,
+            };
+        let table = |feature_id: u32,
+                     table_class_id: u32,
+                     entries: Vec<crate::feature::FeatureEntityTableEntry>| {
+            crate::feature::FeatureEntityTable {
+                feature_id: Some(feature_id),
+                table_class_id,
+                entry_ids: entries.iter().map(|entry| entry.entity_id).collect(),
+                entries,
+                surface_ids: Vec::new(),
+                non_surface_entity_ids: Vec::new(),
+                offset: 0,
+            }
+        };
+        let producer = table(175, 67, vec![entry(192, 200, Some(175))]);
+        let consumer = table(416, 100, vec![entry(192, 98, None)]);
+
+        assert_eq!(
+            feature_entity_dependencies(&[producer.clone(), consumer.clone()], 416),
+            [175]
+        );
+        let conflicting = table(312, 67, vec![entry(192, 200, Some(312))]);
+        assert!(feature_entity_dependencies(&[producer, conflicting, consumer], 416).is_empty());
     }
 
     #[test]

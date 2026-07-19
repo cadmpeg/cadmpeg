@@ -1549,6 +1549,12 @@ owned table entry carries that source identifier and its leading entity is a
 materialized surface in that table. Multiple owned tables are not ambiguous by
 themselves; duplicate source bindings across them are ambiguous.
 
+A table-class-100 entry references a generated entity. When exactly one other
+feature owns a class-200 entry for that entity identifier, the referencing
+feature depends on that generating feature. A self-reference does not add a
+history dependency. Competing generating owners leave the dependency
+unresolved.
+
 `edg_id_tab_ptr`, `lo_id_tab_ptr`, `bnd_type`, `used_bodies`, `geom_lists`,
 and `dtm_id_tab` declare feature-owned geometry tables. Each table retains its
 declared compact count and the entity-class identifier following its `f7`
