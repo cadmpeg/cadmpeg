@@ -3792,6 +3792,18 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
         ])
     );
+    assert_eq!(
+        crate::decode::simple_hole_diameters(
+            &ir,
+            &templates,
+            std::slice::from_ref(&group),
+            &std::collections::BTreeMap::new(),
+        ),
+        std::collections::BTreeMap::from([
+            ("hole-a".into(), cadmpeg_ir::features::Length(5.1)),
+            ("hole-b".into(), cadmpeg_ir::features::Length(5.1)),
+        ])
+    );
     assert!(crate::decode::hole_diameters_for_operations(
         &ir,
         &[operations[0].clone(), operations[0].clone()],
@@ -3922,6 +3934,18 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
             ("hole-b".into(), cadmpeg_ir::features::Length(6.0)),
         ])
     );
+    assert!(crate::decode::hole_diameters_for_operations(
+        &distinct,
+        &operations,
+        &std::collections::BTreeMap::new(),
+    )
+    .is_empty());
+    assert!(crate::decode::hole_diameters_for_operations(
+        &ir,
+        &operations,
+        &std::collections::BTreeMap::from([("hole-a".to_string(), vec![BodyId("body".into())],)]),
+    )
+    .is_empty());
 
     let mut chamfered = ir.clone();
     for bore in 0..2 {
@@ -4008,6 +4032,14 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
                 },
             ),
         ])
+    );
+    assert_eq!(
+        crate::decode::simple_hole_chamfers(
+            &chamfered,
+            &templates,
+            &std::collections::BTreeMap::new(),
+        ),
+        crate::decode::simple_hole_chamfers(&chamfered, &templates, &outputs)
     );
     let mut sheet = chamfered.clone();
     sheet.model.bodies[0].kind = BodyKind::Sheet;

@@ -11852,16 +11852,9 @@ pub(crate) fn hole_diameters_for_operations(
     {
         return BTreeMap::new();
     }
-    let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
-    for operation in operations {
-        let Some([body]) = outputs.get(operation).map(Vec::as_slice) else {
-            return BTreeMap::new();
-        };
-        operations_by_body
-            .entry(body.clone())
-            .or_default()
-            .push(operation.clone());
-    }
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
+    };
 
     let mut diameters = BTreeMap::new();
     for (body, operations) in operations_by_body {
@@ -11892,6 +11885,50 @@ pub(crate) fn hole_diameters_for_operations(
         );
     }
     diameters
+}
+
+/// Resolve hole operations to their explicit output bodies, or to the one
+/// connected solid when NX omits every operation-output relation.
+fn hole_operations_by_body(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> Option<BTreeMap<BodyId, Vec<String>>> {
+    let explicit = operations
+        .iter()
+        .filter(|operation| {
+            outputs
+                .get(*operation)
+                .is_some_and(|bodies| !bodies.is_empty())
+        })
+        .count();
+    if explicit != 0 && explicit != operations.len() {
+        return None;
+    }
+    if explicit == operations.len() {
+        let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
+        for operation in operations {
+            let [body] = outputs.get(operation)?.as_slice() else {
+                return None;
+            };
+            operations_by_body
+                .entry(body.clone())
+                .or_default()
+                .push(operation.clone());
+        }
+        return Some(operations_by_body);
+    }
+
+    let mut connected_solids = ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| connected_solid_body_faces(ir, &body.id).is_some());
+    let body = connected_solids.next()?;
+    if connected_solids.next().is_some() {
+        return None;
+    }
+    Some(BTreeMap::from([(body.id.clone(), operations.to_vec())]))
 }
 
 fn through_bore_cylinders(ir: &CadIr, body_faces: &[&Face]) -> Option<Vec<(Point3, Vector3, f64)>> {
@@ -12007,16 +12044,10 @@ pub(crate) fn simple_hole_chamfers(
     if operations.len() != templates.len() || operations.is_empty() {
         return BTreeMap::new();
     }
-    let mut operations_by_body = BTreeMap::<BodyId, Vec<String>>::new();
-    for operation in operations {
-        let Some([body]) = outputs.get(&operation).map(Vec::as_slice) else {
-            return BTreeMap::new();
-        };
-        operations_by_body
-            .entry(body.clone())
-            .or_default()
-            .push(operation);
-    }
+    let operations = operations.into_iter().collect::<Vec<_>>();
+    let Some(operations_by_body) = hole_operations_by_body(ir, &operations, outputs) else {
+        return BTreeMap::new();
+    };
 
     let surfaces = ir
         .model
