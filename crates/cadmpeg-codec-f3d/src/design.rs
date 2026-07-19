@@ -17917,10 +17917,15 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     if length <= 0.0 {
         return None;
     }
+    let displacement_direction = Vector3::new(
+        displacement.x / length,
+        displacement.y / length,
+        displacement.z / length,
+    );
     let parallel_error = Vector3::new(
-        displacement.x / length - direction.x,
-        displacement.y / length - direction.y,
-        displacement.z / length - direction.z,
+        displacement_direction.y * direction.z - displacement_direction.z * direction.y,
+        displacement_direction.z * direction.x - displacement_direction.x * direction.z,
+        displacement_direction.x * direction.y - displacement_direction.y * direction.x,
     )
     .norm();
     if (direction.norm() - 1.0).abs() > 1.0e-9
@@ -17929,6 +17934,7 @@ fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
     {
         return None;
     }
+    let direction = displacement_direction;
     // The stored line normal is an auxiliary orientation vector. Imported
     // legacy sketches can retain a small component along the line direction;
     // remove that component so the typed carrier maintains its orthonormal
@@ -24100,6 +24106,14 @@ mod relation_tests {
                 <= 1.0e-12
         );
         assert!(normal.z > 0.0);
+
+        bytes[133 + 7 * 8..133 + 8 * 8].copy_from_slice(&1.0f64.to_le_bytes());
+        let SketchCurveGeometry::Line { direction, .. } =
+            super::decode_line(&bytes).expect("reverse-parameterized line")
+        else {
+            panic!("expected line");
+        };
+        assert!((direction.y + 1.0).abs() <= 1.0e-12);
     }
 
     #[test]
