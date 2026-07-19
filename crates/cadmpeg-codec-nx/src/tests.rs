@@ -17249,6 +17249,24 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             native_ref: None,
         });
     }
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#incomplete-block".into()),
+        ordinal: 9,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Block {
+            dimensions: None,
+            placement: None,
+        },
+        native_ref: None,
+    });
     ir.model.configurations.extend([
         DesignConfiguration {
             id: ConfigurationId("test:configuration#0".into()),
@@ -17277,9 +17295,11 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 5);
+    assert_eq!(losses.len(), 6);
     assert_eq!(losses[0].category, LossCategory::Feature);
-    assert!(losses[0].message.contains("9 NX feature history operation"));
+    assert!(losses[0]
+        .message
+        .contains("10 NX feature history operation"));
     assert_eq!(losses[1].category, LossCategory::Feature);
     assert!(losses[1].message.contains("1 NX design configuration"));
     assert_eq!(losses[2].category, LossCategory::Feature);
@@ -17291,8 +17311,10 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(losses[3].message.contains("freeform surface (1)"));
     assert!(losses[3].message.contains("loft (2)"));
     assert_eq!(losses[4].category, LossCategory::Feature);
-    assert!(losses[4].message.contains("1 NX sketch history feature"));
-    assert!(losses[4].message.contains("1 have no neutral sketch graph"));
+    assert!(losses[4].message.contains("block (1)"));
+    assert_eq!(losses[5].category, LossCategory::Feature);
+    assert!(losses[5].message.contains("1 NX sketch history feature"));
+    assert!(losses[5].message.contains("1 have no neutral sketch graph"));
 
     let sketch_id = cadmpeg_ir::sketches::SketchId("test:sketch#0".into());
     ir.model.sketches.push(cadmpeg_ir::sketches::Sketch {
@@ -17312,8 +17334,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 5);
-    assert!(losses[4].message.contains("no sketch constraints"));
+    assert_eq!(losses.len(), 6);
+    assert!(losses[5].message.contains("no sketch constraints"));
 }
 
 #[test]

@@ -7165,6 +7165,173 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
+    let mut incomplete_feature_families = BTreeMap::<&str, usize>::new();
+    for feature in &ir.model.features {
+        let family = match &feature.definition {
+            FeatureDefinition::Block {
+                dimensions,
+                placement,
+            } if dimensions.is_none() || placement.is_none() => "block",
+            FeatureDefinition::ExtractBody { source } if body_selection_is_opaque(source) => {
+                "extract body"
+            }
+            FeatureDefinition::ProjectedCurve {
+                source,
+                target_faces,
+                direction,
+                bidirectional,
+            } if path_ref_is_opaque(source)
+                || face_selection_is_opaque(target_faces)
+                || matches!(
+                    direction,
+                    CurveProjectionDirection::State(CurveProjectionDirectionState::Unresolved)
+                )
+                || bidirectional.is_none() =>
+            {
+                "projected curve"
+            }
+            FeatureDefinition::TrimSurface { faces, tool, keep }
+                if face_selection_is_opaque(faces)
+                    || path_ref_is_opaque(tool)
+                    || matches!(keep, TrimRegion::Unresolved) =>
+            {
+                "trim surface"
+            }
+            FeatureDefinition::ExtendSurface {
+                faces,
+                distance,
+                method,
+            } if face_selection_is_opaque(faces)
+                || distance.is_none()
+                || matches!(method, cadmpeg_ir::features::SurfaceExtension::Unresolved) =>
+            {
+                "extend surface"
+            }
+            FeatureDefinition::Hole {
+                profile,
+                face,
+                position,
+                direction,
+                kind,
+                diameter,
+                extent,
+                ..
+            } if profile.is_none()
+                || face.is_none()
+                || position.is_none()
+                || direction.is_none()
+                || matches!(kind, HoleKind::Unresolved { .. })
+                || diameter.is_none()
+                || extent.is_none() =>
+            {
+                "hole"
+            }
+            FeatureDefinition::Rib { construction, op }
+                if construction.profile.is_none()
+                    || construction.direction.is_none()
+                    || construction.thickness.is_none()
+                    || construction.side.is_none()
+                    || matches!(construction.draft, RibDraft::Unresolved)
+                    || matches!(op, BooleanOp::Unresolved) =>
+            {
+                "rib"
+            }
+            FeatureDefinition::Chamfer {
+                edges,
+                spec,
+                flip_direction,
+            } if edge_selection_is_opaque(edges)
+                || matches!(spec, ChamferSpec::Unresolved { .. })
+                || flip_direction.is_none() =>
+            {
+                "chamfer"
+            }
+            FeatureDefinition::Fillet { edges, radius }
+                if edge_selection_is_opaque(edges)
+                    || matches!(radius, RadiusSpec::Unresolved { .. }) =>
+            {
+                "fillet"
+            }
+            FeatureDefinition::FaceBlend {
+                first_faces,
+                second_faces,
+                radius,
+            } if face_selection_is_opaque(first_faces)
+                || face_selection_is_opaque(second_faces)
+                || matches!(radius, RadiusSpec::Unresolved { .. }) =>
+            {
+                "face blend"
+            }
+            FeatureDefinition::SewBodies {
+                bodies,
+                gap_tolerance,
+            } if body_selection_is_opaque(bodies) || gap_tolerance.is_none() => "sew bodies",
+            FeatureDefinition::TrimBodies {
+                targets,
+                tools,
+                keep,
+            } if body_selection_is_opaque(targets)
+                || body_selection_is_opaque(tools)
+                || matches!(keep, BodyTrimSide::Unresolved) =>
+            {
+                "trim bodies"
+            }
+            FeatureDefinition::Extrude {
+                profile,
+                extent,
+                op,
+                ..
+            } if profile_ref_is_opaque(profile)
+                || matches!(extent, Extent::Unresolved)
+                || matches!(op, BooleanOp::Unresolved) =>
+            {
+                "extrude"
+            }
+            FeatureDefinition::OffsetSurface { faces, distance }
+                if face_selection_is_opaque(faces) || distance.is_none() =>
+            {
+                "offset surface"
+            }
+            FeatureDefinition::Thicken {
+                faces,
+                thickness,
+                side,
+            } if face_selection_is_opaque(faces) || thickness.is_none() || side.is_none() => {
+                "thicken"
+            }
+            FeatureDefinition::Pattern { seeds, pattern }
+                if seeds.is_empty() || matches!(pattern, PatternKind::Unresolved { .. }) =>
+            {
+                "pattern"
+            }
+            FeatureDefinition::Combine { target, tools, op }
+                if body_selection_is_opaque(target)
+                    || body_selection_is_opaque(tools)
+                    || matches!(op, BooleanOp::Unresolved) =>
+            {
+                "body combine"
+            }
+            _ => continue,
+        };
+        *incomplete_feature_families.entry(family).or_default() += 1;
+    }
+    if !incomplete_feature_families.is_empty() {
+        let families = incomplete_feature_families
+            .into_iter()
+            .map(|(family, count)| format!("{family} ({count})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "NX feature families were transferred as typed neutral operations, but required \
+                 construction fields remain unresolved or native-only: {families}."
+            ),
+            provenance: None,
+        });
+    }
+
     let sketch_feature_count = ir
         .model
         .features
@@ -7205,6 +7372,35 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             provenance: None,
         });
     }
+}
+
+fn body_selection_is_opaque(selection: &BodySelection) -> bool {
+    matches!(
+        selection,
+        BodySelection::Unresolved | BodySelection::Native(_)
+    )
+}
+
+fn face_selection_is_opaque(selection: &FaceSelection) -> bool {
+    matches!(
+        selection,
+        FaceSelection::Unresolved | FaceSelection::Native(_)
+    )
+}
+
+fn edge_selection_is_opaque(selection: &EdgeSelection) -> bool {
+    matches!(
+        selection,
+        EdgeSelection::Unresolved | EdgeSelection::Native(_)
+    )
+}
+
+fn profile_ref_is_opaque(profile: &ProfileRef) -> bool {
+    matches!(profile, ProfileRef::Unresolved | ProfileRef::Native(_))
+}
+
+fn path_ref_is_opaque(path: &PathRef) -> bool {
+    matches!(path, PathRef::Unresolved | PathRef::Native(_))
 }
 
 fn attach_native_object_model(
