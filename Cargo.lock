@@ -251,21 +251,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cadmpeg-harness"
-version = "0.2.0"
-dependencies = [
- "cadmpeg-codec-catia",
- "cadmpeg-codec-creo",
- "cadmpeg-codec-f3d",
- "cadmpeg-codec-nx",
- "cadmpeg-codec-rhino",
- "cadmpeg-codec-sldprt",
- "cadmpeg-ir",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "cadmpeg-ir"
 version = "0.2.0"
 dependencies = [

@@ -128,8 +128,7 @@ pub struct Block {
     pub ps_stream_offsets: Vec<usize>,
     /// Content-addressed identity of the retained block payload.
     pub retained_digest: Option<String>,
-    /// Whether `retained_digest` records only a digest because salvage-mode
-    /// retained-byte accounting exhausted its allowance.
+    /// Whether only a digest was retained because salvage mode exhausted its byte allowance.
     pub retention_degraded: bool,
 }
 

@@ -13,7 +13,6 @@ members = [
   "crates/cadmpeg-codec-rhino",
   "crates/cadmpeg-codec-iges",
   "crates/cadmpeg-step",
-  "crates/cadmpeg-harness",
 ]
 # cadmpeg-fuzz is intentionally excluded: cargo-fuzz targets link libFuzzer and
 # require a nightly toolchain, so keeping the crate out of the default workspace

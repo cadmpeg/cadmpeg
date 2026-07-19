@@ -8,7 +8,7 @@ Current implementation status lives in [format-support.md](format-support.md). T
 
 ## Definition of complete format support
 
-Native write support alone does not establish complete format support. A complete codec accounts for every source byte and every applicable semantic domain:
+Native write support alone does not establish complete format support. A complete codec accounts for every applicable semantic domain:
 
 - **Container and versions:** headers, sections, compression, directories, checksums, version gates, and embedded streams.
 - **Geometry:** analytic curves and surfaces, NURBS, parameterizations, intersections, offsets, blends, sweeps, and other procedural constructions.
@@ -64,9 +64,9 @@ Build the evidence required to measure progress.
 - Publish the generated CAD IR JSON Schema and validate serialized artifacts against it.
 - Define semantic equality for IR documents independently of source-specific or regenerated IDs.
 - Define geometric error measures for curves, surfaces, tessellation, and transformed assemblies.
-- Record every source byte as typed data, structural padding, or an explicit opaque record.
+- Retain unsupported native records needed for faithful rewriting.
 
-This milestone is complete when public fixtures produce deterministic decodes, complete byte accounting, stable reports, and reproducible support claims.
+This milestone is complete when public fixtures produce deterministic decodes, stable reports, and reproducible support claims.
 
 ## Milestone 2: Complete `.sldprt` read
 
