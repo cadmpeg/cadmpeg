@@ -1823,6 +1823,33 @@ mod history_reference_tests {
             Some(FeatureTreeNodeRole::DirectionalLight)
         );
 
+        let legacy_roster = |node: &Feature| {
+            let mut roster = vec![node.clone()];
+            for (source, class) in [
+                ("6", "moOriginProfileFeature_c"),
+                ("9", "moSurfaceBodyFolder_c"),
+                ("10", "moSolidBodyFolder_c"),
+                ("12", "moDocsFolder_c"),
+                ("13", "moCommentsFolder_c"),
+            ] {
+                let mut sentinel = feature("sentinel", Some(source), roster.len() as u32);
+                sentinel.input_class = Some(class.into());
+                roster.push(sentinel);
+            }
+            roster
+        };
+        for (source, expected) in [
+            ("2", FeatureTreeNodeRole::LightsAndCameras),
+            ("7", FeatureTreeNodeRole::AmbientLight),
+            ("8", FeatureTreeNodeRole::DirectionalLight),
+        ] {
+            let node = feature("legacy", Some(source), 0);
+            assert_eq!(
+                feature_tree_node_role(&node, &legacy_roster(&node)),
+                Some(expected)
+            );
+        }
+
         let ambiguous = feature("node", Some("99"), 0);
         assert_eq!(feature_tree_node_role(&ambiguous, &[]), None);
 
@@ -3378,30 +3405,46 @@ fn reserved_feature_tree_node_role(
     feature: &Feature,
     history_features: &[Feature],
 ) -> Option<FeatureTreeNodeRole> {
-    if !builtin_feature_manager_roster(history_features) || !classless_builtin_node(feature) {
+    let layout = feature_manager_layout(history_features)?;
+    if !classless_builtin_node(feature) {
         return None;
     }
     let source = feature.source_id.as_deref()?;
-    match (feature.xml_tag.as_str(), source) {
-        (tag, "1") if tag.eq_ignore_ascii_case("Feature") => Some(FeatureTreeNodeRole::Annotations),
-        (tag, "5") if tag.eq_ignore_ascii_case("Sketch") => Some(FeatureTreeNodeRole::ModelOrigin),
-        (tag, "6") if tag.eq_ignore_ascii_case("Feature") => {
+    match (layout, feature.xml_tag.as_str(), source) {
+        (FeatureManagerLayout::Current, tag, "1") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::Annotations)
+        }
+        (FeatureManagerLayout::Current, tag, "5") if tag.eq_ignore_ascii_case("Sketch") => {
+            Some(FeatureTreeNodeRole::ModelOrigin)
+        }
+        (FeatureManagerLayout::Current, tag, "6") if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::LightsAndCameras)
         }
-        (tag, "12") if tag.eq_ignore_ascii_case("Feature") => {
+        (FeatureManagerLayout::Current, tag, "12") if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::AmbientLight)
         }
-        (tag, "13" | "14" | "15") if tag.eq_ignore_ascii_case("Feature") => {
-            Some(FeatureTreeNodeRole::DirectionalLight)
-        }
-        (tag, _)
-            if tag.eq_ignore_ascii_case("Feature")
-                && repeated_directional_light(feature, history_features) =>
+        (FeatureManagerLayout::Current, tag, "13" | "14" | "15")
+            if tag.eq_ignore_ascii_case("Feature") =>
         {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
-        (_, "-1") if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::SheetMetal),
-        (_, _) if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::ExplodedViews),
+        (FeatureManagerLayout::Legacy, tag, "2") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        }
+        (FeatureManagerLayout::Legacy, tag, "7") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::AmbientLight)
+        }
+        (FeatureManagerLayout::Legacy, tag, "8") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        }
+        (_, tag, _)
+            if tag.eq_ignore_ascii_case("Feature")
+                && repeated_directional_light(feature, history_features, layout) =>
+        {
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        }
+        (_, _, "-1") if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::SheetMetal),
+        (_, _, _) if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::ExplodedViews),
         _ => None,
     }
 }
@@ -3415,39 +3458,68 @@ fn classless_builtin_node(feature: &Feature) -> bool {
         && feature.content.is_empty()
 }
 
-fn builtin_feature_manager_roster(features: &[Feature]) -> bool {
-    [
+#[derive(Clone, Copy)]
+enum FeatureManagerLayout {
+    Legacy,
+    Current,
+}
+
+fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> {
+    let matches_roster = |roster: &[(&str, &str)]| {
+        roster.iter().all(|(source, class)| {
+            let mut matches = features.iter().filter(|feature| {
+                feature.source_id.as_deref() == Some(*source)
+                    && feature.input_class.as_deref() == Some(*class)
+            });
+            matches.next().is_some() && matches.next().is_none()
+        })
+    };
+    let legacy = matches_roster(&[
+        ("6", "moOriginProfileFeature_c"),
+        ("9", "moSurfaceBodyFolder_c"),
+        ("10", "moSolidBodyFolder_c"),
+        ("12", "moDocsFolder_c"),
+        ("13", "moCommentsFolder_c"),
+    ]);
+    let current = matches_roster(&[
         ("7", "moDocsFolder_c"),
         ("8", "moCommentsFolder_c"),
         ("9", "moSolidBodyFolder_c"),
         ("10", "moSurfaceBodyFolder_c"),
-    ]
-    .into_iter()
-    .all(|(source, class)| {
-        let mut matches = features.iter().filter(|feature| {
-            feature.source_id.as_deref() == Some(source)
-                && feature.input_class.as_deref() == Some(class)
-        });
-        matches.next().is_some() && matches.next().is_none()
-    })
+    ]);
+    match (legacy, current) {
+        (true, false) => Some(FeatureManagerLayout::Legacy),
+        (false, true) => Some(FeatureManagerLayout::Current),
+        _ => None,
+    }
 }
 
-fn repeated_directional_light(feature: &Feature, features: &[Feature]) -> bool {
+fn repeated_directional_light(
+    feature: &Feature,
+    features: &[Feature],
+    layout: FeatureManagerLayout,
+) -> bool {
+    let first_source_id = match layout {
+        FeatureManagerLayout::Legacy => 8,
+        FeatureManagerLayout::Current => 13,
+    };
     let source = feature
         .source_id
         .as_deref()
         .and_then(|source| source.parse::<u32>().ok());
-    let Some(source) = source.filter(|source| *source >= 13) else {
+    let Some(source) = source.filter(|source| *source >= first_source_id) else {
         return false;
     };
+    let first_source = first_source_id.to_string();
     let Some(first) = features.iter().find(|candidate| {
-        candidate.source_id.as_deref() == Some("13") && classless_builtin_node(candidate)
+        candidate.source_id.as_deref() == Some(first_source.as_str())
+            && classless_builtin_node(candidate)
     }) else {
         return false;
     };
     !first.kind.is_empty()
         && feature.kind == first.kind
-        && (13..=source).all(|source| {
+        && (first_source_id..=source).all(|source| {
             let source = source.to_string();
             let mut matches = features.iter().filter(|candidate| {
                 candidate.source_id.as_deref() == Some(source.as_str())
