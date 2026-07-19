@@ -449,12 +449,12 @@ mod marker_tests {
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
         plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        revolution_line_reference_inputs, sketch_block_identity_normalization_origin,
-        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_SKETCH_MARKER,
-        NAME_MARKER, SCALAR_HEADER,
+        revolution_line_reference_inputs, revolution_operation,
+        sketch_block_identity_normalization_origin, sketch_block_record_origin,
+        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate, BooleanOp,
+        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -3390,6 +3390,23 @@ mod marker_tests {
                 Point3::new(12.0, -34.0, 56.0),
                 Vector3::new(0.0, 1.0, 0.0)
             ))
+        );
+    }
+
+    #[test]
+    fn revolution_form_words_distinguish_new_body_and_join() {
+        assert_eq!(
+            revolution_operation(Some("moRevolution_c"), 6),
+            Some(BooleanOp::NewBody)
+        );
+        assert_eq!(
+            revolution_operation(Some("moRevolution_c"), 8),
+            Some(BooleanOp::Join)
+        );
+        assert_eq!(revolution_operation(Some("moRevolution_c"), 7), None);
+        assert_eq!(
+            revolution_operation(Some("moRevCut_c"), 13),
+            Some(BooleanOp::Cut)
         );
     }
 }
@@ -9021,6 +9038,56 @@ fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> O
             .try_into()
             .ok()?,
     ))
+}
+
+fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
+    match (class, code) {
+        (Some("moRevolution_c"), 6) => Some(BooleanOp::NewBody),
+        (Some("moRevolution_c"), 8) => Some(BooleanOp::Join),
+        (Some("moRevCut_c"), _) => Some(BooleanOp::Cut),
+        _ => None,
+    }
+}
+
+/// Project revolution Boolean form words from declared and compact objects.
+pub(crate) fn bind_revolution_operations(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        let FeatureDefinition::Revolve { op, .. } = &mut feature.definition else {
+            continue;
+        };
+        if *op != BooleanOp::Unresolved {
+            continue;
+        }
+        let Some(history) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| history_features.get(native).copied())
+        else {
+            continue;
+        };
+        let mut operations = lanes.iter().filter_map(|lane| {
+            let name = feature_object_name(history, lane)?;
+            revolution_operation(
+                history.input_class.as_deref(),
+                feature_operation_code(lane, name)?,
+            )
+        });
+        let Some(first) = operations.next() else {
+            continue;
+        };
+        if operations.all(|operation| operation == first) {
+            *op = first;
+        }
+    }
 }
 
 /// Project compact solid-sweep Boolean operation discriminators.

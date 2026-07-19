@@ -1521,6 +1521,7 @@ fn build_geometry_ir(
     ir.model.spatial_sketches = spatial_sketches;
     ir.model.spatial_sketch_entities = spatial_sketch_entities;
     crate::resolved_features::bind_extrusion_operations(&mut ir.model.features, &histories, &lanes);
+    crate::resolved_features::bind_revolution_operations(&mut ir.model.features, &histories, &lanes);
     crate::resolved_features::bind_sweep_operations(&mut ir.model.features, &histories, &lanes);
     crate::pmi::apply_to_parameters(
         &mut ir.model.parameters,

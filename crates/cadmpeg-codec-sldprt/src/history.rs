@@ -6513,6 +6513,11 @@ pub(crate) fn project_configuration_design_states(
             scoped_lanes,
         );
         crate::resolved_features::bind_extrusion_operations(&mut features, histories, scoped_lanes);
+        crate::resolved_features::bind_revolution_operations(
+            &mut features,
+            histories,
+            scoped_lanes,
+        );
         crate::resolved_features::bind_sweep_operations(&mut features, histories, scoped_lanes);
         crate::resolved_features::bind_sweep_adjacent_profiles(
             &mut features,
@@ -7104,6 +7109,11 @@ fn project_features_with_native_inputs(
         &native.feature_input_lanes,
     );
     crate::resolved_features::project_adjacent_extrusion_profiles(
+        &mut features,
+        &histories,
+        &native.feature_input_lanes,
+    );
+    crate::resolved_features::bind_revolution_operations(
         &mut features,
         &histories,
         &native.feature_input_lanes,
