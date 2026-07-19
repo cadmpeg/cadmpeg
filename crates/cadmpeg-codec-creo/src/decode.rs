@@ -23873,7 +23873,7 @@ fn transfer_native_brep(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     derived_intersection_curves: &BTreeSet<CurveId>,
-) {
+) -> usize {
     let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
     let face_orientations = native_face_orientations(scan, ir);
@@ -23888,6 +23888,26 @@ fn transfer_native_brep(
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
     let solved_vertices = solved_topological_vertices(scan, &carriers);
+    for (vertex_id, position) in &solved_vertices {
+        let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
+        if ir.model.points.iter().any(|point| point.id == point_id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &point_id,
+            "VisibGeom",
+            0,
+            "carrier_intersection_point",
+            Exactness::Derived,
+        );
+        ir.model.points.push(Point {
+            id: point_id,
+            position: Point3::new(position[0], position[1], position[2]),
+            source_object: None,
+        });
+    }
+    let solved_point_count = solved_vertices.len();
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
         .pcurves
@@ -23966,7 +23986,7 @@ fn transfer_native_brep(
         })
         .collect::<BTreeMap<_, _>>();
     if eligible_faces.is_empty() {
-        return;
+        return solved_point_count;
     }
     let eligible_loops = eligible_faces
         .values()
@@ -24019,15 +24039,6 @@ fn transfer_native_brep(
         if ir.model.vertices.iter().any(|item| item.id == vertex) {
             continue;
         }
-        let position = solved_vertices[&vertex_id];
-        annotate(
-            annotations,
-            &point_id,
-            "VisibGeom",
-            0,
-            "plane_intersection_point",
-            Exactness::Derived,
-        );
         annotate(
             annotations,
             &vertex,
@@ -24036,11 +24047,6 @@ fn transfer_native_brep(
             "topological_vertex_orbit",
             Exactness::Derived,
         );
-        ir.model.points.push(Point {
-            id: point_id.clone(),
-            position: Point3::new(position[0], position[1], position[2]),
-            source_object: None,
-        });
         ir.model.vertices.push(Vertex {
             id: vertex,
             point: point_id,
@@ -24482,6 +24488,7 @@ fn transfer_native_brep(
             }
         }
     }
+    solved_point_count
 }
 
 fn transfer_cap_pair_cylinders(
@@ -27944,7 +27951,7 @@ fn build_ir(
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
     let derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
-    transfer_native_brep(
+    let carrier_intersection_point_count = transfer_native_brep(
         scan,
         &mut ir,
         &mut annotations,
@@ -28004,6 +28011,10 @@ fn build_ir(
         source.attributes.insert(
             "transferred_saved_spline_curve_count".to_string(),
             saved_spline_curve_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_carrier_intersection_point_count".to_string(),
+            carrier_intersection_point_count.to_string(),
         );
         source.attributes.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -29669,6 +29680,27 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             message: format!(
                 "Transferred {} elliptical reference carrier(s) from MdlRefInfo conic rows whose frame, coefficient radii, and antipodal endpoints satisfy one ellipse equation; the source conic records remain byte-exact native records.",
                 scan.reference_ellipses.len()
+            ),
+            provenance: None,
+        });
+    }
+
+    let carrier_intersection_point_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("transferred_carrier_intersection_point_count")
+        })
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
+    if !container_only && carrier_intersection_point_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {carrier_intersection_point_count} exact model-space point(s) for native topological vertex orbits from unique intersections of every incident placed carrier."
             ),
             provenance: None,
         });

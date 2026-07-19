@@ -1011,6 +1011,10 @@ orbits select one circle when exactly one candidate contains both endpoints.
 Equal radii produce the single equatorial circle.
 Intersecting every candidate circle with an additional incident plane supplies
 a topological vertex only when all carrier intersections reduce to one point.
+That unique model-space intersection is a neutral point independently of
+whether every edge and face in its native B-rep component is evaluable. It is
+also a neutral topological vertex only when an emitted edge uses its half-edge
+orbit.
 
 For a native edge on a derived intersection-line carrier, the oriented start
 vertex is the carrier origin and the unit vector from start to end is its
