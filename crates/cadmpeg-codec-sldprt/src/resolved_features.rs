@@ -5793,6 +5793,69 @@ pub(crate) fn enrich_history_reference_planes(
     }
 }
 
+/// Resolve sketch-block instance ownership from adjacent typed object records.
+pub(crate) fn enrich_history_sketch_block_references(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    for history in histories {
+        let mut by_source = HashMap::<u32, Option<(usize, NativeClassKind)>>::new();
+        for (feature_index, feature) in history.features.iter().enumerate() {
+            let Some(source) = feature
+                .source_id
+                .as_deref()
+                .and_then(|value| value.parse::<u32>().ok())
+            else {
+                continue;
+            };
+            let identity = (
+                feature_index,
+                native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind,
+            );
+            by_source
+                .entry(source)
+                .and_modify(|entry| *entry = None)
+                .or_insert(Some(identity));
+        }
+        let mut candidates = HashMap::<usize, Vec<u32>>::new();
+        for lane in lanes {
+            let mut names = lane.names.iter().collect::<Vec<_>>();
+            names.sort_by_key(|name| name.offset);
+            for pair in names.windows(2) {
+                let (Some(instance_source), Some(definition_source)) =
+                    (pair[0].object_id, pair[1].object_id)
+                else {
+                    continue;
+                };
+                let Some((instance_index, NativeClassKind::SketchBlockInstance)) =
+                    by_source.get(&instance_source).and_then(|entry| *entry)
+                else {
+                    continue;
+                };
+                let Some((_, NativeClassKind::SketchBlockDefinition)) =
+                    by_source.get(&definition_source).and_then(|entry| *entry)
+                else {
+                    continue;
+                };
+                candidates
+                    .entry(instance_index)
+                    .or_default()
+                    .push(definition_source);
+            }
+        }
+        for (feature_index, mut sources) in candidates {
+            sources.sort_unstable();
+            sources.dedup();
+            let [source] = sources.as_slice() else {
+                continue;
+            };
+            history.features[feature_index]
+                .properties
+                .insert("BlockDefinition".into(), source.to_string());
+        }
+    }
+}
+
 /// Add the two serialized construction-plane operands to plane-intersection axes.
 pub(crate) fn enrich_history_reference_axes(
     histories: &mut [crate::records::FeatureHistory],

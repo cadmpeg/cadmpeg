@@ -39,6 +39,7 @@ const FEATURE_REFERENCE_PROPERTIES: &[&str] = &[
     "ParentFeatures",
     "Planes",
     "DissectableChildren",
+    "BlockDefinition",
 ];
 
 pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<FeatureHistory> {
@@ -1816,6 +1817,51 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
+        let mut instance = feature("instance", Some("25"), 1);
+        instance.input_class = Some("moSketchBlockInst_c".into());
+        let mut definition = feature("definition", Some("23"), 0);
+        definition.input_class = Some("moSketchBlockDef_c".into());
+        let mut histories = vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![definition, instance],
+        }];
+        let mut lane = feature_input_lane("lane", None);
+        lane.names = vec![
+            crate::records::FeatureInputName {
+                id: "instance-name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 100,
+                object_id: Some(25),
+                value: "instance".into(),
+            },
+            crate::records::FeatureInputName {
+                id: "definition-name".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 140,
+                object_id: Some(23),
+                value: "definition".into(),
+            },
+        ];
+
+        crate::resolved_features::enrich_history_sketch_block_references(&mut histories, &[lane]);
+
+        assert_eq!(
+            histories[0].features[1]
+                .properties
+                .get("BlockDefinition")
+                .map(String::as_str),
+            Some("23")
+        );
+    }
+
+    #[test]
     fn principal_plane_requires_the_reference_plane_native_class() {
         let mut plane = feature("plane", Some("2"), 0);
         assert_eq!(principal_plane(&plane), None);
@@ -3108,7 +3154,10 @@ fn project_definition(
     }
     if class == Some(FeatureClass::SketchBlockInstance) {
         return FeatureDefinition::SketchBlockInstance {
-            block: None,
+            block: feature
+                .properties
+                .get("BlockDefinition")
+                .and_then(|source| by_source.get(source.as_str()).cloned()),
             placement: None,
         };
     }
@@ -5633,6 +5682,10 @@ pub(crate) fn project_configuration_design_states(
         );
         crate::resolved_features::enrich_history_combine_selections(&mut projection, scoped_lanes);
         crate::resolved_features::enrich_history_sweep_paths(&mut projection, scoped_lanes);
+        crate::resolved_features::enrich_history_sketch_block_references(
+            &mut projection,
+            scoped_lanes,
+        );
         crate::resolved_features::enrich_history_parameters(&mut projection, scoped_lanes, true);
         crate::resolved_features::enrich_history_reference_planes(&mut projection, scoped_lanes);
         crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
@@ -6183,6 +6236,10 @@ fn project_features_with_native_inputs(
         &native.feature_input_lanes,
     );
     crate::resolved_features::enrich_history_sweep_paths(
+        &mut histories,
+        &native.feature_input_lanes,
+    );
+    crate::resolved_features::enrich_history_sketch_block_references(
         &mut histories,
         &native.feature_input_lanes,
     );
@@ -7562,6 +7619,15 @@ pub fn sync_neutral_features(
                 .map(|source| (feature.id.clone(), source.clone()))
         })
         .collect::<HashMap<_, _>>();
+    let feature_sources = features
+        .iter()
+        .filter_map(|feature| {
+            Some((
+                &feature.id,
+                record_sources.get(feature.native_ref.as_ref()?)?.as_str(),
+            ))
+        })
+        .collect::<HashMap<_, _>>();
     let sketch_sources = features
         .iter()
         .filter_map(|feature| match &feature.definition {
@@ -7641,7 +7707,14 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::SketchBlockInstance { block, placement } => {
-                if block.is_some() || placement.is_some() {
+                let retained_source = existing
+                    .as_deref()
+                    .and_then(|record| record.properties.get("BlockDefinition"))
+                    .map(String::as_str);
+                let block_source = block
+                    .as_ref()
+                    .and_then(|block| feature_sources.get(block).copied());
+                if retained_source != block_source || placement.is_some() {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes sketch-block instance semantics",
                         feature.id
