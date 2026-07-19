@@ -16841,10 +16841,13 @@ fn parse_face_operand(
         offsets.push(offset);
         position = offset.checked_add(11)?;
     }
-    offsets.push(match next_byte_offset {
-        Some(offset) => usize::try_from(offset).ok()?,
-        None => next_indexed_record_offset(bytes, position)?,
-    });
+    let immediate_next = next_indexed_record_offset(bytes, position)?;
+    if let Some(limit) = next_byte_offset {
+        if immediate_next > usize::try_from(limit).ok()? {
+            return None;
+        }
+    }
+    offsets.push(immediate_next);
     let mut indexed = Vec::with_capacity(offsets.len());
     for offset in &offsets {
         let (class_tag, after_tag) = lp_ascii(bytes, *offset)?;
@@ -25540,6 +25543,19 @@ mod relation_tests {
         assert_eq!(operand.recipe_nodes[0].program, [-1, -1, 2, 7]);
         assert_eq!(operand.next_record_index, 104);
         assert_eq!(operand.next_byte_offset, face_next_at);
+        let enclosing_limit = header(&mut face_bytes, *b"306", 105);
+        let bounded = parse_face_operand(
+            &face_bytes,
+            &face_scope,
+            0,
+            None,
+            Some(enclosing_limit),
+            &record,
+            std::slice::from_ref(&face_recipe),
+        )
+        .expect("face recipe bounded before its enclosing member limit");
+        assert_eq!(bounded.next_record_index, 104);
+        assert_eq!(bounded.next_byte_offset, face_next_at);
 
         let mut compact_bytes = Vec::new();
         header(&mut compact_bytes, *b"306", 100);

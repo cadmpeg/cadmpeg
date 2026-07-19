@@ -716,11 +716,18 @@ pub(crate) fn bind_face_operand_history_candidates(
         );
         operand.resolved_face_slots = match scope.direct_face_operation {
             Some(crate::records::DesignDirectFaceOperation::OffsetFaces { .. }) => {
-                resolve_direct_face_recipe_clauses(
+                let direct = resolve_direct_face_recipe_clauses(
                     &operand.recipe_references,
                     topology,
                     &changed_faces,
-                )
+                );
+                if direct.is_empty() {
+                    crate::design::resolve_face_operand_history_candidates(operand)
+                        .into_iter()
+                        .collect()
+                } else {
+                    direct
+                }
             }
             _ => crate::design::resolve_face_operand_history_candidates(operand)
                 .into_iter()
