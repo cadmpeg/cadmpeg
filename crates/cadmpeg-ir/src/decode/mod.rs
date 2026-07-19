@@ -21,7 +21,7 @@ mod tests;
 pub use arena::DecodeArena;
 pub use context::{
     DecodeContext, DepthGuard, DerivedKind, DerivedWriter, ExactVec, ExpandSpec, ExpandWriter,
-    GrowVec, RecordDisposition, RecordKind, RecordTicket,
+    GrowVec,
 };
 pub use error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,

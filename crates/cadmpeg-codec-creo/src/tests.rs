@@ -1378,7 +1378,7 @@ fn decode_transfers_closed_plane_intersection_brep() {
 }
 
 #[test]
-fn decode_passes_transfer_accounting_in_strict_mode() {
+fn generated_model_decodes_in_strict_and_salvage_modes() {
     let mut payload = b"srf_array\0\xf8\x04".to_vec();
     push_generated_plane_row(
         &mut payload,
@@ -1458,7 +1458,7 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
     };
     let result = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &strict)
-        .expect("strict decode passes transfer accounting");
+        .expect("strict decode");
     assert_eq!(result.ir.model.surfaces.len(), 5);
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert_eq!(result.ir.model.features.len(), 1);
@@ -1474,7 +1474,7 @@ fn decode_passes_transfer_accounting_in_strict_mode() {
 
     CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("salvage decode passes transfer accounting");
+        .expect("salvage decode");
 }
 
 #[test]

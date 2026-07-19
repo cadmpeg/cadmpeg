@@ -90,15 +90,9 @@ pub enum StrictConsequence {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum LossCode {
-    /// A committed record's transfer disposition failed accounting validation
-    /// against the ledger, native unknowns, or the report's losses.
-    TransferAccounting,
     /// Opaque retention degraded from recoverable to accounted because the
     /// retained-byte budget was exhausted in salvage mode.
     RetentionDegraded,
-    /// A committed record was never resolved and was auto-dropped in salvage
-    /// mode; the source span is accounted but not typed.
-    UnresolvedRecordDropped,
     /// Container-only decode was requested; entity decode was not attempted.
     ContainerOnly,
     /// No geometry stream was located in the container, so no B-rep could be
@@ -191,9 +185,7 @@ impl LossCode {
     /// The stable `snake_case` identifier, matching the serialized form.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::TransferAccounting => "transfer_accounting",
             Self::RetentionDegraded => "retention_degraded",
-            Self::UnresolvedRecordDropped => "unresolved_record_dropped",
             Self::ContainerOnly => "container_only",
             Self::MissingGeometryStream => "missing_geometry_stream",
             Self::TopologyNotTransferred => "topology_not_transferred",
@@ -502,6 +494,5 @@ mod tests {
         );
         assert!(LossCode::PassthroughRecordOmitted.reversible());
         assert!(!LossCode::RetentionDegraded.reversible());
-        assert!(!LossCode::UnresolvedRecordDropped.reversible());
     }
 }

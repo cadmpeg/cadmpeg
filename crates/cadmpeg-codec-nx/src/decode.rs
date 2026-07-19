@@ -13,9 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{
-    DecodeContext, DecodeMode, RecordDisposition, RecordKind, SourceLocation, View,
-};
+use cadmpeg_ir::decode::{DecodeContext, DecodeMode, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -94,24 +92,23 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecEr
 /// decode successfully with no geometry, including an assembly whose geometry
 /// resides in external child parts.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
-    let source = root.location();
     let scan = scan(ctx, root)?;
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let mut report = build_container_report(&scan, true);
-        issue_stream_tickets(ctx, source, &scan, &ir, &mut report);
+        report_untransferred_streams(&scan, &mut report);
         return decode_result(ir, report, annotations, &unknowns, &scan);
     }
 
-    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(ctx, source, &scan) {
+    if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
         enforce_strict(ctx.mode(), &report)?;
         return decode_result(ir, report, annotations, &unknowns, &scan);
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
-    issue_stream_tickets(ctx, source, &scan, &ir, &mut report);
+    report_untransferred_streams(&scan, &mut report);
     enforce_strict(ctx.mode(), &report)?;
     decode_result(ir, report, annotations, &unknowns, &scan)
 }
@@ -158,55 +155,13 @@ fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecEr
     )))
 }
 
-/// Account for each inflated stream consumed by the decode.
-fn issue_stream_tickets(
-    ctx: &DecodeContext<'_>,
-    source: SourceLocation,
-    scan: &Scan,
-    ir: &CadIr,
-    report: &mut DecodeReport,
-) {
-    let mut outputs_by_stream = stream_output_buckets(ir);
-    for (si, stream) in scan.streams.iter().enumerate() {
-        let location = SourceLocation {
-            space: source.space,
-            offset: stream.file_offset as u64,
-        };
-        let ticket = ctx.commit_record(location, RecordKind(stream.kind.label()));
-        let outputs = outputs_by_stream.remove(&si).unwrap_or_default();
-        if !outputs.is_empty() {
-            ctx.resolve(ticket, RecordDisposition::Typed { outputs });
-        } else if stream.kind.is_parasolid() {
-            ctx.resolve(ticket, RecordDisposition::Structural);
-        } else {
-            let loss = stream_drop_note(si, stream);
-            report.losses.push(loss.clone());
-            ctx.resolve(ticket, RecordDisposition::Dropped { loss });
+/// Reports classified streams that produced no transferable representation.
+fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
+    for (index, stream) in scan.streams.iter().enumerate() {
+        if !stream.kind.is_parasolid() {
+            report.losses.push(stream_drop_note(index, stream));
         }
     }
-}
-
-/// Bucket every surviving IR model entity id by the stream index encoded in its
-/// `nx:s{index}:` prefix, in one linear pass over the model. Read after pruning,
-/// so every id resolves in the model and a `Typed` disposition never names an
-/// absent entity. Ids without the stream prefix are ignored.
-fn stream_output_buckets(ir: &CadIr) -> std::collections::HashMap<usize, Vec<String>> {
-    let mut buckets: std::collections::HashMap<usize, Vec<String>> =
-        std::collections::HashMap::new();
-    for id in ir.model.entity_ids() {
-        if let Some(index) = parse_stream_index(&id) {
-            buckets.entry(index).or_default().push(id);
-        }
-    }
-    buckets
-}
-
-/// Parse the stream index `N` from an id of the form `nx:s{N}:...`; `None` for
-/// any id that does not carry the stream-scoped prefix.
-fn parse_stream_index(id: &str) -> Option<usize> {
-    let rest = id.strip_prefix("nx:s")?;
-    let end = rest.find(':')?;
-    rest[..end].parse().ok()
 }
 
 /// The accountable loss note for a non-Parasolid stream that produced no
@@ -267,8 +222,6 @@ impl Counts {
 /// Decode analytic carriers from every Parasolid stream. Returns `None` when no
 /// carrier of any kind passes its gate, so the caller falls back to metadata.
 fn try_decode_geometry(
-    ctx: &DecodeContext<'_>,
-    source: SourceLocation,
     scan: &Scan,
 ) -> Option<(
     CadIr,
@@ -676,7 +629,7 @@ fn try_decode_geometry(
     let mut annotations = annotations.build();
     retain_live_annotations(&ir, &unknowns, &mut annotations);
     let mut report = build_geometry_report(scan, &counts, !ir.model.faces.is_empty());
-    issue_stream_tickets(ctx, source, scan, &ir, &mut report);
+    report_untransferred_streams(scan, &mut report);
     Some((ir, report, annotations, unknowns))
 }
 

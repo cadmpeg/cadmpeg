@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Monotonic decode state, charging, and session lifecycle.
 
-use std::cell::{Cell, RefCell};
-use std::collections::BTreeSet;
+use std::cell::Cell;
 
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
-use crate::document::Model;
 use crate::report::{LossCategory, LossCode, LossNote, Severity};
 
 use super::arena::DecodeArena;
@@ -39,7 +37,6 @@ pub struct DecodeContext<'a> {
     container_only: bool,
     budget: BudgetCells,
     spaces: SpaceRegistry,
-    tickets: TicketTable,
     retained: RetainedStore,
     fuse: Cell<Option<ResourceLimit>>,
 }
@@ -118,7 +115,6 @@ impl<'a> DecodeContext<'a> {
             container_only: false,
             budget,
             spaces,
-            tickets: TicketTable::default(),
             retained: RetainedStore::default(),
             fuse: Cell::new(None),
         };
@@ -614,32 +610,6 @@ impl<'a> DecodeContext<'a> {
         })
     }
 
-    // --- records ------------------------------------------------------------
-
-    /// Registers a committed record for disposition accounting, returning a
-    /// ticket that must be resolved before the decode finishes.
-    pub fn commit_record(&self, location: SourceLocation, kind: RecordKind) -> RecordTicket {
-        let mut entries = self.tickets.entries.borrow_mut();
-        let index = entries.len();
-        entries.push(TicketState {
-            kind,
-            location,
-            disposition: None,
-        });
-        RecordTicket { index }
-    }
-
-    /// Resolves a committed record's ticket with its final disposition.
-    #[expect(
-        clippy::needless_pass_by_value,
-        reason = "resolve consumes the ticket so a record cannot be resolved twice"
-    )]
-    pub fn resolve(&self, ticket: RecordTicket, disposition: RecordDisposition) {
-        if let Some(state) = self.tickets.entries.borrow_mut().get_mut(ticket.index) {
-            state.disposition = Some(disposition);
-        }
-    }
-
     // --- lifecycle ----------------------------------------------------------
 
     /// Closes an inspection, returning a fused resource error even when codec
@@ -654,28 +624,8 @@ impl<'a> DecodeContext<'a> {
         result
     }
 
-    /// Closes the decode, enforcing the session invariants.
-    ///
-    /// A fused context cannot return `Ok`: the original resource error is
-    /// returned even if intermediate code swallowed it through `Option`
-    /// chains. On success, every committed ticket must be resolved; an
-    /// unresolved ticket is a contract error in strict mode. In salvage mode
-    /// each unresolved ticket is resolved as [`RecordDisposition::Dropped`]
-    /// and its [`LossNote`] is appended to the result's report, so the
-    /// omission stays an accountable outcome.
-    ///
-    /// Transfer accounting then validates the resolved disposition table: a
-    /// [`RecordDisposition::Typed`]
-    /// must name at least one output entity, a [`RecordDisposition::Retained`]
-    /// must name at least one retained record and every named record must
-    /// resolve in the retained store, a [`RecordDisposition::Preserved`] must
-    /// name at least one unknown record and every named record must resolve in
-    /// the document's native unknowns, and a [`RecordDisposition::Dropped`]'s
-    /// loss note must be reflected in the report's losses. A codec that issues
-    /// no tickets has an empty table and passes trivially. A violation is a
-    /// codec contract error in strict mode (`Malformed`); in salvage mode each
-    /// violation is appended as an accountable [`LossNote`] and never fails the
-    /// decode, matching the mode's degrade-not-fail discipline.
+    /// Closes a decode, returning a fused resource error even when codec code
+    /// swallowed the charge that caused it.
     pub fn finish(
         self,
         result: Result<DecodeResult, CodecError>,
@@ -684,75 +634,6 @@ impl<'a> DecodeContext<'a> {
             return Err(CodecError::ResourceLimit(limit));
         }
         let mut result = result?;
-        let unresolved = self.tickets.unresolved();
-        if unresolved > 0 {
-            match self.policy.mode {
-                DecodeMode::Strict => {
-                    return Err(CodecError::Malformed(format!(
-                        "{unresolved} committed record ticket(s) left unresolved"
-                    )))
-                }
-                DecodeMode::Salvage => {
-                    let losses = self.tickets.auto_drop_unresolved();
-                    result.report.losses.extend(losses);
-                }
-            }
-        }
-        // Validate the resolved disposition
-        // table against the retained ledger, the document's native unknowns,
-        // and the report's losses. Runs after salvage auto-drop so
-        // auto-generated Dropped dispositions are checked against the loss
-        // notes just appended for them.
-        let unknown_ids = match result.ir.all_native_unknowns() {
-            Ok(records) => records.into_iter().map(|record| record.id.0).collect(),
-            Err(error) => {
-                let message = format!("native unknowns arena is undecodable: {error}");
-                match self.policy.mode {
-                    DecodeMode::Strict => {
-                        return Err(CodecError::Malformed(format!(
-                            "transfer accounting: {message}"
-                        )))
-                    }
-                    DecodeMode::Salvage => {
-                        result.report.losses.push(LossNote {
-                            code: LossCode::TransferAccounting,
-                            category: LossCategory::Other,
-                            severity: Severity::Warning,
-                            message: format!("transfer accounting: {message}"),
-                            provenance: None,
-                        });
-                    }
-                }
-                BTreeSet::new()
-            }
-        };
-        let violations = self.tickets.transfer_accounting(
-            &result.ir.model,
-            &self.retained,
-            &unknown_ids,
-            &result.report.losses,
-        );
-        if !violations.is_empty() {
-            match self.policy.mode {
-                DecodeMode::Strict => {
-                    return Err(CodecError::Malformed(format!(
-                        "transfer accounting: {}",
-                        violations.join("; ")
-                    )))
-                }
-                DecodeMode::Salvage => {
-                    for message in violations {
-                        result.report.losses.push(LossNote {
-                            code: LossCode::TransferAccounting,
-                            category: LossCategory::Other,
-                            severity: Severity::Warning,
-                            message: format!("transfer accounting: {message}"),
-                            provenance: None,
-                        });
-                    }
-                }
-            }
-        }
         if self.retained.is_degraded() {
             // Salvage degraded recovery to accounting on retained exhaustion:
             // surface it as an accountable outcome — a report flag plus one
@@ -805,12 +686,6 @@ impl<'a> DecodeContext<'a> {
     #[cfg(test)]
     pub(crate) fn spaces_len(&self) -> usize {
         self.spaces.len()
-    }
-
-    /// Returns how many committed tickets remain unresolved.
-    #[cfg(test)]
-    pub(crate) fn unresolved_tickets(&self) -> usize {
-        self.tickets.unresolved()
     }
 }
 
@@ -1163,190 +1038,5 @@ pub struct DepthGuard<'g> {
 impl Drop for DepthGuard<'_> {
     fn drop(&mut self) {
         self.budget.set_depth(self.budget.depth().saturating_sub(1));
-    }
-}
-
-/// A codec-defined label for a committed record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct RecordKind(pub &'static str);
-
-/// A ticket issued at a commit boundary, resolvable exactly once.
-#[derive(Debug)]
-#[must_use = "a committed record ticket must be resolved with ctx.resolve"]
-pub struct RecordTicket {
-    index: usize,
-}
-
-/// The final disposition of a committed record.
-#[derive(Debug, Clone, PartialEq)]
-pub enum RecordDisposition {
-    /// Transferred to typed IR outputs, named by entity id.
-    Typed {
-        /// The IR entity ids produced.
-        outputs: Vec<String>,
-    },
-    /// Retained opaque, named by retained-record id.
-    Retained {
-        /// The retained-record ids.
-        records: Vec<String>,
-    },
-    /// Accounted by digest after retained-byte exhaustion.
-    Accounted {
-        /// Digests recorded without their bytes.
-        records: Vec<String>,
-    },
-    /// Dropped with an accountable loss note.
-    Dropped {
-        /// Why the record was dropped.
-        loss: LossNote,
-    },
-    /// Preserved in the document's native unknown-record arena.
-    Preserved {
-        /// The native unknown-record ids the record was preserved as.
-        records: Vec<String>,
-    },
-    /// Container framing with no semantic content.
-    Structural,
-}
-
-#[derive(Debug)]
-struct TicketState {
-    kind: RecordKind,
-    location: SourceLocation,
-    disposition: Option<RecordDisposition>,
-}
-
-#[derive(Debug, Default)]
-struct TicketTable {
-    entries: RefCell<Vec<TicketState>>,
-}
-
-impl TicketTable {
-    fn unresolved(&self) -> usize {
-        self.entries
-            .borrow()
-            .iter()
-            .filter(|state| state.disposition.is_none())
-            .count()
-    }
-
-    /// Validates dispositions against their named outputs, records, and losses.
-    fn transfer_accounting(
-        &self,
-        model: &Model,
-        retained: &RetainedStore,
-        unknown_ids: &BTreeSet<String>,
-        losses: &[LossNote],
-    ) -> Vec<String> {
-        let mut violations = Vec::new();
-        let mut consumed = vec![false; losses.len()];
-        for state in self.entries.borrow().iter() {
-            let (kind, location) = (state.kind.0, state.location);
-            let at = format!(
-                "record `{}` at space {} offset {}",
-                kind,
-                location.space.index(),
-                location.offset
-            );
-            match &state.disposition {
-                Some(RecordDisposition::Typed { outputs }) => {
-                    if outputs.is_empty() {
-                        violations
-                            .push(format!("{at} resolved Typed but names no output entities"));
-                    }
-                    for entity in outputs {
-                        if !model.contains_id(entity) {
-                            violations.push(format!(
-                                "{at} names output entity `{entity}` absent from the IR model"
-                            ));
-                        }
-                    }
-                }
-                Some(RecordDisposition::Retained { records }) => {
-                    if records.is_empty() {
-                        violations.push(format!(
-                            "{at} resolved Retained but names no retained records"
-                        ));
-                    }
-                    for record in records {
-                        if !retained.contains_record(record) {
-                            violations.push(format!(
-                                "{at} names retained record `{record}` absent from the retained ledger"
-                            ));
-                        }
-                    }
-                }
-                Some(RecordDisposition::Accounted { records }) => {
-                    if records.is_empty() {
-                        violations.push(format!("{at} resolved Accounted but names no digests"));
-                    }
-                    for record in records {
-                        if !retained.contains_accounted(record) {
-                            violations.push(format!(
-                                "{at} names accounted digest `{record}` absent from degraded retention"
-                            ));
-                        }
-                    }
-                }
-                Some(RecordDisposition::Dropped { loss }) => {
-                    let matched = losses.iter().enumerate().find(|(index, note)| {
-                        !consumed[*index]
-                            && note.code == loss.code
-                            && note.category == loss.category
-                            && note.message == loss.message
-                    });
-                    match matched {
-                        Some((index, _)) => consumed[index] = true,
-                        None => violations.push(format!(
-                            "{at} resolved Dropped but its loss note is absent from the report"
-                        )),
-                    }
-                }
-                Some(RecordDisposition::Preserved { records }) => {
-                    if records.is_empty() {
-                        violations.push(format!(
-                            "{at} resolved Preserved but names no unknown records"
-                        ));
-                    }
-                    for record in records {
-                        if !unknown_ids.contains(record) {
-                            violations.push(format!(
-                                "{at} names unknown record `{record}` absent from the native unknowns arena"
-                            ));
-                        }
-                    }
-                }
-                Some(RecordDisposition::Structural) | None => {}
-            }
-        }
-        violations
-    }
-
-    /// Resolves every unresolved ticket as `Dropped` with an accountable
-    /// loss note, returning the notes for the decode report.
-    ///
-    /// An unresolved committed record is a record the codec accepted and
-    /// never accounted for; it is a loss, never `Structural`.
-    fn auto_drop_unresolved(&self) -> Vec<LossNote> {
-        let mut notes = Vec::new();
-        for state in self.entries.borrow_mut().iter_mut() {
-            if state.disposition.is_none() {
-                let loss = LossNote {
-                    code: LossCode::UnresolvedRecordDropped,
-                    category: LossCategory::Other,
-                    severity: Severity::Warning,
-                    message: format!(
-                        "unresolved committed record `{}` at space {} offset {} auto-dropped in salvage mode",
-                        state.kind.0,
-                        state.location.space.index(),
-                        state.location.offset
-                    ),
-                    provenance: None,
-                };
-                notes.push(loss.clone());
-                state.disposition = Some(RecordDisposition::Dropped { loss });
-            }
-        }
-        notes
     }
 }

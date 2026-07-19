@@ -19,9 +19,7 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::be::u32_at as be_u32;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{
-    DecodeContext, DecodeMode, RecordDisposition, RecordKind, RecordTicket, View,
-};
+use cadmpeg_ir::decode::{DecodeContext, DecodeMode, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
@@ -55,12 +53,9 @@ struct DecodedBrep {
 /// Decode a `.sldprt` session view into IR and diagnostics.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan_view_retaining(ctx, root)?;
-    let tickets = commit_record_tickets(ctx, root, &scan);
-
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        resolve_record_tickets(ctx, tickets, None, &[]);
         return decode_result(ir, report, annotations, unknowns, &scan);
     }
 
@@ -68,7 +63,6 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if !streams.is_empty() {
         if let Some((decoded, report)) = try_decode_brep(&scan, &streams) {
             reject_unrepresentable_in_strict(ctx, &report)?;
-            let typed_offset = streams[decoded.selected].block.offset;
             let (ir, annotations, unknowns) = build_geometry_ir(
                 &scan,
                 streams[decoded.selected].block,
@@ -76,8 +70,6 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
-            let outputs = typed_outputs(&ir);
-            resolve_record_tickets(ctx, tickets, Some(typed_offset), &outputs);
             return decode_result(ir, report, annotations, unknowns, &scan);
         }
     }
@@ -85,7 +77,6 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
     reject_unrepresentable_in_strict(ctx, &report)?;
-    resolve_record_tickets(ctx, tickets, None, &[]);
     decode_result(ir, report, annotations, unknowns, &scan)
 }
 
@@ -133,124 +124,6 @@ fn reject_unrepresentable_in_strict(
         )));
     }
     Ok(())
-}
-
-struct PendingTicket {
-    ticket: RecordTicket,
-    /// Source offset of the block frame this ticket accounts for; `None` for a
-    /// framing record (directory entry, cache cell).
-    block_offset: Option<usize>,
-    /// Retained-blob digest of the block payload, when the block was retained.
-    retained_digest: Option<String>,
-    retention_degraded: bool,
-}
-
-fn commit_record_tickets(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-    scan: &ContainerScan,
-) -> Vec<PendingTicket> {
-    let location_at = |offset: usize| {
-        root.child(offset, offset)
-            .map_or_else(|| root.location(), View::location)
-    };
-    let mut tickets = Vec::new();
-    for block in &scan.blocks {
-        tickets.push(PendingTicket {
-            ticket: ctx.commit_record(location_at(block.offset), RecordKind("sldprt_block")),
-            block_offset: Some(block.offset),
-            retained_digest: block.retained_digest.clone(),
-            retention_degraded: block.retention_degraded,
-        });
-    }
-    for entry in &scan.directory {
-        tickets.push(PendingTicket {
-            ticket: ctx.commit_record(
-                location_at(entry.offset),
-                RecordKind("sldprt_directory_entry"),
-            ),
-            block_offset: None,
-            retained_digest: None,
-            retention_degraded: false,
-        });
-    }
-    for cell in &scan.cache_cells {
-        tickets.push(PendingTicket {
-            ticket: ctx.commit_record(location_at(cell.offset), RecordKind("sldprt_cache_cell")),
-            block_offset: None,
-            retained_digest: None,
-            retention_degraded: false,
-        });
-    }
-    tickets
-}
-
-/// Resolves block and framing tickets.
-fn resolve_record_tickets(
-    ctx: &DecodeContext<'_>,
-    tickets: Vec<PendingTicket>,
-    typed_offset: Option<usize>,
-    typed_outputs: &[String],
-) {
-    for pending in tickets {
-        let disposition = match (pending.block_offset, pending.retained_digest) {
-            (Some(offset), _) if Some(offset) == typed_offset && !typed_outputs.is_empty() => {
-                RecordDisposition::Typed {
-                    outputs: typed_outputs.to_vec(),
-                }
-            }
-            (Some(_), Some(digest)) if pending.retention_degraded => RecordDisposition::Accounted {
-                records: vec![digest],
-            },
-            (Some(_), Some(digest)) => RecordDisposition::Retained {
-                records: vec![digest],
-            },
-            // A content block (`block_offset == Some`) must have been retained;
-            // reaching here means a block-admission path skipped `ctx.retain`.
-            (Some(offset), None) => {
-                debug_assert!(
-                    false,
-                    "content block at offset {offset} resolved neither Typed nor Retained"
-                );
-                RecordDisposition::Structural
-            }
-            (None, _) => RecordDisposition::Structural,
-        };
-        ctx.resolve(pending.ticket, disposition);
-    }
-}
-
-/// Collect a stable, non-empty set of IR entity ids the selected geometry block
-/// transferred, preferring bodies, then faces, then surfaces.
-///
-/// Transfer accounting requires a `Typed` disposition to name at least one
-/// entity present in the model; the codec merges every active Parasolid site into
-/// one topology graph without per-block body attribution, so the selected site
-/// carries the whole transferred graph's identities.
-fn typed_outputs(ir: &CadIr) -> Vec<String> {
-    let bodies: Vec<String> = ir
-        .model
-        .bodies
-        .iter()
-        .map(|body| body.id.0.clone())
-        .collect();
-    if !bodies.is_empty() {
-        return bodies;
-    }
-    let faces: Vec<String> = ir
-        .model
-        .faces
-        .iter()
-        .map(|face| face.id.0.clone())
-        .collect();
-    if !faces.is_empty() {
-        return faces;
-    }
-    ir.model
-        .surfaces
-        .iter()
-        .map(|surface| surface.id.0.clone())
-        .collect()
 }
 
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream

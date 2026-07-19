@@ -168,16 +168,6 @@ impl RetainedStore {
         self.blobs.borrow().contains_key(digest)
     }
 
-    /// Returns whether `id` names bytes held by this store.
-    pub(crate) fn contains_record(&self, id: &str) -> bool {
-        self.blobs.borrow().contains_key(id)
-    }
-
-    /// Returns whether `id` names a digest whose bytes were not retained.
-    pub(crate) fn contains_accounted(&self, id: &str) -> bool {
-        self.degraded.borrow().contains_key(id)
-    }
-
     /// Inserts a retained blob, keyed by its digest. Idempotent: re-inserting a
     /// present digest keeps the existing address. Reconciles degradation: if the
     /// digest was earlier marked degraded (an over-budget attempt before the

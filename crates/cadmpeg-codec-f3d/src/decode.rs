@@ -14,9 +14,7 @@
 use crate::native::F3dNative;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{
-    DecodeContext, DecodeMode, RecordDisposition, RecordKind, SourceLocation, SpaceId, View,
-};
+use cadmpeg_ir::decode::{DecodeContext, DecodeMode, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
@@ -32,21 +30,13 @@ use crate::{asm_header, fidelity, materials, sab};
 
 /// Decode a `.f3d` root view into a document and its loss report.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
-    let source_space = root.location().space;
     let scan = container::scan(ctx, root)?;
 
     if ctx.container_only() {
         let (ir, unknowns) = build_metadata_ir(&scan);
         let annotations = populate_annotations(&ir, &scan, &F3dNative::default(), None, &unknowns);
         let mut report = build_container_report(&scan, true);
-        account_records(
-            ctx,
-            source_space,
-            &scan,
-            &ir,
-            &std::collections::BTreeMap::new(),
-            &mut report,
-        );
+        report_untransferred_assets(&scan, &mut report);
         return decode_result(
             ir,
             report,
@@ -161,14 +151,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 Some((&active.name, &annotation_records)),
                 &unknowns,
             );
-            account_records(
-                ctx,
-                source_space,
-                &scan,
-                &ir,
-                &decoded_materials.appearance_origins,
-                &mut report,
-            );
+            report_untransferred_assets(&scan, &mut report);
             enforce_strict(ctx.mode(), &report)?;
             return decode_result(
                 ir,
@@ -220,14 +203,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     native.store(ir.native.namespace_mut("f3d"))?;
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
     let mut report = build_container_report(&scan, false);
-    account_records(
-        ctx,
-        source_space,
-        &scan,
-        &ir,
-        &decoded_materials.appearance_origins,
-        &mut report,
-    );
+    report_untransferred_assets(&scan, &mut report);
     enforce_strict(ctx.mode(), &report)?;
     decode_result(
         ir,
@@ -287,136 +263,22 @@ fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecEr
     )))
 }
 
-/// Account for each unique container entry consumed by the decode.
-fn account_records(
-    ctx: &DecodeContext,
-    source_space: SpaceId,
-    scan: &ContainerScan,
-    ir: &CadIr,
-    appearance_origins: &std::collections::BTreeMap<String, String>,
-    report: &mut DecodeReport,
-) {
+/// Reports secondary archive assets that are not transferred.
+fn report_untransferred_assets(scan: &ContainerScan, report: &mut DecodeReport) {
     use container::role;
 
-    let offsets: std::collections::BTreeMap<&str, u64> = scan
-        .layout
-        .iter()
-        .map(|entry| (entry.name.as_str(), entry.compressed.start))
-        .collect();
-    let active = container::select_active_brep(scan).map(|brep| brep.name.clone());
     let mut seen = std::collections::BTreeSet::new();
-    let mut material_note_taken = false;
-
     for entry in &scan.entries {
         if !seen.insert(entry.name.as_str()) {
             continue;
         }
         let role_label = container::classify(&entry.name);
-        debug_assert!(
-            offsets.contains_key(entry.name.as_str()),
-            "container entry {} absent from scan layout",
-            entry.name
-        );
-        let location = SourceLocation {
-            space: source_space,
-            offset: offsets.get(entry.name.as_str()).copied().unwrap_or(0),
-        };
-        let ticket = ctx.commit_record(location, RecordKind(role_label));
-
-        let disposition = match role_label {
-            role::BREP_SMBH | role::BREP_SMB => {
-                if active.as_deref() == Some(entry.name.as_str()) {
-                    if report.geometry_transferred {
-                        let outputs = brep_outputs(ir);
-                        if outputs.is_empty() {
-                            RecordDisposition::Structural
-                        } else {
-                            RecordDisposition::Typed { outputs }
-                        }
-                    } else if let Some(loss) = find_loss(report, LossCategory::Geometry, |loss| {
-                        loss.severity == Severity::Blocking
-                    }) {
-                        RecordDisposition::Dropped { loss }
-                    } else {
-                        RecordDisposition::Structural
-                    }
-                } else {
-                    RecordDisposition::Structural
-                }
-            }
-            role::PROTEIN => {
-                let outputs: Vec<String> = ir
-                    .model
-                    .appearances
-                    .iter()
-                    .filter(|appearance| {
-                        appearance_origins.get(&appearance.id.0).map(String::as_str)
-                            == Some(entry.name.as_str())
-                    })
-                    .map(|appearance| appearance.id.0.clone())
-                    .collect();
-                if !outputs.is_empty() {
-                    RecordDisposition::Typed { outputs }
-                } else if !material_note_taken {
-                    match find_loss(report, LossCategory::Material, |_| true) {
-                        Some(loss) => {
-                            material_note_taken = true;
-                            RecordDisposition::Dropped { loss }
-                        }
-                        None => RecordDisposition::Structural,
-                    }
-                } else {
-                    RecordDisposition::Structural
-                }
-            }
-            role::PARAMESH | role::PREVIEW | role::IMAGE => {
-                let loss = untransferred_asset_loss(role_label, &entry.name);
-                report.losses.push(loss.clone());
-                RecordDisposition::Dropped { loss }
-            }
-            _ => RecordDisposition::Structural,
-        };
-        ctx.resolve(ticket, disposition);
+        if matches!(role_label, role::PARAMESH | role::PREVIEW | role::IMAGE) {
+            report
+                .losses
+                .push(untransferred_asset_loss(role_label, &entry.name));
+        }
     }
-}
-
-/// Model entity ids attributable to the active B-rep stream, for a `Typed`
-/// disposition. Bodies are the natural output; a stream that produced only loose
-/// geometry (surfaces, faces, points, or curves — the non-empty guarantee
-/// [`try_decode_brep`] enforces) names one representative carrier instead.
-fn brep_outputs(ir: &CadIr) -> Vec<String> {
-    if !ir.model.bodies.is_empty() {
-        return ir
-            .model
-            .bodies
-            .iter()
-            .map(|body| body.id.0.clone())
-            .collect();
-    }
-    [
-        ir.model.surfaces.first().map(|s| s.id.0.clone()),
-        ir.model.faces.first().map(|f| f.id.0.clone()),
-        ir.model.points.first().map(|p| p.id.0.clone()),
-        ir.model.curves.first().map(|c| c.id.0.clone()),
-    ]
-    .into_iter()
-    .flatten()
-    .take(1)
-    .collect()
-}
-
-/// The first report loss in `category` satisfying `pred`, cloned for a `Dropped`
-/// disposition whose accountability rests on that already-emitted note.
-fn find_loss(
-    report: &DecodeReport,
-    category: LossCategory,
-    pred: impl Fn(&LossNote) -> bool,
-) -> Option<LossNote> {
-    report
-        .losses
-        .iter()
-        .find(|loss| loss.category == category && pred(loss))
-        .cloned()
 }
 
 /// Build the loss note for an untransferred secondary asset.

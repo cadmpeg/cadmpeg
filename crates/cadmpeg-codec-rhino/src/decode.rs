@@ -3,7 +3,6 @@
 
 use cadmpeg_ir::annotations::ExactnessNote;
 use cadmpeg_ir::codec::DecodeResult;
-use cadmpeg_ir::decode::{RecordDisposition, RecordKind, SourceLocation, SpaceId};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, NurbsCurve, Pcurve, PcurveGeometry, ProceduralCurve,
@@ -1819,7 +1818,6 @@ impl<'a> DecodeContext<'a> {
             .set_native_unknowns("rhino", &unknown_refs)
             .expect("Rhino unknown records serialize");
         self.ir.finalize();
-        self.issue_object_tickets();
         let mut losses: Vec<LossNote> = Vec::new();
         let decoded = self
             .outcomes
@@ -1956,56 +1954,6 @@ impl<'a> DecodeContext<'a> {
             },
             source_fidelity,
         )
-    }
-
-    /// Issues and resolves a platform record ticket for every scanned object.
-    ///
-    /// A record whose geometry decoded resolves [`Typed`](RecordDisposition::Typed)
-    /// naming the IR entities it produced (filtered to entities that survived
-    /// [`finalize`](CadIr::finalize), so the disposition never names a pruned
-    /// id). Every other record is conserved opaque as a native IR unknown
-    /// (`set_native_unknowns`) and resolves [`Preserved`](RecordDisposition::Preserved)
-    /// with that unknown record's id. Rhino does not egress the platform retained store; byte
-    /// recovery rides the codec's own capped native opaque-record store.
-    /// Routing undecoded records through `ctx.retain`
-    /// would duplicate the codec's own capped IR retention purely as
-    /// bookkeeping and charge the platform `RetainedBytes` budget against
-    /// untrusted input, flipping `retention_degraded` on large salvage decodes
-    /// over bytes the codec never intended to recover through that store.
-    fn issue_object_tickets(&self) {
-        let ctx = self.expand.ctx();
-        for (source_order, object) in self.scan.objects.iter().enumerate() {
-            let location = SourceLocation {
-                space: SpaceId::ROOT,
-                offset: object.range.start as u64,
-            };
-            let ticket = ctx.commit_record(location, RecordKind("rhino_object_record"));
-            let outputs: Vec<String> =
-                if self.statuses.get(source_order).copied() == Some(GeometryStatus::Decoded) {
-                    self.unknowns
-                        .get(source_order)
-                        .map_or_else(Vec::new, |record| {
-                            record
-                                .links
-                                .iter()
-                                .filter(|id| self.ir.model.contains_id(id))
-                                .cloned()
-                                .collect()
-                        })
-                } else {
-                    Vec::new()
-                };
-            if outputs.is_empty() {
-                ctx.resolve(
-                    ticket,
-                    RecordDisposition::Preserved {
-                        records: vec![Self::mint_unknown_id(source_order).0],
-                    },
-                );
-            } else {
-                ctx.resolve(ticket, RecordDisposition::Typed { outputs });
-            }
-        }
     }
 
     fn retain_object_records(&mut self) {

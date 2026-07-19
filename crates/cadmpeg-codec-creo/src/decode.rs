@@ -13,9 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{
-    DecodeContext, RecordDisposition, RecordKind, RecordTicket, SourceLocation, SpaceId, View,
-};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::features::{
     Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
@@ -566,8 +564,7 @@ fn transfer_plane_brep(
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
     let scan = container::scan_view(ctx, root)?;
 
-    let space = root.location().space;
-    let (mut ir, dropped_losses, annotations, unknowns) = build_ir(ctx, space, &scan)?;
+    let (mut ir, dropped_losses, annotations, unknowns) = build_ir(&scan)?;
     let mut report = build_report(&scan, ctx.container_only());
     report.losses.extend(dropped_losses);
     let mut source_fidelity = fidelity::coarse_ledger(&scan)?;
@@ -580,20 +577,8 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     ))
 }
 
-/// Commit a record-shaped unit at `offset` in the source `space`.
-fn commit(
-    ctx: &DecodeContext<'_>,
-    space: SpaceId,
-    offset: u64,
-    kind: &'static str,
-) -> RecordTicket {
-    ctx.commit_record(SourceLocation { space, offset }, RecordKind(kind))
-}
-
 /// Build source metadata, preserved geometry records, and datum-plane surfaces.
 fn build_ir(
-    ctx: &DecodeContext<'_>,
-    space: SpaceId,
     scan: &ContainerScan<'_>,
 ) -> Result<
     (
@@ -613,9 +598,7 @@ fn build_ir(
     for section in scan.sections.iter().filter(|s| s.role == role::GEOMETRY) {
         let end = (section.offset + section.length).min(scan.data.len());
         let bytes = &scan.data[section.offset..end];
-        let section_ticket = commit(ctx, space, section.offset as u64, "psb_geometry_section");
         let id = UnknownId(format!("creo:{}:section#{}", section.name, section.offset));
-        let unknown_id = id.0.clone();
         annotate(
             &mut annotations,
             &id,
@@ -632,18 +615,10 @@ fn build_ir(
             data: Some(bytes.to_vec()),
             links: Vec::new(),
         });
-        ctx.resolve(
-            section_ticket,
-            RecordDisposition::Preserved {
-                records: vec![unknown_id],
-            },
-        );
     }
     for plane in &scan.datum_planes {
-        let plane_ticket = commit(ctx, space, plane.offset_in_payload as u64, "datum_plane");
         let offset = plane.offset_in_payload as u64;
         let id = SurfaceId(format!("creo:actdatums:surface#{}", plane.id));
-        let output = id.0.clone();
         annotate(
             &mut annotations,
             &id,
@@ -679,24 +654,15 @@ fn build_ir(
                 instance_path: Vec::new(),
             }),
         });
-        ctx.resolve(
-            plane_ticket,
-            RecordDisposition::Typed {
-                outputs: vec![output],
-            },
-        );
     }
     for frame in &scan.plane_local_systems {
-        let frame_ticket = commit(ctx, space, frame.offset as u64, "plane_local_system");
         let (Some(origin), Some(normal), Some(u_axis)) = (frame.origin, frame.normal, frame.u_axis)
         else {
             let loss = builder::incomplete_frame_note(frame.surface_id, frame.offset as u64);
             dropped_losses.push(loss.clone());
-            ctx.resolve(frame_ticket, RecordDisposition::Dropped { loss });
             continue;
         };
         let id = SurfaceId(format!("creo:visibgeom:surface#{}", frame.surface_id));
-        let output = id.0.clone();
         annotate(
             &mut annotations,
             &id,
@@ -722,18 +688,10 @@ fn build_ir(
                 instance_path: Vec::new(),
             }),
         });
-        ctx.resolve(
-            frame_ticket,
-            RecordDisposition::Typed {
-                outputs: vec![output],
-            },
-        );
     }
     transfer_plane_brep(scan, &mut ir, &mut annotations);
     for (ordinal, operation) in scan.feature_operations.iter().enumerate() {
-        let feature_ticket = commit(ctx, space, operation.offset as u64, "feature_operation");
         let id = IrFeatureId(format!("creo:mdlstatus:feature#{}", operation.feature_id));
-        let output = id.0.clone();
         let mut parameters = BTreeMap::new();
         for affected in scan
             .feature_affected_ids
@@ -834,12 +792,6 @@ fn build_ir(
             },
             native_ref: None,
         });
-        ctx.resolve(
-            feature_ticket,
-            RecordDisposition::Typed {
-                outputs: vec![output],
-            },
-        );
     }
     let sketches = sketch_records(scan);
     if !sketches.is_empty() {
@@ -849,7 +801,6 @@ fn build_ir(
                 .iter()
                 .find(|definition| definition.id == sketch.feature_id)
                 .map_or(0, |definition| definition.offset);
-            let sketch_ticket = commit(ctx, space, offset as u64, "feature_sketch");
             annotate(
                 &mut annotations,
                 &sketch.id,
@@ -860,17 +811,10 @@ fn build_ir(
             );
             let feature_id = format!("creo:mdlstatus:feature#{}", sketch.feature_id);
             if ir.model.features.iter().any(|f| f.id.0 == feature_id) {
-                ctx.resolve(
-                    sketch_ticket,
-                    RecordDisposition::Typed {
-                        outputs: vec![feature_id],
-                    },
-                );
             } else {
                 let loss =
                     builder::unplaced_sketch_note(&sketch.id, sketch.feature_id, offset as u64);
                 dropped_losses.push(loss.clone());
-                ctx.resolve(sketch_ticket, RecordDisposition::Dropped { loss });
             }
         }
         let namespace = ir.native.namespace_mut("creo");

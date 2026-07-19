@@ -16969,42 +16969,6 @@ mod fidelity {
 }
 
 #[test]
-fn transfer_accounting_passes_in_both_modes() {
-    fn options(mode: DecodeMode) -> DecodeOptions {
-        DecodeOptions {
-            container_only: false,
-            policy: DecodePolicy {
-                mode,
-                limits: ResourceLimits::default(),
-            },
-        }
-    }
-
-    let geometry = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
-    for mode in [DecodeMode::Strict, DecodeMode::Salvage] {
-        let result = F3dCodec
-            .decode(&mut Cursor::new(geometry.clone()), &options(mode))
-            .unwrap_or_else(|e| panic!("{mode:?} decode failed transfer accounting: {e:?}"));
-        if mode == DecodeMode::Strict {
-            assert!(
-                !result
-                    .report
-                    .losses
-                    .iter()
-                    .any(|loss| loss.message.contains("transfer accounting")
-                        || loss.message.contains("auto-dropped")),
-                "strict decode surfaced an accounting degrade note"
-            );
-        }
-    }
-    for fixture in [synthetic_f3d(true), synthetic_f3d(false)] {
-        F3dCodec
-            .decode(&mut Cursor::new(fixture), &options(DecodeMode::Salvage))
-            .expect("salvage metadata-fallback decode validates transfer accounting");
-    }
-}
-
-#[test]
 fn metadata_fallback_drops_are_accounted() {
     let result = F3dCodec
         .decode(

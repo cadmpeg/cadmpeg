@@ -4106,25 +4106,6 @@ fn strict_options() -> DecodeOptions {
 }
 
 #[test]
-fn transfer_accounting_passes_in_both_modes_for_geometry() {
-    let fixture = sldprt_with_body_and_history(&triangle_body());
-    for options in [DecodeOptions::default(), strict_options()] {
-        let result = SldprtCodec
-            .decode(&mut Cursor::new(fixture.clone()), &options)
-            .expect("strict and salvage decode both pass transfer accounting");
-        assert!(result.report.geometry_transferred);
-    }
-}
-
-#[test]
-fn transfer_accounting_passes_in_both_modes_for_metadata_fallback() {
-    let fixture = synthetic_sldprt();
-    SldprtCodec
-        .decode(&mut Cursor::new(fixture), &DecodeOptions::default())
-        .expect("salvage metadata decode passes transfer accounting");
-}
-
-#[test]
 fn strict_accepts_operator_requested_container_only() {
     let fixture = synthetic_sldprt();
     let mut options = strict_options();

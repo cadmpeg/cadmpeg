@@ -2839,62 +2839,6 @@ fn options_in(mode: cadmpeg_ir::decode::DecodeMode, container_only: bool) -> Dec
 }
 
 #[test]
-fn geometry_decode_passes_transfer_accounting_in_both_modes() {
-    for mode in [
-        cadmpeg_ir::decode::DecodeMode::Strict,
-        cadmpeg_ir::decode::DecodeMode::Salvage,
-    ] {
-        let mut cur = Cursor::new(topology_part_prt());
-        let result = NxCodec.decode(&mut cur, &options_in(mode, false)).unwrap();
-        assert!(result.report.geometry_transferred);
-        assert!(!result
-            .report
-            .losses
-            .iter()
-            .any(|loss| loss.code == LossCode::TransferAccounting));
-    }
-}
-
-#[test]
-fn assembly_metadata_decode_passes_transfer_accounting_in_both_modes() {
-    for mode in [
-        cadmpeg_ir::decode::DecodeMode::Strict,
-        cadmpeg_ir::decode::DecodeMode::Salvage,
-    ] {
-        let mut cur = Cursor::new(assembly_prt());
-        let result = NxCodec.decode(&mut cur, &options_in(mode, false)).unwrap();
-        assert!(!result
-            .report
-            .losses
-            .iter()
-            .any(|loss| loss.code == LossCode::TransferAccounting));
-    }
-}
-
-#[test]
-fn container_only_decode_passes_transfer_accounting_in_both_modes() {
-    for mode in [
-        cadmpeg_ir::decode::DecodeMode::Strict,
-        cadmpeg_ir::decode::DecodeMode::Salvage,
-    ] {
-        let mut cur = Cursor::new(single_part_prt());
-        let result = NxCodec.decode(&mut cur, &options_in(mode, true)).unwrap();
-        assert!(result.report.container_only);
-        assert_eq!(result.ir.native_unknowns("nx").unwrap().len(), 1);
-        assert!(!result
-            .report
-            .losses
-            .iter()
-            .any(|loss| loss.code == LossCode::PassthroughRecordOmitted));
-        assert!(!result
-            .report
-            .losses
-            .iter()
-            .any(|loss| loss.code == LossCode::TransferAccounting));
-    }
-}
-
-#[test]
 fn inspect_enumerates_streams_and_names_schema() {
     let mut cur = Cursor::new(single_part_prt());
     let summary = NxCodec
