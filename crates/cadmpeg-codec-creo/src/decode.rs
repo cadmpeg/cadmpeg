@@ -27807,6 +27807,34 @@ fn build_ir(
         transfer_resolved_circular_extrusion_breps(scan, &mut ir, &mut annotations);
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
+    let decoded_feature_skamp_count = scan
+        .feature_definitions
+        .iter()
+        .filter_map(|definition| definition.relations.as_ref())
+        .map(|relations| relations.skamps.len())
+        .sum::<usize>();
+    let transferred_feature_skamp_constraint_count = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| constraint.id.0.contains(":skamp:"))
+        .count();
+    let transferred_native_feature_skamp_constraint_count = ir
+        .model
+        .sketch_constraints
+        .iter()
+        .filter(|constraint| {
+            constraint.id.0.contains(":skamp:")
+                && matches!(
+                    &constraint.definition,
+                    SketchConstraintDefinition::Native { native_kind, .. }
+                        if native_kind.starts_with("creo:skamp:")
+                )
+        })
+        .count();
+    let transferred_typed_feature_skamp_constraint_count =
+        transferred_feature_skamp_constraint_count
+            .saturating_sub(transferred_native_feature_skamp_constraint_count);
     if let Some(source) = &mut ir.source {
         source.attributes.insert(
             "transferred_cross_section_plane_count".to_string(),
@@ -27875,6 +27903,22 @@ fn build_ir(
         source.attributes.insert(
             "transferred_feature_extrusion_brep_count".to_string(),
             feature_extrusion_brep_count.to_string(),
+        );
+        source.attributes.insert(
+            "decoded_feature_skamp_count".to_string(),
+            decoded_feature_skamp_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_feature_skamp_constraint_count".to_string(),
+            transferred_feature_skamp_constraint_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_native_feature_skamp_constraint_count".to_string(),
+            transferred_native_feature_skamp_constraint_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_typed_feature_skamp_constraint_count".to_string(),
+            transferred_typed_feature_skamp_constraint_count.to_string(),
         );
     }
     for datum in &scan.datum_planes {
