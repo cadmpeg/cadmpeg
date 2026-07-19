@@ -757,6 +757,15 @@ pub struct PointFeaturePayloadHeader {
     pub mode: u8,
 }
 
+/// Exact six-scalar lane selected by a point-feature construction header.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PointFeatureScalarLane {
+    /// Six finite scalar values in byte order.
+    pub values: [f64; 6],
+    /// Scalar marker offsets across the concatenated preceding and target blocks.
+    pub value_offsets: [usize; 6],
+}
+
 /// Exact common construction references in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadReferenceField {
@@ -1840,6 +1849,39 @@ pub fn point_feature_payload_header(
             object_index,
         },
         mode,
+    })
+}
+
+/// Decode the exact cross-block scalar lane selected by a `POINT` header target.
+pub fn point_feature_scalar_lane(
+    preceding_block: &[u8],
+    target_block: &[u8],
+) -> Option<PointFeatureScalarLane> {
+    const SUFFIX: [u8; 19] = [
+        0x00, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
+        0x02, 0x00, 0x01, 0x00,
+    ];
+    let preceding_start = preceding_block.len().checked_sub(3)?;
+    (target_block.get(45..64) == Some(&SUFFIX)).then_some(())?;
+    let mut lane = Vec::with_capacity(48);
+    lane.extend_from_slice(&preceding_block[preceding_start..]);
+    lane.extend_from_slice(target_block.get(..45)?);
+    let values = lane
+        .chunks_exact(8)
+        .map(shifted_ieee_f64)
+        .collect::<Option<Vec<_>>>()?
+        .try_into()
+        .ok()?;
+    Some(PointFeatureScalarLane {
+        values,
+        value_offsets: [
+            preceding_start,
+            preceding_block.len() + 5,
+            preceding_block.len() + 13,
+            preceding_block.len() + 21,
+            preceding_block.len() + 29,
+            preceding_block.len() + 37,
+        ],
     })
 }
 

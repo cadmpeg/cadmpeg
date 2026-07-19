@@ -7705,6 +7705,37 @@ fn om_point_feature_header_requires_the_complete_leading_envelope() {
 }
 
 #[test]
+fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
+    let mut encoded = Vec::new();
+    for value in [1.0_f64, -2.0, 3.5, 4.0, 5.25, -6.0] {
+        let mut bytes = value.to_be_bytes();
+        bytes[0] -= 0x10;
+        encoded.extend_from_slice(&bytes);
+    }
+    let preceding = [vec![0xaa, 0xbb], encoded[..3].to_vec()].concat();
+    let mut target = encoded[3..].to_vec();
+    target.extend_from_slice(&[
+        0x00, 0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86,
+        0x02, 0x00, 0x01, 0x00,
+    ]);
+    target.push(0xcc);
+
+    let lane = crate::om::point_feature_scalar_lane(&preceding, &target).expect("complete lane");
+    assert_eq!(lane.values, [1.0, -2.0, 3.5, 4.0, 5.25, -6.0]);
+    assert_eq!(lane.value_offsets, [2, 10, 18, 26, 34, 42]);
+
+    let mut malformed = target.clone();
+    malformed[45] = 0x01;
+    assert!(crate::om::point_feature_scalar_lane(&preceding, &malformed).is_none());
+    assert!(crate::om::point_feature_scalar_lane(&preceding[..2], &target).is_none());
+    assert!(crate::om::point_feature_scalar_lane(&preceding, &target[..63]).is_none());
+
+    let mut nonfinite = target;
+    nonfinite[5..13].copy_from_slice(&[0x6f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    assert!(crate::om::point_feature_scalar_lane(&preceding, &nonfinite).is_none());
+}
+
+#[test]
 fn om_surface_feature_references_require_the_complete_common_envelope() {
     let label = crate::om::OperationLabel {
         header_offset: 100,

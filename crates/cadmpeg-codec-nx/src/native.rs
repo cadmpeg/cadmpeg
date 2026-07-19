@@ -5216,6 +5216,23 @@ pub struct FeaturePointConstructionHeader {
     pub source_offset: u64,
 }
 
+/// Exact cross-block scalar lane selected by a point-construction header.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeaturePointConstructionScalarLane {
+    /// Globally unique point-construction scalar-lane identity.
+    pub id: String,
+    /// Owning `POINT` operation label.
+    pub operation_label: String,
+    /// Header selecting this lane.
+    pub construction_header: String,
+    /// Preceding and target data blocks in byte order.
+    pub data_blocks: [String; 2],
+    /// Six finite scalar values in byte order.
+    pub values: [f64; 6],
+    /// Absolute file offsets of the six scalar markers.
+    pub source_offsets: [u64; 6],
+}
+
 /// Ordered construction reference carried by a bounded surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceConstructionReference {
@@ -8644,6 +8661,71 @@ pub fn feature_point_construction_headers(
         }
     }
     headers
+}
+
+/// Decode exact scalar lanes selected by uniquely resolved point-feature headers.
+pub fn feature_point_construction_scalar_lanes(
+    container: &Container,
+    headers: &[FeaturePointConstructionHeader],
+) -> Vec<FeaturePointConstructionScalarLane> {
+    let indexed = container.indexed_om_sections();
+    let mut lanes = Vec::new();
+    for header in headers {
+        let Some(expected_target) = header.data_block.as_deref() else {
+            continue;
+        };
+        let Ok(target_ordinal) = usize::try_from(header.object_index) else {
+            continue;
+        };
+        let candidates = indexed
+            .iter()
+            .enumerate()
+            .filter_map(|(section_ordinal, (entry, section))| {
+                if section.records.first()?.object_id.is_some() || target_ordinal < 2 {
+                    return None;
+                }
+                let target_id =
+                    format!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}");
+                if target_id != expected_target {
+                    return None;
+                }
+                let preceding = section.records.get(target_ordinal - 2)?;
+                let target = section.records.get(target_ordinal - 1)?;
+                let lane = crate::om::point_feature_scalar_lane(preceding.bytes, target.bytes)?;
+                Some((section_ordinal, *entry, preceding, target, lane))
+            })
+            .collect::<Vec<_>>();
+        let [(section_ordinal, entry, preceding, target, lane)] = candidates.as_slice() else {
+            continue;
+        };
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        let source_offsets = lane.value_offsets.map(|offset| {
+            if offset < preceding.bytes.len() {
+                entry_offset + preceding.offset as u64 + offset as u64
+            } else {
+                entry_offset + target.offset as u64 + (offset - preceding.bytes.len()) as u64
+            }
+        });
+        lanes.push(FeaturePointConstructionScalarLane {
+            id: header.id.replacen(
+                "point-construction-header#",
+                "point-construction-scalar-lane#",
+                1,
+            ),
+            operation_label: header.operation_label.clone(),
+            construction_header: header.id.clone(),
+            data_blocks: [
+                format!(
+                    "nx:om-data-blocks-{section_ordinal}:block#{}",
+                    target_ordinal - 1
+                ),
+                format!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
+            ],
+            values: lane.values,
+            source_offsets,
+        });
+    }
+    lanes
 }
 
 /// Decode and resolve the exact common reference envelope in surface-feature
