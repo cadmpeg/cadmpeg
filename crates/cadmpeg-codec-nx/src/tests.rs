@@ -5168,6 +5168,54 @@ fn feature_input_index_row_uses_preserve_every_shared_slot() {
 }
 
 #[test]
+fn feature_input_linked_index_row_uses_preserve_target_and_trailing_slots() {
+    use crate::native::{
+        feature_input_linked_index_row_uses, DataBlockLinkedIndexRow, FeatureInputBlock,
+    };
+
+    let input = FeatureInputBlock {
+        id: "input#0000000001".into(),
+        operation_label: "operation#1".into(),
+        input_slot: 2,
+        object_index: 4,
+        data_block: "block#4".into(),
+        source_offset: 10,
+    };
+    let row = DataBlockLinkedIndexRow {
+        id: "linked-row#3".into(),
+        section_ordinal: 0,
+        ordinal: 3,
+        first_index: 20,
+        discriminator: 0x16,
+        target_index: 4,
+        indices: [5, 6, 4],
+        data_blocks: [
+            "block#4".into(),
+            "block#5".into(),
+            "block#6".into(),
+            "block#4".into(),
+        ],
+        flag: 3,
+        source_entry: "entry".into(),
+        source_offset: 100,
+        first_index_source_offset: 102,
+        target_index_source_offset: 107,
+        index_source_offsets: [112, 113, 114],
+    };
+
+    let uses = feature_input_linked_index_row_uses(&[input], &[row]);
+    assert_eq!(uses.len(), 2);
+    assert_eq!(uses[0].input_block, "input#0000000001");
+    assert_eq!(uses[0].operation_label, "operation#1");
+    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].linked_index_row, "linked-row#3");
+    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(uses[0].source_offset, 107);
+    assert_eq!(uses[1].row_slot, 3);
+    assert_eq!(uses[1].source_offset, 114);
+}
+
+#[test]
 fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     use crate::om::CompactIndex::{Null, Value};
 
