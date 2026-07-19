@@ -4281,6 +4281,30 @@ mod marker_tests {
             .collect::<Vec<_>>(),
             ["first", "second"]
         );
+
+        lane.native_payload.resize(400, 0);
+        lane.native_payload[200..292].fill(0);
+        lane.native_payload[200..205].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        lane.native_payload[205..213].fill(0xff);
+        lane.native_payload[213..217].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        lane.native_payload[217..221].copy_from_slice(&4u32.to_le_bytes());
+        lane.native_payload[223..227].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        lane.native_payload[227..229].copy_from_slice(&2u16.to_le_bytes());
+        lane.native_payload[231..239]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        lane.native_payload[248..256].copy_from_slice(&1.0f64.to_le_bytes());
+        lane.native_payload[264..266].copy_from_slice(&0u16.to_le_bytes());
+        lane.native_payload[266..268].copy_from_slice(&1u16.to_le_bytes());
+        lane.native_payload[272..280].copy_from_slice(&(-1.0f64).to_le_bytes());
+        lane.native_payload[292..297].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        assert_eq!(
+            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            Some(cadmpeg_ir::features::RevolutionAxis {
+                origin: Point3::new(0.0, 0.0, 19.5),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+        );
     }
 
     #[test]
@@ -17456,15 +17480,16 @@ fn roster_curve_endpoint_markers<'a>(
         return Vec::new();
     };
     if curve.coordinates_m.is_some()
-        || !matches!(
+        || (!matches!(
             curve.kind,
             SketchInputKind::LineOrCircle | SketchInputKind::Arc
-        )
+        ) && !marker_is_selected_construction_line(payload, offset))
     {
         return Vec::new();
     }
     if let Some(indices) = wide_indexed_curve_endpoint_indices(payload, offset)
         .or_else(|| compact_indexed_curve_endpoint_indices(payload, offset))
+        .or_else(|| extended_horizontal_axis_endpoint_indices(payload, offset))
     {
         return indices
             .into_iter()
@@ -17653,10 +17678,11 @@ fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
     {
-        payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
-            && !(marker_profile_curve_role(payload, offset) == Some(1)
-                && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes()))
-            && wide_indexed_curve_endpoint_indices(payload, offset).is_none()
+        extended_horizontal_axis_endpoint_indices(payload, offset).is_some()
+            || payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
+                && !(marker_profile_curve_role(payload, offset) == Some(1)
+                    && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes()))
+                && wide_indexed_curve_endpoint_indices(payload, offset).is_none()
     } else if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
     {
         marker_profile_curve_role(payload, offset) == Some(2)
@@ -17664,6 +17690,37 @@ fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
     } else {
         false
     }
+}
+
+fn extended_horizontal_axis_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 17..offset + 21) != Some(&4u32.to_le_bytes())
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(2)
+        || payload.get(offset + 29..offset + 31) != Some(&0u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        || f64::from_le_bytes(payload.get(offset + 48..offset + 56)?.try_into().ok()?) != 1.0
+        || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
+        || payload.get(offset + 68..offset + 72) != Some(&0u32.to_le_bytes())
+        || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 80..offset + 84) != Some(&0u32.to_le_bytes())
+        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+    {
+        return None;
+    }
+    let endpoint = |relative: usize| {
+        u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )
+        .checked_add(1)
+        .map(u32::from)
+    };
+    Some([endpoint(64)?, endpoint(66)?])
 }
 
 fn linked_single_arc_entity(
