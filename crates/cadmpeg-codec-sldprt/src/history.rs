@@ -1792,6 +1792,15 @@ mod history_reference_tests {
         let mut reference_plane = feature("node", Some("5"), 0);
         reference_plane.input_class = Some("moRefPlane_c".into());
         assert_eq!(feature_tree_node_role(&reference_plane), None);
+
+        let mut sheet_metal = feature("node", Some("-1"), 0);
+        sheet_metal.name.clear();
+        assert_eq!(
+            feature_tree_node_role(&sheet_metal),
+            Some(FeatureTreeNodeRole::SheetMetal)
+        );
+        sheet_metal.name = "not a reserved root".into();
+        assert_eq!(feature_tree_node_role(&sheet_metal), None);
     }
 
     #[test]
@@ -3199,6 +3208,15 @@ fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeR
     match (feature.xml_tag.as_str(), feature.source_id.as_deref()?) {
         (tag, "1") if tag.eq_ignore_ascii_case("Feature") => Some(FeatureTreeNodeRole::Annotations),
         (tag, "5") if tag.eq_ignore_ascii_case("Sketch") => Some(FeatureTreeNodeRole::ModelOrigin),
+        (tag, "-1")
+            if tag.eq_ignore_ascii_case("Feature")
+                && feature.name.is_empty()
+                && feature.dimension_properties.is_empty()
+                && feature.text.is_none()
+                && feature.content.is_empty() =>
+        {
+            Some(FeatureTreeNodeRole::SheetMetal)
+        }
         _ => None,
     }
 }
@@ -3225,6 +3243,7 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::Notes => "Notes",
         FeatureTreeNodeRole::SelectionSets => "Selection Sets",
         FeatureTreeNodeRole::Sensors => "Sensors",
+        FeatureTreeNodeRole::SheetMetal => "Sheet Metal",
         FeatureTreeNodeRole::SolidBodies => "Solid Bodies",
         FeatureTreeNodeRole::SurfaceBodies => "Surface Bodies",
         FeatureTreeNodeRole::Tables => "Tables",

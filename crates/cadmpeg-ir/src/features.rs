@@ -820,6 +820,8 @@ pub enum FeatureTreeNodeRole {
     SelectionSets,
     /// Sensor container.
     Sensors,
+    /// Built-in sheet-metal state root.
+    SheetMetal,
     /// Solid-body container.
     SolidBodies,
     /// Surface-body container.
