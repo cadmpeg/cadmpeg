@@ -13486,8 +13486,9 @@ fn exact_work_plane_frame(bytes: &[u8], scope: &DesignParameterScope) -> Option<
                 {
                     (start + 66, None)
                 }
-                362 if bytes.get(start + 55..start + 58) == Some(&[1, 0, 1][..])
-                    && bytes.get(start + 62..start + 76) == Some(&[0u8; 14][..]) =>
+                362 | 373
+                    if bytes.get(start + 55..start + 58) == Some(&[1, 0, 1][..])
+                        && bytes.get(start + 62..start + 76) == Some(&[0u8; 14][..]) =>
                 {
                     (
                         start + 76,
@@ -21123,6 +21124,29 @@ mod relation_tests {
         assert_eq!(decoded.transform, transform);
         assert_eq!(decoded.transform_offset, (work_plane_at + 76) as u64);
         assert_eq!(decoded.reference, Some((99, (work_plane_at + 58) as u64)));
+
+        let extended_at = bytes.len();
+        let mut extended = vec![0; 373];
+        extended[0..4].copy_from_slice(&3u32.to_le_bytes());
+        extended[4..7].copy_from_slice(b"263");
+        extended[7..11].copy_from_slice(&57u32.to_le_bytes());
+        extended[55..58].copy_from_slice(&[1, 0, 1]);
+        extended[58..62].copy_from_slice(&100u32.to_le_bytes());
+        for (ordinal, value) in transform.into_iter().flatten().enumerate() {
+            let at = 76 + ordinal * 8;
+            extended[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        extended.extend_from_slice(&3u32.to_le_bytes());
+        extended.extend_from_slice(b"261");
+        extended.extend_from_slice(&57u32.to_le_bytes());
+        bytes.extend_from_slice(&extended);
+        let mut extended_scope = scope.clone();
+        extended_scope.reference_members = vec![57];
+        let decoded = exact_work_plane_frame(&bytes, &extended_scope)
+            .expect("extended referenced WorkPlane frame");
+        assert_eq!(decoded.transform, transform);
+        assert_eq!(decoded.transform_offset, (extended_at + 76) as u64);
+        assert_eq!(decoded.reference, Some((100, (extended_at + 58) as u64)));
 
         let direct_at = bytes.len();
         let mut direct = vec![0; 352];
