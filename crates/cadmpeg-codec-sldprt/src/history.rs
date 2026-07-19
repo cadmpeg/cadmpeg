@@ -6486,7 +6486,7 @@ pub(crate) fn project_configuration_design_states(
         crate::pmi::enrich_history_parameters(&mut projection, pmi_dimensions);
         apply_evaluated_parameters(&mut projection);
         crate::resolved_features::enrich_history_reference_axes(&mut projection, scoped_lanes);
-        crate::resolved_features::enrich_history_revolution_axes(&mut projection, scoped_lanes);
+        crate::resolved_features::enrich_history_revolution_inputs(&mut projection, scoped_lanes);
         let mut features = project_features(&projection);
         crate::resolved_features::bind_pattern_inputs(&mut features, &projection, scoped_lanes);
         crate::resolved_features::project_compact_body_selections(&mut features, scoped_lanes);
@@ -7060,7 +7060,7 @@ fn project_features_with_native_inputs(
         &mut histories,
         &native.feature_input_lanes,
     );
-    crate::resolved_features::enrich_history_revolution_axes(
+    crate::resolved_features::enrich_history_revolution_inputs(
         &mut histories,
         &native.feature_input_lanes,
     );

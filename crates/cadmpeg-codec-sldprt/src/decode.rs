@@ -2309,7 +2309,7 @@ fn project_design_history(
     crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);
     crate::history::apply_evaluated_parameters(&mut semantic_projection);
     crate::resolved_features::enrich_history_reference_axes(&mut semantic_projection, lanes);
-    crate::resolved_features::enrich_history_revolution_axes(&mut semantic_projection, lanes);
+    crate::resolved_features::enrich_history_revolution_inputs(&mut semantic_projection, lanes);
     ir.model.features = crate::history::project_features(&semantic_projection);
     crate::resolved_features::bind_pattern_inputs(
         &mut ir.model.features,

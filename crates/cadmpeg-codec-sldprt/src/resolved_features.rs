@@ -449,7 +449,7 @@ mod marker_tests {
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
         plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        revolution_line_reference_frame, sketch_block_identity_normalization_origin,
+        revolution_line_reference_inputs, sketch_block_identity_normalization_origin,
         sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
         spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
         unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
@@ -3319,9 +3319,13 @@ mod marker_tests {
     }
 
     #[test]
-    fn revolution_line_reference_frame_uses_placed_line_after_native_handles() {
+    fn revolution_line_reference_inputs_decode_profile_owner_and_placed_axis() {
         let mut payload = vec![0; 240];
         let handles = 96;
+        payload[64..68].copy_from_slice(&42u32.to_le_bytes());
+        payload[68..72].copy_from_slice(&0x5919_4a35u32.to_le_bytes());
+        payload[72..74].copy_from_slice(&0x81dbu16.to_le_bytes());
+        payload[76..80].copy_from_slice(&[0xff; 4]);
         payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
         payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
         payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
@@ -3334,8 +3338,12 @@ mod marker_tests {
         }
         payload[handles + 64..handles + 68].copy_from_slice(CLASS_MARKER);
         assert_eq!(
-            revolution_line_reference_frame(&payload, 32, payload.len()),
-            Some((Point3::new(12.0, -34.0, 56.0), Vector3::new(0.0, 1.0, 0.0)))
+            revolution_line_reference_inputs(&payload, 32, payload.len()),
+            Some((
+                42,
+                Point3::new(12.0, -34.0, 56.0),
+                Vector3::new(0.0, 1.0, 0.0)
+            ))
         );
 
         payload[handles + 8..handles + 12].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
@@ -3351,11 +3359,19 @@ mod marker_tests {
         }
         payload[handles + 92..handles + 96].copy_from_slice(CLASS_MARKER);
         assert_eq!(
-            revolution_line_reference_frame(&payload, 32, payload.len()),
-            Some((Point3::new(12.0, -34.0, 56.0), Vector3::new(0.0, 0.0, -1.0)))
+            revolution_line_reference_inputs(&payload, 32, payload.len()),
+            Some((
+                42,
+                Point3::new(12.0, -34.0, 56.0),
+                Vector3::new(0.0, 0.0, -1.0)
+            ))
         );
 
         payload.fill(0);
+        payload[64..68].copy_from_slice(&42u32.to_le_bytes());
+        payload[68..72].copy_from_slice(&0x5919_4a35u32.to_le_bytes());
+        payload[72..74].copy_from_slice(&0x81dbu16.to_le_bytes());
+        payload[76..80].copy_from_slice(&[0xff; 4]);
         payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
         payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
         payload[handles + 12..handles + 16].copy_from_slice(&7000u32.to_le_bytes());
@@ -3368,8 +3384,12 @@ mod marker_tests {
         }
         payload[handles + 80..handles + 84].copy_from_slice(CLASS_MARKER);
         assert_eq!(
-            revolution_line_reference_frame(&payload, 32, payload.len()),
-            Some((Point3::new(12.0, -34.0, 56.0), Vector3::new(0.0, 1.0, 0.0)))
+            revolution_line_reference_inputs(&payload, 32, payload.len()),
+            Some((
+                42,
+                Point3::new(12.0, -34.0, 56.0),
+                Vector3::new(0.0, 1.0, 0.0)
+            ))
         );
     }
 }
@@ -3579,11 +3599,11 @@ fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3
     ))
 }
 
-fn revolution_line_reference_frame(
+fn revolution_line_reference_inputs(
     payload: &[u8],
     class_offset: usize,
     object_end: usize,
-) -> Option<(Point3, Vector3)> {
+) -> Option<(u32, Point3, Vector3)> {
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
     const NATIVE_TO_IR: f64 = 1000.0;
 
@@ -3616,6 +3636,27 @@ fn revolution_line_reference_frame(
             if address == 0 {
                 continue;
             }
+            let mut source_cells = (search_start..handle_start.saturating_sub(15))
+                .filter_map(|offset| {
+                    let source =
+                        u32::from_le_bytes(payload.get(offset..offset + 4)?.try_into().ok()?);
+                    let identity =
+                        u32::from_le_bytes(payload.get(offset + 4..offset + 8)?.try_into().ok()?);
+                    let token =
+                        u16::from_le_bytes(payload.get(offset + 8..offset + 10)?.try_into().ok()?);
+                    (source != 0
+                        && identity != 0
+                        && token & 0x8000 != 0
+                        && token != u16::MAX
+                        && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]))
+                    .then_some(source)
+                })
+                .collect::<Vec<_>>();
+            source_cells.sort_unstable();
+            source_cells.dedup();
+            let [source] = source_cells.as_slice() else {
+                continue;
+            };
             for frame_gap in [0usize, 4] {
                 if payload
                     .get(handles_end + 8..handles_end + 8 + frame_gap)
@@ -3657,6 +3698,7 @@ fn revolution_line_reference_frame(
                         continue;
                     }
                     let candidate = (
+                        *source,
                         Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
                         Vector3::new(dx / norm, dy / norm, dz / norm),
                     );
@@ -3673,15 +3715,18 @@ fn revolution_line_reference_frame(
         .into_iter()
         .filter_map(|(candidate_rank, candidate)| (candidate_rank == rank).then_some(candidate))
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|(origin, direction)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            direction.x.to_bits(),
-            direction.y.to_bits(),
-            direction.z.to_bits(),
-        ]
+    candidates.sort_by_key(|(source, origin, direction)| {
+        (
+            *source,
+            [
+                origin.x.to_bits(),
+                origin.y.to_bits(),
+                origin.z.to_bits(),
+                direction.x.to_bits(),
+                direction.y.to_bits(),
+                direction.z.to_bits(),
+            ],
+        )
     });
     candidates.dedup();
     let [candidate] = candidates.as_slice() else {
@@ -3690,8 +3735,8 @@ fn revolution_line_reference_frame(
     Some(*candidate)
 }
 
-/// Add placed axes carried by revolution line-reference declarations.
-pub(crate) fn enrich_history_revolution_axes(
+/// Add profile ownership and placed axes carried by revolution line references.
+pub(crate) fn enrich_history_revolution_inputs(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
@@ -3700,7 +3745,25 @@ pub(crate) fn enrich_history_revolution_axes(
         .flat_map(|history| &history.features)
         .cloned()
         .collect::<Vec<_>>();
-    let mut frames = HashMap::<String, Vec<Option<(Point3, Vector3)>>>::new();
+    let profile_sources = histories
+        .iter()
+        .flat_map(|history| {
+            let sources = history
+                .features
+                .iter()
+                .filter(|feature| {
+                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                        == NativeClassKind::ProfileFeature
+                })
+                .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
+                .collect::<HashSet<_>>();
+            history
+                .features
+                .iter()
+                .map(move |feature| (feature.id.clone(), sources.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut inputs = HashMap::<String, Vec<Option<(u32, Point3, Vector3)>>>::new();
     for lane in lanes {
         let mut objects = snapshot
             .iter()
@@ -3758,25 +3821,28 @@ pub(crate) fn enrich_history_revolution_axes(
                         && usize::try_from(class.offset).is_ok_and(|offset| offset < end)
                 })
                 .filter_map(|class| {
-                    revolution_line_reference_frame(
+                    revolution_line_reference_inputs(
                         &lane.native_payload,
                         usize::try_from(class.offset).ok()?,
                         end,
                     )
                 })
                 .collect::<Vec<_>>();
-            candidates.sort_by_key(|(origin, direction)| {
-                [
-                    origin.x.to_bits(),
-                    origin.y.to_bits(),
-                    origin.z.to_bits(),
-                    direction.x.to_bits(),
-                    direction.y.to_bits(),
-                    direction.z.to_bits(),
-                ]
+            candidates.sort_by_key(|(source, origin, direction)| {
+                (
+                    *source,
+                    [
+                        origin.x.to_bits(),
+                        origin.y.to_bits(),
+                        origin.z.to_bits(),
+                        direction.x.to_bits(),
+                        direction.y.to_bits(),
+                        direction.z.to_bits(),
+                    ],
+                )
             });
             candidates.dedup();
-            frames
+            inputs
                 .entry(feature.id.clone())
                 .or_default()
                 .push((candidates.as_slice().len() == 1).then(|| candidates[0]));
@@ -3786,12 +3852,7 @@ pub(crate) fn enrich_history_revolution_axes(
         .iter_mut()
         .flat_map(|history| &mut history.features)
     {
-        if feature.properties.contains_key("AxisOrigin")
-            || feature.properties.contains_key("AxisDirection")
-        {
-            continue;
-        }
-        let Some(votes) = frames.get(&feature.id) else {
+        let Some(votes) = inputs.get(&feature.id) else {
             continue;
         };
         let Some(Some(first)) = votes.first() else {
@@ -3800,14 +3861,27 @@ pub(crate) fn enrich_history_revolution_axes(
         if !votes.iter().all(|vote| vote.as_ref() == Some(first)) {
             continue;
         }
-        feature.properties.insert(
-            "AxisOrigin".into(),
-            format!("{}mm,{}mm,{}mm", first.0.x, first.0.y, first.0.z),
-        );
-        feature.properties.insert(
-            "AxisDirection".into(),
-            format!("{},{},{}", first.1.x, first.1.y, first.1.z),
-        );
+        if !feature.properties.contains_key("Profile")
+            && profile_sources
+                .get(&feature.id)
+                .is_some_and(|sources| sources.contains(&first.0))
+        {
+            feature
+                .properties
+                .insert("Profile".into(), first.0.to_string());
+        }
+        if !feature.properties.contains_key("AxisOrigin")
+            && !feature.properties.contains_key("AxisDirection")
+        {
+            feature.properties.insert(
+                "AxisOrigin".into(),
+                format!("{}mm,{}mm,{}mm", first.1.x, first.1.y, first.1.z),
+            );
+            feature.properties.insert(
+                "AxisDirection".into(),
+                format!("{},{},{}", first.2.x, first.2.y, first.2.z),
+            );
+        }
     }
 }
 
