@@ -4426,30 +4426,27 @@ pub fn project_spatial_sketch_design(
     let mut entities = curves
         .iter()
         .filter_map(|curve| {
-            let placement =
-                placements_by_suffix.get(&(native_stream(&curve.id)?, curve.owner_reference?))?;
+            let scope = native_stream(&curve.id)?;
+            let owner = curve.owner_reference?;
+            if !spatial_owners.contains(&(scope.to_owned(), owner)) {
+                return None;
+            }
+            let placement = placements_by_suffix.get(&(scope, owner))?;
             let geometry = if let Some([start, end]) = spline_segments
-                .get(&(native_stream(&curve.id)?, curve.record_index))
+                .get(&(scope, curve.record_index))
                 .copied()
                 .flatten()
             {
-                if planar_point(&start) && planar_point(&end) {
-                    return None;
-                }
                 SpatialSketchGeometry::Line {
                     start: transform_point(placement, &start),
                     end: transform_point(placement, &end),
                 }
             } else {
                 match curve.geometry.as_ref()? {
-                    SketchCurveGeometry::Line { start, end, .. }
-                        if !(planar_point(start) && planar_point(end)) =>
-                    {
-                        SpatialSketchGeometry::Line {
-                            start: transform_point(placement, start),
-                            end: transform_point(placement, end),
-                        }
-                    }
+                    SketchCurveGeometry::Line { start, end, .. } => SpatialSketchGeometry::Line {
+                        start: transform_point(placement, start),
+                        end: transform_point(placement, end),
+                    },
                     SketchCurveGeometry::Arc {
                         center,
                         normal,
@@ -4457,11 +4454,7 @@ pub fn project_spatial_sketch_design(
                         radius,
                         start_angle,
                         end_angle,
-                    } if !(planar_point(center)
-                        && reference_direction.z.abs() <= 1.0e-9
-                        && sketch_normal_sign(normal).is_some())
-                        && *radius > 0.0 =>
-                    {
+                    } if *radius > 0.0 => {
                         let center = transform_point(placement, center);
                         let normal = transform_vector(placement, normal);
                         let reference_direction = transform_vector(placement, reference_direction);
@@ -4490,10 +4483,8 @@ pub fn project_spatial_sketch_design(
                         control_points,
                         ..
                     } if *degree != 0
-                        && usize::try_from(*degree).is_ok_and(|degree| {
-                            control_points.len() > degree
-                                && control_points.iter().any(|point| !planar_point(point))
-                        }) =>
+                        && usize::try_from(*degree)
+                            .is_ok_and(|degree| control_points.len() > degree) =>
                     {
                         SpatialSketchGeometry::Nurbs {
                             degree: *degree,
@@ -25190,6 +25181,16 @@ mod relation_tests {
                     end_angle: std::f64::consts::TAU,
                 },
             ),
+            curve(
+                108,
+                7,
+                SketchCurveGeometry::Line {
+                    start: Point3::new(1.0, 2.0, 0.0),
+                    end: Point3::new(4.0, 5.0, 0.0),
+                    direction: Vector3::new(1.0, 1.0, 0.0),
+                    normal: Vector3::new(0.0, 0.0, 1.0),
+                },
+            ),
         ];
         curves.push(SketchCurveIdentity {
             id: "f3d:Design/BulkStream.dat:curve#103".into(),
@@ -25287,7 +25288,7 @@ mod relation_tests {
         let (sketches, entities) =
             project_spatial_sketch_design(&[placement.clone()], &points, &curves, &relations);
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 6);
+        assert_eq!(entities.len(), 7);
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
             SpatialSketchGeometry::Line { start, end }
@@ -25299,6 +25300,12 @@ mod relation_tests {
             SpatialSketchGeometry::Line { start, end }
                 if start == Point3::new(14.0, 22.0, 33.0)
                     && end == Point3::new(17.0, 25.0, 36.0)
+        )));
+        assert!(entities.iter().any(|entity| matches!(
+            entity.geometry,
+            SpatialSketchGeometry::Line { start, end }
+                if start == Point3::new(10.0, 21.0, 32.0)
+                    && end == Point3::new(10.0, 24.0, 35.0)
         )));
         let constraints = project_spatial_sketch_constraints(
             &[placement],
