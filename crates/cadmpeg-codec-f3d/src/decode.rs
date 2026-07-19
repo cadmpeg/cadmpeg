@@ -874,6 +874,14 @@ pub fn decode(
                     &native.design_sketch_placements,
                     &native.design_body_bindings,
                 );
+            crate::design::bind_loft_sketch_profiles(
+                &scan,
+                &native.design_construction_operand_groups,
+                &native.design_record_headers,
+                &native.design_entity_headers,
+                &native.design_sketch_placements,
+                &mut ir.model.features,
+            )?;
             crate::design::bind_form_cages(
                 &scan,
                 &native.design_parameter_scopes,
@@ -1188,6 +1196,14 @@ pub fn decode(
             &native.design_sketch_placements,
             &native.design_body_bindings,
         );
+    crate::design::bind_loft_sketch_profiles(
+        &scan,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+        &native.design_entity_headers,
+        &native.design_sketch_placements,
+        &mut ir.model.features,
+    )?;
     crate::design::bind_form_cages(
         &scan,
         &native.design_parameter_scopes,

@@ -15408,11 +15408,81 @@ pub fn bind_extrude_profiles(
             .filter_map(|(ordinal, record_index)| {
                 let ordinal = u32::try_from(ordinal).ok()?;
                 let header = headers.get(&(stream, record_index))?;
-                parse_extrude_profile(bytes, stream, ordinal, header, entities)
+                parse_sketch_profile(bytes, stream, ordinal, header, entities)
             })
             .collect::<Vec<_>>();
         if let [profile] = candidates.as_slice() {
             scope.extrude_profile = Some(profile.clone());
+        }
+    }
+    Ok(())
+}
+
+/// Resolve Loft profile groups that carry the standard sketch-profile frame.
+pub(crate) fn bind_loft_sketch_profiles(
+    scan: &ContainerScan,
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+    entities: &[DesignEntityHeader],
+    placements: &[DesignSketchPlacement],
+    features: &mut [cadmpeg_ir::features::Feature],
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::features::{FeatureDefinition, LoftSection, ProfileRef};
+
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut resolved = HashMap::new();
+    for group in groups.iter().filter(|group| {
+        matches!(group.role, 0x41_0000_0000 | 0x43_0000_0000) && group.members.len() == 1
+    }) {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(header) = headers.get(&(stream, group.members[0])) else {
+            continue;
+        };
+        let Some(profile) = parse_sketch_profile(
+            bytes,
+            stream,
+            group.scope_reference_ordinal,
+            header,
+            entities,
+        ) else {
+            continue;
+        };
+        let matches = placements
+            .iter()
+            .filter(|placement| {
+                native_stream(&placement.id) == Some(stream)
+                    && placement.entity_id == profile.entity_id
+            })
+            .collect::<Vec<_>>();
+        let [placement] = matches.as_slice() else {
+            continue;
+        };
+        resolved.insert(group.id.clone(), neutral_sketch_id(placement));
+    }
+    for feature in features {
+        let FeatureDefinition::Loft { sections, .. } = &mut feature.definition else {
+            continue;
+        };
+        for section in sections {
+            let LoftSection::Profile(ProfileRef::Native(native)) = section else {
+                continue;
+            };
+            if let Some(sketch) = resolved.get(native) {
+                *section = LoftSection::Profile(ProfileRef::Sketch(sketch.clone()));
+            }
         }
     }
     Ok(())
@@ -16226,7 +16296,7 @@ fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeId
     })
 }
 
-fn parse_extrude_profile(
+fn parse_sketch_profile(
     bytes: &[u8],
     stream: &str,
     scope_reference_ordinal: u32,
@@ -20372,10 +20442,10 @@ mod relation_tests {
         offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
-        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
-        parse_genesis_entity_header, parse_parameter_companion, parse_parameter_owner,
-        parse_parameter_scope, parse_settled_entity_header, parse_sketch_placement_candidates,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_selection_group,
+        parse_extrude_selection_member, parse_face_operand, parse_genesis_entity_header,
+        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
+        parse_settled_entity_header, parse_sketch_placement_candidates, parse_sketch_profile,
         parse_sketch_relation, parse_sketch_surface, partial_historical_edge_selection,
         point_lies_on_sketch_geometry, point_on_sketch_entity, project_configurations,
         project_dimension_constraints, project_extrude, project_parameter_design,
@@ -24072,7 +24142,7 @@ mod relation_tests {
     }
 
     #[test]
-    fn extrude_profile_resolves_its_decimal_sketch_entity_suffix() {
+    fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
         bytes.extend_from_slice(b"308");
@@ -24113,8 +24183,8 @@ mod relation_tests {
         };
 
         let profile =
-            parse_extrude_profile(&bytes, "f3d:Design/BulkStream.dat", 4, &header, &[entity])
-                .expect("Extrude sketch-profile operand");
+            parse_sketch_profile(&bytes, "f3d:Design/BulkStream.dat", 4, &header, &[entity])
+                .expect("sketch-profile operand");
         assert_eq!(profile.scope_reference_ordinal, 4);
         assert_eq!(profile.entity_suffix, 172);
         assert_eq!(profile.entity_id, "0_172");
