@@ -1819,6 +1819,37 @@ fn decode_recovers_schema_feature_that_owns_materialized_surfaces() {
 }
 
 #[test]
+fn decode_types_row_only_class_916_as_subtractive_extrusion() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x94, 0xe1,
+    ];
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("cut feature");
+
+    assert_eq!(feature.name.as_deref(), Some("Cut id 4"));
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            direction: None,
+            extent: cadmpeg_ir::features::Extent::Unresolved,
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
+        }
+    ));
+}
+
+#[test]
 fn decode_types_named_protrusion_without_section_operands() {
     let data = build_prt("c", &[("MdlStatus", b"Protrusion id 4\0".to_vec())]);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");

@@ -1280,7 +1280,7 @@ construction transfers a carrier only when the feature has exactly one
 unplaced materialized cylinder row and every support plane satisfies these
 constraints.
 
-The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Classes 916 and 917 are section-sweep definitions whose recipe discriminates linear extrusion from rotation, class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, class 923 is a datum-plane definition, and class 926 is a saved section. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
+The fixed prefix of an `AllFeatur` feature row contains `f6 <class> e1`. The compact integer is the root `FeatDefs` schema class for that feature. This class dispatches the row to its operation-definition grammar. Class 916 is a subtractive section-sweep definition and class 917 is an additive section-sweep definition; their recipes discriminate linear extrusion from rotation. Class 911 is a hole definition, class 913 is a round definition, class 914 is a chamfer definition, class 923 is a datum-plane definition, and class 926 is a saved section. In a DEPDB recipe prefix, the root schema class performs the same dispatch.
 
 A class-926 row containing one section definition is the history node for that
 planar sketch. The contained definition identifier selects the neutral sketch
