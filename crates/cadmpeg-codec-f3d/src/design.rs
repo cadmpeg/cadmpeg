@@ -13563,16 +13563,6 @@ pub fn decode_face_operands(
                 .get(group_member_index + 1)
                 .and_then(|record_index| headers.get(&(stream, *record_index)))
                 .copied()
-                .or_else(|| {
-                    headers
-                        .iter()
-                        .filter(|((candidate_stream, _), candidate)| {
-                            *candidate_stream == stream
-                                && candidate.byte_offset > header.byte_offset
-                        })
-                        .min_by_key(|(_, candidate)| candidate.byte_offset)
-                        .map(|(_, candidate)| *candidate)
-                })
                 .map(|header| header.byte_offset);
             if let Some(operand) = parse_face_operand(
                 bytes,
