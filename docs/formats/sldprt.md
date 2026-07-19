@@ -118,6 +118,8 @@ A current-generation solved curve or arc with role u16 `1` at marker +27 uses an
 
 The extended marker prefix `ff ff 1f 00 01` has a profile-vertex layout with type u32 `1` at marker +17, `04 00 02 00` at marker +23, role u16 `1` at marker +27, `1e 00` at marker +56, and vertex coordinates at marker +58 and +66. Its 84-byte curve records use type u32 `0`, the same marker +23 and +27 values, u32 `1` at marker +60, and zero-based endpoint u16 values at marker +56 and +58. A curve followed at marker +84 by a complete coordinate-bearing marker is a line. A curve followed by the extended marker prefix with a non-coordinate arc-detail body is a bounded arc.
 
+A bounded arc's 84-byte curve record is immediately followed by an arc-detail marker of the same generation. The detail stores `ff ff ff ff 04 00 ff ff` at detail +5, repeats the curve's four-byte locus at detail +23, stores role u16 `2` at detail +27, `00 00 80 bf 00 00 0c 00` at detail +31, f64 `1` at detail +48, and a unit 2D tangent as f64 values at detail +64 and +72. The tangent and the two curve endpoints determine one circle: its center lies on the endpoint normal to the tangent and is equidistant from both endpoints. The bounded arc is the minor sweep between those endpoints.
+
 Keywords feature attributes that contain object identifiers use the feature's `id` namespace. `DissectableChildren` is a separator-delimited ordered list of child object identifiers. A single sketch child of an extrusion is that extrusion's profile dependency.
 
 Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order.

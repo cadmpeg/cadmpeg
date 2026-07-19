@@ -489,9 +489,9 @@ fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<S
 mod marker_tests {
     use super::{
         angled_reference_plane_frame, append_spatial_vertex, arc_angle_relation_kind,
-        compact_body_component_path_at, compact_body_path_at, compact_body_retention_mode,
-        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
-        compact_combine_operation_at, compact_component_plane_frame,
+        compact_arc_start_tangent, compact_body_component_path_at, compact_body_path_at,
+        compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
+        compact_body_state_ids, compact_combine_operation_at, compact_component_plane_frame,
         compact_edge_component_path_at, compact_edge_selection_at,
         compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
@@ -521,10 +521,11 @@ mod marker_tests {
         revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
         roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
         sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, BooleanOp, CompactPointReferenceKind, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER,
-        LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
+        spatial_vertex_coordinates, tangent_bounded_arc, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, Angle, BooleanOp, CompactPointReferenceKind, Length,
+        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
+        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
+        SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
@@ -2767,6 +2768,39 @@ mod marker_tests {
         assert_eq!(
             legacy_extended_profile_curve_kind(&curve, 0),
             Some(SketchInputKind::Arc)
+        );
+    }
+
+    #[test]
+    fn compact_arc_detail_tangent_determines_the_bounded_circle() {
+        let detail = 84;
+        let mut payload = vec![0; detail + 80];
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[detail..detail + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[detail + 5..detail + 13]
+            .copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
+        payload[detail + 13..detail + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[detail + 23..detail + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[detail + 27..detail + 29].copy_from_slice(&2u16.to_le_bytes());
+        payload[detail + 31..detail + 35].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[detail + 35..detail + 39].copy_from_slice(&[0x00, 0x00, 0x0c, 0x00]);
+        payload[detail + 48..detail + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[detail + 64..detail + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
+
+        assert_eq!(compact_arc_start_tangent(&payload, 0), Some([-1.0, 0.0]));
+        assert_eq!(
+            tangent_bounded_arc(
+                Point2::new(0.0, 2.0),
+                Point2::new(0.0, 0.0),
+                [-1.0, 0.0],
+                1.0e-9,
+            ),
+            Some(SketchGeometry::Arc {
+                center: Point2::new(0.0, 1.0),
+                radius: Length(1.0),
+                start_angle: Angle(std::f64::consts::FRAC_PI_2),
+                end_angle: Angle(-std::f64::consts::FRAC_PI_2),
+            })
         );
     }
 
@@ -11348,12 +11382,31 @@ pub(crate) fn project_marker_backed_sketches(
                                     }
                                 }
                             } else {
-                                SketchGeometry::Native {
-                                    native_kind: format!(
-                                        "sldprt:marker-geometry:{}",
-                                        marker.kind.native_code()
-                                    ),
-                                }
+                                (|| {
+                                    let [start, end] = endpoints.as_slice() else {
+                                        return None;
+                                    };
+                                    let (start, end) = (project(start)?, project(end)?);
+                                    let offset = usize::try_from(marker.offset).ok()?;
+                                    let [tu, tv] =
+                                        compact_arc_start_tangent(&lane.native_payload, offset)?;
+                                    let (tu, tv) = transform
+                                        .apply_axes(quantize(Point2::new(tu, tv), QUANTUM))?;
+                                    tangent_bounded_arc(
+                                        start,
+                                        end,
+                                        [tu as f64 * QUANTUM, tv as f64 * QUANTUM],
+                                        QUANTUM,
+                                    )
+                                })()
+                                .unwrap_or_else(|| {
+                                    SketchGeometry::Native {
+                                        native_kind: format!(
+                                            "sldprt:marker-geometry:{}",
+                                            marker.kind.native_code()
+                                        ),
+                                    }
+                                })
                             }
                         }
                         SketchInputKind::Relation(_) | SketchInputKind::Native(_) => return None,
@@ -11406,6 +11459,65 @@ pub(crate) fn project_marker_backed_sketches(
             };
         }
     }
+}
+
+fn compact_arc_start_tangent(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+    let detail = offset.checked_add(84)?;
+    if !sketch_marker_prefix_at(payload, detail)
+        || payload.get(detail + 5..detail + 13)
+            != Some(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff])
+        || payload.get(detail + 13..detail + 17) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || payload.get(detail + 23..detail + 27) != payload.get(offset + 23..offset + 27)
+        || marker_profile_curve_role(payload, detail) != Some(2)
+        || payload.get(detail + 31..detail + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
+        || payload.get(detail + 35..detail + 39) != Some(&[0x00, 0x00, 0x0c, 0x00])
+        || f64::from_le_bytes(payload.get(detail + 48..detail + 56)?.try_into().ok()?) != 1.0
+    {
+        return None;
+    }
+    let u = f64::from_le_bytes(payload.get(detail + 64..detail + 72)?.try_into().ok()?);
+    let v = f64::from_le_bytes(payload.get(detail + 72..detail + 80)?.try_into().ok()?);
+    (u.is_finite() && v.is_finite() && (u.hypot(v) - 1.0).abs() <= 1.0e-9).then_some([u, v])
+}
+
+fn tangent_bounded_arc(
+    start: Point2,
+    end: Point2,
+    tangent: [f64; 2],
+    tolerance: f64,
+) -> Option<SketchGeometry> {
+    let tangent_length = tangent[0].hypot(tangent[1]);
+    if !tangent_length.is_finite() || tangent_length <= tolerance {
+        return None;
+    }
+    let tangent = [tangent[0] / tangent_length, tangent[1] / tangent_length];
+    let normal = [-tangent[1], tangent[0]];
+    let chord = [end.u - start.u, end.v - start.v];
+    let denominator = 2.0 * (chord[0] * normal[0] + chord[1] * normal[1]);
+    if !denominator.is_finite() || denominator.abs() <= tolerance {
+        return None;
+    }
+    let scale = (chord[0] * chord[0] + chord[1] * chord[1]) / denominator;
+    let center = Point2::new(start.u + normal[0] * scale, start.v + normal[1] * scale);
+    let radius = (start.u - center.u).hypot(start.v - center.v);
+    let end_radius = (end.u - center.u).hypot(end.v - center.v);
+    if !radius.is_finite() || radius <= tolerance || !same_dimension_length(radius, end_radius) {
+        return None;
+    }
+    let first = (start.v - center.v).atan2(start.u - center.u);
+    let second = (end.v - center.v).atan2(end.u - center.u);
+    let forward = (second - first).rem_euclid(std::f64::consts::TAU);
+    let (start_angle, end_angle) = if forward <= std::f64::consts::PI + tolerance {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    Some(SketchGeometry::Arc {
+        center,
+        radius: Length(radius),
+        start_angle: Angle(start_angle),
+        end_angle: Angle(end_angle),
+    })
 }
 
 fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) {
