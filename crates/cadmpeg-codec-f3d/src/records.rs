@@ -2348,6 +2348,43 @@ pub struct SketchPatternDirection {
     pub distance_parameter: u32,
 }
 
+/// One text entity in a Fusion sketch coordinate system.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchText {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Index of this text record within the `BulkStream` tree.
+    pub record_index: u32,
+    /// Owning sketch record index.
+    pub owner_reference: u32,
+    /// Source per-file dynamic ASCII class tag naming this record's type.
+    pub class_tag: String,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Persistent genesis identity carried ahead of the text identities.
+    pub entity_genesis: u64,
+    /// Persistent identity of the text entity.
+    pub persistent_id: u64,
+    /// Persistent base identity of the text entity.
+    pub base_id: u64,
+    /// Unicode text content.
+    pub text: String,
+    /// Font-family name.
+    pub font_family: String,
+    /// Nominal text height in millimetres.
+    pub height: f64,
+    /// Horizontal scale relative to the nominal font width.
+    pub width_factor: f64,
+    /// First record reference following the font-width carrier.
+    pub first_reference: u32,
+    /// Second record reference following the text content.
+    pub second_reference: u32,
+    /// Complete source record bytes for native replay and rewrite.
+    #[serde(with = "cadmpeg_ir::bytes")]
+    #[schemars(with = "String")]
+    pub raw_bytes: Vec<u8>,
+}
+
 /// One persistent 2D point in a Fusion sketch coordinate system.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct SketchPoint {

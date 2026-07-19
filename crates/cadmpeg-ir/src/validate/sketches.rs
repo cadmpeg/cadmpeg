@@ -240,6 +240,20 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     finding(findings, Check::ParameterDomain, id, "invalid sketch NURBS");
                 }
             }
+            SketchGeometry::Text {
+                text,
+                font_family,
+                height,
+                width_factor,
+            } => {
+                if text.is_empty()
+                    || font_family.is_empty()
+                    || nonpositive(height.0)
+                    || nonpositive(*width_factor)
+                {
+                    finding(findings, Check::Bounds, id, "invalid sketch text");
+                }
+            }
             SketchGeometry::Native { native_kind } => {
                 if native_kind.is_empty() {
                     finding(findings, Check::Counts, id, "empty native sketch kind");
@@ -657,6 +671,39 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                                 .entities
                                 .iter()
                                 .all(|entity| entities.insert(entity))
+                    })
+            }
+            Constraint::TextFrame { text, frame } => {
+                matches!(geometry.get(text), Some(SketchGeometry::Text { .. }))
+                    && !frame.is_empty()
+                    && frame.iter().all(|entity| {
+                        entity != text
+                            && geometry.get(entity).is_some_and(|geometry| {
+                                !matches!(geometry, SketchGeometry::Text { .. })
+                            })
+                    })
+            }
+            Constraint::TextPath {
+                text,
+                path,
+                glyph_transforms,
+            } => {
+                matches!(geometry.get(text), Some(SketchGeometry::Text { .. }))
+                    && text != path
+                    && geometry.get(path).is_some_and(|geometry| {
+                        !matches!(
+                            geometry,
+                            SketchGeometry::Point { .. } | SketchGeometry::Text { .. }
+                        )
+                    })
+                    && !glyph_transforms.is_empty()
+                    && glyph_transforms.iter().all(|transform| {
+                        transform
+                            .rows
+                            .iter()
+                            .flatten()
+                            .all(|value| value.is_finite())
+                            && transform.rows[3] == [0.0, 0.0, 0.0, 1.0]
                     })
             }
             Constraint::CoincidentLoci { loci } => loci.len() >= 2,

@@ -17,13 +17,13 @@ use crate::records::{
     DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
     EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
     PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
-    SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, TolerantCoedgeParameters,
-    TolerantEdgeTail, TolerantVertexTail, TransformHints, VertexOwnership, WireTopology,
-    XrefDesign, XrefReference,
+    SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
+    TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
+    VertexOwnership, WireTopology, XrefDesign, XrefReference,
 };
 
 /// Current schema version for the Autodesk Fusion native namespace.
-pub const F3D_NATIVE_VERSION: u32 = 4;
+pub const F3D_NATIVE_VERSION: u32 = 5;
 
 pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "act_entities",
@@ -77,6 +77,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "sketch_points",
     "sketch_relations",
     "sketch_surfaces",
+    "sketch_texts",
     "tolerant_coedge_parameters",
     "tolerant_edge_tails",
     "tolerant_vertex_tails",
@@ -134,6 +135,7 @@ macro_rules! f3d_arenas {
             sketch_points: SketchPoint;
             sketch_curve_identities: SketchCurveIdentity;
             sketch_surfaces: SketchSurface;
+            sketch_texts: SketchText;
             lost_edge_references: LostEdgeReference;
             mesh_surface_sentinels: MeshSurfaceSentinel;
             vertex_ownerships: VertexOwnership;
@@ -329,6 +331,9 @@ pub struct F3dNative {
     /// Persistent tensor-product surfaces owned by spatial sketches.
     #[serde(default)]
     pub sketch_surfaces: Vec<SketchSurface>,
+    /// Persistent text entities owned by planar sketches.
+    #[serde(default)]
+    pub sketch_texts: Vec<SketchText>,
     /// Construction-history edge selections that Fusion could not re-resolve.
     #[serde(default)]
     pub lost_edge_references: Vec<LostEdgeReference>,
@@ -414,6 +419,7 @@ impl Default for F3dNative {
             sketch_points: Vec::new(),
             sketch_curve_identities: Vec::new(),
             sketch_surfaces: Vec::new(),
+            sketch_texts: Vec::new(),
             lost_edge_references: Vec::new(),
             mesh_surface_sentinels: Vec::new(),
             vertex_ownerships: Vec::new(),

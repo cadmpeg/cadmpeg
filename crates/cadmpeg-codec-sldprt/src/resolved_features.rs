@@ -2029,9 +2029,11 @@ fn generated_sketch_curve(
                     .map(|(start, end)| [*start, *end]),
             })
         }
-        SketchGeometry::Point { .. } | SketchGeometry::Native { .. } => Err(
+        SketchGeometry::Point { .. }
+        | SketchGeometry::Text { .. }
+        | SketchGeometry::Native { .. } => Err(
             cadmpeg_ir::codec::CodecError::NotImplemented(
-                "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),
+                "source-less SLDPRT sketch writing does not support point, text, or native-only profile entities".into(),
             ),
         ),
     }

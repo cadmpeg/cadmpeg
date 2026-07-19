@@ -13,6 +13,7 @@ use crate::records::{
     ActEntity, ActGuid, ActRootComponent, ConstructionRecipeKind, CreationTimestamp,
     DesignMaterialAssignment, DesignObjectKind, LostEdgeReference, PersistentDesignLink,
     PersistentReferenceKind, PersistentSubentityTag, SketchCurveGeometry, SketchCurveLink,
+    SketchText,
 };
 use cadmpeg_ir::codec::{Codec, CodecError, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -403,6 +404,12 @@ fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecErro
                 .iter()
                 .map(|record| (record.record_index, record.id.as_str())),
         )
+        .chain(
+            native
+                .sketch_texts
+                .iter()
+                .map(|record| (record.record_index, record.id.as_str())),
+        )
     {
         if let Some(before) = typed_indices.insert(record_index, id) {
             return Err(CodecError::Malformed(format!(
@@ -421,6 +428,20 @@ fn validate_source_less_sketch_graph(native: &F3dNative) -> Result<(), CodecErro
             return Err(CodecError::Malformed(format!(
                 "F3D sketch relation {} references missing sketch owner {}",
                 relation.id, relation.owner_reference
+            )));
+        }
+    }
+    for text in &native.sketch_texts {
+        if !root_indices.contains(&text.record_index) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch text {} is not reachable from a sketch header",
+                text.id
+            )));
+        }
+        if !sketch_owners.contains(&u64::from(text.owner_reference)) {
+            return Err(CodecError::Malformed(format!(
+                "F3D sketch text {} references missing sketch owner {}",
+                text.id, text.owner_reference
             )));
         }
     }
@@ -1417,6 +1438,7 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
         && native.sketch_points.is_empty()
         && native.sketch_curve_identities.is_empty()
         && native.sketch_relations.is_empty()
+        && native.sketch_texts.is_empty()
         && !has_body_visibility
     {
         return Ok(None);
@@ -1573,6 +1595,9 @@ fn encode_design_bulkstream(target: &CadIr) -> Result<Option<Vec<u8>>, CodecErro
     }
     for curve in &native.sketch_curve_identities {
         encode_sketch_curve_identity(&mut out, curve)?;
+    }
+    for text in &native.sketch_texts {
+        encode_sketch_text(&mut out, text)?;
     }
     for relation in &native.sketch_relations {
         encode_sketch_relation(&mut out, relation)?;
@@ -1860,6 +1885,39 @@ fn encode_sketch_nurbs(
         .flat_map(|point| [point.x / 10.0, point.y / 10.0, point.z / 10.0])
         .collect::<Vec<_>>();
     encode_f64_sequence(record, &coordinates)
+}
+
+fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
+    validate_dynamic_class_tag(&text.class_tag, "sketch text")?;
+    let decoded = crate::design::decode_sketch_text_record(
+        &text.raw_bytes,
+        "Design/BulkStream.dat",
+        text.class_tag.clone(),
+        text.record_index,
+        0,
+    )
+    .ok_or_else(|| CodecError::Malformed(format!("invalid raw sketch-text record {}", text.id)))?;
+    let header_matches = text.raw_bytes.get(0..4) == Some(&3u32.to_le_bytes())
+        && text.raw_bytes.get(4..7) == Some(text.class_tag.as_bytes())
+        && text.raw_bytes.get(7..15) == Some(&u64::from(text.record_index).to_le_bytes());
+    let fields_match = decoded.owner_reference == text.owner_reference
+        && decoded.entity_genesis == text.entity_genesis
+        && decoded.persistent_id == text.persistent_id
+        && decoded.base_id == text.base_id
+        && decoded.text == text.text
+        && decoded.font_family == text.font_family
+        && decoded.height == text.height
+        && decoded.width_factor == text.width_factor
+        && decoded.first_reference == text.first_reference
+        && decoded.second_reference == text.second_reference;
+    if !header_matches || !fields_match {
+        return Err(CodecError::Malformed(format!(
+            "sketch-text record {} fields disagree with its raw bytes",
+            text.id
+        )));
+    }
+    out.extend_from_slice(&text.raw_bytes);
+    Ok(())
 }
 
 fn encode_sketch_relation(

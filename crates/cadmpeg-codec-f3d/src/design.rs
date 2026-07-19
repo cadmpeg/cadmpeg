@@ -26,6 +26,7 @@ use crate::records::{
     DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
     PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
     SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
+    SketchText,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -3987,6 +3988,18 @@ pub(crate) fn neutral_sketch_curve_id(
     ))
 }
 
+fn neutral_sketch_text_id(
+    native_ref: &str,
+    persistent_id: u64,
+) -> cadmpeg_ir::sketches::SketchEntityId {
+    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    cadmpeg_ir::sketches::SketchEntityId(format!(
+        "f3d:model:sketch-entity#{}:{}t{persistent_id}",
+        stream.len(),
+        stream,
+    ))
+}
+
 pub(crate) fn neutral_spatial_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SpatialSketchId {
@@ -4123,6 +4136,7 @@ pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
+    texts: &[SketchText],
     linear_tolerance: f64,
 ) -> (
     Vec<cadmpeg_ir::sketches::Sketch>,
@@ -4284,6 +4298,24 @@ pub fn project_sketch_design(
             geometry_ref: None,
             endpoint_refs: Vec::new(),
             geometry,
+        })
+    }));
+    entities.extend(texts.iter().filter_map(|text| {
+        let scope = native_stream(&text.id)?;
+        let placement = placements_by_suffix.get(&(scope, text.owner_reference))?;
+        Some(SketchEntity {
+            id: neutral_sketch_text_id(&text.id, text.persistent_id),
+            sketch: neutral_sketch_id(placement),
+            construction: false,
+            native_ref: Some(text.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Text {
+                text: text.text.clone(),
+                font_family: text.font_family.clone(),
+                height: Length(text.height),
+                width_factor: text.width_factor,
+            },
         })
     }));
     entities.sort_by_key(|entity| entity.id.clone());
@@ -8446,6 +8478,7 @@ pub fn project_sketch_constraints(
     parameters: &[DesignParameter],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
+    texts: &[SketchText],
     relations: &[SketchRelation],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
@@ -8487,6 +8520,12 @@ pub fn project_sketch_constraints(
                 (native_stream(&curve.id)?, curve.record_index),
             ))
         }))
+        .chain(texts.iter().filter_map(|text| {
+            Some((
+                text.id.as_str(),
+                (native_stream(&text.id)?, text.record_index),
+            ))
+        }))
         .collect::<HashMap<_, _>>();
     let projected = entities
         .iter()
@@ -8516,6 +8555,15 @@ pub fn project_sketch_constraints(
             ))
         })
         .collect::<HashMap<_, _>>();
+    let text_native_refs = texts
+        .iter()
+        .filter_map(|text| {
+            Some((
+                (native_stream(&text.id)?, text.record_index),
+                text.id.as_str(),
+            ))
+        })
+        .collect::<HashMap<_, _>>();
     let native_operand = |scope: &str, field: &str, record_index: u32| {
         let (family, native_ref) = if let Some(native_ref) =
             point_native_refs.get(&(scope, record_index)).copied()
@@ -8523,6 +8571,8 @@ pub fn project_sketch_constraints(
             ("point", Some(native_ref))
         } else if let Some(native_ref) = curve_native_refs.get(&(scope, record_index)).copied() {
             ("curve", Some(native_ref))
+        } else if let Some(native_ref) = text_native_refs.get(&(scope, record_index)).copied() {
+            ("text", Some(native_ref))
         } else {
             ("record", None)
         };
@@ -8593,6 +8643,7 @@ pub fn project_sketch_constraints(
             )
         })
         .or_else(|| exact_offset_constraint(relation, scope, &projected))
+        .or_else(|| exact_text_relation(relation, scope, &projected))
         .unwrap_or_else(|| Definition::Native {
             native_kind: relation_kind_name(relation),
             native_state: Some(relation.state),
@@ -8756,6 +8807,92 @@ fn exact_rectangular_pattern(
         directions,
         instances,
     })
+}
+
+fn exact_text_relation(
+    relation: &SketchRelation,
+    scope: &str,
+    projected: &HashMap<(&str, u32), &cadmpeg_ir::sketches::SketchEntity>,
+) -> Option<cadmpeg_ir::sketches::SketchConstraintDefinition> {
+    use crate::records::SketchPatternDefinition;
+    use cadmpeg_ir::sketches::{SketchConstraintDefinition as Definition, SketchGeometry};
+    use cadmpeg_ir::transform::Transform;
+
+    if relation.unknown_constraint_bits != 0 || relation.constraint_kinds.len() != 1 {
+        return None;
+    }
+    match relation.pattern.as_ref()? {
+        SketchPatternDefinition::TextFrame { text_reference }
+            if relation.constraint_kinds == [SketchConstraintKind::TextFrame]
+                && relation.members.first() == Some(text_reference)
+                && relation.auxiliary_references == [*text_reference]
+                && relation.return_members == relation.members[1..] =>
+        {
+            let text = projected.get(&(scope, *text_reference))?;
+            if !matches!(text.geometry, SketchGeometry::Text { .. }) {
+                return None;
+            }
+            let frame = relation
+                .return_members
+                .iter()
+                .map(|record_index| projected.get(&(scope, *record_index)).copied())
+                .collect::<Option<Vec<_>>>()?;
+            (!frame.is_empty()
+                && frame.iter().all(|entity| {
+                    entity.id != text.id && !matches!(entity.geometry, SketchGeometry::Text { .. })
+                }))
+            .then(|| Definition::TextFrame {
+                text: text.id.clone(),
+                frame: frame.into_iter().map(|entity| entity.id.clone()).collect(),
+            })
+        }
+        SketchPatternDefinition::TextPath {
+            text_reference,
+            glyph_transforms,
+        } if relation.constraint_kinds == [SketchConstraintKind::TextPath]
+            && relation.members.len() == 2
+            && relation.member_roles.len() == 2
+            && relation.member_roles[0] != 0
+            && relation.member_roles[1] == 0
+            && relation.members[1] == *text_reference
+            && relation.auxiliary_references == [*text_reference]
+            && relation.return_members == [relation.members[0]] =>
+        {
+            let path = projected.get(&(scope, relation.members[0]))?;
+            let text = projected.get(&(scope, *text_reference))?;
+            if path.id == text.id
+                || matches!(
+                    path.geometry,
+                    SketchGeometry::Point { .. } | SketchGeometry::Text { .. }
+                )
+                || !matches!(text.geometry, SketchGeometry::Text { .. })
+                || glyph_transforms.is_empty()
+                || glyph_transforms
+                    .iter()
+                    .flatten()
+                    .flatten()
+                    .any(|value| !value.is_finite())
+            {
+                return None;
+            }
+            let glyph_transforms = glyph_transforms
+                .iter()
+                .map(|source| {
+                    let mut rows = *source;
+                    for row in rows.iter_mut().take(3) {
+                        row[3] *= 10.0;
+                    }
+                    Transform { rows }
+                })
+                .collect();
+            Some(Definition::TextPath {
+                text: text.id.clone(),
+                path: path.id.clone(),
+                glyph_transforms,
+            })
+        }
+        _ => None,
+    }
 }
 
 fn exact_circular_pattern(
@@ -10522,7 +10659,10 @@ fn exact_coincident_loci(
             | Geometry::Ellipse { center, .. } => {
                 loci.push((SketchLocus::Center(entity.id.clone()), *center));
             }
-            Geometry::Line { .. } | Geometry::Nurbs { .. } | Geometry::Native { .. } => {}
+            Geometry::Line { .. }
+            | Geometry::Nurbs { .. }
+            | Geometry::Text { .. }
+            | Geometry::Native { .. } => {}
         }
         loci
     };
@@ -11089,7 +11229,9 @@ fn point_lies_on_sketch_geometry(
             )
             .unwrap_or(false)
         }
-        SketchGeometry::Nurbs { periodic: true, .. } | SketchGeometry::Native { .. } => false,
+        SketchGeometry::Nurbs { periodic: true, .. }
+        | SketchGeometry::Text { .. }
+        | SketchGeometry::Native { .. } => false,
     }
 }
 
@@ -17829,6 +17971,140 @@ pub fn decode_sketch_points(
         }
     }
     Ok(out)
+}
+
+/// Decode sketch-text records carrying persistent identities, font metrics,
+/// UTF-16 content, and an owning-sketch reference.
+pub fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let mut at = 0usize;
+        while at + 230 <= bytes.len() {
+            let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
+                at += 1;
+                continue;
+            };
+            if class_tag.len() != 3 || !class_tag.bytes().all(|byte| byte.is_ascii_digit()) {
+                at += 1;
+                continue;
+            }
+            let Some(record_index) = u32_at(bytes, after_tag) else {
+                break;
+            };
+            let record_end = next_indexed_record_offset(bytes, at + 7).unwrap_or(bytes.len());
+            let Some(payload) = bytes.get(at..record_end) else {
+                break;
+            };
+            if let Some(text) =
+                decode_sketch_text_record(payload, &entry.name, class_tag, record_index, at)
+            {
+                out.push(text);
+                at = record_end;
+            } else {
+                at += 1;
+            }
+        }
+    }
+    Ok(out)
+}
+
+pub(crate) fn decode_sketch_text_record(
+    payload: &[u8],
+    stream: &str,
+    class_tag: String,
+    record_index: u32,
+    byte_offset: usize,
+) -> Option<SketchText> {
+    if payload.get(20) != Some(&1)
+        || u32_at(payload, 21) != Some(3)
+        || u32_at(payload, 25) != Some(13)
+        || payload.get(29..42) != Some(b"EntityGenesis")
+        || u32_at(payload, 42) != Some(23)
+        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
+        || u32_at(payload, 77) != Some(10)
+        || payload.get(81..91) != Some(b"textex_tag")
+        || u32_at(payload, 91) != Some(23)
+        || payload.get(95..118) != Some(b"IntrinsicMetaTypeuint64")
+        || u32_at(payload, 126) != Some(12)
+        || payload.get(130..142) != Some(b"txt_tag_base")
+        || u32_at(payload, 142) != Some(23)
+        || payload.get(146..169) != Some(b"IntrinsicMetaTypeuint64")
+        || payload.get(177) != Some(&1)
+    {
+        return None;
+    }
+    let entity_genesis = read_u64(payload, 69)?;
+    let persistent_id = read_u64(payload, 118)?;
+    let base_id = read_u64(payload, 169)?;
+    let height = f64_at(payload, 178)? * 10.0;
+    let rotation = f64_at(payload, 186)?;
+    let baseline_shift = f32::from_le_bytes(payload.get(194..198)?.try_into().ok()?);
+    let vertical_scale = f32::from_le_bytes(payload.get(198..202)?.try_into().ok()?);
+    let font_count = usize::try_from(u32_at(payload, 202)?).ok()?;
+    if font_count == 0 || font_count > 1_024 {
+        return None;
+    }
+    let (font_family, after_font) = utf16le_at(payload, 206, font_count)?;
+    if payload.get(after_font) != Some(&0) {
+        return None;
+    }
+    let width_factor = f64_at(payload, after_font + 1)?;
+    let first_reference = after_font.checked_add(9)?;
+    if payload.get(first_reference) != Some(&1)
+        || payload.get(first_reference + 5..first_reference + 11) != Some(&[0; 6])
+        || payload.get(first_reference + 11) != Some(&1)
+        || payload.get(first_reference + 12..first_reference + 18) != Some(&[0; 6])
+    {
+        return None;
+    }
+    let text_count_at = first_reference.checked_add(18)?;
+    let text_count = usize::try_from(u32_at(payload, text_count_at)?).ok()?;
+    if text_count == 0 || text_count > 1_048_576 {
+        return None;
+    }
+    let (text, after_text) = utf16le_at(payload, text_count_at + 4, text_count)?;
+    if payload.get(after_text) != Some(&1)
+        || payload.get(after_text + 5..after_text + 11) != Some(&[0; 6])
+        || payload.len() < 11
+    {
+        return None;
+    }
+    let owner_at = payload.len() - 11;
+    if payload.get(owner_at) != Some(&1)
+        || payload.get(owner_at + 5..owner_at + 11) != Some(&[0; 6])
+        || !height.is_finite()
+        || height <= 0.0
+        || !rotation.is_finite()
+        || !baseline_shift.is_finite()
+        || !vertical_scale.is_finite()
+        || vertical_scale <= 0.0
+        || !width_factor.is_finite()
+        || width_factor <= 0.0
+    {
+        return None;
+    }
+    Some(SketchText {
+        id: format!("f3d:{stream}:sketch-text#{byte_offset}"),
+        record_index,
+        owner_reference: u32_at(payload, owner_at + 1)?,
+        class_tag,
+        byte_offset: byte_offset as u64,
+        entity_genesis,
+        persistent_id,
+        base_id,
+        text,
+        font_family,
+        height,
+        width_factor,
+        first_reference: u32_at(payload, first_reference + 1)?,
+        second_reference: u32_at(payload, after_text + 1)?,
+        raw_bytes: payload.to_vec(),
+    })
 }
 
 fn decode_sketch_point(payload: &[u8]) -> Option<(u64, u32, f64, f64, usize, Option<u64>)> {
@@ -24724,7 +25000,7 @@ mod relation_tests {
         // while the sketch records carry ten-times-centimetre values; the
         // projected sketch origin scales by ten to stay commensurate.
         let (sketches, entities) =
-            project_sketch_design(&[placement(341)], &[point.clone()], &[], 1.0e-6);
+            project_sketch_design(&[placement(341)], &[point.clone()], &[], &[], 1.0e-6);
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].origin, Point3::new(260.0, 0.0, 0.0));
         assert_eq!(sketches[0].normal, Vector3::new(1.0, 0.0, 0.0));
@@ -24736,7 +25012,7 @@ mod relation_tests {
         ));
 
         // The settled explicit frame keeps its stored origin unscaled.
-        let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], 1.0e-6);
+        let (sketches, _) = project_sketch_design(&[placement(329)], &[point], &[], &[], 1.0e-6);
         assert_eq!(sketches[0].origin, Point3::new(26.0, 0.0, 0.0));
     }
 
@@ -25294,7 +25570,8 @@ mod relation_tests {
         let placements = vec![placement];
         let points = vec![point];
         let curves = vec![line, nonclamped_nurbs, clockwise_arc];
-        let (sketches, entities) = project_sketch_design(&placements, &points, &curves, 1.0e-6);
+        let (sketches, entities) =
+            project_sketch_design(&placements, &points, &curves, &[], 1.0e-6);
         assert_eq!(sketches.len(), 1);
         assert_eq!(sketches[0].origin, Point3::new(10.0, 20.0, 30.0));
         assert_eq!(sketches[0].u_axis, Vector3::new(0.0, 1.0, 0.0));
@@ -25398,6 +25675,7 @@ mod relation_tests {
             &[],
             &points,
             &curves,
+            &[],
             &[
                 relation(
                     700,
@@ -25710,7 +25988,7 @@ mod relation_tests {
             point_on_surface_relation,
         ];
         let (planar_sketches, planar_entities) =
-            project_sketch_design(&[placement.clone()], &points, &curves, 1.0e-6);
+            project_sketch_design(&[placement.clone()], &points, &curves, &[], 1.0e-6);
         assert!(planar_sketches.is_empty());
         assert!(planar_entities.is_empty());
         let surfaces = [surface];
@@ -27452,9 +27730,10 @@ mod relation_tests {
         )
         .is_err());
 
-        let (mut sketches, mut entities) = project_sketch_design(&placements, &points, &[], 1.0e-6);
+        let (mut sketches, mut entities) =
+            project_sketch_design(&placements, &points, &[], &[], 1.0e-6);
         let mut constraints =
-            project_sketch_constraints(&placements, &[], &points, &[], &relations, &entities);
+            project_sketch_constraints(&placements, &[], &points, &[], &[], &relations, &entities);
         assert_eq!(sketches.len(), 2);
         assert_eq!(entities.len(), 2);
         assert_eq!(constraints.len(), 2);
@@ -29978,6 +30257,151 @@ mod relation_tests {
                 glyph_transforms: glyphs.to_vec(),
             })
         );
+    }
+
+    #[test]
+    fn sketch_text_record_decodes_typed_content_and_metrics() {
+        let mut bytes = Vec::new();
+        let push_ascii = |bytes: &mut Vec<u8>, value: &str| {
+            bytes.extend_from_slice(&(value.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(value.as_bytes());
+        };
+        let push_utf16 = |bytes: &mut Vec<u8>, value: &str| {
+            let encoded = value.encode_utf16().collect::<Vec<_>>();
+            bytes.extend_from_slice(&(encoded.len() as u32).to_le_bytes());
+            bytes.extend(encoded.into_iter().flat_map(u16::to_le_bytes));
+        };
+        push_ascii(&mut bytes, "329");
+        bytes.extend_from_slice(&304u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 5]);
+        bytes.push(1);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        push_ascii(&mut bytes, "EntityGenesis");
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&4u64.to_le_bytes());
+        push_ascii(&mut bytes, "textex_tag");
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&109u64.to_le_bytes());
+        push_ascii(&mut bytes, "txt_tag_base");
+        push_ascii(&mut bytes, "IntrinsicMetaTypeuint64");
+        bytes.extend_from_slice(&305u64.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&1.0f64.to_le_bytes());
+        bytes.extend_from_slice(&0.0f64.to_le_bytes());
+        bytes.extend_from_slice(&0.0f32.to_le_bytes());
+        bytes.extend_from_slice(&1.0f32.to_le_bytes());
+        push_utf16(&mut bytes, "Arial");
+        bytes.push(0);
+        bytes.extend_from_slice(&0.8f64.to_le_bytes());
+        push_reference(&mut bytes, 307);
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.push(1);
+        bytes.extend_from_slice(&[0; 6]);
+        push_utf16(&mut bytes, "path text");
+        push_reference(&mut bytes, 310);
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&[0; 16]);
+        push_reference(&mut bytes, 201);
+        bytes.extend_from_slice(&[0; 6]);
+
+        let text =
+            super::decode_sketch_text_record(&bytes, "Design/BulkStream.dat", "329".into(), 304, 7)
+                .expect("sketch text record");
+        assert_eq!(text.record_index, 304);
+        assert_eq!(text.owner_reference, 201);
+        assert_eq!(text.entity_genesis, 4);
+        assert_eq!(text.persistent_id, 109);
+        assert_eq!(text.base_id, 305);
+        assert_eq!(text.text, "path text");
+        assert_eq!(text.font_family, "Arial");
+        assert_eq!(text.height, 10.0);
+        assert_eq!(text.width_factor, 0.8);
+        assert_eq!(text.first_reference, 307);
+        assert_eq!(text.second_reference, 310);
+    }
+
+    #[test]
+    fn text_path_relation_projects_typed_entities_and_scaled_glyph_placements() {
+        use cadmpeg_ir::features::Length;
+        use cadmpeg_ir::math::Point2;
+        use cadmpeg_ir::sketches::{
+            SketchConstraintDefinition, SketchEntity, SketchEntityId, SketchGeometry, SketchId,
+        };
+
+        let sketch = SketchId("sketch".into());
+        let path = SketchEntity {
+            id: SketchEntityId("path".into()),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(10.0, 0.0),
+            },
+        };
+        let text = SketchEntity {
+            id: SketchEntityId("text".into()),
+            sketch,
+            construction: false,
+            native_ref: None,
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Text {
+                text: "A".into(),
+                font_family: "Arial".into(),
+                height: Length(10.0),
+                width_factor: 0.8,
+            },
+        };
+        let mut glyph = [[0.0; 4]; 4];
+        for ordinal in 0..4 {
+            glyph[ordinal][ordinal] = 1.0;
+        }
+        glyph[0][3] = 0.5;
+        let relation = SketchRelation {
+            id: "f3d:Design/BulkStream.dat:sketch-relation#3".into(),
+            record_index: 3,
+            class_tag: "413".into(),
+            byte_offset: 0,
+            state_offset: 0,
+            owner_reference: 1,
+            owner_entity_id: String::new(),
+            auxiliary_references: vec![2],
+            auxiliary_reference_offsets: Vec::new(),
+            members: vec![1, 2],
+            resolved_members: Vec::new(),
+            member_offsets: Vec::new(),
+            owner_reference_offset: 0,
+            state: 0x200_0000_0000,
+            constraint_kinds: vec![SketchConstraintKind::TextPath],
+            unknown_constraint_bits: 0,
+            member_roles: vec![1, 0],
+            entity_genesis: Some(2),
+            pattern: Some(crate::records::SketchPatternDefinition::TextPath {
+                text_reference: 2,
+                glyph_transforms: vec![glyph],
+            }),
+            return_members: vec![1],
+            resolved_return_members: Vec::new(),
+            return_member_offsets: Vec::new(),
+            raw_bytes: Vec::new(),
+        };
+        let projected =
+            std::collections::HashMap::from([(("scope", 1), &path), (("scope", 2), &text)]);
+        let definition =
+            super::exact_text_relation(&relation, "scope", &projected).expect("typed text path");
+        assert!(matches!(
+            definition,
+            SketchConstraintDefinition::TextPath {
+                text: ref text_id,
+                path: ref path_id,
+                ref glyph_transforms,
+            } if text_id == &text.id
+                && path_id == &path.id
+                && glyph_transforms[0].rows[0][3] == 5.0
+        ));
     }
 
     #[test]

@@ -185,6 +185,7 @@ struct DesignProjectionGaps {
     unprojected_sketch_points: usize,
     unprojected_sketch_curves: usize,
     unprojected_sketch_surfaces: usize,
+    unprojected_sketch_texts: usize,
     unprojected_sketch_relations: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
@@ -236,6 +237,8 @@ fn constraint_parameters(
         Definition::Coincident { .. }
         | Definition::Polygon { .. }
         | Definition::SplineGroup { .. }
+        | Definition::TextFrame { .. }
+        | Definition::TextPath { .. }
         | Definition::CoincidentLoci { .. }
         | Definition::Midpoint { .. }
         | Definition::Concentric { .. }
@@ -417,6 +420,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .iter()
             .filter(|surface| !projected_sketch_entity_refs.contains(surface.id.as_str()))
             .count(),
+        unprojected_sketch_texts: native
+            .sketch_texts
+            .iter()
+            .filter(|text| !projected_sketch_entity_refs.contains(text.id.as_str()))
+            .count(),
         unprojected_sketch_relations: native
             .sketch_relations
             .iter()
@@ -596,6 +604,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        gaps.unprojected_sketch_texts,
+        format!(
+            "{} decoded sketch text record(s) have no neutral sketch entity.",
+            gaps.unprojected_sketch_texts
+        ),
+    );
+    push(
         gaps.unprojected_sketch_relations,
         format!(
             "{} decoded sketch relation(s) have no neutral constraint.",
@@ -741,6 +756,7 @@ pub fn decode(
             native.sketch_relations = sketch_relations;
             extend_related_design_records(reader, &scan, &mut native)?;
             native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
+            native.sketch_texts = crate::design::decode_sketch_texts(&scan)?;
             native.sketch_curve_identities =
                 crate::design::decode_sketch_curve_identities(reader, &scan)?;
             native.sketch_surfaces = crate::design::decode_sketch_surfaces(&scan)?;
@@ -879,6 +895,7 @@ pub fn decode(
                 &native.design_sketch_placements,
                 &native.sketch_points,
                 &native.sketch_curve_identities,
+                &native.sketch_texts,
                 ir.tolerances.linear,
             );
             (ir.model.spatial_sketches, ir.model.spatial_sketch_entities) =
@@ -933,6 +950,7 @@ pub fn decode(
                 &native.design_parameters,
                 &native.sketch_points,
                 &native.sketch_curve_identities,
+                &native.sketch_texts,
                 &native.sketch_relations,
                 &ir.model.sketch_entities,
             );
@@ -1052,6 +1070,7 @@ pub fn decode(
     native.sketch_relations = sketch_relations;
     extend_related_design_records(reader, &scan, &mut native)?;
     native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
+    native.sketch_texts = crate::design::decode_sketch_texts(&scan)?;
     native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
     native.sketch_surfaces = crate::design::decode_sketch_surfaces(&scan)?;
     crate::design::bind_sketch_graph(
@@ -1183,6 +1202,7 @@ pub fn decode(
         &native.design_sketch_placements,
         &native.sketch_points,
         &native.sketch_curve_identities,
+        &native.sketch_texts,
         ir.tolerances.linear,
     );
     (ir.model.spatial_sketches, ir.model.spatial_sketch_entities) =
@@ -1237,6 +1257,7 @@ pub fn decode(
         &native.design_parameters,
         &native.sketch_points,
         &native.sketch_curve_identities,
+        &native.sketch_texts,
         &native.sketch_relations,
         &ir.model.sketch_entities,
     );
@@ -2873,6 +2894,7 @@ mod tests {
                 unprojected_sketch_points: 1,
                 unprojected_sketch_curves: 1,
                 unprojected_sketch_surfaces: 0,
+                unprojected_sketch_texts: 0,
                 unprojected_sketch_relations: 1,
                 unprojected_dimensions: 1,
                 profile_selections: 1,

@@ -1297,6 +1297,13 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                     .collect(),
                 None,
             ),
+            Definition::TextFrame { text, frame } => (
+                std::iter::once(text.clone())
+                    .chain(frame.iter().cloned())
+                    .collect(),
+                None,
+            ),
+            Definition::TextPath { text, path, .. } => (vec![text.clone(), path.clone()], None),
             Definition::Native {
                 entities,
                 parameter: Some(parameter),

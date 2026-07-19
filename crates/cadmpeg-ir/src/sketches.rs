@@ -3,6 +3,7 @@
 
 use crate::features::{Angle, Length, ParameterId};
 use crate::math::{Point2, Point3, Vector3};
+use crate::transform::Transform;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -162,6 +163,17 @@ pub enum SketchGeometry {
         /// Whether the curve is periodic.
         #[serde(default)]
         periodic: bool,
+    },
+    /// Text placed in sketch coordinates.
+    Text {
+        /// Unicode text content.
+        text: String,
+        /// Source font-family name.
+        font_family: String,
+        /// Nominal character height.
+        height: Length,
+        /// Horizontal scale relative to the nominal font width.
+        width_factor: f64,
     },
     /// Source-native geometry not yet reduced to a neutral family.
     Native {
@@ -515,6 +527,22 @@ pub enum SketchConstraintDefinition {
         count_parameter: Option<ParameterId>,
         /// Instances in source order; index zero is the seed instance.
         instances: Vec<SketchCircularPatternInstance>,
+    },
+    /// Text entity bounded by ordered frame curves.
+    TextFrame {
+        /// Text entity owning the frame.
+        text: SketchEntityId,
+        /// Ordered frame curves.
+        frame: Vec<SketchEntityId>,
+    },
+    /// Text entity laid out along a path curve.
+    TextPath {
+        /// Text entity placed along the path.
+        text: SketchEntityId,
+        /// Path curve.
+        path: SketchEntityId,
+        /// Character placements in text order, expressed in sketch coordinates.
+        glyph_transforms: Vec<Transform>,
     },
     /// Two or more explicit entity loci coincide.
     CoincidentLoci {
