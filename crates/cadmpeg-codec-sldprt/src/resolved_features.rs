@@ -439,11 +439,11 @@ mod marker_tests {
         component_path_preceding_feature, component_path_terminal_feature,
         component_profile_source_at, component_reference_curve_path_at, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
-        cosmetic_thread_cylinder_reference_at, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, fixed_reference_plane_frame, inline_surface_reference_at,
-        legacy_feature_input_section, legacy_reference_axis_triads, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
-        matrix_reference_plane_frame, minimal_reference_plane_frame,
+        cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
+        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
+        inline_surface_reference_at, legacy_feature_input_section, legacy_reference_axis_triads,
+        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
+        marker_object_index, matrix_reference_plane_frame, minimal_reference_plane_frame,
         mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
         native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
@@ -3034,6 +3034,27 @@ mod marker_tests {
     }
 
     #[test]
+    fn cosmetic_thread_component_face_reference_uses_the_nested_body_layout() {
+        let body_offset = 30;
+        let marker = body_offset + 92;
+        let mut payload = vec![0; marker - 12];
+        payload[body_offset..body_offset + 2].copy_from_slice(&0x802b_u16.to_le_bytes());
+        payload[body_offset + 2..body_offset + 6].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(selection_vector_tail(&mut payload, &[6]), marker);
+
+        let (actual_marker, components) =
+            cosmetic_thread_component_face_reference_at(&payload, body_offset).unwrap();
+        assert_eq!(actual_marker, marker);
+        assert_eq!(components.last().unwrap().local_id, Some(6));
+
+        payload[body_offset + 6] = 1;
+        assert_eq!(
+            cosmetic_thread_component_face_reference_at(&payload, body_offset),
+            None
+        );
+    }
+
+    #[test]
     fn sketch_surface_component_path_has_two_implicit_root_slots() {
         let marker = 12;
         let mut payload = Vec::new();
@@ -4971,6 +4992,15 @@ fn compact_surface_selections(
                     })?
                 })
                 .into_iter()
+                .chain(lane.classes.iter().filter_map(|class| {
+                    let offset = usize::try_from(class.offset).ok()?;
+                    (class.name == "moCompFace_c" && (start..end).contains(&offset))
+                        .then(|| offset.checked_add(6 + class.name.len()))
+                        .flatten()
+                        .and_then(|body| {
+                            cosmetic_thread_component_face_reference_at(&lane.native_payload, body)
+                        })
+                }))
                 .collect(),
             NativeClassKind::MirrorPattern => (start.saturating_add(12)
                 ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
@@ -5033,6 +5063,22 @@ fn cosmetic_thread_cylinder_reference_at(
             .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
             .map(|components| (marker, components))
     })
+}
+
+fn cosmetic_thread_component_face_reference_at(
+    payload: &[u8],
+    body_offset: usize,
+) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let token = u16::from_le_bytes(payload.get(body_offset..body_offset + 2)?.try_into().ok()?);
+    if token & 0x8000 == 0
+        || token == 0xffff
+        || payload.get(body_offset + 2..body_offset + 6)? != 2u32.to_le_bytes()
+        || payload.get(body_offset + 6..body_offset + 8)? != [0, 0]
+    {
+        return None;
+    }
+    let marker = body_offset.checked_add(92)?;
+    compact_surface_reference_at(payload, marker).map(|components| (marker, components))
 }
 
 fn compact_sketch_surface_component_path_at(
