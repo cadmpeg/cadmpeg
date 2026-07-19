@@ -10584,7 +10584,7 @@ pub(crate) fn project_marker_backed_sketches(
             let Some(transform) = sketch_frame_marker_transform(&sketch, QUANTUM) else {
                 continue;
             };
-            let projected = markers
+            let mut projected = markers
                 .iter()
                 .copied()
                 .filter_map(|marker| {
@@ -10719,6 +10719,7 @@ pub(crate) fn project_marker_backed_sketches(
                     })
                 })
                 .collect::<Vec<_>>();
+            resolve_connected_marker_arcs(&mut projected, QUANTUM);
             if projected.is_empty() {
                 continue;
             }
@@ -10730,6 +10731,144 @@ pub(crate) fn project_marker_backed_sketches(
             };
         }
     }
+}
+
+fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) {
+    let points = entities
+        .iter()
+        .filter_map(|entity| match entity.geometry {
+            SketchGeometry::Point { position } => Some((entity.native_ref.clone()?, position)),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let arcs = entities
+        .iter()
+        .enumerate()
+        .filter_map(|(index, entity)| {
+            (entity.endpoint_refs.len() == 2
+                && matches!(
+                    entity.geometry,
+                    SketchGeometry::Native { ref native_kind }
+                        if native_kind == "sldprt:marker-geometry:2"
+                ))
+            .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let mut visited = HashSet::new();
+    let mut replacements = Vec::new();
+    for first in arcs.iter().copied() {
+        if !visited.insert(first) {
+            continue;
+        }
+        let mut component = vec![first];
+        let mut cursor = 0;
+        while let Some(&current) = component.get(cursor) {
+            cursor += 1;
+            for candidate in arcs.iter().copied() {
+                if visited.contains(&candidate)
+                    || !entities[current]
+                        .endpoint_refs
+                        .iter()
+                        .any(|endpoint| entities[candidate].endpoint_refs.contains(endpoint))
+                {
+                    continue;
+                }
+                visited.insert(candidate);
+                component.push(candidate);
+            }
+        }
+        let mut endpoint_refs = component
+            .iter()
+            .flat_map(|index| &entities[*index].endpoint_refs)
+            .collect::<Vec<_>>();
+        endpoint_refs.sort_unstable();
+        endpoint_refs.dedup();
+        let Some(component_points) = endpoint_refs
+            .iter()
+            .map(|endpoint| points.get(endpoint.as_str()).copied())
+            .collect::<Option<Vec<_>>>()
+        else {
+            continue;
+        };
+        let Some((center, radius)) = fitted_marker_circle(&component_points, tolerance) else {
+            continue;
+        };
+        let mut component_replacements = Vec::new();
+        for index in component {
+            let [start_ref, end_ref] = entities[index].endpoint_refs.as_slice() else {
+                continue;
+            };
+            let (Some(start), Some(end)) = (
+                points.get(start_ref.as_str()).copied(),
+                points.get(end_ref.as_str()).copied(),
+            ) else {
+                component_replacements.clear();
+                break;
+            };
+            let start_angle = (start.v - center.v).atan2(start.u - center.u);
+            let end_angle = (end.v - center.v).atan2(end.u - center.u);
+            let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+            if !(sweep > tolerance && sweep <= std::f64::consts::PI + tolerance) {
+                component_replacements.clear();
+                break;
+            }
+            component_replacements.push((
+                index,
+                SketchGeometry::Arc {
+                    center,
+                    radius: Length(radius),
+                    start_angle: Angle(start_angle),
+                    end_angle: Angle(end_angle),
+                },
+            ));
+        }
+        if component_replacements.len() >= 2 {
+            replacements.extend(component_replacements);
+        }
+    }
+    for (index, geometry) in replacements {
+        entities[index].geometry = geometry;
+    }
+}
+
+fn fitted_marker_circle(points: &[Point2], tolerance: f64) -> Option<(Point2, f64)> {
+    let [first, rest @ ..] = points else {
+        return None;
+    };
+    for (second_index, second) in rest.iter().enumerate() {
+        for third in &rest[second_index + 1..] {
+            let determinant = 2.0
+                * (first.u * (second.v - third.v)
+                    + second.u * (third.v - first.v)
+                    + third.u * (first.v - second.v));
+            if !determinant.is_finite() || determinant.abs() <= tolerance * tolerance {
+                continue;
+            }
+            let first_norm = first.u * first.u + first.v * first.v;
+            let second_norm = second.u * second.u + second.v * second.v;
+            let third_norm = third.u * third.u + third.v * third.v;
+            let center = Point2::new(
+                (first_norm * (second.v - third.v)
+                    + second_norm * (third.v - first.v)
+                    + third_norm * (first.v - second.v))
+                    / determinant,
+                (first_norm * (third.u - second.u)
+                    + second_norm * (first.u - third.u)
+                    + third_norm * (second.u - first.u))
+                    / determinant,
+            );
+            let radius = (first.u - center.u).hypot(first.v - center.v);
+            if radius.is_finite()
+                && radius > tolerance
+                && points.iter().all(|point| {
+                    same_dimension_length((point.u - center.u).hypot(point.v - center.v), radius)
+                })
+            {
+                return Some((center, radius));
+            }
+        }
+    }
+    None
 }
 
 fn sketch_plane_frames(
@@ -18385,26 +18524,26 @@ mod profile_join_tests {
         binary_relation_matches_evaluated_geometry, bind_circle_dimension_centers,
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
         bind_sweep_adjacent_profiles, compact_line_reference_direction,
-        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
+        dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
         implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
         marker_point_locus, owned_relation_parameters, profile_loci_by_marker,
         project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
         relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
-        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
-        single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
-        typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
-        typed_relation_definition, unique_axis_aligned_linked_loci,
-        unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
-        unique_profile_axis_distance_locus, unique_profile_axis_distance_pair,
-        unique_profile_distance_loci_pair, unique_profile_distance_locus,
-        unique_profile_line_angle_entity, unique_profile_line_angle_pair,
-        unique_profile_line_distance_entity, unique_profile_line_distance_pair,
-        unique_profile_line_point_locus, unique_profile_point_line_entity,
-        unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
-        unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
-        MarkerTransform, LEGACY_SKETCH_MARKER,
+        resolve_connected_marker_arcs, resolved_marker_locus, select_marker_transforms_by_frame,
+        single_marker_curve_entity, single_marker_line_entity, sketch_frame_marker_transform,
+        type_display_relation_parameters, typed_marker_relation_definition,
+        typed_marker_relation_definition_in_sketch, typed_relation_definition,
+        unique_axis_aligned_linked_loci, unique_compatible_marker_transform,
+        unique_linked_endpoint_locus, unique_marker_transform, unique_profile_axis_distance_locus,
+        unique_profile_axis_distance_pair, unique_profile_distance_loci_pair,
+        unique_profile_distance_locus, unique_profile_line_angle_entity,
+        unique_profile_line_angle_pair, unique_profile_line_distance_entity,
+        unique_profile_line_distance_pair, unique_profile_line_point_locus,
+        unique_profile_point_line_entity, unique_profile_point_line_pair,
+        unique_repaired_profile_line_angle_pair, unique_repaired_profile_line_distance_pair,
+        unique_repaired_profile_point_line_pair, MarkerTransform, LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -18705,6 +18844,69 @@ mod profile_join_tests {
                 ..
             } if sketch == &expected_sketch
         ));
+    }
+
+    #[test]
+    fn marker_circle_fit_requires_one_circle_through_every_endpoint() {
+        let points = [
+            Point2::new(-2.0, 0.0),
+            Point2::new(0.0, 2.0),
+            Point2::new(2.0, 0.0),
+            Point2::new(0.0, -2.0),
+        ];
+        assert_eq!(
+            fitted_marker_circle(&points, 1.0e-8),
+            Some((Point2::new(0.0, 0.0), 2.0))
+        );
+        let mut inconsistent = points;
+        inconsistent[3] = Point2::new(0.0, -3.0);
+        assert_eq!(fitted_marker_circle(&inconsistent, 1.0e-8), None);
+        assert_eq!(fitted_marker_circle(&points[..2], 1.0e-8), None);
+    }
+
+    #[test]
+    fn connected_marker_arcs_use_their_shared_endpoint_circle() {
+        let sketch = SketchId("sketch".into());
+        let point = |id: &str, position| SketchEntity {
+            id: SketchEntityId(format!("entity-{id}")),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: Some(id.into()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SketchGeometry::Point { position },
+        };
+        let arc = |id: &str, start: &str, end: &str| SketchEntity {
+            id: SketchEntityId(format!("entity-{id}")),
+            sketch: sketch.clone(),
+            construction: false,
+            native_ref: Some(id.into()),
+            geometry_ref: None,
+            endpoint_refs: vec![start.into(), end.into()],
+            geometry: SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:2".into(),
+            },
+        };
+        let mut entities = vec![
+            point("p0", Point2::new(0.0, -2.0)),
+            point("p1", Point2::new(2.0, 0.0)),
+            point("p2", Point2::new(0.0, 2.0)),
+            arc("a0", "p0", "p1"),
+            arc("a1", "p1", "p2"),
+        ];
+
+        resolve_connected_marker_arcs(&mut entities, 1.0e-8);
+
+        for entity in &entities[3..] {
+            assert!(matches!(
+                entity.geometry,
+                SketchGeometry::Arc {
+                    center,
+                    radius: Length(2.0),
+                    ..
+                } if center == Point2::new(0.0, 0.0)
+            ));
+        }
     }
 
     #[test]
