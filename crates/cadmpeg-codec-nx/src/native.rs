@@ -5269,6 +5269,29 @@ pub struct FeatureDraftConstructionIndexLane {
     pub source_offsets: Vec<u64>,
 }
 
+/// Exact logical payload reconstructed from a resolved draft index lane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDraftConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `DRAFT` operation label.
+    pub operation_label: String,
+    /// Counted index lane defining the ordered block sequence.
+    pub index_lane: String,
+    /// Ordered source blocks.
+    pub data_blocks: Vec<String>,
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: Vec<u64>,
+    /// Exact source-block lengths.
+    pub block_byte_lengths: Vec<u64>,
+    /// Absolute source-block offsets.
+    pub block_source_offsets: Vec<u64>,
+}
+
 /// End-anchored compact-index lane in a bounded draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDraftConstructionTerminalLane {
@@ -8888,6 +8911,37 @@ pub fn feature_draft_construction_index_lanes(
         },
     );
     lanes
+}
+
+/// Reconstruct ordered logical payloads from resolved draft index lanes.
+pub fn feature_draft_construction_payloads(
+    container: &Container,
+    lanes: &[FeatureDraftConstructionIndexLane],
+) -> Vec<FeatureDraftConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    lanes
+        .iter()
+        .filter_map(|lane| {
+            let data_blocks = lane.data_blocks.clone()?;
+            let (bytes, block_payload_offsets, block_byte_lengths, block_source_offsets) =
+                join_data_block_bytes(&data_blocks, &blocks)?;
+            Some(FeatureDraftConstructionPayload {
+                id: lane.id.replacen(
+                    "draft-construction-index-lane#",
+                    "draft-construction-payload#",
+                    1,
+                ),
+                operation_label: lane.operation_label.clone(),
+                index_lane: lane.id.clone(),
+                data_blocks,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets,
+                block_byte_lengths,
+                block_source_offsets,
+            })
+        })
+        .collect()
 }
 
 /// Decode complete end-anchored terminal lanes from draft construction payloads.
