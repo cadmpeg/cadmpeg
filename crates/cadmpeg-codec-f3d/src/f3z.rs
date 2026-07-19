@@ -11,7 +11,7 @@
 use std::io::Cursor;
 
 use serde::Deserialize;
-use serde_json::Value;
+use serde_value::Value;
 
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult};
 use cadmpeg_ir::document::Model;
@@ -207,14 +207,14 @@ fn merge_references(
             reference.relative_path
         ));
     }
-    parent.ir.model = serde_json::from_value(model_value).map_err(|error| {
+    parent.ir.model = model_value.deserialize_into().map_err(|error| {
         CodecError::Malformed(format!("merged model round-trip failed: {error}"))
     })?;
     Ok(merged)
 }
 
 fn serialize_model(model: &Model) -> Result<Value, CodecError> {
-    serde_json::to_value(model)
+    serde_value::to_value(model)
         .map_err(|error| CodecError::Malformed(format!("model serialization failed: {error}")))
 }
 
@@ -268,45 +268,53 @@ fn remap_ids(value: &mut Value, occurrence: &str) {
                 *text = format!("f3d:xref/{occurrence}/{rest}");
             }
         }
-        Value::Array(items) => {
+        Value::Seq(items) => {
             for item in items {
                 remap_ids(item, occurrence);
             }
         }
-        Value::Object(fields) => {
-            for item in fields.values_mut() {
-                remap_ids(item, occurrence);
+        Value::Map(fields) => {
+            let entries = std::mem::take(fields);
+            for (mut key, mut item) in entries {
+                remap_ids(&mut key, occurrence);
+                remap_ids(&mut item, occurrence);
+                fields.insert(key, item);
             }
         }
+        Value::Option(Some(item)) | Value::Newtype(item) => remap_ids(item, occurrence),
         _ => {}
     }
 }
 
 /// Append every serialized component arena onto the corresponding root arena.
 fn extend_arenas(root: &mut Value, component: Value) -> Result<(), CodecError> {
-    let (Value::Object(root_fields), Value::Object(component_fields)) = (root, component) else {
+    let (Value::Map(root_fields), Value::Map(mut component_fields)) = (root, component) else {
         return Err(CodecError::Malformed(
-            "serialized model is not a JSON object".into(),
+            "serialized model is not a struct map".into(),
         ));
     };
     for name in Model::arena_names() {
-        let Some(Value::Array(source)) = component_fields.get(*name) else {
+        let key = Value::String((*name).to_string());
+        let Some(Value::Seq(source)) = component_fields.remove(&key) else {
             continue;
         };
         if source.is_empty() {
             continue;
         }
-        let Some(Value::Array(target)) = root_fields.get_mut(*name) else {
-            root_fields.insert((*name).to_string(), Value::Array(source.clone()));
+        let Some(Value::Seq(target)) = root_fields.get_mut(&key) else {
+            root_fields.insert(key, Value::Seq(source));
             continue;
         };
-        target.extend(source.iter().cloned());
+        target.extend(source);
     }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use cadmpeg_ir::document::Model;
+    use cadmpeg_ir::ids::{BodyId, RegionId};
+    use cadmpeg_ir::topology::{Body, BodyKind, Region};
     use cadmpeg_ir::transform::Transform;
 
     #[test]
@@ -337,5 +345,42 @@ mod tests {
                 [0.0, 0.0, 0.0, 1.0],
             ]
         );
+    }
+
+    #[test]
+    fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
+        let mut root = super::serialize_model(&Model::default()).expect("serialize root model");
+        let component = Model {
+            bodies: vec![Body {
+                id: BodyId("f3d:brep:entity#1".into()),
+                kind: BodyKind::Solid,
+                regions: vec![RegionId("f3d:brep:entity#2".into())],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            }],
+            regions: vec![Region {
+                id: RegionId("f3d:brep:entity#2".into()),
+                body: BodyId("f3d:brep:entity#1".into()),
+                shells: Vec::new(),
+            }],
+            ..Model::default()
+        };
+        for ordinal in 0..2 {
+            let mut occurrence =
+                super::serialize_model(&component).expect("serialize component model");
+            super::remap_ids(&mut occurrence, &format!("role/occurrence-{ordinal}"));
+            super::extend_arenas(&mut root, occurrence).expect("merge component arenas");
+        }
+        let merged: Model = root.deserialize_into().expect("deserialize merged model");
+
+        for ordinal in 0..2 {
+            let prefix = format!("f3d:xref/role/occurrence-{ordinal}/brep:entity#");
+            assert_eq!(merged.bodies[ordinal].id.0, format!("{prefix}1"));
+            assert_eq!(merged.bodies[ordinal].regions[0].0, format!("{prefix}2"));
+            assert_eq!(merged.regions[ordinal].id.0, format!("{prefix}2"));
+            assert_eq!(merged.regions[ordinal].body.0, format!("{prefix}1"));
+        }
     }
 }

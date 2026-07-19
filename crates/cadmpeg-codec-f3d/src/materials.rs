@@ -559,12 +559,19 @@ fn color_property(record: &crate::protein::DecodedRecord, id: &str) -> Option<Co
     else {
         return None;
     };
-    Some(Color {
-        r: *r as f32,
-        g: *g as f32,
-        b: *b as f32,
-        a: *a as f32,
-    })
+    decoded_color([*r, *g, *b, *a])
+}
+
+fn decoded_color(values: [f64; 4]) -> Option<Color> {
+    values
+        .iter()
+        .all(|value| value.is_finite() && (0.0..=1.0).contains(value))
+        .then_some(Color {
+            r: values[0] as f32,
+            g: values[1] as f32,
+            b: values[2] as f32,
+            a: values[3] as f32,
+        })
 }
 
 fn texture_asset(record: &crate::protein::DecodedRecord) -> Option<TextureRef> {
@@ -1458,15 +1465,7 @@ fn fixed_rgba(bytes: &[u8], offset: usize) -> Option<Color> {
         let at = offset + ordinal * 8;
         *value = f64::from_le_bytes(bytes.get(at..at + 8)?.try_into().ok()?);
     }
-    values
-        .iter()
-        .all(|value| value.is_finite())
-        .then_some(Color {
-            r: values[0] as f32,
-            g: values[1] as f32,
-            b: values[2] as f32,
-            a: values[3] as f32,
-        })
+    decoded_color(values)
 }
 
 fn generic_connection_delta(record: &[u8], value_block: usize) -> usize {
@@ -1509,4 +1508,15 @@ fn find(bytes: &[u8], needle: &[u8], start: usize) -> Option<usize> {
 
 fn take_lp(bytes: &[u8], position: &mut usize) -> Option<String> {
     String::from_utf8(take_lp_u32_bytes(bytes, position)?.to_vec()).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn decoded_color_requires_finite_normalized_channels() {
+        assert!(super::decoded_color([0.0, 0.25, 0.5, 1.0]).is_some());
+        for invalid in [f64::NAN, f64::INFINITY, -0.01, 1.01] {
+            assert!(super::decoded_color([invalid, 0.25, 0.5, 1.0]).is_none());
+        }
+    }
 }
