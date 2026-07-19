@@ -408,6 +408,12 @@ negative coordinate token. Its value is the big-endian IEEE-754 binary64 image
 control byte is not part of the scalar. An unframed `2d` scalar retains the
 generic eight-byte form.
 
+A `geom_type = 26` positional body trailer has the form `01 12 50
+<selector_ci> <outline[2][3]>`. The selector is a compact integer. The outline
+is six contiguous positional-row scalars and ends at the bounded body end. The
+trailer transfers as `torus_outline_frame`; it does not assign radius or local
+frame roles.
+
 Decoded positional parameter scalars retain their source offset and token length. Structural field binding uses these spans; scalar order alone does not assign frame or radius roles.
 The unresolved seven-byte `73` and `bb` forms retain their exact bytes as one
 scalar slot. Bytes inside either token cannot open another scalar or terminate

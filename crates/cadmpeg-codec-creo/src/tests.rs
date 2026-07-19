@@ -668,6 +668,37 @@ fn torus_family_does_not_shorten_unframed_negative_world_scalar() {
 }
 
 #[test]
+fn torus_parameter_trailer_retains_typed_outline_frame() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[
+        0x01, 0x12, 0x50, 0x50, 0x48, 0x68, 0x10, 0x48, 0x14, 0x00, 0x2d, 0x43, 0xff, 0xff, 0xff,
+        0xa4, 0x41, 0x99, 0x48, 0x64, 0xf0, 0x48, 0x08, 0x00, 0x2f, 0x4a, 0x40,
+    ]);
+    payload.push(0xe3);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
+
+    let frame = scan.surface_parameters[0]
+        .torus_outline_frame(0x26)
+        .expect("typed torus outline frame");
+    assert_eq!(
+        frame.values,
+        [-192.5, -5.0, -39.999_999_957_278_48, -167.5, -3.0, 52.5]
+    );
+    assert_eq!(frame.selector, 80);
+    assert_eq!(frame.offset, 0);
+    assert!(scan.surface_parameters[0]
+        .torus_outline_frame(0x24)
+        .is_none());
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_eq!(native.fields["torus_outline_frame"]["selector"], 80);
+    assert_eq!(native.fields["torus_outline_frame"]["values"][5], 52.5);
+}
+
+#[test]
 fn decode_preserves_surface_parameter_slots_in_native_ir() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);

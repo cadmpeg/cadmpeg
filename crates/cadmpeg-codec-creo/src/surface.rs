@@ -297,6 +297,17 @@ pub struct TabulatedCylinderFrame {
     pub prefixes: [u8; 6],
 }
 
+/// Six-slot outline frame in a positional torus-or-sphere body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TorusOutlineFrame {
+    /// Ordered outline coordinates.
+    pub values: [f64; 6],
+    /// Compact selector following the outline marker.
+    pub selector: u32,
+    /// Byte offset of the outline marker relative to the parameter body.
+    pub offset: usize,
+}
+
 /// One contiguous positional scalar frame with no intervening bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceParameterScalarFrame {
@@ -376,6 +387,43 @@ pub struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    /// Decode the terminal outline frame of a positional torus-or-sphere body.
+    #[must_use]
+    pub fn torus_outline_frame(&self, type_byte: u8) -> Option<TorusOutlineFrame> {
+        if type_byte != 0x26 {
+            return None;
+        }
+        let markers = torus_outline_markers(&self.body);
+        let [(marker, after_selector, selector)] = markers.as_slice() else {
+            return None;
+        };
+        let slots = self
+            .scalar_tokens
+            .iter()
+            .filter(|slot| slot.offset >= *after_selector)
+            .collect::<Vec<_>>();
+        let [a0, a1, a2, b0, b1, b2] = slots.as_slice() else {
+            return None;
+        };
+        let mut cursor = *after_selector;
+        for slot in &slots {
+            (slot.offset == cursor).then_some(())?;
+            cursor = cursor.checked_add(slot.length)?;
+        }
+        (cursor == self.body.len()).then_some(())?;
+        let values = [
+            a0.value?, a1.value?, a2.value?, b0.value?, b1.value?, b2.value?,
+        ];
+        values
+            .iter()
+            .all(|value| value.is_finite())
+            .then_some(TorusOutlineFrame {
+                values,
+                selector: *selector,
+                offset: *marker,
+            })
+    }
+
     /// Decode the common model-space sweep-direction prefix of a positional
     /// `surface_of_extrusion` body.
     #[must_use]
@@ -1226,15 +1274,44 @@ fn decode_row_scalar(
     }
 }
 
+fn torus_outline_markers(body: &[u8]) -> Vec<(usize, usize, u32)> {
+    (0..body.len())
+        .filter_map(|offset| {
+            (body.get(offset..offset + 3) == Some(&[0x01, 0x12, 0x50])).then_some(())?;
+            let (selector, end) = compact_int(body, offset + 3);
+            (end > offset + 3).then_some((offset, end, selector))
+        })
+        .collect()
+}
+
 fn scalar_tokens(
     kind: SurfaceKind,
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Vec<SurfaceParameterScalar> {
     let mut tokens = Vec::new();
+    let outline_markers = if kind == SurfaceKind::TorusOrSphere {
+        torus_outline_markers(body)
+    } else {
+        Vec::new()
+    };
     let mut cursor = 0;
     while cursor < body.len() {
+        if let Some((_, end, _)) = outline_markers
+            .iter()
+            .find(|(offset, _, _)| *offset == cursor)
+        {
+            cursor = *end;
+            continue;
+        }
         if let Some((value, next)) = decode_row_scalar(kind, body, cursor, cache) {
+            if outline_markers
+                .iter()
+                .any(|(offset, _, _)| cursor < *offset && next > *offset)
+            {
+                cursor += 1;
+                continue;
+            }
             tokens.push(SurfaceParameterScalar {
                 value: Some(value),
                 raw: body[cursor..next].to_vec(),
