@@ -10210,6 +10210,8 @@ pub struct DataBlockLinkedIndexRow {
     pub data_blocks: [String; 4],
     /// Serialized `03` or `07` flag.
     pub flag: u8,
+    /// Serialized `04` or `07` mode.
+    pub mode: u8,
     /// Directory entry containing the store.
     pub source_entry: String,
     /// Column block containing the row's opening byte.
@@ -10241,6 +10243,8 @@ pub struct DataBlockTargetIndexRow {
     pub indices: [u32; 3],
     /// Target block followed by the three post-marker blocks.
     pub data_blocks: [String; 4],
+    /// Serialized `04` or `07` mode.
+    pub mode: u8,
     /// Directory entry containing the store.
     pub source_entry: String,
     /// Column block containing the row's opening byte.
@@ -11709,6 +11713,7 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
                         indices: row.indices.map(|(index, _)| index),
                         data_blocks,
                         flag: row.flag,
+                        mode: row.mode,
                         source_entry: entry.name.clone(),
                         opening_data_block: opening.0,
                         opening_block_offset: opening.1,
@@ -11768,6 +11773,7 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
                         target_index: row.target_index.0,
                         indices: row.indices.map(|(index, _)| index),
                         data_blocks,
+                        mode: row.mode,
                         source_entry: entry.name.clone(),
                         opening_data_block: opening.0,
                         opening_block_offset: opening.1,

@@ -173,6 +173,8 @@ pub struct OffsetStoreLinkedIndexRow {
     pub indices: [(u32, usize); 3],
     /// Serialized `03` or `07` row flag.
     pub flag: u8,
+    /// Serialized `04` or `07` row mode.
+    pub mode: u8,
 }
 
 /// One self-framed target-index row in contiguous column storage.
@@ -184,6 +186,8 @@ pub struct OffsetStoreTargetIndexRow {
     pub target_index: (u32, usize),
     /// Three ordered non-null compact indices after `ff ff 90 fe`.
     pub indices: [(u32, usize); 3],
+    /// Serialized `04` or `07` row mode.
+    pub mode: u8,
 }
 
 /// Decode complete self-framed index rows from contiguous column storage.
@@ -240,7 +244,7 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
 /// Decode complete linked index rows from contiguous column storage.
 pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedIndexRow> {
     const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
-    const SUFFIX: [u8; 6] = [0x04, 0x01, 0xc0, 0x44, 0x04, 0x00];
+    const SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
     let mut rows = Vec::new();
     for start in 0..bytes.len().saturating_sub(2) {
         if bytes.get(start..start + 2) != Some(&[0x02, 0x0b]) {
@@ -289,7 +293,10 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
         let Some(flag @ (0x03 | 0x07)) = bytes.get(at + 2).copied() else {
             continue;
         };
-        if bytes.get(at + 3..at + 3 + SUFFIX.len()) != Some(&SUFFIX) {
+        let Some(mode @ (0x04 | 0x07)) = bytes.get(at + 3).copied() else {
+            continue;
+        };
+        if bytes.get(at + 4..at + 4 + SUFFIX.len()) != Some(&SUFFIX) {
             continue;
         }
         rows.push(OffsetStoreLinkedIndexRow {
@@ -299,6 +306,7 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             target_index: (target_index, target_offset),
             indices,
             flag,
+            mode,
         });
     }
     rows
@@ -308,7 +316,7 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
 pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetIndexRow> {
     const PREFIX: [u8; 5] = [0x02, 0x01, 0x01, 0x01, 0x16];
     const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
-    const SUFFIX: [u8; 9] = [0x00, 0x47, 0x03, 0x07, 0x01, 0xc0, 0x44, 0x04, 0x00];
+    const SUFFIX: [u8; 5] = [0x01, 0xc0, 0x44, 0x04, 0x00];
     let mut rows = Vec::new();
     for start in 0..bytes.len().saturating_sub(PREFIX.len()) {
         if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
@@ -338,13 +346,20 @@ pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetInde
         let Ok(indices) = indices.try_into() else {
             continue;
         };
-        if bytes.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+        if bytes.get(at..at + 3) != Some(&[0x00, 0x47, 0x03]) {
+            continue;
+        }
+        let Some(mode @ (0x04 | 0x07)) = bytes.get(at + 3).copied() else {
+            continue;
+        };
+        if bytes.get(at + 4..at + 4 + SUFFIX.len()) != Some(&SUFFIX) {
             continue;
         }
         rows.push(OffsetStoreTargetIndexRow {
             offset: start,
             target_index: (target_index, target_offset),
             indices,
+            mode,
         });
     }
     rows
