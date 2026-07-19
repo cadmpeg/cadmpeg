@@ -3100,17 +3100,6 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
 /// Decode every exactly framed signed Q1.55 pair in a reconstructed sketch payload.
 pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
     const DISCRIMINATOR: [u8; 8] = [0x04, 0xe0, 0x48, 0x0e, 0x02, 0x03, 0x80, 0x84];
-    let decode = |raw: [u8; 7]| {
-        let unsigned = raw
-            .into_iter()
-            .fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
-        let signed = if unsigned & (1_u64 << 55) == 0 {
-            unsigned as i64
-        } else {
-            (unsigned as i64) - (1_i64 << 56)
-        };
-        signed as f64 / (1_u64 << 55) as f64
-    };
     let mut pairs = Vec::new();
     for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
         if window != DISCRIMINATOR {
@@ -3138,7 +3127,7 @@ pub fn sketch_payload_fixed_pairs(bytes: &[u8]) -> Vec<SketchPayloadFixedPair> {
         };
         pairs.push(SketchPayloadFixedPair {
             offset,
-            values: [decode(first_raw), decode(second_raw)],
+            values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
             value_offsets: [first, second],
             raw_values: [first_raw, second_raw],
         });
@@ -3151,17 +3140,6 @@ pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixed
     const DISCRIMINATOR: [u8; 15] = [
         0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
     ];
-    let decode = |raw: [u8; 7]| {
-        let unsigned = raw
-            .into_iter()
-            .fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
-        let signed = if unsigned & (1_u64 << 55) == 0 {
-            unsigned as i64
-        } else {
-            (unsigned as i64) - (1_i64 << 56)
-        };
-        signed as f64 / (1_u64 << 55) as f64
-    };
     let mut pairs = Vec::new();
     for (offset, window) in bytes.windows(DISCRIMINATOR.len()).enumerate() {
         if window != DISCRIMINATOR {
@@ -3189,13 +3167,25 @@ pub fn datum_csys_payload_fixed_pairs(bytes: &[u8]) -> Vec<DatumCsysPayloadFixed
         };
         pairs.push(DatumCsysPayloadFixedPair {
             offset,
-            values: [decode(first_raw), decode(second_raw)],
+            values: [decode_q1_55(first_raw), decode_q1_55(second_raw)],
             value_offsets: [first, second],
             raw_values: [first_raw, second_raw],
             discriminator: DISCRIMINATOR.to_vec(),
         });
     }
     pairs
+}
+
+fn decode_q1_55(raw: [u8; 7]) -> f64 {
+    let unsigned = raw
+        .into_iter()
+        .fold(0_u64, |value, byte| (value << 8) | u64::from(byte));
+    let signed = if unsigned & (1_u64 << 55) == 0 {
+        unsigned as i64
+    } else {
+        (unsigned as i64) - (1_i64 << 56)
+    };
+    signed as f64 / (1_u64 << 55) as f64
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
