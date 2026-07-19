@@ -389,6 +389,17 @@ struct CreoFeatureOperationState {
 }
 
 #[derive(Serialize)]
+struct CreoFeatureReferenceNameRecord {
+    id: String,
+    owner_feature_id: u32,
+    name: String,
+    name_bytes: Vec<u8>,
+    own_reference_id: u32,
+    reference_type: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoFamilyTableRecord {
     id: &'static str,
     pointer_kind: &'static str,
@@ -2284,6 +2295,21 @@ fn feature_operation_state_records(scan: &ContainerScan) -> Vec<CreoFeatureOpera
                 offset: state.offset,
                 state_offset: state.state_offset,
             }
+        })
+        .collect()
+}
+
+fn feature_reference_name_records(scan: &ContainerScan) -> Vec<CreoFeatureReferenceNameRecord> {
+    scan.feature_reference_names
+        .iter()
+        .map(|record| CreoFeatureReferenceNameRecord {
+            id: format!("creo:mdlrefinfo:feature_name#{}", record.offset),
+            owner_feature_id: record.feature_id,
+            name: record.name.clone(),
+            name_bytes: record.name_bytes.clone(),
+            own_reference_id: record.own_reference_id,
+            reference_type: record.reference_type,
+            offset: record.offset,
         })
         .collect()
 }
@@ -12106,6 +12132,17 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
         926 => Some("Section"),
         _ => None,
     }
+}
+
+fn feature_reference_name(scan: &ContainerScan, feature_id: u32) -> Option<&str> {
+    let mut records = scan
+        .feature_reference_names
+        .iter()
+        .filter(|record| record.feature_id == feature_id);
+    let record = records.next()?;
+    records
+        .all(|candidate| candidate.name_bytes.as_slice() == record.name_bytes.as_slice())
+        .then_some(record.name.as_str())
 }
 
 fn owned_section_feature_id(scan: &ContainerScan, definition_id: u32) -> Option<u32> {
@@ -28849,9 +28886,12 @@ fn build_ir(
         else {
             continue;
         };
-        let kind = schema_class
-            .and_then(schema_operation_kind)
-            .unwrap_or("Native Feature");
+        let reference_name = feature_reference_name(scan, feature_id);
+        let kind = reference_name.unwrap_or_else(|| {
+            schema_class
+                .and_then(schema_operation_kind)
+                .unwrap_or("Native Feature")
+        });
         annotate(
             &mut annotations,
             &id,
@@ -28896,7 +28936,9 @@ fn build_ir(
         ir.model.features.push(Feature {
             id,
             ordinal: ir.model.features.len() as u64,
-            name: Some(format!("{kind} id {feature_id}")),
+            name: Some(
+                reference_name.map_or_else(|| format!("{kind} id {feature_id}"), str::to_string),
+            ),
             suppressed: false,
             parent: None,
             dependencies: feature_dependencies(scan, &ir, feature_id),
@@ -29569,6 +29611,22 @@ fn build_ir(
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("feature_operation_states", &feature_operation_states)?;
+    }
+    let feature_reference_names = feature_reference_name_records(scan);
+    if !feature_reference_names.is_empty() {
+        for record in &feature_reference_names {
+            annotate(
+                &mut annotations,
+                &record.id,
+                "MdlRefInfo",
+                record.offset as u64,
+                "feature_reference_name",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_reference_names", &feature_reference_names)?;
     }
     if let Some(family_table) = family_table_record(scan) {
         annotate(

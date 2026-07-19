@@ -25,7 +25,8 @@ use crate::datum::{self, DatumPlane};
 use crate::feature::{
     self, FeatureAffectedIds, FeatureChoice, FeatureChoiceField, FeatureDefinition, FeatureEntity,
     FeatureEntityReference, FeatureEntityTable, FeatureGeometryTable, FeatureLoopRestoreDirection,
-    FeatureOperation, FeatureRecipe, FeatureReplayAffectedIds, FeatureRevolutionExtent, FeatureRow,
+    FeatureOperation, FeatureRecipe, FeatureReferenceName, FeatureReplayAffectedIds,
+    FeatureRevolutionExtent, FeatureRow,
 };
 use crate::placement::{self, FeatureSectionTransform};
 use crate::primdata::{self, PrimitiveScalarArray, PrimitiveTriangleStrip};
@@ -311,6 +312,8 @@ pub struct ContainerScan {
     pub feature_operation_states: Vec<FeatureOperation>,
     /// Current feature-operation state for each feature identifier.
     pub feature_operations: Vec<FeatureOperation>,
+    /// Feature names joined to model feature identifiers by reference data.
+    pub feature_reference_names: Vec<FeatureReferenceName>,
     /// Named records in the implicit `AllFeatur` walker-order entity table.
     pub feature_entities: Vec<FeatureEntity>,
     /// Canonical `f7` references between implicit `AllFeatur` entities.
@@ -1411,6 +1414,25 @@ fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation
     current
 }
 
+fn feature_reference_names(data: &[u8], sections: &[Section]) -> Vec<FeatureReferenceName> {
+    sections
+        .iter()
+        .filter(|section| section.name == "MdlRefInfo")
+        .flat_map(|section| {
+            let end = section
+                .offset
+                .saturating_add(section.length)
+                .min(data.len());
+            feature::reference_names(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record
+                })
+        })
+        .collect()
+}
+
 fn feature_operation_states(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
     let mut records = Vec::new();
     for section in sections
@@ -1661,6 +1683,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         feature_entity_tables(&data, &sections, &feature_ids, &surface_rows);
     let feature_operation_states = feature_operation_states(&data, &sections);
     let feature_operations = feature_operations(&data, &sections);
+    let feature_reference_names = feature_reference_names(&data, &sections);
     let mut feature_definitions = feature_definitions(&data, &sections);
     feature::bind_definition_owners(&mut feature_definitions, &feature_geometry_tables);
     feature_definitions.extend(feature_row_definitions(&feature_rows));
@@ -1791,6 +1814,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         feature_section_transforms,
         feature_operation_states,
         feature_operations,
+        feature_reference_names,
         feature_entities,
         feature_entity_references,
         feature_entity_tables,

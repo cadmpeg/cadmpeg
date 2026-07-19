@@ -1148,6 +1148,15 @@ one feature identifier and increase in byte order from zero. A stored state
 retains the prefix-inclusive name bytes, the `id`/`ID` spelling, and the offset
 of the optional prefix; a recipe-only state has no stored operation name.
 
+`MdlRefInfo` feature-reference entries encode
+`f7 0x71 <own-ref-id> <reference-type> <feature-id> <name> 00 <own-ref-id> <own-ref-id>`.
+The three identifiers before the name and the two closing identifiers are
+compact integers. The repeated closing identifiers delimit the name entry and
+must equal its opening `own-ref-id`. The feature identifier joins the stored
+name to the corresponding model-history feature when `MdlStatus` has no
+identifier-bearing display name. Multiple names for one feature define a
+display name only when their bytes agree.
+
 The current-state record's root schema class selects the operation definition.
 Feature rows supply a schema class only when the current-state record does not
 carry one and all rows for that feature agree on one class. Row order does not

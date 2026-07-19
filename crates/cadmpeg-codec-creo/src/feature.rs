@@ -109,6 +109,72 @@ pub struct FeatureOperation {
     pub state_offset: usize,
 }
 
+/// Feature name joined to its model feature identifier by `mdl_feat_ref_info_new`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureReferenceName {
+    /// Numeric model feature identifier.
+    pub feature_id: u32,
+    /// Stored feature name.
+    pub name: String,
+    /// Exact stored feature-name bytes excluding the NUL terminator.
+    pub name_bytes: Vec<u8>,
+    /// Reference-database object identifier.
+    pub own_reference_id: u32,
+    /// Stored reference type.
+    pub reference_type: u32,
+    /// Byte offset of the `f7 0x71` entry header.
+    pub offset: usize,
+}
+
+/// Decode structurally closed feature-name entries from model reference data.
+pub fn reference_names(payload: &[u8]) -> Vec<FeatureReferenceName> {
+    let mut names = Vec::new();
+    for offset in 0..payload.len().saturating_sub(2) {
+        if payload.get(offset..offset + 2) != Some(&[psb::token::ENTITY_REF, 0x71]) {
+            continue;
+        }
+        let (own_reference_id, after_reference) = psb::compact_int(payload, offset + 2);
+        let (reference_type, after_type) = psb::compact_int(payload, after_reference);
+        let (feature_id, name_start) = psb::compact_int(payload, after_type);
+        if after_reference == offset + 2
+            || after_type == after_reference
+            || name_start == after_type
+            || feature_id == 0
+        {
+            continue;
+        }
+        let Some(name_end) = payload
+            .get(name_start..name_start.saturating_add(256).min(payload.len()))
+            .and_then(|tail| tail.iter().position(|byte| *byte == 0))
+            .map(|relative| name_start + relative)
+        else {
+            continue;
+        };
+        let name_bytes = &payload[name_start..name_end];
+        if name_bytes.is_empty() || name_bytes.iter().any(u8::is_ascii_control) {
+            continue;
+        }
+        let (first_close, after_first_close) = psb::compact_int(payload, name_end + 1);
+        let (second_close, after_second_close) = psb::compact_int(payload, after_first_close);
+        if after_first_close == name_end + 1
+            || after_second_close == after_first_close
+            || first_close != own_reference_id
+            || second_close != own_reference_id
+        {
+            continue;
+        }
+        names.push(FeatureReferenceName {
+            feature_id,
+            name: String::from_utf8_lossy(name_bytes).into_owned(),
+            name_bytes: name_bytes.to_vec(),
+            own_reference_id,
+            reference_type,
+            offset,
+        });
+    }
+    names
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct FeatureRecipeBinding {
     recipe: FeatureRecipe,
@@ -8822,5 +8888,23 @@ mod tests {
         assert_eq!(row.geometry2_id, None);
         assert_eq!([row.member1, row.member2], [0, 0]);
         assert_eq!(row.offset, 1029);
+    }
+
+    #[test]
+    fn model_reference_entry_joins_feature_name_to_feature_id() {
+        let payload = b"\0\xf7\x71\x2a\x05\x29Datum Plane id 41\0\x2a\x2a\x10\0\
+            \xf7\x71\x30\x05\x2fBroken\0\x30\x31";
+
+        assert_eq!(
+            reference_names(payload),
+            [FeatureReferenceName {
+                feature_id: 41,
+                name: "Datum Plane id 41".to_string(),
+                name_bytes: b"Datum Plane id 41".to_vec(),
+                own_reference_id: 42,
+                reference_type: 5,
+                offset: 1,
+            }]
+        );
     }
 }
