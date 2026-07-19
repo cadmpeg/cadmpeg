@@ -13166,6 +13166,16 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     let scan = crate::intersection::scan(&chart);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
+    assert_eq!(
+        crate::intersection::scan_with_auxiliary_replacements(
+            &chart,
+            &chart[..chart.len() - 108],
+            &[&chart[chart.len() - 108..]],
+        )
+        .curves
+        .len(),
+        1
+    );
 
     let base_term = charted_intersection_curve_topology_partition_stream();
     let mut term = base_term.clone();
@@ -13175,7 +13185,7 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
     assert_eq!(
-        crate::intersection::scan_with_term_replacements(
+        crate::intersection::scan_with_auxiliary_replacements(
             &term,
             &base_term,
             &[&term[base_term.len()..]],

@@ -265,24 +265,29 @@ pub fn curves(stream: &[u8]) -> Vec<IntersectionCurve> {
 
 /// Decode chart-backed constructions and classify every rejected construction.
 pub fn scan(stream: &[u8]) -> CurveScan {
-    scan_with_terms(stream, &term_records(stream))
+    scan_with_auxiliaries(stream, &chart_records(stream), &term_records(stream))
 }
 
-/// Decode a merged partition/deltas stream with explicit term replacement boundaries.
-pub(crate) fn scan_with_term_replacements(
+/// Decode a merged partition/deltas stream with explicit auxiliary replacement boundaries.
+pub(crate) fn scan_with_auxiliary_replacements(
     stream: &[u8],
     base_stream: &[u8],
     replacement_streams: &[&[u8]],
 ) -> CurveScan {
+    let mut charts = chart_records(base_stream);
     let mut terms = term_records(base_stream);
     for replacement_stream in replacement_streams {
+        charts.extend(chart_records(replacement_stream));
         terms.extend(term_records(replacement_stream));
     }
-    scan_with_terms(stream, &terms)
+    scan_with_auxiliaries(stream, &charts, &terms)
 }
 
-fn scan_with_terms(stream: &[u8], terms: &BTreeMap<u32, Point3>) -> CurveScan {
-    let charts = chart_records(stream);
+fn scan_with_auxiliaries(
+    stream: &[u8],
+    charts: &BTreeMap<u32, Chart>,
+    terms: &BTreeMap<u32, Point3>,
+) -> CurveScan {
     let uv = uv_records(stream);
     let bridges = blend_bound_records(stream);
     let graph = topology::Graph::parse(stream);
@@ -292,7 +297,7 @@ fn scan_with_terms(stream: &[u8], terms: &BTreeMap<u32, Point3>) -> CurveScan {
         .into_iter()
         .chain(topology::intersection_data_curves(stream))
     {
-        match enrich(construction, &charts, terms, &uv, &bridges, &graph) {
+        match enrich(construction, charts, terms, &uv, &bridges, &graph) {
             Ok(curve) => {
                 result.constructions.push(construction);
                 result.curves.push(curve);

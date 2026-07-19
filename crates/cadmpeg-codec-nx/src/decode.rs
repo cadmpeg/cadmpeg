@@ -1099,7 +1099,7 @@ fn try_decode_geometry(
                 .iter()
                 .map(|delta| scan.streams[*delta].inflated.as_slice())
                 .collect::<Vec<_>>();
-            crate::intersection::scan_with_term_replacements(
+            crate::intersection::scan_with_auxiliary_replacements(
                 semantic,
                 &topology_streams[si],
                 &replacement_streams,
