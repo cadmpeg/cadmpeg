@@ -21956,7 +21956,8 @@ fn transfer_planar_pcurve_lines(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
 ) -> BTreeSet<CurveId> {
-    let mut candidates = BTreeMap::<u32, Vec<([[f64; 3]; 2], usize)>>::new();
+    let reconciled_endpoints = pcurve_edge_endpoints(scan, ir);
+    let mut offsets = BTreeMap::<u32, Vec<usize>>::new();
     for (curve_id, faces, endpoint_sets, offset) in scan
         .pcurves
         .iter()
@@ -21990,25 +21991,20 @@ fn transfer_planar_pcurve_lines(
             }) else {
                 continue;
             };
-            candidates
-                .entry(curve_id)
-                .or_default()
-                .push(([first, second], offset));
+            if !model_points_agree(first, second) {
+                offsets.entry(curve_id).or_default().push(offset);
+            }
         }
     }
     let mut transferred = BTreeSet::new();
-    for (curve_id, candidates) in candidates {
-        let Some((_, offset)) = candidates.first().copied() else {
+    for (curve_id, offsets) in offsets {
+        let Some(points) = reconciled_endpoints.get(&curve_id).copied() else {
             continue;
         };
-        let Some(geometry) = agreed_planar_pcurve_line(
-            &candidates
-                .iter()
-                .map(|(points, _)| *points)
-                .collect::<Vec<_>>(),
-        ) else {
+        let Some(geometry) = agreed_planar_pcurve_line(&[points]) else {
             continue;
         };
+        let offset = offsets.into_iter().min().unwrap_or(0);
         let id = CurveId(format!("creo:visibgeom:curve#{curve_id}"));
         if ir.model.curves.iter().any(|curve| curve.id == id) {
             continue;
