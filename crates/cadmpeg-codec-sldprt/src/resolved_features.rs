@@ -6199,7 +6199,37 @@ pub(crate) fn enrich_history_reference_axes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
-            if let Some((origin, direction)) = explicit_reference_axis_frame(bytes) {
+            let axis_data_classes = lane
+                .classes
+                .iter()
+                .filter(|class| {
+                    matches!(
+                        class.name.as_str(),
+                        "moPlaneInterAxisData_c" | "moSurfaceAxisData_c"
+                    ) && usize::try_from(class.offset)
+                        .is_ok_and(|offset| (start..end).contains(&offset))
+                })
+                .collect::<Vec<_>>();
+            let mut anchored_frames = axis_data_classes
+                .iter()
+                .filter_map(|class| {
+                    let body = usize::try_from(class.offset)
+                        .ok()?
+                        .checked_add(6 + class.name.len())?;
+                    explicit_reference_axis_frame(lane.native_payload.get(body..body + 88)?)
+                })
+                .collect::<Vec<_>>();
+            anchored_frames.sort_by_key(reference_axis_frame_key);
+            anchored_frames.dedup_by_key(|frame| reference_axis_frame_key(frame));
+            let explicit_frame = if axis_data_classes.is_empty() {
+                explicit_reference_axis_frame(bytes)
+            } else {
+                let [frame] = anchored_frames.as_slice() else {
+                    continue;
+                };
+                Some(*frame)
+            };
+            if let Some((origin, direction)) = explicit_frame {
                 let feature = &mut histories[history_index].features[feature_index];
                 feature.properties.insert(
                     "Origin".into(),
@@ -6349,30 +6379,23 @@ fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
         .into_iter()
         .map(|(_, frame)| frame)
         .collect::<Vec<_>>();
-    candidates.sort_by_key(|(origin, direction)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            direction.x.to_bits(),
-            direction.y.to_bits(),
-            direction.z.to_bits(),
-        ]
-    });
-    candidates.dedup_by_key(|(origin, direction)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            direction.x.to_bits(),
-            direction.y.to_bits(),
-            direction.z.to_bits(),
-        ]
-    });
+    candidates.sort_by_key(reference_axis_frame_key);
+    candidates.dedup_by_key(|frame| reference_axis_frame_key(frame));
     let [frame] = candidates.as_slice() else {
         return None;
     };
     Some(*frame)
+}
+
+fn reference_axis_frame_key((origin, direction): &(Point3, Vector3)) -> [u64; 6] {
+    [
+        origin.x.to_bits(),
+        origin.y.to_bits(),
+        origin.z.to_bits(),
+        direction.x.to_bits(),
+        direction.y.to_bits(),
+        direction.z.to_bits(),
+    ]
 }
 
 fn legacy_reference_axis_triads(
