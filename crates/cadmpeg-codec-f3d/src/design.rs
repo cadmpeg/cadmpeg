@@ -2238,6 +2238,13 @@ fn resolved_edge_group(
                 }))
             })
             .or_else(|| {
+                changed_boundary_count_edge_group_candidates(
+                    matched_operands
+                        .iter()
+                        .map(|operand| operand.recipe_selectors.as_slice()),
+                )
+            })
+            .or_else(|| {
                 common_deleted_edge_group_candidates(matched_operands.iter().map(|operand| {
                     (
                         !operand.changed_boundary_edge_slots.is_empty(),
@@ -2727,6 +2734,23 @@ fn common_deleted_edge_group_candidates<'a>(
         }
     }
     Some(candidates)
+}
+
+fn changed_boundary_count_edge_group_candidates<'a>(
+    members: impl IntoIterator<Item = &'a [crate::records::DesignEdgeRecipeSelectorContext]>,
+) -> Option<Vec<i64>> {
+    let members = members.into_iter().collect::<Vec<_>>();
+    if members.is_empty() || members.iter().any(|selectors| selectors.is_empty()) {
+        return None;
+    }
+    let mut candidates = members
+        .iter()
+        .flat_map(|selectors| selectors.iter())
+        .flat_map(|selector| selector.boundary_count_matching_edge_slots.iter().copied())
+        .collect::<Vec<_>>();
+    candidates.sort_unstable();
+    candidates.dedup();
+    (candidates.len() == members.len()).then_some(candidates)
 }
 
 fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
@@ -30496,6 +30520,40 @@ mod relation_tests {
 
     #[test]
     fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
+        let selector = |candidates: &[i64]| crate::records::DesignEdgeRecipeSelectorContext {
+            selector: 0,
+            clause_entries: vec![None, None],
+            clause_triplet_edge_slots: vec![None, None],
+            incidence_matching_edge_slots: Vec::new(),
+            unique_incidence_edge_slot: None,
+            boundary_count_matching_edge_slots: candidates.to_vec(),
+        };
+        let first = [selector(&[19, 17, 18])];
+        let context = [selector(&[])];
+        let last = [selector(&[18, 19, 17])];
+        assert_eq!(
+            super::changed_boundary_count_edge_group_candidates([
+                first.as_slice(),
+                context.as_slice(),
+                last.as_slice(),
+            ]),
+            Some(vec![17, 18, 19])
+        );
+        assert_eq!(
+            super::changed_boundary_count_edge_group_candidates([
+                first.as_slice(),
+                last.as_slice(),
+            ]),
+            None
+        );
+        assert_eq!(
+            super::changed_boundary_count_edge_group_candidates([
+                first.as_slice(),
+                context.as_slice(),
+                &[],
+            ]),
+            None
+        );
         assert_eq!(
             super::common_deleted_edge_group_candidates([
                 (true, &[19, 17, 18, 17][..]),
