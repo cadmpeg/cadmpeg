@@ -612,6 +612,8 @@ Each physical direct or escaped CHART_s record remains a distinct typed source r
 
 **term_use (`0x29`)** records are hard trim endpoints (`ref[3]` = start vertex point, `ref[4]` = end vertex point, meters). Each record contains a leading count, XMT, two-byte endpoint-form discriminator, and one model-space point. Count `1` uses form `L?`; count `2` uses `TF` or `TS`. The typed source record retains these fields, the point in millimetres, framing form, and inflated-stream offset. Each endpoint lies within the CHART_s `chordal_error` of the corresponding first or last chart point. When either term reference does not resolve, exactly one EDGE must carry the intersection curve, both edge vertices must resolve through VERTEX and POINT records, and exactly one ordering of the two edge points must match the two chart endpoints within `chordal_error`. The matching topology point replaces only the missing term witness. Three record forms occur for `0x28`/`0x29`/`0x00cc`: direct tagged, `0xff`-escaped, and descriptor-inline (payload follows the ASCII schema keyword + a fixed field-schema tail).
 
+Within one physical stream a duplicate term-use XMT invalidates that endpoint identity. When deltas history is merged into its paired partition, later complete term-use records replace earlier records with the same XMT before endpoint validation.
+
 **`0x00cc` values-array** packs support UV samples by marker byte:
 
 | Marker | Packing | Meaning                                                       |

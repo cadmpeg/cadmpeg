@@ -13167,12 +13167,23 @@ fn intersection_auxiliaries_reject_duplicate_identities() {
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_chart, 1);
 
-    let mut term = charted_intersection_curve_topology_partition_stream();
+    let base_term = charted_intersection_curve_topology_partition_stream();
+    let mut term = base_term.clone();
     append_record(&mut term, &[0, 41, 0, 0, 0, 1, 0, 21], 34);
     assert_eq!(crate::intersection::term_use_records(&term).len(), 1);
     let scan = crate::intersection::scan(&term);
     assert!(scan.curves.is_empty());
     assert_eq!(scan.rejected.missing_start_term, 1);
+    assert_eq!(
+        crate::intersection::scan_with_term_replacements(
+            &term,
+            &base_term,
+            &[&term[base_term.len()..]],
+        )
+        .curves
+        .len(),
+        1
+    );
 
     let mut uv = charted_intersection_curve_topology_partition_stream();
     append_record(&mut uv, &[0, 204, 0, 0, 0, 4, 0, 23], 41);

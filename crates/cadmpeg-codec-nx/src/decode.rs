@@ -782,6 +782,7 @@ fn try_decode_geometry(
     let mut body_node_ids = BTreeMap::new();
     let semantic_streams = semantic_streams(scan);
     let topology_streams = topology_streams(scan);
+    let delta_pairs = paired_delta_streams(scan);
 
     for (si, stream) in scan.streams.iter().enumerate() {
         if !stream.kind.is_parasolid() {
@@ -1093,7 +1094,19 @@ fn try_decode_geometry(
             }
         }
 
-        let intersection_scan = crate::intersection::scan(semantic);
+        let intersection_scan = if let Some(delta_indices) = delta_pairs.get(&si) {
+            let replacement_streams = delta_indices
+                .iter()
+                .map(|delta| scan.streams[*delta].inflated.as_slice())
+                .collect::<Vec<_>>();
+            crate::intersection::scan_with_term_replacements(
+                semantic,
+                &topology_streams[si],
+                &replacement_streams,
+            )
+        } else {
+            crate::intersection::scan(semantic)
+        };
         counts
             .intersection_rejections
             .extend(intersection_scan.rejected);
