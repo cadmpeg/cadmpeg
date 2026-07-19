@@ -422,7 +422,7 @@ pub fn decode_model_reference_coordinate(
 /// Decode a complete twelve-slot support frame using the local-system macro
 /// language shared by feature definitions and curve-equation entities.
 pub fn decode_explicit_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    decode_local_system_slots(body, cache, false, false)
+    decode_local_system_slots(body, cache, LocalSystemVariant::Explicit)
 }
 
 /// Decode the rank-two local-system lane used by curve-equation entities.
@@ -433,12 +433,12 @@ pub fn decode_curve_expression_local_system_slots(
     if body == [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6] {
         return Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
     }
-    decode_local_system_slots(body, cache, false, false)
+    decode_local_system_slots(body, cache, LocalSystemVariant::Explicit)
 }
 
 /// Decode the feature-definition variant of the twelve-slot support frame.
 pub fn decode_feature_local_system_slots(body: &[u8], cache: &ScalarCache) -> Option<[f64; 12]> {
-    decode_local_system_slots(body, cache, true, true)
+    decode_local_system_slots(body, cache, LocalSystemVariant::Feature)
 }
 
 /// Decode a positional plane local system, including its terminal-zero macro.
@@ -446,20 +446,26 @@ pub fn decode_positional_plane_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
 ) -> Option<[f64; 12]> {
-    decode_local_system_slots(body, cache, false, true)
+    decode_local_system_slots(body, cache, LocalSystemVariant::PositionalPlane)
+}
+
+#[derive(Clone, Copy)]
+enum LocalSystemVariant {
+    Explicit,
+    Feature,
+    PositionalPlane,
 }
 
 fn decode_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
-    rank_two: bool,
-    terminal_zero: bool,
+    variant: LocalSystemVariant,
 ) -> Option<[f64; 12]> {
     let mut values = Vec::with_capacity(12);
     let mut cursor = 0;
     while cursor < body.len() && values.len() < 12 {
         if body.get(cursor..cursor + 2) == Some(&[0x18, 0xe5]) {
-            if rank_two && values.len() == 4 {
+            if matches!(variant, LocalSystemVariant::Feature) && values.len() == 4 {
                 values.extend([0.0, 0.0, 1.0, 0.0, 0.0]);
             } else {
                 values.extend([0.0, 1.0, 0.0]);
@@ -481,12 +487,22 @@ fn decode_local_system_slots(
             cursor += 1;
             continue;
         }
-        if terminal_zero && body.get(cursor) == Some(&0x18) && cursor + 1 == body.len() {
+        if !matches!(variant, LocalSystemVariant::Explicit)
+            && body.get(cursor) == Some(&0x18)
+            && cursor + 1 == body.len()
+        {
             values.push(0.0);
             cursor += 1;
             continue;
         }
-        let (value, next) = decode_in_row_lane(body, cursor, cache)?;
+        let (value, next) = if matches!(variant, LocalSystemVariant::PositionalPlane)
+            && values.len() == 9
+            && body.get(cursor) == Some(&0x4a)
+        {
+            ieee7(body, cursor, 0xc0)?
+        } else {
+            decode_in_row_lane(body, cursor, cache)?
+        };
         values.push(value);
         cursor = next;
     }
@@ -613,6 +629,20 @@ fn ieee7_dict(data: &[u8], offset: usize, high: u16) -> Option<(f64, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn positional_plane_decodes_negative_seven_byte_origin_x() {
+        let cache = ScalarCache::from_section(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
+        let body = [
+            0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x4a, 0x08, 0, 0, 0, 0, 0, 0x18, 0x00, 0x0f,
+        ];
+
+        assert_eq!(
+            decode_positional_plane_local_system_slots(&body, &cache),
+            Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, 3.0, 0.0])
+        );
+        assert!(decode_explicit_local_system_slots(&body, &cache).is_none());
+    }
 
     #[test]
     fn decodes_model_reference_wrapped_ieee_coordinate() {
