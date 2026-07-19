@@ -254,8 +254,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
         .enumerate()
         .map(|(ordinal, (offset, code))| {
             let coordinates_m = marker_coordinates(payload, offset);
-            let kind = if coordinates_m.is_some() && legacy_extended_profile_vertex(payload, offset)
-            {
+            let kind = if coordinates_m.is_some() && indexed_profile_vertex(payload, offset) {
                 SketchInputKind::Point
             } else if coordinates_m.is_none()
                 && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
@@ -431,9 +430,10 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
         payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?,
         LEGACY_SKETCH_MARKER | LEGACY_EXTENDED_SKETCH_MARKER
     ) || (payload.get(offset..offset + SKETCH_MARKER.len())? == SKETCH_MARKER
-        && payload.get(offset + 17..offset + 21)? == 0u32.to_le_bytes()))
+        && (payload.get(offset + 17..offset + 21)? == 0u32.to_le_bytes()
+            || indexed_profile_vertex(payload, offset))))
         && (marker_is_geometry_locus(payload, offset)
-            || legacy_extended_profile_vertex(payload, offset)
+            || indexed_profile_vertex(payload, offset)
             || compact_profile_coordinate_candidate(payload, offset))
         && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
     {
@@ -474,10 +474,11 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
     payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
 }
 
-fn legacy_extended_profile_vertex(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        && payload.get(offset + 17..offset + 21) == Some(&1u32.to_le_bytes())
+fn indexed_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) && payload.get(offset + 17..offset + 21) == Some(&1u32.to_le_bytes())
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
         && marker_profile_curve_role(payload, offset) == Some(1)
 }
@@ -525,8 +526,8 @@ mod marker_tests {
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, fixed_reference_plane_frame, inline_surface_reference_at,
-        legacy_extended_profile_curve_kind, legacy_extended_profile_vertex,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, indexed_profile_vertex,
+        inline_surface_reference_at, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, marker_coordinates, marker_is_geometry_locus,
         marker_is_selected_construction_line, marker_local_id, marker_local_links,
@@ -2997,7 +2998,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn legacy_extended_profile_framing_distinguishes_vertices_lines_and_arcs() {
+    fn indexed_profile_framing_distinguishes_vertices_lines_and_arcs() {
         let mut vertex = vec![0; 74];
         vertex[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -3009,7 +3010,10 @@ mod marker_tests {
         vertex[56..58].copy_from_slice(&[0x1e, 0x00]);
         vertex[58..66].copy_from_slice(&0.025f64.to_le_bytes());
         vertex[66..74].copy_from_slice(&0.01f64.to_le_bytes());
-        assert!(legacy_extended_profile_vertex(&vertex, 0));
+        assert!(indexed_profile_vertex(&vertex, 0));
+        assert_eq!(marker_coordinates(&vertex, 0), Some([0.025, 0.01]));
+        vertex[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        assert!(indexed_profile_vertex(&vertex, 0));
         assert_eq!(marker_coordinates(&vertex, 0), Some([0.025, 0.01]));
 
         let mut curve = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len() + 12];
@@ -4298,6 +4302,29 @@ mod marker_tests {
         lane.native_payload[272..280].copy_from_slice(&(-1.0f64).to_le_bytes());
         lane.native_payload[292..297].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        assert_eq!(
+            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            Some(cadmpeg_ir::features::RevolutionAxis {
+                origin: Point3::new(0.0, 0.0, 19.5),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+        );
+
+        lane.native_payload[200..292].fill(0);
+        lane.native_payload[200..205].copy_from_slice(SKETCH_MARKER);
+        lane.native_payload[205..213].fill(0xff);
+        lane.native_payload[213..217].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        lane.native_payload[217..221].copy_from_slice(&5u32.to_le_bytes());
+        lane.native_payload[223..227].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        lane.native_payload[227..229].copy_from_slice(&2u16.to_le_bytes());
+        lane.native_payload[231..239]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        lane.native_payload[248..256].copy_from_slice(&1.0f64.to_le_bytes());
+        lane.native_payload[256..258].copy_from_slice(&0u16.to_le_bytes());
+        lane.native_payload[258..260].copy_from_slice(&1u16.to_le_bytes());
+        lane.native_payload[264..272].copy_from_slice(&(-1.0f64).to_le_bytes());
+        lane.native_payload[284..289].copy_from_slice(SKETCH_MARKER);
+        lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Vertical);
         assert_eq!(
             profile_roster_construction_axis(&lane, "profile-native", &sketch),
             Some(cadmpeg_ir::features::RevolutionAxis {
@@ -17490,6 +17517,7 @@ fn roster_curve_endpoint_markers<'a>(
     if let Some(indices) = wide_indexed_curve_endpoint_indices(payload, offset)
         .or_else(|| compact_indexed_curve_endpoint_indices(payload, offset))
         .or_else(|| extended_horizontal_axis_endpoint_indices(payload, offset))
+        .or_else(|| current_vertical_axis_endpoint_indices(payload, offset))
     {
         return indices
             .into_iter()
@@ -17675,7 +17703,9 @@ fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option<u16> {
 }
 
 fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
-    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+    if current_vertical_axis_endpoint_indices(payload, offset).is_some() {
+        true
+    } else if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
     {
         extended_horizontal_axis_endpoint_indices(payload, offset).is_some()
@@ -17690,6 +17720,35 @@ fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
     } else {
         false
     }
+}
+
+fn current_vertical_axis_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || payload.get(offset + 17..offset + 21) != Some(&5u32.to_le_bytes())
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(2)
+        || payload.get(offset + 29..offset + 31) != Some(&0u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00])
+        || f64::from_le_bytes(payload.get(offset + 48..offset + 56)?.try_into().ok()?) != 1.0
+        || payload.get(offset + 60..offset + 64) != Some(&0u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 72..offset + 76) != Some(&0u32.to_le_bytes())
+        || !sketch_marker_prefix_at(payload, offset.checked_add(84)?)
+    {
+        return None;
+    }
+    let endpoint = |relative: usize| {
+        u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )
+        .checked_add(1)
+        .map(u32::from)
+    };
+    Some([endpoint(56)?, endpoint(58)?])
 }
 
 fn extended_horizontal_axis_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
