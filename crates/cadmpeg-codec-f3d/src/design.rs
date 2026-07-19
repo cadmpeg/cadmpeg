@@ -2476,12 +2476,9 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         let edge = *proofs.first()?;
         return proofs.iter().all(|proof| *proof == edge).then_some(edge);
     }
-    let reference = ordered_edge_sets.get(..2).and_then(|sets| {
-        sets.iter()
-            .all(|set| !set.is_empty())
-            .then(|| unique_edge_set_intersection(sets))
-            .flatten()
-    });
+    let reference = (shared_edge_sets.len() >= 2)
+        .then(|| unique_edge_set_intersection(&shared_edge_sets))
+        .flatten();
     let incidence = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false);
     let boundary_count = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true);
     let common_triplet =
@@ -26813,6 +26810,13 @@ mod relation_tests {
         );
         assert_eq!(
             resolved_edge_candidate_intersection(&[], [&[17, 18][..], &[17, 19][..]]),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(
+                &[],
+                [&[][..], &[17, 18][..], &[][..], &[17, 19][..]],
+            ),
             Some(17)
         );
         assert_eq!(
