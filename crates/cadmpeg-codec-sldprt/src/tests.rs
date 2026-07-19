@@ -10334,8 +10334,8 @@ fn semantic_writer_round_trips_filled_surface() {
         FeatureDefinition::FilledSurface {
             boundary: EdgeSelection::Resolved { edges, native: edge_native },
             support_faces: FaceSelection::Resolved { faces, native: face_native },
-            continuity: SurfaceContinuity::Tangent,
-            merge_result: false,
+            continuity: Some(SurfaceContinuity::Tangent),
+            merge_result: Some(false),
         } if edges == &[edge_id.clone()] && edge_native == &edge
             && faces == &[face_id.clone()] && face_native == &face
     ));
@@ -10351,8 +10351,8 @@ fn semantic_writer_round_trips_filled_surface() {
     };
     *boundary = EdgeSelection::Edges(vec![edge_id.clone()]);
     *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *continuity = SurfaceContinuity::Curvature;
-    *merge_result = true;
+    *continuity = Some(SurfaceContinuity::Curvature);
+    *merge_result = Some(true);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -10370,8 +10370,8 @@ fn semantic_writer_round_trips_filled_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::FilledSurface {
-            continuity: SurfaceContinuity::Curvature,
-            merge_result: true,
+            continuity: Some(SurfaceContinuity::Curvature),
+            merge_result: Some(true),
             ..
         }
     ));

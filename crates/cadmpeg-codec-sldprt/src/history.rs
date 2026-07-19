@@ -2239,12 +2239,14 @@ fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
     Some(FeatureDefinition::FilledSurface {
         boundary: EdgeSelection::Native(feature.properties.get("Boundary")?.clone()),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
-        continuity,
-        merge_result: feature
-            .properties
-            .get("MergeResult")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
+        continuity: Some(continuity),
+        merge_result: Some(
+            feature
+                .properties
+                .get("MergeResult")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(false),
+        ),
     })
 }
 
@@ -5385,6 +5387,18 @@ pub fn sync_neutral_features(
                 let support_faces = face_selection_value(support_faces).ok_or_else(|| {
                     CodecError::Malformed(format!(
                         "SLDPRT feature {} has no filled-surface supports",
+                        feature.id
+                    ))
+                })?;
+                let continuity = continuity.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved filled-surface continuity",
+                        feature.id
+                    ))
+                })?;
+                let merge_result = merge_result.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved filled-surface merge state",
                         feature.id
                     ))
                 })?;

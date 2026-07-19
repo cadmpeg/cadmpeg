@@ -783,10 +783,12 @@ pub enum FeatureDefinition {
         boundary: EdgeSelection,
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
-        /// Continuity imposed against the support faces.
-        continuity: SurfaceContinuity,
-        /// Whether the generated patch is merged into adjacent surface bodies.
-        merge_result: bool,
+        /// Continuity imposed against the support faces, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        continuity: Option<SurfaceContinuity>,
+        /// Whether the generated patch is merged into adjacent surface bodies, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        merge_result: Option<bool>,
     },
     /// Restricts selected surface faces to one side of a trimming path.
     TrimSurface {

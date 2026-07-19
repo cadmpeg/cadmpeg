@@ -13193,10 +13193,18 @@ fn named_feature_definition(
 }
 
 fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition> {
-    numbered_feature_name_has_family(kind, "Thicken").then_some(IrFeatureDefinition::Thicken {
-        faces: FaceSelection::Unresolved,
-        thickness: None,
-        side: None,
+    if numbered_feature_name_has_family(kind, "Thicken") {
+        return Some(IrFeatureDefinition::Thicken {
+            faces: FaceSelection::Unresolved,
+            thickness: None,
+            side: None,
+        });
+    }
+    numbered_feature_name_has_family(kind, "Fill").then_some(IrFeatureDefinition::FilledSurface {
+        boundary: EdgeSelection::Unresolved,
+        support_faces: FaceSelection::Unresolved,
+        continuity: None,
+        merge_result: None,
     })
 }
 
@@ -14734,6 +14742,15 @@ mod resolved_sketch_tests {
                 faces: FaceSelection::Unresolved,
                 thickness: None,
                 side: None,
+            })
+        ));
+        assert!(matches!(
+            reference_named_feature_definition("Fill 1"),
+            Some(IrFeatureDefinition::FilledSurface {
+                boundary: EdgeSelection::Unresolved,
+                support_faces: FaceSelection::Unresolved,
+                continuity: None,
+                merge_result: None,
             })
         ));
     }

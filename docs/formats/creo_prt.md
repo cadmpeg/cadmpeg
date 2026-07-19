@@ -1131,8 +1131,9 @@ surface-of-revolution reductions require `ratio = 1`.
 `MdlStatus` names encode feature kinds as `<Kind> id <N>`. Defined names include
 `Annotation Feature`, `Cross Section`, `Datum Plane`, `Round`, `Chamfer`,
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
-`Surface`. A reference-backed `Thicken <decimal-ordinal>` name identifies a
-thicken operation. The German operation-family names `Bezugsebene`, `Rundung`,
+`Surface`. Reference-backed `Thicken <decimal-ordinal>` and
+`Fill <decimal-ordinal>` names identify thicken and filled-surface operations.
+The German operation-family names `Bezugsebene`, `Rundung`,
 and `Schräge` denote the same datum-plane, round, and draft families as
 `Datum Plane`, `Round`, and `Draft`, respectively. `Annotation Feature` is a
 non-modeling annotation container.
