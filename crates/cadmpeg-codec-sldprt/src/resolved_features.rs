@@ -2139,6 +2139,11 @@ mod marker_tests {
             extrusion_operation(Some("moICE_c"), 10),
             Some(BooleanOp::Cut)
         );
+        assert_eq!(
+            extrusion_operation(Some("moICE_c"), u32::MAX),
+            Some(BooleanOp::Cut)
+        );
+        assert_eq!(extrusion_operation(Some("moExtrusion_c"), u32::MAX), None);
     }
 
     #[test]
@@ -9148,6 +9153,13 @@ fn feature_operation_code(lane: &FeatureInputLane, name: &FeatureInputName) -> O
         .find(|class| class.offset + 6 + class.name.len() as u64 == name.offset);
     let code_offset = if let Some(class) = direct_class {
         let class_offset = usize::try_from(class.offset).ok()?;
+        if lane
+            .native_payload
+            .get(class_offset.checked_sub(4)?..class_offset)
+            == Some(&[0xff; 4])
+        {
+            return Some(u32::MAX);
+        }
         [8usize, 4].into_iter().find_map(|padding| {
             let code_offset = class_offset.checked_sub(4 + padding)?;
             lane.native_payload
@@ -9192,7 +9204,7 @@ fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
 fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     match (class, code) {
         (Some("moExtrusion_c"), 1 | 82) | (_, 3) => Some(BooleanOp::Join),
-        (Some("moICE_c"), 1 | 2 | 10) | (_, 11) => Some(BooleanOp::Cut),
+        (Some("moICE_c"), 1 | 2 | 10 | u32::MAX) | (_, 11) => Some(BooleanOp::Cut),
         _ => None,
     }
 }
