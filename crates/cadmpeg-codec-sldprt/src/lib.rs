@@ -99,8 +99,6 @@ pub struct SldprtCodec;
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
-    const MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
-
     let Some(namespace) = ir.native.namespace("sldprt") else {
         return Vec::new();
     };
@@ -369,11 +367,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 entity: Some(lane.id.clone()),
             });
         }
-        let expected_offsets = lane
-            .native_payload
-            .windows(MARKER.len())
-            .enumerate()
-            .filter_map(|(offset, bytes)| (bytes == MARKER).then_some(offset as u64))
+        let expected_offsets = (0..lane.native_payload.len())
+            .filter(|offset| {
+                crate::resolved_features::sketch_marker_at(&lane.native_payload, *offset)
+            })
+            .map(|offset| offset as u64)
             .collect::<std::collections::HashSet<_>>();
         let mut ordinals = std::collections::HashSet::new();
         let mut offsets = std::collections::HashSet::new();
@@ -442,13 +440,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 });
             }
             let valid = usize::try_from(entity.offset).ok().is_some_and(|offset| {
-                offset
-                    .checked_add(MARKER.len())
-                    .and_then(|end| lane.native_payload.get(offset..end))
-                    == Some(MARKER)
-                    && offset
-                        .checked_add(21)
-                        .is_some_and(|end| end <= lane.native_payload.len())
+                crate::resolved_features::sketch_marker_at(&lane.native_payload, offset)
             });
             if !valid {
                 findings.push(Finding {

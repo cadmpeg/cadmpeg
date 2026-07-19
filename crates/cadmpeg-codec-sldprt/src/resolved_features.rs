@@ -269,7 +269,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
         .collect()
 }
 
-fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
+pub(crate) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
     sketch_marker_prefix_at(payload, offset)
         && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
         && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
@@ -8604,15 +8604,45 @@ pub(crate) fn project_marker_backed_sketches(
             ) else {
                 continue;
             };
-            let Some(source_id) = compact_profile_reference_plane_source(
+            let frame = compact_profile_reference_plane_source(
                 &lane.native_payload,
                 context_start,
                 start,
                 end,
-            ) else {
-                continue;
-            };
-            let Some(&(origin, normal, u_axis)) = plane_frames.get(&source_id) else {
+            )
+            .and_then(|source| plane_frames.get(&source).copied())
+            .or_else(|| {
+                lane.native_payload
+                    .get(start..end)
+                    .and_then(|object| explicit_reference_plane_frame(object).ok().flatten())
+                    .map(|(origin, normal, u_axis)| {
+                        let finite_zero = |value: f64| {
+                            if value.abs() <= 1.0e-12 {
+                                0.0
+                            } else {
+                                value
+                            }
+                        };
+                        (
+                            Point3::new(
+                                finite_zero(origin.x),
+                                finite_zero(origin.y),
+                                finite_zero(origin.z),
+                            ),
+                            Vector3::new(
+                                finite_zero(normal.x),
+                                finite_zero(normal.y),
+                                finite_zero(normal.z),
+                            ),
+                            Vector3::new(
+                                finite_zero(u_axis.x),
+                                finite_zero(u_axis.y),
+                                finite_zero(u_axis.z),
+                            ),
+                        )
+                    })
+            });
+            let Some((origin, normal, u_axis)) = frame else {
                 continue;
             };
             let lane_key = lane

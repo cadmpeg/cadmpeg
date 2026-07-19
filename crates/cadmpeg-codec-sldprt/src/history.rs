@@ -2360,6 +2360,45 @@ mod history_reference_tests {
         );
     }
 
+    #[test]
+    fn profile_consumers_require_a_regeneration_profile() {
+        let mut definition = FeatureDefinition::Extrude {
+            profile: ProfileRef::Native("sketch-native".into()),
+            direction: None,
+            extent: Extent::Unresolved,
+            op: BooleanOp::Unresolved,
+            draft: None,
+        };
+        let sketch = cadmpeg_ir::sketches::SketchId("sketch".into());
+
+        assert!(!bind_definition_sketch(
+            &mut definition,
+            "sketch-native",
+            &sketch,
+            false,
+        ));
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Native(_),
+                ..
+            }
+        ));
+        assert!(bind_definition_sketch(
+            &mut definition,
+            "sketch-native",
+            &sketch,
+            true,
+        ));
+        assert!(matches!(
+            definition,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Sketch(ref bound),
+                ..
+            } if bound == &sketch
+        ));
+    }
+
     fn design_configuration(
         id: &str,
         ordinal: u32,
@@ -3003,6 +3042,7 @@ pub fn bind_unique_sketch_feature(
                 features[*index].id.clone(),
                 native_ref,
                 sketch.id.clone(),
+                !sketch.profiles.is_empty(),
             ));
         }
     }
@@ -3014,11 +3054,12 @@ pub fn bind_unique_sketch_feature(
                     features[*index].id.clone(),
                     native_ref,
                     sketch.id.clone(),
+                    !sketch.profiles.is_empty(),
                 ));
             }
         }
     }
-    for (index, _, _, sketch) in &bindings {
+    for (index, _, _, sketch, _) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
             space: SketchSpace::Planar,
             sketch: Some(sketch.clone()),
@@ -3038,7 +3079,7 @@ pub fn bind_unique_sketch_feature(
         };
         let candidates = bindings
             .iter()
-            .filter(|(base_index, _, base_native_ref, _)| {
+            .filter(|(base_index, _, base_native_ref, _, _)| {
                 let alias_native = features[*index]
                     .native_ref
                     .as_deref()
@@ -3053,7 +3094,7 @@ pub fn bind_unique_sketch_feature(
                     })
             })
             .collect::<Vec<_>>();
-        let [(base_index, base_dependency, _, sketch)] = candidates.as_slice() else {
+        let [(base_index, base_dependency, _, sketch, has_profile)] = candidates.as_slice() else {
             continue;
         };
         let Some(native_ref) = features[*index].native_ref.clone() else {
@@ -3069,12 +3110,13 @@ pub fn bind_unique_sketch_feature(
             (*base_dependency).clone(),
             native_ref,
             (*sketch).clone(),
+            *has_profile,
         ));
     }
     bindings.extend(aliases);
     for feature in features {
-        for (_, dependency, native_ref, sketch) in &bindings {
-            if bind_definition_sketch(&mut feature.definition, native_ref, sketch)
+        for (_, dependency, native_ref, sketch, has_profile) in &bindings {
+            if bind_definition_sketch(&mut feature.definition, native_ref, sketch, *has_profile)
                 && !feature.dependencies.contains(dependency)
             {
                 feature.dependencies.push(dependency.clone());
@@ -3431,10 +3473,12 @@ fn bind_definition_sketch(
     definition: &mut FeatureDefinition,
     native_ref: &str,
     sketch: &cadmpeg_ir::sketches::SketchId,
+    has_profile: bool,
 ) -> bool {
     let bind_profile = |profile: &mut ProfileRef| {
-        if matches!(profile, ProfileRef::Unresolved(owner) if owner == native_ref)
-            || matches!(profile, ProfileRef::Native(value) if value == native_ref)
+        if has_profile
+            && (matches!(profile, ProfileRef::Unresolved(owner) if owner == native_ref)
+                || matches!(profile, ProfileRef::Native(value) if value == native_ref))
         {
             *profile = ProfileRef::Sketch(sketch.clone());
             true
