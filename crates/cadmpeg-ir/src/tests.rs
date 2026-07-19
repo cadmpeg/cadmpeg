@@ -3048,3 +3048,34 @@ fn body_selections_round_trip_through_json() {
         selections
     );
 }
+
+#[test]
+fn pattern_seeds_round_trip_through_json() {
+    use crate::features::{
+        BodySelection, FaceSelection, FeatureId, GeneratedBodyRef, GeneratedFaceRef, PatternSeed,
+    };
+
+    let feature = FeatureId("synthetic:test:feature#4".into());
+    let seeds = vec![
+        PatternSeed::Feature(feature.clone()),
+        PatternSeed::Faces(FaceSelection::Generated {
+            faces: vec![GeneratedFaceRef {
+                feature: feature.clone(),
+                local_id: "7".into(),
+            }],
+            native: "persistent-face:4:7".into(),
+        }),
+        PatternSeed::Bodies(BodySelection::Generated {
+            bodies: vec![GeneratedBodyRef {
+                feature,
+                local_id: "6,0,7,1,5".into(),
+            }],
+            native: "persistent-body:4:6,0,7,1,5".into(),
+        }),
+    ];
+    let json = serde_json::to_string(&seeds).unwrap();
+    assert_eq!(
+        serde_json::from_str::<Vec<PatternSeed>>(&json).unwrap(),
+        seeds
+    );
+}

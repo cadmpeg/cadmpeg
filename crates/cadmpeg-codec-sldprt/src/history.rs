@@ -14,10 +14,10 @@ use cadmpeg_ir::features::{
     ConfigurationId, CosmeticThreadExtent, DesignConfiguration, DesignParameter, DimensionDisplay,
     EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition, FeatureId,
     FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length,
-    ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm,
-    RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide,
-    RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension,
-    SweepMode, TrimRegion, VariableRadius, VertexSelection, WrapMode,
+    ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, PatternSeed, ProfileRef,
+    RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft,
+    RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity,
+    SurfaceExtension, SweepMode, TrimRegion, VariableRadius, VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::AttributeId;
@@ -4754,7 +4754,7 @@ fn project_pattern(
         Some(seeds) => seeds
             .split(',')
             .map(str::trim)
-            .map(|source| by_source.get(source).cloned())
+            .map(|source| by_source.get(source).cloned().map(PatternSeed::Feature))
             .collect::<Option<Vec<_>>>()
             .unwrap_or_default(),
         None => Vec::new(),
@@ -11153,16 +11153,26 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let seed_sources = seeds
-                    .iter()
-                    .map(|seed| parent_sources.get(seed).cloned())
-                    .collect::<Option<Vec<_>>>()
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing pattern seed",
-                            feature.id
-                        ))
-                    })?;
+                let mut seed_sources = Vec::new();
+                for seed in seeds {
+                    match seed {
+                        PatternSeed::Feature(seed) => seed_sources.push(
+                            parent_sources.get(seed).cloned().ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "SLDPRT feature {} references a missing pattern seed",
+                                    feature.id
+                                ))
+                            })?,
+                        ),
+                        PatternSeed::Faces(_) | PatternSeed::Bodies(_) if existing.is_some() => {}
+                        PatternSeed::Faces(_) | PatternSeed::Bodies(_) => {
+                            return Err(CodecError::NotImplemented(format!(
+                                "SLDPRT feature {} has a source-less topology pattern seed",
+                                feature.id
+                            )));
+                        }
+                    }
+                }
                 if seed_sources.is_empty()
                     && (!matches!(
                         expected_form,

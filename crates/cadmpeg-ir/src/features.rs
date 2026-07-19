@@ -718,8 +718,8 @@ pub enum FeatureDefinition {
     },
     /// Repetition or reflection of existing features.
     Pattern {
-        /// Features being repeated or reflected; empty when the source selection is unresolved.
-        seeds: Vec<FeatureId>,
+        /// Geometry being repeated or reflected; empty when the source selection is unresolved.
+        seeds: Vec<PatternSeed>,
         /// Spatial transform defining the repetition or reflection.
         pattern: PatternKind,
     },
@@ -734,6 +734,18 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
     },
+}
+
+/// One geometric selection repeated or reflected by a pattern operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum PatternSeed {
+    /// Complete result of a preceding construction-history feature.
+    Feature(FeatureId),
+    /// Selected faces, including faces in an intermediate regenerated result.
+    Faces(FaceSelection),
+    /// Selected bodies, including bodies in an intermediate regenerated result.
+    Bodies(BodySelection),
 }
 
 /// Independently decoded inputs of a profile revolution.

@@ -1094,6 +1094,15 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Pattern { seeds, pattern } => {
                 seeds.is_empty()
+                    || seeds.iter().any(|seed| match seed {
+                        cadmpeg_ir::features::PatternSeed::Feature(_) => false,
+                        cadmpeg_ir::features::PatternSeed::Faces(faces) => {
+                            incomplete_face_selection(faces)
+                        }
+                        cadmpeg_ir::features::PatternSeed::Bodies(bodies) => {
+                            incomplete_body_selection(bodies)
+                        }
+                    })
                     || matches!(pattern, PatternKind::Unresolved { .. })
                     || matches!(pattern, PatternKind::Linear { direction: None, .. })
                     || matches!(pattern, PatternKind::CurveDriven { path: None, .. })

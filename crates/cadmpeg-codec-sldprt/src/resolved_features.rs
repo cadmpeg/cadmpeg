@@ -12,7 +12,9 @@ use crate::records::{
 };
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::cursor::bounded_len;
-use cadmpeg_ir::features::{Angle, BooleanOp, FeatureDefinition, Length, PathRef, PatternKind};
+use cadmpeg_ir::features::{
+    Angle, BooleanOp, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed,
+};
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
     BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PointId, RegionId, ShellId, SurfaceId,
@@ -3299,9 +3301,9 @@ pub(crate) fn bind_pattern_inputs(
                 if !matches!(
                     model_features[model_index].definition,
                     FeatureDefinition::Pattern {
-                        ref seeds,
                         pattern: PatternKind::Unresolved { .. },
-                    } if seeds.is_empty()
+                        ..
+                    }
                 ) {
                     continue;
                 }
@@ -3474,7 +3476,7 @@ pub(crate) fn bind_pattern_inputs(
         } = &mut model_features[index].definition
         {
             if seeds.is_empty() && slot.is_none() {
-                seeds.push(seed.clone());
+                seeds.push(PatternSeed::Feature(seed.clone()));
                 *slot = Some(path.clone());
             }
         }
@@ -3495,7 +3497,7 @@ pub(crate) fn bind_pattern_inputs(
         }
         if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
             if seeds.is_empty() {
-                seeds.push(seed.clone());
+                seeds.push(PatternSeed::Feature(seed.clone()));
             }
         }
     }
@@ -3560,7 +3562,7 @@ pub(crate) fn bind_pattern_inputs(
         }
         if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
             if seeds.is_empty() {
-                seeds.push(seed.clone());
+                seeds.push(PatternSeed::Feature(seed.clone()));
             }
         }
     }
@@ -16000,8 +16002,8 @@ mod profile_join_tests {
     };
     use cadmpeg_ir::features::{
         Angle, BooleanOp, DesignParameter, DimensionDisplay, Extent, Feature, FeatureDefinition,
-        FeatureId, Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef,
-        SketchSpace, SweepMode,
+        FeatureId, Length, ParameterId, ParameterValue, PathRef, PatternKind, PatternSeed,
+        ProfileRef, SketchSpace, SweepMode,
     };
     use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
     use cadmpeg_ir::ids::SurfaceId;
@@ -18218,7 +18220,7 @@ mod profile_join_tests {
         let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
             panic!("expected pattern");
         };
-        assert_eq!(seeds, std::slice::from_ref(&features[2].id));
+        assert_eq!(seeds, &[PatternSeed::Feature(features[2].id.clone())]);
 
         let mut ambiguous_lane = lane.clone();
         ambiguous_lane.names.insert(2, name(450, 20, "PathSketch"));
@@ -18263,7 +18265,7 @@ mod profile_join_tests {
         let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
             panic!("expected pattern");
         };
-        assert_eq!(seeds, std::slice::from_ref(&features[2].id));
+        assert_eq!(seeds, &[PatternSeed::Feature(features[2].id.clone())]);
         assert_eq!(features[0].dependencies, [features[2].id.clone()]);
         assert!(matches!(
             features[0].definition,

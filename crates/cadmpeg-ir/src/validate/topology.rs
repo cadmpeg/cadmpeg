@@ -5,7 +5,7 @@
 use super::*;
 use crate::features::{
     ChamferSpec, CosmeticThreadExtent, DimensionDisplay, FaceMotion, FeatureSourceContent,
-    FlexMode, HoleKind, Length, ParameterValue, PatternKind, RadiusSpec,
+    FlexMode, HoleKind, Length, ParameterValue, PatternKind, PatternSeed, RadiusSpec,
 };
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
@@ -2017,18 +2017,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     paths.push(path);
                 }
                 for seed in seeds {
-                    match features.get(seed.0.as_str()) {
-                        None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
-                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
-                            check: Check::ReferentialIntegrity,
-                            severity: Severity::Error,
-                            message: format!(
-                                "seed feature `{}` does not precede its pattern",
-                                seed.0
-                            ),
-                            entity: Some(feature.id.0.clone()),
-                        }),
-                        Some(_) => {}
+                    match seed {
+                        PatternSeed::Feature(seed) => match features.get(seed.0.as_str()) {
+                            None => ref_error(findings, &feature.id.0, "seed feature", &seed.0),
+                            Some(ordinal) if *ordinal >= feature.ordinal => {
+                                findings.push(Finding {
+                                    check: Check::ReferentialIntegrity,
+                                    severity: Severity::Error,
+                                    message: format!(
+                                        "seed feature `{}` does not precede its pattern",
+                                        seed.0
+                                    ),
+                                    entity: Some(feature.id.0.clone()),
+                                })
+                            }
+                            Some(_) => {}
+                        },
+                        PatternSeed::Faces(selection) => face_selections.push(selection),
+                        PatternSeed::Bodies(selection) => body_selections.push(selection),
                     }
                 }
                 let valid = match pattern {

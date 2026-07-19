@@ -3603,7 +3603,7 @@ fn encoder_writes_source_less_native_features() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Pattern {
-                seeds: vec![seed_id.clone()],
+                seeds: vec![cadmpeg_ir::features::PatternSeed::Feature(seed_id.clone())],
                 pattern,
             },
             native_ref: None,
@@ -14338,7 +14338,7 @@ fn semantic_writer_round_trips_all_pattern_forms() {
                 spacing: Length(10.0),
                 count: 3,
             },
-        } if seeds == &[seed.clone()]
+        } if seeds == &[cadmpeg_ir::features::PatternSeed::Feature(seed.clone())]
     ));
     assert!(matches!(
         &decoded.ir.model.features[2].definition,
