@@ -10571,7 +10571,7 @@ pub(crate) fn project_marker_backed_sketches(
                     };
                 continue;
             }
-            let sketch = Sketch {
+            let mut sketch = Sketch {
                 id: sketch_id.clone(),
                 name: Some(native_feature.name.clone()),
                 configuration: lane.configuration.clone(),
@@ -10720,6 +10720,7 @@ pub(crate) fn project_marker_backed_sketches(
                 })
                 .collect::<Vec<_>>();
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
+            sketch.profiles = closed_marker_profiles(&projected);
             if projected.is_empty() {
                 continue;
             }
@@ -10829,6 +10830,102 @@ fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) 
     for (index, geometry) in replacements {
         entities[index].geometry = geometry;
     }
+}
+
+fn closed_marker_profiles(entities: &[SketchEntity]) -> Vec<Vec<SketchEntityUse>> {
+    let curves = entities
+        .iter()
+        .enumerate()
+        .filter(|(_, entity)| {
+            !entity.construction
+                && entity.endpoint_refs.len() == 2
+                && matches!(
+                    entity.geometry,
+                    SketchGeometry::Line { .. } | SketchGeometry::Arc { .. }
+                )
+        })
+        .collect::<Vec<_>>();
+    let mut incidence = HashMap::<&str, Vec<usize>>::new();
+    for (index, entity) in &curves {
+        for endpoint in &entity.endpoint_refs {
+            incidence.entry(endpoint).or_default().push(*index);
+        }
+    }
+    let mut unused = curves
+        .iter()
+        .map(|(index, _)| *index)
+        .collect::<HashSet<_>>();
+    let mut profiles = Vec::new();
+    while let Some(&first) = unused.iter().min() {
+        let mut component = HashSet::from([first]);
+        let mut frontier = vec![first];
+        while let Some(curve) = frontier.pop() {
+            for endpoint in &entities[curve].endpoint_refs {
+                for adjacent in incidence.get(endpoint.as_str()).into_iter().flatten() {
+                    if component.insert(*adjacent) {
+                        frontier.push(*adjacent);
+                    }
+                }
+            }
+        }
+        if component.iter().any(|curve| {
+            entities[*curve].endpoint_refs.iter().any(|endpoint| {
+                incidence
+                    .get(endpoint.as_str())
+                    .is_none_or(|curves| curves.len() != 2)
+            })
+        }) {
+            unused.retain(|curve| !component.contains(curve));
+            continue;
+        }
+        let start = entities[first].endpoint_refs[0].as_str();
+        let mut current = start;
+        let mut curve = first;
+        let mut profile = Vec::new();
+        loop {
+            if !unused.remove(&curve) {
+                profile.clear();
+                break;
+            }
+            let [curve_start, curve_end] = entities[curve].endpoint_refs.as_slice() else {
+                profile.clear();
+                break;
+            };
+            let (reversed, next) = if curve_start == current {
+                (false, curve_end.as_str())
+            } else if curve_end == current {
+                (true, curve_start.as_str())
+            } else {
+                profile.clear();
+                break;
+            };
+            profile.push(SketchEntityUse {
+                entity: entities[curve].id.clone(),
+                reversed,
+            });
+            current = next;
+            if current == start {
+                break;
+            }
+            let Some(candidates) = incidence.get(current).filter(|curves| curves.len() == 2) else {
+                profile.clear();
+                break;
+            };
+            let Some(next_curve) = candidates
+                .iter()
+                .copied()
+                .find(|index| unused.contains(index))
+            else {
+                profile.clear();
+                break;
+            };
+            curve = next_curve;
+        }
+        if profile.len() >= 2 {
+            profiles.push(profile);
+        }
+    }
+    profiles
 }
 
 fn fitted_marker_circle(points: &[Point2], tolerance: f64) -> Option<(Point2, f64)> {
@@ -18523,7 +18620,7 @@ mod profile_join_tests {
     use super::{
         binary_relation_matches_evaluated_geometry, bind_circle_dimension_centers,
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
-        bind_sweep_adjacent_profiles, compact_line_reference_direction,
+        bind_sweep_adjacent_profiles, closed_marker_profiles, compact_line_reference_direction,
         dimensioned_circle_surface_transforms, dimensioned_circle_transform, fitted_marker_circle,
         implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
         marker_point_locus, owned_relation_parameters, profile_loci_by_marker,
@@ -18907,6 +19004,21 @@ mod profile_join_tests {
                 } if center == Point2::new(0.0, 0.0)
             ));
         }
+        entities.push(SketchEntity {
+            id: SketchEntityId("entity-line".into()),
+            sketch,
+            construction: false,
+            native_ref: Some("line".into()),
+            geometry_ref: None,
+            endpoint_refs: vec!["p2".into(), "p0".into()],
+            geometry: SketchGeometry::Line {
+                start: Point2::new(0.0, 2.0),
+                end: Point2::new(0.0, -2.0),
+            },
+        });
+        assert_eq!(closed_marker_profiles(&entities)[0].len(), 3);
+        entities.last_mut().unwrap().construction = true;
+        assert!(closed_marker_profiles(&entities).is_empty());
     }
 
     #[test]
