@@ -128,6 +128,8 @@ struct CreoSketchTableHeader {
 struct CreoSketchBucketHeader {
     index: u32,
     declared_entry_count: u32,
+    decoded_entry_count: u32,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -189,7 +191,7 @@ struct CreoSketchTrimEntity {
 #[derive(Serialize)]
 struct CreoSketchTrimVertex {
     vertex_id: u32,
-    entities: [u32; 2],
+    entities: Vec<u32>,
     section_coordinates: Option<[f64; 2]>,
     offset: usize,
 }
@@ -2832,7 +2834,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                 .flat_map(|table| &table.rows)
                 .map(|vertex| CreoSketchTrimVertex {
                     vertex_id: vertex.vertex_id,
-                    entities: vertex.entities,
+                    entities: vertex.entities.clone(),
                     section_coordinates: vertex.section_coordinates,
                     offset: vertex.offset,
                 })
@@ -3046,6 +3048,8 @@ fn sketch_table_headers(
                 .map(|bucket| CreoSketchBucketHeader {
                     index: bucket.index,
                     declared_entry_count: bucket.declared_entry_count,
+                    decoded_entry_count: bucket.decoded_entry_count,
+                    offset: bucket.offset,
                 })
                 .collect(),
             table.rows.len(),
@@ -3064,6 +3068,8 @@ fn sketch_table_headers(
                 .map(|bucket| CreoSketchBucketHeader {
                     index: bucket.index,
                     declared_entry_count: bucket.declared_entry_count,
+                    decoded_entry_count: bucket.decoded_entry_count,
+                    offset: bucket.offset,
                 })
                 .collect(),
             table.rows.len(),
@@ -3343,6 +3349,8 @@ fn saved_section_line_geometry(
         .or_else(|| {
             order_table.is_complete().then_some(())?;
             let trimmed = definition.trim_entities.as_ref()?;
+            (trimmed.has_complete_bucket_frame() && trimmed.has_unique_external_ids())
+                .then_some(())?;
             let segment_table = definition.segments.as_ref()?;
             segment_table.is_complete().then_some(())?;
             let segment_ids = segment_table
@@ -4876,12 +4884,15 @@ fn trim_segment_id(
     definition: &crate::feature::FeatureDefinition,
     row: &crate::feature::FeatureTrimEntity,
 ) -> Option<u32> {
+    let trim_table = definition.trim_entities.as_ref()?;
+    (trim_table.has_complete_bucket_frame() && trim_table.has_unique_external_ids())
+        .then_some(())?;
     let Some(segment_table) = &definition.segments else {
         return Some(row.external_id);
     };
     segment_table.is_complete().then_some(())?;
     let segments = &segment_table.rows;
-    let trim_rows = &definition.trim_entities.as_ref()?.rows;
+    let trim_rows = &trim_table.rows;
     let matching_segment_count = segments
         .iter()
         .filter(|segment| segment.external_id == row.external_id)
@@ -5086,9 +5097,20 @@ fn resolved_trim_vertex_coordinates(
         return BTreeMap::new();
     };
     let radii = resolved_section_radii(definition);
+    let mut seen_vertex_ids = BTreeSet::new();
+    let duplicate_vertex_ids = definition
+        .trim_vertices
+        .iter()
+        .filter(|table| table.has_complete_bucket_frame())
+        .flat_map(|table| &table.rows)
+        .filter_map(|vertex| {
+            (!seen_vertex_ids.insert(vertex.vertex_id)).then_some(vertex.vertex_id)
+        })
+        .collect::<BTreeSet<_>>();
     let mut coordinate_candidates = definition
         .trim_vertices
         .iter()
+        .filter(|table| table.has_complete_bucket_frame())
         .flat_map(|table| &table.rows)
         .filter_map(|vertex| Some((vertex.vertex_id, vertex.section_coordinates?)))
         .collect::<Vec<_>>();
@@ -5165,6 +5187,8 @@ fn resolved_trim_vertex_coordinates(
     }
     let (mut coordinates, mut ambiguous_vertices) =
         reconciled_section_coordinates(coordinate_candidates);
+    ambiguous_vertices.extend(duplicate_vertex_ids);
+    coordinates.retain(|vertex, _| !ambiguous_vertices.contains(vertex));
     loop {
         let mut additions = Vec::new();
         for trim in definition
@@ -9704,6 +9728,9 @@ fn resolved_profile_chains(
     let Some(table) = &definition.trim_entities else {
         return resolved_segment_profile_chains(definition, emitted);
     };
+    if !table.has_complete_bucket_frame() || !table.has_unique_external_ids() {
+        return resolved_segment_profile_chains(definition, emitted);
+    }
     let rows = table
         .rows
         .iter()
@@ -15647,13 +15674,13 @@ mod resolved_sketch_tests {
             rows: vec![
                 crate::feature::FeatureTrimVertex {
                     vertex_id: 1,
-                    entities: [42, 43],
+                    entities: vec![42, 43],
                     section_coordinates: Some([0.0, -2.0]),
                     offset: 31,
                 },
                 crate::feature::FeatureTrimVertex {
                     vertex_id: 1,
-                    entities: [42, 44],
+                    entities: vec![42, 44],
                     section_coordinates: Some([9.0, 9.0]),
                     offset: 32,
                 },
@@ -18293,6 +18320,28 @@ mod resolved_sketch_tests {
         assert_eq!(profiles[0][0].entity.0, "creo:featdefs:sketch_entity#40:10");
         assert!(!profiles[0][0].reversed);
         assert!(profiles[0][1].reversed);
+
+        let mut incomplete = definition.clone();
+        let table = incomplete.trim_entities.as_mut().expect("trim table");
+        table.declared_count = Some(1);
+        table.buckets.push(crate::feature::FeatureTrimBucket {
+            index: 0,
+            declared_entry_count: 4,
+            decoded_entry_count: 3,
+            offset: 5,
+        });
+        assert!(resolved_profile_chains(
+            &incomplete,
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        )
+        .is_empty());
+        assert_eq!(
+            trim_segment_id(
+                &incomplete,
+                &incomplete.trim_entities.as_ref().expect("trim table").rows[0],
+            ),
+            None
+        );
 
         assert!(
             resolved_profile_chains(&definition, &BTreeSet::from([10_u32, 11_u32, 12_u32]))

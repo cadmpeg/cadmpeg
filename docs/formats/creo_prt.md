@@ -1746,11 +1746,21 @@ Each populated bucket stores an array opener whose count is the number of
 entries in that bucket. Empty buckets store no entry array and have an entry
 count of zero. The named first bucket stores its entry count in `bucket_xar`;
 later populated buckets store the count immediately after their bucket index.
+The named schema prototype is one entry in the first bucket. A bucket is
+complete only when its decoded prototype and positional entry bodies equal its
+declared entry count exactly; missing and extra bodies both make it incomplete.
 
-`vert_tab` chains bind a solved trim-vertex identifier to two incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A solved trim vertex is the intersection of its two defining `segtab` carriers evaluated from `var_arr` or the joined saved-section geometry; its identifier differs from a `segtab` point identifier. A neutral sketch line uses its `ent_tab` start and end intersections, not the untrimmed carrier endpoints.
+`vert_tab` chains bind a solved trim-vertex identifier to its incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A trim vertex with exactly two incident carriers can be solved as their intersection evaluated from `var_arr` or the joined saved-section geometry; its identifier differs from a `segtab` point identifier. A neutral sketch line uses its `ent_tab` start and end intersections, not the untrimmed carrier endpoints.
 Native `vert_tab` rows are retained from their own complete entry bodies. Their
 retention does not depend on whether either incident entity is present in the
 decoded `ent_tab` subset.
+The `ent_ids` array count is the number of incident entity identifiers and is
+not fixed at two. The vertex identifier follows those entity identifiers and a
+zero terminates the entry. Collision-chain entries may omit the `ent_ids` array
+opener; in that form, every identifier before the final vertex identifier is an
+incident entity. Geometric intersection coordinates are derived only for rows
+with exactly two distinct incident entities. Repeated vertex identifiers are
+semantically ambiguous even when each stored entry body is complete.
 All stored, saved-section, and propagated coordinates for one trim-vertex
 identifier must agree. Conflicting candidates leave that vertex unresolved.
 When the two incident `segtab` rows have exactly one common endpoint
