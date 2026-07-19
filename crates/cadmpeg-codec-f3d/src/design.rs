@@ -2520,30 +2520,29 @@ fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
 }
 
 fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
-    if operand.recipe_reference_contexts.is_empty() {
-        if let Some(local_topology_references) = &operand.local_topology_references {
-            local_topology_references
-                .iter()
-                .filter_map(|ordinal| {
-                    operand
-                        .terminal_reference_edge_slots
-                        .get(usize::try_from(ordinal.get()).ok()?.checked_sub(1)?)
-                })
-                .map(Vec::as_slice)
-                .collect()
-        } else {
-            operand
-                .terminal_reference_edge_slots
-                .iter()
-                .map(Vec::as_slice)
-                .collect()
-        }
+    let reference_edge_slots = if operand.recipe_reference_contexts.is_empty() {
+        operand
+            .terminal_reference_edge_slots
+            .iter()
+            .map(Vec::as_slice)
+            .collect::<Vec<_>>()
     } else {
         operand
             .recipe_reference_contexts
             .iter()
             .map(|context| context.changed_reference_edge_slots.as_slice())
+            .collect::<Vec<_>>()
+    };
+    if let Some(local_topology_references) = &operand.local_topology_references {
+        local_topology_references
+            .iter()
+            .filter_map(|ordinal| {
+                reference_edge_slots.get(usize::try_from(ordinal.get()).ok()?.checked_sub(1)?)
+            })
+            .copied()
             .collect()
+    } else {
+        reference_edge_slots
     }
 }
 
@@ -24143,6 +24142,36 @@ mod relation_tests {
             super::edge_operand_reference_edge_sets(&edge_operand),
             vec![&[17][..], &[18, 19][..]]
         );
+        let reference_context = |reference_ordinal, changed_reference_edge_slots| {
+            crate::records::DesignEdgeRecipeReferenceContext {
+                reference_ordinal,
+                result_faces: Vec::new(),
+                result_face_boundaries: Vec::new(),
+                result_shared_edge_slots: Vec::new(),
+                preceding_faces: Vec::new(),
+                preceding_face_boundaries: Vec::new(),
+                preceding_support_face_slots: Vec::new(),
+                preceding_support_face_boundaries: Vec::new(),
+                shared_edge_slots: Vec::new(),
+                changed_shared_edge_slots: Vec::new(),
+                changed_reference_edge_slots,
+            }
+        };
+        edge_operand.recipe_reference_contexts = vec![
+            reference_context(0, vec![17]),
+            reference_context(1, vec![18, 19]),
+        ];
+        edge_operand.local_topology_references = Some(vec![
+            std::num::NonZeroU32::new(2).unwrap(),
+            std::num::NonZeroU32::new(1).unwrap(),
+            std::num::NonZeroU32::new(2).unwrap(),
+        ]);
+        assert_eq!(
+            super::edge_operand_reference_edge_sets(&edge_operand),
+            vec![&[18, 19][..], &[17][..], &[18, 19][..]]
+        );
+        edge_operand.recipe_reference_contexts.clear();
+        edge_operand.local_topology_references = None;
         edge_operand.terminal_reference_edge_slots.clear();
         edge_operand.resolved_edge_slot = Some(17);
         assert_eq!(super::resolved_edge_operand(&edge_operand), Some(17));
