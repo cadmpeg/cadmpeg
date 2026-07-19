@@ -773,7 +773,7 @@ mod marker_tests {
         );
         assert_eq!(
             reconcile_reference_plane_frame(Some(explicit), Some(conflicting_constraint)),
-            None
+            Some(conflicting_constraint)
         );
     }
 
@@ -5741,7 +5741,7 @@ pub(crate) fn sync_changed_feature_scalars(
     Ok(())
 }
 
-/// Prefer an explicit basis when a constraint record confirms the same plane equation.
+/// Prefer an explicit basis when it agrees with the class-anchored plane constraint.
 fn reconcile_reference_plane_frame(
     explicit: Option<(Point3, Vector3, Vector3)>,
     constraint: Option<(Point3, Vector3, Vector3)>,
@@ -5757,9 +5757,13 @@ fn reconcile_reference_plane_frame(
     let constraint_distance = constraint.1.x * constraint.0.x
         + constraint.1.y * constraint.0.y
         + constraint.1.z * constraint.0.z;
-    ((alignment.abs() - 1.0).abs() <= 1.0e-9
-        && (explicit_distance - alignment.signum() * constraint_distance).abs() <= 1.0e-9)
-        .then_some(explicit)
+    if (alignment.abs() - 1.0).abs() <= 1.0e-9
+        && (explicit_distance - alignment.signum() * constraint_distance).abs() <= 1.0e-9
+    {
+        Some(explicit)
+    } else {
+        Some(constraint)
+    }
 }
 
 /// Add validated reference-plane frames to a projection copy of history.
@@ -5823,8 +5827,10 @@ pub(crate) fn enrich_history_reference_planes(
                     .push(source);
             }
             let constraint = constraint_midplane_frame(bytes);
-            let Ok(explicit) = explicit_reference_plane_frame(bytes) else {
-                continue;
+            let explicit = match explicit_reference_plane_frame(bytes) {
+                Ok(frame) => frame,
+                Err(()) if constraint.is_some() => None,
+                Err(()) => continue,
             };
             let Some(frame) = reconcile_reference_plane_frame(explicit, constraint) else {
                 continue;
