@@ -209,6 +209,31 @@ pub struct SpatialSketchEntity {
     pub geometry: SpatialSketchGeometry,
 }
 
+/// One geometric relation owned by a spatial sketch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchConstraint {
+    /// Globally unique constraint id.
+    pub id: SketchConstraintId,
+    /// Owning spatial sketch.
+    pub sketch: SpatialSketchId,
+    /// Neutral relation semantics.
+    pub definition: SpatialSketchConstraintDefinition,
+    /// Source-native relation represented by this constraint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_ref: Option<String>,
+}
+
+/// Neutral geometric relations between model-space sketch entities.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SpatialSketchConstraintDefinition {
+    /// A spline's defining model-space entities grouped by one native relation.
+    SplineGroup {
+        /// Ordered spline-group members.
+        entities: Vec<SpatialSketchEntityId>,
+    },
+}
+
 /// Solved geometry in model coordinates.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]

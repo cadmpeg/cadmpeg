@@ -12,7 +12,10 @@ use crate::attributes::SourceAttribute;
 use crate::features::{DesignConfiguration, DesignParameter, Feature, FeatureInputTopology};
 use crate::geometry::{Curve, Pcurve, ProceduralCurve, ProceduralSurface, Surface};
 use crate::native::Native;
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
 use crate::subd::SubdSurface;
 use crate::tessellation::Tessellation;
 use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vertex};
@@ -46,6 +49,7 @@ macro_rules! arena_registry {
             sketch_constraints: SketchConstraint, "Sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
             spatial_sketches: SpatialSketch, "Spatial sketch arena.", [serde(default)] => |e| e.id.0.clone();
             spatial_sketch_entities: SpatialSketchEntity, "Solved spatial sketch entity arena.", [serde(default)] => |e| e.id.0.clone();
+            spatial_sketch_constraints: SpatialSketchConstraint, "Spatial sketch constraint arena.", [serde(default)] => |e| e.id.0.clone();
             tessellations: Tessellation, "Tessellation arena.", [] => |e| e.id.clone();
             appearances: Appearance, "Appearance arena.", [] => |e| e.id.0.clone();
             appearance_bindings: AppearanceBinding, "Appearance binding arena.", [] => |e| e.id.clone();

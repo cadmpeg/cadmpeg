@@ -269,6 +269,12 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
         .sketch_constraints
         .iter()
         .filter_map(|constraint| constraint.native_ref.as_deref())
+        .chain(
+            ir.model
+                .spatial_sketch_constraints
+                .iter()
+                .filter_map(|constraint| constraint.native_ref.as_deref()),
+        )
         .collect::<HashSet<_>>();
     let projected_sketch_refs = ir
         .model
@@ -864,7 +870,14 @@ pub fn decode(
                 crate::design::project_spatial_sketch_design(
                     &native.design_sketch_placements,
                     &native.sketch_curve_identities,
+                    &native.sketch_relations,
                 );
+            ir.model.spatial_sketch_constraints = crate::design::project_spatial_sketch_constraints(
+                &native.design_sketch_placements,
+                &native.sketch_relations,
+                &native.sketch_curve_identities,
+                &ir.model.spatial_sketch_entities,
+            );
             crate::design::bind_extrude_profile_selections(
                 &mut ir.model.features,
                 &native.design_parameter_scopes,
@@ -1148,7 +1161,14 @@ pub fn decode(
         crate::design::project_spatial_sketch_design(
             &native.design_sketch_placements,
             &native.sketch_curve_identities,
+            &native.sketch_relations,
         );
+    ir.model.spatial_sketch_constraints = crate::design::project_spatial_sketch_constraints(
+        &native.design_sketch_placements,
+        &native.sketch_relations,
+        &native.sketch_curve_identities,
+        &ir.model.spatial_sketch_entities,
+    );
     crate::design::bind_extrude_profile_selections(
         &mut ir.model.features,
         &native.design_parameter_scopes,

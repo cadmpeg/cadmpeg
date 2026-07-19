@@ -5,7 +5,10 @@
 use super::*;
 use crate::features::FeatureInputTopology;
 use crate::features::{DesignConfiguration, DesignParameter};
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
 use crate::subd::SubdSurface;
 
 pub(super) fn check_version(ir: &CadIr, findings: &mut Vec<Finding>) {

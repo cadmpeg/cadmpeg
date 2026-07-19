@@ -355,6 +355,44 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         }
     }
 
+    let spatial_entities = ir
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .map(|entity| (entity.id.clone(), entity.sketch.clone()))
+        .collect::<HashMap<_, _>>();
+    for constraint in &ir.model.spatial_sketch_constraints {
+        if !spatial_sketches.contains(&constraint.sketch) {
+            finding(
+                findings,
+                Check::ReferentialIntegrity,
+                &constraint.id.0,
+                "spatial constraint references a missing spatial sketch",
+            );
+        }
+        let crate::sketches::SpatialSketchConstraintDefinition::SplineGroup { entities } =
+            &constraint.definition;
+        let distinct = entities.iter().collect::<HashSet<_>>();
+        if entities.len() < 2 || distinct.len() != entities.len() {
+            finding(
+                findings,
+                Check::Counts,
+                &constraint.id.0,
+                "invalid spatial spline-group arity",
+            );
+        }
+        for entity in entities {
+            if spatial_entities.get(entity) != Some(&constraint.sketch) {
+                finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    &constraint.id.0,
+                    "spatial constraint member does not belong to its sketch",
+                );
+            }
+        }
+    }
+
     let geometry = ir
         .model
         .sketch_entities

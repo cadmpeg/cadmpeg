@@ -2923,8 +2923,9 @@ fn spatial_sketch_cannot_own_planar_geometry() {
 fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::features::Length;
     use crate::sketches::{
-        SpatialSketch, SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchGeometry,
-        SpatialSketchId,
+        SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
+        SpatialSketchGeometry, SpatialSketchId,
     };
 
     let mut ir = unit_cube();
@@ -2935,9 +2936,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         configuration: None,
         native_ref: None,
     });
+    let circle = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#circle".into());
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#circle".into()),
-        sketch,
+        id: circle.clone(),
+        sketch: sketch.clone(),
         construction: false,
         native_ref: None,
         geometry_ref: None,
@@ -2949,6 +2951,29 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             radius: Length(4.0),
         },
     });
+    let line = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: line.clone(),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Line {
+            start: Point3::new(0.0, 0.0, 0.0),
+            end: Point3::new(1.0, 1.0, 1.0),
+        },
+    });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#group".into()),
+            sketch,
+            definition: SpatialSketchConstraintDefinition::SplineGroup {
+                entities: vec![line, circle],
+            },
+            native_ref: None,
+        });
     ir.finalize();
     assert!(validate(&ir, Vec::new()).findings.is_empty());
     let json = ir.to_canonical_json().expect("serialize spatial sketch");
@@ -2957,6 +2982,10 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     assert_eq!(
         decoded.model.spatial_sketch_entities,
         ir.model.spatial_sketch_entities
+    );
+    assert_eq!(
+        decoded.model.spatial_sketch_constraints,
+        ir.model.spatial_sketch_constraints
     );
 }
 

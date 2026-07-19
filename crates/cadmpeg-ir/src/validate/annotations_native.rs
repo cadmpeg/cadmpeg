@@ -5,7 +5,10 @@
 use super::*;
 use crate::features::FeatureInputTopology;
 use crate::features::{DesignConfiguration, DesignParameter};
-use crate::sketches::{Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchEntity};
+use crate::sketches::{
+    Sketch, SketchConstraint, SketchEntity, SpatialSketch, SpatialSketchConstraint,
+    SpatialSketchEntity,
+};
 use crate::subd::SubdSurface;
 
 macro_rules! define_model_entity_json {
@@ -211,6 +214,18 @@ pub(super) fn check_native_links(
             }
         }
     }
+    for sketch in &ir.model.spatial_sketches {
+        if let Some(target) = &sketch.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(sketch.id.0.clone()),
+                });
+            }
+        }
+    }
     for constraint in &ir.model.sketch_constraints {
         if let Some(target) = &constraint.native_ref {
             if !native_ids.contains(target.as_str()) {
@@ -236,6 +251,18 @@ pub(super) fn check_native_links(
                         });
                     }
                 }
+            }
+        }
+    }
+    for constraint in &ir.model.spatial_sketch_constraints {
+        if let Some(target) = &constraint.native_ref {
+            if !native_ids.contains(target.as_str()) {
+                findings.push(Finding {
+                    check: Check::NativeLinks,
+                    severity: Severity::Error,
+                    message: format!("native_ref `{target}` does not resolve"),
+                    entity: Some(constraint.id.0.clone()),
+                });
             }
         }
     }
