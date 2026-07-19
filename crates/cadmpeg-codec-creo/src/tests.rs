@@ -751,6 +751,50 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
 }
 
 #[test]
+fn cone_terminal_half_angle_bounds_the_parameter_body() {
+    let half_angle = [0x74, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x05];
+    let expected = f64::from_be_bytes([0x3f, 0xe9, 0x21, 0xfb, 0x54, 0x44, 0x2d, 0x05]);
+    let mut payload = visibgeom_payload(2, 0);
+    payload.extend_from_slice(&[7, 0x25, 4, 0x01, 0, 0]);
+    payload.extend_from_slice(&[0xe3, 0x18, 0xe4]);
+    payload.extend_from_slice(&half_angle);
+    payload.push(0xe3);
+    payload.extend_from_slice(&[0xfe; 12]);
+    payload.extend_from_slice(&[8, 0x22, 4, 0x01, 0, 0, 0xe4, 0xe3]);
+    let data = build_prt("c", &[("VisibGeom", payload)]);
+    let scan = container::scan_bytes(data.clone());
+
+    assert_eq!(
+        scan.surface_parameters[0].body,
+        [&[0xe3, 0x18, 0xe4][..], &half_angle[..]].concat()
+    );
+    assert_eq!(
+        scan.surface_parameters[0].scalar_values,
+        [0.0, 1.0, expected]
+    );
+    assert_eq!(
+        scan.surface_parameters[0].boundary,
+        crate::surface::SurfaceBodyBoundary::CompoundClose
+    );
+    let override_value = scan.surface_parameters[0]
+        .cone_half_angle_override(0x25)
+        .expect("terminal cone half-angle");
+    assert_eq!(override_value.radians, expected);
+    assert_eq!(override_value.offset, 3);
+    assert!(scan.surface_parameters[0]
+        .cone_half_angle_override(0x26)
+        .is_none());
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+    assert_eq!(
+        native.fields["cone_half_angle_override"]["radians"],
+        expected
+    );
+    assert_eq!(native.fields["cone_half_angle_override"]["offset"], 3);
+}
+
+#[test]
 fn decode_preserves_surface_parameter_slots_in_native_ir() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);

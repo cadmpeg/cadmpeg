@@ -319,6 +319,22 @@ pub struct TorusRadiusOverrides {
     pub offset: usize,
 }
 
+/// Terminal half-angle override in a positional cone body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ConeHalfAngleOverride {
+    /// Cone half-angle in radians, strictly between zero and pi/2.
+    pub radians: f64,
+    /// Byte offset of the positive-DICT token relative to the parameter body.
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ConeHalfAngleLayout {
+    value: f64,
+    start: usize,
+    end: usize,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct TorusRadiusOverrideLayout {
     overrides: TorusRadiusOverrides,
@@ -406,6 +422,19 @@ pub struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    /// Decode the terminal positive-DICT half-angle of a positional cone body.
+    #[must_use]
+    pub fn cone_half_angle_override(&self, type_byte: u8) -> Option<ConeHalfAngleOverride> {
+        if type_byte != 0x25 {
+            return None;
+        }
+        let layout = terminal_cone_half_angle_layout(&self.body)?;
+        Some(ConeHalfAngleOverride {
+            radians: layout.value,
+            offset: layout.start,
+        })
+    }
+
     /// Decode the tagged radius trailer of a positional torus-or-sphere body.
     #[must_use]
     pub fn torus_radius_overrides(&self, type_byte: u8) -> Option<TorusRadiusOverrides> {
@@ -1343,6 +1372,32 @@ fn torus_radius_override_layout(body: &[u8]) -> Option<TorusRadiusOverrideLayout
     )
 }
 
+fn unique_cone_half_angle_layout(
+    body: &[u8],
+    accepts_end: impl Fn(usize) -> bool,
+) -> Option<ConeHalfAngleLayout> {
+    let mut layouts = (0..body.len()).filter_map(|start| {
+        let (value, end) = scalar::decode_positive_dict(body, start)?;
+        (valid_half_angle(value) && accepts_end(end)).then_some(ConeHalfAngleLayout {
+            value,
+            start,
+            end,
+        })
+    });
+    let layout = layouts.next()?;
+    layouts.next().is_none().then_some(layout)
+}
+
+fn terminal_cone_half_angle_layout(body: &[u8]) -> Option<ConeHalfAngleLayout> {
+    unique_cone_half_angle_layout(body, |end| end == body.len())
+}
+
+fn cone_half_angle_before_close(body: &[u8]) -> Option<ConeHalfAngleLayout> {
+    unique_cone_half_angle_layout(body, |end| {
+        body.get(end) == Some(&psb::token::COMPOUND_CLOSE)
+    })
+}
+
 fn scalar_tokens(
     kind: SurfaceKind,
     body: &[u8],
@@ -1356,6 +1411,11 @@ fn scalar_tokens(
     };
     let radius_layout = if kind == SurfaceKind::TorusOrSphere {
         torus_radius_override_layout(body)
+    } else {
+        None
+    };
+    let cone_half_angle = if kind == SurfaceKind::Cone {
+        terminal_cone_half_angle_layout(body)
     } else {
         None
     };
@@ -1378,6 +1438,18 @@ fn scalar_tokens(
                 continue;
             }
         }
+        if let Some(layout) = cone_half_angle {
+            if cursor == layout.start {
+                tokens.push(SurfaceParameterScalar {
+                    value: Some(layout.value),
+                    raw: body[layout.start..layout.end].to_vec(),
+                    offset: layout.start,
+                    length: layout.end - layout.start,
+                });
+                cursor = layout.end;
+                continue;
+            }
+        }
         if let Some((value, next)) = decode_row_scalar(kind, body, cursor, cache) {
             if outline_markers
                 .iter()
@@ -1389,6 +1461,10 @@ fn scalar_tokens(
             if radius_layout.is_some_and(|layout| {
                 cursor < layout.overrides.offset && next > layout.overrides.offset
             }) {
+                cursor += 1;
+                continue;
+            }
+            if cone_half_angle.is_some_and(|layout| cursor < layout.start && next > layout.start) {
                 cursor += 1;
                 continue;
             }
@@ -1477,12 +1553,27 @@ fn named_record_boundary(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<usize> {
+    let cone_half_angle = if kind == SurfaceKind::Cone {
+        terminal_cone_half_angle_layout(body)
+    } else {
+        None
+    };
     let mut cursor = 0;
     while cursor < body.len() {
+        if let Some(layout) = cone_half_angle {
+            if cursor == layout.start {
+                cursor = layout.end;
+                continue;
+            }
+        }
         if named_record_length(body, cursor).is_some() {
             return Some(cursor);
         }
         if let Some((_, next)) = decode_row_scalar(kind, body, cursor, cache) {
+            if cone_half_angle.is_some_and(|layout| cursor < layout.start && next > layout.start) {
+                cursor += 1;
+                continue;
+            }
             cursor = next;
         } else {
             cursor += 1;
@@ -1743,6 +1834,11 @@ fn surface_body_compound_close(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<usize> {
+    if kind == SurfaceKind::Cone {
+        if let Some(layout) = cone_half_angle_before_close(body) {
+            return Some(layout.end);
+        }
+    }
     if kind == SurfaceKind::Extrusion {
         if let Some((_, mut cursor)) = decode_tabulated_cylinder_frame(body, cache) {
             if body.get(cursor) == Some(&psb::token::ENTITY_REF) {

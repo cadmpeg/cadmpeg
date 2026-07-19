@@ -1594,6 +1594,7 @@ struct CreoSurfaceParameterRecord {
     tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
     torus_outline_frame: Option<CreoTorusOutlineFrame>,
     torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
+    cone_half_angle_override: Option<CreoConeHalfAngleOverride>,
     extrusion_direction: Option<[f64; 3]>,
     row_offset: usize,
     body_offset: usize,
@@ -1617,6 +1618,12 @@ struct CreoTorusOutlineFrame {
 struct CreoTorusRadiusOverrides {
     radius1: f64,
     radius2: f64,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoConeHalfAngleOverride {
+    radians: f64,
     offset: usize,
 }
 
@@ -2195,6 +2202,12 @@ fn surface_parameter_records(
                         radius1: overrides.radius1,
                         radius2: overrides.radius2,
                         offset: overrides.offset,
+                    },
+                ),
+                cone_half_angle_override: record.cone_half_angle_override(row.type_byte).map(
+                    |half_angle| CreoConeHalfAngleOverride {
+                        radians: half_angle.radians,
+                        offset: half_angle.offset,
                     },
                 ),
                 extrusion_direction: (row.kind == crate::surface::SurfaceKind::Extrusion)

@@ -384,6 +384,12 @@ Other six-scalar sequences after the marker are not directrix envelopes.
 
 Cone `half_angle` uses the positive DICT rule and is expressed in radians. Valid values lie in `(0, pi/2)`.
 
+A positional `geom_type = 25` body can terminate with one positive-DICT
+`half_angle` scalar immediately followed by the structural body-close byte.
+The scalar has precedence over scalar candidates beginning inside its payload;
+the following close byte is not part of the scalar. The bounded body transfers
+the value and source offset as `cone_half_angle_override`.
+
 ### 3.3 Torus and sphere representation
 
 A `srf_prim_ptr(torus)` prototype stores `e1[3], e2[3], e3[3], origin[3], radius1, radius2`. A sphere uses `radius1 = 0` and radius `radius2`; a torus uses nonzero `radius1`. Per-instance row-body overrides use a separate grammar.
