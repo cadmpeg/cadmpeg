@@ -8450,11 +8450,33 @@ impl MeshSelectionSearch<'_> {
             .flatten()
             .map(|use_| use_.edge)
             .collect::<HashSet<_>>();
+        let adjacent_faces = (!selected_edges.is_empty())
+            .then(|| {
+                self.selected
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(face, selected)| {
+                        (selected.is_none()
+                            && self.assignments[face]
+                                .iter()
+                                .flat_map(|assignment| &assignment.boundaries)
+                                .flatten()
+                                .any(|use_| selected_edges.contains(&use_.edge)))
+                        .then_some(face)
+                    })
+                    .collect::<HashSet<_>>()
+            })
+            .filter(|faces| !faces.is_empty());
         let next = self
             .selected
             .iter()
             .enumerate()
             .filter(|(_, selected)| selected.is_none())
+            .filter(|(face, _)| {
+                adjacent_faces
+                    .as_ref()
+                    .is_none_or(|adjacent| adjacent.contains(face))
+            })
             .filter_map(|(face, _)| {
                 if !budget.charge() {
                     return None;
@@ -11459,6 +11481,69 @@ mod motif_tests {
         search.search_with_limit(&quotient, 0);
 
         assert!(search.exhausted);
+        assert!(search.solution.is_none());
+    }
+
+    #[test]
+    fn mesh_selection_finishes_the_active_face_component_first() {
+        const UNRELATED_FACE_COUNT: usize = 1_000;
+        let use_edge = |edge| MeshBoundaryEdgeCandidate {
+            edge,
+            start: 0,
+            end: 0,
+            reversed: Some(false),
+        };
+        let selected_assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_edge(0)]],
+        };
+        let mut assignments = vec![vec![selected_assignment]];
+        assignments.extend((0..UNRELATED_FACE_COUNT).map(|index| {
+            vec![MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_edge(index + 2)]],
+            }]
+        }));
+        assignments.push(vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![use_edge(0), use_edge(1)]],
+        }]);
+        let face_count = assignments.len();
+        let edge_count = UNRELATED_FACE_COUNT + 2;
+        let mut selected = vec![None; face_count];
+        selected[0] = Some((0, vec![vec![false]]));
+        let mut edge_candidates = vec![vec![[0, 0]]; edge_count];
+        edge_candidates[1] = vec![[1, 1]];
+        let mut domains = Vec::with_capacity(edge_count * 2);
+        for candidates in &edge_candidates {
+            let domain = Arc::new(candidates.iter().flatten().copied().collect::<HashSet<_>>());
+            domains.push(domain.clone());
+            domains.push(domain);
+        }
+        let mut search = MeshSelectionSearch {
+            assignments: &assignments,
+            possible_face_equations: vec![Vec::new(); face_count],
+            possible_face_choices: vec![Vec::new(); face_count],
+            face_work: vec![Some(1); face_count],
+            edge_candidates: &edge_candidates,
+            edge_rows: &[],
+            vertex_points: &[[0.0; 3], [1.0, 0.0, 0.0]],
+            selected,
+            states: 0,
+            solution: None,
+            stop_after_first_solution: false,
+            ambiguous: false,
+            exhausted: false,
+            face_equation_cache: RefCell::default(),
+        };
+        let quotient = MeshQuotient {
+            union: UnionFind::new(edge_count * 2),
+            domains,
+            members: (0..edge_count * 2).map(|node| vec![node]).collect(),
+        };
+        let budget = MeshConstraintBudget::new(5);
+        let propagation_budget = MeshConstraintBudget::new(0);
+
+        search.search_from_state(&quotient, true, &budget, &propagation_budget);
+
+        assert!(!search.exhausted);
         assert!(search.solution.is_none());
     }
 
