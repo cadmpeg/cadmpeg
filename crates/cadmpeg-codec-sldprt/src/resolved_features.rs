@@ -440,10 +440,11 @@ mod marker_tests {
         component_profile_source_at, component_reference_curve_path_at, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
-        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
-        inline_surface_reference_at, legacy_feature_input_section, legacy_reference_axis_triads,
-        marker_coordinates, marker_is_geometry_locus, marker_local_id, marker_local_links,
-        marker_object_index, matrix_reference_plane_frame, minimal_reference_plane_frame,
+        enrich_history_revolution_inputs, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, inline_surface_reference_at,
+        legacy_feature_input_section, legacy_reference_axis_triads, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
+        matrix_reference_plane_frame, minimal_reference_plane_frame,
         mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
         native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
@@ -457,8 +458,9 @@ mod marker_tests {
         FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
-        Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
-        SketchInputEntity, SketchInputKind, SketchInputLink, SketchRelationKind,
+        Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
+        FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity,
+        SketchInputKind, SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchLocus};
@@ -3409,6 +3411,78 @@ mod marker_tests {
             Some(BooleanOp::Cut)
         );
     }
+
+    #[test]
+    fn revolution_cut_consumes_the_preceding_profile_object() {
+        let feature = |id: &str, source: &str, class: &str| Feature {
+            id: id.into(),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: Some(source.into()),
+            parent_source_id: None,
+            ordinal: 0,
+            name: id.into(),
+            kind: String::new(),
+            input_class: Some(class.into()),
+            suppressed: false,
+            parameters: Default::default(),
+            dimension_properties: Default::default(),
+            properties: Default::default(),
+            text: None,
+            content: Vec::new(),
+        };
+        let mut histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: Default::default(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                feature("profile", "23", "moProfileFeature_c"),
+                feature("cut", "28", "moRevCut_c"),
+            ],
+        }];
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: vec![0; 256],
+            classes: Vec::new(),
+            names: vec![
+                FeatureInputName {
+                    id: "profile-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: 100,
+                    object_id: Some(23),
+                    value: "profile".into(),
+                },
+                FeatureInputName {
+                    id: "cut-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 1,
+                    offset: 200,
+                    object_id: Some(28),
+                    value: "cut".into(),
+                },
+            ],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        enrich_history_revolution_inputs(&mut histories, &[lane]);
+
+        assert_eq!(
+            histories[0].features[1].properties.get("Profile"),
+            Some(&"23".into())
+        );
+    }
 }
 
 pub(crate) fn named_scalars(
@@ -3780,6 +3854,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                 .map(move |feature| (feature.id.clone(), sources.clone()))
         })
         .collect::<HashMap<_, _>>();
+    let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
     let mut inputs = HashMap::<String, Vec<Option<(u32, Point3, Vector3)>>>::new();
     for lane in lanes {
         let mut objects = snapshot
@@ -3787,12 +3862,24 @@ pub(crate) fn enrich_history_revolution_inputs(
             .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
             .collect::<Vec<_>>();
         objects.sort_unstable_by_key(|(offset, _)| *offset);
-        for &(start, feature) in &objects {
+        for (index, &(start, feature)) in objects.iter().enumerate() {
             if !matches!(
                 feature.input_class.as_deref(),
                 Some("moRevolution_c" | "moRevCut_c")
             ) {
                 continue;
+            }
+            if feature.input_class.as_deref() == Some("moRevCut_c") {
+                let source = index
+                    .checked_sub(1)
+                    .and_then(|index| objects.get(index))
+                    .map(|(_, feature)| *feature)
+                    .filter(|feature| {
+                        native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                            == NativeClassKind::ProfileFeature
+                    })
+                    .and_then(|feature| feature.source_id.as_deref()?.parse::<u32>().ok());
+                profiles.entry(feature.id.clone()).or_default().push(source);
             }
             let mut declarations = lane.classes.iter().filter(|class| {
                 Some(class.name.as_str()) == feature.input_class.as_deref()
@@ -3859,6 +3946,10 @@ pub(crate) fn enrich_history_revolution_inputs(
                 )
             });
             candidates.dedup();
+            profiles
+                .entry(feature.id.clone())
+                .or_default()
+                .push((candidates.as_slice().len() == 1).then(|| candidates[0].0));
             inputs
                 .entry(feature.id.clone())
                 .or_default()
@@ -3869,6 +3960,21 @@ pub(crate) fn enrich_history_revolution_inputs(
         .iter_mut()
         .flat_map(|history| &mut history.features)
     {
+        if !feature.properties.contains_key("Profile") {
+            if let Some(votes) = profiles.get(&feature.id) {
+                if let Some(Some(first)) = votes.first() {
+                    if votes.iter().all(|vote| vote == &Some(*first))
+                        && profile_sources
+                            .get(&feature.id)
+                            .is_some_and(|sources| sources.contains(first))
+                    {
+                        feature
+                            .properties
+                            .insert("Profile".into(), first.to_string());
+                    }
+                }
+            }
+        }
         let Some(votes) = inputs.get(&feature.id) else {
             continue;
         };
@@ -3877,15 +3983,6 @@ pub(crate) fn enrich_history_revolution_inputs(
         };
         if !votes.iter().all(|vote| vote.as_ref() == Some(first)) {
             continue;
-        }
-        if !feature.properties.contains_key("Profile")
-            && profile_sources
-                .get(&feature.id)
-                .is_some_and(|sources| sources.contains(&first.0))
-        {
-            feature
-                .properties
-                .insert("Profile".into(), first.0.to_string());
         }
         if !feature.properties.contains_key("AxisOrigin")
             && !feature.properties.contains_key("AxisDirection")
