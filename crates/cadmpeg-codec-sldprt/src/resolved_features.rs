@@ -4466,6 +4466,13 @@ mod marker_tests {
         lane.native_payload[detail..detail + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
 
+        lane.native_payload[curve..curve + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        lane.native_payload[detail..detail + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        lane.native_payload[curve + 17..curve + 21].copy_from_slice(&2u32.to_le_bytes());
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+
         lane.native_payload[curve + 17..curve + 21].copy_from_slice(&1u32.to_le_bytes());
         lane.sketch_entities[0].coordinates_m = Some([-0.01, 0.0]);
         lane.sketch_entities[1].coordinates_m = Some([-0.01, 0.02]);
@@ -5681,10 +5688,14 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             && lane.native_payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
             && (compact_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some()
                 || wide_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some());
-        let detailed_code_zero = lane.native_payload.get(offset + 17..offset + 21)
-            == Some(&0u32.to_le_bytes())
+        let detailed_indexed_curve = lane
+            .native_payload
+            .get(offset + 17..offset + 21)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+            .is_some_and(|code| matches!(code, 0 | 2))
             && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some();
-        current_code_two || detailed_code_zero
+        current_code_two || detailed_indexed_curve
     });
     let mut endpoint_candidates = Vec::new();
     let curve_candidates = curve_candidates.collect::<Vec<_>>();
