@@ -6114,8 +6114,7 @@ fn signed_unit_chart(local: [f64; 2], frame: [f64; 2], offset: f64) -> Option<(f
 }
 
 fn is_zero_offset_signed_planar_frame(heads: &[u8]) -> bool {
-    matches!(heads, [_, 0x42, z0, _, 0x18, z1]
-        if matches!(z0, 0x7f..=0x86) && matches!(z1, 0x7f..=0x86))
+    matches!(heads, [_, 0x42, _, _, 0x18, _])
 }
 
 fn placed_tabulated_cylinder_directrix(
@@ -13720,6 +13719,19 @@ mod resolved_sketch_tests {
         assert_eq!(curve.control_points[0], Point3::new(-13.0, -20.0, 5.0));
         assert_eq!(curve.control_points[3], Point3::new(-10.0, -22.0, 5.0));
         assert_eq!(sweep, [0.0, 0.0, 5.0]);
+
+        let mut broad_signed_frame = parameters;
+        broad_signed_frame.scalar_frames.truncate(1);
+        broad_signed_frame.tabulated_cylinder_frame =
+            Some(crate::surface::TabulatedCylinderFrame {
+                values: [1.0, 2.0, 5.0, 4.0, 4.0, 10.0],
+                prefixes: [0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a],
+            });
+        let (curve, sweep) = placed_tabulated_cylinder_directrix(&replay, &broad_signed_frame)
+            .expect("broad signed-DICT placement");
+        assert_eq!(curve.control_points[0], Point3::new(1.0, 2.0, 5.0));
+        assert_eq!(curve.control_points[3], Point3::new(4.0, 4.0, 5.0));
+        assert_eq!(sweep, [0.0, 0.0, 5.0]);
     }
 
     #[test]
@@ -13743,6 +13755,9 @@ mod resolved_sketch_tests {
         assert_eq!(signed_unit_chart([1.0, 2.0], [4.0, 5.0], 30.0), None);
         assert!(is_zero_offset_signed_planar_frame(&[
             0x68, 0x42, 0x84, 0x71, 0x18, 0x86,
+        ]));
+        assert!(is_zero_offset_signed_planar_frame(&[
+            0xa2, 0x42, 0x88, 0xa3, 0x18, 0x8a,
         ]));
         assert!(!is_zero_offset_signed_planar_frame(&[
             0x68, 0x42, 0x84, 0x71, 0x19, 0x86,

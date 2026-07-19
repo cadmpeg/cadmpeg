@@ -373,9 +373,10 @@ points form a non-rational clamped cubic B-spline with knot vector
 
 The `_ 46 2f _ 46 2e` layout requires a first-axis intercept magnitude of 30,
 a zero second-axis intercept, and retains the stored sweep-axis sign. The
-`_ 42 7f..86 _ 18 7f..86` layout requires zero intercepts and retains the
-stored sweep-axis sign. Its first and fourth slots accept the complete
-first-coordinate scalar lane. In the `_ 2d _ _ 2d _` layout, slots one and
+`_ 42 _ _ 18 _` layout requires zero intercepts and retains the stored
+sweep-axis sign. Its first and fourth slots accept the complete first-coordinate
+scalar lane; its third and sixth slots accept the complete second-coordinate
+scalar lane. In the `_ 2d _ _ 2d _` layout, slots one and
 four also use the first-coordinate lane. Its directrix charts select exactly
 one of two forms: a zero-offset form retaining the sweep-axis sign, or a
 first-axis intercept magnitude of 30 with a zero second-axis intercept and a
