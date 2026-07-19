@@ -1265,14 +1265,14 @@ fn edge_recipe_reference_context(
         .flat_map(|face| &face.loops)
         .flat_map(|face_loop| face_loop.edge_slots.iter().copied())
         .collect::<HashSet<_>>();
-    let changed_reference_edge_slots = preceding_boundary_edges
+    let mut changed_reference_edge_slots = preceding_edges
         .iter()
         .copied()
-        .filter(|edge| {
-            changed_edges.contains(edge)
-                && (preceding_edges.contains(edge) || support_edges.contains(edge))
-        })
-        .collect();
+        .chain(support_edges.iter().copied())
+        .filter(|edge| changed_edges.contains(edge))
+        .collect::<Vec<_>>();
+    changed_reference_edge_slots.sort_unstable();
+    changed_reference_edge_slots.dedup();
     crate::records::DesignEdgeRecipeReferenceContext {
         reference_ordinal,
         result_faces,
@@ -3489,6 +3489,17 @@ mod tests {
         assert_eq!(alternate_context.result_faces, [FaceId(id(4))]);
         assert_eq!(alternate_context.preceding_faces, [FaceId(id(4))]);
         assert_eq!(alternate_context.changed_reference_edge_slots, [7]);
+        let support_only_context = edge_recipe_reference_context(
+            2,
+            &reference,
+            &topology,
+            &[99],
+            &topology,
+            &[98],
+            &HashSet::from([7]),
+        );
+        assert!(support_only_context.shared_edge_slots.is_empty());
+        assert_eq!(support_only_context.changed_reference_edge_slots, [7]);
         let cyclic = AsmHistoricalTopology {
             edge_vertices: vec![
                 AsmHistoricalEdge {
