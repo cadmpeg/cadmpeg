@@ -613,6 +613,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::Revolve) => {
+                        matches!(group.role, 0x0000_0021_0000_0000 | 0x0000_0041_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(design::DesignFeatureFamily::Shell) => {
                         group.role == 0x0000_0010_0000_0000
                             && group.extrude_role.is_none()
@@ -711,7 +716,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     for scope in native.design_parameter_scopes.iter().filter(|scope| {
         matches!(
             design::design_feature_family(&scope.kind),
-            Some(design::DesignFeatureFamily::Loft | design::DesignFeatureFamily::Sweep)
+            Some(
+                design::DesignFeatureFamily::Revolve
+                    | design::DesignFeatureFamily::Loft
+                    | design::DesignFeatureFamily::Sweep
+            )
         ) && scope.path_feature_construction.is_some()
     }) {
         let native_stream = design_stream(&scope.id);
@@ -725,6 +734,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .collect::<Vec<_>>();
         let role_count = |role| groups.iter().filter(|group| group.role == role).count();
         let valid = match scope.path_feature_construction.as_ref() {
+            Some(records::DesignPathFeatureConstruction::Revolve { .. }) => {
+                groups.len() == 2
+                    && role_count(0x0000_0021_0000_0000) == 1
+                    && role_count(0x0000_0041_0000_0000) == 1
+            }
             Some(records::DesignPathFeatureConstruction::Loft { operation, .. }) => match operation
             {
                 records::DesignExtrudeOperation::Join => {
@@ -751,7 +765,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design Loft or Sweep operand roles conflict with its construction"
+                message: "Fusion Design path-feature operand roles conflict with its construction"
                     .into(),
                 entity: Some(scope.id.clone()),
             });

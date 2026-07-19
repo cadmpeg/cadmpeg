@@ -46,6 +46,7 @@ pub(crate) enum DesignFeatureFamily {
     Mirror,
     Move,
     OffsetFaces,
+    Revolve,
     Shell,
     Thicken,
     Coil,
@@ -68,6 +69,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
         "Move" => Some(DesignFeatureFamily::Move),
         "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),
+        "Revolve" => Some(DesignFeatureFamily::Revolve),
         "Shell" => Some(DesignFeatureFamily::Shell),
         "Thicken" => Some(DesignFeatureFamily::Thicken),
         "SpirePrimitive" => Some(DesignFeatureFamily::Coil),
@@ -803,6 +805,14 @@ pub fn project_parameter_design_with_edge_identities(
                             .collect(),
                         properties: native_scope_properties(scope, native_scope),
                     })
+            } else if family == Some(DesignFeatureFamily::Revolve) {
+                project_fixed_revolve(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else if family == Some(DesignFeatureFamily::Loft) {
                 project_fixed_loft(scope, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -2991,6 +3001,54 @@ fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::fea
         DesignExtrudeOperation::Intersect => cadmpeg_ir::features::BooleanOp::Intersect,
         DesignExtrudeOperation::NewBody => cadmpeg_ir::features::BooleanOp::NewBody,
     }
+}
+
+fn project_fixed_revolve(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{
+        Angle, Extent, FeatureDefinition, ProfileRef, RevolutionConstruction,
+    };
+
+    let DesignPathFeatureConstruction::Revolve {
+        operation, angle, ..
+    } = scope.path_feature_construction.as_ref()?
+    else {
+        return None;
+    };
+    let stream = native_stream(&scope.id)?;
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let profiles = groups
+        .iter()
+        .filter(|group| group.role == 0x41_0000_0000)
+        .collect::<Vec<_>>();
+    let axes = groups
+        .iter()
+        .filter(|group| group.role == 0x21_0000_0000)
+        .collect::<Vec<_>>();
+    let ([profile], [_axis]) = (profiles.as_slice(), axes.as_slice()) else {
+        return None;
+    };
+    if groups.len() != 2 {
+        return None;
+    }
+    Some(FeatureDefinition::Revolve {
+        construction: RevolutionConstruction {
+            profile: Some(ProfileRef::Native(profile.id.clone())),
+            axis: None,
+            extent: Some(Extent::Angle {
+                angle: Angle(*angle),
+            }),
+        },
+        op: fixed_boolean_operation(*operation),
+    })
 }
 
 fn project_fixed_loft(
@@ -14514,6 +14572,43 @@ fn exact_path_feature_construction(
         })
     };
     match design_feature_family(&scope.kind)? {
+        DesignFeatureFamily::Revolve
+            if scope.frame_length == 386
+                && scope.reference_members.len() == 7
+                && u32_at(bytes, start + 29) == Some(2)
+                && bytes.get(start + 33) == Some(&0) =>
+        {
+            let lanes = scope
+                .reference_members
+                .iter()
+                .filter_map(|record_index| {
+                    let scalar = exact_fixed_scalar(bytes, *record_index)?;
+                    (scalar.owner_record_index == Some(scope.record_index))
+                        .then_some((*record_index, scalar))
+                })
+                .collect::<Vec<_>>();
+            let [(angle_record_index, angle), (opposite_angle_record_index, opposite)] =
+                lanes.as_slice()
+            else {
+                return None;
+            };
+            if angle.ordinal != 0
+                || opposite.ordinal != 1
+                || angle.value <= 0.0
+                || opposite.value != 0.0
+            {
+                return None;
+            }
+            Some(DesignPathFeatureConstruction::Revolve {
+                operation: operation(start + 25)?,
+                operation_offset: u64::try_from(start + 25).ok()?,
+                angle: angle.value,
+                angle_record_index: *angle_record_index,
+                angle_offset: angle.value_offset,
+                opposite_angle_record_index: *opposite_angle_record_index,
+                opposite_angle_offset: opposite.value_offset,
+            })
+        }
         DesignFeatureFamily::Loft if scope.class_tag.len() == 3 && scope.frame_length >= 376 => {
             Some(DesignPathFeatureConstruction::Loft {
                 operation: operation(start + 29)?,
@@ -15187,6 +15282,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Revolve)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Shell)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Thicken)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
@@ -23323,6 +23419,68 @@ mod relation_tests {
                 distance_offset: (chamfer_scalar_start + 40) as u64,
             })
         );
+
+        let revolve_start = bytes.len();
+        let mut revolve = vec![0; 386];
+        revolve[25..29].copy_from_slice(&4u32.to_le_bytes());
+        revolve[29..33].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&revolve);
+        let revolve_scalar_start = bytes.len();
+        for (record_index, ordinal, value) in [(1_779u32, 0u8, 3.5f64), (1_780, 1, 0.0)] {
+            let mut scalar = vec![0; 105];
+            scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+            scalar[4..7].copy_from_slice(b"321");
+            scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+            scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+            scalar[24] = 1;
+            scalar[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+            scalar[35] = ordinal;
+            scalar[40..48].copy_from_slice(&value.to_le_bytes());
+            scalar.extend_from_slice(&3u32.to_le_bytes());
+            scalar.extend_from_slice(b"265");
+            scalar.extend_from_slice(&record_index.to_le_bytes());
+            bytes.extend_from_slice(&scalar);
+        }
+        let mut revolve_scope = scope.clone();
+        revolve_scope.byte_offset = revolve_start as u64;
+        revolve_scope.kind = "Revolve".into();
+        revolve_scope.frame_length = 386;
+        revolve_scope.reference_members = vec![200, 201, 202, 203, 1_779, 1_780, 204];
+        let revolve_construction = exact_path_feature_construction(&bytes, &revolve_scope);
+        assert_eq!(
+            revolve_construction,
+            Some(DesignPathFeatureConstruction::Revolve {
+                operation: DesignExtrudeOperation::NewBody,
+                operation_offset: (revolve_start + 25) as u64,
+                angle: 3.5,
+                angle_record_index: 1_779,
+                angle_offset: (revolve_scalar_start + 40) as u64,
+                opposite_angle_record_index: 1_780,
+                opposite_angle_offset: (revolve_scalar_start + 116 + 40) as u64,
+            })
+        );
+        revolve_scope.id = "stream:scope".into();
+        revolve_scope.path_feature_construction = revolve_construction;
+        let mut revolve_profile = thicken_group.clone();
+        revolve_profile.id = "stream:profile".into();
+        revolve_profile.scope_record_index = revolve_scope.record_index;
+        revolve_profile.role = 0x0000_0041_0000_0000;
+        let mut revolve_axis = revolve_profile.clone();
+        revolve_axis.id = "stream:axis".into();
+        revolve_axis.role = 0x0000_0021_0000_0000;
+        assert!(matches!(
+            super::project_fixed_revolve(&revolve_scope, &[revolve_profile, revolve_axis]),
+            Some(cadmpeg_ir::features::FeatureDefinition::Revolve {
+                construction: cadmpeg_ir::features::RevolutionConstruction {
+                    profile: Some(cadmpeg_ir::features::ProfileRef::Native(profile)),
+                    axis: None,
+                    extent: Some(cadmpeg_ir::features::Extent::Angle {
+                        angle: cadmpeg_ir::features::Angle(3.5),
+                    }),
+                },
+                op: cadmpeg_ir::features::BooleanOp::NewBody,
+            }) if profile == "stream:profile"
+        ));
 
         let loft_start = bytes.len();
         let mut loft = vec![0; 376];

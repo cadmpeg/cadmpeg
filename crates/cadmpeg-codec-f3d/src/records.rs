@@ -926,6 +926,23 @@ pub struct DesignFixedChamferParameters {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum DesignPathFeatureConstruction {
+    /// One-sided fixed-angle revolution result operation.
+    Revolve {
+        /// Boolean result operation.
+        operation: DesignExtrudeOperation,
+        /// Byte offset of the operation u32.
+        operation_offset: u64,
+        /// Positive angular travel in radians.
+        angle: f64,
+        /// Referenced angular-travel scalar record.
+        angle_record_index: u32,
+        /// Byte offset of the angular-travel scalar.
+        angle_offset: u64,
+        /// Zero-valued opposite-side angle scalar record.
+        opposite_angle_record_index: u32,
+        /// Byte offset of the opposite-side angle scalar.
+        opposite_angle_offset: u64,
+    },
     /// Loft result operation.
     Loft {
         /// Boolean result operation.
