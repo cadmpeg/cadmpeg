@@ -3766,6 +3766,47 @@ fn line_reference_direction(payload: &[u8], class_offset: u64) -> Option<Vector3
     ))
 }
 
+fn compact_line_reference_direction(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+) -> Option<Vector3> {
+    const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
+    let end = object_end.min(payload.len());
+    let final_handle = end.checked_sub(128).filter(|end| *end >= object_start)?;
+    let mut candidates = (object_start..=final_handle).filter_map(|handle| {
+        let record = payload.get(handle..handle + 128)?;
+        let address = u32::from_le_bytes(record[12..16].try_into().ok()?);
+        if record[..8] != HANDLES
+            || record[8..12] != [0; 4]
+            || address == 0
+            || record[16..32] != [0; 16]
+            || record[104..112] != [1, 0, 0, 0, 1, 0, 0, 0]
+            || record[112..128] != [0; 16]
+        {
+            return None;
+        }
+        let scalar = |index: usize| {
+            let offset = 32 + index * 8;
+            let value = f64::from_le_bytes(record.get(offset..offset + 8)?.try_into().ok()?);
+            value.is_finite().then_some(value)
+        };
+        let direction = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
+        let norm =
+            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
+                .sqrt();
+        ((norm - 1.0).abs() <= 1.0e-9).then_some(Vector3::new(
+            direction.x / norm,
+            direction.y / norm,
+            direction.z / norm,
+        ))
+    });
+    let first = candidates.next()?;
+    candidates
+        .all(|candidate| candidate == first)
+        .then_some(first)
+}
+
 fn revolution_line_reference_inputs(
     payload: &[u8],
     class_offset: usize,
@@ -4192,19 +4233,28 @@ pub(crate) fn bind_pattern_inputs(
                 }
                 let end = starts
                     .get(start_index + 1)
-                    .map_or(u64::MAX, |(offset, _)| *offset);
+                    .map_or(lane.native_payload.len(), |(offset, _)| {
+                        usize::try_from(*offset).unwrap_or(lane.native_payload.len())
+                    });
                 let mut directions = lane
                     .classes
                     .iter()
                     .filter(|class| {
                         class.name == "moLineRef_w"
                             && class.offset > starts[start_index].0
-                            && class.offset < end
+                            && usize::try_from(class.offset).is_ok_and(|offset| offset < end)
                     })
                     .filter_map(|class| {
                         line_reference_direction(&lane.native_payload, class.offset)
                     })
                     .collect::<Vec<_>>();
+                if let Ok(start) = usize::try_from(starts[start_index].0) {
+                    directions.extend(compact_line_reference_direction(
+                        &lane.native_payload,
+                        start,
+                        end,
+                    ));
+                }
                 directions.sort_by_key(|direction| {
                     [
                         direction.x.to_bits(),
@@ -17781,10 +17831,11 @@ mod profile_join_tests {
     use super::{
         binary_relation_matches_evaluated_geometry, bind_circle_dimension_centers,
         bind_circular_profile_by_dimension, bind_detached_relation_drivers, bind_pattern_inputs,
-        bind_sweep_adjacent_profiles, dimensioned_circle_surface_transforms,
-        dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
-        line_reference_direction, marker_entities, marker_point_locus, owned_relation_parameters,
-        profile_loci_by_marker, project_dimensioned_sketch_geometry, project_dissected_sketches,
+        bind_sweep_adjacent_profiles, compact_line_reference_direction,
+        dimensioned_circle_surface_transforms, dimensioned_circle_transform,
+        implicit_circle_marker, line_endpoint_markers, line_reference_direction, marker_entities,
+        marker_point_locus, owned_relation_parameters, profile_loci_by_marker,
+        project_dimensioned_sketch_geometry, project_dissected_sketches,
         project_marker_backed_sketches, project_marker_dimensioned_circles,
         project_relation_point_geometry, project_relation_solved_point_geometry,
         relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
@@ -20044,6 +20095,28 @@ mod profile_join_tests {
         assert_eq!(
             line_reference_direction(&three_word_payload, line_ref_offset as u64),
             Some(Vector3::new(0.0, 0.6, 0.8))
+        );
+        let mut compact_payload = vec![0; 256];
+        let handles = 64;
+        compact_payload[handles..handles + 8]
+            .copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff]);
+        compact_payload[handles + 12..handles + 16].copy_from_slice(&5000u32.to_le_bytes());
+        for (index, value) in [0.58, -0.0125, 0.023, -0.29, 0.0, 0.0, 0.0, -1.0, 0.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = handles + 32 + index * 8;
+            compact_payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        compact_payload[handles + 104..handles + 112].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
+        assert_eq!(
+            compact_line_reference_direction(&compact_payload, 0, compact_payload.len()),
+            Some(Vector3::new(0.0, -1.0, 0.0))
+        );
+        compact_payload[handles + 12..handles + 16].fill(0);
+        assert_eq!(
+            compact_line_reference_direction(&compact_payload, 0, compact_payload.len()),
+            None
         );
         let lane = FeatureInputLane {
             id: "lane".into(),

@@ -386,7 +386,9 @@ An `moCurvePattern_c` feature-input object is immediately preceded by its seed f
 
 An `moLineRef_w` declaration has two direction layouts. When two consecutive `c7 cf ff ff` words occur at declaration offsets `+136` and `+140` and `f8 2a 00 00` occurs at `+148`, three little-endian f64 values at `+200`, `+208`, and `+216` store its unit xyz direction. When three consecutive `c7 cf ff ff` words occur at `+144`, `+148`, and `+152` and `f8 2a 00 00` occurs at `+160`, the unit xyz direction is at `+220`, `+228`, and `+236`.
 
-An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That preceding object identifies the repeated neutral feature. The sole structurally valid `moLineRef_w` declaration before the next feature object supplies the linear-pattern direction. A missing or multiply addressed preceding object, or zero or multiple direction references, leaves the corresponding linear-pattern input unresolved.
+A compact line reference starts with two consecutive `c7 cf ff ff` words, one zero u32, a nonzero u32 stream address, and 16 zero bytes. Nine finite little-endian f64 values follow. The final three values are its unit xyz direction. The scalar record is followed by u32 values `1` and `1` and 16 zero bytes.
+
+An `moLPattern_c` feature-input object is immediately preceded by its seed feature object. That preceding object identifies the repeated neutral feature. The sole structurally valid declared or compact line reference before the next feature object supplies the linear-pattern direction. A missing or multiply addressed preceding object, or zero or multiple direction references, leaves the corresponding linear-pattern input unresolved.
 
 Built-in reference-plane history records have native class `moRefPlane_c` and no dimensions or extra attributes. Within that class, source IDs `2`, `3`, and `4` identify the Front, Top, and Right principal planes.
 
