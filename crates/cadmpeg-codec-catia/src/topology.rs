@@ -6675,16 +6675,30 @@ impl MeshQuotient {
         if assignment.boundaries.iter().any(Vec::is_empty) {
             return Vec::new();
         }
-        let unknown = assignment
+        let mut oriented = oriented_edges.clone();
+        let mut variable_count = 0usize;
+        let orientation_plan = assignment
             .boundaries
             .iter()
-            .flatten()
-            .filter(|use_| use_.reversed.is_none())
-            .count();
-        if unknown <= 12 {
+            .map(|boundary| {
+                boundary
+                    .iter()
+                    .map(|use_| match use_.reversed {
+                        Some(reversed) => (reversed, None),
+                        None if oriented.insert(use_.edge) => (false, None),
+                        None => {
+                            let variable = variable_count;
+                            variable_count += 1;
+                            (false, Some(variable))
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        if variable_count <= 12 {
             let mut output = Vec::new();
             let mut seen = HashSet::new();
-            let combinations = 1usize << unknown;
+            let combinations = 1usize << variable_count;
             let orientation_work = assignment
                 .boundaries
                 .iter()
@@ -6698,17 +6712,14 @@ impl MeshQuotient {
                 if budget.is_some_and(|budget| !budget.charge_by(orientation_work)) {
                     break;
                 }
-                let mut variable = 0usize;
-                let directions = assignment
-                    .boundaries
+                let directions = orientation_plan
                     .iter()
                     .map(|boundary| {
                         boundary
                             .iter()
-                            .map(|use_| {
-                                use_.reversed.unwrap_or_else(|| {
-                                    let shift = unknown - variable - 1;
-                                    variable += 1;
+                            .map(|(fixed, variable)| {
+                                variable.map_or(*fixed, |variable| {
+                                    let shift = variable_count - variable - 1;
                                     mask & (1usize << shift) != 0
                                 })
                             })
@@ -10416,6 +10427,40 @@ mod motif_tests {
             &[vec![true, false, false, true]],
             &already_oriented,
         ));
+    }
+
+    #[test]
+    fn mesh_option_enumeration_does_not_scan_fixed_direction_gauges() {
+        const EDGE_COUNT: usize = 10;
+        let assignment = MeshFaceBoundaryAssignment {
+            boundaries: vec![(0..EDGE_COUNT)
+                .map(|edge| MeshBoundaryEdgeCandidate {
+                    edge,
+                    start: edge,
+                    end: (edge + 1) % EDGE_COUNT,
+                    reversed: None,
+                })
+                .collect()],
+        };
+        let quotient = MeshQuotient {
+            union: UnionFind::new(EDGE_COUNT * 2),
+            domains: vec![Arc::new(HashSet::from([0])); EDGE_COUNT * 2],
+            members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
+        };
+        let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
+        let budget = MeshConstraintBudget::new(500);
+
+        let options = quotient.assignment_options_limited(
+            &assignment,
+            &candidates,
+            &HashSet::new(),
+            2,
+            Some(&budget),
+        );
+
+        assert_eq!(options.len(), 1);
+        assert_eq!(options[0].0, vec![vec![false; EDGE_COUNT]]);
+        assert!(!budget.exhausted.get());
     }
 
     #[test]
