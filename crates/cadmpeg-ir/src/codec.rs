@@ -255,7 +255,7 @@ mod sealed {
 ///     DecodeResult, ReadSeek,
 /// };
 /// use cadmpeg_ir::decode::{DecodeContext, View};
-/// use cadmpeg_ir::InspectOptions;
+/// use cadmpeg_ir::decode::InspectOptions;
 ///
 /// struct Rogue;
 /// impl Codec for Rogue {

@@ -78,7 +78,7 @@ fn main() {
         let mut input = Cursor::new(&opaque);
         black_box(
             codec
-                .inspect(&mut input, &cadmpeg_ir::InspectOptions::default())
+                .inspect(&mut input, &cadmpeg_ir::decode::InspectOptions::default())
                 .unwrap(),
         );
     });

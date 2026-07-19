@@ -9,9 +9,9 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::geometry::SurfaceGeometry;
-use cadmpeg_ir::InspectOptions;
 use cadmpeg_ir::LossCode;
 
 use crate::variant::Variant;

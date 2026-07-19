@@ -250,17 +250,17 @@ enum LimitProfile {
 impl DecodeArgs {
     fn options(&self) -> cadmpeg_ir::DecodeOptions {
         let limits = match self.limits {
-            LimitProfile::Desktop => cadmpeg_ir::ResourceLimits::desktop(),
-            LimitProfile::Service => cadmpeg_ir::ResourceLimits::service(),
+            LimitProfile::Desktop => cadmpeg_ir::decode::ResourceLimits::desktop(),
+            LimitProfile::Service => cadmpeg_ir::decode::ResourceLimits::service(),
         };
         let mode = if self.strict {
-            cadmpeg_ir::DecodeMode::Strict
+            cadmpeg_ir::decode::DecodeMode::Strict
         } else {
-            cadmpeg_ir::DecodeMode::Salvage
+            cadmpeg_ir::decode::DecodeMode::Salvage
         };
         cadmpeg_ir::DecodeOptions {
             container_only: self.container_only,
-            policy: cadmpeg_ir::DecodePolicy { mode, limits },
+            policy: cadmpeg_ir::decode::DecodePolicy { mode, limits },
         }
     }
 }

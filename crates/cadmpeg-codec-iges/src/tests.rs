@@ -45,7 +45,7 @@ fn malformed_sequence_padding_is_rejected_without_panicking() {
         IgesCodec
             .inspect(
                 &mut Cursor::new(bytes),
-                &cadmpeg_ir::InspectOptions::default()
+                &cadmpeg_ir::decode::InspectOptions::default()
             )
             .unwrap_err()
             .to_string(),
@@ -330,7 +330,7 @@ fn inspect_reports_sections_and_physical_line_endings() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
 
@@ -354,7 +354,7 @@ fn decode_retains_short_and_extended_physical_records_before_terminate() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(bytes.as_slice()),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
     let noncanonical = summary
@@ -448,7 +448,7 @@ fn inspect_parses_alternate_delimiters_and_cross_card_hollerith() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
 
@@ -503,7 +503,7 @@ fn inspect_reports_directory_entity_and_form_census() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
 
@@ -5108,7 +5108,7 @@ fn decode_distinguishes_all_external_reference_forms_without_resolution() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(&bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
     assert!(summary
@@ -7650,7 +7650,7 @@ fn inspect_rejects_terminate_count_mismatch() {
     let error = IgesCodec
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap_err();
     assert_eq!(
@@ -7668,7 +7668,7 @@ fn inspect_accepts_space_padded_terminate_counts() {
     IgesCodec
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
 }
@@ -7794,7 +7794,7 @@ fn inspect_preserves_transform_cycles_as_named_reference_states() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
 
@@ -7811,7 +7811,7 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(compressed.clone()),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
     assert_eq!(summary.container_kind, "compressed-ascii");
@@ -7832,7 +7832,7 @@ fn compressed_and_binary_representations_are_detected_inspected_and_refused() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(binary.clone()),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
     assert_eq!(summary.container_kind, "binary");
@@ -7857,7 +7857,7 @@ fn legacy_fixed_ascii_is_reported_but_not_decoded_as_iges_5_3() {
     let summary = IgesCodec
         .inspect(
             &mut Cursor::new(bytes.clone()),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .unwrap();
     assert!(summary.notes.contains(&"iges_version=5.2".into()));

@@ -15,7 +15,7 @@
 //!
 //! use cadmpeg_codec_creo::CreoCodec;
 //! use cadmpeg_ir::codec::{Codec, CodecEntry};
-//! use cadmpeg_ir::InspectOptions;
+//! use cadmpeg_ir::decode::InspectOptions;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut input = File::open("part.prt")?;

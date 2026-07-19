@@ -6,7 +6,7 @@
 
 use cadmpeg_codec_creo::CreoCodec;
 use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions};
-use cadmpeg_ir::InspectOptions;
+use cadmpeg_ir::decode::InspectOptions;
 use libfuzzer_sys::fuzz_target;
 use std::io::Cursor;
 

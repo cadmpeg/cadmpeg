@@ -14,7 +14,7 @@ use cadmpeg_codec_nx::NxCodec;
 use cadmpeg_codec_rhino::RhinoCodec;
 use cadmpeg_codec_sldprt::SldprtCodec;
 use cadmpeg_ir::codec::{Codec, CodecEntry, DecodeOptions};
-use cadmpeg_ir::InspectOptions;
+use cadmpeg_ir::decode::InspectOptions;
 use libfuzzer_sys::fuzz_target;
 
 fn mutate_bytes(data: &[u8], seed: u8) -> Vec<u8> {

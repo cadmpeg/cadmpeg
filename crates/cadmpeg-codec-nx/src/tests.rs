@@ -7,12 +7,12 @@ use flate2::write::ZlibEncoder;
 use flate2::Compression;
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions};
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, CurveGeometry, ProceduralSurfaceDefinition, SurfaceGeometry,
 };
 use cadmpeg_ir::math::Vector3;
 use cadmpeg_ir::Exactness;
-use cadmpeg_ir::InspectOptions;
 use cadmpeg_ir::LossCode;
 
 use crate::container;

@@ -5,7 +5,7 @@
 use std::io::{Cursor, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, Confidence, DecodeOptions, Encoder};
-use cadmpeg_ir::InspectOptions;
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::LossCode;
 
 use crate::container::{self, role, MARKER};

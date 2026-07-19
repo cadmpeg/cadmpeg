@@ -7,10 +7,10 @@
 use std::io::{Cursor, Read, Write};
 
 use cadmpeg_ir::codec::{Codec, CodecEntry, CodecError, Confidence, DecodeOptions, Encoder};
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::decode::{
     DecodeArena, DecodeContext, DecodeMode, DecodePolicy, ResourceDimension, ResourceLimits, View,
 };
-use cadmpeg_ir::InspectOptions;
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 

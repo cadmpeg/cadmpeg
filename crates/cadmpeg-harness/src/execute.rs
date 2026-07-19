@@ -8,8 +8,9 @@
 
 use std::io::Cursor;
 
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::{Codec, CodecEntry, CodecError, DecodeOptions, DecodeResult, InspectOptions};
+use cadmpeg_ir::{Codec, CodecEntry, CodecError, DecodeOptions, DecodeResult};
 use serde::{Deserialize, Serialize};
 
 use crate::model::{Operation, PolicyProfile, ResultClass};

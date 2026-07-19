@@ -4,7 +4,8 @@
 //!
 //! The labels are the wire format between the parent driver and child runner.
 
-use cadmpeg_ir::{Confidence, DecodePolicy};
+use cadmpeg_ir::decode::DecodePolicy;
+use cadmpeg_ir::Confidence;
 
 /// One decode entry point exercised by the sweep.
 ///

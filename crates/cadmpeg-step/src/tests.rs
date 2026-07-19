@@ -145,7 +145,7 @@ fn codec_detects_and_inspects_ap242_exchange_structure() {
     let summary = codec
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .expect("inspect minimal AP242");
     assert_eq!(summary.format, "step");
@@ -202,7 +202,7 @@ fn codec_inspects_edition3_sections_and_external_references() {
     let summary = StepCodec::default()
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .expect("inspect edition 3 sections");
 
@@ -263,7 +263,7 @@ fn decode_reports_data_section_external_dependencies() {
     let summary = StepCodec::default()
         .inspect(
             &mut Cursor::new(bytes),
-            &cadmpeg_ir::InspectOptions::default(),
+            &cadmpeg_ir::decode::InspectOptions::default(),
         )
         .expect("inspect external document dependencies");
     let dependencies = summary

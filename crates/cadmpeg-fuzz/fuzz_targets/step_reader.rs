@@ -11,6 +11,6 @@ use libfuzzer_sys::fuzz_target;
 fuzz_target!(|data: &[u8]| {
     let _ = cadmpeg_step::StepCodec::default().inspect(
         &mut Cursor::new(data),
-        &cadmpeg_ir::InspectOptions::default(),
+        &cadmpeg_ir::decode::InspectOptions::default(),
     );
 });

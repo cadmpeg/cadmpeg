@@ -8,11 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use anyhow::{anyhow, bail, Context, Result};
+use cadmpeg_ir::decode::InspectOptions;
 use cadmpeg_ir::report::{DecodeReport, ExportReport, ValidationReport};
 use cadmpeg_ir::source_fidelity_diff::{diff_source_fidelity, FidelityDiff};
-use cadmpeg_ir::{
-    validate, validate_with_source_fidelity, CadIr, CodecEntry, InspectOptions, SourceFidelity,
-};
+use cadmpeg_ir::{validate, validate_with_source_fidelity, CadIr, CodecEntry, SourceFidelity};
 
 use crate::loader::{self, read_prefix};
 use crate::registry::Registry;

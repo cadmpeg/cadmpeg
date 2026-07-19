@@ -77,7 +77,6 @@ pub use codec::{
     CadirEncoder, Codec, CodecEntry, CodecError, Confidence, ContainerEntry, ContainerSummary,
     DecodeOptions, DecodeResult, Encoder, ReadSeek,
 };
-pub use decode::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
 pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
 pub use features::{
