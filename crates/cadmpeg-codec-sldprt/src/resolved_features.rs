@@ -3877,10 +3877,7 @@ pub(crate) fn enrich_history_revolution_inputs(
             let sources = history
                 .features
                 .iter()
-                .filter(|feature| {
-                    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-                        == NativeClassKind::ProfileFeature
-                })
+                .filter(|feature| is_profile_feature_object(feature))
                 .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
                 .collect::<HashSet<_>>();
             history
@@ -3909,10 +3906,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                     .checked_sub(1)
                     .and_then(|index| objects.get(index))
                     .map(|(_, feature)| *feature)
-                    .filter(|feature| {
-                        native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
-                            == NativeClassKind::ProfileFeature
-                    })
+                    .filter(|feature| is_profile_feature_object(feature))
                     .and_then(|feature| feature.source_id.as_deref()?.parse::<u32>().ok());
                 profiles.entry(feature.id.clone()).or_default().push(source);
             }
@@ -8840,6 +8834,20 @@ mod idless_history_binding_tests {
     }
 
     #[test]
+    fn classless_sketch_objects_are_profile_features_only_with_source_identity() {
+        let mut sketch = feature(1, "localized sketch");
+        sketch.xml_tag = "Sketch".into();
+        sketch.source_id = Some("77".into());
+        assert!(is_profile_feature_object(&sketch));
+
+        sketch.source_id = Some("0".into());
+        assert!(!is_profile_feature_object(&sketch));
+        sketch.source_id = Some("77".into());
+        sketch.input_class = Some("moRefPlane_c".into());
+        assert!(!is_profile_feature_object(&sketch));
+    }
+
+    #[test]
     fn exact_idless_startup_binds_from_the_native_class_roster() {
         let mut features = vec![
             feature(10, "localized plane"),
@@ -12522,7 +12530,9 @@ pub(crate) fn project_adjacent_extrusion_profiles(
         objects.sort_by_key(|(name, _)| name.offset);
         let object_kind = |name: &FeatureInputName, feature: &crate::records::Feature| {
             let kind = native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind;
-            if kind == NativeClassKind::Unknown
+            if is_profile_feature_object(feature) {
+                NativeClassKind::ProfileFeature
+            } else if kind == NativeClassKind::Unknown
                 && feature_inline_operation_fields(lane, name).is_some()
             {
                 NativeClassKind::Extrusion
@@ -12631,6 +12641,18 @@ pub(crate) fn project_adjacent_extrusion_profiles(
             }
         }
     }
+}
+
+fn is_profile_feature_object(feature: &crate::records::Feature) -> bool {
+    native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+        == NativeClassKind::ProfileFeature
+        || (feature.input_class.is_none()
+            && feature.xml_tag.eq_ignore_ascii_case("Sketch")
+            && feature
+                .source_id
+                .as_deref()
+                .and_then(|source| source.parse::<u32>().ok())
+                .is_some_and(|source| source != 0))
 }
 
 fn is_dissected_profile_feature(feature: &crate::records::Feature) -> bool {
