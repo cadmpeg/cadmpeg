@@ -421,15 +421,15 @@ mod marker_tests {
         component_profile_source_at, component_reference_curve_path_at, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_cylinder_reference_at, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, fixed_reference_plane_frame, legacy_feature_input_section,
-        legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
-        minimal_reference_plane_frame, mirror_pattern_component_path_at,
-        mirror_surface_component_path_at, named_scalars, native_scalar_matches_discrete_parameter,
-        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
-        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
-        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, inline_surface_reference_at,
+        legacy_feature_input_section, legacy_reference_axis_triads, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
+        matrix_reference_plane_frame, minimal_reference_plane_frame,
+        mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
@@ -1879,7 +1879,7 @@ mod marker_tests {
         assert_eq!(path.len(), 1);
         assert_eq!(path[0].instance, Some(0x8032));
         assert_eq!(path[0].type_signature, [1; 12]);
-        assert_eq!(path[0].local_id, 7);
+        assert_eq!(path[0].local_id, Some(7));
 
         payload[12] = 1;
         payload[22] = 1;
@@ -2146,7 +2146,7 @@ mod marker_tests {
         assert_eq!(found, marker);
         assert_eq!(kind, CompactPointReferenceKind::Point);
         let path = compact_single_face_reference_path_at(&payload, marker).unwrap();
-        assert_eq!(path.last().unwrap().local_id, 7);
+        assert_eq!(path.last().unwrap().local_id, Some(7));
 
         // A to-face selector byte is not a point reference.
         payload[38] = 0x40;
@@ -2300,7 +2300,9 @@ mod marker_tests {
         let components = component_reference_curve_path_at(&payload, marker).unwrap();
         assert_eq!(components.len(), 4);
         assert_eq!(components[0].instance, Some(0x8c20));
-        assert!(components.iter().all(|component| component.local_id == 1));
+        assert!(components
+            .iter()
+            .all(|component| component.local_id == Some(1)));
 
         payload[cursor + 8] ^= 1;
         assert_eq!(component_reference_curve_path_at(&payload, marker), None);
@@ -2718,12 +2720,12 @@ mod marker_tests {
                 FeatureInputComponentPathEntry {
                     instance: Some(0x803d),
                     type_signature: [1; 12],
-                    local_id: 2,
+                    local_id: Some(2),
                 },
                 FeatureInputComponentPathEntry {
                     instance: Some(0x804a),
                     type_signature: [2; 12],
-                    local_id: 3,
+                    local_id: Some(3),
                 },
             ])
         );
@@ -2885,9 +2887,9 @@ mod marker_tests {
                 ))
                 .collect::<Vec<_>>(),
             vec![
-                (Some(0x8c20), signature, 2),
-                (Some(0x8c21), signature, 1),
-                (Some(0x8c22), signature, 11)
+                (Some(0x8c20), signature, Some(2)),
+                (Some(0x8c21), signature, Some(1)),
+                (Some(0x8c22), signature, Some(11))
             ]
         );
         payload[12 + 18 + 24 + 4] ^= 1;
@@ -2897,7 +2899,7 @@ mod marker_tests {
                 .iter()
                 .map(|component| component.local_id)
                 .collect::<Vec<_>>(),
-            vec![2]
+            vec![Some(2)]
         );
     }
 
@@ -2913,7 +2915,7 @@ mod marker_tests {
         let (actual_marker, components) =
             cosmetic_thread_cylinder_reference_at(&payload, body_offset).unwrap();
         assert_eq!(actual_marker, marker);
-        assert_eq!(components.last().unwrap().local_id, 3);
+        assert_eq!(components.last().unwrap().local_id, Some(3));
 
         assert_eq!(
             cosmetic_thread_cylinder_reference_at(&payload, body_offset + 1),
@@ -2946,7 +2948,7 @@ mod marker_tests {
                 .iter()
                 .map(|component| component.local_id)
                 .collect::<Vec<_>>(),
-            [3, 7]
+            [Some(3), Some(7)]
         );
     }
 
@@ -2986,7 +2988,7 @@ mod marker_tests {
 
         let path = mirror_pattern_component_path_at(&payload, marker).unwrap();
         assert_eq!(path.len(), 3);
-        assert_eq!(path.last().unwrap().local_id, 3);
+        assert_eq!(path.last().unwrap().local_id, Some(3));
         assert_eq!(
             &path.last().unwrap().type_signature[4..8],
             &37u32.to_le_bytes()
@@ -3015,10 +3017,36 @@ mod marker_tests {
         let path = mirror_surface_component_path_at(&payload, marker).unwrap();
         assert_eq!(path.len(), 2);
         assert_eq!(path[0].instance, Some(0x803e));
-        assert_eq!(path[0].local_id, 9);
+        assert_eq!(path[0].local_id, Some(9));
         assert_eq!(path[1].instance, None);
-        assert_eq!(path[1].local_id, 4);
+        assert_eq!(path[1].local_id, Some(4));
         assert_eq!(&path[1].type_signature[4..8], &56u32.to_le_bytes());
+    }
+
+    #[test]
+    fn inline_surface_path_distinguishes_branch_and_selection_nodes() {
+        let prefix = [0x54, 0x81, 0x56, 0x01];
+        let signature = |source: u32, identity: u32| {
+            let mut signature = [0; 12];
+            signature[..4].copy_from_slice(&prefix);
+            signature[4..8].copy_from_slice(&source.to_le_bytes());
+            signature[8..].copy_from_slice(&identity.to_le_bytes());
+            signature
+        };
+        let mut payload = 0x8157_u16.to_le_bytes().to_vec();
+        payload.extend([0, 0]);
+        payload.extend(signature(20, 1));
+        payload.extend(0x8200_u16.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend(signature(10, 2));
+        payload.extend(7u32.to_le_bytes());
+
+        let path = inline_surface_reference_at(&payload, 4).unwrap();
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0].instance, Some(0x8157));
+        assert_eq!(path[0].local_id, None);
+        assert_eq!(path[1].instance, Some(0x8200));
+        assert_eq!(path[1].local_id, Some(7));
     }
 
     #[test]
@@ -3047,12 +3075,12 @@ mod marker_tests {
             FeatureInputComponentPathEntry {
                 instance: Some(0x8032),
                 type_signature: signature,
-                local_id: 7,
+                local_id: Some(7),
             },
             FeatureInputComponentPathEntry {
                 instance: Some(0x803b),
                 type_signature: signature,
-                local_id: 1,
+                local_id: Some(1),
             },
         ];
         assert_eq!(
@@ -3088,7 +3116,7 @@ mod marker_tests {
                 signature[4..8].copy_from_slice(&44u32.to_le_bytes());
                 signature
             },
-            local_id: 9,
+            local_id: Some(9),
         });
         let producer = feature("producer", "42");
         let other = feature("other", "43");
@@ -3096,7 +3124,7 @@ mod marker_tests {
         let (component, feature) =
             component_path_preceding_feature(&mixed, &history, "mirror").unwrap();
         assert_eq!(feature.id, "other");
-        assert_eq!(component.local_id, 1);
+        assert_eq!(component.local_id, Some(1));
     }
 }
 
@@ -4764,6 +4792,7 @@ fn compact_surface_selections(
             (token & 0x8000 != 0 && token != 0xffff).then_some(token)
         })
         .collect::<HashSet<_>>();
+    let mirror_surface_prefix = mirror_surface_type_prefix(lane);
     let mut objects = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -4844,6 +4873,9 @@ fn compact_surface_selections(
                     mirror_surface_component_path_at(&lane.native_payload, marker)
                         .map(|components| (marker, components))
                 })
+                .chain(mirror_surface_prefix.into_iter().flat_map(|prefix| {
+                    inline_mirror_surface_paths(&lane.native_payload, start, end, prefix)
+                }))
                 .collect(),
             _ => continue,
         };
@@ -4913,7 +4945,9 @@ pub(crate) fn compact_surface_selection_at(
                 payload.get(cursor..cursor + 2)?.try_into().ok()?,
             )),
             type_signature: signature.as_slice().try_into().ok()?,
-            local_id: u32::from_le_bytes(payload.get(cursor + 16..cursor + 20)?.try_into().ok()?),
+            local_id: Some(u32::from_le_bytes(
+                payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
+            )),
         });
         cursor += 20;
         if payload.get(cursor + 4..cursor + 16) != Some(signature.as_slice())
@@ -4932,6 +4966,7 @@ pub(crate) fn compact_surface_reference_at(
     compact_surface_selection_at(payload, marker)
         .or_else(|| mirror_surface_component_path_at(payload, marker))
         .or_else(|| compact_termination_reference_path_at(payload, marker))
+        .or_else(|| inline_surface_reference_at(payload, marker))
 }
 
 fn repeated_edge_selections(
@@ -5038,9 +5073,9 @@ fn mirror_surface_component_path_at(
                             payload.get(offset..offset + 2)?.try_into().ok()?,
                         )),
                         type_signature: signature_at(offset + 4)?,
-                        local_id: u32::from_le_bytes(
+                        local_id: Some(u32::from_le_bytes(
                             payload.get(offset + 16..offset + 20)?.try_into().ok()?,
-                        ),
+                        )),
                     },
                     20,
                 ))
@@ -5051,9 +5086,9 @@ fn mirror_surface_component_path_at(
                 FeatureInputComponentPathEntry {
                     instance: None,
                     type_signature: signature_at(offset)?,
-                    local_id: u32::from_le_bytes(
+                    local_id: Some(u32::from_le_bytes(
                         payload.get(offset + 12..offset + 16)?.try_into().ok()?,
-                    ),
+                    )),
                 },
                 16,
             ))
@@ -5085,6 +5120,121 @@ fn mirror_surface_component_path_at(
         cursor += gap;
     }
     Some(components)
+}
+
+fn mirror_surface_type_prefix(lane: &FeatureInputLane) -> Option<[u8; 4]> {
+    let mut classes = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moMirPatternSurfIdRep_c");
+    let class = classes.next().filter(|_| classes.next().is_none())?;
+    let offset = usize::try_from(class.offset).ok()?;
+    let signature = offset.checked_add(8 + class.name.len())?;
+    let prefix: [u8; 4] = lane
+        .native_payload
+        .get(signature..signature + 4)?
+        .try_into()
+        .ok()?;
+    let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
+    let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
+    (family & 0x8000 != 0 && family != u16::MAX && variant != 0).then_some(prefix)
+}
+
+fn inline_mirror_surface_paths(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+    prefix: [u8; 4],
+) -> Vec<(usize, Vec<FeatureInputComponentPathEntry>)> {
+    let signature_at = |offset: usize| -> Option<[u8; 12]> {
+        let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
+        let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
+        let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
+        (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
+    };
+    let instance_before = |offset: usize| -> Option<u16> {
+        let bytes = payload.get(offset.checked_sub(4)?..offset)?;
+        let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
+        (instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..] == [0, 0]).then_some(instance)
+    };
+    let mut result = Vec::new();
+    for terminal in start..end.saturating_sub(16) {
+        if signature_at(terminal).is_none() {
+            continue;
+        }
+        let local_bytes = &payload[terminal + 12..terminal + 16];
+        let next_is_component = {
+            let instance = u16::from_le_bytes(local_bytes[..2].try_into().unwrap());
+            instance & 0x8000 != 0
+                && instance != u16::MAX
+                && local_bytes[2..] == [0, 0]
+                && signature_at(terminal + 16).is_some()
+        };
+        if next_is_component {
+            continue;
+        }
+        let mut cursor = terminal;
+        while instance_before(cursor).is_some() {
+            let Some(previous) = cursor.checked_sub(16) else {
+                break;
+            };
+            if signature_at(previous).is_none() {
+                break;
+            }
+            cursor = previous;
+        }
+        let offset = cursor;
+        let Some(components) = inline_surface_reference_at(payload, offset) else {
+            continue;
+        };
+        if !result.iter().any(|(_, existing)| existing == &components) {
+            result.push((offset, components));
+        }
+    }
+    result
+}
+
+fn inline_surface_reference_at(
+    payload: &[u8],
+    offset: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    let prefix: [u8; 4] = payload.get(offset..offset + 4)?.try_into().ok()?;
+    let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
+    let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
+    if family & 0x8000 == 0 || family == u16::MAX || variant == 0 {
+        return None;
+    }
+    let signature_at = |offset: usize| -> Option<[u8; 12]> {
+        let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
+        let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
+        let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
+        (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
+    };
+    let instance_before = |offset: usize| -> Option<u16> {
+        let bytes = payload.get(offset.checked_sub(4)?..offset)?;
+        let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
+        (instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..] == [0, 0]).then_some(instance)
+    };
+    let mut cursor = offset;
+    let mut components = Vec::new();
+    loop {
+        let signature = signature_at(cursor)?;
+        let tail: [u8; 4] = payload.get(cursor + 12..cursor + 16)?.try_into().ok()?;
+        let instance = u16::from_le_bytes(tail[..2].try_into().ok()?);
+        let continues = instance & 0x8000 != 0
+            && instance != u16::MAX
+            && tail[2..] == [0, 0]
+            && signature_at(cursor + 16).is_some();
+        components.push(FeatureInputComponentPathEntry {
+            instance: instance_before(cursor),
+            type_signature: signature,
+            local_id: (!continues).then(|| u32::from_le_bytes(tail)),
+        });
+        if !continues {
+            return Some(components);
+        }
+        cursor += 16;
+    }
 }
 
 fn compact_edge_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {
@@ -5120,11 +5270,11 @@ pub(crate) fn compact_edge_selection_at(payload: &[u8], marker: usize) -> Option
     }
     compact_homogeneous_edge_ids(payload, marker + 18, count)
         .or_else(|| {
-            compact_edge_component_path(payload, marker, count).map(|(components, _)| {
+            compact_edge_component_path(payload, marker, count).and_then(|(components, _)| {
                 components
                     .into_iter()
                     .map(|component| component.local_id)
-                    .collect()
+                    .collect::<Option<Vec<_>>>()
             })
         })
         .or_else(|| compact_u16_edge_ids(payload, marker + 18, count))
@@ -5274,7 +5424,9 @@ fn compact_heterogeneous_component_path(
                 payload.get(cursor..cursor + 2)?.try_into().ok()?,
             )),
             type_signature: payload.get(cursor + 4..cursor + 16)?.try_into().ok()?,
-            local_id: u32::from_le_bytes(payload.get(cursor + 16..cursor + 20)?.try_into().ok()?),
+            local_id: Some(u32::from_le_bytes(
+                payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
+            )),
         });
         cursor += 20;
         if index + 1 == count {
@@ -5310,11 +5462,14 @@ fn compact_heterogeneous_edge_path(
     cursor: usize,
     count: usize,
 ) -> Option<(Vec<u32>, usize)> {
-    compact_heterogeneous_component_path(payload, cursor, count).map(|(entries, end)| {
-        (
-            entries.into_iter().map(|entry| entry.local_id).collect(),
+    compact_heterogeneous_component_path(payload, cursor, count).and_then(|(entries, end)| {
+        Some((
+            entries
+                .into_iter()
+                .map(|entry| entry.local_id)
+                .collect::<Option<Vec<_>>>()?,
             end,
-        )
+        ))
     })
 }
 
@@ -5500,9 +5655,9 @@ fn component_reference_curve_path_at(
                     payload.get(cursor..cursor + 2)?.try_into().ok()?,
                 )),
                 type_signature: signature,
-                local_id: u32::from_le_bytes(
+                local_id: Some(u32::from_le_bytes(
                     payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
-                ),
+                )),
             });
             cursor += 20;
             if index + 1 != count {
@@ -10034,6 +10189,12 @@ pub(crate) fn project_compact_surface_selections(
             continue;
         };
         if let FeatureDefinition::Pattern { seeds, .. } = &mut feature.definition {
+            if seeds
+                .iter()
+                .any(|seed| matches!(seed, PatternSeed::Feature(_)))
+            {
+                continue;
+            }
             for selection in feature_selections {
                 let native = compact_surface_selection_value(&selection.components);
                 let generated = component_path_preceding_feature(
@@ -10044,18 +10205,29 @@ pub(crate) fn project_compact_surface_selections(
                 .and_then(|(component, producer)| {
                     feature_ids_by_native
                         .get(producer.id.as_str())
-                        .map(|feature| (feature, component))
+                        .zip(component.local_id.as_ref())
                 });
                 let seed = match generated {
-                    Some((producer, component)) => {
+                    Some((producer, local_id)) => {
+                        let face = cadmpeg_ir::features::GeneratedFaceRef {
+                            feature: producer.clone(),
+                            local_id: local_id.to_string(),
+                        };
+                        if seeds.iter().any(|seed| {
+                            matches!(
+                                seed,
+                                PatternSeed::Faces(
+                                    cadmpeg_ir::features::FaceSelection::Generated { faces, .. }
+                                ) if faces.contains(&face)
+                            )
+                        }) {
+                            continue;
+                        }
                         if !feature.dependencies.contains(producer) {
                             feature.dependencies.push(producer.clone());
                         }
                         PatternSeed::Faces(cadmpeg_ir::features::FaceSelection::Generated {
-                            faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
-                                feature: producer.clone(),
-                                local_id: component.local_id.to_string(),
-                            }],
+                            faces: vec![face],
                             native,
                         })
                     }
@@ -10100,7 +10272,8 @@ pub(crate) fn project_compact_surface_selections(
         };
         let generated = producer
             .and_then(|producer| feature_ids_by_native.get(producer))
-            .zip(component);
+            .zip(component)
+            .and_then(|(feature, component)| Some((feature, component.local_id?)));
         match slot {
             SelectionSlot::Face(faces) => {
                 if matches!(
@@ -10109,11 +10282,11 @@ pub(crate) fn project_compact_surface_selections(
                         | cadmpeg_ir::features::FaceSelection::Native(_)
                 ) {
                     *faces = match generated {
-                        Some((feature, component)) => {
+                        Some((feature, local_id)) => {
                             cadmpeg_ir::features::FaceSelection::Generated {
                                 faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
                                     feature: feature.clone(),
-                                    local_id: component.local_id.to_string(),
+                                    local_id: local_id.to_string(),
                                 }],
                                 native,
                             }
@@ -10137,11 +10310,11 @@ pub(crate) fn project_compact_surface_selections(
                     )
                 {
                     *vertex = match generated {
-                        Some((feature, component)) => {
+                        Some((feature, local_id)) => {
                             cadmpeg_ir::features::VertexSelection::Generated {
                                 vertex: cadmpeg_ir::features::GeneratedVertexRef {
                                     feature: feature.clone(),
-                                    local_id: component.local_id.to_string(),
+                                    local_id: local_id.to_string(),
                                 },
                                 native,
                             }
@@ -10668,7 +10841,11 @@ pub(crate) fn project_surface_sweep_profiles(
                     let feature_id = feature_ids_by_native.get(owner.as_str())?.clone();
                     let local_id = components
                         .iter()
-                        .map(|component| component.local_id.to_string())
+                        .map(|component| {
+                            component
+                                .local_id
+                                .map_or_else(|| "_".into(), |id| id.to_string())
+                        })
                         .collect::<Vec<_>>()
                         .join(",");
                     let native = format!(
@@ -10831,7 +11008,11 @@ pub(crate) fn project_compact_combine_paths(
             let feature = feature_ids_by_native.get(&producer)?.clone();
             let local_id = components
                 .iter()
-                .map(|component| component.local_id.to_string())
+                .map(|component| {
+                    component
+                        .local_id
+                        .map_or_else(|| "_".into(), |id| id.to_string())
+                })
                 .collect::<Vec<_>>()
                 .join(",");
             Some((
@@ -11259,7 +11440,9 @@ pub(crate) fn compact_termination_reference_path_at(
         Some(FeatureInputComponentPathEntry {
             instance: Some(u16::from_le_bytes(instance[0..2].try_into().ok()?)),
             type_signature: payload.get(offset + 4..offset + 16)?.try_into().ok()?,
-            local_id: u32::from_le_bytes(payload.get(offset + 16..offset + 20)?.try_into().ok()?),
+            local_id: Some(u32::from_le_bytes(
+                payload.get(offset + 16..offset + 20)?.try_into().ok()?,
+            )),
         })
     };
     let mut cursor = marker + 18;
@@ -11325,7 +11508,12 @@ pub(crate) fn compact_surface_selection_value(
         if index != 0 {
             value.push(',');
         }
-        write!(&mut value, "{}", component.local_id).expect("writing to String cannot fail");
+        match component.local_id {
+            Some(local_id) => {
+                write!(&mut value, "{local_id}").expect("writing to String cannot fail")
+            }
+            None => value.push('_'),
+        }
     }
     value
 }
@@ -11389,11 +11577,15 @@ fn component_path_preceding_feature<'a>(
     &'a FeatureInputComponentPathEntry,
     &'a crate::records::Feature,
 )> {
-    let owner_ordinal = features
+    let owner_source = features
         .iter()
-        .position(|feature| feature.id == owner_ref)?;
-    let mut by_source = HashMap::<u32, Option<(usize, &crate::records::Feature)>>::new();
-    for (ordinal, feature) in features.iter().enumerate() {
+        .find(|feature| feature.id == owner_ref)?
+        .source_id
+        .as_deref()?
+        .parse::<u32>()
+        .ok()?;
+    let mut by_source = HashMap::<u32, Option<&crate::records::Feature>>::new();
+    for feature in features {
         let Some(source_id) = feature
             .source_id
             .as_deref()
@@ -11404,12 +11596,12 @@ fn component_path_preceding_feature<'a>(
         by_source
             .entry(source_id)
             .and_modify(|candidate| *candidate = None)
-            .or_insert(Some((ordinal, *feature)));
+            .or_insert(Some(*feature));
     }
     components.iter().rev().find_map(|component| {
         let source_id = u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
-        let (ordinal, feature) = by_source.get(&source_id)?.as_ref()?;
-        (*ordinal < owner_ordinal).then_some((component, *feature))
+        let feature = by_source.get(&source_id)?.as_ref()?;
+        (source_id < owner_source).then_some((component, *feature))
     })
 }
 

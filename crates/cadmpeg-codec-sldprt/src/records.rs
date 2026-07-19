@@ -306,8 +306,9 @@ pub struct FeatureInputComponentPathEntry {
     pub instance: Option<u16>,
     /// Twelve-byte serialized component type identity.
     pub type_signature: [u8; 12],
-    /// Feature-local identifier carried by this path node.
-    pub local_id: u32,
+    /// Feature-local identifier carried by terminal selection nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_id: Option<u32>,
 }
 
 /// A declared sketch-relation family and its attached scalar record.

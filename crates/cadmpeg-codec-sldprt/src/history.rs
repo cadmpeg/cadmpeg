@@ -6331,6 +6331,7 @@ pub(crate) fn project_configuration_design_states(
         apply_evaluated_parameters(&mut projection);
         crate::resolved_features::enrich_history_reference_axes(&mut projection, scoped_lanes);
         let mut features = project_features(&projection);
+        crate::resolved_features::bind_pattern_inputs(&mut features, &projection, scoped_lanes);
         crate::resolved_features::project_compact_body_selections(&mut features, scoped_lanes);
         crate::resolved_features::project_compact_combine_paths(
             &mut features,
@@ -6461,7 +6462,6 @@ pub(crate) fn project_configuration_sketch_states(
             &ir.model.sketches,
             histories,
         );
-        crate::resolved_features::bind_pattern_inputs(&mut features, histories, scoped_lanes);
         crate::resolved_features::project_adjacent_extrusion_profiles(
             &mut features,
             histories,
@@ -6902,6 +6902,11 @@ fn project_features_with_native_inputs(
         &native.feature_input_lanes,
     );
     let mut features = project_features(&histories);
+    crate::resolved_features::bind_pattern_inputs(
+        &mut features,
+        &histories,
+        &native.feature_input_lanes,
+    );
     crate::resolved_features::bind_sweep_operations(
         &mut features,
         &histories,
@@ -7134,14 +7139,15 @@ fn validate_compact_surface_selection_edits(
         };
         let generated = producer
             .and_then(|producer| feature_ids_by_native.get(producer))
-            .zip(component);
+            .zip(component)
+            .and_then(|(feature, component)| Some((feature, component.local_id?)));
         let changed = match slot {
             SelectionSlot::Face(faces) => {
                 let expected = match generated {
-                    Some((feature, component)) => FaceSelection::Generated {
+                    Some((feature, local_id)) => FaceSelection::Generated {
                         faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
                             feature: feature.clone(),
-                            local_id: component.local_id.to_string(),
+                            local_id: local_id.to_string(),
                         }],
                         native,
                     },
@@ -7157,10 +7163,10 @@ fn validate_compact_surface_selection_edits(
             }
             SelectionSlot::Vertex(vertex) => {
                 let expected = match generated {
-                    Some((feature, component)) => VertexSelection::Generated {
+                    Some((feature, local_id)) => VertexSelection::Generated {
                         vertex: cadmpeg_ir::features::GeneratedVertexRef {
                             feature: feature.clone(),
-                            local_id: component.local_id.to_string(),
+                            local_id: local_id.to_string(),
                         },
                         native,
                     },
