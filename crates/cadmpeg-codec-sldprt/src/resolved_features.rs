@@ -410,14 +410,15 @@ mod marker_tests {
         compact_surface_selection_at, complete_ordered_compact_line_profile,
         component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, constraint_midplane_frame,
-        coordinate_marker_local_links, explicit_reference_plane_frame, fixed_reference_plane_frame,
-        legacy_feature_input_section, legacy_reference_axis_triads, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
-        matrix_reference_plane_frame, minimal_reference_plane_frame, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
-        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
-        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        coordinate_marker_local_links, explicit_reference_axis_frame,
+        explicit_reference_plane_frame, fixed_reference_plane_frame, legacy_feature_input_section,
+        legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
+        minimal_reference_plane_frame, named_scalars, native_scalar_matches_discrete_parameter,
+        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
+        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
+        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
@@ -655,6 +656,36 @@ mod marker_tests {
             Vector3::new(0.0, 1.0, 0.0),
         );
         assert_eq!(plane_intersection_axis_frame(first, parallel), None);
+    }
+
+    #[test]
+    fn explicit_reference_axis_requires_redundant_collinear_witnesses() {
+        let mut record = vec![0; 88];
+        for (offset, value) in [
+            (0, 0.25_f64),
+            (8, -0.4),
+            (16, 0.1),
+            (24, 0.25),
+            (32, 0.6),
+            (40, 0.1),
+            (48, 0.5),
+            (56, 0.5),
+            (64, 0.0),
+            (72, 1.0),
+            (80, 0.0),
+        ] {
+            record[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        let mut payload = vec![0xaa; 17];
+        payload.extend_from_slice(&record);
+        payload.extend_from_slice(&[0xbb; 11]);
+        assert_eq!(
+            explicit_reference_axis_frame(&payload),
+            Some((Point3::new(250.0, 0.0, 100.0), Vector3::new(0.0, 1.0, 0.0),))
+        );
+
+        record[24..32].copy_from_slice(&0.5_f64.to_le_bytes());
+        assert_eq!(explicit_reference_axis_frame(&record), None);
     }
 
     #[test]
@@ -6168,6 +6199,18 @@ pub(crate) fn enrich_history_reference_axes(
             let Some(bytes) = lane.native_payload.get(start..end) else {
                 continue;
             };
+            if let Some((origin, direction)) = explicit_reference_axis_frame(bytes) {
+                let feature = &mut histories[history_index].features[feature_index];
+                feature.properties.insert(
+                    "Origin".into(),
+                    format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+                );
+                feature.properties.insert(
+                    "Direction".into(),
+                    format!("{},{},{}", direction.x, direction.y, direction.z),
+                );
+                continue;
+            }
             let Some([first, second]) = plane_intersection_axis_sources(bytes, &known_sources)
             else {
                 continue;
@@ -6225,6 +6268,97 @@ pub(crate) fn enrich_history_reference_axes(
             format!("{},{},{}", frame.1.x, frame.1.y, frame.1.z),
         );
     }
+}
+
+fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const UNIT_TOLERANCE: f64 = 1.0e-9;
+
+    let scalar = |bytes: &[u8], offset: usize| {
+        let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let mut candidates = payload
+        .windows(88)
+        .filter_map(|bytes| {
+            let first = Vector3::new(scalar(bytes, 0)?, scalar(bytes, 8)?, scalar(bytes, 16)?);
+            let second = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
+            let first_extent = scalar(bytes, 48)?;
+            let second_extent = scalar(bytes, 56)?;
+            let stored_direction =
+                Vector3::new(scalar(bytes, 64)?, scalar(bytes, 72)?, scalar(bytes, 80)?);
+            let delta = Vector3::new(second.x - first.x, second.y - first.y, second.z - first.z);
+            let delta_length = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
+            let direction_length = (stored_direction.x * stored_direction.x
+                + stored_direction.y * stored_direction.y
+                + stored_direction.z * stored_direction.z)
+                .sqrt();
+            if delta_length <= 1.0e-12
+                || (direction_length - 1.0).abs() > UNIT_TOLERANCE
+                || first_extent <= 0.0
+                || second_extent <= 0.0
+                || !same_dimension_length(first_extent, second_extent)
+                || [first.x, first.y, first.z, second.x, second.y, second.z]
+                    .into_iter()
+                    .any(|value| value.abs() > 1.0e6)
+            {
+                return None;
+            }
+            let direction = Vector3::new(
+                stored_direction.x / direction_length,
+                stored_direction.y / direction_length,
+                stored_direction.z / direction_length,
+            );
+            let aligned = (delta.x * direction.x + delta.y * direction.y + delta.z * direction.z)
+                / delta_length;
+            if aligned < 1.0 - UNIT_TOLERANCE {
+                return None;
+            }
+            let projection = first.x * direction.x + first.y * direction.y + first.z * direction.z;
+            let canonical_zero = |value: f64| if value == 0.0 { 0.0 } else { value };
+            let origin = Point3::new(
+                (first.x - projection * direction.x) * NATIVE_TO_IR,
+                (first.y - projection * direction.y) * NATIVE_TO_IR,
+                (first.z - projection * direction.z) * NATIVE_TO_IR,
+            );
+            Some((
+                Point3::new(
+                    canonical_zero(origin.x),
+                    canonical_zero(origin.y),
+                    canonical_zero(origin.z),
+                ),
+                Vector3::new(
+                    canonical_zero(direction.x),
+                    canonical_zero(direction.y),
+                    canonical_zero(direction.z),
+                ),
+            ))
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|(origin, direction)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
+            direction.x.to_bits(),
+            direction.y.to_bits(),
+            direction.z.to_bits(),
+        ]
+    });
+    candidates.dedup_by_key(|(origin, direction)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
+            direction.x.to_bits(),
+            direction.y.to_bits(),
+            direction.z.to_bits(),
+        ]
+    });
+    let [frame] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*frame)
 }
 
 fn legacy_reference_axis_triads(
