@@ -2018,6 +2018,10 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     );
                 }
             }
+            FeatureDefinition::SplitBody { targets, tools } => {
+                body_selections.push(targets);
+                face_selections.push(tools);
+            }
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
             }

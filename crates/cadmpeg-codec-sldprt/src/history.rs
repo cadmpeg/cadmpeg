@@ -885,6 +885,10 @@ pub fn bind_topology_selections(
                     resolve_body_selection(cell, &body_ids);
                 }
             }
+            FeatureDefinition::SplitBody { targets, tools } => {
+                resolve_body_selection(targets, &body_ids);
+                resolve_face_selection(tools, &face_ids);
+            }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 resolve_body_selection(targets, &body_ids);
                 resolve_face_selection(tools, &face_ids);
@@ -5456,6 +5460,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::SplitBody { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses a split-body operation",
+                    feature.id
+                )));
+            }
             FeatureDefinition::CutWithSurface {
                 targets,
                 tools,
@@ -7125,6 +7135,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
         FeatureDefinition::BoundaryFill { .. } => "BoundaryFill",
+        FeatureDefinition::SplitBody { .. } => "SplitBody",
         FeatureDefinition::CutWithSurface { .. } => "CutWithSurface",
         FeatureDefinition::DeleteBody {
             mode: BodyRetentionMode::Unresolved,

@@ -638,6 +638,14 @@ pub enum FeatureDefinition {
         /// Whether the side opposite the default tool orientation is removed.
         reverse: bool,
     },
+    /// Partitions selected bodies with selected surface faces while retaining
+    /// every resulting side.
+    SplitBody {
+        /// Bodies partitioned by the operation.
+        targets: BodySelection,
+        /// Surface faces extended as necessary to partition the targets.
+        tools: FaceSelection,
+    },
     /// Deletes bodies directly or retains only the selected bodies.
     DeleteBody {
         /// Bodies selected by the operation.

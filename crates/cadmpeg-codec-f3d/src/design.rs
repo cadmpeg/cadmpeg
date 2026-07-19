@@ -51,6 +51,7 @@ pub(crate) enum DesignFeatureFamily {
     Sweep,
     SurfacePatch,
     BoundaryFill,
+    Split,
 }
 
 /// Return the canonical operation family while preserving `kind` verbatim on
@@ -71,6 +72,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Sweep" => Some(DesignFeatureFamily::Sweep),
         "SurfacePatch" => Some(DesignFeatureFamily::SurfacePatch),
         "BoundaryFill" => Some(DesignFeatureFamily::BoundaryFill),
+        "Split" => Some(DesignFeatureFamily::Split),
         _ => None,
     }
 }
@@ -838,6 +840,14 @@ pub fn project_parameter_design_with_edge_identities(
                 })
             } else if family == Some(DesignFeatureFamily::BoundaryFill) {
                 project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
+            } else if family == Some(DesignFeatureFamily::Split) {
+                project_split(scope, construction_groups, face_operands).unwrap_or_else(|| {
                     FeatureDefinition::Native {
                         kind: scope.kind.clone(),
                         parameters: BTreeMap::new(),
@@ -3048,6 +3058,60 @@ fn project_boundary_fill(
             .iter()
             .map(|cell| BodySelection::Native(cell.id.clone()))
             .collect(),
+    })
+}
+
+fn project_split(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{BodySelection, FaceSelection, FeatureDefinition};
+
+    if scope.kind != "Split" || scope.frame_length != 325 || scope.reference_members.len() != 4 {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let [targets] = groups.as_slice() else {
+        return None;
+    };
+    if targets.scope_reference_ordinal != 2
+        || targets.record_index != scope.reference_members[2]
+        || targets.role != 0x0000_0004_0000_0000
+        || targets.members.as_slice() != &scope.reference_members[3..4]
+    {
+        return None;
+    }
+    let matching_tools = face_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+                && operand.scope_reference_ordinal == 1
+                && operand.record_index == scope.reference_members[1]
+                && operand.recipe_kind == ConstructionRecipeKind::Face
+        })
+        .collect::<Vec<_>>();
+    let [tool] = matching_tools.as_slice() else {
+        return None;
+    };
+    let tools = resolved_face_operand(tool).map_or_else(
+        || FaceSelection::Native(tool.id.clone()),
+        |faces| FaceSelection::Resolved {
+            faces,
+            native: tool.id.clone(),
+        },
+    );
+    Some(FeatureDefinition::SplitBody {
+        targets: BodySelection::Native(targets.id.clone()),
+        tools,
     })
 }
 
@@ -14208,7 +14272,11 @@ pub fn decode_face_operands(
     for scope in scopes.values().filter(|scope| {
         matches!(
             design_feature_family(&scope.kind),
-            Some(DesignFeatureFamily::OffsetFaces | DesignFeatureFamily::Thicken)
+            Some(
+                DesignFeatureFamily::OffsetFaces
+                    | DesignFeatureFamily::Thicken
+                    | DesignFeatureFamily::Split
+            )
         )
     }) {
         let Some(stream) = native_stream(&scope.id) else {
@@ -14465,6 +14533,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
         let scope_group_start = out.len();
@@ -15686,8 +15755,12 @@ fn parse_face_operand(
     if !matches!(recipe_program.get(0..2), Some([0, -1 | 0])) {
         return None;
     }
-    let header_value = usize::try_from(*recipe_program.get(2)?).ok()?;
-    if header_value == 0 || header_value > 100_000 {
+    let terminal_program = recipe_program.as_slice() == [0, -1];
+    if !terminal_program
+        && usize::try_from(*recipe_program.get(2)?)
+            .ok()
+            .is_none_or(|header_value| header_value == 0 || header_value > 100_000)
+    {
         return None;
     }
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
@@ -15698,6 +15771,9 @@ fn parse_face_operand(
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     if !recipe_node_indices.is_empty() && recipe_node_indices.first() != Some(&3) {
+        return None;
+    }
+    if terminal_program && !recipe_node_indices.is_empty() {
         return None;
     }
     let recipe_node_offsets = recipe_node_indices
@@ -18927,6 +19003,10 @@ mod relation_tests {
         assert_eq!(
             design_feature_family("BoundaryFill"),
             Some(DesignFeatureFamily::BoundaryFill)
+        );
+        assert_eq!(
+            design_feature_family("Split"),
+            Some(DesignFeatureFamily::Split)
         );
         assert_eq!(
             design_feature_family("Loft"),
@@ -23446,6 +23526,25 @@ mod relation_tests {
         .expect("compact face recipe operand");
         assert_eq!(compact.recipe_program, [0, -1, 4, 1, -1, 1, 0, -1]);
         assert!(compact.recipe_nodes.is_empty());
+
+        let terminal_program_at = compact_name_at + 24;
+        compact_bytes.truncate(terminal_program_at);
+        for value in [0i32, -1] {
+            compact_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        header(&mut compact_bytes, *b"306", 104);
+        let terminal = parse_face_operand(
+            &compact_bytes,
+            &face_scope,
+            0,
+            None,
+            None,
+            &record,
+            std::slice::from_ref(&compact_recipe),
+        )
+        .expect("terminal face recipe operand");
+        assert_eq!(terminal.recipe_program, [0, -1]);
+        assert!(terminal.recipe_nodes.is_empty());
         operand.recipe_references.push(DesignRecipeReference {
             selector: 1,
             selector_offset: 1_101,
