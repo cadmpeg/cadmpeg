@@ -1775,6 +1775,11 @@ mod history_reference_tests {
         let cases = [
             ("1", FeatureTreeNodeRole::Annotations),
             ("5", FeatureTreeNodeRole::ModelOrigin),
+            ("6", FeatureTreeNodeRole::LightsAndCameras),
+            ("12", FeatureTreeNodeRole::AmbientLight),
+            ("13", FeatureTreeNodeRole::DirectionalLight),
+            ("14", FeatureTreeNodeRole::DirectionalLight),
+            ("15", FeatureTreeNodeRole::DirectionalLight),
         ];
 
         for (source_id, expected) in cases {
@@ -1786,7 +1791,7 @@ mod history_reference_tests {
             assert_eq!(feature_tree_node_role(&node), Some(expected));
         }
 
-        let ambiguous = feature("node", Some("12"), 0);
+        let ambiguous = feature("node", Some("99"), 0);
         assert_eq!(feature_tree_node_role(&ambiguous), None);
 
         let mut reference_plane = feature("node", Some("5"), 0);
@@ -3208,6 +3213,15 @@ fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeR
     match (feature.xml_tag.as_str(), feature.source_id.as_deref()?) {
         (tag, "1") if tag.eq_ignore_ascii_case("Feature") => Some(FeatureTreeNodeRole::Annotations),
         (tag, "5") if tag.eq_ignore_ascii_case("Sketch") => Some(FeatureTreeNodeRole::ModelOrigin),
+        (tag, "6") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        }
+        (tag, "12") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::AmbientLight)
+        }
+        (tag, "13" | "14" | "15") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        }
         (tag, "-1")
             if tag.eq_ignore_ascii_case("Feature")
                 && feature.name.is_empty()
