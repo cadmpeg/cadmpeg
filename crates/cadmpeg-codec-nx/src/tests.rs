@@ -16307,17 +16307,48 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         },
         native_ref: None,
     });
+    for (ordinal, definition) in [
+        FeatureDefinition::DatumPlaneUnresolved,
+        FeatureDefinition::DatumCoordinateSystemUnresolved,
+        FeatureDefinition::LoftUnresolved,
+        FeatureDefinition::FreeformSurfaceUnresolved,
+        FeatureDefinition::LoftUnresolved,
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ir.model.features.push(Feature {
+            id: FeatureId(format!("test:feature#unresolved-{ordinal}")),
+            ordinal: ordinal as u64 + 4,
+            name: None,
+            suppressed: None,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition,
+            native_ref: None,
+        });
+    }
 
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 3);
     assert_eq!(losses[0].category, LossCategory::Feature);
     assert!(losses[0].message.contains("Container (1)"));
     assert!(losses[0].message.contains("DELETE (2)"));
     assert_eq!(losses[1].category, LossCategory::Feature);
-    assert!(losses[1].message.contains("1 NX sketch history feature"));
-    assert!(losses[1].message.contains("1 have no neutral sketch graph"));
+    assert!(losses[1].message.contains("datum coordinate system (1)"));
+    assert!(losses[1].message.contains("datum plane (1)"));
+    assert!(losses[1].message.contains("freeform surface (1)"));
+    assert!(losses[1].message.contains("loft (2)"));
+    assert_eq!(losses[2].category, LossCategory::Feature);
+    assert!(losses[2].message.contains("1 NX sketch history feature"));
+    assert!(losses[2].message.contains("1 have no neutral sketch graph"));
 
     let sketch_id = cadmpeg_ir::sketches::SketchId("test:sketch#0".into());
     ir.model.sketches.push(cadmpeg_ir::sketches::Sketch {
@@ -16330,15 +16361,15 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         profiles: Vec::new(),
         native_ref: None,
     });
-    ir.model.features.last_mut().unwrap().definition = FeatureDefinition::Sketch {
+    ir.model.features[3].definition = FeatureDefinition::Sketch {
         space: cadmpeg_ir::features::SketchSpace::Planar,
         sketch: Some(sketch_id),
     };
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 2);
-    assert!(losses[1].message.contains("no sketch constraints"));
+    assert_eq!(losses.len(), 3);
+    assert!(losses[2].message.contains("no sketch constraints"));
 }
 
 #[test]

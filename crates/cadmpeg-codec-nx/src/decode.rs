@@ -7079,6 +7079,34 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
+    let mut unresolved_feature_families = BTreeMap::<&str, usize>::new();
+    for feature in &ir.model.features {
+        let family = match feature.definition {
+            FeatureDefinition::DatumPlaneUnresolved => "datum plane",
+            FeatureDefinition::DatumCoordinateSystemUnresolved => "datum coordinate system",
+            FeatureDefinition::LoftUnresolved => "loft",
+            FeatureDefinition::FreeformSurfaceUnresolved => "freeform surface",
+            _ => continue,
+        };
+        *unresolved_feature_families.entry(family).or_default() += 1;
+    }
+    if !unresolved_feature_families.is_empty() {
+        let families = unresolved_feature_families
+            .into_iter()
+            .map(|(family, count)| format!("{family} ({count})"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "NX feature family identities were transferred, but their neutral construction \
+                 semantics remain unresolved: {families}."
+            ),
+            provenance: None,
+        });
+    }
+
     let sketch_feature_count = ir
         .model
         .features
