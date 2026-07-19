@@ -255,12 +255,13 @@ fn decode_record(
             })?;
         }
         let property_at = at;
-        let value = read_value(record, &mut at, property.carrier, &id).map_err(|error| {
-            CodecError::Malformed(format!(
+        let value = read_value(record, &mut at, property.carrier, &id, property.connectable)
+            .map_err(|error| {
+                CodecError::Malformed(format!(
                 "Protein {schema} instance {guid} property {id} at {property_at}..{at}/{}: {error}",
                 record.len()
             ))
-        })?;
+            })?;
         let connections = if property.connectable || property.carrier == Carrier::Reference {
             read_connections(record, &mut at).map_err(|error| {
                 CodecError::Malformed(format!(
@@ -300,6 +301,7 @@ fn read_value(
     at: &mut usize,
     carrier: Carrier,
     id: &str,
+    connectable: bool,
 ) -> Result<PropertyValue, CodecError> {
     let malformed = || CodecError::Malformed(format!("Protein property {id} is truncated"));
     Ok(match carrier {
@@ -324,6 +326,15 @@ fn read_value(
             PropertyValue::String(take_lp(bytes, at).ok_or_else(malformed)?)
         }
         Carrier::Color => {
+            if connectable || id != "common_Tint_color" {
+                let marker = take::<1>(bytes, at).ok_or_else(malformed)?;
+                if marker != [0] {
+                    return Err(CodecError::Malformed(format!(
+                        "Protein Color property {id} has invalid value marker {}",
+                        marker[0]
+                    )));
+                }
+            }
             let mut rgba = [0.0; 4];
             for value in &mut rgba {
                 *value = f64::from_le_bytes(take(bytes, at).ok_or_else(malformed)?);
@@ -332,7 +343,16 @@ fn read_value(
         }
         Carrier::Reference => PropertyValue::Reference,
         Carrier::TextureUri => {
-            let count = usize::from(take::<1>(bytes, at).ok_or_else(malformed)?[0]);
+            take::<1>(bytes, at).ok_or_else(malformed)?;
+            let count = usize::try_from(u32::from_le_bytes(take(bytes, at).ok_or_else(malformed)?))
+                .map_err(|_| {
+                    CodecError::Malformed("Protein TextureURI count exceeds usize".into())
+                })?;
+            if count > 1_024 {
+                return Err(CodecError::Malformed(format!(
+                    "Protein TextureURI property {id} has implausible path count {count}"
+                )));
+            }
             let mut paths = Vec::with_capacity(count);
             for _ in 0..count {
                 paths.push(take_lp(bytes, at).ok_or_else(malformed)?);
@@ -356,11 +376,6 @@ fn read_connections(bytes: &[u8], at: &mut usize) -> Result<Vec<String>, CodecEr
             "Protein property has invalid connection flag {}",
             flag[0]
         )));
-    }
-    if take::<1>(bytes, at) != Some([1]) {
-        return Err(CodecError::Malformed(
-            "Protein connected-property list marker is absent".into(),
-        ));
     }
     let count = usize::try_from(u32::from_le_bytes(take(bytes, at).ok_or_else(|| {
         CodecError::Malformed("Protein property connection count is truncated".into())
@@ -433,6 +448,41 @@ mod tests {
     }
 
     #[test]
+    fn color_and_connection_carriers_distinguish_their_prefixes() {
+        let rgba = [0.1_f64, 0.2, 0.3, 1.0];
+        let mut prefixed = vec![0];
+        prefixed.extend(rgba.into_iter().flat_map(f64::to_le_bytes));
+        let mut at = 0;
+        assert_eq!(
+            read_value(&prefixed, &mut at, Carrier::Color, "generic_diffuse", true).unwrap(),
+            PropertyValue::Color(rgba)
+        );
+        assert_eq!(at, prefixed.len());
+
+        let bare = rgba
+            .into_iter()
+            .flat_map(f64::to_le_bytes)
+            .collect::<Vec<_>>();
+        let mut at = 0;
+        assert_eq!(
+            read_value(&bare, &mut at, Carrier::Color, "common_Tint_color", false).unwrap(),
+            PropertyValue::Color(rgba)
+        );
+        assert_eq!(at, bare.len());
+
+        let mut connections = vec![1];
+        connections.extend_from_slice(&2u32.to_le_bytes());
+        push_lp(&mut connections, "first-guid");
+        push_lp(&mut connections, "second-guid");
+        let mut at = 0;
+        assert_eq!(
+            read_connections(&connections, &mut at).unwrap(),
+            ["first-guid", "second-guid"]
+        );
+        assert_eq!(at, connections.len());
+    }
+
+    #[test]
     fn schema_driven_record_uses_inheritance_and_serialized_property_ids() {
         let protein = schema_archive(&[
             (
@@ -463,13 +513,15 @@ mod tests {
         for value in ["TextureSchema", "asset-guid", "Texture", ""] {
             push_lp(&mut logical, value);
         }
+        logical.push(0);
         for value in [0.1_f64, 0.2, 0.3, 1.0] {
             logical.extend_from_slice(&value.to_le_bytes());
         }
         push_connections(&mut logical, &["first-guid", "second-guid"]);
         logical.extend_from_slice(&0x2016_u32.to_le_bytes());
         logical.extend_from_slice(&2.5_f64.to_le_bytes());
-        logical.push(2);
+        logical.push(0);
+        logical.extend_from_slice(&2u32.to_le_bytes());
         push_lp(&mut logical, "cloud/resource/one");
         push_lp(&mut logical, "cloud/resource/two");
         logical.extend_from_slice(&0x200e_u32.to_le_bytes());
@@ -534,7 +586,7 @@ mod tests {
     }
 
     fn push_connections(bytes: &mut Vec<u8>, values: &[&str]) {
-        bytes.extend_from_slice(&[1, 1]);
+        bytes.push(1);
         bytes.extend_from_slice(&(values.len() as u32).to_le_bytes());
         for value in values {
             push_lp(bytes, value);
