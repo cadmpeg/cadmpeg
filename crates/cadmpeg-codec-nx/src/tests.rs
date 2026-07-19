@@ -5275,12 +5275,14 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
 }
 
 #[test]
-fn data_block_linked_index_tables_require_descending_target_runs() {
-    use crate::native::{data_block_linked_index_tables, DataBlockLinkedIndexRow};
+fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
+    use crate::native::{
+        data_block_column_index_tables, DataBlockLinkedIndexRow, DataBlockTargetIndexRow,
+    };
 
-    let row = |id: &str, section: u32, target: u32, offset: u64| DataBlockLinkedIndexRow {
+    let linked = |id: &str, target: u32, mode: u8, offset: u64| DataBlockLinkedIndexRow {
         id: id.into(),
-        section_ordinal: section,
+        section_ordinal: 2,
         ordinal: 0,
         first_index: 20,
         discriminator: 0x16,
@@ -5293,8 +5295,8 @@ fn data_block_linked_index_tables_require_descending_target_runs() {
             "block#7".into(),
         ],
         flag: 3,
-        mode: 4,
-        source_entry: format!("entry-{section}"),
+        mode,
+        source_entry: "entry".into(),
         opening_data_block: format!("opening-block-{id}"),
         opening_block_offset: 8,
         source_offset: offset,
@@ -5302,22 +5304,55 @@ fn data_block_linked_index_tables_require_descending_target_runs() {
         target_index_source_offset: offset + 7,
         index_source_offsets: [offset + 12, offset + 13, offset + 14],
     };
-    let rows = [
-        row("row-0", 2, 10, 100),
-        row("row-1", 2, 9, 125),
-        row("gap", 2, 7, 150),
-        row("section-3-0", 3, 20, 200),
-        row("section-3-1", 3, 19, 225),
+    let target = |id: &str, index: u32, mode: u8, offset: u64| DataBlockTargetIndexRow {
+        id: id.into(),
+        section_ordinal: 2,
+        ordinal: 0,
+        target_index: index,
+        indices: [5, 6, 7],
+        data_blocks: [
+            format!("block#{index}"),
+            "block#5".into(),
+            "block#6".into(),
+            "block#7".into(),
+        ],
+        mode,
+        source_entry: "entry".into(),
+        opening_data_block: format!("opening-block-{id}"),
+        opening_block_offset: 8,
+        source_offset: offset,
+        target_index_source_offset: offset + 5,
+        index_source_offsets: [offset + 10, offset + 11, offset + 12],
+    };
+    let linked_rows = [
+        linked("opening", 63, 7, 100),
+        linked("linked-59", 59, 4, 200),
+        linked("linked-58", 58, 4, 225),
+    ];
+    let target_rows = [
+        target("target-62", 62, 7, 125),
+        target("target-61", 61, 7, 150),
+        target("target-60", 60, 4, 175),
     ];
 
-    let tables = data_block_linked_index_tables(&rows);
-    assert_eq!(tables.len(), 2);
-    assert_eq!(tables[0].rows, ["row-0", "row-1"]);
-    assert_eq!(tables[0].first_target_index, 10);
-    assert_eq!(tables[0].last_target_index, 9);
+    let tables = data_block_column_index_tables(&linked_rows, &target_rows);
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].opening_linked_row, "opening");
+    assert_eq!(
+        tables[0].target_rows,
+        ["target-62", "target-61", "target-60"]
+    );
+    assert_eq!(tables[0].linked_rows, ["linked-59", "linked-58"]);
+    assert_eq!(tables[0].first_target_index, 63);
+    assert_eq!(tables[0].last_target_index, 58);
     assert_eq!(tables[0].source_offset, 100);
-    assert_eq!(tables[1].rows, ["section-3-0", "section-3-1"]);
-    assert_eq!(tables[1].ordinal, 0);
+
+    let mut gap = target_rows.clone();
+    gap[1].target_index = 60;
+    assert!(data_block_column_index_tables(&linked_rows, &gap).is_empty());
+    let mut incomplete_mode = target_rows.clone();
+    incomplete_mode[2].mode = 7;
+    assert!(data_block_column_index_tables(&linked_rows, &incomplete_mode).is_empty());
 }
 
 #[test]

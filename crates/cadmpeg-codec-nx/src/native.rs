@@ -10259,24 +10259,26 @@ pub struct DataBlockTargetIndexRow {
     pub index_source_offsets: [u64; 3],
 }
 
-/// Maximal linked-index-row run with consecutive descending target blocks.
+/// Complete composite table spanning linked and target-index row grammars.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataBlockLinkedIndexTable {
+pub struct DataBlockColumnIndexTable {
     /// Globally unique table identity.
     pub id: String,
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
-    /// Zero-based table order within the section's column storage.
-    pub ordinal: u32,
-    /// Linked rows in ascending source order.
-    pub rows: Vec<String>,
+    /// Leading mode-7 linked row.
+    pub opening_linked_row: String,
+    /// Consecutive target-index rows in ascending source order.
+    pub target_rows: Vec<String>,
+    /// Consecutive mode-4 linked rows in ascending source order.
+    pub linked_rows: Vec<String>,
     /// First and greatest target block ordinal.
     pub first_target_index: u32,
     /// Last and least target block ordinal.
     pub last_target_index: u32,
     /// Directory entry containing the store.
     pub source_entry: String,
-    /// Absolute source offset of the first row.
+    /// Absolute source offset of the opening linked row.
     pub source_offset: u64,
 }
 
@@ -11789,49 +11791,76 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
         .collect()
 }
 
-/// Group maximal linked-row runs whose target blocks descend without gaps.
-pub fn data_block_linked_index_tables(
-    rows: &[DataBlockLinkedIndexRow],
-) -> Vec<DataBlockLinkedIndexTable> {
-    let mut tables = Vec::new();
-    let mut start = 0;
-    while start < rows.len() {
-        let mut end = start + 1;
-        while end < rows.len()
-            && rows[end].section_ordinal == rows[start].section_ordinal
-            && rows[end].source_offset > rows[end - 1].source_offset
-            && rows[end - 1].target_index.checked_sub(1) == Some(rows[end].target_index)
-        {
-            end += 1;
-        }
-        if end - start >= 2 {
-            let members = &rows[start..end];
-            let section_ordinal = members[0].section_ordinal;
-            let ordinal = tables
-                .iter()
-                .filter(|table: &&DataBlockLinkedIndexTable| {
-                    table.section_ordinal == section_ordinal
-                })
-                .count() as u32;
-            tables.push(DataBlockLinkedIndexTable {
-                id: format!(
-                    "nx:om-data-block-linked-index-tables-{section_ordinal}:table#{ordinal}"
-                ),
-                section_ordinal,
-                ordinal,
-                rows: members.iter().map(|row| row.id.clone()).collect(),
-                first_target_index: members[0].target_index,
-                last_target_index: members
-                    .last()
-                    .expect("nonempty linked-row run")
-                    .target_index,
-                source_entry: members[0].source_entry.clone(),
-                source_offset: members[0].source_offset,
-            });
-        }
-        start = end;
+/// Resolve complete composite column-index tables atomically by section.
+pub fn data_block_column_index_tables(
+    linked_rows: &[DataBlockLinkedIndexRow],
+    target_rows: &[DataBlockTargetIndexRow],
+) -> Vec<DataBlockColumnIndexTable> {
+    let mut linked_by_section = BTreeMap::<u32, Vec<&DataBlockLinkedIndexRow>>::new();
+    for row in linked_rows {
+        linked_by_section
+            .entry(row.section_ordinal)
+            .or_default()
+            .push(row);
     }
-    tables
+    let mut targets_by_section = BTreeMap::<u32, Vec<&DataBlockTargetIndexRow>>::new();
+    for row in target_rows {
+        targets_by_section
+            .entry(row.section_ordinal)
+            .or_default()
+            .push(row);
+    }
+    linked_by_section
+        .into_iter()
+        .filter_map(|(section_ordinal, linked)| {
+            let targets = targets_by_section.remove(&section_ordinal)?;
+            let (opening, suffix) = linked.split_first()?;
+            let (last_target, target_prefix) = targets.split_last()?;
+            if opening.mode != 7
+                || suffix.is_empty()
+                || suffix.iter().any(|row| row.mode != 4)
+                || last_target.mode != 4
+                || target_prefix.iter().any(|row| row.mode != 7)
+            {
+                return None;
+            }
+            let ordered = std::iter::once((opening.target_index, opening.source_offset))
+                .chain(
+                    targets
+                        .iter()
+                        .map(|row| (row.target_index, row.source_offset)),
+                )
+                .chain(
+                    suffix
+                        .iter()
+                        .map(|row| (row.target_index, row.source_offset)),
+                )
+                .collect::<Vec<_>>();
+            if ordered
+                .windows(2)
+                .any(|pair| pair[0].0.checked_sub(1) != Some(pair[1].0) || pair[0].1 >= pair[1].1)
+                || linked
+                    .iter()
+                    .any(|row| row.source_entry != opening.source_entry)
+                || targets
+                    .iter()
+                    .any(|row| row.source_entry != opening.source_entry)
+            {
+                return None;
+            }
+            Some(DataBlockColumnIndexTable {
+                id: format!("nx:om-data-block-column-index-tables-{section_ordinal}:table"),
+                section_ordinal,
+                opening_linked_row: opening.id.clone(),
+                target_rows: targets.iter().map(|row| row.id.clone()).collect(),
+                linked_rows: suffix.iter().map(|row| row.id.clone()).collect(),
+                first_target_index: opening.target_index,
+                last_target_index: ordered.last().expect("nonempty column table").0,
+                source_entry: opening.source_entry.clone(),
+                source_offset: opening.source_offset,
+            })
+        })
+        .collect()
 }
 
 /// Decode one product/version header from each indexed NX OM store.
