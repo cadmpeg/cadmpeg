@@ -424,23 +424,26 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     if payload.get(offset + 5..offset + 17)? != GEOMETRY_PREFIX {
         return None;
     }
-    let coordinate_offset = if payload.get(offset + 64..offset + 66)? == [0x1e, 0x00] {
-        offset.checked_add(66)?
-    } else if (matches!(
-        payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?,
-        LEGACY_SKETCH_MARKER | LEGACY_EXTENDED_SKETCH_MARKER
-    ) || (payload.get(offset..offset + SKETCH_MARKER.len())? == SKETCH_MARKER
-        && (payload.get(offset + 17..offset + 21)? == 0u32.to_le_bytes()
-            || indexed_profile_vertex(payload, offset))))
-        && (marker_is_geometry_locus(payload, offset)
-            || indexed_profile_vertex(payload, offset)
-            || compact_profile_coordinate_candidate(payload, offset))
-        && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
-    {
-        offset.checked_add(58)?
-    } else {
-        return None;
-    };
+    let indexed_endpoint_body = wide_indexed_curve_endpoint_indices(payload, offset).is_some()
+        || extended_wide_horizontal_relation_endpoint_indices(payload, offset).is_some();
+    let coordinate_offset =
+        if !indexed_endpoint_body && payload.get(offset + 64..offset + 66)? == [0x1e, 0x00] {
+            offset.checked_add(66)?
+        } else if (matches!(
+            payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?,
+            LEGACY_SKETCH_MARKER | LEGACY_EXTENDED_SKETCH_MARKER
+        ) || (payload.get(offset..offset + SKETCH_MARKER.len())? == SKETCH_MARKER
+            && (payload.get(offset + 17..offset + 21)? == 0u32.to_le_bytes()
+                || indexed_profile_vertex(payload, offset))))
+            && (marker_is_geometry_locus(payload, offset)
+                || indexed_profile_vertex(payload, offset)
+                || compact_profile_coordinate_candidate(payload, offset))
+            && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
+        {
+            offset.checked_add(58)?
+        } else {
+            return None;
+        };
     let first = f64::from_le_bytes(
         payload
             .get(coordinate_offset..coordinate_offset + 8)?
@@ -3015,6 +3018,25 @@ mod marker_tests {
         vertex[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         assert!(indexed_profile_vertex(&vertex, 0));
         assert_eq!(marker_coordinates(&vertex, 0), Some([0.025, 0.01]));
+        vertex.resize(112 + LEGACY_EXTENDED_SKETCH_MARKER.len(), 0);
+        vertex[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        vertex[17..21].copy_from_slice(&4u32.to_le_bytes());
+        vertex[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        vertex[27..31].copy_from_slice(&[1, 0, 1, 0]);
+        vertex[64..66].copy_from_slice(&[0x1e, 0x00]);
+        vertex[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        vertex[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        vertex[68..72].copy_from_slice(&1u32.to_le_bytes());
+        vertex[72..80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        vertex[80..84].copy_from_slice(&u32::MAX.to_le_bytes());
+        vertex[84..86].copy_from_slice(&1u16.to_le_bytes());
+        for offset in (86..102).step_by(4) {
+            vertex[offset..offset + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        vertex[112..112 + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert_eq!(marker_coordinates(&vertex, 0), None);
 
         let mut curve = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len() + 12];
         curve[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -4332,6 +4354,35 @@ mod marker_tests {
                 direction: Vector3::new(1.0, 0.0, 0.0),
             })
         );
+
+        lane.native_payload[200..312].fill(0);
+        lane.native_payload[200..205].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        lane.native_payload[205..213].fill(0xff);
+        lane.native_payload[213..217].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        lane.native_payload[217..221].copy_from_slice(&4u32.to_le_bytes());
+        lane.native_payload[223..227].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        lane.native_payload[227..231].copy_from_slice(&[1, 0, 1, 0]);
+        lane.native_payload[231..239]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        lane.native_payload[248..256].copy_from_slice(&1.0f64.to_le_bytes());
+        lane.native_payload[264..266].copy_from_slice(&0u16.to_le_bytes());
+        lane.native_payload[266..268].copy_from_slice(&1u16.to_le_bytes());
+        lane.native_payload[268..272].copy_from_slice(&1u32.to_le_bytes());
+        lane.native_payload[272..280].copy_from_slice(&(-1.0f64).to_le_bytes());
+        lane.native_payload[280..284].copy_from_slice(&u32::MAX.to_le_bytes());
+        lane.native_payload[284..286].copy_from_slice(&1u16.to_le_bytes());
+        for offset in (286..302).step_by(4) {
+            lane.native_payload[offset..offset + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        lane.native_payload[312..317].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        lane.sketch_entities[3].kind = SketchInputKind::Relation(SketchRelationKind::Horizontal);
+        assert_eq!(
+            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            Some(cadmpeg_ir::features::RevolutionAxis {
+                origin: Point3::new(0.0, 0.0, 19.5),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+        );
     }
 
     #[test]
@@ -4400,6 +4451,8 @@ mod marker_tests {
                 direction: Vector3::new(1.0, 0.0, 0.0),
             })
         );
+        lane.sketch_entities[0].kind = SketchInputKind::Arc;
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
     }
 
     #[test]
@@ -5712,23 +5765,24 @@ fn profile_roster_construction_axis(
     const QUANTUM: f64 = 1.0e-8;
     const NATIVE_TO_IR: f64 = 1000.0;
 
+    let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
     let mut axes = lane
         .sketch_entities
         .iter()
         .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
         .filter_map(|marker| {
             let offset = usize::try_from(marker.offset).ok()?;
-            marker_is_selected_construction_line(&lane.native_payload, offset).then_some(marker)
-        });
-    let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
-    let endpoints = match (axes.next(), axes.next()) {
-        (Some(axis), None) => {
-            let endpoints = roster_curve_endpoint_markers(&lane.native_payload, axis, &markers);
+            if !marker_is_selected_construction_line(&lane.native_payload, offset) {
+                return None;
+            }
+            let endpoints = roster_curve_endpoint_markers(&lane.native_payload, marker, &markers);
             let [start, end] = endpoints.as_slice() else {
                 return None;
             };
-            [*start, *end]
-        }
+            Some([*start, *end])
+        });
+    let endpoints = match (axes.next(), axes.next()) {
+        (Some(endpoints), None) => endpoints,
         (None, None) => profile_roster_implicit_axis_endpoints(lane, profile_native, &markers)?,
         _ => return None,
     };
@@ -5859,6 +5913,34 @@ fn profile_roster_implicit_axis_endpoints<'a>(
                 return Some(endpoints);
             }
         }
+    }
+    let mut boundary_relations = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
+        .filter(|marker| {
+            usize::try_from(marker.offset).ok().is_some_and(|offset| {
+                extended_wide_horizontal_relation_endpoint_indices(&lane.native_payload, offset)
+                    .is_some()
+            })
+        })
+        .filter_map(|candidate| {
+            let endpoints = roster_curve_endpoint_markers(&lane.native_payload, candidate, markers);
+            let [start, end] = endpoints.as_slice() else {
+                return None;
+            };
+            let endpoints = [*start, *end];
+            bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints)
+                .then_some(endpoints)
+        })
+        .collect::<Vec<_>>();
+    boundary_relations.sort_unstable_by_key(|endpoints| [endpoints[0].offset, endpoints[1].offset]);
+    boundary_relations
+        .dedup_by_key(|endpoints| [endpoints[0].id.as_str(), endpoints[1].id.as_str()]);
+    match boundary_relations.as_slice() {
+        [endpoints] => return Some(*endpoints),
+        [] => {}
+        _ => return None,
     }
     let [candidate] = curve_candidates.as_slice() else {
         return None;
@@ -17506,11 +17588,15 @@ fn roster_curve_endpoint_markers<'a>(
     let Some(offset) = usize::try_from(curve.offset).ok() else {
         return Vec::new();
     };
+    let selected_construction = marker_is_selected_construction_line(payload, offset);
+    let boundary_relation =
+        extended_wide_horizontal_relation_endpoint_indices(payload, offset).is_some();
     if curve.coordinates_m.is_some()
         || (!matches!(
             curve.kind,
             SketchInputKind::LineOrCircle | SketchInputKind::Arc
-        ) && !marker_is_selected_construction_line(payload, offset))
+        ) && !selected_construction
+            && !boundary_relation)
     {
         return Vec::new();
     }
@@ -17518,6 +17604,7 @@ fn roster_curve_endpoint_markers<'a>(
         .or_else(|| compact_indexed_curve_endpoint_indices(payload, offset))
         .or_else(|| extended_horizontal_axis_endpoint_indices(payload, offset))
         .or_else(|| current_vertical_axis_endpoint_indices(payload, offset))
+        .or_else(|| extended_wide_horizontal_relation_endpoint_indices(payload, offset))
     {
         return indices
             .into_iter()
@@ -17526,10 +17613,11 @@ fn roster_curve_endpoint_markers<'a>(
                     marker.feature_ref == curve.feature_ref
                         && marker.object_index == Some(index)
                         && marker.coordinates_m.is_some()
-                        && matches!(
-                            marker.kind,
-                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                        )
+                        && (selected_construction
+                            || matches!(
+                                marker.kind,
+                                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                            ))
                 });
                 let candidate = candidates.next()?;
                 candidates.next().is_none().then_some(candidate)
@@ -17587,10 +17675,11 @@ fn roster_curve_endpoint_markers<'a>(
                 marker.feature_ref == curve.feature_ref
                     && marker.object_index == Some(u32::from(index))
                     && marker.coordinates_m.is_some()
-                    && matches!(
-                        marker.kind,
-                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
-                    )
+                    && (selected_construction
+                        || matches!(
+                            marker.kind,
+                            SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                        ))
             });
             let candidate = candidates.next()?;
             candidates.next().is_none().then_some(candidate)
@@ -17749,6 +17838,51 @@ fn current_vertical_axis_endpoint_indices(payload: &[u8], offset: usize) -> Opti
         .map(u32::from)
     };
     Some([endpoint(56)?, endpoint(58)?])
+}
+
+fn extended_wide_horizontal_relation_endpoint_indices(
+    payload: &[u8],
+    offset: usize,
+) -> Option<[u32; 2]> {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 17..offset + 21) != Some(&4u32.to_le_bytes())
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 29..offset + 31) != Some(&1u16.to_le_bytes())
+        || payload.get(offset + 31..offset + 39)
+            != Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        || f64::from_le_bytes(payload.get(offset + 48..offset + 56)?.try_into().ok()?) != 1.0
+        || payload.get(offset + 56..offset + 64) != Some(&[0; 8])
+        || payload.get(offset + 68..offset + 72) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
+        || payload.get(offset + 80..offset + 84) != Some(&u32::MAX.to_le_bytes())
+        || payload
+            .get(offset + 84..offset + 86)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u16::from_le_bytes)
+            .is_none_or(|state| state == 0)
+        || payload.get(offset + 86..offset + 102)
+            != Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        || payload.get(offset + 102..offset + 104) != Some(&0u16.to_le_bytes())
+        || !sketch_marker_prefix_at(payload, offset.checked_add(112)?)
+    {
+        return None;
+    }
+    let endpoint = |relative: usize| {
+        u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )
+        .checked_add(1)
+        .map(u32::from)
+    };
+    Some([endpoint(64)?, endpoint(66)?])
 }
 
 fn extended_horizontal_axis_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
