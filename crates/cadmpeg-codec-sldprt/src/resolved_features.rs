@@ -1926,8 +1926,8 @@ mod marker_tests {
         payload[146..158]
             .copy_from_slice(&[0xf0, 0x81, 0x4d, 2, 0xd6, 0, 0, 0, 0x4d, 0xb8, 0xb0, 0x59]);
         payload[158..162].copy_from_slice(&9u32.to_le_bytes());
-        payload[162..182].fill(0);
-        payload[182..186].copy_from_slice(&101u32.to_le_bytes());
+        payload[162..186].fill(0);
+        payload[186..190].copy_from_slice(&101u32.to_le_bytes());
         let (path, terminal_source) =
             compact_single_face_reference_record_at(&payload, 100).unwrap();
         assert_eq!(path.len(), 2);
@@ -11635,12 +11635,34 @@ fn compact_single_face_reference_record_at(
             let (components, end) = (count > 1)
                 .then(|| compact_heterogeneous_component_path(payload, marker + 18, count - 1))
                 .flatten()?;
-            if payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]) {
-                return Some((components, None));
-            }
-            let source = u32::from_le_bytes(payload.get(end + 20..end + 24)?.try_into().ok()?);
-            (payload.get(end..end + 20)? == [0; 20] && source != 0)
-                .then_some((components, Some(source)))
+            [0usize, 4, 8].into_iter().find_map(|gap| {
+                let filler = match gap {
+                    0 => true,
+                    4 => payload.get(end..end + 4) == Some(&[0; 4]),
+                    8 => matches!(
+                        payload.get(end..end + 8),
+                        Some(
+                            [0, 0, 0, 0, 0, 0, 0, 0]
+                                | [0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]
+                                | [0xa0, 0x86, 0x01, 0x00, 0, 0, 0, 0]
+                        )
+                    ),
+                    _ => false,
+                };
+                if !filler {
+                    return None;
+                }
+                let terminal = end + gap;
+                if payload.get(terminal..terminal + 8)
+                    == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
+                {
+                    return Some((components.clone(), None));
+                }
+                let source =
+                    u32::from_le_bytes(payload.get(terminal + 20..terminal + 24)?.try_into().ok()?);
+                (payload.get(terminal..terminal + 20)? == [0; 20] && source != 0)
+                    .then(|| (components.clone(), Some(source)))
+            })
         })
 }
 
