@@ -1942,12 +1942,7 @@ positive DICT head rule; and `2d <tail7>` reconstructs `40 <tail7>`.
 The neutral curve is the clamped cubic interpolation spline with four endpoint
 knots, one simple knot at each internal stored parameter, `count + 2` poles,
 point interpolation at every stored parameter, and first derivatives equal to
-the two stored endpoint tangent vectors. When a complete `segtab` table and a
-unique `order_table` join bind it to an opaque segment-family row, the complete
-saved spline supplies the neutral geometry for that external sketch entity;
-the opaque row retains the entity's solver identity and does not replace the
-complete saved geometry. A same-feature generated spline or extrusion surface
-binding makes that entity profile geometry.
+the two stored endpoint tangent vectors.
 
 A saved-line family may contain a named `entity(point)` prototype between
 positional line rows. Positional line replay resumes after that prototype's
@@ -1959,6 +1954,13 @@ stored XYZ endpoints. In this lane, `18 e0` stores a standalone zero followed
 by a named-record opener and is not dictionary index `e0`.
 
 A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. The internal identifier must occur on exactly one saved entity before this join applies. Saved rows sharing an internal identifier remain independent construction entities identified by their row offsets. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
+
+When a unique decoded `segtab` row and a unique `order_table` join bind a
+complete saved line, arc, circle, or spline to an opaque segment family, the
+saved entity supplies the standalone neutral geometry for that external sketch
+entity. The opaque row retains the entity's solver identity and does not replace
+the complete saved geometry. A complete `segtab` table and a compatible
+same-feature generated surface binding make that entity profile geometry.
 
 A saved line, arc, or circle with complete section-space geometry and an
 `order_table` join defines a neutral sketch entity under that row's `ext_id`.

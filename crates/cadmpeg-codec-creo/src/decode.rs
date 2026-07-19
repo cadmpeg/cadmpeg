@@ -10129,29 +10129,25 @@ fn unique_saved_section_internal_ids(
         .collect()
 }
 
-fn resolved_saved_spline_external_ids(
+fn materialized_saved_section_external_ids(
     definition: &crate::feature::FeatureDefinition,
 ) -> BTreeSet<u32> {
-    if !definition
-        .segments
-        .as_ref()
-        .is_some_and(crate::feature::FeatureSegmentTable::is_complete)
-    {
-        return BTreeSet::new();
-    }
     let unique_saved_ids = unique_saved_section_internal_ids(definition);
     let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
     definition
         .saved_section
         .iter()
         .flat_map(|saved| &saved.entities)
-        .filter_map(|entity| match entity {
-            crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
-            _ => None,
-        })
-        .filter_map(|spline| {
-            saved_spline_sketch_geometry(spline)?;
-            let internal_id = spline.entity_id?;
+        .filter_map(|entity| {
+            match entity {
+                crate::feature::FeatureSavedEntity::Spline(spline) => {
+                    saved_spline_sketch_geometry(spline)?;
+                }
+                _ => {
+                    saved_section_entity_geometry(entity)?;
+                }
+            }
+            let internal_id = saved_section_entity_identity(entity).0?;
             unique_saved_ids.contains(&internal_id).then_some(())?;
             definition.order_table.as_ref().and_then(|order| {
                 saved_section_external_id(
@@ -10431,6 +10427,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         let unique_segment_ids = unique_section_segment_external_ids(definition);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
         let unique_saved_ids = unique_saved_section_internal_ids(definition);
+        let complete_segment_table = definition
+            .segments
+            .as_ref()
+            .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
         let points = resolved_section_points(definition);
         let solved = definition
             .trim_entities
@@ -10478,7 +10478,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             })
             .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
-        let resolved_saved_spline_external_ids = resolved_saved_spline_external_ids(definition);
+        let materialized_saved_section_external_ids =
+            materialized_saved_section_external_ids(definition);
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let profile_segments = segments
             .iter()
@@ -10591,7 +10592,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         {
             let unique_external_id = unique_segment_ids.contains(&segment.external_id);
             if unique_external_id
-                && resolved_saved_spline_external_ids.contains(&segment.external_id)
+                && materialized_saved_section_external_ids.contains(&segment.external_id)
             {
                 continue;
             }
@@ -10663,6 +10664,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             };
             let generated = external_id.is_some_and(|external_id| {
                 saved_entity_is_generated_profile(
+                    complete_segment_table,
                     definition.owner_feature_id,
                     external_id,
                     &[generated_kind],
@@ -10733,6 +10735,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             };
             let generated = external_id.is_some_and(|external_id| {
                 saved_entity_is_generated_profile(
+                    complete_segment_table,
                     definition.owner_feature_id,
                     external_id,
                     &[
@@ -11120,12 +11123,16 @@ fn generated_surface_id_for_feature(
 }
 
 fn saved_entity_is_generated_profile(
+    segment_table_complete: bool,
     feature_id: Option<u32>,
     source_entity_id: u32,
     expected_kinds: &[crate::surface::SurfaceKind],
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
+    if !segment_table_complete {
+        return false;
+    }
     let Some(feature_id) = feature_id else {
         return false;
     };
@@ -14628,6 +14635,7 @@ mod resolved_sketch_tests {
             BTreeMap::from([(9, 43)])
         );
         assert!(saved_entity_is_generated_profile(
+            true,
             Some(17),
             8,
             &[crate::surface::SurfaceKind::Cylinder],
@@ -14637,6 +14645,7 @@ mod resolved_sketch_tests {
         let mut extrusion_rows = rows.clone();
         extrusion_rows[2] = row(43, crate::surface::SurfaceKind::Extrusion);
         assert!(saved_entity_is_generated_profile(
+            true,
             Some(17),
             9,
             &[
@@ -14647,6 +14656,7 @@ mod resolved_sketch_tests {
             &extrusion_rows,
         ));
         assert!(!saved_entity_is_generated_profile(
+            true,
             Some(17),
             9,
             &[crate::surface::SurfaceKind::Spline],
@@ -14654,6 +14664,18 @@ mod resolved_sketch_tests {
             &extrusion_rows,
         ));
         assert!(!saved_entity_is_generated_profile(
+            false,
+            Some(17),
+            9,
+            &[
+                crate::surface::SurfaceKind::Spline,
+                crate::surface::SurfaceKind::Extrusion,
+            ],
+            std::slice::from_ref(&table),
+            &extrusion_rows,
+        ));
+        assert!(!saved_entity_is_generated_profile(
+            true,
             Some(17),
             10,
             &[crate::surface::SurfaceKind::Cylinder],
@@ -16018,6 +16040,10 @@ mod resolved_sketch_tests {
             section_entity_external_ids(&definition),
             BTreeSet::from([42])
         );
+        assert_eq!(
+            materialized_saved_section_external_ids(&definition),
+            BTreeSet::from([42])
+        );
         let mut incomplete = definition.clone();
         let crate::feature::FeatureSavedEntity::Line(incomplete_line) = &mut incomplete
             .saved_section
@@ -16040,6 +16066,7 @@ mod resolved_sketch_tests {
             section_entity_external_ids(&incomplete),
             BTreeSet::from([42])
         );
+        assert!(materialized_saved_section_external_ids(&incomplete).is_empty());
         let (native_entity, offset) = unresolved_saved_section_entity(
             &incomplete,
             &SketchId("creo:model:sketch#5".into()),
@@ -19908,7 +19935,7 @@ mod resolved_sketch_tests {
             offset: 1,
         };
         assert_eq!(
-            resolved_saved_spline_external_ids(&definition),
+            materialized_saved_section_external_ids(&definition),
             BTreeSet::from([42])
         );
 
@@ -19924,7 +19951,7 @@ mod resolved_sketch_tests {
             .expect("saved section")
             .entities
             .push(crate::feature::FeatureSavedEntity::Spline(incomplete));
-        assert!(resolved_saved_spline_external_ids(&duplicate_saved_id).is_empty());
+        assert!(materialized_saved_section_external_ids(&duplicate_saved_id).is_empty());
 
         let mut ambiguous_external_id = definition;
         let duplicate_opaque = ambiguous_external_id
@@ -19944,7 +19971,7 @@ mod resolved_sketch_tests {
             .as_mut()
             .expect("segments")
             .declared_count = 2;
-        assert!(resolved_saved_spline_external_ids(&ambiguous_external_id).is_empty());
+        assert!(materialized_saved_section_external_ids(&ambiguous_external_id).is_empty());
 
         let mut incomplete_segment_table = ambiguous_external_id;
         incomplete_segment_table
@@ -19953,7 +19980,10 @@ mod resolved_sketch_tests {
             .expect("segments")
             .opaque_rows
             .pop();
-        assert!(resolved_saved_spline_external_ids(&incomplete_segment_table).is_empty());
+        assert_eq!(
+            materialized_saved_section_external_ids(&incomplete_segment_table),
+            BTreeSet::from([42])
+        );
     }
 
     #[test]
