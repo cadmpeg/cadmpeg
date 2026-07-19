@@ -61,8 +61,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
-        let mut report = build_container_report(&scan, true);
-        crate::tickets::account_records(ctx, root, &ir, &mut report);
+        let report = build_container_report(&scan, true);
         return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
     }
 
@@ -115,12 +114,11 @@ fn finish_decode<'a>(
     root: View<'a>,
     scan: &ContainerScan<'a>,
     mut ir: CadIr,
-    mut report: DecodeReport,
+    report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
-    crate::tickets::account_records(ctx, root, &ir, &mut report);
     if !report.container_only {
         reject_unrepresentable_in_strict(ctx, &report)?;
     }

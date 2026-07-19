@@ -185,8 +185,8 @@ pub(crate) struct DecodeContext<'a> {
     mesh_budget: crate::mesh::MeshBudget,
     geometry_transferred: bool,
     phase_warnings: Vec<String>,
-    /// Typed loss notes raised when a semantic boundary resolves through a
-    /// [`Transfer`]. Distinct from `phase_warnings`, which aggregate into
+    /// Typed loss notes raised at semantic conversion boundaries. Distinct
+    /// from `phase_warnings`, which aggregate into
     /// untyped `DecodeDiagnostic` notes; these carry the boundary's own loss
     /// code and drain into the report's `losses` at finalization.
     typed_losses: Vec<LossNote>,
@@ -1964,11 +1964,8 @@ impl<'a> DecodeContext<'a> {
     /// naming the IR entities it produced (filtered to entities that survived
     /// [`finalize`](CadIr::finalize), so the disposition never names a pruned
     /// id). Every other record is conserved opaque as a native IR unknown
-    /// (`set_native_unknowns`) and byte-censused by the crate's own accounting
-    /// module, so it resolves [`Structural`](RecordDisposition::Structural): the
-    /// platform's checkable dispositions name model entities (`Typed`) or
-    /// retained-store blobs (`Retained`), and a native `UnknownRecord` is
-    /// neither. Rhino does not egress the platform retained store; byte
+    /// (`set_native_unknowns`) and resolves [`Preserved`](RecordDisposition::Preserved)
+    /// with that unknown record's id. Rhino does not egress the platform retained store; byte
     /// recovery rides the codec's own capped native opaque-record store.
     /// Routing undecoded records through `ctx.retain`
     /// would duplicate the codec's own capped IR retention purely as
@@ -1999,7 +1996,12 @@ impl<'a> DecodeContext<'a> {
                     Vec::new()
                 };
             if outputs.is_empty() {
-                ctx.resolve(ticket, RecordDisposition::Structural);
+                ctx.resolve(
+                    ticket,
+                    RecordDisposition::Preserved {
+                        records: vec![Self::mint_unknown_id(source_order).0],
+                    },
+                );
             } else {
                 ctx.resolve(ticket, RecordDisposition::Typed { outputs });
             }

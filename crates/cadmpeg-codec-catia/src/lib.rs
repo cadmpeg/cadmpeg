@@ -58,7 +58,6 @@ pub mod geometry;
 pub(crate) mod ledger;
 pub mod native;
 pub mod object_graph;
-pub(crate) mod tickets;
 pub mod topology;
 pub mod value_block;
 pub mod variant;

@@ -488,8 +488,7 @@ pub fn diff(
 }
 
 enum FidelitySummary {
-    /// Neither decode reported a sidecar (e.g. both inputs were CADIR JSON, or
-    /// both codecs are below L1).
+    /// Neither decode reported a sidecar, for example when both inputs are CADIR JSON.
     None,
     /// Only the left input reported a sidecar.
     OnlyLeft,

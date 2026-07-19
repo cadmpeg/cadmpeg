@@ -23,16 +23,14 @@ use crate::b5::{B5Graph, B5Loop, B5Surface};
 /// Transfer a complete B5 graph. Returns `false` without mutation when any
 /// referenced face, pcurve, edge endpoint, or loop chain remains unresolved.
 ///
-/// Each referenced surface resolves through a [`Transfer`]: an analytic carrier the decoder can read
-/// verbatim resolves [`Exact`](Transfer::Exact), while a plane whose stored
-/// axes are not orthonormal or a revolution carrier the transfer cannot express
-/// resolves [`Fallback`](Transfer::Fallback) to an opaque `Unknown` surface. An
+/// Each referenced surface is either transferred analytically or, when stored
+/// axes are not orthonormal or a revolution cannot be expressed, replaced by
+/// an opaque `Unknown` surface. An
 /// opaque substitute is not a tolerable reduction: the face's mandatory surface
 /// geometry was not transferred, so the note carries the
 /// [`GeometryNotTransferred`](LossCode::GeometryNotTransferred) code that strict
-/// mode refuses. Threading the substitution through a [`Builder`] makes the
-/// fallback unwritable without its note, so `losses` gains one entry per
-/// substituted carrier. `losses` is left untouched on every `false` return.
+/// mode refuses. `losses` gains one entry per substituted carrier and is left
+/// untouched on every `false` return.
 pub(crate) fn transfer(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,

@@ -130,7 +130,7 @@ fn compression_label(method: CompressionMethod) -> String {
 /// One archive entry's physical placement within the root address space.
 ///
 /// The compressed extent is the entry's byte range in the root `source` space;
-/// the L1 fidelity ledger ([`crate::fidelity`]) tiles it as an opaque payload
+/// the fidelity ledger ([`crate::fidelity`]) tiles it as an opaque payload
 /// span and derives the entry's own space from it (a slice of the root when
 /// stored, a decompression transform otherwise).
 #[derive(Debug, Clone)]
@@ -181,7 +181,7 @@ pub struct ContainerScan<'a> {
     /// decompression `Transform` for compressed ones.
     inflated_entries: BTreeMap<String, View<'a>>,
     /// Physical placement of every admitted entry within the root space, in
-    /// archive order. Drives the L1 fidelity ledger's coarse tiling.
+    /// archive order. Drives the fidelity ledger's coarse tiling.
     pub layout: Vec<EntryLayout>,
 }
 

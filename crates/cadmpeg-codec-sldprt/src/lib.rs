@@ -104,7 +104,7 @@ use std::io::Write;
 pub struct SldprtCodec;
 
 impl SldprtCodec {
-    /// Build the validated L1 source-fidelity sidecar for a `.sldprt` container.
+    /// Build the validated source-fidelity sidecar for a `.sldprt` container.
     ///
     /// Scans the outer container and produces the v2 [`SourceFidelity`] at
     /// Complete source tiling
