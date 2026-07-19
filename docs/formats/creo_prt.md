@@ -788,6 +788,10 @@ solved, one solved locus determines the other by copying the coordinate along
 the axis and reflecting the perpendicular coordinate through the axis. A
 complete saved endpoint or center supplies a solved locus without introducing a
 section-point identity.
+A three-item type-fourteen incidence whose first item is a sense-zero type-5
+point instead makes the following two selected loci centrally symmetric about
+that point entity. Senses `2`, `3`, and `4` select the same endpoint and center
+loci as other solver incidences.
 A two-item type-seventeen incidence stores two endpoint or center loci that
 share one sketch coordinate. Flag `1` selects the section `u` coordinate and
 flag `2` selects the section `v` coordinate. This discriminator defines the

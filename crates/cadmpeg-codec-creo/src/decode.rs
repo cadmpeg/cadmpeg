@@ -8858,6 +8858,11 @@ fn reconcile_constraint_entity_references(
             second,
             axis,
         } => locus_emitted(first) && locus_emitted(second) && emitted.contains(axis),
+        SketchConstraintDefinition::PointSymmetric {
+            first,
+            second,
+            center,
+        } => locus_emitted(first) && locus_emitted(second) && locus_emitted(center),
         SketchConstraintDefinition::Concentric { first, second }
         | SketchConstraintDefinition::Collinear { first, second }
         | SketchConstraintDefinition::Parallel { first, second }
@@ -8918,6 +8923,7 @@ fn reconcile_constraint_parameter_reference(
         | SketchConstraintDefinition::Concentric { .. }
         | SketchConstraintDefinition::Collinear { .. }
         | SketchConstraintDefinition::Symmetric { .. }
+        | SketchConstraintDefinition::PointSymmetric { .. }
         | SketchConstraintDefinition::Horizontal { .. }
         | SketchConstraintDefinition::Vertical { .. }
         | SketchConstraintDefinition::Parallel { .. }
@@ -9686,6 +9692,18 @@ fn section_skamp_constraints(
                                 "creo:featdefs:sketch_entity#{}:{}",
                                 definition.id, axis.entity_id
                             )),
+                        }
+                    }
+                    (14, [center, first, second])
+                        if center.sense == 0
+                            && section_skamp_is_point(definition, center)
+                            && section_skamp_endpoint(definition, first).is_some()
+                            && section_skamp_endpoint(definition, second).is_some() =>
+                    {
+                        SketchConstraintDefinition::PointSymmetric {
+                            first: section_skamp_endpoint(definition, first)?,
+                            second: section_skamp_endpoint(definition, second)?,
+                            center: section_skamp_locus(definition, center)?,
                         }
                     }
                     (17, [_, _]) => {
@@ -16900,6 +16918,46 @@ mod resolved_sketch_tests {
             BTreeMap::from([(101, 4.0)])
         );
         let constraints = section_skamp_constraints(&definition, &SketchId("sketch".into()));
+        let mut point_symmetry = definition.clone();
+        point_symmetry.relations.as_mut().expect("relations").skamps =
+            vec![crate::feature::FeatureSkamp {
+                id: 20,
+                kind: 14,
+                flags: 0,
+                status: 0,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 14,
+                        sense: 0,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 12,
+                        sense: 2,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 13,
+                        sense: 3,
+                    },
+                ],
+                offset: 96,
+            }];
+        synchronize_skamp_count(&mut point_symmetry);
+        assert_eq!(
+            section_skamp_constraints(&point_symmetry, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::PointSymmetric {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string()
+                )),
+                center: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:14".to_string()
+                )),
+            }
+        );
 
         assert!(matches!(
             constraints[0].0.definition,

@@ -361,6 +361,15 @@ pub enum SketchConstraintDefinition {
         /// Symmetry axis.
         axis: SketchEntityId,
     },
+    /// Two loci are centrally symmetric about a point locus.
+    PointSymmetric {
+        /// First symmetric locus.
+        first: SketchLocus,
+        /// Second symmetric locus.
+        second: SketchLocus,
+        /// Center of symmetry.
+        center: SketchLocus,
+    },
     /// Line is horizontal in sketch coordinates.
     Horizontal {
         /// Constrained entity.

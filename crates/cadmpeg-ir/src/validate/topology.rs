@@ -1482,6 +1482,18 @@ pub(super) fn check_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Find
                 ],
                 None,
             ),
+            Definition::PointSymmetric {
+                first,
+                second,
+                center,
+            } => (
+                vec![
+                    locus_entity(first).clone(),
+                    locus_entity(second).clone(),
+                    locus_entity(center).clone(),
+                ],
+                None,
+            ),
             Definition::DistanceLoci {
                 first,
                 second,
