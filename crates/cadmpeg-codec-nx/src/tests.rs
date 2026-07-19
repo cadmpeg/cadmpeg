@@ -5159,7 +5159,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         index_source_offsets: [108, 109, 110, 111],
     };
 
-    let uses = feature_input_column_row_uses(&[input], &[row], &[], &[]);
+    let uses = feature_input_column_row_uses(&[input], &[row], &[], &[], &[]);
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -5212,7 +5212,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         index_source_offsets: [112, 113, 114],
     };
 
-    let uses = feature_input_column_row_uses(&[input], &[], &[row], &[]);
+    let uses = feature_input_column_row_uses(&[input], &[], &[row], &[], &[]);
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -5228,8 +5228,8 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
 #[test]
 fn feature_input_column_row_uses_preserve_target_row_slots() {
     use crate::native::{
-        feature_input_column_row_uses, ColumnIndexRowKind, DataBlockTargetIndexRow,
-        FeatureInputBlock,
+        feature_input_column_row_uses, ColumnIndexRowKind, DataBlockColumnIndexTable,
+        DataBlockTargetIndexRow, FeatureInputBlock,
     };
 
     let input = FeatureInputBlock {
@@ -5261,13 +5261,33 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         index_source_offsets: [110, 111, 112],
     };
 
-    let uses = feature_input_column_row_uses(&[input], &[], &[], &[row]);
+    let table = DataBlockColumnIndexTable {
+        id: "column-table".into(),
+        section_ordinal: 0,
+        opening_linked_row: "opening-row".into(),
+        target_rows: vec!["target-row#3".into()],
+        linked_rows: vec!["suffix-row".into()],
+        first_target_index: 5,
+        last_target_index: 3,
+        source_entry: "entry".into(),
+        source_offset: 50,
+    };
+    let ambiguous = feature_input_column_row_uses(
+        &[input.clone()],
+        &[],
+        &[],
+        &[row.clone()],
+        &[table.clone(), table.clone()],
+    );
+    assert!(ambiguous.iter().all(|use_| use_.column_table.is_none()));
+    let uses = feature_input_column_row_uses(&[input], &[], &[], &[row], &[table]);
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
     assert_eq!(uses[0].input_slot, 2);
     assert_eq!(uses[0].row_kind, ColumnIndexRowKind::TargetIndex);
     assert_eq!(uses[0].column_row, "target-row#3");
+    assert_eq!(uses[0].column_table.as_deref(), Some("column-table"));
     assert_eq!(uses[0].row_slot, 0);
     assert_eq!(uses[0].source_offset, 105);
     assert_eq!(uses[1].row_slot, 3);

@@ -4342,6 +4342,9 @@ pub struct FeatureInputColumnRowUse {
     pub row_kind: ColumnIndexRowKind,
     /// Native row identity in its grammar-specific arena.
     pub column_row: String,
+    /// Unique complete composite table containing the row, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub column_table: Option<String>,
     /// Zero-based slot in the row's four-block lane.
     pub row_slot: u8,
     /// Exact shared target in the native `data_blocks` arena.
@@ -6383,7 +6386,20 @@ pub fn feature_input_column_row_uses(
     index_rows: &[DataBlockIndexRow],
     linked_rows: &[DataBlockLinkedIndexRow],
     target_rows: &[DataBlockTargetIndexRow],
+    tables: &[DataBlockColumnIndexTable],
 ) -> Vec<FeatureInputColumnRowUse> {
+    let mut table_by_row = BTreeMap::<&str, Option<&str>>::new();
+    for table in tables {
+        for row in std::iter::once(table.opening_linked_row.as_str())
+            .chain(table.target_rows.iter().map(String::as_str))
+            .chain(table.linked_rows.iter().map(String::as_str))
+        {
+            table_by_row
+                .entry(row)
+                .and_modify(|value| *value = None)
+                .or_insert(Some(table.id.as_str()));
+        }
+    }
     let mut slots_by_block = BTreeMap::<&str, Vec<(&str, ColumnIndexRowKind, usize, u64)>>::new();
     for row in index_rows {
         for (slot, data_block) in row.data_blocks.iter().enumerate() {
@@ -6443,6 +6459,10 @@ pub fn feature_input_column_row_uses(
                         input_slot: input.input_slot,
                         row_kind: *row_kind,
                         column_row: (*row).to_string(),
+                        column_table: table_by_row
+                            .get(row)
+                            .and_then(|table| *table)
+                            .map(str::to_string),
                         row_slot: *slot as u8,
                         data_block: input.data_block.clone(),
                         source_offset: *source_offset,

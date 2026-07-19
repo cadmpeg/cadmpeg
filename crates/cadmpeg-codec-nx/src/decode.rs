@@ -7612,6 +7612,7 @@ fn attach_native_object_model(
         &data_block_index_rows,
         &data_block_linked_index_rows,
         &data_block_target_index_rows,
+        &data_block_column_index_tables,
     );
     let feature_parameter_bindings = crate::native::feature_parameter_bindings(
         &feature_input_blocks,
