@@ -699,6 +699,58 @@ fn torus_parameter_trailer_retains_typed_outline_frame() {
 }
 
 #[test]
+fn torus_parameter_trailer_retains_tagged_radius_overrides() {
+    let cases = [
+        (
+            vec![
+                0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff,
+            ],
+            0.249_999_999_951_747_04,
+        ),
+        (
+            vec![
+                0x18, 0x0d, 0x2a, 0xe8, 0x00, 0x00, 0x0e, 0x01, 0x29, 0xdf, 0xff,
+            ],
+            0.75,
+        ),
+    ];
+    for (body, expected_radius2) in cases {
+        let mut payload = visibgeom_payload(1, 0);
+        payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        let data = build_prt("c", &[("VisibGeom", payload)]);
+        let scan = container::scan_bytes(data.clone());
+
+        let overrides = scan.surface_parameters[0]
+            .torus_radius_overrides(0x26)
+            .expect("tagged torus radius overrides");
+        assert_eq!(overrides.radius1, 0.499_999_999_999_999_94);
+        assert_eq!(overrides.radius2, expected_radius2);
+        assert_eq!(overrides.offset, 0);
+        assert_eq!(
+            scan.surface_parameters[0].scalar_values,
+            [expected_radius2, 0.499_999_999_999_999_94]
+        );
+        assert!(scan.surface_parameters[0]
+            .torus_radius_overrides(0x24)
+            .is_none());
+
+        let result =
+            decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+        let native = &result.ir.native.namespace("creo").unwrap().arenas["surface_parameters"][0];
+        assert_eq!(
+            native.fields["torus_radius_overrides"]["radius1"],
+            0.499_999_999_999_999_94
+        );
+        assert_eq!(
+            native.fields["torus_radius_overrides"]["radius2"],
+            expected_radius2
+        );
+    }
+}
+
+#[test]
 fn decode_preserves_surface_parameter_slots_in_native_ir() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);

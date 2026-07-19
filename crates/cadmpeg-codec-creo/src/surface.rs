@@ -308,6 +308,25 @@ pub struct TorusOutlineFrame {
     pub offset: usize,
 }
 
+/// Tagged radius overrides in a positional torus-or-sphere body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TorusRadiusOverrides {
+    /// Major torus radius, or zero for a sphere.
+    pub radius1: f64,
+    /// Minor torus radius, or sphere radius.
+    pub radius2: f64,
+    /// Byte offset of the `18 0d` radius trailer marker.
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TorusRadiusOverrideLayout {
+    overrides: TorusRadiusOverrides,
+    radius2_start: usize,
+    radius2_end: usize,
+    radius1_start: usize,
+}
+
 /// One contiguous positional scalar frame with no intervening bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceParameterScalarFrame {
@@ -387,6 +406,15 @@ pub struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    /// Decode the tagged radius trailer of a positional torus-or-sphere body.
+    #[must_use]
+    pub fn torus_radius_overrides(&self, type_byte: u8) -> Option<TorusRadiusOverrides> {
+        if type_byte != 0x26 {
+            return None;
+        }
+        torus_radius_override_layout(&self.body).map(|layout| layout.overrides)
+    }
+
     /// Decode the terminal outline frame of a positional torus-or-sphere body.
     #[must_use]
     pub fn torus_outline_frame(&self, type_byte: u8) -> Option<TorusOutlineFrame> {
@@ -1284,6 +1312,37 @@ fn torus_outline_markers(body: &[u8]) -> Vec<(usize, usize, u32)> {
         .collect()
 }
 
+fn torus_radius_override_layout(body: &[u8]) -> Option<TorusRadiusOverrideLayout> {
+    let mut markers = body
+        .windows(2)
+        .enumerate()
+        .filter(|(_, bytes)| *bytes == [0x18, 0x0d]);
+    let (offset, _) = markers.next()?;
+    markers.next().is_none().then_some(())?;
+    let radius2_start = offset + 2;
+    let (radius2, radius2_end) = scalar::decode(body, radius2_start)?;
+    let radius1_marker = (radius2_end..=radius2_end.checked_add(1)?)
+        .find(|candidate| body.get(*candidate) == Some(&0x0e))?;
+    let mut radius1_candidates = (radius1_marker + 1..=radius1_marker + 2).filter_map(|start| {
+        let (value, end) = scalar::decode(body, start)?;
+        (end == body.len()).then_some((value, start))
+    });
+    let (radius1, radius1_start) = radius1_candidates.next()?;
+    radius1_candidates.next().is_none().then_some(())?;
+    (radius1.is_finite() && radius1 >= 0.0 && radius2.is_finite() && radius2 > 0.0).then_some(
+        TorusRadiusOverrideLayout {
+            overrides: TorusRadiusOverrides {
+                radius1,
+                radius2,
+                offset,
+            },
+            radius2_start,
+            radius2_end,
+            radius1_start,
+        },
+    )
+}
+
 fn scalar_tokens(
     kind: SurfaceKind,
     body: &[u8],
@@ -1295,6 +1354,11 @@ fn scalar_tokens(
     } else {
         Vec::new()
     };
+    let radius_layout = if kind == SurfaceKind::TorusOrSphere {
+        torus_radius_override_layout(body)
+    } else {
+        None
+    };
     let mut cursor = 0;
     while cursor < body.len() {
         if let Some((_, end, _)) = outline_markers
@@ -1304,11 +1368,27 @@ fn scalar_tokens(
             cursor = *end;
             continue;
         }
+        if let Some(layout) = radius_layout {
+            if cursor == layout.overrides.offset {
+                cursor = layout.radius2_start;
+                continue;
+            }
+            if cursor == layout.radius2_end {
+                cursor = layout.radius1_start;
+                continue;
+            }
+        }
         if let Some((value, next)) = decode_row_scalar(kind, body, cursor, cache) {
             if outline_markers
                 .iter()
                 .any(|(offset, _, _)| cursor < *offset && next > *offset)
             {
+                cursor += 1;
+                continue;
+            }
+            if radius_layout.is_some_and(|layout| {
+                cursor < layout.overrides.offset && next > layout.overrides.offset
+            }) {
                 cursor += 1;
                 continue;
             }

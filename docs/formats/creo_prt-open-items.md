@@ -9,7 +9,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - DICT sign lattices outside the defined scalar lanes are unspecified.
 - `double_xar` slot bodies other than the defined literal and recursive
   placeholder images are unspecified, including variable-length `e5` forms.
-- Per-instance overrides for cone half-angle and `geom_type = 26` torus/sphere radii are unspecified.
+- Per-instance overrides for cone half-angle and `geom_type = 26` torus/sphere
+  radius bodies outside the tagged radius trailer are unspecified.
 - The joins from later positional spline rows to their prototype data and from
   spline surfaces to surface-intersection curves are unspecified.
 - The prototype-adjacent `tab_cyl` instance rows use a construction distinct

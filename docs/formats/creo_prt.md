@@ -414,6 +414,12 @@ is six contiguous positional-row scalars and ends at the bounded body end. The
 trailer transfers as `torus_outline_frame`; it does not assign radius or local
 frame roles.
 
+A tagged `geom_type = 26` radius trailer begins with `18 0d`, followed by the
+positive `radius2` scalar, zero or one selector byte, and `0e`. Zero or one
+selector byte after `0e` precedes the terminal positive `radius1` scalar. The
+`radius1` scalar ends at the bounded body end. `radius1 = 0` selects a sphere;
+a positive `radius1` selects a torus.
+
 Decoded positional parameter scalars retain their source offset and token length. Structural field binding uses these spans; scalar order alone does not assign frame or radius roles.
 The unresolved seven-byte `73` and `bb` forms retain their exact bytes as one
 scalar slot. Bytes inside either token cannot open another scalar or terminate

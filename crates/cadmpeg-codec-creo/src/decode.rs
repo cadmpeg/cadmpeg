@@ -1593,6 +1593,7 @@ struct CreoSurfaceParameterRecord {
     terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
     tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
     torus_outline_frame: Option<CreoTorusOutlineFrame>,
+    torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
     extrusion_direction: Option<[f64; 3]>,
     row_offset: usize,
     body_offset: usize,
@@ -1609,6 +1610,13 @@ struct CreoTabulatedCylinderFrame {
 struct CreoTorusOutlineFrame {
     values: [f64; 6],
     selector: u32,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoTorusRadiusOverrides {
+    radius1: f64,
+    radius2: f64,
     offset: usize,
 }
 
@@ -2182,6 +2190,13 @@ fn surface_parameter_records(
                         offset: frame.offset,
                     }
                 }),
+                torus_radius_overrides: record.torus_radius_overrides(row.type_byte).map(
+                    |overrides| CreoTorusRadiusOverrides {
+                        radius1: overrides.radius1,
+                        radius2: overrides.radius2,
+                        offset: overrides.offset,
+                    },
+                ),
                 extrusion_direction: (row.kind == crate::surface::SurfaceKind::Extrusion)
                     .then(|| record.extrusion_direction(row.type_byte))
                     .flatten(),
