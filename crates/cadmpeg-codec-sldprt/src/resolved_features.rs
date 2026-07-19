@@ -2004,6 +2004,25 @@ mod marker_tests {
     }
 
     #[test]
+    fn compact_extrusion_through_all_accepts_a_retained_dimension_child() {
+        let mut payload = vec![0; 26];
+        payload[..2].copy_from_slice(&[0x0c, 0x8e]);
+        payload[4] = 1;
+        payload[18] = 1;
+        payload.extend_from_slice(b"\xff\xff\x01\x00\x16\x00moDisplayDistanceDim_c");
+        let block = payload.len();
+        payload.resize(block + 16, 0);
+        payload[block + 9] = 0x20;
+        payload.extend_from_slice(&[0xff, 0xff, 0, 0, 3]);
+        payload.extend_from_slice(&[0xff, 0xff, 0xff, 0xff]);
+        payload.extend_from_slice(&[0, 0, 0, 0, 0, 0, 0x80, 0xbf]);
+
+        assert!(compact_extrusion_through_all_at(&payload, 0));
+        payload[22] = 1;
+        assert!(!compact_extrusion_through_all_at(&payload, 0));
+    }
+
+    #[test]
     fn compact_extrusion_mid_plane_requires_the_dimension_child() {
         let dimension_tail = |payload: &mut Vec<u8>| {
             let block = payload.len();
@@ -11894,7 +11913,9 @@ pub(crate) fn project_compact_combine_paths(
 
 pub(crate) fn compact_extrusion_through_all_at(payload: &[u8], offset: usize) -> bool {
     compact_extrusion_end_spec_header(payload, offset, 1)
-        && compact_extrusion_traversal_tail_at(payload, offset)
+        && (compact_extrusion_traversal_tail_at(payload, offset)
+            || (payload.get(offset + 22..offset + 26) == Some(&[0, 0, 0, 0])
+                && compact_extrusion_dimension_child_at(payload, offset + 26).is_some()))
 }
 
 pub(crate) fn compact_extrusion_through_next_at(payload: &[u8], offset: usize) -> bool {
