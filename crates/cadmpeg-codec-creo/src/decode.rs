@@ -9281,23 +9281,16 @@ fn section_angular_entities(
     };
     let order_table = definition.order_table.as_ref()?;
     let external_id = |internal_id| {
-        let matching = order_table
-            .rows
-            .iter()
-            .filter(|row| row.internal_id == internal_id)
-            .collect::<Vec<_>>();
-        let [row] = matching.as_slice() else {
-            return None;
-        };
+        let external_id = order_table.external_id(internal_id)?;
         let matching_segments = segments
             .iter()
             .filter(|segment| {
-                segment.external_id == row.external_id
+                segment.external_id == external_id
                     && segment.kind == crate::feature::FeatureSegmentKind::Line
             })
             .collect::<Vec<_>>();
-        (known_entities.contains(&row.external_id) && matching_segments.len() == 1)
-            .then_some(row.external_id)
+        (known_entities.contains(&external_id) && matching_segments.len() == 1)
+            .then_some(external_id)
     };
     let [first, second] = [first_internal, second_internal].map(external_id);
     let [Some(first), Some(second)] = [first, second] else {
@@ -18901,6 +18894,21 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
+        let mut incomplete_angle_order = angular_dimension.clone();
+        incomplete_angle_order
+            .order_table
+            .as_mut()
+            .expect("order table")
+            .declared_count = 3;
+        assert!(matches!(
+            section_dimension_constraints(
+                &incomplete_angle_order,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
         let mut ambiguous_angle = angular_dimension.clone();
         ambiguous_angle
             .order_table
@@ -18913,6 +18921,11 @@ mod resolved_sketch_tests {
                 bitmask: 1,
                 offset: 92,
             });
+        ambiguous_angle
+            .order_table
+            .as_mut()
+            .expect("order table")
+            .declared_count = 3;
         assert!(matches!(
             section_dimension_constraints(
                 &ambiguous_angle,

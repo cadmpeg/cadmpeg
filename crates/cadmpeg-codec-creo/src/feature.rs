@@ -1097,7 +1097,14 @@ impl FeatureOrderTable {
             .iter()
             .filter(|row| row.internal_id == internal_id);
         let row = matches.next()?;
-        matches.next().is_none().then_some(row.external_id)
+        (matches.next().is_none()
+            && self
+                .rows
+                .iter()
+                .filter(|candidate| candidate.external_id == row.external_id)
+                .count()
+                == 1)
+            .then_some(row.external_id)
     }
 
     /// Resolve a section entity identifier to its generated-entity position.
@@ -1108,7 +1115,14 @@ impl FeatureOrderTable {
             .iter()
             .filter(|row| row.external_id == external_id);
         let row = matches.next()?;
-        matches.next().is_none().then_some(row.internal_id)
+        (matches.next().is_none()
+            && self
+                .rows
+                .iter()
+                .filter(|candidate| candidate.internal_id == row.internal_id)
+                .count()
+                == 1)
+            .then_some(row.internal_id)
     }
 }
 
@@ -7791,6 +7805,7 @@ mod tests {
             offset: 20,
         });
         assert_eq!(duplicate_external.internal_id(10), None);
+        assert_eq!(duplicate_external.external_id(2), None);
         let mut duplicate_internal = order;
         duplicate_internal.declared_count += 1;
         duplicate_internal.rows.push(FeatureOrderRow {
@@ -7800,6 +7815,7 @@ mod tests {
             offset: 21,
         });
         assert_eq!(duplicate_internal.external_id(2), None);
+        assert_eq!(duplicate_internal.internal_id(10), None);
     }
 
     #[test]

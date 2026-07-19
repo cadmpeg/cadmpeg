@@ -910,9 +910,10 @@ constraint.
 A type-one relation whose selected dimension is angular and whose first
 operand vector is `a=[first_entity,second_entity,null,1]` measures the angle
 between two line entities. The first two values are internal identifiers in
-`order_ptr`; each must map uniquely to a distinct `segtab` line. Their stored
-order supplies the two neutral angle operands. The remaining operand vectors
-and the relation sign retain the native angle-direction selectors.
+`order_ptr`; the complete order table must map each uniquely to a distinct
+`segtab` line. Their stored order supplies the two neutral angle operands. The
+remaining operand vectors and the relation sign retain the native
+angle-direction selectors.
 
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 `c=[15,0,0,0]`, and sign `1` binds the selected dimension value to the
@@ -1953,7 +1954,7 @@ the row may carry six-byte `82..8f` state tokens and standalone `0f`, `18`, or
 stored XYZ endpoints. In this lane, `18 e0` stores a standalone zero followed
 by a named-record opener and is not dictionary index `e0`.
 
-A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. The internal identifier must occur on exactly one saved entity before this join applies. Saved rows sharing an internal identifier remain independent construction entities identified by their row offsets. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
+A saved entity identifier is an `order_table.int_id`; joining through that row's `ext_id` binds its evaluated geometry to the corresponding `segtab` entity. A join requires a complete order table and a row whose internal and external identifiers each occur exactly once. The internal identifier must occur on exactly one saved entity before this join applies. Saved rows sharing an internal identifier remain independent construction entities identified by their row offsets. A saved line with two complete section-space XY endpoints supplies that entity's line geometry when its `var_arr` endpoints are relation-backed. The saved-entity and solved-`segtab` sets are one-to-one by entity family. After explicit `order_table` joins, exactly one unmatched saved entity and one unmatched solved entity of the same family bind as the unique remaining pair; multiple unmatched pairs remain unresolved.
 
 When a unique decoded `segtab` row and a unique `order_table` join bind a
 complete saved line, arc, circle, or spline to an opaque segment family, the
