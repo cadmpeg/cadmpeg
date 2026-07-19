@@ -1460,46 +1460,48 @@ pub(crate) fn direct_face_selection(
     }
     let members = matching
         .iter()
-        .map(|operand| (operand.id.as_str(), operand.resolved_face_slot))
+        .map(|operand| (operand.id.as_str(), operand.resolved_face_slots.as_slice()))
         .collect::<Vec<_>>();
     let feature_id = neutral_feature_id(scope);
     let feature_key = feature_id
         .0
         .split_once('#')
         .map_or(feature_id.0.as_str(), |(_, key)| key);
+    let historical_face = |previous_state_id, slot| {
+        HistoricalFaceId(format!(
+            "f3d:history-input:face#{}:{}:{previous_state_id}:{slot}",
+            feature_key.len(),
+            feature_key,
+        ))
+    };
     let faces = match scope.previous_history_state_id {
-        Some(previous_state_id) if members.iter().all(|(_, face)| face.is_some()) => {
+        Some(previous_state_id) if members.iter().all(|(_, faces)| !faces.is_empty()) => {
+            let mut resolved = Vec::new();
+            for slot in members.iter().flat_map(|(_, faces)| faces.iter().copied()) {
+                let face = historical_face(previous_state_id, slot);
+                if !resolved.contains(&face) {
+                    resolved.push(face);
+                }
+            }
             FaceSelection::Historical {
                 state: feature_input_topology_id(&feature_id, previous_state_id),
-                faces: members
-                    .iter()
-                    .filter_map(|(_, face)| *face)
-                    .map(|face| {
-                        HistoricalFaceId(format!(
-                            "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
-                            feature_key.len(),
-                            feature_key
-                        ))
-                    })
-                    .collect(),
+                faces: resolved,
                 native: scope.id.clone(),
             }
         }
-        Some(previous_state_id) if members.iter().any(|(_, face)| face.is_some()) => {
+        Some(previous_state_id) if members.iter().any(|(_, faces)| !faces.is_empty()) => {
             let mut faces = Vec::new();
             let mut unresolved = Vec::new();
-            for (identity, face) in &members {
-                if let Some(face) = face {
-                    let face = HistoricalFaceId(format!(
-                        "f3d:history-input:face#{}:{}:{previous_state_id}:{face}",
-                        feature_key.len(),
-                        feature_key,
-                    ));
-                    if !faces.contains(&face) {
-                        faces.push(face);
-                    }
-                } else {
+            for (identity, slots) in &members {
+                if slots.is_empty() {
                     unresolved.push((*identity).to_owned());
+                } else {
+                    for slot in *slots {
+                        let face = historical_face(previous_state_id, *slot);
+                        if !faces.contains(&face) {
+                            faces.push(face);
+                        }
+                    }
                 }
             }
             FaceSelection::HistoricalPartial {
@@ -3549,9 +3551,13 @@ fn resolved_profile_face_group(
         if matches.next().is_some() {
             return None;
         }
-        let face = operand.resolved_face_slot?;
-        if !faces.contains(&face) {
-            faces.push(face);
+        if operand.resolved_face_slots.is_empty() {
+            return None;
+        }
+        for face in &operand.resolved_face_slots {
+            if !faces.contains(face) {
+                faces.push(*face);
+            }
         }
     }
     (!faces.is_empty()).then(|| {
@@ -3578,10 +3584,14 @@ fn resolved_profile_face_group(
 }
 
 fn resolved_face_operand(operand: &DesignFaceOperand) -> Option<Vec<cadmpeg_ir::ids::FaceId>> {
-    if let Some(slot) = operand.resolved_face_slot {
-        return Some(vec![cadmpeg_ir::ids::FaceId(format!(
-            "f3d:brep:entity#{slot}"
-        ))]);
+    if !operand.resolved_face_slots.is_empty() {
+        return Some(
+            operand
+                .resolved_face_slots
+                .iter()
+                .map(|slot| cadmpeg_ir::ids::FaceId(format!("f3d:brep:entity#{slot}")))
+                .collect(),
+        );
     }
     let candidates = face_operand_candidates(operand);
     if !operand.alternate_selector_candidate_faces.is_empty() {
@@ -3770,9 +3780,7 @@ fn retain_face_operand_resolution(
             && operand.scope_record_index == group.scope_record_index
             && group.members.contains(&operand.record_index)
             && face_operand_candidates(operand).contains(face)
-            && operand
-                .resolved_face_slot
-                .is_none_or(|resolved| resolved == slot)
+            && (operand.resolved_face_slots.is_empty() || operand.resolved_face_slots == [slot])
     });
     let Some(operand) = matches.next() else {
         return false;
@@ -3780,7 +3788,7 @@ fn retain_face_operand_resolution(
     if matches.next().is_some() {
         return false;
     }
-    operand.resolved_face_slot = Some(slot);
+    operand.resolved_face_slots = vec![slot];
     true
 }
 
@@ -15995,7 +16003,7 @@ fn parse_face_operand(
         preceding_candidate_faces: Vec::new(),
         changed_candidate_faces: Vec::new(),
         historical_support_contexts: Vec::new(),
-        resolved_face_slot: None,
+        resolved_face_slots: Vec::new(),
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -23745,7 +23753,7 @@ mod relation_tests {
         assert_eq!(operand.recipe_record_index, 103);
         assert_eq!(operand.recipe_kind, ConstructionRecipeKind::BoundedFace);
         assert_eq!(operand.recipe_id, face_recipe.id);
-        assert_eq!(operand.resolved_face_slot, None);
+        assert!(operand.resolved_face_slots.is_empty());
         assert_eq!(
             operand.recipe_program_offset,
             face_recipe_name_at as u64 + 24
@@ -23916,7 +23924,7 @@ mod relation_tests {
             super::resolve_face_operand_history_candidates(&operand),
             Some(50)
         );
-        operand.resolved_face_slot = Some(50);
+        operand.resolved_face_slots = vec![50];
         assert!(matches!(
             resolved_face_group(&group, std::slice::from_ref(&operand)),
             Some(FaceSelection::Resolved { faces, native })
@@ -23935,14 +23943,14 @@ mod relation_tests {
                     && faces[0].0.ends_with(":49:50")
                     && native == historical_face_scope.id
         ));
-        operand.resolved_face_slot = None;
+        operand.resolved_face_slots.clear();
         assert!(super::retain_face_operand_resolution(
             &group,
             std::slice::from_mut(&mut operand),
             &FaceId("f3d:brep:entity#50".into()),
         ));
-        assert_eq!(operand.resolved_face_slot, Some(50));
-        operand.resolved_face_slot = None;
+        assert_eq!(operand.resolved_face_slots, [50]);
+        operand.resolved_face_slots.clear();
         operand.alternate_selector_candidate_faces = vec![
             FaceId("f3d:brep:entity#50".into()),
             FaceId("f3d:brep:entity#51".into()),
@@ -23953,7 +23961,7 @@ mod relation_tests {
                 if faces == operand.alternate_selector_candidate_faces && native == group.id
         ));
         operand.alternate_selector_candidate_faces.clear();
-        operand.resolved_face_slot = Some(50);
+        operand.resolved_face_slots = vec![50];
         let mut ambiguous = [operand.clone(), operand];
         assert!(!super::retain_face_operand_resolution(
             &group,

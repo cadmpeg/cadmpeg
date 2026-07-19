@@ -670,7 +670,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         operand.preceding_candidate_faces.clear();
         operand.changed_candidate_faces.clear();
         operand.historical_support_contexts.clear();
-        operand.resolved_face_slot = None;
+        operand.resolved_face_slots.clear();
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -714,10 +714,80 @@ pub(crate) fn bind_face_operand_history_candidates(
             topology,
             &changed_faces,
         );
-        operand.resolved_face_slot =
-            crate::design::resolve_face_operand_history_candidates(operand);
+        operand.resolved_face_slots = match scope.direct_face_operation {
+            Some(crate::records::DesignDirectFaceOperation::OffsetFaces { .. }) => {
+                resolve_direct_face_recipe_clauses(
+                    &operand.recipe_references,
+                    topology,
+                    &changed_faces,
+                )
+            }
+            _ => crate::design::resolve_face_operand_history_candidates(operand)
+                .into_iter()
+                .collect(),
+        };
     }
     bind_profile_face_group_cardinality(operands, scopes, operand_groups, histories);
+}
+
+fn resolve_direct_face_recipe_clauses(
+    references: &[crate::records::DesignRecipeReference],
+    topology: &crate::history_records::AsmHistoricalTopology,
+    changed_faces: &HashSet<i64>,
+) -> Vec<i64> {
+    let mut clauses = Vec::<(u64, u64, Vec<&crate::records::DesignRecipeReference>)>::new();
+    for reference in references {
+        let key = (reference.selector_offset, reference.token_offset);
+        if let Some((_, _, references)) = clauses
+            .iter_mut()
+            .find(|(selector, token, _)| (*selector, *token) == key)
+        {
+            references.push(reference);
+        } else {
+            clauses.push((key.0, key.1, vec![reference]));
+        }
+    }
+    let topology_faces = topology.faces.iter().copied().collect::<HashSet<_>>();
+    let mut resolved = Vec::new();
+    for (_, _, references) in clauses {
+        let mut intersection = None::<HashSet<i64>>;
+        for reference in references {
+            let candidates = if reference.candidate_faces.is_empty() {
+                &reference.alternate_selector_faces
+            } else {
+                &reference.candidate_faces
+            };
+            let candidates = candidates
+                .iter()
+                .filter_map(|face| stable_ref(&face.0))
+                .filter(|face| topology_faces.contains(face) && changed_faces.contains(face))
+                .collect::<HashSet<_>>();
+            if candidates.is_empty() {
+                return Vec::new();
+            }
+            intersection = Some(match intersection {
+                None => candidates,
+                Some(mut intersection) => {
+                    intersection.retain(|face| candidates.contains(face));
+                    intersection
+                }
+            });
+        }
+        let Some(intersection) = intersection else {
+            return Vec::new();
+        };
+        let mut candidates = intersection.into_iter();
+        let Some(face) = candidates.next() else {
+            return Vec::new();
+        };
+        if candidates.next().is_some() {
+            return Vec::new();
+        }
+        if !resolved.contains(&face) {
+            resolved.push(face);
+        }
+    }
+    resolved
 }
 
 fn bind_profile_face_group_cardinality(
@@ -763,7 +833,7 @@ fn bind_profile_face_group_cardinality(
         }
         if indices.iter().any(|index| {
             let operand = &operands[*index];
-            operand.resolved_face_slot.is_some()
+            !operand.resolved_face_slots.is_empty()
                 || !crate::design::face_operand_candidates(operand).is_empty()
                 || operand.recipe_references.iter().any(|reference| {
                     !reference.candidate_faces.is_empty()
@@ -814,7 +884,7 @@ fn bind_profile_face_group_cardinality(
             let face_id = cadmpeg_ir::ids::FaceId(format!("f3d:brep:entity#{face}"));
             operands[index].preceding_candidate_faces = vec![face_id.clone()];
             operands[index].changed_candidate_faces = vec![face_id];
-            operands[index].resolved_face_slot = Some(face);
+            operands[index].resolved_face_slots = vec![face];
         }
     }
 }
@@ -3932,5 +4002,53 @@ mod tests {
             profile_face_group_cardinality_candidates(&ambiguous, &changed, 3),
             None
         );
+    }
+
+    #[test]
+    fn direct_face_recipe_clauses_resolve_ordered_changed_intersections() {
+        use cadmpeg_ir::ids::FaceId;
+
+        let reference =
+            |selector_offset, candidates: &[i64]| crate::records::DesignRecipeReference {
+                selector: 1,
+                selector_offset,
+                token: "x".into(),
+                token_offset: selector_offset + 1,
+                design_reference: 1,
+                design_reference_offset: selector_offset + 2,
+                candidate_faces: candidates
+                    .iter()
+                    .map(|face| FaceId(format!("f3d:brep:entity#{face}")))
+                    .collect(),
+                candidate_edges: Vec::new(),
+                alternate_selector_faces: Vec::new(),
+                alternate_selector_edges: Vec::new(),
+            };
+        let references = [
+            reference(10, &[1, 2]),
+            reference(10, &[2, 3]),
+            reference(20, &[4, 5]),
+            reference(20, &[4, 6]),
+            reference(30, &[2]),
+        ];
+        let topology = AsmHistoricalTopology {
+            faces: vec![1, 2, 3, 4, 5, 6],
+            ..AsmHistoricalTopology::default()
+        };
+
+        assert_eq!(
+            resolve_direct_face_recipe_clauses(
+                &references,
+                &topology,
+                &[2, 4].into_iter().collect()
+            ),
+            [2, 4]
+        );
+        assert!(resolve_direct_face_recipe_clauses(
+            &references,
+            &topology,
+            &[2].into_iter().collect()
+        )
+        .is_empty());
     }
 }

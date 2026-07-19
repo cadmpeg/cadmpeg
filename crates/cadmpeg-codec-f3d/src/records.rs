@@ -1852,10 +1852,10 @@ pub struct DesignFaceOperand {
     /// owners in the immediately preceding historical topology.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_support_contexts: Vec<DesignHistoricalFaceSupportContext>,
-    /// Stable historical face slot proven by the preceding topology or exact
-    /// feature transition.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub resolved_face_slot: Option<i64>,
+    /// Ordered stable historical face slots proven by the preceding topology
+    /// or exact feature transition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_face_slots: Vec<i64>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.
