@@ -41,3 +41,4 @@
 - Reconciliation between generated feature-local edges selected by entry-form `moCompEdge_c` paths and edges that survive in the final B-rep is unresolved. Compact-ID edge vectors remain unresolved.
 - Reconciliation between generated feature-local faces selected by `moCompSurfaceBody_c` paths and faces that survive in the final B-rep is unresolved.
 - General-curve-reference forms without a component-profile source record or an immediately preceding uniquely resolved profile feature remain unmapped to sketch or B-rep geometry. Composite sweep-profile forms not carried by a unique enclosed planar profile stream or an immediately following uniquely resolved profile feature and compact Boolean operation codes other than join code `15` are unresolved.
+- The discriminator between the eight- and nine-scalar compact line-reference forms is unresolved when both final-triple interpretations are unit vectors.

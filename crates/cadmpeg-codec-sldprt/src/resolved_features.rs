@@ -3770,11 +3770,15 @@ fn compact_line_reference_direction(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
+    excluded_handles: &[usize],
 ) -> Option<Vector3> {
     const HANDLES: [u8; 8] = [0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff];
     let end = object_end.min(payload.len());
     let final_handle = end.checked_sub(80).filter(|end| *end >= object_start)?;
     let mut candidates = (object_start..=final_handle).flat_map(|handle| {
+        if excluded_handles.contains(&handle) {
+            return Vec::new();
+        }
         let Some(record) = payload.get(handle..end) else {
             return Vec::new();
         };
@@ -3785,7 +3789,7 @@ fn compact_line_reference_direction(
         else {
             return Vec::new();
         };
-        if record[..8] != HANDLES || record[8..12] != [0; 4] || address == 0 || address == 0x2af8 {
+        if record[..8] != HANDLES || record[8..12] != [0; 4] || address == 0 {
             return Vec::new();
         }
         let scalar = |offset: usize| {
@@ -3809,11 +3813,15 @@ fn compact_line_reference_direction(
             && record.get(104..112) == Some(&[1, 0, 0, 0, 1, 0, 0, 0])
             && record.get(112..128) == Some(&[0; 16])
         {
-            directions.extend(direction_at(80));
+            if let Some(direction) = direction_at(80) {
+                directions.push(direction);
+                return directions;
+            }
         }
         if record.get(16..24) == Some(&[0; 8]) {
             if record.get(80..88) == Some(&[0; 8]) {
                 directions.extend(direction_at(64));
+                directions.extend(direction_at(72));
             } else {
                 directions.extend(direction_at(56));
             }
@@ -4255,7 +4263,7 @@ pub(crate) fn bind_pattern_inputs(
                     .map_or(lane.native_payload.len(), |(offset, _)| {
                         usize::try_from(*offset).unwrap_or(lane.native_payload.len())
                     });
-                let mut directions = lane
+                let declarations = lane
                     .classes
                     .iter()
                     .filter(|class| {
@@ -4263,15 +4271,24 @@ pub(crate) fn bind_pattern_inputs(
                             && class.offset > starts[start_index].0
                             && usize::try_from(class.offset).is_ok_and(|offset| offset < end)
                     })
+                    .collect::<Vec<_>>();
+                let mut directions = declarations
+                    .iter()
                     .filter_map(|class| {
                         line_reference_direction(&lane.native_payload, class.offset)
                     })
                     .collect::<Vec<_>>();
                 if let Ok(start) = usize::try_from(starts[start_index].0) {
+                    let excluded_handles = declarations
+                        .iter()
+                        .filter_map(|class| usize::try_from(class.offset).ok())
+                        .flat_map(|offset| [offset + 136, offset + 144])
+                        .collect::<Vec<_>>();
                     directions.extend(compact_line_reference_direction(
                         &lane.native_payload,
                         start,
                         end,
+                        &excluded_handles,
                     ));
                 }
                 directions.sort_by_key(|direction| {
@@ -20101,6 +20118,15 @@ mod profile_join_tests {
             line_reference_direction(&native_payload, line_ref_offset as u64),
             Some(Vector3::new(-1.0, 0.0, 0.0))
         );
+        assert_eq!(
+            compact_line_reference_direction(
+                &native_payload,
+                0,
+                native_payload.len(),
+                &[line_ref_offset + 136],
+            ),
+            None
+        );
         let mut three_word_payload = vec![0; 400];
         three_word_payload[line_ref_offset + 144..line_ref_offset + 156].copy_from_slice(&[
             0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff, 0xc7, 0xcf, 0xff, 0xff,
@@ -20129,7 +20155,7 @@ mod profile_join_tests {
         }
         compact_payload[handles + 104..handles + 112].copy_from_slice(&[1, 0, 0, 0, 1, 0, 0, 0]);
         assert_eq!(
-            compact_line_reference_direction(&compact_payload, 0, compact_payload.len()),
+            compact_line_reference_direction(&compact_payload, 0, compact_payload.len(), &[]),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
         let short_handles = 200;
@@ -20158,30 +20184,32 @@ mod profile_join_tests {
             let offset = eight_scalar_handles + 24 + index * 8;
             compact_payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
         }
+        compact_payload[eight_scalar_handles + 88..eight_scalar_handles + 96]
+            .copy_from_slice(&f64::NAN.to_le_bytes());
         assert_eq!(
-            compact_line_reference_direction(&compact_payload, 200, 288),
+            compact_line_reference_direction(&compact_payload, 200, 288, &[]),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
         assert_eq!(
-            compact_line_reference_direction(&compact_payload, 300, 400),
+            compact_line_reference_direction(&compact_payload, 300, 400, &[]),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
         assert_eq!(
-            compact_line_reference_direction(&compact_payload, 0, compact_payload.len()),
+            compact_line_reference_direction(&compact_payload, 0, compact_payload.len(), &[]),
             Some(Vector3::new(0.0, -1.0, 0.0))
         );
         compact_payload[short_handles + 56..short_handles + 80].copy_from_slice(&[
             0, 0, 0, 0, 0, 0, 0xf0, 0x3f, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         ]);
         assert_eq!(
-            compact_line_reference_direction(&compact_payload, 0, compact_payload.len()),
+            compact_line_reference_direction(&compact_payload, 0, compact_payload.len(), &[]),
             None
         );
         compact_payload[short_handles + 12..short_handles + 16].fill(0);
         compact_payload[eight_scalar_handles + 12..eight_scalar_handles + 16].fill(0);
         compact_payload[handles + 12..handles + 16].fill(0);
         assert_eq!(
-            compact_line_reference_direction(&compact_payload, 0, compact_payload.len()),
+            compact_line_reference_direction(&compact_payload, 0, compact_payload.len(), &[]),
             None
         );
         let lane = FeatureInputLane {
