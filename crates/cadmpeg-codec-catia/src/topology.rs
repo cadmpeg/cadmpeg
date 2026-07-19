@@ -5987,9 +5987,13 @@ impl MeshQuotient {
 
             let mut propagated = Vec::new();
             let branch = loop {
-                let scan_work = domains.iter().try_fold(assigned.len(), |total, domain| {
-                    total.checked_add(domain.len())
-                });
+                let scan_work = domains
+                    .iter()
+                    .zip(assigned.iter())
+                    .filter(|(_, point)| point.is_none())
+                    .try_fold(0usize, |total, (domain, _)| {
+                        total.checked_add(domain.len().saturating_add(1))
+                    });
                 if scan_work.is_none_or(|work| budget.is_some_and(|budget| !budget.charge_by(work)))
                 {
                     *exhausted = true;
@@ -11906,6 +11910,25 @@ mod motif_tests {
             .close_coordinate_roots_with_budget(1, &[vec![]], Some(&budget))
             .is_none());
         assert!(budget.exhausted.get());
+    }
+
+    #[test]
+    fn quotient_coordinate_closure_does_not_rescan_assigned_roots() {
+        const ROOT_COUNT: usize = 100;
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(ROOT_COUNT),
+            domains: vec![Arc::new(HashSet::from([0])); ROOT_COUNT],
+            members: (0..ROOT_COUNT).map(|node| vec![node]).collect(),
+        };
+        let budget = MeshConstraintBudget::new(2 * ROOT_COUNT + 1);
+
+        let assignment = quotient
+            .close_coordinate_roots_with_budget(1, &[], Some(&budget))
+            .expect("forced coordinate closure");
+
+        assert_eq!(quotient.root_count(), 1);
+        assert_eq!(assignment.values().copied().collect::<Vec<_>>(), [0]);
+        assert!(!budget.exhausted.get());
     }
 
     #[test]
