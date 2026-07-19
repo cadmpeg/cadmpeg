@@ -2469,11 +2469,9 @@ fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) ->
     let tolerance = 1.0e-9 * (1.0 + radius.abs());
     let mut chain = Vec::new();
     for operand in operands {
-        let resolved = resolved_edge_operand(operand);
-        if let Some(edge) = resolved {
+        if let Some(edge) = resolved_edge_operand(operand) {
             chain.push(edge);
         }
-        let before = chain.len();
         chain.extend(
             operand
                 .treatment_radius_candidates
@@ -2481,19 +2479,29 @@ fn radius_edge_group_candidates(operands: &[&DesignEdgeOperand], radius: f64) ->
                 .filter(|candidate| (candidate.radius - radius).abs() <= tolerance)
                 .map(|candidate| candidate.edge_slot),
         );
-        if chain.len() == before
-            && resolved.is_none()
+    }
+    chain.sort_unstable();
+    chain.dedup();
+    if chain.is_empty() {
+        return None;
+    }
+    for operand in operands {
+        let has_radius_candidate = operand
+            .treatment_radius_candidates
+            .iter()
+            .any(|candidate| (candidate.radius - radius).abs() <= tolerance);
+        if resolved_edge_operand(operand).is_none()
+            && !has_radius_candidate
             && !operand.changed_boundary_edge_slots.is_empty()
+            && !operand
+                .changed_boundary_edge_slots
+                .iter()
+                .any(|edge| chain.contains(edge))
         {
             return None;
         }
     }
-    chain.sort_unstable();
-    chain.dedup();
-    if !chain.is_empty() {
-        return Some(chain);
-    }
-    None
+    Some(chain)
 }
 
 fn unique_edge_assignment_with_context(
@@ -25077,6 +25085,18 @@ mod relation_tests {
         assert_eq!(
             super::radius_edge_group_candidates(&[&chain_left, &chain_right], 3.0),
             Some(vec![17, 18, 19, 20])
+        );
+        let mut context_operand = edge_operand.clone();
+        context_operand.treatment_radius_candidates.clear();
+        context_operand.changed_boundary_edge_slots = vec![16, 17];
+        assert_eq!(
+            super::radius_edge_group_candidates(&[&edge_operand, &context_operand], 3.0),
+            Some(vec![17, 18])
+        );
+        context_operand.changed_boundary_edge_slots = vec![15, 16];
+        assert_eq!(
+            super::radius_edge_group_candidates(&[&edge_operand, &context_operand], 3.0),
+            None
         );
         let mut resolved_operand = edge_operand.clone();
         resolved_operand.id = "resolved".into();
