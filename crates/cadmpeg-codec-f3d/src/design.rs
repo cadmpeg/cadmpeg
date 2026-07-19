@@ -14223,11 +14223,16 @@ fn exact_move_operation(bytes: &[u8], scope: &DesignParameterScope) -> Option<De
     for record_index in &scope.reference_members {
         for (start, paired) in indexed_record_pairs(bytes, *record_index) {
             let (class_tag, after_tag) = lp_ascii(bytes, start)?;
-            if class_tag != "349"
-                || u32_at(bytes, after_tag) != Some(*record_index)
-                || !matches!(paired.checked_sub(start)?, 254 | 274)
+            let frame_length = paired.checked_sub(start)?;
+            if u32_at(bytes, after_tag) != Some(*record_index)
                 || bytes.get(start + 11..start + 43) != Some(&[0; 32])
-                || bytes.get(start + 47) != Some(&0)
+            {
+                continue;
+            }
+            if !matches!(
+                (class_tag.as_str(), frame_length),
+                ("349", 254 | 274) | ("368", 254)
+            ) || bytes.get(start + 47) != Some(&0)
             {
                 continue;
             }
@@ -22838,6 +22843,31 @@ mod relation_tests {
         assert_eq!(decoded.transform, transform);
         assert_eq!(decoded.transform_offset, (direct_at + 66) as u64);
         assert_eq!(decoded.reference, None);
+
+        let move_at = bytes.len();
+        let mut move_frame = vec![0; 254];
+        move_frame[0..4].copy_from_slice(&3u32.to_le_bytes());
+        move_frame[4..7].copy_from_slice(b"368");
+        move_frame[7..11].copy_from_slice(&90u32.to_le_bytes());
+        move_frame[43..47].copy_from_slice(&5u32.to_le_bytes());
+        let mut move_transform = identity_matrix();
+        move_transform[1][3] = 15.0;
+        for (ordinal, value) in move_transform.into_iter().flatten().enumerate() {
+            let at = 48 + ordinal * 8;
+            move_frame[at..at + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        move_frame.extend_from_slice(&3u32.to_le_bytes());
+        move_frame.extend_from_slice(b"265");
+        move_frame.extend_from_slice(&90u32.to_le_bytes());
+        bytes.extend_from_slice(&move_frame);
+        let mut move_scope = scope.clone();
+        move_scope.kind = "Move".into();
+        move_scope.reference_members = vec![90];
+        let decoded =
+            super::exact_move_operation(&bytes, &move_scope).expect("class-368 Move frame");
+        assert_eq!(decoded.transform, move_transform);
+        assert_eq!(decoded.transform_offset, (move_at + 48) as u64);
+        assert_eq!(decoded.form, 5);
 
         let sphere_at = bytes.len();
         let mut sphere = vec![0; 462];
