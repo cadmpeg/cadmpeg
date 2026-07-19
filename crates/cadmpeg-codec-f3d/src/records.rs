@@ -880,12 +880,22 @@ pub struct DesignFixedFilletParameters {
     pub tangency_weight_record_index: u32,
     /// Byte offset of the tangency-weight scalar.
     pub tangency_weight_offset: u64,
-    /// One constant radius or two endpoint radii in source centimetres.
+    /// One constant radius, or endpoint radii followed by intermediate radii,
+    /// in source centimetres.
     pub radii: Vec<f64>,
-    /// Referenced radius scalar records in lane order.
+    /// Referenced radius scalar records in semantic radius order.
     pub radius_record_indexes: Vec<u32>,
-    /// Byte offsets of the radius scalars in lane order.
+    /// Byte offsets of the radius scalars in semantic radius order.
     pub radius_offsets: Vec<u64>,
+    /// Normalized edge-chain positions paired with the intermediate radii.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intermediate_parameters: Vec<f64>,
+    /// Referenced intermediate-position scalar records in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intermediate_parameter_record_indexes: Vec<u32>,
+    /// Byte offsets of intermediate-position scalars in source order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub intermediate_parameter_offsets: Vec<u64>,
 }
 
 /// Exact fixed scalar lane carried by an equal-distance Chamfer scope.

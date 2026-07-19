@@ -2779,19 +2779,25 @@ fn project_fixed_fillet(
         [radius] if *radius > 0.0 => RadiusSpec::Constant {
             radius: Length(*radius * 10.0),
         },
-        [first, second] if *first >= 0.0 && *second >= 0.0 && (*first > 0.0 || *second > 0.0) => {
-            RadiusSpec::Variable {
-                points: vec![
-                    VariableRadius {
-                        parameter: 0.0,
-                        radius: Length(*first * 10.0),
-                    },
-                    VariableRadius {
-                        parameter: 1.0,
-                        radius: Length(*second * 10.0),
-                    },
-                ],
-            }
+        [first, second, intermediate @ ..]
+            if intermediate.len() == fixed.intermediate_parameters.len() =>
+        {
+            let mut points = Vec::with_capacity(intermediate.len() + 2);
+            points.push(VariableRadius {
+                parameter: 0.0,
+                radius: Length(*first * 10.0),
+            });
+            points.extend(intermediate.iter().zip(&fixed.intermediate_parameters).map(
+                |(radius, parameter)| VariableRadius {
+                    parameter: *parameter,
+                    radius: Length(*radius * 10.0),
+                },
+            ));
+            points.push(VariableRadius {
+                parameter: 1.0,
+                radius: Length(*second * 10.0),
+            });
+            RadiusSpec::Variable { points }
         }
         _ => return None,
     };
@@ -13583,11 +13589,39 @@ fn exact_fixed_fillet_parameters(
     if tangency.value <= 0.0 {
         return None;
     }
-    let radii = lanes[1..]
+    let radius_lanes = if lanes.len() <= 3 {
+        lanes[1..].iter().collect::<Vec<_>>()
+    } else {
+        if lanes.len() % 2 == 0 {
+            return None;
+        }
+        lanes[1..3]
+            .iter()
+            .chain(lanes[3..].chunks_exact(2).map(|pair| &pair[0]))
+            .collect::<Vec<_>>()
+    };
+    let parameter_lanes = lanes
+        .get(3..)
+        .into_iter()
+        .flat_map(|lanes| lanes.chunks_exact(2).map(|pair| &pair[1]))
+        .collect::<Vec<_>>();
+    let radii = radius_lanes
         .iter()
         .map(|(_, scalar)| scalar.value)
         .collect::<Vec<_>>();
-    if radii.iter().any(|radius| *radius < 0.0) || radii.iter().all(|radius| *radius == 0.0) {
+    let intermediate_parameters = parameter_lanes
+        .iter()
+        .map(|(_, scalar)| scalar.value)
+        .collect::<Vec<_>>();
+    if radii.iter().any(|radius| *radius < 0.0)
+        || radii.iter().all(|radius| *radius == 0.0)
+        || intermediate_parameters
+            .iter()
+            .any(|parameter| !(0.0..1.0).contains(parameter))
+        || intermediate_parameters
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+    {
         return None;
     }
     Some(DesignFixedFilletParameters {
@@ -13595,11 +13629,20 @@ fn exact_fixed_fillet_parameters(
         tangency_weight_record_index,
         tangency_weight_offset: tangency.value_offset,
         radii,
-        radius_record_indexes: lanes[1..]
+        radius_record_indexes: radius_lanes
             .iter()
             .map(|(record_index, _)| *record_index)
             .collect(),
-        radius_offsets: lanes[1..]
+        radius_offsets: radius_lanes
+            .iter()
+            .map(|(_, scalar)| scalar.value_offset)
+            .collect(),
+        intermediate_parameters,
+        intermediate_parameter_record_indexes: parameter_lanes
+            .iter()
+            .map(|(record_index, _)| *record_index)
+            .collect(),
+        intermediate_parameter_offsets: parameter_lanes
             .iter()
             .map(|(_, scalar)| scalar.value_offset)
             .collect(),
@@ -21745,14 +21788,16 @@ mod relation_tests {
                 tangency_weight: 1.0,
                 tangency_weight_record_index: 77,
                 tangency_weight_offset: (fillet_start + 40) as u64,
-                radii: vec![0.0, 0.65, 0.4, 0.2],
-                radius_record_indexes: vec![78, 79, 87, 88],
+                radii: vec![0.0, 0.65, 0.4],
+                radius_record_indexes: vec![78, 79, 87],
                 radius_offsets: vec![
                     (fillet_start + 115 + 40) as u64,
                     (fillet_start + 230 + 40) as u64,
                     (fillet_start + 345 + 40) as u64,
-                    (fillet_start + 460 + 40) as u64,
                 ],
+                intermediate_parameters: vec![0.2],
+                intermediate_parameter_record_indexes: vec![88],
+                intermediate_parameter_offsets: vec![(fillet_start + 460 + 40) as u64],
             })
         );
 
