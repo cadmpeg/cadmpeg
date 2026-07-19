@@ -10709,7 +10709,9 @@ pub(crate) fn project_marker_backed_sketches(
                             native_feature.ordinal, marker.ordinal
                         )),
                         sketch: sketch_id.clone(),
-                        construction: true,
+                        construction: usize::try_from(marker.offset).ok().is_some_and(|offset| {
+                            marker_is_selected_construction_line(&lane.native_payload, offset)
+                        }),
                         native_ref: Some(marker.id.clone()),
                         geometry_ref: None,
                         endpoint_refs,
@@ -18402,7 +18404,7 @@ mod profile_join_tests {
         unique_profile_line_point_locus, unique_profile_point_line_entity,
         unique_profile_point_line_pair, unique_repaired_profile_line_angle_pair,
         unique_repaired_profile_line_distance_pair, unique_repaired_profile_point_line_pair,
-        MarkerTransform,
+        MarkerTransform, LEGACY_SKETCH_MARKER,
     };
     use crate::records::{
         Feature as NativeFeature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -18573,6 +18575,7 @@ mod profile_join_tests {
         let mut curve = marker("curve", Some([0.003, 0.004]));
         curve.feature_ref = Some("sketch-native".into());
         curve.ordinal = 1;
+        curve.offset = 200;
         curve.kind = SketchInputKind::LineOrCircle;
         let mut endpoint = marker("endpoint", Some([0.005, 0.006]));
         endpoint.feature_ref = Some("sketch-native".into());
@@ -18597,6 +18600,10 @@ mod profile_join_tests {
         arc_end.ordinal = 5;
         arc_end.offset = 5;
         arc_end.links = arc_start.links.clone();
+        payload.resize(300, 0);
+        payload[200..205].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[227..229].copy_from_slice(&2u16.to_le_bytes());
+        payload[268..272].copy_from_slice(&0u32.to_le_bytes());
         let lane = FeatureInputLane {
             id: "lane".into(),
             configuration: None,
@@ -18654,6 +18661,9 @@ mod profile_join_tests {
                 if start == Point2::new(-2.0, 1.0)
                     && end == Point2::new(-6.0, 5.0)
         ));
+        assert!(!entities[0].construction);
+        assert!(entities[1].construction);
+        assert!(entities[2..].iter().all(|entity| !entity.construction));
         assert!(matches!(
             entities[3].geometry,
             SketchGeometry::Arc {
