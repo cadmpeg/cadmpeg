@@ -2966,6 +2966,16 @@ mod marker_tests {
         assert_eq!(actual_marker, marker);
         assert_eq!(components.last().unwrap().local_id, Some(3));
 
+        let compact_marker = body_offset + 66;
+        let mut compact = vec![0; compact_marker - 12];
+        compact[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+        compact[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(selection_vector_tail(&mut compact, &[5]), compact_marker);
+        let (actual_marker, components) =
+            cosmetic_thread_cylinder_reference_at(&compact, body_offset).unwrap();
+        assert_eq!(actual_marker, compact_marker);
+        assert_eq!(components.last().unwrap().local_id, Some(5));
+
         assert_eq!(
             cosmetic_thread_cylinder_reference_at(&payload, body_offset + 1),
             None
@@ -4965,10 +4975,12 @@ fn cosmetic_thread_cylinder_reference_at(
     {
         return None;
     }
-    let marker = body_offset.checked_add(94)?;
-    compact_termination_reference_path_at(payload, marker)
-        .or_else(|| compact_edge_component_path_at(payload, marker))
-        .map(|components| (marker, components))
+    [66, 94].into_iter().find_map(|relative| {
+        let marker = body_offset.checked_add(relative)?;
+        compact_termination_reference_path_at(payload, marker)
+            .or_else(|| compact_edge_component_path_at(payload, marker))
+            .map(|components| (marker, components))
+    })
 }
 
 pub(crate) fn compact_surface_selection_at(
