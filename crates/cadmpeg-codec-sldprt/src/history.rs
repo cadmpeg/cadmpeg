@@ -1774,6 +1774,20 @@ mod history_reference_tests {
 
     #[test]
     fn structurally_stable_feature_manager_nodes_use_source_identity() {
+        let roster = |node: &Feature| {
+            let mut roster = vec![node.clone()];
+            for (source, class) in [
+                ("7", "moDocsFolder_c"),
+                ("8", "moCommentsFolder_c"),
+                ("9", "moSolidBodyFolder_c"),
+                ("10", "moSurfaceBodyFolder_c"),
+            ] {
+                let mut sentinel = feature("sentinel", Some(source), roster.len() as u32);
+                sentinel.input_class = Some(class.into());
+                roster.push(sentinel);
+            }
+            roster
+        };
         let cases = [
             ("1", FeatureTreeNodeRole::Annotations),
             ("5", FeatureTreeNodeRole::ModelOrigin),
@@ -1790,31 +1804,47 @@ mod history_reference_tests {
             if source_id == "5" {
                 node.xml_tag = "Sketch".into();
             }
-            assert_eq!(feature_tree_node_role(&node), Some(expected));
+            assert_eq!(
+                feature_tree_node_role(&node, &roster(&node)),
+                Some(expected)
+            );
         }
 
+        let mut fourth_light = feature("fourth", Some("16"), 0);
+        fourth_light.kind = "本地化方向光".into();
+        let mut directional_roster = roster(&fourth_light);
+        for source in 13..16 {
+            let mut light = feature("light", Some(&source.to_string()), source);
+            light.kind = fourth_light.kind.clone();
+            directional_roster.push(light);
+        }
+        assert_eq!(
+            feature_tree_node_role(&fourth_light, &directional_roster),
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        );
+
         let ambiguous = feature("node", Some("99"), 0);
-        assert_eq!(feature_tree_node_role(&ambiguous), None);
+        assert_eq!(feature_tree_node_role(&ambiguous, &[]), None);
 
         let mut exploded_views = ambiguous.clone();
         exploded_views.name.clear();
         assert_eq!(
-            feature_tree_node_role(&exploded_views),
+            feature_tree_node_role(&exploded_views, &roster(&exploded_views)),
             Some(FeatureTreeNodeRole::ExplodedViews)
         );
 
         let mut reference_plane = feature("node", Some("5"), 0);
         reference_plane.input_class = Some("moRefPlane_c".into());
-        assert_eq!(feature_tree_node_role(&reference_plane), None);
+        assert_eq!(feature_tree_node_role(&reference_plane, &[]), None);
 
         let mut sheet_metal = feature("node", Some("-1"), 0);
         sheet_metal.name.clear();
         assert_eq!(
-            feature_tree_node_role(&sheet_metal),
+            feature_tree_node_role(&sheet_metal, &roster(&sheet_metal)),
             Some(FeatureTreeNodeRole::SheetMetal)
         );
         sheet_metal.name = "not a reserved root".into();
-        assert_eq!(feature_tree_node_role(&sheet_metal), None);
+        assert_eq!(feature_tree_node_role(&sheet_metal, &[]), None);
     }
 
     #[test]
@@ -3199,7 +3229,7 @@ fn project_definition(
     features_by_source: &HashMap<&str, &Feature>,
     history_features: &[Feature],
 ) -> FeatureDefinition {
-    if let Some(role) = feature_tree_node_role(feature) {
+    if let Some(role) = feature_tree_node_role(feature, history_features) {
         return FeatureDefinition::TreeNode { role };
     }
     let class = classify(feature);
@@ -3336,19 +3366,23 @@ fn sketch_block_placement(feature: &Feature) -> Option<Transform> {
     Some(placement)
 }
 
-fn feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
-    reserved_feature_tree_node_role(feature)
+fn feature_tree_node_role(
+    feature: &Feature,
+    history_features: &[Feature],
+) -> Option<FeatureTreeNodeRole> {
+    reserved_feature_tree_node_role(feature, history_features)
         .or_else(|| native_object_class(feature.input_class.as_deref()?).tree_node)
 }
 
-fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
-    if feature.input_class.is_some()
-        || !feature.parameters.is_empty()
-        || !feature.properties.is_empty()
-    {
+fn reserved_feature_tree_node_role(
+    feature: &Feature,
+    history_features: &[Feature],
+) -> Option<FeatureTreeNodeRole> {
+    if !builtin_feature_manager_roster(history_features) || !classless_builtin_node(feature) {
         return None;
     }
-    match (feature.xml_tag.as_str(), feature.source_id.as_deref()?) {
+    let source = feature.source_id.as_deref()?;
+    match (feature.xml_tag.as_str(), source) {
         (tag, "1") if tag.eq_ignore_ascii_case("Feature") => Some(FeatureTreeNodeRole::Annotations),
         (tag, "5") if tag.eq_ignore_ascii_case("Sketch") => Some(FeatureTreeNodeRole::ModelOrigin),
         (tag, "6") if tag.eq_ignore_ascii_case("Feature") => {
@@ -3360,10 +3394,68 @@ fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeR
         (tag, "13" | "14" | "15") if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
+        (tag, _)
+            if tag.eq_ignore_ascii_case("Feature")
+                && repeated_directional_light(feature, history_features) =>
+        {
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        }
         (_, "-1") if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::SheetMetal),
         (_, _) if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::ExplodedViews),
         _ => None,
     }
+}
+
+fn classless_builtin_node(feature: &Feature) -> bool {
+    feature.input_class.is_none()
+        && feature.parameters.is_empty()
+        && feature.dimension_properties.is_empty()
+        && feature.properties.is_empty()
+        && feature.text.is_none()
+        && feature.content.is_empty()
+}
+
+fn builtin_feature_manager_roster(features: &[Feature]) -> bool {
+    [
+        ("7", "moDocsFolder_c"),
+        ("8", "moCommentsFolder_c"),
+        ("9", "moSolidBodyFolder_c"),
+        ("10", "moSurfaceBodyFolder_c"),
+    ]
+    .into_iter()
+    .all(|(source, class)| {
+        let mut matches = features.iter().filter(|feature| {
+            feature.source_id.as_deref() == Some(source)
+                && feature.input_class.as_deref() == Some(class)
+        });
+        matches.next().is_some() && matches.next().is_none()
+    })
+}
+
+fn repeated_directional_light(feature: &Feature, features: &[Feature]) -> bool {
+    let source = feature
+        .source_id
+        .as_deref()
+        .and_then(|source| source.parse::<u32>().ok());
+    let Some(source) = source.filter(|source| *source >= 13) else {
+        return false;
+    };
+    let Some(first) = features.iter().find(|candidate| {
+        candidate.source_id.as_deref() == Some("13") && classless_builtin_node(candidate)
+    }) else {
+        return false;
+    };
+    !first.kind.is_empty()
+        && feature.kind == first.kind
+        && (13..=source).all(|source| {
+            let source = source.to_string();
+            let mut matches = features.iter().filter(|candidate| {
+                candidate.source_id.as_deref() == Some(source.as_str())
+                    && classless_builtin_node(candidate)
+                    && candidate.kind == first.kind
+            });
+            matches.next().is_some() && matches.next().is_none()
+        })
 }
 
 fn empty_feature_tree_node(feature: &Feature) -> bool {
@@ -7692,6 +7784,18 @@ pub fn sync_neutral_features(
                 .map(|source| (feature.id.clone(), source.clone()))
         })
         .collect::<HashMap<_, _>>();
+    let retained_tree_node_roles = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| {
+            history.features.iter().filter_map(|feature| {
+                Some((
+                    feature.id.clone(),
+                    feature_tree_node_role(feature, &history.features)?,
+                ))
+            })
+        })
+        .collect::<HashMap<_, _>>();
     let feature_sources = features
         .iter()
         .filter_map(|feature| {
@@ -7738,7 +7842,7 @@ pub fn sync_neutral_features(
             FeatureDefinition::TreeNode { role } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| feature_tree_node_role(record) != Some(*role))
+                    .is_some_and(|record| retained_tree_node_roles.get(&record.id) != Some(role))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes feature-tree node role",
