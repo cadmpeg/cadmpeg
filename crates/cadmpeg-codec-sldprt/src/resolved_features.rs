@@ -254,16 +254,19 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
         .enumerate()
         .map(|(ordinal, (offset, code))| {
             let coordinates_m = marker_coordinates(payload, offset);
-            let kind = if coordinates_m.is_none()
+            let kind = if coordinates_m.is_some() && legacy_extended_profile_vertex(payload, offset)
+            {
+                SketchInputKind::Point
+            } else if coordinates_m.is_none()
                 && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
                 && payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
                     == Some(LEGACY_EXTENDED_SKETCH_MARKER)
             {
-                match code {
+                legacy_extended_profile_curve_kind(payload, offset).unwrap_or_else(|| match code {
                     0 => SketchInputKind::Arc,
                     1 | 2 => SketchInputKind::LineOrCircle,
                     _ => SketchInputKind::from_native_code_and_layout(code, false),
-                }
+                })
             } else if coordinates_m.is_none()
                 && payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
                     == Some(LEGACY_SKETCH_MARKER)
@@ -422,7 +425,8 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
         LEGACY_SKETCH_MARKER | LEGACY_EXTENDED_SKETCH_MARKER
     ) || (payload.get(offset..offset + SKETCH_MARKER.len())? == SKETCH_MARKER
         && payload.get(offset + 17..offset + 21)? == 0u32.to_le_bytes()))
-        && marker_is_geometry_locus(payload, offset)
+        && (marker_is_geometry_locus(payload, offset)
+            || legacy_extended_profile_vertex(payload, offset))
         && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
     {
         offset.checked_add(58)?
@@ -454,6 +458,33 @@ pub(crate) fn marker_is_geometry_locus(payload: &[u8], offset: usize) -> bool {
     payload.get(offset + 23..offset + 27) == Some(&[0x05, 0x00, 0x01, 0x00])
 }
 
+fn legacy_extended_profile_vertex(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 17..offset + 21) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+}
+
+fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<SketchInputKind> {
+    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        || payload.get(offset + 17..offset + 21) != Some(&0u32.to_le_bytes())
+        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || marker_profile_curve_role(payload, offset) != Some(1)
+    {
+        return None;
+    }
+    let next = offset.checked_add(84)?;
+    sketch_marker_prefix_at(payload, next).then(|| {
+        if sketch_marker_at(payload, next) {
+            SketchInputKind::LineOrCircle
+        } else {
+            SketchInputKind::Arc
+        }
+    })
+}
+
 #[cfg(test)]
 mod marker_tests {
     use super::{
@@ -477,7 +508,8 @@ mod marker_tests {
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         current_compact_curve_endpoint_indices, enrich_history_revolution_inputs,
         explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
-        inline_surface_reference_at, legacy_feature_input_section, legacy_reference_axis_triads,
+        inline_surface_reference_at, legacy_extended_profile_curve_kind,
+        legacy_extended_profile_vertex, legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
         minimal_reference_plane_frame, mirror_pattern_component_path_at,
@@ -2698,6 +2730,44 @@ mod marker_tests {
         );
         payload[27..29].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(current_compact_curve_endpoint_indices(&payload, 0), None);
+    }
+
+    #[test]
+    fn legacy_extended_profile_framing_distinguishes_vertices_lines_and_arcs() {
+        let mut vertex = vec![0; 74];
+        vertex[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        vertex[5..13].fill(0xff);
+        vertex[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        vertex[17..21].copy_from_slice(&1u32.to_le_bytes());
+        vertex[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        vertex[27..29].copy_from_slice(&1u16.to_le_bytes());
+        vertex[56..58].copy_from_slice(&[0x1e, 0x00]);
+        vertex[58..66].copy_from_slice(&0.025f64.to_le_bytes());
+        vertex[66..74].copy_from_slice(&0.01f64.to_le_bytes());
+        assert!(legacy_extended_profile_vertex(&vertex, 0));
+        assert_eq!(marker_coordinates(&vertex, 0), Some([0.025, 0.01]));
+
+        let mut curve = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len() + 12];
+        curve[..LEGACY_EXTENDED_SKETCH_MARKER.len()].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        curve[5..13].fill(0xff);
+        curve[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        curve[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        curve[27..29].copy_from_slice(&1u16.to_le_bytes());
+        curve[60..64].copy_from_slice(&1u32.to_le_bytes());
+        curve[84..84 + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        curve[89..97].fill(0xff);
+        curve[97..101].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        assert_eq!(
+            legacy_extended_profile_curve_kind(&curve, 0),
+            Some(SketchInputKind::LineOrCircle)
+        );
+        curve[89..93].copy_from_slice(&[0xff, 0xff, 0x04, 0x00]);
+        assert_eq!(
+            legacy_extended_profile_curve_kind(&curve, 0),
+            Some(SketchInputKind::Arc)
+        );
     }
 
     #[test]
