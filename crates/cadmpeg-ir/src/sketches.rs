@@ -319,6 +319,19 @@ pub enum SpatialSketchGeometry {
         #[serde(default)]
         periodic: bool,
     },
+    /// Tensor-product NURBS surface embedded in model space.
+    NurbsSurface {
+        /// Degree in the first parameter.
+        u_degree: u32,
+        /// Degree in the second parameter.
+        v_degree: u32,
+        /// Full knot vector in the first parameter.
+        u_knots: Vec<f64>,
+        /// Full knot vector in the second parameter.
+        v_knots: Vec<f64>,
+        /// Rectangular control grid in first-parameter-major order.
+        control_points: Vec<Vec<Point3>>,
+    },
     /// Source-native spatial geometry not yet reduced to a neutral family.
     Native {
         /// Source geometry family.

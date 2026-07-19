@@ -184,6 +184,7 @@ struct DesignProjectionGaps {
     unprojected_sketch_placements: usize,
     unprojected_sketch_points: usize,
     unprojected_sketch_curves: usize,
+    unprojected_sketch_surfaces: usize,
     unprojected_sketch_relations: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
@@ -411,6 +412,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .iter()
             .filter(|curve| !projected_sketch_entity_refs.contains(curve.id.as_str()))
             .count(),
+        unprojected_sketch_surfaces: native
+            .sketch_surfaces
+            .iter()
+            .filter(|surface| !projected_sketch_entity_refs.contains(surface.id.as_str()))
+            .count(),
         unprojected_sketch_relations: native
             .sketch_relations
             .iter()
@@ -583,6 +589,13 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
         ),
     );
     push(
+        gaps.unprojected_sketch_surfaces,
+        format!(
+            "{} decoded sketch surface(s) have no neutral spatial sketch entity.",
+            gaps.unprojected_sketch_surfaces
+        ),
+    );
+    push(
         gaps.unprojected_sketch_relations,
         format!(
             "{} decoded sketch relation(s) have no neutral constraint.",
@@ -730,10 +743,12 @@ pub fn decode(
             native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
             native.sketch_curve_identities =
                 crate::design::decode_sketch_curve_identities(reader, &scan)?;
+            native.sketch_surfaces = crate::design::decode_sketch_surfaces(&scan)?;
             crate::design::bind_sketch_graph(
                 &native.design_entity_headers,
                 &mut native.sketch_points,
                 &mut native.sketch_curve_identities,
+                &mut native.sketch_surfaces,
                 &mut native.sketch_relations,
             )?;
             crate::design::bind_extrude_selection_geometry(
@@ -871,6 +886,7 @@ pub fn decode(
                     &native.design_sketch_placements,
                     &native.sketch_points,
                     &native.sketch_curve_identities,
+                    &native.sketch_surfaces,
                     &native.sketch_relations,
                 );
             crate::design::bind_sketch_feature_geometry(
@@ -885,6 +901,7 @@ pub fn decode(
                 &native.sketch_relations,
                 &native.sketch_points,
                 &native.sketch_curve_identities,
+                &native.sketch_surfaces,
                 &ir.model.spatial_sketch_entities,
             );
             crate::design::bind_extrude_profile_selections(
@@ -1036,10 +1053,12 @@ pub fn decode(
     extend_related_design_records(reader, &scan, &mut native)?;
     native.sketch_points = crate::design::decode_sketch_points(reader, &scan)?;
     native.sketch_curve_identities = crate::design::decode_sketch_curve_identities(reader, &scan)?;
+    native.sketch_surfaces = crate::design::decode_sketch_surfaces(&scan)?;
     crate::design::bind_sketch_graph(
         &native.design_entity_headers,
         &mut native.sketch_points,
         &mut native.sketch_curve_identities,
+        &mut native.sketch_surfaces,
         &mut native.sketch_relations,
     )?;
     crate::design::bind_extrude_selection_geometry(
@@ -1171,6 +1190,7 @@ pub fn decode(
             &native.design_sketch_placements,
             &native.sketch_points,
             &native.sketch_curve_identities,
+            &native.sketch_surfaces,
             &native.sketch_relations,
         );
     crate::design::bind_sketch_feature_geometry(
@@ -1185,6 +1205,7 @@ pub fn decode(
         &native.sketch_relations,
         &native.sketch_points,
         &native.sketch_curve_identities,
+        &native.sketch_surfaces,
         &ir.model.spatial_sketch_entities,
     );
     crate::design::bind_extrude_profile_selections(
@@ -1562,6 +1583,9 @@ fn populate_annotations(
                     "sketch_entity",
                 );
             }
+        }
+        for entity in &native.sketch_surfaces {
+            note(&entity.id, "sketch_surface");
         }
         for entity in &native.sketch_curve_links {
             note(&entity.id, "sketch_curve_link");
@@ -2848,6 +2872,7 @@ mod tests {
                 unprojected_sketch_placements: 1,
                 unprojected_sketch_points: 1,
                 unprojected_sketch_curves: 1,
+                unprojected_sketch_surfaces: 0,
                 unprojected_sketch_relations: 1,
                 unprojected_dimensions: 1,
                 profile_selections: 1,

@@ -2625,6 +2625,28 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut sketch_surface_identities = HashSet::new();
+    for surface in &native.sketch_surfaces {
+        if surface.persistent_id == 0
+            || !sketch_surface_identities
+                .insert((design_stream(&surface.id), surface.persistent_id))
+        {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch surface has an invalid persistent identity".into(),
+                entity: Some(surface.id.clone()),
+            });
+        }
+        if !sketch_geometry_records.insert((design_stream(&surface.id), surface.record_index)) {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion sketch geometry aliases another typed indexed record".into(),
+                entity: Some(surface.id.clone()),
+            });
+        }
+    }
     let typed_sketch_records = native
         .sketch_points
         .iter()
@@ -2634,6 +2656,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .sketch_curve_identities
                 .iter()
                 .map(|curve| (design_stream(&curve.id), curve.record_index)),
+        )
+        .chain(
+            native
+                .sketch_surfaces
+                .iter()
+                .map(|surface| (design_stream(&surface.id), surface.record_index)),
         )
         .collect::<std::collections::HashSet<_>>();
     let sketch_operands = native
@@ -2658,6 +2686,15 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 },
             )
         }))
+        .chain(native.sketch_surfaces.iter().map(|surface| {
+            (
+                (design_stream(&surface.id), surface.record_index),
+                records::SketchRelationOperand::Surface {
+                    record_index: surface.record_index,
+                    persistent_id: surface.persistent_id,
+                },
+            )
+        }))
         .collect::<std::collections::HashMap<_, _>>();
     let mut relation_owners = std::collections::HashMap::new();
     for (id, record_index, owner_reference) in native
@@ -2669,6 +2706,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .sketch_curve_identities
                 .iter()
                 .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
+        )
+        .chain(
+            native
+                .sketch_surfaces
+                .iter()
+                .map(|surface| (&surface.id, surface.record_index, surface.owner_reference)),
         )
     {
         let Some(owner_reference) = owner_reference else {

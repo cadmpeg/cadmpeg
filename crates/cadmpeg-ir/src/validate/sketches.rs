@@ -353,6 +353,45 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     );
                 }
             }
+            SpatialSketchGeometry::NurbsSurface {
+                u_degree,
+                v_degree,
+                u_knots,
+                v_knots,
+                control_points,
+            } => {
+                let u_count = control_points.len();
+                let v_count = control_points.first().map_or(0, Vec::len);
+                let expected_u_knots = usize::try_from(*u_degree)
+                    .ok()
+                    .and_then(|degree| u_count.checked_add(degree)?.checked_add(1));
+                let expected_v_knots = usize::try_from(*v_degree)
+                    .ok()
+                    .and_then(|degree| v_count.checked_add(degree)?.checked_add(1));
+                if *u_degree == 0
+                    || *v_degree == 0
+                    || u_count <= *u_degree as usize
+                    || v_count <= *v_degree as usize
+                    || control_points.iter().any(|row| row.len() != v_count)
+                    || expected_u_knots != Some(u_knots.len())
+                    || expected_v_knots != Some(v_knots.len())
+                    || u_knots.iter().any(|value| !value.is_finite())
+                    || v_knots.iter().any(|value| !value.is_finite())
+                    || u_knots.windows(2).any(|pair| pair[0] > pair[1])
+                    || v_knots.windows(2).any(|pair| pair[0] > pair[1])
+                    || control_points
+                        .iter()
+                        .flatten()
+                        .any(|point| !finite3(*point))
+                {
+                    finding(
+                        findings,
+                        Check::ParameterDomain,
+                        id,
+                        "invalid spatial sketch NURBS surface",
+                    );
+                }
+            }
             SpatialSketchGeometry::Native { native_kind } => {
                 if native_kind.is_empty() {
                     finding(
@@ -455,12 +494,22 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 );
             }
             SpatialConstraint::Tangent { first, second }
-                if matches!(
+                if !matches!(
                     spatial_geometry.get(first),
-                    Some(SpatialSketchGeometry::Point { .. }) | None
-                ) || matches!(
+                    Some(
+                        SpatialSketchGeometry::Line { .. }
+                            | SpatialSketchGeometry::Circle { .. }
+                            | SpatialSketchGeometry::Arc { .. }
+                            | SpatialSketchGeometry::Nurbs { .. }
+                    )
+                ) || !matches!(
                     spatial_geometry.get(second),
-                    Some(SpatialSketchGeometry::Point { .. }) | None
+                    Some(
+                        SpatialSketchGeometry::Line { .. }
+                            | SpatialSketchGeometry::Circle { .. }
+                            | SpatialSketchGeometry::Arc { .. }
+                            | SpatialSketchGeometry::Nurbs { .. }
+                    )
                 ) =>
             {
                 finding(

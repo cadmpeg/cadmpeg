@@ -3009,6 +3009,24 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             radius: Length(4.0),
         },
     });
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface".into()),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::NurbsSurface {
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+        },
+    });
     let line = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
         id: line.clone(),

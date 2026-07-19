@@ -8563,9 +8563,14 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
     second_owner.entity_suffix = 278;
     second_owner.entity_id = "0_278".into();
     entities.push(second_owner);
-    let error =
-        crate::design::bind_sketch_graph(&entities, &mut points, &mut curves, &mut relations)
-            .expect_err("typed sketch geometry cannot belong to two sketches");
+    let error = crate::design::bind_sketch_graph(
+        &entities,
+        &mut points,
+        &mut curves,
+        &mut [],
+        &mut relations,
+    )
+    .expect_err("typed sketch geometry cannot belong to two sketches");
     assert!(error.to_string().contains("belongs to multiple sketches"));
 }
 

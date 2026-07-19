@@ -32,6 +32,7 @@ This document records F3D semantics that the format specification does not yet d
 - The Design `MetaStream` Dimension object is a registry with no owned entity IDs. Paired-, repeated counted-, null-locus, annotated `EntityGenesis`, and recipe-backed dimension frames retain their operands.
 - The indexed parameter companion has a fixed prefix, an owner backlink, a Unix-epoch microsecond timestamp, an exact owned interval, and an ordered set of contained construction recipes. Dimension-owned recipes resolve to their immediate indexed-record containers. Whether the timestamp denotes parameter creation or last modification is unresolved, and the operation grammar relating recipe records in non-locus companion variants is unresolved.
 - The semantics of sketch-relation member-role values are unresolved. Rectangular-pattern seed instances can contain both zero and nonzero roles, so role zero does not classify generated membership.
+- The point-to-surface loci selected by sketch-relation member-role values `0` through `3` are unresolved. They do not select the four control-grid corners.
 - The semantic meaning of the explicit per-member role integers within a `0x80000000` spline-group relation is unresolved.
 - Whether `EntityGenesis`-form sketch coordinate values follow the document display unit or are fixed at ten times the centimetre value is unresolved.
 - In a sketch member-run head record, the roles of the eleven zero bytes between the record index and the placement matrix and of the marked tail after the matrix are unresolved.

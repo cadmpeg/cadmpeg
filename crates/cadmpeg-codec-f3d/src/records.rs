@@ -2238,7 +2238,14 @@ pub enum SketchRelationOperand {
         /// Nullable secondary persistent curve identity.
         secondary_id: u64,
     },
-    /// A referenced indexed record without point or curve identity fields.
+    /// A persistent sketch surface.
+    Surface {
+        /// Indexed Design record referenced by the relation.
+        record_index: u32,
+        /// Persistent surface identity stored by that record.
+        persistent_id: u64,
+    },
+    /// A referenced indexed record without point, curve, or surface identity fields.
     Record {
         /// Indexed Design record referenced by the relation.
         record_index: u32,
@@ -2401,6 +2408,37 @@ pub struct SketchCurveIdentity {
     /// decoder recovered one; `None` when the geometry subtype was not decoded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub geometry: Option<SketchCurveGeometry>,
+}
+
+/// One persistent tensor-product surface owned by a spatial Fusion sketch.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SketchSurface {
+    /// Globally unique deterministic identifier for this native record.
+    pub id: String,
+    /// Index of this surface record within the `BulkStream` tree.
+    pub record_index: u32,
+    /// Owning sketch entity derived from relations using this surface.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_reference: Option<u32>,
+    /// Source per-file dynamic three-digit ASCII class tag.
+    pub class_tag: String,
+    /// Byte offset of this record within its Design `BulkStream`.
+    pub byte_offset: u64,
+    /// Optional persistent genesis identity carried ahead of the surface identity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_genesis: Option<u64>,
+    /// Persistent Fusion identifier for the sketch surface.
+    pub persistent_id: u64,
+    /// Degree in the first surface parameter.
+    pub u_degree: u32,
+    /// Degree in the second surface parameter.
+    pub v_degree: u32,
+    /// Full knot vector in the first parameter.
+    pub u_knots: Vec<f64>,
+    /// Full knot vector in the second parameter.
+    pub v_knots: Vec<f64>,
+    /// Rectangular control grid in first-parameter-major order, in millimetres.
+    pub control_points: Vec<Vec<Point3>>,
 }
 
 /// Exact analytic geometry carried by a source sketch-curve record.

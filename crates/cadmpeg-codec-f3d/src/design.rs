@@ -25,7 +25,7 @@ use crate::records::{
     DesignSketchPlacement, DesignSolidPrimitive, DesignTopologyRecipeEntry,
     DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
     PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -4036,6 +4036,18 @@ fn neutral_spatial_sketch_point_id(
     ))
 }
 
+fn neutral_spatial_sketch_surface_id(
+    native_ref: &str,
+    persistent_id: u64,
+) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
+    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
+        "f3d:model:spatial-sketch-entity#{}:{}s{persistent_id}",
+        stream.len(),
+        stream,
+    ))
+}
+
 pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record_index: u32,
@@ -4300,6 +4312,7 @@ pub fn project_spatial_sketch_design(
     placements: &[DesignSketchPlacement],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
+    surfaces: &[SketchSurface],
     relations: &[SketchRelation],
 ) -> (
     Vec<cadmpeg_ir::sketches::SpatialSketch>,
@@ -4327,6 +4340,12 @@ pub fn project_spatial_sketch_design(
         .chain(points.iter().filter_map(|point| {
             (sketch_point_depth(point)?.abs() > 1.0e-9)
                 .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
+        }))
+        .chain(surfaces.iter().filter_map(|surface| {
+            Some((
+                native_stream(&surface.id)?.to_owned(),
+                surface.owner_reference?,
+            ))
         }))
         .collect::<HashSet<_>>();
     let curves_by_record = curves
@@ -4539,6 +4558,34 @@ pub fn project_spatial_sketch_design(
             },
         })
     }));
+    entities.extend(surfaces.iter().filter_map(|surface| {
+        let scope = native_stream(&surface.id)?;
+        let owner = surface.owner_reference?;
+        let placement = placements_by_suffix.get(&(scope, owner))?;
+        Some(SpatialSketchEntity {
+            id: neutral_spatial_sketch_surface_id(&surface.id, surface.persistent_id),
+            sketch: neutral_spatial_sketch_id(placement),
+            construction: false,
+            native_ref: Some(surface.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SpatialSketchGeometry::NurbsSurface {
+                u_degree: surface.u_degree,
+                v_degree: surface.v_degree,
+                u_knots: surface.u_knots.clone(),
+                v_knots: surface.v_knots.clone(),
+                control_points: surface
+                    .control_points
+                    .iter()
+                    .map(|row| {
+                        row.iter()
+                            .map(|point| transform_point(placement, point))
+                            .collect()
+                    })
+                    .collect(),
+            },
+        })
+    }));
     entities.sort_by_key(|entity| entity.id.clone());
     let spatial_ids = entities
         .iter()
@@ -4564,6 +4611,7 @@ pub fn project_spatial_sketch_constraints(
     relations: &[SketchRelation],
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
+    surfaces: &[SketchSurface],
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
@@ -4595,6 +4643,11 @@ pub fn project_spatial_sketch_constraints(
             points
                 .iter()
                 .map(|point| (point.id.as_str(), point.record_index)),
+        )
+        .chain(
+            surfaces
+                .iter()
+                .map(|surface| (surface.id.as_str(), surface.record_index)),
         )
         .collect::<HashMap<_, _>>();
     let projected = entities
@@ -4671,9 +4724,16 @@ pub fn project_spatial_sketch_constraints(
                     let [first, second] = member_entities.as_slice() else {
                         return None;
                     };
-                    if matches!(first.geometry, SpatialSketchGeometry::Point { .. })
-                        || matches!(second.geometry, SpatialSketchGeometry::Point { .. })
-                    {
+                    let curve = |geometry: &SpatialSketchGeometry| {
+                        matches!(
+                            geometry,
+                            SpatialSketchGeometry::Line { .. }
+                                | SpatialSketchGeometry::Circle { .. }
+                                | SpatialSketchGeometry::Arc { .. }
+                                | SpatialSketchGeometry::Nurbs { .. }
+                        )
+                    };
+                    if !curve(&first.geometry) || !curve(&second.geometry) {
                         return None;
                     }
                     Definition::Tangent {
@@ -7776,7 +7836,9 @@ fn historical_member_points_in_state(
             .or_else(|| match member.resolved_geometry.as_ref()? {
                 SketchRelationOperand::Point { .. } => Some(AsmHistoricalEntityKind::Point),
                 SketchRelationOperand::Curve { .. } => Some(AsmHistoricalEntityKind::Curve),
-                SketchRelationOperand::Record { .. } => None,
+                SketchRelationOperand::Surface { .. } | SketchRelationOperand::Record { .. } => {
+                    None
+                }
             })?;
     let entity_ref = member
         .historical_entity_ref
@@ -17885,11 +17947,133 @@ pub fn decode_sketch_curve_identities(
     Ok(out)
 }
 
+struct ParsedSketchSurface {
+    entity_genesis: Option<u64>,
+    persistent_id: u64,
+    u_degree: u32,
+    v_degree: u32,
+    u_knots: Vec<f64>,
+    v_knots: Vec<f64>,
+    control_points: Vec<Vec<Point3>>,
+}
+
+fn parse_sketch_surface(payload: &[u8]) -> Option<ParsedSketchSurface> {
+    if payload.get(20) != Some(&1)
+        || u32_at(payload, 21) != Some(2)
+        || u32_at(payload, 25) != Some(13)
+        || payload.get(29..42) != Some(b"EntityGenesis")
+        || u32_at(payload, 42) != Some(23)
+        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
+        || u32_at(payload, 77) != Some(11)
+        || payload.get(81..92) != Some(b"surface_tag")
+        || u32_at(payload, 92) != Some(23)
+        || payload.get(96..119) != Some(b"IntrinsicMetaTypeuint64")
+    {
+        return None;
+    }
+    let entity_genesis = read_u64(payload, 69);
+    let persistent_id = read_u64(payload, 119)?;
+    let point_count = usize::try_from(u32_at(payload, 127)?).ok()?;
+    if point_count == 0 || point_count > 100_000 {
+        return None;
+    }
+    let coordinate_count = point_count.checked_mul(3)?;
+    let coordinate_bytes = point_count.checked_mul(24)?;
+    let coordinates = f64s_at(payload, 131, coordinate_count)?;
+    let degrees_at = 131usize.checked_add(coordinate_bytes)?;
+    let u_degree = u32_at(payload, degrees_at)?;
+    let v_degree = u32_at(payload, degrees_at.checked_add(4)?)?;
+    let u_knot_count = usize::try_from(u32_at(payload, degrees_at.checked_add(8)?)?).ok()?;
+    let u_knots_at = degrees_at.checked_add(12)?;
+    let u_knots = f64s_at(payload, u_knots_at, u_knot_count)?;
+    let v_count_at = u_knots_at.checked_add(u_knot_count.checked_mul(8)?)?;
+    let v_knot_count = usize::try_from(u32_at(payload, v_count_at)?).ok()?;
+    let v_knots_at = v_count_at.checked_add(4)?;
+    let v_knots = f64s_at(payload, v_knots_at, v_knot_count)?;
+    let grid_at = v_knots_at.checked_add(v_knot_count.checked_mul(8)?)?;
+    let u_count = usize::try_from(u32_at(payload, grid_at)?).ok()?;
+    let v_count = usize::try_from(u32_at(payload, grid_at.checked_add(4)?)?).ok()?;
+    let expected_u_knots = u_count.checked_add(usize::try_from(u_degree).ok()?.checked_add(1)?)?;
+    let expected_v_knots = v_count.checked_add(usize::try_from(v_degree).ok()?.checked_add(1)?)?;
+    if u_degree == 0
+        || v_degree == 0
+        || u_count.checked_mul(v_count) != Some(point_count)
+        || u_knot_count != expected_u_knots
+        || v_knot_count != expected_v_knots
+        || coordinates.iter().any(|value| !value.is_finite())
+        || u_knots.iter().any(|value| !value.is_finite())
+        || v_knots.iter().any(|value| !value.is_finite())
+        || u_knots.windows(2).any(|pair| pair[0] > pair[1])
+        || v_knots.windows(2).any(|pair| pair[0] > pair[1])
+    {
+        return None;
+    }
+    let control_points = coordinates
+        .chunks_exact(3)
+        .map(|point| Point3::new(point[0] * 10.0, point[1] * 10.0, point[2] * 10.0))
+        .collect::<Vec<_>>()
+        .chunks(v_count)
+        .map(<[Point3]>::to_vec)
+        .collect();
+    Some(ParsedSketchSurface {
+        entity_genesis,
+        persistent_id,
+        u_degree,
+        v_degree,
+        u_knots,
+        v_knots,
+        control_points,
+    })
+}
+
+/// Decode tensor-product surface entities owned by spatial Design sketches.
+pub fn decode_sketch_surfaces(scan: &ContainerScan) -> Result<Vec<SketchSurface>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let mut at = 0usize;
+        while let Some(record_at) = next_indexed_record_offset(bytes, at) {
+            at = record_at + 1;
+            let Some((class_tag, after_tag)) = lp_ascii(bytes, record_at) else {
+                continue;
+            };
+            let Some(record_index) = u32_at(bytes, after_tag) else {
+                continue;
+            };
+            let payload = &bytes[record_at..];
+            let Some(surface) = parse_sketch_surface(payload) else {
+                continue;
+            };
+            out.push(SketchSurface {
+                id: format!("f3d:{}:sketch-surface#{record_at}", entry.name),
+                record_index,
+                owner_reference: None,
+                class_tag,
+                byte_offset: record_at as u64,
+                entity_genesis: surface.entity_genesis,
+                persistent_id: surface.persistent_id,
+                u_degree: surface.u_degree,
+                v_degree: surface.v_degree,
+                u_knots: surface.u_knots,
+                v_knots: surface.v_knots,
+                control_points: surface.control_points,
+            });
+        }
+    }
+    out.sort_by_key(|surface| surface.id.clone());
+    Ok(out)
+}
+
 /// Bind relation-connected sketch geometry to its unique owning sketch.
 pub(crate) fn bind_sketch_graph(
     entities: &[DesignEntityHeader],
     points: &mut [SketchPoint],
     curves: &mut [SketchCurveIdentity],
+    surfaces: &mut [SketchSurface],
     relations: &mut [SketchRelation],
 ) -> Result<(), CodecError> {
     let sketch_owners = entities
@@ -17930,6 +18114,11 @@ pub(crate) fn bind_sketch_graph(
                 .iter()
                 .filter_map(|curve| Some((native_stream(&curve.id)?, curve.record_index))),
         )
+        .chain(
+            surfaces
+                .iter()
+                .filter_map(|surface| Some((native_stream(&surface.id)?, surface.record_index))),
+        )
         .collect::<std::collections::HashSet<_>>();
     let mut owners = std::collections::HashMap::new();
     let direct_owners = points
@@ -17939,6 +18128,11 @@ pub(crate) fn bind_sketch_graph(
             curves
                 .iter()
                 .map(|curve| (&curve.id, curve.record_index, curve.owner_reference)),
+        )
+        .chain(
+            surfaces
+                .iter()
+                .map(|surface| (&surface.id, surface.record_index, surface.owner_reference)),
         )
         .filter_map(|(id, record_index, owner_reference)| {
             Some((
@@ -18010,6 +18204,11 @@ pub(crate) fn bind_sketch_graph(
             .and_then(|scope| owners.get(&(scope, curve.record_index)))
             .copied();
     }
+    for surface in surfaces.iter_mut() {
+        surface.owner_reference = native_stream(&surface.id)
+            .and_then(|scope| owners.get(&(scope, surface.record_index)))
+            .copied();
+    }
     let operands = points
         .iter()
         .filter_map(|point| {
@@ -18028,6 +18227,15 @@ pub(crate) fn bind_sketch_graph(
                     record_index: curve.record_index,
                     primary_id: curve.primary_id,
                     secondary_id: curve.secondary_id,
+                },
+            ))
+        }))
+        .chain(surfaces.iter().filter_map(|surface| {
+            Some((
+                (native_stream(&surface.id)?, surface.record_index),
+                SketchRelationOperand::Surface {
+                    record_index: surface.record_index,
+                    persistent_id: surface.persistent_id,
                 },
             ))
         }))
@@ -19372,12 +19580,12 @@ mod relation_tests {
         parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
         parse_genesis_entity_header, parse_parameter_companion, parse_parameter_owner,
         parse_parameter_scope, parse_settled_entity_header, parse_sketch_placement_candidates,
-        parse_sketch_relation, partial_historical_edge_selection, point_lies_on_sketch_geometry,
-        point_on_sketch_entity, project_configurations, project_dimension_constraints,
-        project_extrude, project_parameter_design, project_sketch_constraints,
-        project_sketch_design, project_spatial_sketch_constraints, project_spatial_sketch_design,
-        radial_dimension_definition, recipe_record_prefix, region_containing_points,
-        remove_dimension_frame_relations, repeated_linear_dimension,
+        parse_sketch_relation, parse_sketch_surface, partial_historical_edge_selection,
+        point_lies_on_sketch_geometry, point_on_sketch_entity, project_configurations,
+        project_dimension_constraints, project_extrude, project_parameter_design,
+        project_sketch_constraints, project_sketch_design, project_spatial_sketch_constraints,
+        project_spatial_sketch_design, radial_dimension_definition, recipe_record_prefix,
+        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, sketch_entity_endpoints, two_locus_distance_dimension,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
@@ -19413,6 +19621,58 @@ mod relation_tests {
         SketchEntityUse, SketchGeometry, SketchId,
     };
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn sketch_surface_parser_recovers_tensor_product_grid() {
+        let mut payload = vec![0; 315];
+        payload[20] = 1;
+        payload[21..25].copy_from_slice(&2u32.to_le_bytes());
+        payload[25..29].copy_from_slice(&13u32.to_le_bytes());
+        payload[29..42].copy_from_slice(b"EntityGenesis");
+        payload[42..46].copy_from_slice(&23u32.to_le_bytes());
+        payload[46..69].copy_from_slice(b"IntrinsicMetaTypeuint64");
+        payload[69..77].copy_from_slice(&17u64.to_le_bytes());
+        payload[77..81].copy_from_slice(&11u32.to_le_bytes());
+        payload[81..92].copy_from_slice(b"surface_tag");
+        payload[92..96].copy_from_slice(&23u32.to_le_bytes());
+        payload[96..119].copy_from_slice(b"IntrinsicMetaTypeuint64");
+        payload[119..127].copy_from_slice(&29u64.to_le_bytes());
+        payload[127..131].copy_from_slice(&4u32.to_le_bytes());
+        let coordinates = [
+            0.0f64, 0.0, 0.0, 0.0, 2.0, 0.0, 3.0, 0.0, 0.0, 3.0, 2.0, 1.0,
+        ];
+        for (index, coordinate) in coordinates.into_iter().enumerate() {
+            let at = 131 + index * 8;
+            payload[at..at + 8].copy_from_slice(&coordinate.to_le_bytes());
+        }
+        let degrees_at = 131 + coordinates.len() * 8;
+        payload[degrees_at..degrees_at + 4].copy_from_slice(&1u32.to_le_bytes());
+        payload[degrees_at + 4..degrees_at + 8].copy_from_slice(&1u32.to_le_bytes());
+        payload[degrees_at + 8..degrees_at + 12].copy_from_slice(&4u32.to_le_bytes());
+        let mut at = degrees_at + 12;
+        for knot in [0.0f64, 0.0, 1.0, 1.0] {
+            payload[at..at + 8].copy_from_slice(&knot.to_le_bytes());
+            at += 8;
+        }
+        payload[at..at + 4].copy_from_slice(&4u32.to_le_bytes());
+        at += 4;
+        for knot in [0.0f64, 0.0, 1.0, 1.0] {
+            payload[at..at + 8].copy_from_slice(&knot.to_le_bytes());
+            at += 8;
+        }
+        payload[at..at + 4].copy_from_slice(&2u32.to_le_bytes());
+        payload[at + 4..at + 8].copy_from_slice(&2u32.to_le_bytes());
+
+        let surface = parse_sketch_surface(&payload).expect("canonical surface payload");
+        assert_eq!(surface.entity_genesis, Some(17));
+        assert_eq!(surface.persistent_id, 29);
+        assert_eq!((surface.u_degree, surface.v_degree), (1, 1));
+        assert_eq!(surface.u_knots, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(surface.v_knots, [0.0, 0.0, 1.0, 1.0]);
+        assert_eq!(surface.control_points.len(), 2);
+        assert_eq!(surface.control_points[0].len(), 2);
+        assert_eq!(surface.control_points[1][1], Point3::new(30.0, 20.0, 10.0));
+    }
 
     #[test]
     fn feature_family_tokens_are_localized() {
@@ -24808,6 +25068,7 @@ mod relation_tests {
             &mut points,
             &mut [],
             &mut [],
+            &mut [],
         )
         .expect("member-run owners bind");
         assert_eq!(points[0].owner_reference, Some(100));
@@ -24819,6 +25080,7 @@ mod relation_tests {
         assert!(bind_sketch_graph(
             &[header(100, vec![20]), header(101, vec![20])],
             &mut points,
+            &mut [],
             &mut [],
             &mut [],
         )
@@ -25409,7 +25671,7 @@ mod relation_tests {
         assert!(planar_sketches.is_empty());
         assert!(planar_entities.is_empty());
         let (sketches, entities) =
-            project_spatial_sketch_design(&[placement.clone()], &points, &curves, &relations);
+            project_spatial_sketch_design(&[placement.clone()], &points, &curves, &[], &relations);
         assert_eq!(sketches.len(), 1);
         assert_eq!(entities.len(), 7);
         assert!(entities.iter().any(|entity| matches!(
@@ -25435,6 +25697,7 @@ mod relation_tests {
             &relations,
             &points,
             &curves,
+            &[],
             &entities,
         );
         assert!(matches!(
@@ -27113,6 +27376,7 @@ mod relation_tests {
             &[header("A"), header("B")],
             &mut points,
             &mut [],
+            &mut [],
             &mut relations,
         )
         .expect("stream-local sketch graphs bind independently");
@@ -27125,6 +27389,7 @@ mod relation_tests {
         assert!(bind_sketch_graph(
             &[overflowing_header],
             &mut [point("A")],
+            &mut [],
             &mut [],
             &mut [relation("A")],
         )
