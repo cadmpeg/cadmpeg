@@ -757,14 +757,15 @@ fn bind_profile_face_group_cardinality(
         {
             continue;
         }
-        if indices.len() < 2
-            || indices.iter().any(|index| {
-                let operand = &operands[*index];
-                operand.resolved_face_slot.is_some()
-                    || !crate::design::face_operand_candidates(operand).is_empty()
-                    || !operand.recipe_references.is_empty()
-            })
-        {
+        if indices.iter().any(|index| {
+            let operand = &operands[*index];
+            operand.resolved_face_slot.is_some()
+                || !crate::design::face_operand_candidates(operand).is_empty()
+                || operand.recipe_references.iter().any(|reference| {
+                    !reference.candidate_faces.is_empty()
+                        || !reference.alternate_selector_faces.is_empty()
+                })
+        }) {
             continue;
         }
         indices.sort_by_key(|index| operands[*index].group_member_ordinal);
@@ -3892,6 +3893,18 @@ mod tests {
         assert_eq!(
             profile_face_group_cardinality_candidates(&topology, &changed, 3),
             Some(vec![10, 11, 12])
+        );
+        assert_eq!(
+            profile_face_group_cardinality_candidates(&topology, &[20].into_iter().collect(), 1,),
+            Some(vec![20])
+        );
+        assert_eq!(
+            profile_face_group_cardinality_candidates(
+                &topology,
+                &[10, 20].into_iter().collect(),
+                1,
+            ),
+            None
         );
 
         let mut ambiguous = topology;
