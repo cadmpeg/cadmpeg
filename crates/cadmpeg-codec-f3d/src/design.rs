@@ -1938,7 +1938,7 @@ fn resolved_edge_group(
                 .iter()
                 .all(|operand| operand.resolved_edge_slot.is_some())
     });
-    if let Some(identity_matches) = identity_matches.filter(|_| {
+    if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
         !has_recipe_operands || (has_complete_identity_selection && !has_concrete_recipe_evidence)
     }) {
         if identity_matches.is_empty() {
@@ -2022,11 +2022,35 @@ fn resolved_edge_group(
     };
     let state = feature_input_topology_id(feature_id, previous_state_id);
     let lost_selection = || unmatched_selection(Some(previous_state_id));
-    let exact_slots = matched_operands
+    let combined_edges = matched_operands
         .iter()
-        .map(|operand| resolved_edge_operand(operand))
+        .enumerate()
+        .map(|(index, operand)| {
+            let recipe = resolved_edge_operand(operand);
+            let identity = identity_matches
+                .as_ref()
+                .and_then(|identities| identities[index].resolved_edge_slot);
+            match (recipe, identity) {
+                (Some(recipe), Some(identity)) if recipe != identity => None,
+                (recipe, identity) => Some(recipe.or(identity)),
+            }
+        })
+        .collect::<Option<Vec<_>>>();
+    let Some(combined_edges) = combined_edges else {
+        return unmatched_selection(Some(previous_state_id));
+    };
+    let established_edges = combined_edges.iter().flatten().copied().collect::<Vec<_>>();
+    let exact_slots = combined_edges
+        .iter()
+        .copied()
         .collect::<Option<Vec<_>>>()
-        .or_else(|| unique_edge_group_assignment(&matched_operands));
+        .or_else(|| {
+            unique_edge_group_assignment(&matched_operands).filter(|assignment| {
+                established_edges
+                    .iter()
+                    .all(|identity| assignment.contains(identity))
+            })
+        });
     let transition_slots = || {
         treatment_radius
             .and_then(|radius| radius_edge_group_candidates(&matched_operands, radius))
@@ -2048,17 +2072,30 @@ fn resolved_edge_group(
             })
             .or_else(|| scope_partition_edge_group_candidates(group, groups, operands))
     };
-    let resolved_slots =
-        exact_slots.or_else(|| transition_state_id.and_then(|_| transition_slots()));
+    let resolved_slots = exact_slots.or_else(|| {
+        transition_state_id.and_then(|_| {
+            transition_slots().filter(|assignment| {
+                established_edges
+                    .iter()
+                    .all(|identity| assignment.contains(identity))
+            })
+        })
+    });
     let Some(resolved_slots) = resolved_slots else {
         if !group.lost_edge_references.is_empty() {
             return lost_selection();
         }
-        let partial_members = if transition_state_id.is_none() {
-            terminal_partial_edge_group_members(&matched_operands)
-        } else {
-            partial_edge_group_members(&matched_operands)
-        };
+        let partial_members = matched_operands
+            .iter()
+            .zip(combined_edges)
+            .filter_map(|(operand, resolved)| {
+                let carries_transition_evidence = identity_matches.is_some()
+                    || transition_state_id.is_none()
+                    || !operand.changed_boundary_edge_slots.is_empty();
+                (resolved.is_some() || carries_transition_evidence)
+                    .then_some((operand.id.as_str(), resolved))
+            })
+            .collect::<Vec<_>>();
         return partial_historical_edge_selection(
             partial_members,
             previous_state_id,
@@ -2088,43 +2125,6 @@ fn resolved_edge_group(
             native: group.id.clone(),
         }
     }
-}
-
-fn terminal_partial_edge_group_members<'a>(
-    operands: &[&'a DesignEdgeOperand],
-) -> Vec<(&'a str, Option<i64>)> {
-    operands
-        .iter()
-        .filter_map(|operand| {
-            let resolved = resolved_edge_operand(operand);
-            if resolved.is_none()
-                && matches!(
-                    edge_group_assignment_candidates(
-                        &operand.recipe_selectors,
-                        edge_operand_reference_edge_sets(operand),
-                    ),
-                    Some(EdgeAssignmentCandidates::Context)
-                )
-            {
-                None
-            } else {
-                Some((operand.id.as_str(), resolved))
-            }
-        })
-        .collect()
-}
-
-fn partial_edge_group_members<'a>(
-    operands: &[&'a DesignEdgeOperand],
-) -> Vec<(&'a str, Option<i64>)> {
-    operands
-        .iter()
-        .filter_map(|operand| {
-            let resolved = resolved_edge_operand(operand);
-            (resolved.is_some() || !operand.changed_boundary_edge_slots.is_empty())
-                .then_some((operand.id.as_str(), resolved))
-        })
-        .collect()
 }
 
 fn partial_historical_edge_selection<'a>(
@@ -19617,15 +19617,15 @@ mod relation_tests {
         DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
         DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
-        DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
-        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup,
-        DesignExtrudeStart, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
-        DesignFixedFilletParameters, DesignObjectKind, DesignParameter, DesignParameterCompanion,
-        DesignParameterKind, DesignParameterOwner, DesignParameterScope,
-        DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
-        DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference, PersistentSubentityTag,
-        SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
-        SketchRelation, SketchRelationOperand, SketchSurface,
+        DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
+        DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
+        DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFixedChamferParameters,
+        DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind,
+        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
+        DesignParameterScope, DesignPathFeatureConstruction, DesignRecipeReference,
+        DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference,
+        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+        SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -23810,22 +23810,6 @@ mod relation_tests {
             super::edge_operand_reference_edge_sets(&edge_operand),
             vec![&[17][..], &[18, 19][..]]
         );
-        assert_eq!(
-            super::terminal_partial_edge_group_members(&[&edge_operand]),
-            vec![(edge_operand.id.as_str(), None)]
-        );
-        edge_operand.terminal_reference_edge_slots = vec![vec![17]];
-        assert!(super::terminal_partial_edge_group_members(&[&edge_operand]).is_empty());
-        edge_operand.terminal_reference_edge_slots = vec![vec![], vec![17]];
-        assert_eq!(
-            super::terminal_partial_edge_group_members(&[&edge_operand]),
-            vec![(edge_operand.id.as_str(), None)]
-        );
-        edge_operand.terminal_reference_edge_slots = vec![vec![17, 18], vec![17, 18]];
-        assert_eq!(
-            super::terminal_partial_edge_group_members(&[&edge_operand]),
-            vec![(edge_operand.id.as_str(), None)]
-        );
         edge_operand.terminal_reference_edge_slots.clear();
         edge_operand.resolved_edge_slot = Some(17);
         assert_eq!(super::resolved_edge_operand(&edge_operand), Some(17));
@@ -23945,7 +23929,7 @@ mod relation_tests {
         let terminal = super::resolved_edge_group(
             &terminal_group,
             std::slice::from_ref(&terminal_group),
-            &[terminal_resolved, terminal_unresolved],
+            &[terminal_resolved, terminal_unresolved.clone()],
             &[],
             None,
             &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
@@ -23964,19 +23948,49 @@ mod relation_tests {
             ),
             "{terminal:?}"
         );
-        let mut context_operand = edge_operand.clone();
-        context_operand.id = "context".into();
-        context_operand.changed_boundary_edge_slots.clear();
-        let mut unresolved_operand = edge_operand.clone();
-        unresolved_operand.id = "unresolved".into();
-        assert_eq!(
-            super::partial_edge_group_members(&[
-                &resolved_operand,
-                &context_operand,
-                &unresolved_operand,
-            ]),
-            [("resolved", Some(17)), ("unresolved", None)]
+        let identity = |record_index, ordinal, edge| DesignEdgeIdentityOperand {
+            id: format!("f3d:Design/BulkStream.dat:edge-identity#{record_index}"),
+            scope_record_index: 1,
+            group_record_index: 90,
+            group_member_ordinal: ordinal,
+            record_index,
+            byte_offset: u64::from(record_index),
+            class_tag: "297".into(),
+            local_id: u64::from(record_index),
+            local_id_offset: 0,
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            historical_entity_kind: None,
+            historical_entity_ref: None,
+            historical_state_ids: Vec::new(),
+            resolved_edge_slot: edge,
+            resolution_identity_id: None,
+        };
+        let mut recipe_unresolved = proven_operand.clone();
+        recipe_unresolved.resolved_edge_slot = None;
+        recipe_unresolved.recipe_state_id = Some(8);
+        recipe_unresolved.changed_boundary_edge_slots.clear();
+        let merged = super::resolved_edge_group(
+            &terminal_group,
+            std::slice::from_ref(&terminal_group),
+            &[recipe_unresolved, terminal_unresolved],
+            &[identity(100, 0, Some(17)), identity(104, 1, None)],
+            Some(8),
+            &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+            None,
         );
+        assert!(matches!(
+            merged,
+            cadmpeg_ir::features::EdgeSelection::HistoricalPartial {
+                ref edges,
+                ref unresolved,
+                ..
+            } if edges == &[cadmpeg_ir::ids::HistoricalEdgeId(
+                "f3d:history-input:edge#6:fillet:8:17".into()
+            )] && unresolved == &["f3d:Design/BulkStream.dat:edge-operand#104"]
+        ));
         assert_eq!(
             edge_operand.recipe_program_offset,
             recipe_name_at as u64 + 16
