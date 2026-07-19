@@ -5228,8 +5228,8 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
 #[test]
 fn feature_input_column_row_uses_preserve_target_row_slots() {
     use crate::native::{
-        feature_input_column_row_uses, ColumnIndexRowKind, DataBlockColumnIndexTable,
-        DataBlockTargetIndexRow, FeatureInputBlock,
+        feature_input_column_row_uses, feature_input_column_targets, ColumnIndexRowKind,
+        DataBlockColumnIndexTable, DataBlockTargetIndexRow, FeatureInputBlock,
     };
 
     let input = FeatureInputBlock {
@@ -5280,7 +5280,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         &[table.clone(), table.clone()],
     );
     assert!(ambiguous.iter().all(|use_| use_.column_table.is_none()));
-    let uses = feature_input_column_row_uses(&[input], &[], &[], &[row], &[table]);
+    let uses = feature_input_column_row_uses(&[input.clone()], &[], &[], &[row], &[table]);
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -5292,6 +5292,14 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(uses[0].source_offset, 105);
     assert_eq!(uses[1].row_slot, 3);
     assert_eq!(uses[1].source_offset, 112);
+    let targets = feature_input_column_targets(&[input.clone()], &uses);
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].input_block, input.id);
+    assert_eq!(targets[0].column_row, "target-row#3");
+    assert_eq!(targets[0].column_table, "column-table");
+    let mut duplicate = uses.clone();
+    duplicate.push(uses[0].clone());
+    assert!(feature_input_column_targets(&[input], &duplicate).is_empty());
 }
 
 #[test]

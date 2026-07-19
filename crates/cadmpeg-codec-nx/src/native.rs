@@ -4353,6 +4353,29 @@ pub struct FeatureInputColumnRowUse {
     pub source_offset: u64,
 }
 
+/// Unique composite-table target row for one feature input block.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureInputColumnTarget {
+    /// Globally unique target identity.
+    pub id: String,
+    /// Feature input binding that resolves to the target block.
+    pub input_block: String,
+    /// Owning feature operation label.
+    pub operation_label: String,
+    /// Input slot in the operation header.
+    pub input_slot: u8,
+    /// Linked or target-index row whose slot zero is the input block.
+    pub column_row: String,
+    /// Serialized grammar of `column_row`.
+    pub row_kind: ColumnIndexRowKind,
+    /// Unique complete composite table containing `column_row`.
+    pub column_table: String,
+    /// Exact target in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Absolute file offset of the row's target block index.
+    pub source_offset: u64,
+}
+
 /// Ordered parameter declaration reached through one feature input block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureParameterBinding {
@@ -6469,6 +6492,47 @@ pub fn feature_input_column_row_uses(
                     },
                 )
                 .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Retain inputs having exactly one slot-zero use in one complete column table.
+pub fn feature_input_column_targets(
+    inputs: &[FeatureInputBlock],
+    uses: &[FeatureInputColumnRowUse],
+) -> Vec<FeatureInputColumnTarget> {
+    inputs
+        .iter()
+        .filter_map(|input| {
+            let targets = uses
+                .iter()
+                .filter(|use_| {
+                    use_.input_block == input.id
+                        && use_.row_slot == 0
+                        && use_.column_table.is_some()
+                        && use_.row_kind != ColumnIndexRowKind::Index
+                })
+                .collect::<Vec<_>>();
+            let [target] = targets.as_slice() else {
+                return None;
+            };
+            Some(FeatureInputColumnTarget {
+                id: format!(
+                    "nx:feature-history:input-column-target#{}",
+                    input.id.rsplit_once('#').map_or("unknown", |(_, key)| key)
+                ),
+                input_block: input.id.clone(),
+                operation_label: input.operation_label.clone(),
+                input_slot: input.input_slot,
+                column_row: target.column_row.clone(),
+                row_kind: target.row_kind,
+                column_table: target
+                    .column_table
+                    .clone()
+                    .expect("complete target use has a table"),
+                data_block: input.data_block.clone(),
+                source_offset: target.source_offset,
+            })
         })
         .collect()
 }

@@ -7614,6 +7614,10 @@ fn attach_native_object_model(
         &data_block_target_index_rows,
         &data_block_column_index_tables,
     );
+    let feature_input_column_targets = crate::native::feature_input_column_targets(
+        &feature_input_blocks,
+        &feature_input_column_row_uses,
+    );
     let feature_parameter_bindings = crate::native::feature_parameter_bindings(
         &feature_input_blocks,
         &data_block_references,
@@ -9144,6 +9148,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_input_column_row_uses",
             &feature_input_column_row_uses,
+        )?;
+    }
+    if !feature_input_column_targets.is_empty() {
+        namespace.set_arena(
+            "feature_input_column_targets",
+            &feature_input_column_targets,
         )?;
     }
     if !feature_parameter_bindings.is_empty() {
