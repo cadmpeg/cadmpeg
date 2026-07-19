@@ -5611,6 +5611,23 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
             .collect::<Vec<_>>(),
         [7]
     );
+    assert_eq!(
+        scan.nonvisible_surface_rows
+            .iter()
+            .map(|row| (row.id, row.feature_id))
+            .collect::<Vec<_>>(),
+        [(8, 5)]
+    );
+
+    let result = decode::decode(
+        &mut Cursor::new(scan.data.clone()),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+    let rows = &result.ir.native.namespace("creo").unwrap().arenas["nonvisible_surface_rows"];
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "creo:novisgeom:surface_row#8");
+    assert_eq!(rows[0].fields["source_section"], "NovisGeom");
 }
 
 #[test]

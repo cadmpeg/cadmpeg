@@ -29354,6 +29354,23 @@ fn build_ir(
         namespace.version = 1;
         namespace.set_arena("surface_rows", &surface_rows)?;
     }
+    let nonvisible_surface_rows =
+        surface_row_records(scan, &scan.nonvisible_surface_rows, "novisgeom");
+    if !nonvisible_surface_rows.is_empty() {
+        for record in &nonvisible_surface_rows {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "nonvisible_surface_namespace_row",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("nonvisible_surface_rows", &nonvisible_surface_rows)?;
+    }
     let cross_section_surface_rows = surface_row_records(
         scan,
         &scan.cross_section_surface_rows,

@@ -217,6 +217,9 @@ pub struct ContainerScan {
     /// Typed fixed-prefix surface rows from the selected material model
     /// geometry namespace. Parameter bodies are decoded separately.
     pub surface_rows: Vec<SurfaceRow>,
+    /// Typed fixed-prefix rows from the separate invisible and construction
+    /// surface namespace.
+    pub nonvisible_surface_rows: Vec<SurfaceRow>,
     /// Typed fixed-prefix surface rows from the DEPDB cross-section geometry
     /// namespace. These are kept separate from model-face surface rows.
     pub cross_section_surface_rows: Vec<SurfaceRow>,
@@ -1630,6 +1633,12 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
     let family_table = family_table(&data, &sections);
+    let nonvisible_surface_sections = sections
+        .iter()
+        .filter(|section| section.name == "NovisGeom")
+        .cloned()
+        .collect::<Vec<_>>();
+    let nonvisible_surface_rows = surface_rows(&data, &nonvisible_surface_sections);
     let surface_rows = surface_rows(&data, &model_geometry_sections);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
     let surface_parameters = surface_parameters(&data, &model_geometry_sections);
@@ -1769,6 +1778,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         principal_unit,
         family_table,
         surface_rows,
+        nonvisible_surface_rows,
         cross_section_surface_rows,
         surface_parameters,
         cross_section_surface_parameters,
