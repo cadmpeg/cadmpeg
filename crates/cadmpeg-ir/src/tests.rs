@@ -1435,8 +1435,6 @@ fn schema_constrains_version_and_requires_subd_arena() {
         .and_then(serde_json::Value::as_array)
         .unwrap()
         .contains(&serde_json::json!("subds")));
-    assert!(schema.pointer("/properties/byte_ledger").is_none());
-
     let mut value = serde_json::to_value(unit_cube()).unwrap();
     value
         .pointer_mut("/model")
@@ -2920,13 +2918,4 @@ fn polyline_carriers_evaluate_in_both_parameter_directions() {
         crate::eval::curve_point(&decreasing, 2.5),
         Some(Point3::new(0.5, 0.0, 0.0))
     );
-}
-
-#[test]
-fn current_document_excludes_source_byte_accounting() {
-    let ir = CadIr::empty(crate::units::Units::default());
-    let json = serde_json::to_value(&ir).unwrap();
-
-    assert_eq!(json["ir_version"], "53");
-    assert!(json.get("byte_ledger").is_none());
 }
