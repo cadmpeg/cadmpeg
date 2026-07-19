@@ -2807,6 +2807,55 @@ mod marker_tests {
     }
 
     #[test]
+    fn extended_compact_indexed_curves_own_their_endpoint_trailers() {
+        let marker = |size: usize| {
+            let mut payload = vec![0; size + LEGACY_SKETCH_MARKER.len()];
+            payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+            payload[5..13].fill(0xff);
+            payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+            payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+            payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+            payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[56..58].copy_from_slice(&4u16.to_le_bytes());
+            payload[58..60].copy_from_slice(&8u16.to_le_bytes());
+            payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+            payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+            payload[size..].copy_from_slice(LEGACY_SKETCH_MARKER);
+            payload
+        };
+
+        let mut compact_96 = marker(96);
+        compact_96[82..84].copy_from_slice(&3u16.to_le_bytes());
+        compact_96[88..92].copy_from_slice(&4u32.to_le_bytes());
+        compact_96[92..96].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            compact_indexed_curve_endpoint_indices(&compact_96, 0),
+            Some([5, 9])
+        );
+        compact_96[84] = 1;
+        assert_eq!(compact_indexed_curve_endpoint_indices(&compact_96, 0), None);
+
+        let mut compact_104 = marker(104);
+        compact_104[72..76].copy_from_slice(&(-1i32).to_le_bytes());
+        compact_104[76..78].copy_from_slice(&5u16.to_le_bytes());
+        for at in (78..94).step_by(4) {
+            compact_104[at..at + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        compact_104[96..100].copy_from_slice(&6u32.to_le_bytes());
+        compact_104[100..104].copy_from_slice(&2u32.to_le_bytes());
+        assert_eq!(
+            compact_indexed_curve_endpoint_indices(&compact_104, 0),
+            Some([5, 9])
+        );
+        compact_104[94] = 1;
+        assert_eq!(
+            compact_indexed_curve_endpoint_indices(&compact_104, 0),
+            None
+        );
+    }
+
+    #[test]
     fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
         let detail = 92;
         let mut payload = vec![0; detail + 80];
@@ -17127,8 +17176,7 @@ fn compact_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
         || payload.get(offset + 31..offset + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
         || payload.get(offset + 35..offset + 39) != Some(&[0x00, 0x00, 0x04, 0x00])
         || f64::from_le_bytes(payload.get(offset + 48..offset + 56)?.try_into().ok()?) != 1.0
-        || !(sketch_marker_prefix_at(payload, offset.checked_add(84)?)
-            || compact_indexed_curve_has_terminal_trailer(payload, offset))
+        || !compact_indexed_curve_record_ends_at(payload, offset)
     {
         return None;
     }
@@ -17145,15 +17193,37 @@ fn compact_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
     Some([endpoint(56)?, endpoint(58)?])
 }
 
-fn compact_indexed_curve_has_terminal_trailer(payload: &[u8], offset: usize) -> bool {
-    payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
-        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
-        && payload.get(offset + 78..offset + 94)
-            == Some(&[
-                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
-                0xff, 0xff,
-            ])
+fn compact_indexed_curve_record_ends_at(payload: &[u8], offset: usize) -> bool {
+    if sketch_marker_prefix_at(payload, offset.saturating_add(84)) {
+        return true;
+    }
+    if payload.get(offset + 60..offset + 64) != Some(&1u32.to_le_bytes())
+        || payload.get(offset + 64..offset + 72) != Some(&(-1.0f64).to_le_bytes())
+    {
+        return false;
+    }
+    let compact_96 = payload.get(offset + 72..offset + 80) == Some(&[0; 8])
+        && payload.get(offset + 80..offset + 82) == Some(&[0; 2])
+        && payload.get(offset + 84..offset + 88) == Some(&[0; 4])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(96));
+    let selector = payload
+        .get(offset + 72..offset + 76)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(i32::from_le_bytes);
+    let reference_sentinel = payload.get(offset + 78..offset + 94)
+        == Some(&[
+            0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+            0xff, 0xff,
+        ]);
+    let compact_104 = matches!(selector, Some(-1 | 1))
+        && reference_sentinel
+        && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(104));
+    let terminal_102 = matches!(selector, Some(-1 | 1))
+        && reference_sentinel
         && payload.get(offset + 94..offset + 102) == Some(&[0; 8])
+        && !sketch_marker_prefix_at(payload, offset.saturating_add(102));
+    compact_96 || compact_104 || terminal_102
 }
 
 fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
