@@ -1869,6 +1869,9 @@ complete only when its decoded prototype and positional entry bodies equal its
 declared entry count exactly; missing and extra bodies both make it incomplete.
 
 `vert_tab` chains bind a solved trim-vertex identifier to its incident `segtab` external identifiers. This vertex namespace is the namespace used by `ent_tab.start_vtx` and `ent_tab.end_vtx`. A trim vertex with exactly two incident carriers can be solved as their intersection evaluated from `var_arr` or the joined saved-section geometry; its identifier differs from a `segtab` point identifier. A neutral sketch line uses its `ent_tab` start and end intersections, not the untrimmed carrier endpoints.
+Both intersections must lie on an independently solved line carrier. A neutral
+sketch arc likewise uses its `ent_tab` intersections as endpoints; both must
+lie on the independently solved `var_arr` or saved-section circle carrier.
 Native `vert_tab` rows are retained from their own complete entry bodies. Their
 retention does not depend on whether either incident entity is present in the
 decoded `ent_tab` subset.

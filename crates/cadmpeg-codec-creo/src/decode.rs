@@ -5573,9 +5573,39 @@ fn trimmed_section_segment_geometry(
         .find(|row| trim_segment_id(definition, row) == Some(segment.external_id))?;
     let start = trim_vertices.get(&trim.vertices[0])?;
     let end = trim_vertices.get(&trim.vertices[1])?;
-    if let Some(geometry) = resolved_section_segment_geometry(definition, points, segment) {
-        if !matches!(geometry, SketchGeometry::Line { .. }) {
-            return Some(geometry);
+    if let Some(SketchGeometry::Line {
+        start: carrier_start,
+        end: carrier_end,
+    }) = resolved_section_segment_geometry(definition, points, segment)
+    {
+        let scale = [
+            carrier_start.u,
+            carrier_start.v,
+            carrier_end.u,
+            carrier_end.v,
+            start[0],
+            start[1],
+            end[0],
+            end[1],
+        ]
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+        let direction = [
+            carrier_end.u / scale - carrier_start.u / scale,
+            carrier_end.v / scale - carrier_start.v / scale,
+        ];
+        let direction_norm = direction[0].hypot(direction[1]);
+        if direction_norm <= 1e-12
+            || [start, end].into_iter().any(|point| {
+                let offset = [
+                    point[0] / scale - carrier_start.u / scale,
+                    point[1] / scale - carrier_start.v / scale,
+                ];
+                (offset[0] * direction[1] - offset[1] * direction[0]).abs() > 1e-9 * direction_norm
+            })
+        {
+            return None;
         }
     } else if let Some(([center_u, center_v], radius)) =
         section_arc_carrier(&resolved_section_radii(definition), points, segment)
@@ -16400,7 +16430,7 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn trimmed_line_uses_reconciled_solver_orientation() {
+    fn trimmed_line_reconciles_carrier_and_solver_orientation() {
         let segment = crate::feature::FeatureSegment {
             kind: crate::feature::FeatureSegmentKind::Line,
             directions: [None; 3],
@@ -16513,6 +16543,23 @@ mod resolved_sketch_tests {
             })
         );
 
+        let carrier_points = BTreeMap::from([(7, [0.0, 3.0]), (9, [2.0, 3.0])]);
+        assert!(trimmed_section_segment_geometry(
+            &definition,
+            &carrier_points,
+            &trim_vertices,
+            &segment,
+        )
+        .is_some());
+        let off_carrier_vertices = BTreeMap::from([(1, [-2.0, 3.0]), (2, [4.0, 4.0])]);
+        assert!(trimmed_section_segment_geometry(
+            &definition,
+            &carrier_points,
+            &off_carrier_vertices,
+            &segment,
+        )
+        .is_none());
+
         let relations = definition.relations.as_mut().expect("solver relations");
         relations.skamps.push(crate::feature::FeatureSkamp {
             id: 3,
@@ -16540,7 +16587,7 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn saved_arc_carrier_combines_with_trim_vertices() {
+    fn arc_carriers_use_trim_vertices() {
         let segment = crate::feature::FeatureSegment {
             kind: crate::feature::FeatureSegmentKind::Arc,
             directions: [None; 3],
@@ -16609,13 +16656,59 @@ mod resolved_sketch_tests {
             offset: 0,
         };
         let trim_vertices = BTreeMap::from([(1, [-2.0, 0.0]), (2, [0.0, -2.0])]);
+        let points = BTreeMap::from([(7, [2.0, 0.0]), (8, [0.0, 0.0]), (9, [0.0, 2.0])]);
 
         assert_eq!(
+            trimmed_section_segment_geometry(&definition, &points, &trim_vertices, &segment),
+            Some(SketchGeometry::Arc {
+                center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                radius: Length(2.0),
+                start_angle: Angle(-std::f64::consts::FRAC_PI_2),
+                end_angle: Angle(std::f64::consts::PI),
+            })
+        );
+
+        let mut var_segment = segment.clone();
+        var_segment.radius_ref = Some(10);
+        let mut var_arc = definition;
+        var_arc.variables = Some(crate::feature::FeatureVariableTable {
+            declared_count: 0,
+            entity_ref: None,
+            rows: Vec::new(),
+            points: vec![
+                crate::feature::FeatureSectionPoint {
+                    point_id: 7,
+                    u: Some(2.0),
+                    v: Some(0.0),
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 8,
+                    u: Some(0.0),
+                    v: Some(0.0),
+                },
+                crate::feature::FeatureSectionPoint {
+                    point_id: 9,
+                    u: Some(0.0),
+                    v: Some(2.0),
+                },
+            ],
+            offset: 5,
+        });
+        var_arc.segments = Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: vec![var_segment.clone()],
+            opaque_rows: Vec::new(),
+            offset: 6,
+        });
+        var_arc.order_table = None;
+        var_arc.saved_section = None;
+        assert_eq!(
             trimmed_section_segment_geometry(
-                &definition,
-                &BTreeMap::new(),
+                &var_arc,
+                &resolved_section_points(&var_arc),
                 &trim_vertices,
-                &segment,
+                &var_segment,
             ),
             Some(SketchGeometry::Arc {
                 center: cadmpeg_ir::math::Point2::new(0.0, 0.0),
