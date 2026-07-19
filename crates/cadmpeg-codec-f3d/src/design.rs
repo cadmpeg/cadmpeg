@@ -2663,16 +2663,16 @@ fn resolved_edge_candidate_intersection_with_extra_proofs<'a, const N: usize>(
         .copied()
         .filter(|edges| !edges.is_empty())
         .collect::<Vec<_>>();
-    if !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty() {
-        let proofs = extra_proofs.into_iter().flatten().collect::<Vec<_>>();
-        let edge = *proofs.first()?;
-        return proofs.iter().all(|proof| *proof == edge).then_some(edge);
-    }
+    let references_unavailable = !ordered_edge_sets.is_empty() && shared_edge_sets.is_empty();
     let reference = (shared_edge_sets.len() >= 2)
         .then(|| unique_edge_set_intersection(&shared_edge_sets))
         .flatten();
-    let incidence = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false);
-    let boundary_count = corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true);
+    let incidence = (!references_unavailable)
+        .then(|| corroborated_edge_intersection(selector_contexts, &shared_edge_sets, false))
+        .flatten();
+    let boundary_count = (!references_unavailable)
+        .then(|| corroborated_edge_intersection(selector_contexts, &shared_edge_sets, true))
+        .flatten();
     let common_triplet =
         corroborated_common_triplet_intersection(selector_contexts, &shared_edge_sets);
     let cross_clause_triplet =
@@ -29464,7 +29464,11 @@ mod relation_tests {
         });
         common.clause_triplet_edge_slots[0] = Some([vec![17, 18], vec![17]]);
         assert_eq!(
-            resolved_edge_candidate_intersection(&[common], [&[17, 18][..]]),
+            resolved_edge_candidate_intersection(&[common.clone()], [&[17, 18][..]]),
+            Some(17)
+        );
+        assert_eq!(
+            resolved_edge_candidate_intersection(&[common], [&[][..]]),
             Some(17)
         );
         let mut common = selector(0, &[]);
