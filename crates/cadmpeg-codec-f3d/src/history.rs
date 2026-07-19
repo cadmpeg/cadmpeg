@@ -3332,9 +3332,7 @@ mod tests {
             crate::records::DesignTopologyRecipeSide {
                 field_count: std::num::NonZeroU32::new(3).unwrap(),
                 header_value: 0,
-                first: 0,
-                second: 0,
-                third: None,
+                scalars: vec![0, 0],
                 payload_entry_count: u32::try_from(entries.len()).unwrap(),
                 entries,
             }

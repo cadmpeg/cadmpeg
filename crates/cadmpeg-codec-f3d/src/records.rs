@@ -1722,18 +1722,12 @@ pub struct DesignEdgeRecipeStructure {
 /// One delimiter-bounded side clause in a standard edge recipe.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignTopologyRecipeSide {
-    /// Encoded number of fields after the header count: two or three scalar
-    /// runs plus the payload.
+    /// Encoded number of fields after the header count: scalar fields plus the payload.
     pub field_count: NonZeroU32,
     /// Second word of the side header.
     pub header_value: i32,
-    /// Scalar between the first and second clause delimiters.
-    pub first: i32,
-    /// Scalar between the second and third clause delimiters.
-    pub second: i32,
-    /// Optional scalar between the third and fourth clause delimiters.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub third: Option<i32>,
+    /// Ordered scalar fields following the side header.
+    pub scalars: Vec<i32>,
     /// Encoded number of eight-word payload entries following the zero tag.
     pub payload_entry_count: u32,
     /// Ordered eight-word payload entries.
@@ -1743,7 +1737,7 @@ pub struct DesignTopologyRecipeSide {
 /// One eight-word topology entry in an edge-recipe side clause.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignTopologyRecipeEntry {
-    /// Clause-local selector in `0..=2`, strictly increasing within one clause.
+    /// Nonnegative clause-local selector, strictly increasing within one clause.
     pub selector: i32,
     /// Number of boundary edges on the referenced face loop.
     pub boundary_edge_count: NonZeroU32,

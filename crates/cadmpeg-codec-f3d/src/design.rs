@@ -15969,14 +15969,7 @@ pub(crate) fn edge_recipe_local_topology_references(
 ) -> Option<Vec<std::num::NonZeroU32>> {
     topology_recipe_references(
         std::iter::once(structure.root).chain(structure.sides.iter().flat_map(|side| {
-            [
-                Some(side.header_value),
-                Some(side.first),
-                Some(side.second),
-                side.third,
-            ]
-            .into_iter()
-            .flatten()
+            std::iter::once(side.header_value).chain(side.scalars.iter().copied())
         })),
         reference_count,
     )
@@ -15985,100 +15978,54 @@ pub(crate) fn edge_recipe_local_topology_references(
 fn edge_recipe_structure_tail(
     program: &[i32],
 ) -> Option<crate::records::DesignEdgeRecipeStructure> {
-    edge_recipe_minus_one_delimited_structure(program)
-        .or_else(|| edge_recipe_zero_delimited_structure(program))
-}
-
-fn edge_recipe_minus_one_delimited_structure(
-    program: &[i32],
-) -> Option<crate::records::DesignEdgeRecipeStructure> {
-    let runs = program
-        .split(|word| *word == -1)
-        .filter(|run| !run.is_empty())
-        .collect::<Vec<_>>();
-    if runs.first().is_none_or(|run| run.len() != 1) {
+    let (&root, mut remaining) = program.split_first()?;
+    remaining = recipe_delimiter(remaining)?;
+    let (first, tail) = edge_recipe_counted_side(remaining)?;
+    remaining = recipe_delimiter(tail)?;
+    let (second, tail) = edge_recipe_counted_side(remaining)?;
+    if !matches!(tail, [] | [-1]) {
         return None;
     }
-    let sides = [4usize, 5]
-        .into_iter()
-        .filter_map(|first_len| {
-            let second_len = runs.len().checked_sub(1 + first_len)?;
-            if !matches!(second_len, 4 | 5) {
-                return None;
-            }
-            Some([
-                edge_recipe_side(&runs[1..=first_len])?,
-                edge_recipe_side(&runs[1 + first_len..])?,
-            ])
-        })
-        .collect::<Vec<_>>();
-    let [sides] = sides.as_slice() else {
-        return None;
-    };
-    Some(crate::records::DesignEdgeRecipeStructure {
-        root: runs[0][0],
-        sides: sides.clone(),
-    })
-}
-
-fn edge_recipe_zero_delimited_structure(
-    program: &[i32],
-) -> Option<crate::records::DesignEdgeRecipeStructure> {
-    let runs = program
-        .split(|word| *word == -1)
-        .filter(|run| !run.is_empty())
-        .collect::<Vec<_>>();
-    let [root, first, second] = runs.as_slice() else {
-        return None;
-    };
-    let [root] = **root else {
-        return None;
-    };
     Some(crate::records::DesignEdgeRecipeStructure {
         root,
-        sides: [
-            edge_recipe_zero_delimited_side(first)?,
-            edge_recipe_zero_delimited_side(second)?,
-        ],
+        sides: [first, second],
     })
 }
 
-fn edge_recipe_zero_delimited_side(words: &[i32]) -> Option<DesignTopologyRecipeSide> {
+fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
+    matches!(words.first(), Some(-1 | 0)).then(|| &words[1..])
+}
+
+fn edge_recipe_counted_side(words: &[i32]) -> Option<(DesignTopologyRecipeSide, &[i32])> {
     let field_count = std::num::NonZeroU32::new(u32::try_from(*words.first()?).ok()?)?;
-    if !matches!(field_count.get(), 3 | 4) {
+    if field_count.get() < 2 {
         return None;
     }
     let scalar_count = usize::try_from(field_count.get()).ok()?.checked_sub(1)?;
     let header_value = *words.get(1)?;
-    if words.get(2) != Some(&0) {
-        return None;
-    }
+    let mut remaining = recipe_delimiter(words.get(2..)?)?;
     let mut scalars = Vec::with_capacity(scalar_count);
-    let mut cursor = 3;
     for _ in 0..scalar_count {
-        scalars.push(*words.get(cursor)?);
-        if words.get(cursor + 1) != Some(&0) {
-            return None;
-        }
-        cursor += 2;
+        let (&scalar, tail) = remaining.split_first()?;
+        scalars.push(scalar);
+        remaining = recipe_delimiter(tail)?;
     }
-    let payload_entry_count = u32::try_from(*words.get(cursor + 1)?).ok()?;
-    if words.get(cursor) != Some(&0) {
+    let [0, entry_count, entries @ ..] = remaining else {
         return None;
-    }
-    let entries = words.get(cursor + 2..)?;
-    if entries.len() != usize::try_from(payload_entry_count).ok()?.checked_mul(8)? {
-        return None;
-    }
-    Some(DesignTopologyRecipeSide {
-        field_count,
-        header_value,
-        first: scalars[0],
-        second: scalars[1],
-        third: scalars.get(2).copied(),
-        payload_entry_count,
-        entries: edge_recipe_entries(entries)?,
-    })
+    };
+    let payload_entry_count = u32::try_from(*entry_count).ok()?;
+    let payload_len = usize::try_from(payload_entry_count).ok()?.checked_mul(8)?;
+    let (entries, remaining) = entries.split_at_checked(payload_len)?;
+    Some((
+        DesignTopologyRecipeSide {
+            field_count,
+            header_value,
+            scalars,
+            payload_entry_count,
+            entries: edge_recipe_entries(entries)?,
+        },
+        remaining,
+    ))
 }
 
 pub(crate) fn face_recipe_structure(
@@ -16150,11 +16097,9 @@ fn topology_recipe_references(
 }
 
 fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignTopologyRecipeSide> {
-    if !matches!(runs.len(), 4 | 5)
+    if runs.len() < 3
         || runs[0].len() != 2
-        || runs[1].len() != 1
-        || runs[2].len() != 1
-        || (runs.len() == 5 && runs[3].len() != 1)
+        || runs[1..runs.len() - 1].iter().any(|run| run.len() != 1)
     {
         return None;
     }
@@ -16173,9 +16118,7 @@ fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignTopologyRecipeSide> {
     Some(DesignTopologyRecipeSide {
         field_count,
         header_value: runs[0][1],
-        first: runs[1][0],
-        second: runs[2][0],
-        third: (runs.len() == 5).then_some(runs[3][0]),
+        scalars: runs[1..runs.len() - 1].iter().map(|run| run[0]).collect(),
         payload_entry_count,
         entries: edge_recipe_entries(&payload[2..])?,
     })
@@ -16186,7 +16129,7 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> 
         .chunks_exact(8)
         .map(|entry| {
             let selector = entry[0];
-            if !(0..=2).contains(&selector) {
+            if selector < 0 {
                 return None;
             }
             let boundary_edge_count = std::num::NonZeroU32::new(u32::try_from(entry[1]).ok()?)?;
@@ -24334,9 +24277,7 @@ mod relation_tests {
         assert_eq!(structured.root, 2);
         assert_eq!(structured.sides[0].field_count.get(), 3);
         assert_eq!(structured.sides[0].header_value, 0);
-        assert_eq!(structured.sides[0].first, 2);
-        assert_eq!(structured.sides[0].second, 1);
-        assert_eq!(structured.sides[0].third, None);
+        assert_eq!(structured.sides[0].scalars, [2, 1]);
         assert_eq!(structured.sides[0].payload_entry_count, 1);
         assert_eq!(structured.sides[0].entries[0].selector, 1);
         assert_eq!(structured.sides[0].entries[0].boundary_edge_count.get(), 5);
@@ -24382,7 +24323,7 @@ mod relation_tests {
         );
         assert_eq!(structured.sides[1].field_count.get(), 3);
         assert_eq!(structured.sides[1].header_value, 0);
-        assert_eq!(structured.sides[1].third, None);
+        assert_eq!(structured.sides[1].scalars, [1, 3]);
         assert_eq!(structured.sides[1].payload_entry_count, 1);
         assert_eq!(structured.sides[1].entries[0].selector, 2);
         assert_eq!(structured.sides[1].entries[0].boundary_edge_count.get(), 5);
@@ -24438,7 +24379,11 @@ mod relation_tests {
         );
         let common = super::edge_recipe_entries(&[1, 5, 1, 1, 1, 1, 1, 1]).unwrap();
         assert_eq!(common[0].common_incident_edge_ordinal, Some(0));
-        assert!(super::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).is_none());
+        assert_eq!(
+            super::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).unwrap()[0].selector,
+            3
+        );
+        assert!(super::edge_recipe_entries(&[-1, 5, 1, 1, 1, 2, 1, 2]).is_none());
         assert!(super::edge_recipe_entries(&[1, 5, 6, 5, 6, 2, 1, 2]).is_none());
         assert!(
             super::edge_recipe_entries(&[1, 5, 1, 1, 1, 2, 1, 2, 1, 5, 2, 1, 2, 3, 2, 3,])
@@ -24453,8 +24398,8 @@ mod relation_tests {
             -1, 4, -1, 0, 0, -1,
         ])
         .expect("recipe structure with a third scalar on its second side");
-        assert_eq!(extended.sides[0].third, None);
-        assert_eq!(extended.sides[1].third, Some(4));
+        assert_eq!(extended.sides[0].scalars, [1, 0]);
+        assert_eq!(extended.sides[1].scalars, [0, 1, 4]);
         assert_eq!(extended.sides[1].field_count.get(), 4);
         assert!(extended.sides[0].entries.is_empty());
         assert!(extended.sides[1].entries.is_empty());
@@ -24466,19 +24411,33 @@ mod relation_tests {
         assert_eq!(zero_delimited.root, 2);
         assert_eq!(zero_delimited.sides[0].field_count.get(), 3);
         assert_eq!(zero_delimited.sides[0].header_value, 1);
-        assert_eq!(zero_delimited.sides[0].first, 0);
-        assert_eq!(zero_delimited.sides[0].second, 2);
+        assert_eq!(zero_delimited.sides[0].scalars, [0, 2]);
         assert!(zero_delimited.sides[0].entries.is_empty());
         assert_eq!(zero_delimited.sides[1].field_count.get(), 4);
-        assert_eq!(zero_delimited.sides[1].first, 3);
-        assert_eq!(zero_delimited.sides[1].second, 4);
-        assert_eq!(zero_delimited.sides[1].third, Some(0));
+        assert_eq!(zero_delimited.sides[1].scalars, [3, 4, 0]);
         assert_eq!(zero_delimited.sides[1].entries.len(), 1);
         assert_eq!(zero_delimited.sides[1].entries[0].selector, 2);
         assert_eq!(
             zero_delimited.sides[1].entries[0].boundary_edge_count.get(),
             3
         );
+        let mixed_delimiters = super::edge_recipe_structure(&[
+            -1, -1, 2, 0, 0, 1, -1, 2, -1, 3, 2, 0, 1, -1, 0, 0, 0, 0, -1, 3, 0, 0, 1, -1, 3, 0, 0,
+            0, -1,
+        ])
+        .expect("recipe structure with field-local delimiters");
+        assert_eq!(mixed_delimiters.root, 2);
+        assert_eq!(mixed_delimiters.sides[0].header_value, 2);
+        assert_eq!(mixed_delimiters.sides[0].scalars, [1, 0]);
+        assert_eq!(mixed_delimiters.sides[1].header_value, 0);
+        assert_eq!(mixed_delimiters.sides[1].scalars, [1, 3]);
+        let variable_scalars = super::edge_recipe_structure(&[
+            -1, -1, 2, 0, -1, 1, -1, 2, -1, 5, 1, -1, 0, -1, 2, -1, 3, -1, 4, -1, 0, 0, -1, 3, 0,
+            -1, 1, -1, 2, -1, 0, 0, -1,
+        ])
+        .expect("recipe structure with four scalar fields");
+        assert_eq!(variable_scalars.sides[0].field_count.get(), 5);
+        assert_eq!(variable_scalars.sides[0].scalars, [0, 2, 3, 4]);
         let face = super::face_recipe_structure(&[
             0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0, 0, -1,
         ])
@@ -24487,12 +24446,10 @@ mod relation_tests {
         assert_eq!(face.prelude, [1, 2]);
         assert_eq!(face.sides[0].field_count.get(), 3);
         assert_eq!(face.sides[0].header_value, 0);
-        assert_eq!(face.sides[0].first, 2);
-        assert_eq!(face.sides[0].second, 1);
+        assert_eq!(face.sides[0].scalars, [2, 1]);
         assert_eq!(face.sides[1].field_count.get(), 3);
         assert_eq!(face.sides[1].header_value, 0);
-        assert_eq!(face.sides[1].first, 1);
-        assert_eq!(face.sides[1].second, 3);
+        assert_eq!(face.sides[1].scalars, [1, 3]);
         assert_eq!(edge_operand.next_record_index, 104);
         assert_eq!(edge_operand.next_byte_offset, next_at);
         bind_edge_operand_candidates(
