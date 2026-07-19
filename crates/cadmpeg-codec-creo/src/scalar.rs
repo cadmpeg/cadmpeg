@@ -495,14 +495,13 @@ fn decode_local_system_slots(
             cursor += 1;
             continue;
         }
-        let (value, next) = if matches!(variant, LocalSystemVariant::PositionalPlane)
-            && values.len() == 9
-            && body.get(cursor) == Some(&0x4a)
-        {
-            ieee7(body, cursor, 0xc0)?
-        } else {
-            decode_in_row_lane(body, cursor, cache)?
-        };
+        let (value, next) =
+            if matches!(variant, LocalSystemVariant::PositionalPlane) && values.len() == 9 {
+                decode_in_row_lane(body, cursor, cache)
+                    .or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))?
+            } else {
+                decode_in_row_lane(body, cursor, cache)?
+            };
         values.push(value);
         cursor = next;
     }
@@ -631,7 +630,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn positional_plane_decodes_negative_seven_byte_origin_x() {
+    fn positional_plane_origin_x_prefers_row_then_signed_first_coordinate_lanes() {
         let cache = ScalarCache::from_section(&[0x46, 0x08, 0, 0, 0, 0, 0, 0]);
         let body = [
             0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x4a, 0x08, 0, 0, 0, 0, 0, 0x18, 0x00, 0x0f,
@@ -642,6 +641,29 @@ mod tests {
             Some([0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -3.0, 3.0, 0.0])
         );
         assert!(decode_explicit_local_system_slots(&body, &cache).is_none());
+
+        let fixed = [
+            0x10, 0x18, 0xe5, 0x10, 0x18, 0xe5, 0x0f, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x18, 0x00,
+            0x0f,
+        ];
+        assert_eq!(
+            decode_positional_plane_local_system_slots(&fixed, &cache).map(|slots| slots[9]),
+            Some(3.0)
+        );
+
+        let dict_origin = [
+            0x18, 0xe4, 0x10, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4, 0x9f, 0x77, 0xa7, 0x70, 0x76,
+            0xc8, 0xb8, 0x2d, 0x1e, 0, 0, 0, 0, 0, 0x65, 0xb9, 0x11, 0x9e, 0xed, 0x48, 0x6f, 0x9e,
+        ];
+        assert_eq!(
+            decode_positional_plane_local_system_slots(&dict_origin, &cache)
+                .map(|slots| { [slots[9], slots[10], slots[11]] }),
+            Some([
+                f64::from_be_bytes([0x40, 0x14, 0x77, 0xa7, 0x70, 0x76, 0xc8, 0xb8]),
+                f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
+                f64::from_be_bytes([0xbf, 0x11, 0x9e, 0xed, 0x48, 0x6f, 0x9e, 0]),
+            ])
+        );
     }
 
     #[test]
