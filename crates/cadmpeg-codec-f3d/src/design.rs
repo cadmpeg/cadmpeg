@@ -2072,6 +2072,24 @@ fn resolved_edge_group(
         let Some(combined_edges) = combined_edges else {
             return unmatched_selection(Some(previous_state_id));
         };
+        if combined_edges.iter().all(Option::is_some) {
+            let mut edges = Vec::new();
+            for edge_slot in combined_edges.into_iter().flatten() {
+                let edge = HistoricalEdgeId(format!(
+                    "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
+                    feature_key.len(),
+                    feature_key
+                ));
+                if !edges.contains(&edge) {
+                    edges.push(edge);
+                }
+            }
+            return EdgeSelection::Historical {
+                state,
+                edges,
+                native: group.id.clone(),
+            };
+        }
         let partial_members = matched_operands
             .iter()
             .zip(combined_edges)
@@ -24337,7 +24355,7 @@ mod relation_tests {
         let merged = super::resolved_edge_group(
             &terminal_group,
             std::slice::from_ref(&terminal_group),
-            &[recipe_unresolved, terminal_unresolved],
+            &[recipe_unresolved.clone(), terminal_unresolved.clone()],
             &[identity(100, 0, Some(17)), identity(104, 1, None)],
             Some(8),
             &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
@@ -24352,6 +24370,27 @@ mod relation_tests {
             } if edges == &[cadmpeg_ir::ids::HistoricalEdgeId(
                 "f3d:history-input:edge#6:fillet:8:17".into()
             )] && unresolved == &["f3d:Design/BulkStream.dat:edge-operand#104"]
+        ));
+        let complete = super::resolved_edge_group(
+            &terminal_group,
+            std::slice::from_ref(&terminal_group),
+            &[recipe_unresolved, terminal_unresolved],
+            &[identity(100, 0, Some(17)), identity(104, 1, Some(18))],
+            Some(8),
+            &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+            None,
+        );
+        assert!(matches!(
+            complete,
+            cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
+                if edges == &[
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:8:17".into()
+                    ),
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:8:18".into()
+                    ),
+                ]
         ));
         assert_eq!(
             edge_operand.recipe_program_offset,
