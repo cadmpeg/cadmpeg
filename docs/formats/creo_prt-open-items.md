@@ -46,7 +46,7 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - In named `ActDatums` outline slots, the value semantics of `a5`, `9f`, `5c`,
   and `45` are unspecified. Their values determine nonzero datum offsets and
   extents.
-- The direction-bit rule assigning pcurve endpoint pairs A and B to traversal start and end is unspecified, as is the partition of shared surface references into face instances.
+- The partition of shared surface references into face instances is unspecified.
 - The referents and traversal roles of `lo_restore` `direction` and
   `direction2` compact integers are unspecified.
 - Bindings for rowless face-use references outside the round-feature rowless-cylinder table are unspecified.

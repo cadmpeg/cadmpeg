@@ -22041,9 +22041,17 @@ fn transfer_planar_pcurve_lines(
 
 type PcurveVertexConstraint = ([u32; 2], [[f64; 3]; 2]);
 
+fn directed_pcurve_points(directions: [u8; 2], points: [[f64; 3]; 2]) -> Option<[[f64; 3]; 2]> {
+    match directions {
+        [0x01, 0xf6] => Some(points),
+        [0xf6, 0x01] => Some([points[1], points[0]]),
+        _ => None,
+    }
+}
+
 fn solve_pcurve_vertex_domains(
     constraints: &[PcurveVertexConstraint],
-    carrier_points: &BTreeMap<u32, [f64; 3]>,
+    fixed_points: &BTreeMap<u32, Option<[f64; 3]>>,
     incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
 ) -> BTreeMap<u32, [f64; 3]> {
     let mut domains = BTreeMap::<u32, Vec<[f64; 3]>>::new();
@@ -22077,9 +22085,21 @@ fn solve_pcurve_vertex_domains(
             });
         }
     }
-    for (vertex, point) in carrier_points {
-        let domain = domains.entry(*vertex).or_insert_with(|| vec![*point]);
-        domain.retain(|candidate| model_points_agree(*candidate, *point));
+    for (vertex, point) in fixed_points {
+        match domains.entry(*vertex) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(point.iter().copied().collect());
+            }
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                if let Some(point) = point {
+                    entry
+                        .get_mut()
+                        .retain(|candidate| model_points_agree(*candidate, *point));
+                } else {
+                    entry.get_mut().clear();
+                }
+            }
+        }
     }
     for (vertex, curves) in incident_curves {
         if let Some(domain) = domains.get_mut(vertex) {
@@ -22170,24 +22190,54 @@ fn solved_topological_vertices(
         .iter()
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
-    let constraints = crate::topology::uniquely_identified_rows(&scan.curve_topology_rows)
+    let mut fixed_points = carrier_points
         .into_iter()
-        .filter_map(|row| {
-            let points = *edge_endpoints.get(&row.id)?;
-            let forward = incidence.get(&HalfEdgeId {
-                curve_id: row.id,
-                side: 0,
-            })?;
-            let reverse = incidence.get(&HalfEdgeId {
-                curve_id: row.id,
-                side: 1,
-            })?;
-            let end = forward.end_vertex_id?;
-            (reverse.start_vertex_id == end
-                && reverse.end_vertex_id == Some(forward.start_vertex_id))
-            .then_some(([forward.start_vertex_id, end], points))
-        })
-        .collect::<Vec<_>>();
+        .map(|(vertex, point)| (vertex, Some(point)))
+        .collect::<BTreeMap<_, _>>();
+    let mut constraints = Vec::new();
+    for row in crate::topology::uniquely_identified_rows(&scan.curve_topology_rows) {
+        let Some(points) = edge_endpoints.get(&row.id).copied() else {
+            continue;
+        };
+        let Some(forward) = incidence.get(&HalfEdgeId {
+            curve_id: row.id,
+            side: 0,
+        }) else {
+            continue;
+        };
+        let Some(reverse) = incidence.get(&HalfEdgeId {
+            curve_id: row.id,
+            side: 1,
+        }) else {
+            continue;
+        };
+        let Some(end) = forward.end_vertex_id else {
+            continue;
+        };
+        if reverse.start_vertex_id != end || reverse.end_vertex_id != Some(forward.start_vertex_id)
+        {
+            continue;
+        }
+        let vertices = [forward.start_vertex_id, end];
+        constraints.push((vertices, points));
+        if let Some(ordered) = directed_pcurve_points(row.directions, points) {
+            for (vertex, point) in vertices.into_iter().zip(ordered) {
+                match fixed_points.entry(vertex) {
+                    std::collections::btree_map::Entry::Vacant(entry) => {
+                        entry.insert(Some(point));
+                    }
+                    std::collections::btree_map::Entry::Occupied(mut entry) => {
+                        if entry
+                            .get()
+                            .is_none_or(|known| !model_points_agree(known, point))
+                        {
+                            entry.insert(None);
+                        }
+                    }
+                }
+            }
+        }
+    }
     let analytic_curves = crate::topology::uniquely_identified_rows(&scan.curve_topology_rows)
         .into_iter()
         .filter_map(|row| {
@@ -22221,7 +22271,7 @@ fn solved_topological_vertices(
             (!curves.is_empty()).then_some((vertex.id, curves))
         })
         .collect::<BTreeMap<_, _>>();
-    solve_pcurve_vertex_domains(&constraints, &carrier_points, &incident_curves)
+    solve_pcurve_vertex_domains(&constraints, &fixed_points, &incident_curves)
 }
 
 fn orient_line_edge_carrier(
@@ -23795,7 +23845,7 @@ mod native_pcurve_tests {
         );
         assert!(solve_pcurve_vertex_domains(
             &constraints,
-            &BTreeMap::from([(2, [9.0, 0.0, 0.0])]),
+            &BTreeMap::from([(2, Some([9.0, 0.0, 0.0]))]),
             &BTreeMap::new(),
         )
         .is_empty());
@@ -23812,6 +23862,17 @@ mod native_pcurve_tests {
             ),
             BTreeMap::from([(1, a), (2, b)])
         );
+    }
+
+    #[test]
+    fn pcurve_direction_flags_assign_endpoint_order() {
+        let points = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]];
+        assert_eq!(directed_pcurve_points([0x01, 0xf6], points), Some(points));
+        assert_eq!(
+            directed_pcurve_points([0xf6, 0x01], points),
+            Some([points[1], points[0]])
+        );
+        assert_eq!(directed_pcurve_points([0x01, 0x01], points), None);
     }
 
     fn plane() -> SurfaceGeometry {
@@ -30061,9 +30122,10 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: format!(
-            "General model B-rep transfer remains incomplete. Exact planar components transfer \
-             when every loop is solved from placed-plane intersections and one strict containment \
-             outer boundary exists per face. Selected \
+            "General model B-rep transfer remains incomplete. Native face components transfer \
+             when every boundary edge has solved vertex orbits, face orientation is unique, and \
+             every loop is complete; a multi-loop planar face additionally requires one strict \
+             containment outer boundary. Selected \
              cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
              or a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
              square cap outline establishes the complete axis placement, parameterization, and \
@@ -30265,10 +30327,11 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
     losses.push(LossNote {
         category: LossCategory::Topology,
         severity: Severity::Blocking,
-        message: "Native curve half-edges and closed loops were decoded. Exact plane-intersection \
-                  components transfer as body/region/shell/face/loop/coedge/edge/vertex graphs; \
-                  remaining components require face-instance partitioning, surface parameter \
-                  bindings, curve geometry, or vertex coordinates."
+        message: "Native curve half-edges and closed loops were decoded. Components with complete \
+                  solved boundaries and unique face orientations transfer as \
+                  body/region/shell/face/loop/coedge/edge/vertex graphs; remaining components \
+                  require face-instance partitioning, surface parameter bindings, curve geometry, \
+                  or vertex coordinates."
             .to_string(),
         provenance: None,
     });

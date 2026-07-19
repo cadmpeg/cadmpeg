@@ -570,7 +570,9 @@ unique, the equivalence relation `h ~ twin(previous(h))` defines topological
 vertex orbits. The relation is symmetric and transitive; source identifier
 order does not partition an orbit. The suffix graph defines half-edges, loops,
 coedges, shells, and vertex orbits when both sides are present. `crv_pnt_dir` is
-a per-side orientation-flag array, not a tangent vector.
+a per-side orientation-flag array, not a tangent vector. For pcurve endpoint
+pairs, `01` traverses endpoint A to endpoint B and `f6` traverses endpoint B to
+endpoint A. The two half-edge sides store complementary flags.
 
 The raw `type_byte` does not by itself identify a curve family.
 
