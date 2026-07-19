@@ -1986,8 +1986,12 @@ fn surface_prototype_records(scan: &ContainerScan) -> Vec<CreoSurfacePrototypeRe
         .collect()
 }
 
-fn curve_parameter_records(scan: &ContainerScan) -> Vec<CreoCurveParameterRecord> {
-    scan.curve_parameters
+fn curve_parameter_records(
+    scan: &ContainerScan,
+    records: &[crate::curve::CurveParameterRecord],
+    id_namespace: &str,
+) -> Vec<CreoCurveParameterRecord> {
+    records
         .iter()
         .map(|record| {
             let (suffix, suffix_candidate_count) = match record.suffix {
@@ -1997,7 +2001,7 @@ fn curve_parameter_records(scan: &ContainerScan) -> Vec<CreoCurveParameterRecord
                 }
             };
             CreoCurveParameterRecord {
-                id: format!("creo:visibgeom:curve_parameter#{}", record.curve_id),
+                id: format!("creo:{id_namespace}:curve_parameter#{}", record.curve_id),
                 curve_id: record.curve_id,
                 type_byte: record.type_byte,
                 body: record.body.clone(),
@@ -2088,11 +2092,14 @@ fn cross_section_curve_row_records(scan: &ContainerScan) -> Vec<CreoCrossSection
         .collect()
 }
 
-fn curve_topology_row_records(scan: &ContainerScan) -> Vec<CreoCurveTopologyRowRecord> {
-    scan.curve_topology_rows
-        .iter()
+fn curve_topology_row_records(
+    scan: &ContainerScan,
+    rows: &[crate::curve::CurveTopologyRow],
+    id_namespace: &str,
+) -> Vec<CreoCurveTopologyRowRecord> {
+    rows.iter()
         .map(|row| CreoCurveTopologyRowRecord {
-            id: format!("creo:visibgeom:curve_topology#{}", row.id),
+            id: format!("creo:{id_namespace}:curve_topology#{}", row.id),
             curve_id: row.id,
             type_byte: row.type_byte,
             feature_id: row.feature_id,
@@ -29426,7 +29433,7 @@ fn build_ir(
             &tabulated_cylinder_curve_replays,
         )?;
     }
-    let curve_parameters = curve_parameter_records(scan);
+    let curve_parameters = curve_parameter_records(scan, &scan.curve_parameters, "visibgeom");
     if !curve_parameters.is_empty() {
         for record in &curve_parameters {
             annotate(
@@ -29441,6 +29448,23 @@ fn build_ir(
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("curve_parameters", &curve_parameters)?;
+    }
+    let nonvisible_curve_parameters =
+        curve_parameter_records(scan, &scan.nonvisible_curve_parameters, "novisgeom");
+    if !nonvisible_curve_parameters.is_empty() {
+        for record in &nonvisible_curve_parameters {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "nonvisible_curve_parameter_record",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("nonvisible_curve_parameters", &nonvisible_curve_parameters)?;
     }
     let fc_curve_coordinates = fc_curve_coordinate_records(scan);
     if !fc_curve_coordinates.is_empty() {
@@ -29499,6 +29523,26 @@ fn build_ir(
         namespace.version = 1;
         namespace.set_arena("curve_prototypes", &curve_prototypes)?;
     }
+    let nonvisible_curve_prototypes = curve_prototype_records(
+        scan,
+        &scan.nonvisible_curve_prototypes,
+        "creo:novisgeom:curve_prototype",
+    );
+    if !nonvisible_curve_prototypes.is_empty() {
+        for record in &nonvisible_curve_prototypes {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "nonvisible_curve_prototype",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("nonvisible_curve_prototypes", &nonvisible_curve_prototypes)?;
+    }
     let cross_section_curve_prototypes = curve_prototype_records(
         scan,
         &scan.cross_section_curve_prototypes,
@@ -29522,7 +29566,8 @@ fn build_ir(
             &cross_section_curve_prototypes,
         )?;
     }
-    let curve_topology_rows = curve_topology_row_records(scan);
+    let curve_topology_rows =
+        curve_topology_row_records(scan, &scan.curve_topology_rows, "visibgeom");
     if !curve_topology_rows.is_empty() {
         for record in &curve_topology_rows {
             annotate(
@@ -29537,6 +29582,26 @@ fn build_ir(
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("curve_topology_rows", &curve_topology_rows)?;
+    }
+    let nonvisible_curve_topology_rows =
+        curve_topology_row_records(scan, &scan.nonvisible_curve_topology_rows, "novisgeom");
+    if !nonvisible_curve_topology_rows.is_empty() {
+        for record in &nonvisible_curve_topology_rows {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "nonvisible_curve_topology_row",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "nonvisible_curve_topology_rows",
+            &nonvisible_curve_topology_rows,
+        )?;
     }
     let cross_section_curve_rows = cross_section_curve_row_records(scan);
     if !cross_section_curve_rows.is_empty() {

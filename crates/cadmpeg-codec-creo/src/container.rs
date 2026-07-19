@@ -248,12 +248,18 @@ pub struct ContainerScan {
     /// Labeled curve prototypes from geometry sections. The curve body and
     /// its analytic interpretation are decoded separately.
     pub curve_prototypes: Vec<CurvePrototype>,
+    /// Labeled curve prototypes from the separate invisible and construction
+    /// geometry namespace.
+    pub nonvisible_curve_prototypes: Vec<CurvePrototype>,
     /// Labeled first curve rows from DEPDB cross-section namespaces.
     pub cross_section_curve_prototypes: Vec<CurvePrototype>,
     /// Source programs from curve-from-equation entity records.
     pub curve_expressions: Vec<CurveExpressionRecord>,
     /// Bounded analytic parameter bodies from positional curve rows.
     pub curve_parameters: Vec<CurveParameterRecord>,
+    /// Bounded curve parameter bodies from the separate invisible and
+    /// construction geometry namespace.
+    pub nonvisible_curve_parameters: Vec<CurveParameterRecord>,
     /// Complete eight-slot pcurve endpoints in both adjacent face frames.
     pub pcurves: Vec<PcurveEndpoints>,
     /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
@@ -272,6 +278,9 @@ pub struct ContainerScan {
     /// Curve rows with an unambiguous canonical four-reference topology
     /// suffix. These rows define the native half-edge adjacency graph.
     pub curve_topology_rows: Vec<CurveTopologyRow>,
+    /// Curve rows from the separate invisible and construction geometry
+    /// namespace. These rows do not participate in model topology.
+    pub nonvisible_curve_topology_rows: Vec<CurveTopologyRow>,
     /// Complete one-sided curve rows from the DEPDB cross-section namespace.
     pub cross_section_curve_rows: Vec<DepdbCurveRow>,
     /// Resolved native half-edges and closed loops built from curve rows.
@@ -1633,12 +1642,12 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let census = geom_census(&data, &sections);
     let principal_unit = principal_unit(&data);
     let family_table = family_table(&data, &sections);
-    let nonvisible_surface_sections = sections
+    let nonvisible_geometry_sections = sections
         .iter()
         .filter(|section| section.name == "NovisGeom")
         .cloned()
         .collect::<Vec<_>>();
-    let nonvisible_surface_rows = surface_rows(&data, &nonvisible_surface_sections);
+    let nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
     let surface_rows = surface_rows(&data, &model_geometry_sections);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
     let surface_parameters = surface_parameters(&data, &model_geometry_sections);
@@ -1656,10 +1665,13 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     );
     let surface_prototypes = surface_prototypes(&data, &model_geometry_sections);
     let surface_prototype_records = surface_prototype_records(&data, &model_geometry_sections);
+    let nonvisible_curve_prototypes = curve_prototypes(&data, &nonvisible_geometry_sections);
     let curve_prototypes = curve_prototypes(&data, &model_geometry_sections);
     let cross_section_curve_prototypes = cross_section_curve_prototypes(&data, &sections);
     let curve_expressions = curve_expressions(&data, &sections);
+    let nonvisible_curve_parameters = curve_parameters(&data, &nonvisible_geometry_sections);
     let curve_parameters = curve_parameters(&data, &model_geometry_sections);
+    let nonvisible_curve_topology_rows = curve_topology_rows(&data, &nonvisible_geometry_sections);
     let curve_topology_rows = curve_topology_rows(&data, &model_geometry_sections);
     let cross_section_curve_rows = cross_section_curve_rows(&data, &sections);
     let pcurves = curve::pcurve_endpoints(&curve_parameters, &curve_topology_rows);
@@ -1792,9 +1804,11 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         surface_prototypes,
         surface_prototype_records,
         curve_prototypes,
+        nonvisible_curve_prototypes,
         cross_section_curve_prototypes,
         curve_expressions,
         curve_parameters,
+        nonvisible_curve_parameters,
         pcurves,
         fc_curve_coordinates,
         fc05_circles,
@@ -1803,6 +1817,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         curve_prototype_topology,
         bound_prototype_pcurves,
         curve_topology_rows,
+        nonvisible_curve_topology_rows,
         cross_section_curve_rows,
         half_edges,
         loops,

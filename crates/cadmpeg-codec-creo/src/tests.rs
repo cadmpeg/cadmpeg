@@ -5583,8 +5583,14 @@ fn nd_decoration_selects_nd_layout() {
 fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     let mut visible = visibgeom_payload(1, 0);
     visible.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0, 0xe4, 0xe3]);
+    visible.extend_from_slice(b"crv_array\0crv_id\0\x07type\0\x08feat_id\0\x04");
+    visible
+        .extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let mut invisible = visibgeom_payload(1, 0);
     invisible.extend_from_slice(&[8, 0x26, 5, 0x01, 0, 0, 0xe4, 0xe3]);
+    invisible.extend_from_slice(b"crv_array\0crv_id\0\x07type\0\x09feat_id\0\x05");
+    invisible
+        .extend_from_slice(b"topol_ref_data\0\x07\x09\x05\x01\xf6\x0c\x0d\x07\x07\0\0\xe3\xe1\xe3");
     let mut depdb = visibgeom_payload(1, 0);
     depdb.extend_from_slice(&[9, 0x26, 6, 0x01, 0, 0, 0xe4, 0xe3]);
 
@@ -5618,6 +5624,14 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
             .collect::<Vec<_>>(),
         [(8, 5)]
     );
+    assert_eq!(scan.curve_prototypes.len(), 1);
+    assert_eq!(scan.nonvisible_curve_prototypes.len(), 1);
+    assert_eq!(scan.nonvisible_curve_prototypes[0].feature_id, Some(5));
+    assert_eq!(scan.curve_parameters.len(), 1);
+    assert_eq!(scan.nonvisible_curve_parameters.len(), 1);
+    assert_eq!(scan.curve_topology_rows[0].faces, [10, 11]);
+    assert_eq!(scan.nonvisible_curve_topology_rows[0].faces, [12, 13]);
+    assert_eq!(scan.half_edges.len(), 2);
 
     let result = decode::decode(
         &mut Cursor::new(scan.data.clone()),
@@ -5628,6 +5642,15 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].id, "creo:novisgeom:surface_row#8");
     assert_eq!(rows[0].fields["source_section"], "NovisGeom");
+    let namespace = result.ir.native.namespace("creo").unwrap();
+    let prototypes = &namespace.arenas["nonvisible_curve_prototypes"];
+    assert_eq!(prototypes[0].fields["curve_id"], 7);
+    assert_eq!(prototypes[0].fields["source_section"], "NovisGeom");
+    let parameters = &namespace.arenas["nonvisible_curve_parameters"];
+    assert_eq!(parameters[0].id, "creo:novisgeom:curve_parameter#7");
+    let topology = &namespace.arenas["nonvisible_curve_topology_rows"];
+    assert_eq!(topology[0].id, "creo:novisgeom:curve_topology#7");
+    assert_eq!(topology[0].fields["faces"][0], 12);
 }
 
 #[test]
