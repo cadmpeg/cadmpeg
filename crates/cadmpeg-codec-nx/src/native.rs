@@ -10125,6 +10125,39 @@ pub struct DataBlockIndexRow {
     pub index_source_offsets: [u64; 4],
 }
 
+/// Self-framed linked index row in contiguous column storage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockLinkedIndexRow {
+    /// Globally unique row identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Zero-based row order within the section's column storage.
+    pub ordinal: u32,
+    /// Unresolved leading compact index.
+    pub first_index: u32,
+    /// Serialized `16`, `17`, or `18` discriminator.
+    pub discriminator: u8,
+    /// Target compact block index.
+    pub target_index: u32,
+    /// Three compact block indices after `ff ff 90 fe`.
+    pub indices: [u32; 3],
+    /// Target block followed by the three post-marker blocks.
+    pub data_blocks: [String; 4],
+    /// Serialized `03` or `07` flag.
+    pub flag: u8,
+    /// Directory entry containing the store.
+    pub source_entry: String,
+    /// Absolute file offset of the opening discriminator.
+    pub source_offset: u64,
+    /// Absolute file offset of the leading compact index.
+    pub first_index_source_offset: u64,
+    /// Absolute file offset of the target compact index.
+    pub target_index_source_offset: u64,
+    /// Absolute file offsets of the three post-marker indices.
+    pub index_source_offsets: [u64; 3],
+}
+
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreHeader {
@@ -11478,6 +11511,59 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
                     source_entry: entry.name.clone(),
                     source_offset: source_base + row.offset as u64,
                     first_index_source_offset: source_base + row.first_index_offset as u64,
+                    index_source_offsets: row
+                        .indices
+                        .map(|(_, offset)| source_base + offset as u64),
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode complete in-range linked index rows from column storage.
+pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinkedIndexRow> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(storage) = section.column_storage else {
+                return Vec::new();
+            };
+            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+                return Vec::new();
+            };
+            let source_base =
+                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
+            let block_count = section.records.len() + 1;
+            crate::om::offset_store_linked_index_rows(storage)
+                .into_iter()
+                .filter_map(|row| {
+                    let values = std::iter::once(row.target_index.0)
+                        .chain(row.indices.iter().map(|(index, _)| *index));
+                    let data_blocks = values
+                        .map(|index| control_index_data_block(section_ordinal, block_count, index))
+                        .collect::<Option<Vec<_>>>()
+                        .and_then(|blocks| blocks.try_into().ok())?;
+                    Some((row, data_blocks))
+                })
+                .enumerate()
+                .map(|(ordinal, (row, data_blocks))| DataBlockLinkedIndexRow {
+                    id: format!(
+                        "nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"
+                    ),
+                    section_ordinal: section_ordinal as u32,
+                    ordinal: ordinal as u32,
+                    first_index: row.first_index.0,
+                    discriminator: row.discriminator,
+                    target_index: row.target_index.0,
+                    indices: row.indices.map(|(index, _)| index),
+                    data_blocks,
+                    flag: row.flag,
+                    source_entry: entry.name.clone(),
+                    source_offset: source_base + row.offset as u64,
+                    first_index_source_offset: source_base + row.first_index.1 as u64,
+                    target_index_source_offset: source_base + row.target_index.1 as u64,
                     index_source_offsets: row
                         .indices
                         .map(|(_, offset)| source_base + offset as u64),

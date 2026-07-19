@@ -7601,6 +7601,7 @@ fn attach_native_object_model(
     let data_block_abr_reference_lanes =
         crate::native::data_block_abr_reference_lanes(&scan.container);
     let data_block_index_rows = crate::native::data_block_index_rows(&scan.container);
+    let data_block_linked_index_rows = crate::native::data_block_linked_index_rows(&scan.container);
     let feature_input_index_row_uses =
         crate::native::feature_input_index_row_uses(&feature_input_blocks, &data_block_index_rows);
     let feature_parameter_bindings = crate::native::feature_parameter_bindings(
@@ -9110,6 +9111,12 @@ fn attach_native_object_model(
     }
     if !data_block_index_rows.is_empty() {
         namespace.set_arena("data_block_index_rows", &data_block_index_rows)?;
+    }
+    if !data_block_linked_index_rows.is_empty() {
+        namespace.set_arena(
+            "data_block_linked_index_rows",
+            &data_block_linked_index_rows,
+        )?;
     }
     if !feature_input_index_row_uses.is_empty() {
         namespace.set_arena(

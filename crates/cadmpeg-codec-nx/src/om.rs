@@ -158,6 +158,23 @@ pub struct OffsetStoreIndexRow {
     pub indices: [(u32, usize); 4],
 }
 
+/// One self-framed linked index row in contiguous column storage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetStoreLinkedIndexRow {
+    /// Byte offset of the opening `02 0b` discriminator.
+    pub offset: usize,
+    /// Unresolved leading compact index and its byte offset.
+    pub first_index: (u32, usize),
+    /// Serialized `16`, `17`, or `18` row discriminator.
+    pub discriminator: u8,
+    /// Compact target index and its byte offset.
+    pub target_index: (u32, usize),
+    /// Three ordered non-null compact indices after `ff ff 90 fe`.
+    pub indices: [(u32, usize); 3],
+    /// Serialized `03` or `07` row flag.
+    pub flag: u8,
+}
+
 /// Decode complete self-framed index rows from contiguous column storage.
 pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
     const PREFIX: [u8; 3] = [0x2d, 0x02, 0x0b];
@@ -204,6 +221,73 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
             first_index_offset,
             flag,
             indices,
+        });
+    }
+    rows
+}
+
+/// Decode complete linked index rows from contiguous column storage.
+pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedIndexRow> {
+    const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
+    const SUFFIX: [u8; 6] = [0x04, 0x01, 0xc0, 0x44, 0x04, 0x00];
+    let mut rows = Vec::new();
+    for start in 0..bytes.len().saturating_sub(2) {
+        if bytes.get(start..start + 2) != Some(&[0x02, 0x0b]) {
+            continue;
+        }
+        let first_offset = start + 2;
+        let Some((CompactIndex::Value(first_index), first_width)) =
+            bytes.get(first_offset..).and_then(compact_index)
+        else {
+            continue;
+        };
+        let marker = first_offset + first_width;
+        if bytes.get(marker..marker + 2) != Some(&[0x93, 0x8c]) {
+            continue;
+        }
+        let Some(discriminator @ (0x16..=0x18)) = bytes.get(marker + 2).copied() else {
+            continue;
+        };
+        let target_offset = marker + 3;
+        let Some((CompactIndex::Value(target_index), target_width)) =
+            bytes.get(target_offset..).and_then(compact_index)
+        else {
+            continue;
+        };
+        let mut at = target_offset + target_width;
+        if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
+            continue;
+        }
+        at += MIDDLE.len();
+        let mut indices = Vec::new();
+        for _ in 0..3 {
+            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
+            else {
+                indices.clear();
+                break;
+            };
+            indices.push((index, at));
+            at += width;
+        }
+        let Ok(indices) = indices.try_into() else {
+            continue;
+        };
+        if bytes.get(at..at + 2) != Some(&[0x00, 0x47]) {
+            continue;
+        }
+        let Some(flag @ (0x03 | 0x07)) = bytes.get(at + 2).copied() else {
+            continue;
+        };
+        if bytes.get(at + 3..at + 3 + SUFFIX.len()) != Some(&SUFFIX) {
+            continue;
+        }
+        rows.push(OffsetStoreLinkedIndexRow {
+            offset: start,
+            first_index: (first_index, first_offset),
+            discriminator,
+            target_index: (target_index, target_offset),
+            indices,
+            flag,
         });
     }
     rows
