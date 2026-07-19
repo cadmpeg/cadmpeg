@@ -910,9 +910,9 @@ The operation labels `Pattern Feature`, `Pattern Geometry`, and `Geometry Instan
 
 The operation labels `CPROJ` and `CPROJ_CMB` identify projected-curve constructions. Neutral projection retains unresolved source-path, target-face, direction, and directionality fields.
 
-The `TRIMMED_SH` operation label identifies a surface-trim construction. Neutral projection retains unresolved input faces, trim path, and retained region.
+The `TRIMMED_SH` operation label identifies a surface-trim construction. When the operation has exactly one transferred output body and that body is a sheet containing exactly one completely owned face, that face is the input-face selection. Other output shapes leave the input faces unresolved. The trim path and retained region remain unresolved.
 
-The `EXTEND_SHEET` operation label identifies a surface-extension construction. Neutral projection retains unresolved input faces, distance, and continuation law.
+The `EXTEND_SHEET` operation label identifies a surface-extension construction. When the operation has exactly one transferred output body and that body is a sheet containing exactly one completely owned face, that face is the input-face selection. Other output shapes leave the input faces unresolved. The distance and continuation law remain unresolved.
 
 The `EXTRACT_BODY` operation label identifies a body-extraction construction. Neutral projection retains an unresolved source-body selection independently of the operation's output bodies.
 
