@@ -1810,17 +1810,26 @@ mod history_reference_tests {
             );
         }
 
-        let mut fourth_light = feature("fourth", Some("16"), 0);
+        let mut fourth_light = feature("fourth", Some("70"), 0);
         fourth_light.kind = "本地化方向光".into();
         let mut directional_roster = roster(&fourth_light);
-        for source in 13..16 {
-            let mut light = feature("light", Some(&source.to_string()), source);
-            light.kind = fourth_light.kind.clone();
-            directional_roster.push(light);
-        }
+        let mut first_light = feature("light", Some("13"), 13);
+        first_light.kind = fourth_light.kind.clone();
+        directional_roster.push(first_light);
         assert_eq!(
             feature_tree_node_role(&fourth_light, &directional_roster),
             Some(FeatureTreeNodeRole::DirectionalLight)
+        );
+
+        let mut additional_ambient = feature("additional ambient", Some("16"), 0);
+        additional_ambient.kind = "本地化环境光".into();
+        let mut ambient_roster = roster(&additional_ambient);
+        let mut reserved_ambient = feature("ambient", Some("12"), 12);
+        reserved_ambient.kind = additional_ambient.kind.clone();
+        ambient_roster.push(reserved_ambient);
+        assert_eq!(
+            feature_tree_node_role(&additional_ambient, &ambient_roster),
+            Some(FeatureTreeNodeRole::AmbientLight)
         );
 
         let legacy_roster = |node: &Feature| {
@@ -3439,7 +3448,23 @@ fn reserved_feature_tree_node_role(
         }
         (_, tag, _)
             if tag.eq_ignore_ascii_case("Feature")
-                && repeated_directional_light(feature, history_features, layout) =>
+                && repeated_builtin_node_kind(
+                    feature,
+                    history_features,
+                    layout,
+                    FeatureTreeNodeRole::AmbientLight,
+                ) =>
+        {
+            Some(FeatureTreeNodeRole::AmbientLight)
+        }
+        (_, tag, _)
+            if tag.eq_ignore_ascii_case("Feature")
+                && repeated_builtin_node_kind(
+                    feature,
+                    history_features,
+                    layout,
+                    FeatureTreeNodeRole::DirectionalLight,
+                ) =>
         {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
@@ -3494,40 +3519,26 @@ fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> 
     }
 }
 
-fn repeated_directional_light(
+fn repeated_builtin_node_kind(
     feature: &Feature,
     features: &[Feature],
     layout: FeatureManagerLayout,
+    role: FeatureTreeNodeRole,
 ) -> bool {
-    let first_source_id = match layout {
-        FeatureManagerLayout::Legacy => 8,
-        FeatureManagerLayout::Current => 13,
+    let reserved_source = match (layout, role) {
+        (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::AmbientLight) => "7",
+        (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::DirectionalLight) => "8",
+        (FeatureManagerLayout::Current, FeatureTreeNodeRole::AmbientLight) => "12",
+        (FeatureManagerLayout::Current, FeatureTreeNodeRole::DirectionalLight) => "13",
+        _ => return false,
     };
-    let source = feature
-        .source_id
-        .as_deref()
-        .and_then(|source| source.parse::<u32>().ok());
-    let Some(source) = source.filter(|source| *source >= first_source_id) else {
+    let mut anchors = features.iter().filter(|candidate| {
+        candidate.source_id.as_deref() == Some(reserved_source) && classless_builtin_node(candidate)
+    });
+    let Some(anchor) = anchors.next() else {
         return false;
     };
-    let first_source = first_source_id.to_string();
-    let Some(first) = features.iter().find(|candidate| {
-        candidate.source_id.as_deref() == Some(first_source.as_str())
-            && classless_builtin_node(candidate)
-    }) else {
-        return false;
-    };
-    !first.kind.is_empty()
-        && feature.kind == first.kind
-        && (first_source_id..=source).all(|source| {
-            let source = source.to_string();
-            let mut matches = features.iter().filter(|candidate| {
-                candidate.source_id.as_deref() == Some(source.as_str())
-                    && classless_builtin_node(candidate)
-                    && candidate.kind == first.kind
-            });
-            matches.next().is_some() && matches.next().is_none()
-        })
+    anchors.next().is_none() && !anchor.kind.is_empty() && feature.kind == anchor.kind
 }
 
 fn empty_feature_tree_node(feature: &Feature) -> bool {
