@@ -1440,7 +1440,7 @@ fn matrix_axis_angle(transform: &[[f64; 4]; 4]) -> Option<cadmpeg_ir::features::
     })
 }
 
-fn direct_face_selection(
+pub(crate) fn direct_face_selection(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
 ) -> Option<cadmpeg_ir::features::FaceSelection> {
@@ -5038,6 +5038,9 @@ fn resolved_extrude_profile_selection(
                 previous_history_state_id?,
                 resolution.linear_tolerance,
             )
+        })
+        .or_else(|| {
+            (sketch.profiles.len() == 1).then_some(ResolvedProfileSelection::Loops(vec![0]))
         });
     match resolved_profiles {
         Some(ResolvedProfileSelection::Loops(profiles)) => ProfileRef::SketchProfiles {
@@ -23210,6 +23213,27 @@ mod relation_tests {
                 selections: ref actual_selections,
             } if actual_sketch == &sketch_id && actual_selections == &[group.id.clone()]
         ));
+        let mut single_profile_sketch = sketch.clone();
+        single_profile_sketch.profiles.truncate(1);
+        assert!(matches!(
+            resolved_extrude_profile_selection(
+                &sketch_id,
+                &group,
+                std::slice::from_ref(&member),
+                &single_profile_sketch,
+                super::ExtrudeProfileResolution {
+                    entities: &[],
+                    histories: &[],
+                    linear_tolerance: 1.0e-6,
+                },
+                None,
+                None,
+            ),
+            cadmpeg_ir::features::ProfileRef::SketchProfiles {
+                sketch: ref actual_sketch,
+                ref profiles,
+            } if actual_sketch == &sketch_id && profiles == &[0]
+        ));
     }
 
     #[test]
@@ -23897,6 +23921,19 @@ mod relation_tests {
             resolved_face_group(&group, std::slice::from_ref(&operand)),
             Some(FaceSelection::Resolved { faces, native })
                 if faces == [FaceId("f3d:brep:entity#50".into())] && native == group.id
+        ));
+        let mut historical_face_scope = face_scope.clone();
+        historical_face_scope.previous_history_state_id = Some(49);
+        assert!(matches!(
+            super::direct_face_selection(
+                &historical_face_scope,
+                std::slice::from_ref(&operand)
+            ),
+            Some(FaceSelection::Historical { state, faces, native })
+                if state == feature_input_topology_id(&super::neutral_feature_id(&historical_face_scope), 49)
+                    && faces.len() == 1
+                    && faces[0].0.ends_with(":49:50")
+                    && native == historical_face_scope.id
         ));
         operand.resolved_face_slot = None;
         assert!(super::retain_face_operand_resolution(

@@ -563,16 +563,20 @@ pub(crate) fn bind_feature_face_selections(
         let Some(_topology) = &previous.topology else {
             continue;
         };
-        let cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } =
-            &mut feature.definition
-        else {
-            continue;
-        };
-        if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
-            bind_face_selection(face, scope, groups, operands);
-        }
-        if let cadmpeg_ir::features::Extent::ToFace { face, .. } = extent {
-            bind_face_selection(face, scope, groups, operands);
+        match &mut feature.definition {
+            cadmpeg_ir::features::FeatureDefinition::Extrude { start, extent, .. } => {
+                if let cadmpeg_ir::features::ExtrudeStart::FromFace { face, .. } = start {
+                    bind_face_selection(face, scope, groups, operands);
+                }
+                if let cadmpeg_ir::features::Extent::ToFace { face, .. } = extent {
+                    bind_face_selection(face, scope, groups, operands);
+                }
+            }
+            cadmpeg_ir::features::FeatureDefinition::MoveFace { faces, .. }
+            | cadmpeg_ir::features::FeatureDefinition::Thicken { faces, .. } => {
+                bind_face_selection(faces, scope, groups, operands);
+            }
+            _ => {}
         }
     }
 }
@@ -1759,6 +1763,14 @@ fn bind_face_selection(
     let cadmpeg_ir::features::FaceSelection::Native(native) = selection else {
         return;
     };
+    if native == &scope.id {
+        if let Some(resolved) = crate::design::direct_face_selection(scope, operands) {
+            if !matches!(resolved, cadmpeg_ir::features::FaceSelection::Native(_)) {
+                *selection = resolved;
+            }
+        }
+        return;
+    }
     let mut matching_groups = groups.iter().filter(|group| group.id == *native);
     let Some(group) = matching_groups.next() else {
         return;
