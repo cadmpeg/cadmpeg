@@ -3791,8 +3791,22 @@ mod marker_tests {
             sketch_entities: Vec::new(),
         };
 
-        enrich_history_revolution_inputs(&mut histories, &[lane]);
+        enrich_history_revolution_inputs(&mut histories, &[lane.clone()]);
 
+        assert_eq!(
+            histories[0].features[1].properties.get("Profile"),
+            Some(&"23".into())
+        );
+        assert_eq!(
+            histories[0].features[3].properties.get("Profile"),
+            Some(&"29".into())
+        );
+
+        for feature in &mut histories[0].features {
+            feature.source_id = None;
+            feature.properties.clear();
+        }
+        enrich_history_revolution_inputs(&mut histories, &[lane]);
         assert_eq!(
             histories[0].features[1].properties.get("Profile"),
             Some(&"23".into())
@@ -4223,67 +4237,102 @@ pub(crate) fn enrich_history_revolution_inputs(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
-    let snapshot = histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .cloned()
-        .collect::<Vec<_>>();
-    let profile_sources = histories
-        .iter()
-        .flat_map(|history| {
-            let sources = history
-                .features
-                .iter()
-                .filter(|feature| is_profile_feature_object(feature))
-                .filter_map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
-                .collect::<HashSet<_>>();
-            history
-                .features
-                .iter()
-                .map(move |feature| (feature.id.clone(), sources.clone()))
-        })
-        .collect::<HashMap<_, _>>();
+    let name_counts = histories.iter().flat_map(|history| &history.features).fold(
+        HashMap::<String, usize>::new(),
+        |mut counts, feature| {
+            *counts.entry(feature.name.clone()).or_default() += 1;
+            counts
+        },
+    );
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| feature.source_id.is_none() && is_profile_feature_object(feature))
+    {
+        if name_counts.get(feature.name.as_str()) != Some(&1) {
+            continue;
+        }
+        let mut object_ids = lanes
+            .iter()
+            .filter_map(|lane| feature_object_name(feature, lane)?.object_id)
+            .collect::<Vec<_>>();
+        object_ids.sort_unstable();
+        object_ids.dedup();
+        if let [object_id] = object_ids.as_slice() {
+            feature.source_id = Some(object_id.to_string());
+        }
+    }
+    let mut profile_sources = HashMap::<String, HashSet<u32>>::new();
+    for history in histories.iter() {
+        let sources = history
+            .features
+            .iter()
+            .filter(|feature| is_profile_feature_object(feature))
+            .flat_map(|feature| {
+                feature
+                    .source_id
+                    .as_deref()
+                    .and_then(|source| source.parse::<u32>().ok())
+                    .into_iter()
+                    .chain(
+                        lanes
+                            .iter()
+                            .filter_map(|lane| feature_object_name(feature, lane)?.object_id),
+                    )
+            })
+            .collect::<HashSet<_>>();
+        for feature in &history.features {
+            profile_sources.insert(feature.id.clone(), sources.clone());
+        }
+    }
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
     let mut inputs = HashMap::<String, Vec<Option<(u32, Point3, Vector3)>>>::new();
     for lane in lanes {
-        let mut objects = snapshot
-            .iter()
-            .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
-            .collect::<Vec<_>>();
-        objects.sort_unstable_by_key(|(offset, _)| *offset);
-        for (index, &(start, feature)) in objects.iter().enumerate() {
-            if !matches!(
-                feature.input_class.as_deref(),
-                Some("moRevolution_c" | "moRevCut_c")
-            ) {
-                continue;
+        for history in histories.iter() {
+            let mut objects = history
+                .features
+                .iter()
+                .filter_map(|feature| Some((feature_object_name(feature, lane)?.offset, feature)))
+                .collect::<Vec<_>>();
+            objects.sort_unstable_by_key(|(offset, _)| *offset);
+            for (index, &(start, feature)) in objects.iter().enumerate() {
+                if !matches!(
+                    feature.input_class.as_deref(),
+                    Some("moRevolution_c" | "moRevCut_c")
+                ) {
+                    continue;
+                }
+                let immediate_profile = index
+                    .checked_sub(1)
+                    .and_then(|index| objects.get(index))
+                    .map(|(_, feature)| *feature)
+                    .filter(|feature| is_profile_feature_object(feature))
+                    .and_then(|feature| feature_object_name(feature, lane)?.object_id);
+                let Some(known_profiles) = profile_sources.get(&feature.id) else {
+                    continue;
+                };
+                let Some(start) = usize::try_from(start).ok() else {
+                    continue;
+                };
+                let end = objects
+                    .get(index + 1)
+                    .and_then(|(offset, _)| usize::try_from(*offset).ok())
+                    .unwrap_or(lane.native_payload.len());
+                let line_reference = revolution_line_reference_inputs(
+                    &lane.native_payload,
+                    start,
+                    end,
+                    known_profiles,
+                );
+                profiles
+                    .entry(feature.id.clone())
+                    .or_default()
+                    .push(immediate_profile.or_else(|| line_reference.map(|input| input.0)));
+                inputs
+                    .entry(feature.id.clone())
+                    .or_default()
+                    .push(line_reference);
             }
-            let immediate_profile = index
-                .checked_sub(1)
-                .and_then(|index| objects.get(index))
-                .map(|(_, feature)| *feature)
-                .filter(|feature| is_profile_feature_object(feature))
-                .and_then(|feature| feature.source_id.as_deref()?.parse::<u32>().ok());
-            let Some(known_profiles) = profile_sources.get(&feature.id) else {
-                continue;
-            };
-            let Some(start) = usize::try_from(start).ok() else {
-                continue;
-            };
-            let end = objects
-                .get(index + 1)
-                .and_then(|(offset, _)| usize::try_from(*offset).ok())
-                .unwrap_or(lane.native_payload.len());
-            let line_reference =
-                revolution_line_reference_inputs(&lane.native_payload, start, end, known_profiles);
-            profiles
-                .entry(feature.id.clone())
-                .or_default()
-                .push(immediate_profile.or_else(|| line_reference.map(|input| input.0)));
-            inputs
-                .entry(feature.id.clone())
-                .or_default()
-                .push(line_reference);
         }
     }
     for feature in histories
