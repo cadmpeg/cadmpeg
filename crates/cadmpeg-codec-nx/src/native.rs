@@ -10052,6 +10052,8 @@ pub struct DataBlockIndexRow {
     pub flag: u8,
     /// Four ordered non-null compact indices after the row flag.
     pub indices: [u32; 4],
+    /// Four same-section blocks addressed by the compact indices.
+    pub data_blocks: [String; 4],
     /// Directory entry containing the offset-only store.
     pub source_entry: String,
     /// Absolute file offset of the opening discriminator.
@@ -11389,16 +11391,29 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
             };
             let source_base =
                 entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
+            let block_count = section.records.len() + 1;
             crate::om::offset_store_index_rows(storage)
                 .into_iter()
+                .filter_map(|row| {
+                    let data_blocks = row
+                        .indices
+                        .iter()
+                        .map(|(index, _)| {
+                            control_index_data_block(section_ordinal, block_count, *index)
+                        })
+                        .collect::<Option<Vec<_>>>()
+                        .and_then(|blocks| blocks.try_into().ok())?;
+                    Some((row, data_blocks))
+                })
                 .enumerate()
-                .map(|(ordinal, row)| DataBlockIndexRow {
+                .map(|(ordinal, (row, data_blocks))| DataBlockIndexRow {
                     id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
                     section_ordinal: section_ordinal as u32,
                     ordinal: ordinal as u32,
                     first_index: row.first_index,
                     flag: row.flag,
                     indices: row.indices.map(|(index, _)| index),
+                    data_blocks,
                     source_entry: entry.name.clone(),
                     source_offset: source_base + row.offset as u64,
                     first_index_source_offset: source_base + row.first_index_offset as u64,
