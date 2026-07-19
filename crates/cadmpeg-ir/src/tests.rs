@@ -3201,6 +3201,10 @@ fn feature_operation_geometry_is_validated() {
     };
 
     let definitions = vec![
+        FeatureDefinition::Form { cages: Vec::new() },
+        FeatureDefinition::Form {
+            cages: vec![crate::ids::SubdId("synthetic:test:subd#missing".into())],
+        },
         FeatureDefinition::Fillet {
             groups: vec![FilletGroup {
                 edges: EdgeSelection::Unresolved,
@@ -3372,6 +3376,8 @@ fn feature_operation_geometry_is_validated() {
         },
     ];
     let expected = [
+        "Form operation has no control cage",
+        "references missing Form control cage `synthetic:test:subd#missing`",
         "fillet radius is invalid",
         "rib geometry is invalid",
         "hole geometry is invalid",

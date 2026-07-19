@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, HistoricalBodyId, HistoricalEdgeId,
-    HistoricalFaceId, VertexId,
+    HistoricalFaceId, SubdId, VertexId,
 };
 use crate::math::{Point3, Vector3};
 use schemars::JsonSchema;
@@ -279,6 +279,11 @@ pub enum FeatureDefinition {
     BaseFeature {
         /// Bodies copied into the parametric timeline when the session closed.
         bodies: BodySelection,
+    },
+    /// Freeform modeling session represented by its final subdivision cages.
+    Form {
+        /// Ordered control cages committed by the session.
+        cages: Vec<SubdId>,
     },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {

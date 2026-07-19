@@ -46,7 +46,7 @@ This document records F3D semantics that the format specification does not yet d
 - The semantic roles of the six-byte fields following Base Feature body suffixes and record references are unresolved.
 - The semantic roles of the f64 and two f32 fields between a sketch-text record's nominal height and font family, its two internal record references, and its class-specific tail fields are unresolved.
 
-- The payload grammar of `TSplines.BlobParts/*.tsm` control-cage entries is undefined; the entries pass through the container unchanged while the exact face geometry transfers from the B-rep stream's `t_spl_sur` carriers.
+- The individual scalar and index roles within `0m cg` derived-grip records, and the direct cage-object identity join needed to partition active TSM entries between multiple Form scopes, are unresolved.
 
 ## External references
 

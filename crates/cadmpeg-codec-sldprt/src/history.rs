@@ -3796,6 +3796,7 @@ pub fn sync_neutral_features(
             .find(|candidate| feature.native_ref.as_deref() == Some(candidate.id.as_str()));
         let (kind, parameters, mut properties) = match &feature.definition {
             FeatureDefinition::BaseFeature { .. }
+            | FeatureDefinition::Form { .. }
             | FeatureDefinition::Coil { .. }
             | FeatureDefinition::Sphere { .. }
             | FeatureDefinition::Torus { .. } => {
@@ -7180,6 +7181,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Sphere { .. } => "Sphere",
         FeatureDefinition::Torus { .. } => "Torus",
         FeatureDefinition::BaseFeature { .. } => "BaseFeature",
+        FeatureDefinition::Form { .. } => "Form",
         FeatureDefinition::Native { kind, .. } if extrude_op(kind).is_some() => "Extrusion",
         FeatureDefinition::Native { kind, .. } if valid_xml_name(kind) => kind,
         FeatureDefinition::Native { .. } => "Feature",

@@ -68,6 +68,17 @@ fn parse_f64(name: &str, value: Option<&str>, field: &str) -> Result<f64, CodecE
         .ok_or_else(|| malformed(name, format!("invalid {field}")))
 }
 
+fn require_end<'a>(
+    name: &str,
+    mut fields: impl Iterator<Item = &'a str>,
+    record: &str,
+) -> Result<(), CodecError> {
+    if fields.next().is_some() {
+        return Err(malformed(name, format!("{record} has trailing fields")));
+    }
+    Ok(())
+}
+
 fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
     let text = std::str::from_utf8(bytes)
         .map_err(|error| malformed(name, format!("payload is not UTF-8: {error}")))?;
@@ -83,13 +94,53 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
     let mut grip_vertices = Vec::new();
     let mut grip_points = Vec::new();
     let mut in_grip_map = false;
+    let mut declarations = BTreeSet::new();
     for line in text.lines().map(str::trim).filter(|line| !line.is_empty()) {
         let mut fields = line.split_ascii_whitespace();
         match fields.next() {
-            Some("f") => face_roots.push(parse_usize(name, fields.next(), "face root")?),
-            Some("e") => edge_roots.push(parse_usize(name, fields.next(), "edge root")?),
+            Some("#TS0200") => require_end(name, fields, "header")?,
+            Some("degree") => {
+                if parse_usize(name, fields.next(), "degree")? != 3 {
+                    return Err(malformed(name, "unsupported degree"));
+                }
+                require_end(name, fields, "degree declaration")?;
+                declarations.insert("degree");
+            }
+            Some(declaration @ ("cap-type" | "end-conditions" | "star-knot-rule")) => {
+                if fields.next().is_none() {
+                    return Err(malformed(name, format!("missing {declaration} value")));
+                }
+                require_end(name, fields, declaration)?;
+                declarations.insert(declaration);
+            }
+            Some("star-smoothness") => {
+                parse_f64(name, fields.next(), "star smoothness")?;
+                require_end(name, fields, "star-smoothness declaration")?;
+                declarations.insert("star-smoothness");
+            }
+            Some("units") => {
+                if fields.next() != Some("1") || fields.next() != Some("meters") {
+                    return Err(malformed(name, "unsupported units declaration"));
+                }
+                require_end(name, fields, "units declaration")?;
+                declarations.insert("units");
+            }
+            Some("f") => {
+                face_roots.push(parse_usize(name, fields.next(), "face root")?);
+                parse_i64(name, fields.next(), "face flags")?;
+                require_end(name, fields, "face")?;
+            }
+            Some("e") => {
+                edge_roots.push(parse_usize(name, fields.next(), "edge root")?);
+                parse_f64(name, fields.next(), "edge scalar")?;
+                require_end(name, fields, "edge")?;
+            }
             Some("v") => {
                 parse_usize(name, fields.next(), "vertex root")?;
+                if fields.next().is_none() {
+                    return Err(malformed(name, "missing vertex direction"));
+                }
+                require_end(name, fields, "vertex")?;
                 vertex_count += 1;
             }
             Some("l") => {
@@ -109,19 +160,26 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
             }
             Some("ec") => {
                 crease_edges.insert(parse_usize(name, fields.next(), "crease edge index")?);
+                parse_i64(name, fields.next(), "crease flags")?;
+                require_end(name, fields, "crease")?;
             }
             Some("0m") => match fields.next() {
-                Some("odd-grip-map") => in_grip_map = true,
+                Some("odd-grip-map") => {
+                    require_end(name, fields, "odd-grip-map declaration")?;
+                    in_grip_map = true;
+                }
                 Some("gvp") if in_grip_map => {
                     grip_vertices.push(Some(parse_usize(
                         name,
                         fields.next(),
                         "grip vertex index",
                     )?));
+                    require_end(name, fields, "primary grip map")?;
                 }
                 Some("gv") if in_grip_map => {
                     parse_usize(name, fields.next(), "secondary grip vertex index")?;
                     grip_vertices.push(None);
+                    require_end(name, fields, "secondary grip map")?;
                 }
                 Some("cg") if in_grip_map => {}
                 _ => return Err(malformed(name, "unknown odd-grip-map record")),
@@ -142,7 +200,8 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
         }
     }
 
-    if face_roots.is_empty()
+    if declarations.len() != 6
+        || face_roots.is_empty()
         || edge_roots.is_empty()
         || vertex_count == 0
         || half_edges.is_empty()
@@ -258,7 +317,7 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
             let crease = crease_edges.contains(&index);
             SubdEdge {
                 vertices,
-                sharpness: if crease { [1.0, 1.0] } else { [0.0, 0.0] },
+                sharpness: [0.0, 0.0],
                 tag: if crease {
                     SubdEdgeTag::Crease
                 } else {
@@ -294,6 +353,11 @@ fn parse(name: &str, bytes: &[u8]) -> Result<SubdSurface, CodecError> {
 #[cfg(test)]
 mod tests {
     const QUAD_TOPOLOGY: &str = "degree 3\n\
+cap-type G1CAPS\n\
+star-smoothness 0\n\
+units 1 meters\n\
+end-conditions SUBD_CREASES\n\
+star-knot-rule NURCCS\n\
 f 0 0\n\
 e 0 1\ne 2 1\ne 4 1\ne 6 1\n\
 v 0 NORTH\nv 2 NORTH\nv 4 NORTH\nv 6 NORTH\n\

@@ -25,6 +25,7 @@ pub(super) struct IdSets {
     curves: HashSet<String>,
     procedural_curves: HashSet<String>,
     pcurves: HashSet<String>,
+    subds: HashSet<String>,
     appearances: HashSet<String>,
     unknowns: HashSet<String>,
 }
@@ -56,6 +57,7 @@ impl IdSets {
                 .map(|e| e.id.0.clone())
                 .collect(),
             pcurves: ir.model.pcurves.iter().map(|e| e.id.0.clone()).collect(),
+            subds: ir.model.subds.iter().map(|e| e.id.0.clone()).collect(),
             appearances: ir
                 .model
                 .appearances
@@ -1773,6 +1775,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         let mut body_selections = Vec::new();
         match &feature.definition {
             FeatureDefinition::BaseFeature { bodies } => body_selections.push(bodies),
+            FeatureDefinition::Form { cages } => {
+                if cages.is_empty() {
+                    feature_geometry_error(findings, feature, "Form operation has no control cage");
+                }
+                check_ids(
+                    findings,
+                    &feature.id.0,
+                    "Form control cage",
+                    cages.iter().map(|cage| cage.0.as_str()),
+                    &ids.subds,
+                );
+            }
             FeatureDefinition::Extrude {
                 profile,
                 direction,

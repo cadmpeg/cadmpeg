@@ -1634,6 +1634,123 @@ pub(crate) fn direct_face_selection(
     Some(faces)
 }
 
+/// Replace a resolved Form scope's native definition with its committed cages.
+///
+/// The Form's cage-list record owns an ordered list of cage-object references.
+/// Archive cage order is used only when one Form owns every active cage; a
+/// document with multiple Form scopes remains native until the object records
+/// can provide an identity join.
+pub(crate) fn bind_form_cages(
+    scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
+    headers: &[DesignRecordHeader],
+    features: &mut [cadmpeg_ir::features::Feature],
+    cages: &[cadmpeg_ir::subd::SubdSurface],
+) -> Result<(), CodecError> {
+    let form_scopes = scopes
+        .iter()
+        .filter(|scope| scope.kind == "Form")
+        .collect::<Vec<_>>();
+    let [scope] = form_scopes.as_slice() else {
+        return Ok(());
+    };
+    let Some(stream) = native_stream(&scope.id).and_then(|stream| stream.strip_prefix("f3d:"))
+    else {
+        return Ok(());
+    };
+    let bytes = scan.entry_bytes(stream)?;
+    let owned_count = scope
+        .reference_members
+        .iter()
+        .filter_map(|record_index| {
+            headers.iter().find(|header| {
+                native_stream(&header.id) == native_stream(&scope.id)
+                    && header.record_index == *record_index
+            })
+        })
+        .find_map(|header| {
+            form_cage_count(
+                bytes,
+                header.byte_offset as usize,
+                header.record_index,
+                scope.record_index,
+            )
+        });
+    if owned_count != Some(cages.len()) || cages.is_empty() {
+        return Ok(());
+    }
+    let feature_id = neutral_feature_id(scope);
+    let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
+        return Ok(());
+    };
+    if matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Native { kind, .. } if kind == "Form"
+    ) {
+        feature.definition = cadmpeg_ir::features::FeatureDefinition::Form {
+            cages: cages.iter().map(|cage| cage.id.clone()).collect(),
+        };
+    }
+    Ok(())
+}
+
+fn form_cage_count(
+    bytes: &[u8],
+    offset: usize,
+    expected_record_index: u32,
+    scope_record_index: u32,
+) -> Option<usize> {
+    let class_length = u32_at(bytes, offset)? as usize;
+    let class_start = offset.checked_add(4)?;
+    let class_end = class_start.checked_add(class_length)?;
+    bytes.get(class_start..class_end)?;
+    let record_index = read_u64(bytes, class_end)?;
+    let prefix = bytes.get(class_end + 8..class_end + 14)?;
+    if record_index != expected_record_index as u64
+        || prefix != [0; 6]
+        || bytes.get(class_end + 14) != Some(&1)
+        || read_u64(bytes, class_end + 15)? != scope_record_index as u64
+        || bytes.get(class_end + 23..class_end + 25)? != [0, 0]
+    {
+        return None;
+    }
+    let count = u32_at(bytes, class_end + 25)? as usize;
+    let mut cursor = class_end.checked_add(29)?;
+    for _ in 0..count {
+        if bytes.get(cursor) != Some(&1) {
+            return None;
+        }
+        read_u64(bytes, cursor + 1)?;
+        if bytes.get(cursor + 9..cursor + 11)? != [0, 0] {
+            return None;
+        }
+        cursor = cursor.checked_add(11)?;
+    }
+    Some(count)
+}
+
+#[cfg(test)]
+mod form_tests {
+    #[test]
+    fn reads_owned_cage_count() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"402");
+        bytes.extend_from_slice(&2196u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.push(1);
+        bytes.extend_from_slice(&2190u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        for reference in [8300u64, 8303] {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+            bytes.extend_from_slice(&[0; 2]);
+        }
+        assert_eq!(super::form_cage_count(&bytes, 0, 2196, 2190), Some(2));
+    }
+}
+
 fn normalize_parameter_ordinals(parameters: &mut [cadmpeg_ir::features::DesignParameter]) {
     use cadmpeg_ir::features::{FeatureId, ParameterId};
 

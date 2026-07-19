@@ -27,6 +27,18 @@
 
 `<folder>` is an asset-folder path component.
 
+### 1.1.1 Form control cages
+
+A `TSplines.BlobParts/*.tsm` entry is a UTF-8, line-oriented `TS0200` control-cage program. The first line is `#TS0200`. Its fixed declarations are `degree 3`, `cap-type`, `star-smoothness`, `units`, `end-conditions`, and `star-knot-rule`. Geometry coordinates are centimetres irrespective of the declarative `units 1 meters` line.
+
+Topology uses zero-based indices in record order. An `f root flags` record defines a face and one half-edge in its boundary. An `e root scalar` record defines an edge and one of its two half-edges; the scalar is a finite f64 and is nominally one. A `v root direction` record defines a control vertex. An `l next previous mate vertex face sector flags` record defines a half-edge: `next` and `previous` are reciprocal within a face ring, `mate` is reciprocal across an edge, `vertex` is the half-edge's terminal control vertex, and `face` is the owning face index or `-1` on a boundary mate. Starting at an `f` root and following `next` yields that face's directed edge ring. For an `e` root, the directed edge runs from the mate's terminal vertex to the root's terminal vertex. Every half-edge belongs to exactly one `e` root pair. An `ec edge flags` record marks the indexed edge as a crease. Vertex subdivision tags follow crease incidence: zero crease edges is smooth, one is dart, two is crease, and three or more is corner.
+
+Each `0g x y z weight` record defines a rational grip point. Without an explicit grip map, the grip records correspond positionally to the `v` records. An explicit map starts with `0m odd-grip-map`; each following `0m gvp vertex` or `0m gv vertex` marker corresponds to the next `0g` record. A `gvp` marker assigns that point to the indexed topology vertex, while `gv` marks a secondary grip. Every topology vertex has exactly one primary grip. `0m cg` records describe derived grip connectivity and do not replace the primary topology map.
+
+The terminal `tol` and `geom-tol` values are centimetres. `ver`, `behavior-version`, and `compat-version` identify the generating T-spline implementation. `100edges`, `100verts`, and `50000grip` records retain editor selections and do not change the committed cage topology.
+
+A Form scope owns an indexed cage-list record. After its indexed-record header, that record stores six zero bytes, `u8 1`, the owning scope's u64 record index, two zero bytes, a u32 cage count, and that many entries of `u8 1 + u64 cage-object reference + two zero bytes`. A single Form whose list count equals every active-folder TSM entry owns those cages in archive order. Its result-body bindings identify the B-rep bodies committed by the operation.
+
 ### 1.2 Stored property and configuration entries
 
 The following small entries are STORED:
