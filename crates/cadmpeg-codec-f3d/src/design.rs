@@ -4794,6 +4794,10 @@ pub(crate) fn bind_extrude_profile_selections(
             continue;
         };
         let Some(sketch) = sketches.iter().find(|sketch| sketch.id == *sketch_id) else {
+            *profile = ProfileRef::Native(match matching_groups.as_slice() {
+                [group] => group.id.clone(),
+                _ => scope.id.clone(),
+            });
             continue;
         };
         let selections = matching_groups
@@ -19274,23 +19278,24 @@ mod relation_tests {
     use super::{
         assign_extrude_face_roles, bind_configuration_parameter_overrides,
         bind_configuration_suppressed_features, bind_dimension_loci, bind_edge_operand_candidates,
-        bind_extrude_selection_geometry, bind_extrude_selection_identities,
-        bind_face_operand_candidates, bind_lost_edge_groups, bind_parameter_companion_payloads,
-        bind_sketch_graph, body_bound_candidates, closed_sketch_profiles, companion_owned_interval,
-        contiguous_i32_program, decode_constraint_kinds, decode_fillet_radius_groups,
-        decode_pattern_definition, design_feature_family, design_parameter_prefix,
-        directional_point_dimension, exact_atomic_constraint, exact_base_feature_construction,
-        exact_counted_dimension_relation, exact_counted_offset, exact_direct_face_operation,
-        exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
-        exact_fixed_fillet_parameters, exact_offset_constraint, exact_path_feature_construction,
-        exact_solid_primitive, exact_work_plane_frame, exact_work_point_position,
-        expression_identifiers, face_recipe_program_kind, feature_input_topology_id,
-        find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
-        historical_profile_face_candidates, identity_matrix, indexed_record_containing,
-        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
-        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
-        neutral_sketch_point_id, next_indexed_record_offset, next_indexed_record_offset_with_index,
-        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
+        bind_extrude_profile_selections, bind_extrude_selection_geometry,
+        bind_extrude_selection_identities, bind_face_operand_candidates, bind_lost_edge_groups,
+        bind_parameter_companion_payloads, bind_sketch_graph, body_bound_candidates,
+        closed_sketch_profiles, companion_owned_interval, contiguous_i32_program,
+        decode_constraint_kinds, decode_fillet_radius_groups, decode_pattern_definition,
+        design_feature_family, design_parameter_prefix, directional_point_dimension,
+        exact_atomic_constraint, exact_base_feature_construction, exact_counted_dimension_relation,
+        exact_counted_offset, exact_direct_face_operation, exact_fixed_chamfer_parameters,
+        exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_offset_constraint,
+        exact_path_feature_construction, exact_solid_primitive, exact_work_plane_frame,
+        exact_work_point_position, expression_identifiers, face_recipe_program_kind,
+        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
+        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
+        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
+        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
+        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
+        next_indexed_record_offset_with_index, null_locus_dimension_definition,
+        offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -19317,13 +19322,14 @@ mod relation_tests {
         DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
         DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole,
-        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart,
-        DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
-        DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-        DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-        DesignRecipeReference, DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
-        LostEdgeReference, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-        SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand,
+        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup,
+        DesignExtrudeStart, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
+        DesignFixedFilletParameters, DesignObjectKind, DesignParameter, DesignParameterCompanion,
+        DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
+        DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference, PersistentSubentityTag,
+        SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+        SketchRelation, SketchRelationOperand,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -27691,15 +27697,67 @@ mod relation_tests {
         )
         .expect("typed blind Extrude");
         assert!(matches!(
-            blind,
+            &blind,
             FeatureDefinition::Extrude {
-                profile: ProfileRef::Sketch(ref profile),
+                profile: ProfileRef::Sketch(profile),
                 direction: ExtrudeDirection::ProfileNormal,
                 extent: Extent::Blind { length: Length(5.5) },
                 op: BooleanOp::NewBody,
                 draft: Some(Angle(0.2)),
                 ..
             } if profile == &neutral_sketch_id(&placement)
+        ));
+        let selection = DesignExtrudeSelectionGroup {
+            id: "f3d:Design/BulkStream.dat:selection#300".into(),
+            scope_record_index: scope.record_index,
+            scope_reference_ordinal: 0,
+            record_index: 300,
+            byte_offset: 700,
+            class_tag: "308".into(),
+            member_count_offset: 720,
+            members: vec![301],
+            member_offsets: vec![724],
+            opaque_index: 1,
+            opaque_index_offset: 735,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 739,
+            variant: false,
+            paired_class_tag: "259".into(),
+            paired_byte_offset: 760,
+        };
+        let mut feature = Feature {
+            id: FeatureId("f3d:model:feature#extrude".into()),
+            ordinal: 0,
+            name: Some("Extrude".into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: Some("Extrude".into()),
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: blind,
+            native_ref: Some(scope.id.clone()),
+        };
+        bind_extrude_profile_selections(
+            std::slice::from_mut(&mut feature),
+            std::slice::from_ref(&scope),
+            std::slice::from_ref(&selection),
+            &[],
+            &[],
+            super::ExtrudeProfileResolution {
+                entities: &[],
+                histories: &[],
+                linear_tolerance: 1.0e-6,
+            },
+        );
+        assert!(matches!(
+            feature.definition,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Native(ref native),
+                ..
+            } if native == &selection.id
         ));
         scope.extrude_direction_reversed = Some(true);
         assert!(project_extrude(
