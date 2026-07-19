@@ -5262,6 +5262,9 @@ pub struct FeatureDraftConstructionIndexLane {
     pub declared_count: u8,
     /// Non-null compact indices in serialized order.
     pub indices: Vec<u32>,
+    /// Same-store native blocks when the complete lane and graph select one store.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_blocks: Option<Vec<String>>,
     /// Absolute source offsets of the compact-index tokens.
     pub source_offsets: Vec<u64>,
 }
@@ -8835,6 +8838,7 @@ pub fn feature_draft_construction_references(
 pub fn feature_draft_construction_index_lanes(
     container: &Container,
 ) -> Vec<FeatureDraftConstructionIndexLane> {
+    let indexed = container.indexed_om_sections();
     let mut lanes = Vec::new();
     visit_feature_history_operation_records(
         container,
@@ -8842,6 +8846,29 @@ pub fn feature_draft_construction_index_lanes(
             let Some(lane) = crate::om::draft_feature_leading_index_lane(record) else {
                 return;
             };
+            let indices = lane
+                .indices
+                .iter()
+                .map(|(value, _)| *value)
+                .collect::<Vec<_>>();
+            let data_blocks =
+                crate::om::draft_feature_payload_references(record).and_then(|graph| {
+                    let mut complete_indices = graph
+                        .references
+                        .iter()
+                        .map(|reference| reference.object_index)
+                        .collect::<Vec<_>>();
+                    complete_indices.extend(&indices);
+                    let section_ordinal = unique_offset_data_store(&indexed, &complete_indices)?;
+                    Some(
+                        indices
+                            .iter()
+                            .map(|index| {
+                                format!("nx:om-data-blocks-{section_ordinal}:block#{index}")
+                            })
+                            .collect(),
+                    )
+                });
             lanes.push(FeatureDraftConstructionIndexLane {
                 id: format!(
                     "nx:feature-history:draft-construction-index-lane#{section_key}-{operation_ordinal:010}"
@@ -8850,7 +8877,8 @@ pub fn feature_draft_construction_index_lanes(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 declared_count: lane.declared_count,
-                indices: lane.indices.iter().map(|(value, _)| *value).collect(),
+                indices,
+                data_blocks,
                 source_offsets: lane
                     .indices
                     .iter()
@@ -10018,6 +10046,19 @@ fn unique_offset_data_block(
     indexed: &[(&crate::container::DirEntry, crate::om::IndexedSection<'_>)],
     object_index: u32,
 ) -> Option<String> {
+    let section_ordinal = unique_offset_data_store(indexed, &[object_index])?;
+    Some(format!(
+        "nx:om-data-blocks-{section_ordinal}:block#{object_index}"
+    ))
+}
+
+fn unique_offset_data_store(
+    indexed: &[(&crate::container::DirEntry, crate::om::IndexedSection<'_>)],
+    object_indices: &[u32],
+) -> Option<usize> {
+    if object_indices.is_empty() || object_indices.contains(&0) {
+        return None;
+    }
     let candidates = indexed
         .iter()
         .enumerate()
@@ -10026,19 +10067,18 @@ fn unique_offset_data_block(
                 .records
                 .first()
                 .is_some_and(|record| record.object_id.is_none())
-                && object_index != 0
-                && usize::try_from(object_index)
-                    .ok()
-                    .is_some_and(|ordinal| ordinal <= candidate.records.len())
+                && object_indices.iter().all(|object_index| {
+                    usize::try_from(*object_index)
+                        .ok()
+                        .is_some_and(|ordinal| ordinal <= candidate.records.len())
+                })
         })
-        .map(|(section_ordinal, _)| {
-            format!("nx:om-data-blocks-{section_ordinal}:block#{object_index}")
-        })
+        .map(|(section_ordinal, _)| section_ordinal)
         .collect::<Vec<_>>();
-    let [candidate] = candidates.as_slice() else {
+    let [section_ordinal] = candidates.as_slice() else {
         return None;
     };
-    Some(candidate.clone())
+    Some(*section_ordinal)
 }
 
 /// Join operation input lanes to uniquely resolved parameter declarations.
