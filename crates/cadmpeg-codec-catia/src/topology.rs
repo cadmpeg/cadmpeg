@@ -6698,7 +6698,7 @@ impl MeshQuotient {
                     .collect::<Vec<_>>()
             })
             .collect::<Vec<_>>();
-        if variable_count <= 12 {
+        if variable_count <= 8 {
             let mut output = Vec::new();
             let mut seen = HashSet::new();
             let combinations = 1usize << variable_count;
@@ -6737,7 +6737,8 @@ impl MeshQuotient {
                     continue;
                 }
                 let mut quotient = self.clone();
-                let viable =
+                let mut merged_nodes = Vec::new();
+                let merged =
                     assignment
                         .boundaries
                         .iter()
@@ -6757,14 +6758,27 @@ impl MeshQuotient {
                                 let Some(root) = quotient.merge(left_end, right_start) else {
                                     return false;
                                 };
-                                quotient.propagate_component_edge_domains_with_budget(
-                                    root,
-                                    edge_candidates,
-                                    budget,
-                                )
+                                merged_nodes.push(root);
+                                true
                             })
                         });
-                if !viable {
+                if !merged {
+                    continue;
+                }
+                let affected_edges = merged_nodes
+                    .into_iter()
+                    .flat_map(|node| {
+                        let root = quotient.union.find(node);
+                        quotient.members[root].clone()
+                    })
+                    .map(|node| node / 2)
+                    .filter(|edge| !edge_candidates[*edge].is_empty())
+                    .collect::<HashSet<_>>();
+                if !quotient.propagate_edge_domains_with_budget(
+                    affected_edges,
+                    edge_candidates,
+                    budget,
+                ) {
                     continue;
                 }
                 let canonical_directions = directions
@@ -10452,7 +10466,7 @@ mod motif_tests {
             members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
         };
         let candidates = vec![vec![[0, 0]]; EDGE_COUNT];
-        let budget = MeshConstraintBudget::new(500);
+        let budget = MeshConstraintBudget::new(30);
 
         let options = quotient.assignment_options_limited(
             &assignment,
