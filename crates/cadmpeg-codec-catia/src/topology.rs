@@ -7127,6 +7127,7 @@ fn changed_quotient_edges(left: &MeshQuotient, right: &MeshQuotient) -> HashSet<
 
 struct MeshSelectionSearch<'a> {
     assignments: &'a [Vec<MeshFaceBoundaryAssignment>],
+    #[cfg(test)]
     possible_face_equations: Vec<Vec<[usize; 2]>>,
     possible_face_choices: Vec<Vec<Vec<[usize; 2]>>>,
     face_work: Vec<Option<usize>>,
@@ -7710,6 +7711,7 @@ impl MeshSelectionSearch<'_> {
             || (self.stop_after_first_solution && self.solution.is_some())
     }
 
+    #[cfg(test)]
     fn remaining_equation_merge_capacity(&self, quotient: &mut MeshQuotient) -> Option<usize> {
         fn choice_component_reductions(
             choice: &[[usize; 2]],
@@ -8355,14 +8357,6 @@ impl MeshSelectionSearch<'_> {
         if root_count < self.vertex_points.len() {
             return None;
         }
-        let remaining_merges = self.remaining_equation_merge_capacity(&mut measured)?;
-        if root_count.saturating_sub(remaining_merges) > self.vertex_points.len() {
-            measured.close_coordinate_roots_with_budget(
-                self.vertex_points.len(),
-                self.edge_candidates,
-                Some(budget),
-            )?;
-        }
         if root_count == self.vertex_points.len()
             && !measured.point_assignment_exists_with_budget(
                 self.vertex_points.len(),
@@ -8413,24 +8407,6 @@ impl MeshSelectionSearch<'_> {
             }
             let root_count = measured.root_count();
             if root_count < self.vertex_points.len() {
-                return;
-            }
-            let Some(remaining_merges) = self.remaining_equation_merge_capacity(&mut measured)
-            else {
-                return;
-            };
-            if root_count.saturating_sub(remaining_merges) > self.vertex_points.len()
-                && measured
-                    .close_coordinate_roots_with_budget(
-                        self.vertex_points.len(),
-                        self.edge_candidates,
-                        Some(budget),
-                    )
-                    .is_none()
-            {
-                if budget.exhausted.get() {
-                    self.exhausted = true;
-                }
                 return;
             }
             if root_count == self.vertex_points.len()
@@ -8920,6 +8896,7 @@ fn resolve_standard_mesh_endpoint_candidates(
     )?;
     let mut search = MeshSelectionSearch {
         assignments: &assignments,
+        #[cfg(test)]
         possible_face_equations: face_equations,
         possible_face_choices: face_choices,
         face_work,
@@ -9690,7 +9667,7 @@ mod motif_tests {
         bind_edge_port_candidates, bounded_endpoint_cycle_orders, bounded_oriented_trail_orders,
         canonicalize_mesh_vertex_labels, complete_duplicate_face_slots,
         deduplicate_mesh_quotient_assignments, face_endpoint_candidates_close,
-        mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable,
+        initial_mesh_quotient, mesh_assignment_can_merge, mesh_assignment_endpoint_cycles_viable,
         mesh_candidates_equivalent, mesh_edge_points_compatible, mesh_face_endpoint_configurations,
         motif_port_points, parse_edge_tables_at, parse_edge_tables_scoped_at,
         parse_fbb_edge_tables_width, parse_trim_chain, parse_trim_record, parse_trim_record_layout,
@@ -11056,6 +11033,48 @@ mod motif_tests {
         };
 
         assert!(!search.fixed_remaining_faces_are_orientable());
+    }
+
+    #[test]
+    fn partial_mesh_selection_defers_ambiguous_coordinate_closure() {
+        let assignments = Vec::new();
+        let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+        let edge_rows = vec![
+            EdgeRow {
+                kind: 1,
+                handles: vec![0, 1],
+                boundary_layout: EdgeBoundaryLayout::InteriorWithFlankingCorners,
+            };
+            2
+        ];
+        let vertex_points = vec![[0.0; 3], [1.0, 0.0, 0.0]];
+        let search = MeshSelectionSearch {
+            assignments: &assignments,
+            possible_face_equations: Vec::new(),
+            possible_face_choices: Vec::new(),
+            face_work: Vec::new(),
+            edge_candidates: &edge_candidates,
+            edge_rows: &edge_rows,
+            vertex_points: &vertex_points,
+            selected: Vec::new(),
+            states: 0,
+            solution: None,
+            stop_after_first_solution: false,
+            ambiguous: false,
+            exhausted: false,
+            face_equation_cache: RefCell::default(),
+        };
+        let mut quotient = initial_mesh_quotient(&edge_candidates, 2, &[[0, 1], [2, 3]])
+            .expect("initial quotient");
+        quotient.merge(1, 2).expect("selected face corner");
+        let budget = MeshConstraintBudget::new(100);
+
+        let mut prepared = search
+            .prepare_selected_branch(&quotient, &HashSet::new(), &budget)
+            .expect("partial quotient remains viable");
+
+        assert_eq!(prepared.root_count(), 3);
+        assert!(!budget.exhausted.get());
     }
 
     #[test]
