@@ -4305,6 +4305,27 @@ pub struct FeatureInputBlockIdentityGroup {
     pub source_offsets: Vec<u64>,
 }
 
+/// Exact reuse of one feature input block by a column index-row slot.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureInputIndexRowUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Feature input binding that resolves to the shared block.
+    pub input_block: String,
+    /// Owning feature operation label.
+    pub operation_label: String,
+    /// Input slot in the operation header.
+    pub input_slot: u8,
+    /// Column index row containing the shared block.
+    pub index_row: String,
+    /// Zero-based slot in the row's four-block lane.
+    pub row_slot: u8,
+    /// Exact shared target in the native `data_blocks` arena.
+    pub data_block: String,
+    /// Absolute file offset of the row's compact block index.
+    pub source_offset: u64,
+}
+
 /// Ordered parameter declaration reached through one feature input block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureParameterBinding {
@@ -6329,6 +6350,46 @@ pub fn feature_input_block_identity_groups(
                 source_offsets: members.iter().map(|member| member.source_offset).collect(),
             },
         )
+        .collect()
+}
+
+/// Join feature inputs to every index-row slot addressing the same block.
+pub fn feature_input_index_row_uses(
+    inputs: &[FeatureInputBlock],
+    rows: &[DataBlockIndexRow],
+) -> Vec<FeatureInputIndexRowUse> {
+    let mut slots_by_block = BTreeMap::<&str, Vec<(&DataBlockIndexRow, usize)>>::new();
+    for row in rows {
+        for (slot, data_block) in row.data_blocks.iter().enumerate() {
+            slots_by_block
+                .entry(data_block)
+                .or_default()
+                .push((row, slot));
+        }
+    }
+    inputs
+        .iter()
+        .flat_map(|input| {
+            slots_by_block
+                .get(input.data_block.as_str())
+                .into_iter()
+                .flatten()
+                .map(|(row, slot)| FeatureInputIndexRowUse {
+                    id: format!(
+                        "nx:feature-history:input-index-row-use#{}-{:010}-{slot:010}",
+                        input.id.rsplit_once('#').map_or("unknown", |(_, key)| key),
+                        row.ordinal,
+                    ),
+                    input_block: input.id.clone(),
+                    operation_label: input.operation_label.clone(),
+                    input_slot: input.input_slot,
+                    index_row: row.id.clone(),
+                    row_slot: *slot as u8,
+                    data_block: input.data_block.clone(),
+                    source_offset: row.index_source_offsets[*slot],
+                })
+                .collect::<Vec<_>>()
+        })
         .collect()
 }
 

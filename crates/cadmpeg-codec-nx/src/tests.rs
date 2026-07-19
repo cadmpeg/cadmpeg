@@ -5125,6 +5125,49 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
 }
 
 #[test]
+fn feature_input_index_row_uses_preserve_every_shared_slot() {
+    use crate::native::{feature_input_index_row_uses, DataBlockIndexRow, FeatureInputBlock};
+
+    let input = FeatureInputBlock {
+        id: "input#0000000001".into(),
+        operation_label: "operation#1".into(),
+        input_slot: 2,
+        object_index: 7,
+        data_block: "block#4".into(),
+        source_offset: 10,
+    };
+    let row = DataBlockIndexRow {
+        id: "row#3".into(),
+        section_ordinal: 0,
+        ordinal: 3,
+        first_index: 20,
+        flag: 3,
+        indices: [4, 4, 5, 6],
+        data_blocks: [
+            "block#4".into(),
+            "block#4".into(),
+            "block#5".into(),
+            "block#6".into(),
+        ],
+        source_entry: "entry".into(),
+        source_offset: 100,
+        first_index_source_offset: 103,
+        index_source_offsets: [108, 109, 110, 111],
+    };
+
+    let uses = feature_input_index_row_uses(&[input], &[row]);
+    assert_eq!(uses.len(), 2);
+    assert_eq!(uses[0].input_block, "input#0000000001");
+    assert_eq!(uses[0].operation_label, "operation#1");
+    assert_eq!(uses[0].input_slot, 2);
+    assert_eq!(uses[0].index_row, "row#3");
+    assert_eq!(uses[0].row_slot, 0);
+    assert_eq!(uses[0].source_offset, 108);
+    assert_eq!(uses[1].row_slot, 1);
+    assert_eq!(uses[1].source_offset, 109);
+}
+
+#[test]
 fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     use crate::om::CompactIndex::{Null, Value};
 
