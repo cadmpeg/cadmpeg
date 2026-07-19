@@ -228,6 +228,7 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             tree_node_class(FeatureTreeNodeRole::CosmeticThread)
         }
         "moDocsFolder_c" => tree_node_class(FeatureTreeNodeRole::DesignBinder),
+        "moEnvFolder_c" => tree_node_class(FeatureTreeNodeRole::LightsAndCameras),
         "moEqnFolder_c" => tree_node_class(FeatureTreeNodeRole::Equations),
         "moFavoriteFolder_c" => tree_node_class(FeatureTreeNodeRole::Favorites),
         "moFtrFolder_c" => tree_node_class(FeatureTreeNodeRole::FeatureFolder),
@@ -240,6 +241,8 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moSolidBodyFolder_c" => tree_node_class(FeatureTreeNodeRole::SolidBodies),
         "moSurfaceBodyFolder_c" => tree_node_class(FeatureTreeNodeRole::SurfaceBodies),
         "moTableFolder_c" => tree_node_class(FeatureTreeNodeRole::Tables),
+        "moAmbientLight_c" => tree_node_class(FeatureTreeNodeRole::AmbientLight),
+        "moDirectionLight_c" => tree_node_class(FeatureTreeNodeRole::DirectionalLight),
 
         "sgSketch" => (NativeClassKind::Sketch, Sketch, None, None),
         "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" | "sgSplineHandle" => {
@@ -577,7 +580,10 @@ mod tests {
         }
 
         for (class, role) in [
+            ("moAmbientLight_c", FeatureTreeNodeRole::AmbientLight),
             ("moDetailFolder_c", FeatureTreeNodeRole::Details),
+            ("moDirectionLight_c", FeatureTreeNodeRole::DirectionalLight),
+            ("moEnvFolder_c", FeatureTreeNodeRole::LightsAndCameras),
             ("moFtrFolder_c", FeatureTreeNodeRole::FeatureFolder),
             ("moTableFolder_c", FeatureTreeNodeRole::Tables),
         ] {
