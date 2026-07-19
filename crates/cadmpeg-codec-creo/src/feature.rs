@@ -787,6 +787,32 @@ pub struct FeatureSegment {
     pub offset: usize,
 }
 
+/// One fully framed `segtab_ptr` row whose segment family has no neutral
+/// geometry representation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FeatureOpaqueSegment {
+    /// Stored segment-family discriminator.
+    pub kind: u32,
+    /// Three stored direction fields.
+    pub directions: [Option<u32>; 3],
+    /// Two stored point fields.
+    pub point_ids: [Option<u32>; 2],
+    /// Stored center-point field.
+    pub center_id: Option<u32>,
+    /// Stored arc-orientation field.
+    pub arc_orientation: Option<u32>,
+    /// Stored vertical/horizontal field.
+    pub vertical_horizontal: Option<u32>,
+    /// Stored radius-reference field.
+    pub radius_ref: Option<u32>,
+    /// Stored secondary-radius-reference field.
+    pub radius2_ref: Option<u32>,
+    /// External segment identifier used by section tables.
+    pub external_id: u32,
+    /// Byte offset of the row in the original stream.
+    pub offset: usize,
+}
+
 /// Defining-sketch segment table from one feature definition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureSegmentTable {
@@ -796,6 +822,8 @@ pub struct FeatureSegmentTable {
     pub entity_ref: Option<u32>,
     /// Fully aligned line and arc rows.
     pub rows: Vec<FeatureSegment>,
+    /// Fully aligned rows with unsupported segment-family discriminators.
+    pub opaque_rows: Vec<FeatureOpaqueSegment>,
     /// Byte offset of the `segtab_ptr` label in the original stream.
     pub offset: usize,
 }
@@ -803,7 +831,7 @@ pub struct FeatureSegmentTable {
 impl FeatureSegmentTable {
     /// Whether every row declared by the table decoded.
     pub fn is_complete(&self) -> bool {
-        usize::try_from(self.declared_count).ok() == Some(self.rows.len())
+        usize::try_from(self.declared_count).ok() == Some(self.rows.len() + self.opaque_rows.len())
     }
 
     /// Resolve a uniquely identified defining-sketch segment.
@@ -814,7 +842,12 @@ impl FeatureSegmentTable {
             .iter()
             .filter(|segment| segment.external_id == external_id);
         let segment = matches.next()?;
-        matches.next().is_none().then_some(segment)
+        (matches.next().is_none()
+            && !self
+                .opaque_rows
+                .iter()
+                .any(|row| row.external_id == external_id))
+        .then_some(segment)
     }
 }
 
@@ -2037,6 +2070,9 @@ fn segment_table_body(
             (usize::try_from(declared).ok()? == count).then_some(())?;
             p = next;
         }
+        if label == b"type\0" && payload.get(p..p + 2) == Some(&[0xc0, 0x80]) {
+            p += 2;
+        }
         let mut values = Vec::with_capacity(count);
         for _ in 0..count {
             values.push(next_segment_int(payload, &mut p));
@@ -2053,22 +2089,10 @@ fn segment_table_body(
         let (_, radius_ref) = named_values(b"radius\0", 1)?;
         let (_, radius2_ref) = named_values(b"radius2\0", 1)?;
         let (_, external_id) = named_values(b"ext_id\0", 1)?;
-        let kind = match kind[0]? {
-            2 => FeatureSegmentKind::Line,
-            3 => FeatureSegmentKind::Arc,
-            5 => FeatureSegmentKind::Point,
-            _ => return None,
-        };
-        let point0 = point_ids[0]?;
-        let point1 = if kind == FeatureSegmentKind::Point {
-            point0
-        } else {
-            point_ids[1]?
-        };
-        Some(FeatureSegment {
-            kind,
+        Some(FeatureOpaqueSegment {
+            kind: kind[0]?,
             directions: [directions[0], directions[1], directions[2]],
-            point_ids: [point0, point1],
+            point_ids: [point_ids[0], point_ids[1]],
             center_id: center_id[0],
             arc_orientation: arc_orientation[0],
             vertical_horizontal: vertical_horizontal[0],
@@ -2097,17 +2121,21 @@ fn segment_table_body(
     .filter_map(|label| find_bytes(payload, label, cursor, end))
     .min()
     .unwrap_or(end);
-    let mut rows = named_row.into_iter().collect::<Vec<_>>();
+    let mut rows = Vec::new();
+    let mut opaque_rows = Vec::new();
+    if let Some(row) = named_row {
+        retain_segment_row(row, &mut rows, &mut opaque_rows);
+    }
     let first_row = cursor;
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
-    while cursor < region_end && rows.len() < row_limit {
+    while cursor < region_end && rows.len() + opaque_rows.len() < row_limit {
         let row_start = cursor;
         let kind_offset = if payload.get(cursor..cursor + 2) == Some(&[0xc0, 0x80]) {
             cursor + 2
         } else {
             cursor
         };
-        if !matches!(payload.get(kind_offset), Some(2 | 3 | 5))
+        if payload.get(kind_offset).is_none_or(|kind| *kind > 0x7f)
             || (row_start != first_row
                 && payload.get(row_start.saturating_sub(1)) != Some(&0xe3)
                 && payload.get(row_start.saturating_sub(4)..row_start)
@@ -2119,14 +2147,9 @@ fn segment_table_body(
         let mut p = kind_offset;
         let (kind_raw, next) = segment_int(payload, p);
         p = next;
-        let kind = match kind_raw {
-            Some(2) => FeatureSegmentKind::Line,
-            Some(3) => FeatureSegmentKind::Arc,
-            Some(5) => FeatureSegmentKind::Point,
-            _ => {
-                cursor += 1;
-                continue;
-            }
+        let Some(kind) = kind_raw else {
+            cursor += 1;
+            continue;
         };
         let directions = [
             next_segment_int(payload, &mut p),
@@ -2135,18 +2158,6 @@ fn segment_table_body(
         ];
         let point0 = next_segment_int(payload, &mut p);
         let point1 = next_segment_int(payload, &mut p);
-        let Some(point0) = point0 else {
-            cursor += 1;
-            continue;
-        };
-        let point1 = if kind == FeatureSegmentKind::Point {
-            point0
-        } else if let Some(point1) = point1 {
-            point1
-        } else {
-            cursor += 1;
-            continue;
-        };
         let center_id = next_segment_int(payload, &mut p);
         let arc_orientation = next_segment_int(payload, &mut p);
         let verhor_flag = payload.get(p) == Some(&0xf5);
@@ -2160,19 +2171,26 @@ fn segment_table_body(
             cursor += 1;
             continue;
         };
-        if payload.get(p) == Some(&0xe2) && point0 < 256 && point1 < 256 {
-            rows.push(FeatureSegment {
-                kind,
-                directions,
-                point_ids: [point0, point1],
-                center_id,
-                arc_orientation,
-                vertical_horizontal,
-                radius_ref,
-                radius2_ref,
-                external_id,
-                offset: row_start,
-            });
+        if payload.get(p) == Some(&0xe2)
+            && point0.is_none_or(|point| point < 256)
+            && point1.is_none_or(|point| point < 256)
+        {
+            retain_segment_row(
+                FeatureOpaqueSegment {
+                    kind,
+                    directions,
+                    point_ids: [point0, point1],
+                    center_id,
+                    arc_orientation,
+                    vertical_horizontal,
+                    radius_ref,
+                    radius2_ref,
+                    external_id,
+                    offset: row_start,
+                },
+                &mut rows,
+                &mut opaque_rows,
+            );
             cursor = p + 1;
         } else {
             cursor += 1;
@@ -2182,8 +2200,48 @@ fn segment_table_body(
         declared_count,
         entity_ref,
         rows,
+        opaque_rows,
         offset: table,
     })
+}
+
+fn retain_segment_row(
+    row: FeatureOpaqueSegment,
+    rows: &mut Vec<FeatureSegment>,
+    opaque_rows: &mut Vec<FeatureOpaqueSegment>,
+) {
+    let kind = match row.kind {
+        2 => FeatureSegmentKind::Line,
+        3 => FeatureSegmentKind::Arc,
+        5 => FeatureSegmentKind::Point,
+        _ => {
+            opaque_rows.push(row);
+            return;
+        }
+    };
+    let Some(point0) = row.point_ids[0] else {
+        return;
+    };
+    let point1 = if kind == FeatureSegmentKind::Point {
+        point0
+    } else {
+        let Some(point1) = row.point_ids[1] else {
+            return;
+        };
+        point1
+    };
+    rows.push(FeatureSegment {
+        kind,
+        directions: row.directions,
+        point_ids: [point0, point1],
+        center_id: row.center_id,
+        arc_orientation: row.arc_orientation,
+        vertical_horizontal: row.vertical_horizontal,
+        radius_ref: row.radius_ref,
+        radius2_ref: row.radius2_ref,
+        external_id: row.external_id,
+        offset: row.offset,
+    });
 }
 
 fn trim_entity_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureTrimEntityTable> {
@@ -7038,6 +7096,39 @@ mod tests {
     }
 
     #[test]
+    fn segment_tables_retain_fully_framed_opaque_families() {
+        let mut payload = b"segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2\
+            type\0\xc0\x80\x01dir\0\xf8\x03\x00\xe5\xe4\
+            pointid\0\xf8\x02\xf6\xe4cntrid\0\x00arcorient\0\x00\
+            verhor\0\x00radius\0\xf6radius2\0\xf6ext_id\0\x04\
+            \xf2\xf7\x01\xe2"
+            .to_vec();
+        payload.extend_from_slice(&[0x19, 0, 1, 0, 10, 11, 0xf6, 0, 0, 0xf6, 0xf6, 1, 0xe2]);
+
+        let segments = segment_table(&payload, 0, payload.len()).expect("segment table");
+
+        assert!(segments.is_complete());
+        assert!(segments.rows.is_empty());
+        assert_eq!(segments.opaque_rows.len(), 2);
+        assert_eq!(segments.opaque_rows[0].kind, 1);
+        assert_eq!(segments.opaque_rows[0].point_ids, [None, None]);
+        assert_eq!(segments.opaque_rows[0].external_id, 4);
+        assert_eq!(segments.opaque_rows[1].kind, 25);
+        assert_eq!(segments.opaque_rows[1].point_ids, [Some(10), Some(11)]);
+        assert_eq!(segments.opaque_rows[1].external_id, 1);
+
+        let malformed_known = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 2, 0, 1, 0, 10, 0xf6, 0xf6, 0, 0,
+            0xf6, 0xf6, 1, 0xe2,
+        ];
+        let segments = segment_table_body(&malformed_known, 0, 0, malformed_known.len())
+            .expect("malformed known segment table");
+        assert!(!segments.is_complete());
+        assert!(segments.rows.is_empty());
+        assert!(segments.opaque_rows.is_empty());
+    }
+
+    #[test]
     fn positional_dimension_table_uses_the_inherited_table_class() {
         let mut payload = b"prefix\xf8\x02\xf7\x58\xfb\xe2\xf7\x59".to_vec();
         payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
@@ -7670,6 +7761,7 @@ mod tests {
                 segment(FeatureSegmentKind::Line, [1, 2], 9),
                 segment(FeatureSegmentKind::Arc, [2, 3], 10),
             ],
+            opaque_rows: Vec::new(),
             offset: 0,
         };
         let variables = FeatureVariableTable {
@@ -8283,6 +8375,7 @@ mod tests {
                 external_id: 42,
                 offset: 0,
             }],
+            opaque_rows: Vec::new(),
             offset: 0,
         };
 
@@ -8347,6 +8440,7 @@ mod tests {
                 external_id: 42,
                 offset: 0,
             }],
+            opaque_rows: Vec::new(),
             offset: 0,
         };
 
@@ -8400,6 +8494,7 @@ mod tests {
                 external_id: 43,
                 offset: 0,
             }],
+            opaque_rows: Vec::new(),
             offset: 0,
         };
 

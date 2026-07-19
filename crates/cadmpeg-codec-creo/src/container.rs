@@ -1255,6 +1255,9 @@ fn offset_feature_definition(definition: &mut FeatureDefinition, section_offset:
         for row in &mut segments.rows {
             row.offset += section_offset;
         }
+        for row in &mut segments.opaque_rows {
+            row.offset += section_offset;
+        }
     }
     if let Some(entities) = &mut definition.trim_entities {
         entities.offset += section_offset;

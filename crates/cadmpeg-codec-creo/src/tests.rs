@@ -2696,6 +2696,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                     offset: 0,
                 },
             ],
+            opaque_rows: Vec::new(),
             offset: 0,
         }),
         trim_entities: None,

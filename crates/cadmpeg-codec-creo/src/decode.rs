@@ -95,6 +95,7 @@ struct CreoSketchRecord {
     solved_external_ids: Vec<u32>,
     variables: Vec<CreoSketchVariable>,
     segments: Vec<CreoSketchSegment>,
+    opaque_segments: Vec<CreoSketchOpaqueSegment>,
     trim_entities: Vec<CreoSketchTrimEntity>,
     trim_vertices: Vec<CreoSketchTrimVertex>,
     order_rows: Vec<CreoSketchOrderRow>,
@@ -260,6 +261,20 @@ struct CreoSketchSegment {
     external_id: u32,
     kind: &'static str,
     point_ids: [u32; 2],
+    center_id: Option<u32>,
+    directions: [Option<u32>; 3],
+    arc_orientation: Option<u32>,
+    vertical_horizontal_constraint: Option<u32>,
+    radius_dimension_id: Option<u32>,
+    secondary_radius_dimension_id: Option<u32>,
+    offset: usize,
+}
+
+#[derive(Serialize)]
+struct CreoSketchOpaqueSegment {
+    external_id: u32,
+    kind: u32,
+    point_ids: [Option<u32>; 2],
     center_id: Option<u32>,
     directions: [Option<u32>; 3],
     arc_orientation: Option<u32>,
@@ -2855,6 +2870,23 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     offset: segment.offset,
                 })
                 .collect(),
+            opaque_segments: definition
+                .segments
+                .iter()
+                .flat_map(|table| &table.opaque_rows)
+                .map(|segment| CreoSketchOpaqueSegment {
+                    external_id: segment.external_id,
+                    kind: segment.kind,
+                    point_ids: segment.point_ids,
+                    center_id: segment.center_id,
+                    directions: segment.directions,
+                    arc_orientation: segment.arc_orientation,
+                    vertical_horizontal_constraint: segment.vertical_horizontal,
+                    radius_dimension_id: segment.radius_ref,
+                    secondary_radius_dimension_id: segment.radius2_ref,
+                    offset: segment.offset,
+                })
+                .collect(),
             trim_entities: definition
                 .trim_entities
                 .iter()
@@ -3075,7 +3107,7 @@ fn sketch_table_headers(
             table.entity_ref,
             None,
             Vec::new(),
-            table.rows.len(),
+            table.rows.len() + table.opaque_rows.len(),
             table.offset,
         );
     }
@@ -15478,6 +15510,7 @@ mod resolved_sketch_tests {
             declared_count: 0,
             entity_ref: None,
             rows: Vec::new(),
+            opaque_rows: Vec::new(),
             offset: 0,
         });
         constrained.relations = Some(crate::feature::FeatureRelationTable {
@@ -15555,6 +15588,7 @@ mod resolved_sketch_tests {
             declared_count: 1,
             entity_ref: None,
             rows: vec![segment.clone()],
+            opaque_rows: Vec::new(),
             offset: 4,
         });
         completed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
@@ -15809,6 +15843,7 @@ mod resolved_sketch_tests {
             declared_count: 1,
             entity_ref: None,
             rows: vec![segment],
+            opaque_rows: Vec::new(),
             offset: 38,
         });
         trimmed.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
@@ -16682,6 +16717,7 @@ mod resolved_sketch_tests {
                 declared_count: 5,
                 entity_ref: None,
                 rows: vec![segment, arc, point, other_line, other_arc],
+                opaque_rows: Vec::new(),
                 offset: 30,
             }),
             trim_entities: None,
@@ -18576,6 +18612,7 @@ mod resolved_sketch_tests {
                     offset: external_id as usize,
                 })
                 .collect(),
+            opaque_rows: Vec::new(),
             offset: 4,
         });
         let arc_profile = resolved_profile_chains(&arcs, &BTreeSet::from([10, 11]));
@@ -18608,6 +18645,7 @@ mod resolved_sketch_tests {
                 offset: external_id as usize,
             })
             .collect(),
+            opaque_rows: Vec::new(),
             offset: 4,
         });
         let segment_profile =
@@ -18686,6 +18724,7 @@ mod resolved_sketch_tests {
                     external_id: 1,
                     offset: 2,
                 }],
+                opaque_rows: Vec::new(),
                 offset: 2,
             }),
             trim_entities: None,

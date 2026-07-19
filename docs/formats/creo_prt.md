@@ -904,6 +904,9 @@ The named `segtab` row before its schema close is likewise a data row. Its `type
 Positional rows may insert the two-byte `c0 80` wrapper before `type`. The
 wrapper does not change the following field layout. A compact `ext_id` value of
 zero is an identifier; the `f6` control sentinel represents an absent value.
+The `c0 80` wrapper may also precede the named row's scalar `type`. Segment
+families other than types `2`, `3`, and `5` retain the same fields and count
+toward table completeness, but do not define line, arc, or point geometry.
 `ext_id` is the neutral section-entity identity when exactly one `segtab` row
 stores that value. Rows sharing an `ext_id` remain independent construction
 entities identified by their row offsets and do not participate in profile,

@@ -1077,6 +1077,7 @@ mod tests {
                     external_id: 43,
                     offset: 20,
                 }],
+                opaque_rows: Vec::new(),
                 offset: 20,
             }),
             trim_entities: None,
