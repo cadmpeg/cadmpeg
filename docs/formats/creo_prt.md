@@ -1414,6 +1414,11 @@ is the pcurve direction and its parameter interval is `[0, 1]`. Agreeing
 positional and labeled forms define one pcurve. Distinct matching paths, or a
 pair that matches neither endpoint order or both orders, do not define a
 pcurve.
+Mapping endpoint A and endpoint B through every evaluable adjacent face chart
+must produce the same ordered model-space pair. For one topological vertex
+orbit, the common point among the unordered mapped endpoint pairs of at least
+two incident curves is its model-space point when exactly one point remains.
+A carrier-derived point for the same orbit must agree with that point.
 
 When a native edge has no pcurve candidate on a solved planar face, an exact
 line, circle, ellipse, parabola, hyperbola, or NURBS carrier lying in that plane

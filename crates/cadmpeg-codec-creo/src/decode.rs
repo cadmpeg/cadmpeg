@@ -21853,8 +21853,90 @@ fn native_face_orientations(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, b
     orientations
 }
 
+fn model_points_agree(first: [f64; 3], second: [f64; 3]) -> bool {
+    let scale = first
+        .into_iter()
+        .chain(second)
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    first
+        .into_iter()
+        .zip(second)
+        .all(|(first, second)| (first - second).abs() <= 1e-9 * scale)
+}
+
+fn mapped_pcurve_endpoints(
+    ir: &CadIr,
+    faces: [u32; 2],
+    endpoint_sets: [[[f64; 2]; 2]; 2],
+) -> Option<[[f64; 3]; 2]> {
+    let mapped = faces
+        .into_iter()
+        .zip(endpoint_sets)
+        .filter_map(|(face_id, endpoints)| {
+            let surface = ir.model.surfaces.iter().find(|surface| {
+                surface.id == SurfaceId(format!("creo:visibgeom:surface#{face_id}"))
+            })?;
+            let [first, second] = endpoints.map(|uv| {
+                cadmpeg_ir::eval::surface_point(&surface.geometry, uv[0], uv[1])
+                    .map(|point| [point.x, point.y, point.z])
+            });
+            Some([first?, second?])
+        })
+        .collect::<Vec<[[f64; 3]; 2]>>();
+    let first = *mapped.first()?;
+    mapped
+        .iter()
+        .all(|candidate| {
+            model_points_agree(first[0], candidate[0]) && model_points_agree(first[1], candidate[1])
+        })
+        .then_some(first)
+}
+
+fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f64; 3]; 2]> {
+    let mut candidates = BTreeMap::<u32, Vec<[[f64; 3]; 2]>>::new();
+    for (curve_id, faces, first, second) in scan
+        .pcurves
+        .iter()
+        .map(|pcurve| {
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            )
+        })
+        .chain(scan.bound_prototype_pcurves.iter().map(|pcurve| {
+            (
+                pcurve.curve_id,
+                pcurve.faces,
+                pcurve.face_0_endpoints,
+                pcurve.face_1_endpoints,
+            )
+        }))
+    {
+        if let Some(points) = mapped_pcurve_endpoints(ir, faces, [first, second]) {
+            candidates.entry(curve_id).or_default().push(points);
+        }
+    }
+    candidates
+        .into_iter()
+        .filter_map(|(curve_id, candidates)| {
+            let first = *candidates.first()?;
+            candidates
+                .iter()
+                .all(|candidate| {
+                    model_points_agree(first[0], candidate[0])
+                        && model_points_agree(first[1], candidate[1])
+                })
+                .then_some((curve_id, first))
+        })
+        .collect()
+}
+
 fn solved_topological_vertices(
     scan: &ContainerScan,
+    ir: &CadIr,
     carriers: &BTreeMap<u32, CarrierEquation>,
 ) -> BTreeMap<u32, [f64; 3]> {
     let half_edges = scan
@@ -21862,7 +21944,8 @@ fn solved_topological_vertices(
         .iter()
         .map(|half_edge| (half_edge.id, half_edge))
         .collect::<BTreeMap<_, _>>();
-    scan.topological_vertices
+    let carrier_points = scan
+        .topological_vertices
         .iter()
         .filter_map(|vertex| {
             let incident_carriers = vertex
@@ -21873,6 +21956,54 @@ fn solved_topological_vertices(
                 .copied()
                 .collect::<Vec<_>>();
             solve_carriers(&incident_carriers).map(|point| (vertex.id, point))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let edge_endpoints = pcurve_edge_endpoints(scan, ir);
+    scan.topological_vertices
+        .iter()
+        .filter_map(|vertex| {
+            let incident = vertex
+                .half_edges
+                .iter()
+                .map(|half_edge| half_edge.curve_id)
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .filter_map(|curve_id| edge_endpoints.get(&curve_id))
+                .collect::<Vec<_>>();
+            let pcurve_point = incident.first().and_then(|first| {
+                let mut candidates = first.to_vec();
+                for endpoints in incident.iter().skip(1) {
+                    candidates.retain(|candidate| {
+                        endpoints
+                            .iter()
+                            .any(|endpoint| model_points_agree(*candidate, *endpoint))
+                    });
+                }
+                candidates.dedup_by(|first, second| model_points_agree(*first, *second));
+                if incident.len() >= 2 {
+                    candidates
+                        .first()
+                        .copied()
+                        .filter(|_| candidates.len() == 1)
+                } else {
+                    None
+                }
+            });
+            let carrier_point = carrier_points.get(&vertex.id).copied().filter(|carrier| {
+                incident.iter().all(|endpoints| {
+                    endpoints
+                        .iter()
+                        .any(|endpoint| model_points_agree(*carrier, *endpoint))
+                })
+            });
+            match (carrier_point, pcurve_point) {
+                (Some(carrier), Some(pcurve)) if model_points_agree(carrier, pcurve) => {
+                    Some((vertex.id, carrier))
+                }
+                (Some(carrier), None) => Some((vertex.id, carrier)),
+                (None, Some(pcurve)) => Some((vertex.id, pcurve)),
+                _ => None,
+            }
         })
         .collect()
 }
@@ -23385,6 +23516,39 @@ fn ruled_generator_line_pcurve(
 mod native_pcurve_tests {
     use super::*;
 
+    #[test]
+    fn reconciles_pcurve_endpoints_across_evaluable_face_charts() {
+        let mut ir = CadIr::empty(Units::default());
+        for (id, normal, u_axis) in [
+            (1, [0.0, 0.0, 1.0], [1.0, 0.0, 0.0]),
+            (2, [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]),
+        ] {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("creo:visibgeom:surface#{id}")),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal: Vector3::new(normal[0], normal[1], normal[2]),
+                    u_axis: Vector3::new(u_axis[0], u_axis[1], u_axis[2]),
+                },
+                source_object: None,
+            });
+        }
+        assert_eq!(
+            mapped_pcurve_endpoints(
+                &ir,
+                [1, 2],
+                [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [4.0, 3.0]]],
+            ),
+            Some([[1.0, 2.0, 0.0], [3.0, 4.0, 0.0]])
+        );
+        assert!(mapped_pcurve_endpoints(
+            &ir,
+            [1, 2],
+            [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [5.0, 3.0]]],
+        )
+        .is_none());
+    }
+
     fn plane() -> SurfaceGeometry {
         SurfaceGeometry::Plane {
             origin: Point3::new(0.0, 0.0, 3.0),
@@ -23887,7 +24051,7 @@ fn transfer_native_brep(
         .iter()
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
-    let solved_vertices = solved_topological_vertices(scan, &carriers);
+    let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
     for (vertex_id, position) in &solved_vertices {
         let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
         if ir.model.points.iter().any(|point| point.id == point_id) {
@@ -23898,7 +24062,7 @@ fn transfer_native_brep(
             &point_id,
             "VisibGeom",
             0,
-            "carrier_intersection_point",
+            "topological_vertex_point",
             Exactness::Derived,
         );
         ir.model.points.push(Point {
@@ -26898,7 +27062,7 @@ fn transfer_carrier_intersection_curves(
 ) -> BTreeSet<CurveId> {
     let mut transferred = BTreeSet::new();
     let carriers = placed_carriers(scan, ir);
-    let solved_vertices = solved_topological_vertices(scan, &carriers);
+    let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
     let incidence = scan
         .half_edge_vertex_incidence
         .iter()
@@ -27951,7 +28115,7 @@ fn build_ir(
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
     let derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
-    let carrier_intersection_point_count = transfer_native_brep(
+    let topological_point_count = transfer_native_brep(
         scan,
         &mut ir,
         &mut annotations,
@@ -28013,8 +28177,8 @@ fn build_ir(
             saved_spline_curve_count.to_string(),
         );
         source.attributes.insert(
-            "transferred_carrier_intersection_point_count".to_string(),
-            carrier_intersection_point_count.to_string(),
+            "transferred_topological_point_count".to_string(),
+            topological_point_count.to_string(),
         );
         source.attributes.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -29685,22 +29849,18 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
-    let carrier_intersection_point_count = ir
+    let topological_point_count = ir
         .source
         .as_ref()
-        .and_then(|source| {
-            source
-                .attributes
-                .get("transferred_carrier_intersection_point_count")
-        })
+        .and_then(|source| source.attributes.get("transferred_topological_point_count"))
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
-    if !container_only && carrier_intersection_point_count != 0 {
+    if !container_only && topological_point_count != 0 {
         losses.push(LossNote {
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {carrier_intersection_point_count} exact model-space point(s) for native topological vertex orbits from unique intersections of every incident placed carrier."
+                "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or agreeing pcurve endpoint maps."
             ),
             provenance: None,
         });
