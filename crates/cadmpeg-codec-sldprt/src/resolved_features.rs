@@ -442,14 +442,15 @@ mod marker_tests {
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
         explicit_reference_plane_frame, fixed_reference_plane_frame, inline_surface_reference_at,
-        legacy_feature_input_section, legacy_reference_axis_triads, marker_coordinates,
-        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
-        matrix_reference_plane_frame, minimal_reference_plane_frame,
-        mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
-        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
-        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        legacy_feature_input_section, legacy_reference_axis_triads,
+        legacy_single_face_reference_path_at, marker_coordinates, marker_is_geometry_locus,
+        marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
+        minimal_reference_plane_frame, mirror_pattern_component_path_at,
+        mirror_surface_component_path_at, named_scalars, native_scalar_matches_discrete_parameter,
+        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
+        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
+        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         revolution_line_reference_inputs, revolution_operation,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
@@ -2242,6 +2243,41 @@ mod marker_tests {
         assert!(!compact_extrusion_through_all_at(&payload, 15));
         payload[..17].copy_from_slice(b"\xff\xff\x01\x00\x0b\x00moEndSpec_c");
         assert!(compact_extrusion_through_all_at(&payload, 15));
+    }
+
+    #[test]
+    fn legacy_single_face_reference_requires_a_unique_counted_path() {
+        let mut payload = vec![0; 128];
+        payload[0..4].copy_from_slice(&[0x53, 0x81, 0x80, 0x80]);
+        payload[4..8].copy_from_slice(&2u32.to_le_bytes());
+        payload[11..15].copy_from_slice(&101u32.to_le_bytes());
+        payload[15..19].copy_from_slice(&101u32.to_le_bytes());
+
+        let control = 44;
+        payload[control..control + 2].copy_from_slice(&[0x1e, 0x81]);
+        payload[control + 2..control + 6].copy_from_slice(&1u32.to_le_bytes());
+        payload[control + 10..control + 14].copy_from_slice(&1u32.to_le_bytes());
+        payload[control + 14..control + 18].copy_from_slice(&[0, 2, 0, 0]);
+        payload[control + 22..control + 30].copy_from_slice(&[1; 8]);
+        payload[control + 30..control + 38].copy_from_slice(&[1; 8]);
+
+        let entry = control + 40;
+        payload[entry..entry + 4].copy_from_slice(&[0x32, 0x80, 0, 0]);
+        payload[entry + 4..entry + 16].copy_from_slice(&[1; 12]);
+        payload[entry + 16..entry + 20].copy_from_slice(&7u32.to_le_bytes());
+        payload[entry + 20..entry + 28].copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]);
+
+        let path = legacy_single_face_reference_path_at(&payload, 0).unwrap();
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0].instance, Some(0x8032));
+        assert_eq!(path[0].type_signature, [1; 12]);
+        assert_eq!(path[0].local_id, Some(7));
+
+        payload[entry + 1] = 0;
+        assert_eq!(legacy_single_face_reference_path_at(&payload, 0), None);
+        payload[entry + 1] = 0x80;
+        payload[control + 30] = 2;
+        assert_eq!(legacy_single_face_reference_path_at(&payload, 0), None);
     }
 
     fn selection_vector_tail(payload: &mut Vec<u8>, entries: &[u32]) -> usize {
@@ -12189,6 +12225,9 @@ pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Opt
     if !compact_single_face_child_body_at(payload, body_offset) {
         return None;
     }
+    if legacy_single_face_reference_path_at(payload, body_offset).is_some() {
+        return Some(body_offset);
+    }
     (body_offset..body_offset.saturating_add(160))
         .find(|marker| compact_single_face_reference_at(payload, *marker))
 }
@@ -12204,7 +12243,8 @@ fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
         && component_token & 0x8000 != 0
         && component_token != 0xffff
         && body[4..8] == 2u32.to_le_bytes()
-        && body[8..11] == [0x40, 0, 0]
+        && matches!(body[8], 0 | 0x40)
+        && body[9..11] == [0, 0]
 }
 
 /// End-spec children carry their class at the anchor: either a lane-scoped
@@ -12246,7 +12286,166 @@ fn compact_single_face_reference_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
-    compact_single_face_reference_record_at(payload, marker).map(|record| record.0)
+    compact_single_face_reference_record_at(payload, marker)
+        .map(|record| record.0)
+        .or_else(|| legacy_single_face_reference_path_at(payload, marker))
+}
+
+fn legacy_single_face_reference_path_at(
+    payload: &[u8],
+    body: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    let header = payload.get(body..body + 19)?;
+    let class_token = u16::from_le_bytes(header[0..2].try_into().ok()?);
+    let component_token = u16::from_le_bytes(header[2..4].try_into().ok()?);
+    let owner = u32::from_le_bytes(header[11..15].try_into().ok()?);
+    if class_token & 0x8000 == 0
+        || class_token == 0xffff
+        || component_token & 0x8000 == 0
+        || component_token == 0xffff
+        || header[4..8] != 2u32.to_le_bytes()
+        || !matches!(header[8], 0 | 0x40)
+        || header[9..11] != [0, 0]
+        || owner == 0
+        || header[15..19] != owner.to_le_bytes()
+    {
+        return None;
+    }
+    let entry_at = |offset: usize| -> Option<FeatureInputComponentPathEntry> {
+        let instance = payload.get(offset..offset + 4)?;
+        let signature: [u8; 12] = payload.get(offset + 4..offset + 16)?.try_into().ok()?;
+        (u16::from_le_bytes([instance[0], instance[1]]) & 0x8000 != 0
+            && instance[0..2] != [0xff, 0xff]
+            && instance[2..4] == [0, 0]
+            && signature[0..2] != [0, 0])
+        .then(|| FeatureInputComponentPathEntry {
+            instance: Some(u16::from_le_bytes([instance[0], instance[1]])),
+            type_signature: signature,
+            local_id: None,
+        })
+    };
+    let terminal = |offset: usize| {
+        payload.get(offset..offset + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0])
+            || [20usize, 24].into_iter().any(|zero_count| {
+                payload
+                    .get(offset..offset + zero_count)
+                    .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+                    && payload
+                        .get(offset + zero_count..offset + zero_count + 4)
+                        .and_then(|bytes| bytes.try_into().ok())
+                        .map(u32::from_le_bytes)
+                        .is_some_and(|source| source != 0)
+            })
+    };
+    fn parse_entries(
+        payload: &[u8],
+        entry_at: &impl Fn(usize) -> Option<FeatureInputComponentPathEntry>,
+        terminal: &impl Fn(usize) -> bool,
+        cursor: usize,
+        remaining: usize,
+        entries: &mut Vec<FeatureInputComponentPathEntry>,
+        complete: &mut Vec<Vec<FeatureInputComponentPathEntry>>,
+    ) {
+        if complete.len() > 1 {
+            return;
+        }
+        if remaining == 0 {
+            if terminal(cursor) && !complete.contains(entries) {
+                complete.push(entries.clone());
+            }
+            return;
+        }
+        let Some(entry) = entry_at(cursor) else {
+            return;
+        };
+        for with_local_id in [true, false] {
+            let mut entry = entry.clone();
+            let end = if with_local_id {
+                let Some(bytes) = payload.get(cursor + 16..cursor + 20) else {
+                    continue;
+                };
+                entry.local_id = Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]));
+                cursor + 20
+            } else {
+                cursor + 16
+            };
+            entries.push(entry);
+            if remaining == 1 {
+                parse_entries(payload, entry_at, terminal, end, 0, entries, complete);
+            } else {
+                for gap in [0usize, 2, 4, 6, 8] {
+                    if payload
+                        .get(end..end + gap)
+                        .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+                    {
+                        parse_entries(
+                            payload,
+                            entry_at,
+                            terminal,
+                            end + gap,
+                            remaining - 1,
+                            entries,
+                            complete,
+                        );
+                    }
+                }
+            }
+            entries.pop();
+        }
+    }
+    let mut candidates = Vec::new();
+    for control in [body + 44, body + 48] {
+        let Some(prefix) = payload.get(control..control + 40) else {
+            continue;
+        };
+        if !payload
+            .get(body + 19..control)
+            .is_some_and(|bytes| bytes.iter().all(|byte| *byte == 0))
+        {
+            continue;
+        }
+        let token = u16::from_le_bytes(prefix[0..2].try_into().ok()?);
+        let count = usize::try_from(u32::from_le_bytes(prefix[10..14].try_into().ok()?)).ok()?;
+        if token & 0x8000 == 0
+            || token == 0xffff
+            || prefix[2..6] != 1u32.to_le_bytes()
+            || prefix[6..10] != [0; 4]
+            || !(1..=64).contains(&count)
+            || prefix[14..18] != [0, 2, 0, 0]
+            || prefix[22..30] != prefix[30..38]
+            || prefix[38..40] != [0, 0]
+        {
+            continue;
+        }
+        for serialized_roots in [0usize, 2] {
+            let Some(entry_count) = count
+                .checked_sub(serialized_roots)
+                .filter(|count| *count > 0)
+            else {
+                continue;
+            };
+            parse_entries(
+                payload,
+                &entry_at,
+                &terminal,
+                control + 40,
+                entry_count,
+                &mut Vec::new(),
+                &mut candidates,
+            );
+        }
+    }
+    candidates.sort_by_key(|entries| {
+        entries
+            .iter()
+            .map(|entry| (entry.instance, entry.type_signature, entry.local_id))
+            .collect::<Vec<_>>()
+    });
+    candidates.dedup();
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(candidate.clone())
 }
 
 fn compact_single_face_reference_record_at(
