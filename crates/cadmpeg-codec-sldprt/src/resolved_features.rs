@@ -3460,7 +3460,7 @@ mod marker_tests {
         }
         payload[handles + 64..handles + 68].copy_from_slice(CLASS_MARKER);
         assert_eq!(
-            revolution_line_reference_inputs(&payload, 32, payload.len(), 42),
+            revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
             Some((
                 42,
                 Point3::new(12.0, -34.0, 56.0),
@@ -3481,7 +3481,7 @@ mod marker_tests {
         }
         payload[handles + 92..handles + 96].copy_from_slice(CLASS_MARKER);
         assert_eq!(
-            revolution_line_reference_inputs(&payload, 32, payload.len(), 42),
+            revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
             Some((
                 42,
                 Point3::new(12.0, -34.0, 56.0),
@@ -3506,7 +3506,7 @@ mod marker_tests {
         }
         payload[handles + 80..handles + 84].copy_from_slice(CLASS_MARKER);
         assert_eq!(
-            revolution_line_reference_inputs(&payload, 32, payload.len(), 42),
+            revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
             Some((
                 42,
                 Point3::new(12.0, -34.0, 56.0),
@@ -3536,7 +3536,7 @@ mod marker_tests {
         payload[handles + 75..handles + 77].copy_from_slice(&0x81bau16.to_le_bytes());
 
         assert_eq!(
-            revolution_line_reference_inputs(&payload, 32, payload.len(), 42),
+            revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
             Some((
                 42,
                 Point3::new(12.0, -34.0, 56.0),
@@ -4081,7 +4081,7 @@ fn revolution_line_reference_inputs(
     payload: &[u8],
     object_start: usize,
     object_end: usize,
-    expected_source: u32,
+    profile_sources: &HashSet<u32>,
 ) -> Option<(u32, Point3, Vector3)> {
     const HANDLE: [u8; 4] = [0xc7, 0xcf, 0xff, 0xff];
     const NATIVE_TO_IR: f64 = 1000.0;
@@ -4114,27 +4114,27 @@ fn revolution_line_reference_inputs(
             if address == 0 {
                 continue;
             }
-            let has_source_cell = (object_start..handle_start.saturating_sub(15)).any(|offset| {
-                (|| {
+            let mut source_cells = (object_start..handle_start.saturating_sub(15))
+                .filter_map(|offset| {
                     let source =
                         u32::from_le_bytes(payload.get(offset..offset + 4)?.try_into().ok()?);
                     let identity =
                         u32::from_le_bytes(payload.get(offset + 4..offset + 8)?.try_into().ok()?);
                     let token =
                         u16::from_le_bytes(payload.get(offset + 8..offset + 10)?.try_into().ok()?);
-                    Some(
-                        source == expected_source
-                            && identity != 0
-                            && token & 0x8000 != 0
-                            && token != u16::MAX
-                            && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]),
-                    )
-                })()
-                .unwrap_or(false)
-            });
-            if !has_source_cell {
+                    (profile_sources.contains(&source)
+                        && identity != 0
+                        && token & 0x8000 != 0
+                        && token != u16::MAX
+                        && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]))
+                    .then_some(source)
+                })
+                .collect::<Vec<_>>();
+            source_cells.sort_unstable();
+            source_cells.dedup();
+            let [source] = source_cells.as_slice() else {
                 continue;
-            }
+            };
             for frame_gap in [0usize, 4, 8] {
                 if payload
                     .get(handles_end + 8..handles_end + 8 + frame_gap)
@@ -4181,7 +4181,7 @@ fn revolution_line_reference_inputs(
                         continue;
                     }
                     let candidate = (
-                        expected_source,
+                        *source,
                         Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
                         Vector3::new(dx / norm, dy / norm, dz / norm),
                     );
@@ -4258,14 +4258,13 @@ pub(crate) fn enrich_history_revolution_inputs(
             ) {
                 continue;
             }
-            let source = index
+            let immediate_profile = index
                 .checked_sub(1)
                 .and_then(|index| objects.get(index))
                 .map(|(_, feature)| *feature)
                 .filter(|feature| is_profile_feature_object(feature))
                 .and_then(|feature| feature.source_id.as_deref()?.parse::<u32>().ok());
-            profiles.entry(feature.id.clone()).or_default().push(source);
-            let Some(source) = source else {
+            let Some(known_profiles) = profile_sources.get(&feature.id) else {
                 continue;
             };
             let Some(start) = usize::try_from(start).ok() else {
@@ -4275,15 +4274,16 @@ pub(crate) fn enrich_history_revolution_inputs(
                 .get(index + 1)
                 .and_then(|(offset, _)| usize::try_from(*offset).ok())
                 .unwrap_or(lane.native_payload.len());
+            let line_reference =
+                revolution_line_reference_inputs(&lane.native_payload, start, end, known_profiles);
+            profiles
+                .entry(feature.id.clone())
+                .or_default()
+                .push(immediate_profile.or_else(|| line_reference.map(|input| input.0)));
             inputs
                 .entry(feature.id.clone())
                 .or_default()
-                .push(revolution_line_reference_inputs(
-                    &lane.native_payload,
-                    start,
-                    end,
-                    source,
-                ));
+                .push(line_reference);
         }
     }
     for feature in histories
