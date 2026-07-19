@@ -4420,6 +4420,10 @@ mod marker_tests {
             None
         );
 
+        lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+
+        lane.sketch_entities[2].kind = SketchInputKind::Point;
         lane.sketch_entities[2].coordinates_m = Some([-0.01, 0.01]);
         lane.native_payload[curve..curve + LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -5686,9 +5690,13 @@ fn profile_roster_implicit_axis_chord<'a>(
     let mut minimum_side = f64::INFINITY;
     let mut maximum_side = f64::NEG_INFINITY;
     for [u, v] in markers.iter().filter_map(|marker| {
-        (marker.feature_ref.as_deref() == Some(profile_native))
-            .then_some(marker.coordinates_m)
-            .flatten()
+        (marker.feature_ref.as_deref() == Some(profile_native)
+            && matches!(
+                marker.kind,
+                SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+            ))
+        .then_some(marker.coordinates_m)
+        .flatten()
     }) {
         let relative_u = u - start_u;
         let relative_v = v - start_v;
