@@ -8317,7 +8317,15 @@ fn historical_entity_positions(
             }
             Vec::new()
         }
-        _ => return None,
+        AsmHistoricalEntityKind::Body
+        | AsmHistoricalEntityKind::Region
+        | AsmHistoricalEntityKind::Shell => {
+            let faces = historical_owned_faces(kind, local_id, topology)?;
+            for face in faces {
+                positions.extend(historical_face_points(face, topology)?);
+            }
+            Vec::new()
+        }
     };
     for edge_ref in edge_refs {
         let edge = topology
@@ -8333,6 +8341,44 @@ fn historical_entity_positions(
         positions.extend(end);
     }
     (!positions.is_empty()).then_some(positions)
+}
+
+fn historical_owned_faces(
+    kind: crate::records::AsmHistoricalEntityKind,
+    local_id: i64,
+    topology: &crate::history_records::AsmHistoricalTopology,
+) -> Option<Vec<i64>> {
+    use crate::records::AsmHistoricalEntityKind;
+
+    let relation_members = |relations: &[crate::history_records::AsmHistoricalRelation], owner| {
+        let mut matches = relations
+            .iter()
+            .filter(|relation| relation.owner_ref == owner);
+        let members = matches.next()?.member_refs.clone();
+        matches.next().is_none().then_some(members)
+    };
+    let regions = match kind {
+        AsmHistoricalEntityKind::Body => relation_members(&topology.body_regions, local_id)?,
+        AsmHistoricalEntityKind::Region => vec![local_id],
+        AsmHistoricalEntityKind::Shell => Vec::new(),
+        _ => return None,
+    };
+    let shells = if kind == AsmHistoricalEntityKind::Shell {
+        vec![local_id]
+    } else {
+        let mut shells = Vec::new();
+        for region in regions {
+            shells.extend(relation_members(&topology.region_shells, region)?);
+        }
+        shells
+    };
+    let mut faces = Vec::new();
+    for shell in shells {
+        faces.extend(relation_members(&topology.shell_faces, shell)?);
+    }
+    faces.sort_unstable();
+    faces.dedup();
+    (!faces.is_empty()).then_some(faces)
 }
 
 fn historical_vertex_positions(
@@ -21820,6 +21866,47 @@ mod relation_tests {
                 &topology,
             ),
             None
+        );
+    }
+
+    #[test]
+    fn historical_region_faces_follow_complete_ownership_hierarchy() {
+        use crate::history_records::{AsmHistoricalRelation, AsmHistoricalTopology};
+        use crate::records::AsmHistoricalEntityKind;
+
+        let topology = AsmHistoricalTopology {
+            body_regions: vec![AsmHistoricalRelation {
+                owner_ref: 1,
+                member_refs: vec![2],
+            }],
+            region_shells: vec![AsmHistoricalRelation {
+                owner_ref: 2,
+                member_refs: vec![3, 4],
+            }],
+            shell_faces: vec![
+                AsmHistoricalRelation {
+                    owner_ref: 3,
+                    member_refs: vec![7, 5],
+                },
+                AsmHistoricalRelation {
+                    owner_ref: 4,
+                    member_refs: vec![6, 7],
+                },
+            ],
+            ..AsmHistoricalTopology::default()
+        };
+
+        assert_eq!(
+            super::historical_owned_faces(AsmHistoricalEntityKind::Body, 1, &topology),
+            Some(vec![5, 6, 7])
+        );
+        assert_eq!(
+            super::historical_owned_faces(AsmHistoricalEntityKind::Region, 2, &topology),
+            Some(vec![5, 6, 7])
+        );
+        assert_eq!(
+            super::historical_owned_faces(AsmHistoricalEntityKind::Shell, 3, &topology),
+            Some(vec![5, 7])
         );
     }
 
