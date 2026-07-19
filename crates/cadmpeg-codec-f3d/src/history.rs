@@ -1472,10 +1472,7 @@ fn bind_active_edge_operand_candidates(
             terminal_edge_recipe_reference_faces(&operand.recipe_references, None);
         let reference_faces = terminal_edge_recipe_reference_faces(
             &operand.recipe_references,
-            operand
-                .recipe_structure
-                .as_ref()
-                .map(|_| operand.local_topology_references.as_slice()),
+            operand.local_topology_references.as_deref(),
         );
         let terminal_faces = terminal_edge_recipe_faces(&operand.candidate_faces, &reference_faces);
         let candidate_faces = faces_in_topology(&terminal_faces, topology);
@@ -3333,6 +3330,7 @@ mod tests {
                 field_count: std::num::NonZeroU32::new(3).unwrap(),
                 header_value: 0,
                 scalars: vec![0, 0],
+                payload_prefix: vec![0],
                 payload_entry_count: u32::try_from(entries.len()).unwrap(),
                 entries,
             }

@@ -1491,9 +1491,10 @@ pub struct DesignEdgeOperand {
     /// Standard two-side structure decoded from the recipe program.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recipe_structure: Option<DesignEdgeRecipeStructure>,
-    /// Ordered nonzero local topology references from the root and side scalar runs.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub local_topology_references: Vec<NonZeroU32>,
+    /// Ordered local topology references when every nonzero root and side scalar
+    /// is a valid prefix-reference ordinal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub local_topology_references: Option<Vec<NonZeroU32>>,
     /// Active solved faces carrying the recipe's persistent Design reference.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub candidate_faces: Vec<FaceId>,
@@ -1728,7 +1729,9 @@ pub struct DesignTopologyRecipeSide {
     pub header_value: i32,
     /// Ordered scalar fields following the side header.
     pub scalars: Vec<i32>,
-    /// Encoded number of eight-word payload entries following the zero tag.
+    /// Exact field program preceding the topology-entry count.
+    pub payload_prefix: Vec<i32>,
+    /// Encoded number of eight-word topology entries following the field program.
     pub payload_entry_count: u32,
     /// Ordered eight-word payload entries.
     pub entries: Vec<DesignTopologyRecipeEntry>,

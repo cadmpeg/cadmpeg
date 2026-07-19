@@ -2521,9 +2521,8 @@ fn resolved_edge_operand(operand: &DesignEdgeOperand) -> Option<i64> {
 
 fn edge_operand_reference_edge_sets(operand: &DesignEdgeOperand) -> Vec<&[i64]> {
     if operand.recipe_reference_contexts.is_empty() {
-        if operand.recipe_structure.is_some() {
-            operand
-                .local_topology_references
+        if let Some(local_topology_references) = &operand.local_topology_references {
+            local_topology_references
                 .iter()
                 .filter_map(|ordinal| {
                     operand
@@ -15900,16 +15899,10 @@ fn parse_edge_operand(
             )
         })
         .collect::<Vec<_>>();
-    let (recipe_structure, local_topology_references) = match edge_recipe_structure(&recipe_program)
-    {
-        Some(structure) => {
-            match edge_recipe_local_topology_references(&structure, recipe_references.len()) {
-                Some(references) => (Some(structure), references),
-                None => (None, Vec::new()),
-            }
-        }
-        None => (None, Vec::new()),
-    };
+    let recipe_structure = edge_recipe_structure(&recipe_program);
+    let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
+        edge_recipe_local_topology_references(structure, recipe_references.len())
+    });
     Some(DesignEdgeOperand {
         id: format!(
             "f3d:{}:design-edge-operand#{}",
@@ -15980,52 +15973,91 @@ fn edge_recipe_structure_tail(
 ) -> Option<crate::records::DesignEdgeRecipeStructure> {
     let (&root, mut remaining) = program.split_first()?;
     remaining = recipe_delimiter(remaining)?;
-    let (first, tail) = edge_recipe_counted_side(remaining)?;
-    remaining = recipe_delimiter(tail)?;
-    let (second, tail) = edge_recipe_counted_side(remaining)?;
-    if !matches!(tail, [] | [-1]) {
-        return None;
+    let mut structures = Vec::new();
+    for (first, tail) in edge_recipe_counted_side_candidates(remaining) {
+        let Some(remaining) = recipe_delimiter(tail) else {
+            continue;
+        };
+        for (second, tail) in edge_recipe_counted_side_candidates(remaining) {
+            if matches!(tail, [] | [-1]) {
+                structures.push(crate::records::DesignEdgeRecipeStructure {
+                    root,
+                    sides: [first.clone(), second],
+                });
+            }
+        }
     }
-    Some(crate::records::DesignEdgeRecipeStructure {
-        root,
-        sides: [first, second],
-    })
+    let [structure] = structures.as_slice() else {
+        return None;
+    };
+    Some(structure.clone())
 }
 
 fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
     matches!(words.first(), Some(-1 | 0)).then(|| &words[1..])
 }
 
-fn edge_recipe_counted_side(words: &[i32]) -> Option<(DesignTopologyRecipeSide, &[i32])> {
-    let field_count = std::num::NonZeroU32::new(u32::try_from(*words.first()?).ok()?)?;
+fn edge_recipe_counted_side_candidates(words: &[i32]) -> Vec<(DesignTopologyRecipeSide, &[i32])> {
+    let Some(field_count) = words
+        .first()
+        .and_then(|word| u32::try_from(*word).ok())
+        .and_then(std::num::NonZeroU32::new)
+    else {
+        return Vec::new();
+    };
     if field_count.get() < 2 {
-        return None;
+        return Vec::new();
     }
-    let scalar_count = usize::try_from(field_count.get()).ok()?.checked_sub(1)?;
-    let header_value = *words.get(1)?;
-    let mut remaining = recipe_delimiter(words.get(2..)?)?;
+    let Some(scalar_count) = usize::try_from(field_count.get())
+        .ok()
+        .and_then(|count| count.checked_sub(1))
+    else {
+        return Vec::new();
+    };
+    let Some(&header_value) = words.get(1) else {
+        return Vec::new();
+    };
+    let Some(mut remaining) = words.get(2..).and_then(recipe_delimiter) else {
+        return Vec::new();
+    };
     let mut scalars = Vec::with_capacity(scalar_count);
     for _ in 0..scalar_count {
-        let (&scalar, tail) = remaining.split_first()?;
+        let Some((&scalar, tail)) = remaining.split_first() else {
+            return Vec::new();
+        };
         scalars.push(scalar);
-        remaining = recipe_delimiter(tail)?;
+        let Some(tail) = recipe_delimiter(tail) else {
+            return Vec::new();
+        };
+        remaining = tail;
     }
-    let [0, entry_count, entries @ ..] = remaining else {
-        return None;
-    };
-    let payload_entry_count = u32::try_from(*entry_count).ok()?;
-    let payload_len = usize::try_from(payload_entry_count).ok()?.checked_mul(8)?;
-    let (entries, remaining) = entries.split_at_checked(payload_len)?;
-    Some((
-        DesignTopologyRecipeSide {
-            field_count,
-            header_value,
-            scalars,
-            payload_entry_count,
-            entries: edge_recipe_entries(entries)?,
-        },
-        remaining,
-    ))
+    (0..remaining.len())
+        .filter(|entry_count_at| {
+            *entry_count_at == 1 && remaining.first() == Some(&0)
+                || *entry_count_at > 0 && remaining.get(entry_count_at - 1) == Some(&-1)
+        })
+        .filter_map(|entry_count_at| {
+            let payload_entry_count = u32::try_from(*remaining.get(entry_count_at)?).ok()?;
+            if entry_count_at != 1 && payload_entry_count == 0 {
+                return None;
+            }
+            let payload_len = usize::try_from(payload_entry_count).ok()?.checked_mul(8)?;
+            let entries_at = entry_count_at.checked_add(1)?;
+            let entries_end = entries_at.checked_add(payload_len)?;
+            let entries = edge_recipe_entries(remaining.get(entries_at..entries_end)?)?;
+            Some((
+                DesignTopologyRecipeSide {
+                    field_count,
+                    header_value,
+                    scalars: scalars.clone(),
+                    payload_prefix: remaining[..entry_count_at].to_vec(),
+                    payload_entry_count,
+                    entries,
+                },
+                remaining.get(entries_end..)?,
+            ))
+        })
+        .collect()
 }
 
 pub(crate) fn face_recipe_structure(
@@ -16119,6 +16151,7 @@ fn edge_recipe_side(runs: &[&[i32]]) -> Option<DesignTopologyRecipeSide> {
         field_count,
         header_value: runs[0][1],
         scalars: runs[1..runs.len() - 1].iter().map(|run| run[0]).collect(),
+        payload_prefix: vec![0],
         payload_entry_count,
         entries: edge_recipe_entries(&payload[2..])?,
     })
@@ -24438,6 +24471,16 @@ mod relation_tests {
         .expect("recipe structure with four scalar fields");
         assert_eq!(variable_scalars.sides[0].field_count.get(), 5);
         assert_eq!(variable_scalars.sides[0].scalars, [0, 2, 3, 4]);
+        let extended_payload = super::edge_recipe_structure(&[
+            -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 2, 3, -1, 0, 0, -1, 4, -1, 0,
+            0, -1, 1, 0, 4, 1, 1, 1, 2, 2, 2, -1, 3, 0, -1, 1, -1, 2, -1, 0, 0, -1,
+        ])
+        .expect("recipe structure with an extended payload field program");
+        assert_eq!(
+            extended_payload.sides[0].payload_prefix,
+            [2, 3, -1, 0, 0, -1, 4, -1, 0, 0, -1]
+        );
+        assert_eq!(extended_payload.sides[0].entries.len(), 1);
         let face = super::face_recipe_structure(&[
             0, -1, 1, -1, 2, -1, 3, 0, -1, 2, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 3, -1, 0, 0, -1,
         ])
