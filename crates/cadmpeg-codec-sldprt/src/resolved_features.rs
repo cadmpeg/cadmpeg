@@ -434,9 +434,9 @@ mod marker_tests {
         compact_line_chain_addresses, compact_line_region_addresses, compact_offset_plane_source,
         compact_profile_reference_plane_source, compact_reference_plane_frame,
         compact_reference_plane_source, compact_single_face_reference_path_at,
-        compact_sketch_surface_component_path_at, compact_surface_selection_at,
-        complete_ordered_compact_line_profile, component_path_features,
-        component_path_preceding_feature, component_path_terminal_feature,
+        compact_single_face_reference_record_at, compact_sketch_surface_component_path_at,
+        compact_surface_selection_at, complete_ordered_compact_line_profile,
+        component_path_features, component_path_preceding_feature, component_path_terminal_feature,
         component_profile_source_at, component_reference_curve_path_at, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
@@ -1905,6 +1905,35 @@ mod marker_tests {
         assert_eq!(path[0].instance, Some(0x8032));
         assert_eq!(path[0].type_signature, [1; 12]);
         assert_eq!(path[0].local_id, Some(7));
+
+        payload[35..39].copy_from_slice(&[0xe4, 0x82, 0x07, 0x81]);
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
+        payload[37..39].copy_from_slice(&[0xff, 0xff]);
+        assert_eq!(compact_extrusion_to_face_at(&payload, 0), None);
+        payload[37..39].copy_from_slice(&[0x07, 0x81]);
+
+        payload[88..92].copy_from_slice(&2u32.to_le_bytes());
+        payload[138..158].fill(0);
+        payload[158..162].copy_from_slice(&101u32.to_le_bytes());
+        let (path, terminal_source) =
+            compact_single_face_reference_record_at(&payload, 100).unwrap();
+        assert_eq!(path.len(), 1);
+        assert_eq!(terminal_source, Some(101));
+
+        payload[88..92].copy_from_slice(&3u32.to_le_bytes());
+        payload[138..142].fill(0);
+        payload[142..146].copy_from_slice(&[0xf5, 0x81, 0, 0]);
+        payload[146..158]
+            .copy_from_slice(&[0xf0, 0x81, 0x4d, 2, 0xd6, 0, 0, 0, 0x4d, 0xb8, 0xb0, 0x59]);
+        payload[158..162].copy_from_slice(&9u32.to_le_bytes());
+        payload[162..182].fill(0);
+        payload[182..186].copy_from_slice(&101u32.to_le_bytes());
+        let (path, terminal_source) =
+            compact_single_face_reference_record_at(&payload, 100).unwrap();
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[1].local_id, Some(9));
+        assert_eq!(terminal_source, Some(101));
+        payload[88..92].copy_from_slice(&1u32.to_le_bytes());
 
         payload[12] = 1;
         payload[22] = 1;
@@ -5023,6 +5052,28 @@ fn compact_surface_selections(
             continue;
         }
         for (offset, components) in candidates {
+            let explicit_terminal =
+                compact_single_face_reference_record_at(&lane.native_payload, offset)
+                    .and_then(|(_, source)| source)
+                    .and_then(|source| {
+                        let mut matches = history_features.iter().filter(|candidate| {
+                            candidate
+                                .source_id
+                                .as_deref()
+                                .and_then(|value| value.parse::<u32>().ok())
+                                == Some(source)
+                        });
+                        let feature = matches.next()?;
+                        matches.next().is_none().then(|| feature.id.clone())
+                    });
+            let terminal_feature_ref = explicit_terminal
+                .or_else(|| component_path_terminal_feature(&components, &history_features));
+            let mut producer_feature_refs = component_path_features(&components, &history_features);
+            if let Some(terminal) = &terminal_feature_ref {
+                if !producer_feature_refs.contains(terminal) {
+                    producer_feature_refs.push(terminal.clone());
+                }
+            }
             result.push(FeatureInputSurfaceSelection {
                 id: format!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
                 parent: lane.id.clone(),
@@ -5030,11 +5081,8 @@ fn compact_surface_selections(
                 offset: offset as u64,
                 object_name_ref: name.id.clone(),
                 feature_ref: feature.id.clone(),
-                producer_feature_refs: component_path_features(&components, &history_features),
-                terminal_feature_ref: component_path_terminal_feature(
-                    &components,
-                    &history_features,
-                ),
+                producer_feature_refs,
+                terminal_feature_ref,
                 components,
             });
         }
@@ -5606,9 +5654,8 @@ fn compact_heterogeneous_component_path(
         if index + 1 == count {
             continue;
         }
-        let gaps = [0usize, 2, 4, 8]
-            .into_iter()
-            .filter(|gap| match *gap {
+        let gap = [0usize, 2, 4, 8].into_iter().find(|gap| {
+            let filler = match *gap {
                 0 => true,
                 2 => payload.get(cursor..cursor + 2) == Some(&[0; 2]),
                 4 => payload.get(cursor..cursor + 4) == Some(&[0; 4]),
@@ -5621,12 +5668,9 @@ fn compact_heterogeneous_component_path(
                     )
                 ),
                 _ => false,
-            })
-            .filter(|gap| entry_at(cursor + gap).is_some())
-            .collect::<Vec<_>>();
-        let [gap] = gaps.as_slice() else {
-            return None;
-        };
+            };
+            filler && entry_at(cursor + *gap).is_some()
+        })?;
         cursor += gap;
     }
     Some((entries, cursor))
@@ -11502,20 +11546,33 @@ pub(crate) fn compact_extrusion_to_face_at(payload: &[u8], offset: usize) -> Opt
         return None;
     }
     let declaration = b"\xff\xff\x01\x00\x11\x00moSingleFaceRef_w";
-    let body = b"\x2d\x80\x2b\x80\x02\x00\x00\x00\x40\x00\x00";
     let child = offset + 33;
     let body_offset = if payload.get(child..child + declaration.len()) == Some(declaration) {
         child + declaration.len()
-    } else if payload.get(child + 2..child + 2 + body.len()) == Some(body) {
+    } else if compact_single_face_child_body_at(payload, child + 2) {
         child + 2
     } else {
         return None;
     };
-    if payload.get(body_offset..body_offset + body.len()) != Some(body) {
+    if !compact_single_face_child_body_at(payload, body_offset) {
         return None;
     }
     (body_offset..body_offset.saturating_add(160))
         .find(|marker| compact_single_face_reference_at(payload, *marker))
+}
+
+fn compact_single_face_child_body_at(payload: &[u8], offset: usize) -> bool {
+    let Some(body) = payload.get(offset..offset + 11) else {
+        return false;
+    };
+    let class_token = u16::from_le_bytes([body[0], body[1]]);
+    let component_token = u16::from_le_bytes([body[2], body[3]]);
+    class_token & 0x8000 != 0
+        && class_token != 0xffff
+        && component_token & 0x8000 != 0
+        && component_token != 0xffff
+        && body[4..8] == 2u32.to_le_bytes()
+        && body[8..11] == [0x40, 0, 0]
 }
 
 /// End-spec children carry their class at the anchor: either a lane-scoped
@@ -11551,6 +11608,13 @@ fn compact_single_face_reference_path_at(
     payload: &[u8],
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    compact_single_face_reference_record_at(payload, marker).map(|record| record.0)
+}
+
+fn compact_single_face_reference_record_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<(Vec<FeatureInputComponentPathEntry>, Option<u32>)> {
     let count = marker.checked_sub(12).and_then(|offset| {
         Some(u32::from_le_bytes(
             payload.get(offset..offset + 4)?.try_into().ok()?,
@@ -11566,13 +11630,17 @@ fn compact_single_face_reference_path_at(
         return None;
     }
     compact_heterogeneous_component_path(payload, marker + 18, count)
-        .map(|(components, _)| components)
+        .map(|(components, _)| (components, None))
         .or_else(|| {
             let (components, end) = (count > 1)
                 .then(|| compact_heterogeneous_component_path(payload, marker + 18, count - 1))
                 .flatten()?;
-            (payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]))
-                .then_some(components)
+            if payload.get(end..end + 8) == Some(&[0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0]) {
+                return Some((components, None));
+            }
+            let source = u32::from_le_bytes(payload.get(end + 20..end + 24)?.try_into().ok()?);
+            (payload.get(end..end + 20)? == [0; 20] && source != 0)
+                .then_some((components, Some(source)))
         })
 }
 
