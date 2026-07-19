@@ -16263,7 +16263,7 @@ fn inspect_enumerates_streams_and_names_schema() {
 }
 
 #[test]
-fn design_intent_losses_count_native_feature_families() {
+fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
     use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
 
@@ -16289,14 +16289,56 @@ fn design_intent_losses_count_native_feature_families() {
             native_ref: None,
         });
     }
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#sketch".into()),
+        ordinal: 3,
+        name: None,
+        suppressed: None,
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::Sketch {
+            space: cadmpeg_ir::features::SketchSpace::Unresolved,
+            sketch: None,
+        },
+        native_ref: None,
+    });
 
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 1);
+    assert_eq!(losses.len(), 2);
     assert_eq!(losses[0].category, LossCategory::Feature);
     assert!(losses[0].message.contains("Container (1)"));
     assert!(losses[0].message.contains("DELETE (2)"));
+    assert_eq!(losses[1].category, LossCategory::Feature);
+    assert!(losses[1].message.contains("1 NX sketch history feature"));
+    assert!(losses[1].message.contains("1 have no neutral sketch graph"));
+
+    let sketch_id = cadmpeg_ir::sketches::SketchId("test:sketch#0".into());
+    ir.model.sketches.push(cadmpeg_ir::sketches::Sketch {
+        id: sketch_id.clone(),
+        name: None,
+        configuration: None,
+        origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+        normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        profiles: Vec::new(),
+        native_ref: None,
+    });
+    ir.model.features.last_mut().unwrap().definition = FeatureDefinition::Sketch {
+        space: cadmpeg_ir::features::SketchSpace::Planar,
+        sketch: Some(sketch_id),
+    };
+    losses.clear();
+    crate::decode::append_design_intent_losses(&ir, &mut losses);
+
+    assert_eq!(losses.len(), 2);
+    assert!(losses[1].message.contains("no sketch constraints"));
 }
 
 #[test]

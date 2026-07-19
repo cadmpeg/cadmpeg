@@ -7079,7 +7079,35 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
         });
     }
 
-    if !ir.model.sketches.is_empty() && ir.model.sketch_constraints.is_empty() {
+    let sketch_feature_count = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
+        .count();
+    let unresolved_sketch_feature_count = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| {
+            matches!(
+                feature.definition,
+                FeatureDefinition::Sketch { sketch: None, .. }
+            )
+        })
+        .count();
+    if unresolved_sketch_feature_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "Decoded {sketch_feature_count} NX sketch history feature(s), of which \
+                 {unresolved_sketch_feature_count} have no neutral sketch graph because complete \
+                 sketch placement and entity semantics are unresolved."
+            ),
+            provenance: None,
+        });
+    } else if sketch_feature_count != 0 && ir.model.sketch_constraints.is_empty() {
         losses.push(LossNote {
             category: LossCategory::Feature,
             severity: Severity::Warning,
