@@ -110,11 +110,7 @@ pub use sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchEntity,
     SketchEntityId, SketchEntityUse, SketchGeometry, SketchId, SketchNativeOperand,
 };
-pub use source_fidelity::{
-    AddressSpaceLedger, CanonicalSpaceId, FidelityError, LedgerSpan, RetainedRef,
-    RetainedSourceRecord, SerializedOrigin, SerializedRange, SerializedTransformKind,
-    SourceFidelity, SpaceExtent, SpanClass, SOURCE_FIDELITY_VERSION,
-};
+pub use source_fidelity::{RetainedSourceRecord, SourceFidelity, SOURCE_FIDELITY_VERSION};
 pub use spreadsheets::{Spreadsheet, SpreadsheetDimension, SpreadsheetId, SpreadsheetRange};
 pub use subd::{
     SubdEdge, SubdEdgeTag, SubdEdgeUse, SubdFace, SubdScheme, SubdSurface, SubdVertex,

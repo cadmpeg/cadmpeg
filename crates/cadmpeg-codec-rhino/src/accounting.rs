@@ -12,7 +12,7 @@ use std::ops::Range;
 
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::SpanClass;
+use cadmpeg_ir::source_fidelity::SpanClass;
 use serde::Serialize;
 
 use crate::container::Scan;

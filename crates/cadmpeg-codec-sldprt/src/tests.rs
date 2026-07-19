@@ -15125,15 +15125,16 @@ fn container_ledger_tiles_every_physical_byte() {
     assert_eq!(
         root.spans
             .iter()
-            .filter(|s| s.class == cadmpeg_ir::SpanClass::Opaque
-                && s.meaning.starts_with("block-payload:"))
+            .filter(
+                |s| s.class == cadmpeg_ir::source_fidelity::SpanClass::Opaque
+                    && s.meaning.starts_with("block-payload:")
+            )
             .count(),
         scan.blocks.len()
     );
-    assert!(root
-        .spans
-        .iter()
-        .any(|s| s.class == cadmpeg_ir::SpanClass::Structural && s.meaning == "outer-header"));
+    assert!(root.spans.iter().any(|s| s.class
+        == cadmpeg_ir::source_fidelity::SpanClass::Structural
+        && s.meaning == "outer-header"));
 
     // Decompressed blocks are Transform spaces, not physical source extents.
     for block in &scan.blocks {
@@ -15141,12 +15142,17 @@ fn container_ledger_tiles_every_physical_byte() {
             .spaces
             .iter()
             .find(|s| {
-                matches!(&s.origin, cadmpeg_ir::SerializedOrigin::Transform { .. })
-                    && s.length == block.payload.len() as u64
+                matches!(
+                    &s.origin,
+                    cadmpeg_ir::source_fidelity::SerializedOrigin::Transform { .. }
+                ) && s.length == block.payload.len() as u64
             })
             .expect("block child space present");
         assert_eq!(child.spans.len(), 1);
-        assert_eq!(child.spans[0].class, cadmpeg_ir::SpanClass::Opaque);
+        assert_eq!(
+            child.spans[0].class,
+            cadmpeg_ir::source_fidelity::SpanClass::Opaque
+        );
     }
 }
 

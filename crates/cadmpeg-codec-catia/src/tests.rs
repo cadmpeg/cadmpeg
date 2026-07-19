@@ -3663,7 +3663,7 @@ fn every_decode_path_populates_v1_annotations() {
 }
 
 mod ledger {
-    use cadmpeg_ir::{SerializedOrigin, SpanClass};
+    use cadmpeg_ir::source_fidelity::{SerializedOrigin, SpanClass};
 
     use super::{
         fbb_only_catpart, standard_catpart, tetrahedron_topology_catpart, with_scan,

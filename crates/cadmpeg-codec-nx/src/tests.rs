@@ -2967,7 +2967,7 @@ fn source_fidelity_tiles_every_physical_space() {
     let source = sidecar
         .spaces
         .iter()
-        .find(|space| space.id == cadmpeg_ir::CanonicalSpaceId::source())
+        .find(|space| space.id == cadmpeg_ir::source_fidelity::CanonicalSpaceId::source())
         .expect("source space present");
     assert_eq!(source.length, file.len() as u64);
 
@@ -2978,9 +2978,9 @@ fn source_fidelity_tiles_every_physical_space() {
         assert_eq!(span.range.start, cursor, "gap or overlap in source tiling");
         cursor = span.range.end;
         match span.class {
-            cadmpeg_ir::SpanClass::Opaque => saw_opaque = true,
-            cadmpeg_ir::SpanClass::Structural => saw_structural = true,
-            cadmpeg_ir::SpanClass::Typed => {}
+            cadmpeg_ir::source_fidelity::SpanClass::Opaque => saw_opaque = true,
+            cadmpeg_ir::source_fidelity::SpanClass::Structural => saw_structural = true,
+            cadmpeg_ir::source_fidelity::SpanClass::Typed => {}
         }
     }
     assert_eq!(
@@ -2992,7 +2992,10 @@ fn source_fidelity_tiles_every_physical_space() {
     assert!(saw_structural, "container framing should be structural");
 
     for (ordinal, stream) in scan.streams.iter().enumerate() {
-        let id = cadmpeg_ir::CanonicalSpaceId::stream("/Root/UG_PART/UG_PART", ordinal as u32);
+        let id = cadmpeg_ir::source_fidelity::CanonicalSpaceId::stream(
+            "/Root/UG_PART/UG_PART",
+            ordinal as u32,
+        );
         let space = sidecar
             .spaces
             .iter()
@@ -3002,7 +3005,10 @@ fn source_fidelity_tiles_every_physical_space() {
         assert_eq!(space.spans.len(), 1);
         assert_eq!(space.spans[0].range.start, 0);
         assert_eq!(space.spans[0].range.end, space.length);
-        assert_eq!(space.spans[0].class, cadmpeg_ir::SpanClass::Opaque);
+        assert_eq!(
+            space.spans[0].class,
+            cadmpeg_ir::source_fidelity::SpanClass::Opaque
+        );
     }
 }
 

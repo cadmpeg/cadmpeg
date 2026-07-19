@@ -8,7 +8,8 @@ use crate::global::Global;
 use crate::graph::ReferenceEdge;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SpanClass};
+use cadmpeg_ir::source_fidelity::SpanClass;
+use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity};
 use serde::Serialize;
 use std::collections::BTreeMap;
 

@@ -1848,12 +1848,14 @@ fn annotation_keys_streams_and_field_paths_are_checked() {
 fn source_fidelity_structure_is_checked_by_document_validation() {
     let ir = unit_cube();
     let mut source_fidelity = crate::SourceFidelity::default();
-    source_fidelity.spaces.push(crate::AddressSpaceLedger {
-        id: crate::CanonicalSpaceId::source(),
-        length: 4,
-        origin: crate::SerializedOrigin::Root,
-        spans: Vec::new(),
-    });
+    source_fidelity
+        .spaces
+        .push(crate::source_fidelity::AddressSpaceLedger {
+            id: crate::source_fidelity::CanonicalSpaceId::source(),
+            length: 4,
+            origin: crate::source_fidelity::SerializedOrigin::Root,
+            spans: Vec::new(),
+        });
     let findings = crate::validate_with_source_fidelity(&ir, &source_fidelity, Vec::new()).findings;
     assert!(findings.iter().any(|finding| {
         finding.check == Check::ByteAccounting && finding.message.contains("spans do not tile")

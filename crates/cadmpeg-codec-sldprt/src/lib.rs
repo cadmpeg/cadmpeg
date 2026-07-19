@@ -111,7 +111,7 @@ impl SldprtCodec {
     /// of the root `source` space plus one `Transform` child space per block
     /// (see [`fidelity`]). The ledger is validated before it is returned, so an
     /// accounting-enabled result never carries an incompletely tiled or
-    /// origin-inconsistent ledger; a [`FidelityError`](cadmpeg_ir::FidelityError)
+    /// origin-inconsistent ledger; a [`FidelityError`](cadmpeg_ir::source_fidelity::FidelityError)
     /// surfaces as [`CodecError::Malformed`]. Serialize the result through
     /// [`SourceFidelity::to_canonical_json`] for the stable-id sidecar.
     pub fn source_fidelity(&self, reader: &mut dyn ReadSeek) -> Result<SourceFidelity, CodecError> {

@@ -4,10 +4,11 @@
 use crate::card::{CardScan, PhysicalLine, Section};
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::{
-    AddressSpaceLedger, ByteLedger, ByteSpan, ByteSpanClass, CanonicalSpaceId, LedgerSpan,
-    RetainedRef, SerializedOrigin, SerializedRange, SpanClass,
+use cadmpeg_ir::source_fidelity::{
+    AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, RetainedRef, SerializedOrigin,
+    SerializedRange, SpanClass,
 };
+use cadmpeg_ir::{ByteLedger, ByteSpan, ByteSpanClass};
 use std::collections::BTreeMap;
 
 fn push(

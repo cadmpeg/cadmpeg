@@ -26,10 +26,11 @@
 //! conservation invariant.
 
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::{
+use cadmpeg_ir::source_fidelity::{
     AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
-    SourceFidelity, SpaceExtent, SpanClass,
+    SpaceExtent, SpanClass,
 };
+use cadmpeg_ir::SourceFidelity;
 
 use crate::container::{self, ContainerScan, InnerDir};
 

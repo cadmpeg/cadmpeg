@@ -19,10 +19,10 @@
 //! `issue_object_tickets`).
 
 use cadmpeg_ir::hash::sha256_hex;
-use cadmpeg_ir::{
+use cadmpeg_ir::source_fidelity::{
     AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
-    SourceFidelity,
 };
+use cadmpeg_ir::SourceFidelity;
 
 use crate::accounting::partition;
 use crate::container::Scan;

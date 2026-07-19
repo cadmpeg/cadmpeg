@@ -2295,7 +2295,10 @@ fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
 
     let sidecar = &result.source_fidelity;
     assert_eq!(sidecar.spaces.len(), 1);
-    assert_eq!(sidecar.spaces[0].id, cadmpeg_ir::CanonicalSpaceId::source());
+    assert_eq!(
+        sidecar.spaces[0].id,
+        cadmpeg_ir::source_fidelity::CanonicalSpaceId::source()
+    );
     assert_eq!(sidecar.spaces[0].length, bytes.len() as u64);
     assert_eq!(sidecar.validate(), Ok(()));
 

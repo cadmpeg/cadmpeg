@@ -380,7 +380,7 @@ fn decode_retains_short_and_extended_physical_records_before_terminate() {
     assert_eq!(spans[0].range.end - spans[0].range.start, 12);
     assert_eq!(spans[1].range.end - spans[1].range.start, 81);
     assert!(spans.iter().all(|span| {
-        span.class == cadmpeg_ir::SpanClass::Opaque
+        span.class == cadmpeg_ir::source_fidelity::SpanClass::Opaque
             && result
                 .source_fidelity
                 .retained_records
@@ -482,7 +482,7 @@ fn decode_classifies_cross_card_hollerith_bytes_as_one_global_value() {
     assert_eq!(value_spans.len(), 2);
     assert!(value_spans
         .iter()
-        .all(|span| span.class == cadmpeg_ir::SpanClass::Typed));
+        .all(|span| span.class == cadmpeg_ir::source_fidelity::SpanClass::Typed));
     assert_eq!(
         value_spans
             .iter()
@@ -7691,25 +7691,28 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     assert_eq!(ledger.spans.first().unwrap().range.start, 0);
     assert_eq!(ledger.spans.last().unwrap().range.end, source_length);
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::SpanClass::Typed
+        span.class == cadmpeg_ir::source_fidelity::SpanClass::Typed
             && span.meaning == "parameter_token_0"
             && span.owner == "iges:parameter-record#D1"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::SpanClass::Structural
+        span.class == cadmpeg_ir::source_fidelity::SpanClass::Structural
             && span.meaning == "parameter_delimiter_or_padding"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::SpanClass::Typed && span.meaning == "global_value_0"
+        span.class == cadmpeg_ir::source_fidelity::SpanClass::Typed
+            && span.meaning == "global_value_0"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::SpanClass::Structural && span.meaning == "global_delimiter"
+        span.class == cadmpeg_ir::source_fidelity::SpanClass::Structural
+            && span.meaning == "global_delimiter"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::SpanClass::Structural && span.meaning == "reserved_1"
+        span.class == cadmpeg_ir::source_fidelity::SpanClass::Structural
+            && span.meaning == "reserved_1"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::SpanClass::Opaque
+        span.class == cadmpeg_ir::source_fidelity::SpanClass::Opaque
             && span.meaning == "parameter_comment"
             && span
                 .retained
@@ -7726,7 +7729,7 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     for span in result.source_fidelity.spaces[0]
         .spans
         .iter()
-        .filter(|span| span.class == cadmpeg_ir::SpanClass::Opaque)
+        .filter(|span| span.class == cadmpeg_ir::source_fidelity::SpanClass::Opaque)
     {
         let retained = result
             .source_fidelity
@@ -7895,7 +7898,7 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
         .iter()
         .find(|span| span.meaning == "post_terminate_bytes")
         .unwrap();
-    assert_eq!(span.class, cadmpeg_ir::SpanClass::Opaque);
+    assert_eq!(span.class, cadmpeg_ir::source_fidelity::SpanClass::Opaque);
     assert_eq!(span.range.end - span.range.start, 17);
     let retained = result
         .source_fidelity

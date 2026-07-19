@@ -20,10 +20,11 @@
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
-use cadmpeg_ir::{
+use cadmpeg_ir::source_fidelity::{
     AddressSpaceLedger, CanonicalSpaceId, LedgerSpan, SerializedOrigin, SerializedRange,
-    SerializedTransformKind, SourceFidelity, SpaceExtent, SpanClass,
+    SerializedTransformKind, SpaceExtent, SpanClass,
 };
+use cadmpeg_ir::SourceFidelity;
 
 use crate::container::{
     Block, CacheCell, ContainerScan, DirectoryEntry, BLOCK_HEADER_LEN, OUTER_HEADER_LEN,
