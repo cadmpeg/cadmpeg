@@ -10182,6 +10182,10 @@ pub struct DataBlockIndexRow {
     pub data_blocks: [String; 4],
     /// Directory entry containing the offset-only store.
     pub source_entry: String,
+    /// Column block containing the row's opening byte.
+    pub opening_data_block: String,
+    /// Byte offset of the row opening within `opening_data_block`.
+    pub opening_block_offset: u32,
     /// Absolute file offset of the opening discriminator.
     pub source_offset: u64,
     /// Absolute file offset of the first compact index.
@@ -10213,6 +10217,10 @@ pub struct DataBlockLinkedIndexRow {
     pub flag: u8,
     /// Directory entry containing the store.
     pub source_entry: String,
+    /// Column block containing the row's opening byte.
+    pub opening_data_block: String,
+    /// Byte offset of the row opening within `opening_data_block`.
+    pub opening_block_offset: u32,
     /// Absolute file offset of the opening discriminator.
     pub source_offset: u64,
     /// Absolute file offset of the leading compact index.
@@ -11259,6 +11267,24 @@ pub(crate) fn control_index_data_block(
     ))
 }
 
+fn column_storage_block_at(
+    section_ordinal: usize,
+    records: &[crate::om::EntityRecord<'_>],
+    offset: usize,
+) -> Option<(String, u32)> {
+    records.iter().enumerate().find_map(|(ordinal, record)| {
+        let block_offset = offset.checked_sub(record.offset)?;
+        if block_offset >= record.bytes.len() {
+            return None;
+        }
+        let block_offset = u32::try_from(block_offset).ok()?;
+        Some((
+            format!("nx:om-data-blocks-{section_ordinal}:block#{}", ordinal + 1),
+            block_offset,
+        ))
+    })
+}
+
 /// Decode persistent-handle and tagged-28 occurrences in bounded control blocks.
 pub fn data_block_control_references(container: &Container) -> Vec<DataBlockControlReference> {
     container
@@ -11583,10 +11609,15 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
                         })
                         .collect::<Option<Vec<_>>>()
                         .and_then(|blocks| blocks.try_into().ok())?;
-                    Some((row, data_blocks))
+                    let opening = column_storage_block_at(
+                        section_ordinal,
+                        &section.records,
+                        storage_offset + row.offset,
+                    )?;
+                    Some((row, data_blocks, opening))
                 })
                 .enumerate()
-                .map(|(ordinal, (row, data_blocks))| DataBlockIndexRow {
+                .map(|(ordinal, (row, data_blocks, opening))| DataBlockIndexRow {
                     id: format!("nx:om-data-block-index-rows-{section_ordinal}:row#{ordinal}"),
                     section_ordinal: section_ordinal as u32,
                     ordinal: ordinal as u32,
@@ -11595,6 +11626,8 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
                     indices: row.indices.map(|(index, _)| index),
                     data_blocks,
                     source_entry: entry.name.clone(),
+                    opening_data_block: opening.0,
+                    opening_block_offset: opening.1,
                     source_offset: source_base + row.offset as u64,
                     first_index_source_offset: source_base + row.first_index_offset as u64,
                     index_source_offsets: row
@@ -11631,29 +11664,38 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
                         .map(|index| control_index_data_block(section_ordinal, block_count, index))
                         .collect::<Option<Vec<_>>>()
                         .and_then(|blocks| blocks.try_into().ok())?;
-                    Some((row, data_blocks))
+                    let opening = column_storage_block_at(
+                        section_ordinal,
+                        &section.records,
+                        storage_offset + row.offset,
+                    )?;
+                    Some((row, data_blocks, opening))
                 })
                 .enumerate()
-                .map(|(ordinal, (row, data_blocks))| DataBlockLinkedIndexRow {
-                    id: format!(
-                        "nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"
-                    ),
-                    section_ordinal: section_ordinal as u32,
-                    ordinal: ordinal as u32,
-                    first_index: row.first_index.0,
-                    discriminator: row.discriminator,
-                    target_index: row.target_index.0,
-                    indices: row.indices.map(|(index, _)| index),
-                    data_blocks,
-                    flag: row.flag,
-                    source_entry: entry.name.clone(),
-                    source_offset: source_base + row.offset as u64,
-                    first_index_source_offset: source_base + row.first_index.1 as u64,
-                    target_index_source_offset: source_base + row.target_index.1 as u64,
-                    index_source_offsets: row
-                        .indices
-                        .map(|(_, offset)| source_base + offset as u64),
-                })
+                .map(
+                    |(ordinal, (row, data_blocks, opening))| DataBlockLinkedIndexRow {
+                        id: format!(
+                            "nx:om-data-block-linked-index-rows-{section_ordinal}:row#{ordinal}"
+                        ),
+                        section_ordinal: section_ordinal as u32,
+                        ordinal: ordinal as u32,
+                        first_index: row.first_index.0,
+                        discriminator: row.discriminator,
+                        target_index: row.target_index.0,
+                        indices: row.indices.map(|(index, _)| index),
+                        data_blocks,
+                        flag: row.flag,
+                        source_entry: entry.name.clone(),
+                        opening_data_block: opening.0,
+                        opening_block_offset: opening.1,
+                        source_offset: source_base + row.offset as u64,
+                        first_index_source_offset: source_base + row.first_index.1 as u64,
+                        target_index_source_offset: source_base + row.target_index.1 as u64,
+                        index_source_offsets: row
+                            .indices
+                            .map(|(_, offset)| source_base + offset as u64),
+                    },
+                )
                 .collect()
         })
         .collect()
