@@ -973,6 +973,8 @@ The `DATUM_PLANE` operation label establishes a reference-plane feature family. 
 
 **Persistent-handle identity.** `e0 + handle:u32 BE` values are persistent handles forming a cross-stream bridge (RMFastLoad ↔ UG_PART OM ↔ EXTREFSTREAM). Equal handle values group their ordered distinct bounded OM records, offset-store control blocks, and indexed EXTREFSTREAM records under one native handle identity. A second family is a four-byte big-endian word whose high nibble is `0xC` and low 28 bits are the reference value. Both tokens remain within one externally bounded record and occur as `(e0-handle, c-ref)` pairs.
 
+Each persistent-handle identity separately counts serialized occurrences in OM/control storage and EXTREFSTREAM storage. The external count includes every normalized handle-set prefix occurrence, its omitted closing duplicate when present, and every exact tail-pair occurrence.
+
 **Same-section record references.** A counted reference run is `01, count:u8, (count - 1) × (90, record_ordinal:u16 BE)`, with `count >= 2`. Every ordinal addresses an entity record in the same external entity-index directory. The containing record depends on the addressed records; the addressed records have the containing record as a dependent. The complete run lies within one bounded record; any out-of-range ordinal invalidates the run atomically. Token order is operand order, and inverse dependent order follows containing-record ordinal.
 
 ### 7.2 Partition and deltas merge

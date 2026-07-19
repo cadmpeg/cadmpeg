@@ -10627,7 +10627,7 @@ pub struct PersistentHandle {
     pub value: u32,
     /// Ordered distinct OM directory records containing the handle.
     pub records: Vec<String>,
-    /// Total number of serialized occurrences across those records.
+    /// Total serialized occurrences across OM records and offset-store control blocks.
     pub occurrence_count: u32,
     /// Ordered distinct offset-store control blocks containing the handle.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -10635,6 +10635,9 @@ pub struct PersistentHandle {
     /// Ordered distinct EXTREFSTREAM records containing the same handle.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub external_records: Vec<String>,
+    /// Total serialized occurrences across EXTREFSTREAM record prefixes and tails.
+    #[serde(default)]
+    pub external_occurrence_count: u32,
 }
 
 /// Named NX arrangement from `/Root/part/arrangements`.
@@ -12499,55 +12502,71 @@ pub fn persistent_handles(
     external: &[ExternalReferenceRecord],
     external_tail_pairs: &[ExternalReferenceTailReferencePair],
 ) -> Vec<PersistentHandle> {
-    let mut groups = BTreeMap::<u32, (Vec<String>, u32, Vec<String>, Vec<String>)>::new();
+    #[derive(Default)]
+    struct Group {
+        records: Vec<String>,
+        occurrence_count: u32,
+        external_records: Vec<String>,
+        data_blocks: Vec<String>,
+        external_occurrence_count: u32,
+    }
+
+    let mut groups = BTreeMap::<u32, Group>::new();
     for reference in references
         .iter()
         .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
     {
-        let (records, occurrence_count, _, _) = groups.entry(reference.value).or_default();
-        *occurrence_count += 1;
-        if records.last() != Some(&reference.record) && !records.contains(&reference.record) {
-            records.push(reference.record.clone());
+        let group = groups.entry(reference.value).or_default();
+        group.occurrence_count += 1;
+        if group.records.last() != Some(&reference.record)
+            && !group.records.contains(&reference.record)
+        {
+            group.records.push(reference.record.clone());
         }
     }
     for reference in control_references
         .iter()
         .filter(|reference| reference.kind == ObjectReferenceKind::PersistentHandle)
     {
-        let (_, occurrence_count, _, data_blocks) = groups.entry(reference.value).or_default();
-        *occurrence_count += 1;
-        if !data_blocks.contains(&reference.data_block) {
-            data_blocks.push(reference.data_block.clone());
+        let group = groups.entry(reference.value).or_default();
+        group.occurrence_count += 1;
+        if !group.data_blocks.contains(&reference.data_block) {
+            group.data_blocks.push(reference.data_block.clone());
         }
     }
     for record in external {
         for handle in &record.handles {
-            let external_records = &mut groups.entry(*handle).or_default().2;
-            if !external_records.contains(&record.id) {
-                external_records.push(record.id.clone());
+            let group = groups.entry(*handle).or_default();
+            group.external_occurrence_count += 1;
+            if !group.external_records.contains(&record.id) {
+                group.external_records.push(record.id.clone());
             }
+        }
+        if record.closing_duplicate {
+            let Some(handle) = record.handles.last() else {
+                continue;
+            };
+            groups.entry(*handle).or_default().external_occurrence_count += 1;
         }
     }
     for pair in external_tail_pairs {
-        let external_records = &mut groups.entry(pair.persistent_handle).or_default().2;
-        if !external_records.contains(&pair.handle_set_record) {
-            external_records.push(pair.handle_set_record.clone());
+        let group = groups.entry(pair.persistent_handle).or_default();
+        group.external_occurrence_count += 1;
+        if !group.external_records.contains(&pair.handle_set_record) {
+            group.external_records.push(pair.handle_set_record.clone());
         }
     }
     groups
         .into_iter()
-        .map(
-            |(value, (records, occurrence_count, external_records, data_blocks))| {
-                PersistentHandle {
-                    id: format!("nx:om-persistent-handles:handle#{value:08x}"),
-                    value,
-                    records,
-                    occurrence_count,
-                    data_blocks,
-                    external_records,
-                }
-            },
-        )
+        .map(|(value, group)| PersistentHandle {
+            id: format!("nx:om-persistent-handles:handle#{value:08x}"),
+            value,
+            records: group.records,
+            occurrence_count: group.occurrence_count,
+            data_blocks: group.data_blocks,
+            external_records: group.external_records,
+            external_occurrence_count: group.external_occurrence_count,
+        })
         .collect()
 }
 

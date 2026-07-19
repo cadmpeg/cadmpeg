@@ -16684,7 +16684,7 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
         declared_count: 1,
         id_slots: [0; 4],
         handles: vec![0x1020_3040],
-        closing_duplicate: false,
+        closing_duplicate: true,
         prefix_byte_len: 31,
         tail_byte_len: 0,
         source_entry: "external".into(),
@@ -16716,8 +16716,10 @@ fn persistent_handle_identity_bridges_om_and_external_records() {
     assert_eq!(handles[0].occurrence_count, 2);
     assert_eq!(handles[0].data_blocks, ["nx:test:control-block#0"]);
     assert_eq!(handles[0].external_records, ["nx:test:external-record#6"]);
+    assert_eq!(handles[0].external_occurrence_count, 2);
     assert_eq!(handles[1].value, 0x5060_7080);
     assert_eq!(handles[1].external_records, ["nx:test:external-record#6"]);
+    assert_eq!(handles[1].external_occurrence_count, 1);
 }
 
 #[test]
