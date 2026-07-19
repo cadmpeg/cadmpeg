@@ -410,17 +410,18 @@ mod marker_tests {
         compact_surface_selection_at, complete_ordered_compact_line_profile,
         component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, constraint_midplane_frame,
-        coordinate_marker_local_links, fixed_reference_plane_frame, legacy_feature_input_section,
-        legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
-        minimal_reference_plane_frame, named_scalars, native_scalar_matches_discrete_parameter,
-        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
-        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
-        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers, sketch_plane_frames,
-        solved_tangent, spatial_vertex_coordinates, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        coordinate_marker_local_links, explicit_reference_plane_frame, fixed_reference_plane_frame,
+        legacy_feature_input_section, legacy_reference_axis_triads, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
+        matrix_reference_plane_frame, minimal_reference_plane_frame, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -790,6 +791,61 @@ mod marker_tests {
 
         payload[root + 113..root + 121].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(matrix_reference_plane_frame(&payload), None);
+    }
+
+    #[test]
+    fn complete_reference_plane_frames_precede_compact_byte_patterns() {
+        let mut payload = vec![0; 260];
+        let matrix = 3;
+        for (relative, value) in [
+            (0, 0.035_f64),
+            (8, 0.0),
+            (16, 0.0),
+            (24, 1.0),
+            (32, 0.0),
+            (40, 0.0),
+            (49, 0.0),
+            (57, 0.0),
+            (65, 1.0),
+            (73, 0.0),
+            (81, 1.0),
+            (89, 0.0),
+            (97, -1.0),
+            (105, 0.0),
+            (113, 0.0),
+        ] {
+            payload[matrix + relative..matrix + relative + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[matrix + 48] = 1;
+
+        let compact = 165;
+        for (relative, value) in [
+            (0, 0.0_f64),
+            (8, 0.0),
+            (16, 0.0),
+            (24, 0.0),
+            (32, 0.0),
+            (40, 1.0),
+            (48, 0.0),
+            (56, 0.0),
+            (65, 0.0),
+            (73, 1.0),
+        ] {
+            payload[compact + relative..compact + relative + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+        payload[compact + 64] = 0;
+        payload[compact + 81] = 0;
+
+        assert!(compact_reference_plane_frame(&payload).is_some());
+        assert_eq!(
+            explicit_reference_plane_frame(&payload),
+            Ok(Some((
+                Point3::new(35.0, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, -1.0),
+            )))
+        );
     }
 
     #[test]
@@ -5619,7 +5675,7 @@ fn reconcile_reference_plane_frame(
         .then_some(explicit)
 }
 
-/// Add exact fixed-reference-plane frames to a projection copy of history.
+/// Add validated reference-plane frames to a projection copy of history.
 pub(crate) fn enrich_history_reference_planes(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -5679,33 +5735,9 @@ pub(crate) fn enrich_history_reference_planes(
                     .or_default()
                     .push(source);
             }
-            let mut frames = bytes
-                .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
-                .filter_map(fixed_reference_plane_frame)
-                .collect::<Vec<_>>();
-            frames.extend(angled_reference_plane_frame(bytes));
-            frames.extend(matrix_reference_plane_frame(bytes));
-            frames.extend(minimal_reference_plane_frame(bytes));
-            frames.extend(compact_reference_plane_frame(bytes));
-            frames.sort_by_key(|(origin, normal, u_axis)| {
-                [
-                    origin.x.to_bits(),
-                    origin.y.to_bits(),
-                    origin.z.to_bits(),
-                    normal.x.to_bits(),
-                    normal.y.to_bits(),
-                    normal.z.to_bits(),
-                    u_axis.x.to_bits(),
-                    u_axis.y.to_bits(),
-                    u_axis.z.to_bits(),
-                ]
-            });
-            frames.dedup_by(|left, right| left == right);
             let constraint = constraint_midplane_frame(bytes);
-            let explicit = match frames.as_slice() {
-                [frame] => Some(*frame),
-                [] => None,
-                _ => continue,
+            let Ok(explicit) = explicit_reference_plane_frame(bytes) else {
+                continue;
             };
             let Some(frame) = reconcile_reference_plane_frame(explicit, constraint) else {
                 continue;
@@ -6025,6 +6057,45 @@ fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
 
 const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
 
+fn explicit_reference_plane_frame(
+    payload: &[u8],
+) -> Result<Option<(Point3, Vector3, Vector3)>, ()> {
+    // The complete matrix stores all three basis columns and a redundant normal.
+    // Shorter layouts can occur as incidental aligned scalar runs later in the
+    // same feature record, so they only participate when no matrix is present.
+    if let Some(frame) = matrix_reference_plane_frame(payload) {
+        return Ok(Some(frame));
+    }
+    let mut frames = payload
+        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+        .filter_map(fixed_reference_plane_frame)
+        .collect::<Vec<_>>();
+    if frames.is_empty() {
+        frames.extend(angled_reference_plane_frame(payload));
+        frames.extend(minimal_reference_plane_frame(payload));
+        frames.extend(compact_reference_plane_frame(payload));
+    }
+    frames.sort_by_key(|(origin, normal, u_axis)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
+            normal.x.to_bits(),
+            normal.y.to_bits(),
+            normal.z.to_bits(),
+            u_axis.x.to_bits(),
+            u_axis.y.to_bits(),
+            u_axis.z.to_bits(),
+        ]
+    });
+    frames.dedup_by(|left, right| left == right);
+    match frames.as_slice() {
+        [frame] => Ok(Some(*frame)),
+        [] => Ok(None),
+        _ => Err(()),
+    }
+}
+
 fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     if bytes.len() != FIXED_REFERENCE_PLANE_FRAME_LEN || bytes.get(48) != Some(&1) {
@@ -6233,25 +6304,9 @@ fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vect
             left.x * right.y - left.y * right.x,
         )
     };
-    let fixed_ranges = payload
-        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
-        .enumerate()
-        .filter_map(|(offset, bytes)| {
-            fixed_reference_plane_frame(bytes)
-                .is_some()
-                .then_some(offset..offset + FIXED_REFERENCE_PLANE_FRAME_LEN)
-        })
-        .collect::<Vec<_>>();
     let mut frames = payload
         .windows(RECORD_LEN)
-        .enumerate()
-        .filter(|(offset, _)| {
-            let range = *offset..*offset + RECORD_LEN;
-            fixed_ranges
-                .iter()
-                .all(|fixed| range.end <= fixed.start || range.start >= fixed.end)
-        })
-        .filter_map(|(_, bytes)| {
+        .filter_map(|bytes| {
             if bytes[48] != 1 {
                 return None;
             }
