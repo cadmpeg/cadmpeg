@@ -2792,7 +2792,23 @@ mod marker_tests {
             Some([-1.0, 0.0])
         );
 
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[detail + 23..detail + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&payload, 0),
+            Some([7, 11])
+        );
+        assert!(!marker_is_selected_construction_line(&payload, 0));
+        assert_eq!(
+            compact_bounded_curve_tangent(&payload, 0),
+            Some([-1.0, 0.0])
+        );
+
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[detail + 23..detail + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         assert_eq!(
             wide_indexed_curve_endpoint_indices(&payload, 0),
             Some([7, 11])
@@ -16985,13 +17001,17 @@ fn compact_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
 }
 
 fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
-    if !matches!(
-        payload.get(offset..offset + SKETCH_MARKER.len()),
-        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
-    ) || !matches!(
-        u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?),
-        0..=2
-    ) || !marker_is_geometry_locus(payload, offset)
+    let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
+    let supported_prefix = prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER;
+    let supported_locus = marker_is_geometry_locus(payload, offset)
+        || (prefix == LEGACY_EXTENDED_SKETCH_MARKER
+            && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]));
+    if !supported_prefix
+        || !matches!(
+            u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?),
+            0..=2
+        )
+        || !supported_locus
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 31..offset + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
         || payload.get(offset + 35..offset + 39) != Some(&[0x00, 0x00, 0x04, 0x00])
