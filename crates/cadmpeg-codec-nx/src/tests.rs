@@ -3182,6 +3182,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         FeatureDefinition::FreeformSurfaceUnresolved
     );
     assert_eq!(
+        crate::decode::non_boolean_feature_definition("POINT", &[], None, None, None),
+        FeatureDefinition::DatumPointUnresolved
+    );
+    assert_eq!(
         crate::decode::non_boolean_feature_definition("DRAFT", &[], None, None, None),
         FeatureDefinition::DraftUnresolved
     );

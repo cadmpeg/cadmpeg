@@ -764,11 +764,12 @@ fn unresolved_datum_families_round_trip_through_json() {
 
     let definitions = [
         FeatureDefinition::DatumPlaneUnresolved,
+        FeatureDefinition::DatumPointUnresolved,
         FeatureDefinition::DatumCoordinateSystemUnresolved,
     ];
     let json = serde_json::to_string(&definitions).unwrap();
     assert_eq!(
-        serde_json::from_str::<[FeatureDefinition; 2]>(&json).unwrap(),
+        serde_json::from_str::<[FeatureDefinition; 3]>(&json).unwrap(),
         definitions
     );
 }

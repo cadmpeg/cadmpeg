@@ -7182,6 +7182,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
     for feature in &ir.model.features {
         let family = match feature.definition {
             FeatureDefinition::DatumPlaneUnresolved => "datum plane",
+            FeatureDefinition::DatumPointUnresolved => "datum point",
             FeatureDefinition::DatumCoordinateSystemUnresolved => "datum coordinate system",
             FeatureDefinition::LoftUnresolved => "loft",
             FeatureDefinition::FreeformSurfaceUnresolved => "freeform surface",
@@ -12291,6 +12292,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
     }
     match kind {
         "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
+        "POINT" => FeatureDefinition::DatumPointUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
         "TEXT" if matches!(payload_strings, [text, font] if !text.is_empty() && !font.is_empty()) => {
             FeatureDefinition::TreeNode {

@@ -3974,6 +3974,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::DatumPointUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved reference-point construction",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DatumOffsetPlane {
                 reference,
                 distance,
@@ -7431,6 +7437,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",
         FeatureDefinition::DatumPoint { .. } => "ReferencePoint",
+        FeatureDefinition::DatumPointUnresolved => "ReferencePoint",
         FeatureDefinition::DatumCoordinateSystem { .. } => "CoordinateSystem",
         FeatureDefinition::DatumCoordinateSystemUnresolved => "CoordinateSystem",
         FeatureDefinition::Block { .. } => "Block",

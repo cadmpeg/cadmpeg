@@ -313,6 +313,8 @@ pub enum FeatureDefinition {
         /// Point position in model space.
         position: Point3,
     },
+    /// Constructed reference-point family whose model-space position is unresolved.
+    DatumPointUnresolved,
     /// Standalone model vertex constructed at one point.
     PointGeometry {
         /// Vertex position in the feature's local construction frame.

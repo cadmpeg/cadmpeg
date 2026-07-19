@@ -2800,6 +2800,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::DatumPlaneUnresolved
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::DatumPointUnresolved
             | FeatureDefinition::DatumCoordinateSystemUnresolved
             | FeatureDefinition::StoredGeometry
             | FeatureDefinition::LoftUnresolved
