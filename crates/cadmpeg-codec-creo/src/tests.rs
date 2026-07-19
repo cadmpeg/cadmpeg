@@ -2680,6 +2680,73 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
 }
 
 #[test]
+fn decode_retains_repeated_sketch_snapshots_with_offset_identities() {
+    let mut definition =
+        b"feat_defs_40\0segtab_ptr\0\xf8\x02\xf7\x01\xfb\xe2schema\xf2\xf7\x01\xe2".to_vec();
+    definition.extend_from_slice(&[2, 0, 0, 0, 7, 8, 0xf6, 0, 0, 0xf6, 0xf6, 42, 0xe2, 0xe3]);
+    definition.extend_from_slice(&[25, 0, 0, 0, 8, 9, 0xf6, 0, 0, 0xf6, 0xf6, 43, 0xe2, 0xe3]);
+    let mut payload = definition.clone();
+    payload.extend_from_slice(&definition);
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    assert_eq!(result.ir.model.sketches.len(), 2);
+    assert_eq!(result.ir.model.features.len(), 2);
+    assert!(result
+        .ir
+        .model
+        .sketches
+        .iter()
+        .all(|sketch| sketch.id.0.starts_with("creo:model:sketch#offset:")));
+    for sketch in &result.ir.model.sketches {
+        let expected_native_ref =
+            sketch
+                .id
+                .0
+                .replacen("creo:model:sketch#", "creo:featdefs:sketch#", 1);
+        let identity_scope = sketch
+            .id
+            .0
+            .strip_prefix("creo:model:sketch#")
+            .expect("Creo sketch identity");
+        assert_eq!(
+            sketch.native_ref.as_deref(),
+            Some(expected_native_ref.as_str())
+        );
+        assert_eq!(
+            result
+                .ir
+                .model
+                .sketch_entities
+                .iter()
+                .filter(|entity| entity.sketch == sketch.id)
+                .count(),
+            2
+        );
+        assert!(result
+            .ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch.id)
+            .all(|entity| entity.id.0.contains(&format!("#{identity_scope}:"))));
+    }
+    assert_eq!(
+        result
+            .ir
+            .model
+            .sketch_entities
+            .iter()
+            .map(|entity| &entity.id)
+            .collect::<BTreeSet<_>>()
+            .len(),
+        4
+    );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
 fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
     let definition = crate::feature::FeatureDefinition {
         id: 40,

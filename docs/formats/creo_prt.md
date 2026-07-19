@@ -2046,15 +2046,19 @@ vector defines zero azimuth. The operation's angular extent trims the carrier.
 A profile vertex on the axis is a rotational singularity and does not define a
 circle.
 
-A section with a resolved `gsec3d_ptr` placement is an ordered planar sketch
-history node owning the placed sketch geometry. When the section transform has
-a generating feature identifier, that feature depends on the sketch history
-node. The sketch node precedes its profile consumer in construction order. A
-definition supplies neutral sketch placement and generated geometry only when
-exactly one resolved section transform carries its definition identifier;
-duplicate transforms remain native placement records. When the transform names
-a generating feature, it also requires exactly one transform for that feature;
-two definitions claiming the same feature do not select a profile snapshot.
+Every bounded feature definition containing section entities is an ordered
+planar sketch history node. Its sketch, entity, constraint, profile, and
+standalone history-feature identities share the definition identity: the
+numeric feature-definition identifier when unique, otherwise the bounded
+record's source-offset-qualified identifier. A section with exactly one
+resolved `gsec3d_ptr` placement owns placed sketch geometry. Other section
+snapshots retain unresolved placement and do not generate model-space curves.
+When the section transform has a generating feature identifier, that feature
+depends on the sketch history node. The sketch node precedes its profile
+consumer in construction order. Duplicate transforms remain native placement
+records. When the transform names a generating feature, it also requires
+exactly one transform for that feature; two definitions claiming the same
+feature do not select a profile snapshot.
 
 `FamilyInf.Sld_FamilyInfo.drv_tbl_ptr` is the configuration driver-table
 pointer. The configuration-root identity is

@@ -3293,12 +3293,48 @@ fn feature_sketch_record_id_in_scan(
     }
 }
 
-fn feature_sketch_record_id(definition: &crate::feature::FeatureDefinition) -> String {
-    if definition.id == 0 && definition.owner_feature_id.is_none() {
-        format!("creo:featdefs:sketch#offset:{}", definition.offset)
-    } else {
-        format!("creo:featdefs:sketch#{}", definition.id)
-    }
+fn model_sketch_id(
+    scan: &ContainerScan,
+    definition: &crate::feature::FeatureDefinition,
+) -> SketchId {
+    let native_id = feature_sketch_record_id_in_scan(scan, definition);
+    SketchId(native_id.replacen("creo:featdefs:sketch#", "creo:model:sketch#", 1))
+}
+
+fn sketch_identity_scope(sketch: &SketchId) -> &str {
+    sketch
+        .0
+        .strip_prefix("creo:model:sketch#")
+        .unwrap_or(&sketch.0)
+}
+
+fn sketch_entity_id(sketch: &SketchId, suffix: impl std::fmt::Display) -> SketchEntityId {
+    SketchEntityId(format!(
+        "creo:featdefs:sketch_entity#{}:{suffix}",
+        sketch_identity_scope(sketch)
+    ))
+}
+
+fn sketch_constraint_id(sketch: &SketchId, suffix: impl std::fmt::Display) -> SketchConstraintId {
+    SketchConstraintId(format!(
+        "creo:featdefs:sketch_constraint#{}:{suffix}",
+        sketch_identity_scope(sketch)
+    ))
+}
+
+fn sketch_native_ref(sketch: &SketchId) -> String {
+    format!("creo:featdefs:sketch#{}", sketch_identity_scope(sketch))
+}
+
+fn sketch_section_curve_id(sketch: &SketchId, suffix: impl std::fmt::Display) -> String {
+    format!(
+        "creo:featdefs:section_curve#{}:{suffix}",
+        sketch_identity_scope(sketch)
+    )
+}
+
+fn sketch_point_ref(sketch: &SketchId, point: u32) -> String {
+    format!("{}:point#{point}", sketch_native_ref(sketch))
 }
 
 fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinitionRecord> {
@@ -3762,7 +3798,7 @@ fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
 }
 
 fn saved_profile_chains(
-    definition_id: u32,
+    sketch: &SketchId,
     geometries: &[(u32, SketchGeometry)],
 ) -> Vec<Vec<SketchEntityUse>> {
     let mut profiles = geometries
@@ -3770,9 +3806,7 @@ fn saved_profile_chains(
         .filter(|(_, geometry)| is_full_circle_geometry(geometry))
         .map(|(external_id, _)| {
             vec![SketchEntityUse {
-                entity: SketchEntityId(format!(
-                    "creo:featdefs:sketch_entity#{definition_id}:{external_id}"
-                )),
+                entity: sketch_entity_id(sketch, external_id),
                 reversed: false,
             }]
         })
@@ -3827,10 +3861,7 @@ fn saved_profile_chains(
                 break;
             }
             uses.push(SketchEntityUse {
-                entity: SketchEntityId(format!(
-                    "creo:featdefs:sketch_entity#{definition_id}:{}",
-                    rows[row].0
-                )),
+                entity: sketch_entity_id(sketch, rows[row].0),
                 reversed,
             });
             let outgoing = usize::from(!reversed);
@@ -9052,6 +9083,7 @@ fn relation_incidence(
 
 fn relation_incidence_entities(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     relation_id: u32,
 ) -> Vec<SketchEntityId> {
     let Some(incidence) = relation_incidence(definition, relation_id) else {
@@ -9062,12 +9094,9 @@ fn relation_incidence_entities(
         .items
         .iter()
         .map(|item| {
-            known.contains(&item.entity_id).then(|| {
-                SketchEntityId(format!(
-                    "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id, item.entity_id
-                ))
-            })
+            known
+                .contains(&item.entity_id)
+                .then(|| sketch_entity_id(sketch, item.entity_id))
         })
         .collect::<Option<Vec<_>>>()
         .unwrap_or_default()
@@ -9075,6 +9104,7 @@ fn relation_incidence_entities(
 
 fn relation_incidence_known_entities(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     relation_id: u32,
 ) -> Vec<SketchEntityId> {
     let Some(incidence) = relation_incidence(definition, relation_id) else {
@@ -9085,17 +9115,13 @@ fn relation_incidence_known_entities(
         .items
         .iter()
         .filter(|item| known.contains(&item.entity_id))
-        .map(|item| {
-            SketchEntityId(format!(
-                "creo:featdefs:sketch_entity#{}:{}",
-                definition.id, item.entity_id
-            ))
-        })
+        .map(|item| sketch_entity_id(sketch, item.entity_id))
         .collect()
 }
 
 fn relation_incidence_loci(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     relation_id: u32,
 ) -> Option<[SketchLocus; 2]> {
     let incidence = relation_incidence(definition, relation_id)?;
@@ -9103,13 +9129,14 @@ fn relation_incidence_loci(
         return None;
     };
     Some([
-        section_skamp_locus(definition, first)?,
-        section_skamp_locus(definition, second)?,
+        section_skamp_locus(definition, sketch, first)?,
+        section_skamp_locus(definition, sketch, second)?,
     ])
 }
 
 fn section_angular_entities(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     segments: &[crate::feature::FeatureSegment],
     vectors: [[Option<u32>; 4]; 3],
     known_entities: &BTreeSet<u32>,
@@ -9141,14 +9168,8 @@ fn section_angular_entities(
     let [Some(first), Some(second)] = [first, second] else {
         return None;
     };
-    (first != second).then(|| {
-        [first, second].map(|external_id| {
-            SketchEntityId(format!(
-                "creo:featdefs:sketch_entity#{}:{external_id}",
-                definition.id
-            ))
-        })
-    })
+    (first != second)
+        .then(|| [first, second].map(|external_id| sketch_entity_id(sketch, external_id)))
 }
 
 fn section_dimension_constraints(
@@ -9192,6 +9213,7 @@ fn section_dimension_constraints(
                 {
                     let [first, second] = section_angular_entities(
                         definition,
+                        sketch,
                         segments,
                         relation.operand_vectors?,
                         &known_entities,
@@ -9228,10 +9250,7 @@ fn section_dimension_constraints(
                         .contains(&segment.external_id)
                         .then_some(())?;
                     return Some(SketchConstraintDefinition::Radius {
-                        entity: SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, segment.external_id
-                        )),
+                        entity: sketch_entity_id(sketch, segment.external_id),
                         parameter,
                     });
                 }
@@ -9252,10 +9271,7 @@ fn section_dimension_constraints(
                                 known_entities
                                     .contains(&measured.external_id)
                                     .then_some(())?;
-                                let entity = SketchEntityId(format!(
-                                    "creo:featdefs:sketch_entity#{}:{}",
-                                    definition.id, measured.external_id
-                                ));
+                                let entity = sketch_entity_id(sketch, measured.external_id);
                                 let [first, second] = if measured.point_ids == [first_id, second_id]
                                 {
                                     [SketchLocus::Start(entity.clone()), SketchLocus::End(entity)]
@@ -9288,7 +9304,7 @@ fn section_dimension_constraints(
                     }
                 }
                 if let Some([first, second]) =
-                    relation_incidence_loci(definition, relation.relation_id)
+                    relation_incidence_loci(definition, sketch, relation.relation_id)
                 {
                     return Some(SketchConstraintDefinition::DistanceLoci {
                         first,
@@ -9296,14 +9312,15 @@ fn section_dimension_constraints(
                         parameter,
                     });
                 }
-                let entities = relation_incidence_entities(definition, relation.relation_id);
+                let entities =
+                    relation_incidence_entities(definition, sketch, relation.relation_id);
                 (!entities.is_empty()).then_some(SketchConstraintDefinition::Distance {
                     entities,
                     parameter,
                 })
             })();
             let incidence_entities = if unique_relation_id {
-                relation_incidence_known_entities(definition, relation.relation_id)
+                relation_incidence_known_entities(definition, sketch, relation.relation_id)
             } else {
                 Vec::new()
             };
@@ -9315,22 +9332,22 @@ fn section_dimension_constraints(
                     operands: vec![SketchNativeOperand {
                         native_kind: "relat_ptr".to_string(),
                         object_index: relation.relation_id,
-                        native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                        native_ref: Some(sketch_native_ref(sketch)),
                     }],
                 });
             (
                 SketchConstraint {
-                    id: SketchConstraintId(if unique_relation_id {
-                        format!(
-                            "creo:featdefs:sketch_constraint#{}:relation:{}",
-                            definition.id, relation.relation_id
+                    id: if unique_relation_id {
+                        sketch_constraint_id(
+                            sketch,
+                            format_args!("relation:{}", relation.relation_id),
                         )
                     } else {
-                        format!(
-                            "creo:featdefs:sketch_constraint#{}:relation:offset:{}",
-                            definition.id, relation.offset
+                        sketch_constraint_id(
+                            sketch,
+                            format_args!("relation:offset:{}", relation.offset),
                         )
-                    }),
+                    },
                     sketch: sketch.clone(),
                     definition: constraint_definition,
                     name: None,
@@ -9342,7 +9359,7 @@ fn section_dimension_constraints(
                     label_distance: None,
                     label_position: None,
                     metadata: None,
-                    native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                    native_ref: Some(sketch_native_ref(sketch)),
                 },
                 relation.offset,
             )
@@ -9361,12 +9378,10 @@ fn section_linear_distance_vectors(vectors: [[Option<u32>; 4]; 3]) -> bool {
 
 fn section_skamp_locus(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
-    let entity = SketchEntityId(format!(
-        "creo:featdefs:sketch_entity#{}:{}",
-        definition.id, item.entity_id
-    ));
+    let entity = sketch_entity_id(sketch, item.entity_id);
     if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return match (segment.kind, item.sense) {
             (_, 0) => Some(SketchLocus::Entity(entity)),
@@ -9404,24 +9419,27 @@ fn section_skamp_locus(
 
 fn section_skamp_endpoint(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
     matches!(item.sense, 2 | 3)
-        .then(|| section_skamp_locus(definition, item))
+        .then(|| section_skamp_locus(definition, sketch, item))
         .flatten()
 }
 
 fn section_skamp_point_locus(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
     matches!(item.sense, 2..=4)
-        .then(|| section_skamp_locus(definition, item))
+        .then(|| section_skamp_locus(definition, sketch, item))
         .flatten()
 }
 
 fn section_skamp_line_pair(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     first: &crate::feature::FeatureSkampItem,
     second: &crate::feature::FeatureSkampItem,
 ) -> Option<[SketchEntityId; 2]> {
@@ -9432,23 +9450,19 @@ fn section_skamp_line_pair(
     {
         return None;
     }
-    Some([first, second].map(|item| {
-        SketchEntityId(format!(
-            "creo:featdefs:sketch_entity#{}:{}",
-            definition.id, item.entity_id
-        ))
-    }))
+    Some([first, second].map(|item| sketch_entity_id(sketch, item.entity_id)))
 }
 
 fn section_skamp_same_coordinate(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     skamp: &crate::feature::FeatureSkamp,
 ) -> Option<(SketchLocus, SketchLocus, SketchCoordinateAxis)> {
     let [first, second] = skamp.items.as_slice() else {
         return None;
     };
-    let first_locus = section_skamp_point_locus(definition, first)?;
-    let second_locus = section_skamp_point_locus(definition, second)?;
+    let first_locus = section_skamp_point_locus(definition, sketch, first)?;
+    let second_locus = section_skamp_point_locus(definition, sketch, second)?;
     let ([first_source, second_source], coordinate) =
         section_skamp_same_coordinate_sources(definition, skamp)?;
     let axis = [SketchCoordinateAxis::U, SketchCoordinateAxis::V][coordinate];
@@ -9544,6 +9558,7 @@ fn section_saved_entity(
 
 fn section_skamp_circular_entity(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchEntityId> {
     if item.sense != 0 {
@@ -9566,12 +9581,7 @@ fn section_skamp_circular_entity(
             )
         })
     };
-    circular.then(|| {
-        SketchEntityId(format!(
-            "creo:featdefs:sketch_entity#{}:{}",
-            definition.id, item.entity_id
-        ))
-    })
+    circular.then(|| sketch_entity_id(sketch, item.entity_id))
 }
 
 fn section_skamp_constraints(
@@ -9600,12 +9610,7 @@ fn section_skamp_constraints(
                     .items
                     .iter()
                     .filter(|item| section_entities.contains(&item.entity_id))
-                    .map(|item| {
-                        SketchEntityId(format!(
-                            "creo:featdefs:sketch_entity#{}:{}",
-                            definition.id, item.entity_id
-                        ))
-                    })
+                    .map(|item| sketch_entity_id(sketch, item.entity_id))
                     .collect::<Vec<_>>();
                 Some(SketchConstraintDefinition::Native {
                     native_kind: format!("creo:skamp:{}", skamp.kind),
@@ -9625,13 +9630,13 @@ fn section_skamp_constraints(
             let constraint_definition = if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
                     (0, [first, second])
-                        if section_skamp_point_locus(definition, first).is_some()
-                            && section_skamp_point_locus(definition, second).is_some() =>
+                        if section_skamp_point_locus(definition, sketch, first).is_some()
+                            && section_skamp_point_locus(definition, sketch, second).is_some() =>
                     {
                         SketchConstraintDefinition::CoincidentLoci {
                             loci: vec![
-                                section_skamp_point_locus(definition, first)?,
-                                section_skamp_point_locus(definition, second)?,
+                                section_skamp_point_locus(definition, sketch, first)?,
+                                section_skamp_point_locus(definition, sketch, second)?,
                             ],
                         }
                     }
@@ -9639,13 +9644,14 @@ fn section_skamp_constraints(
                         if (first.sense == 0
                             && (section_skamp_is_point(definition, first)
                                 || section_skamp_is_line(definition, first))
-                            && section_skamp_locus(definition, first).is_some()
-                            && section_skamp_point_locus(definition, second).is_some())
+                            && section_skamp_locus(definition, sketch, first).is_some()
+                            && section_skamp_point_locus(definition, sketch, second).is_some())
                             || (second.sense == 0
                                 && (section_skamp_is_point(definition, second)
                                     || section_skamp_is_line(definition, second))
-                                && section_skamp_locus(definition, second).is_some()
-                                && section_skamp_point_locus(definition, first).is_some()) =>
+                                && section_skamp_locus(definition, sketch, second).is_some()
+                                && section_skamp_point_locus(definition, sketch, first)
+                                    .is_some()) =>
                     {
                         let (entity, locus) = if first.sense == 0 {
                             (first, second)
@@ -9654,71 +9660,66 @@ fn section_skamp_constraints(
                         };
                         if section_skamp_is_line(definition, entity) {
                             SketchConstraintDefinition::PointOnObject {
-                                point: section_skamp_point_locus(definition, locus)?,
-                                entity: SketchEntityId(format!(
-                                    "creo:featdefs:sketch_entity#{}:{}",
-                                    definition.id, entity.entity_id
-                                )),
+                                point: section_skamp_point_locus(definition, sketch, locus)?,
+                                entity: sketch_entity_id(sketch, entity.entity_id),
                             }
                         } else {
                             SketchConstraintDefinition::CoincidentLoci {
                                 loci: vec![
-                                    section_skamp_locus(definition, entity)?,
-                                    section_skamp_point_locus(definition, locus)?,
+                                    section_skamp_locus(definition, sketch, entity)?,
+                                    section_skamp_point_locus(definition, sketch, locus)?,
                                 ],
                             }
                         }
                     }
                     (1, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
                         SketchConstraintDefinition::Horizontal {
-                            entity: SketchEntityId(format!(
-                                "creo:featdefs:sketch_entity#{}:{}",
-                                definition.id, item.entity_id
-                            )),
+                            entity: sketch_entity_id(sketch, item.entity_id),
                         }
                     }
                     (2, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
                         SketchConstraintDefinition::Vertical {
-                            entity: SketchEntityId(format!(
-                                "creo:featdefs:sketch_entity#{}:{}",
-                                definition.id, item.entity_id
-                            )),
+                            entity: sketch_entity_id(sketch, item.entity_id),
                         }
                     }
                     (4, [first, second])
-                        if section_skamp_endpoint(definition, first).is_some()
-                            && section_skamp_endpoint(definition, second).is_some() =>
+                        if section_skamp_endpoint(definition, sketch, first).is_some()
+                            && section_skamp_endpoint(definition, sketch, second).is_some() =>
                     {
                         SketchConstraintDefinition::TangentLoci {
-                            first: section_skamp_endpoint(definition, first)?,
-                            second: section_skamp_endpoint(definition, second)?,
+                            first: section_skamp_endpoint(definition, sketch, first)?,
+                            second: section_skamp_endpoint(definition, sketch, second)?,
                         }
                     }
                     (5, [first, second])
-                        if section_skamp_line_pair(definition, first, second).is_some() =>
+                        if section_skamp_line_pair(definition, sketch, first, second).is_some() =>
                     {
-                        let [first, second] = section_skamp_line_pair(definition, first, second)?;
+                        let [first, second] =
+                            section_skamp_line_pair(definition, sketch, first, second)?;
                         SketchConstraintDefinition::Perpendicular { first, second }
                     }
                     (6, [first, second])
-                        if section_skamp_circular_entity(definition, first).is_some()
-                            && section_skamp_circular_entity(definition, second).is_some() =>
+                        if section_skamp_circular_entity(definition, sketch, first).is_some()
+                            && section_skamp_circular_entity(definition, sketch, second)
+                                .is_some() =>
                     {
                         SketchConstraintDefinition::Equal {
-                            first: section_skamp_circular_entity(definition, first)?,
-                            second: section_skamp_circular_entity(definition, second)?,
+                            first: section_skamp_circular_entity(definition, sketch, first)?,
+                            second: section_skamp_circular_entity(definition, sketch, second)?,
                         }
                     }
                     (7, [first, second])
-                        if section_skamp_line_pair(definition, first, second).is_some() =>
+                        if section_skamp_line_pair(definition, sketch, first, second).is_some() =>
                     {
-                        let [first, second] = section_skamp_line_pair(definition, first, second)?;
+                        let [first, second] =
+                            section_skamp_line_pair(definition, sketch, first, second)?;
                         SketchConstraintDefinition::Parallel { first, second }
                     }
                     (8, [first, second])
-                        if section_skamp_line_pair(definition, first, second).is_some() =>
+                        if section_skamp_line_pair(definition, sketch, first, second).is_some() =>
                     {
-                        let [first, second] = section_skamp_line_pair(definition, first, second)?;
+                        let [first, second] =
+                            section_skamp_line_pair(definition, sketch, first, second)?;
                         SketchConstraintDefinition::Equal { first, second }
                     }
                     (9, [first, second])
@@ -9735,43 +9736,37 @@ fn section_skamp_constraints(
                             (second, first)
                         };
                         SketchConstraintDefinition::PointOnObject {
-                            point: section_skamp_locus(definition, point)?,
-                            entity: SketchEntityId(format!(
-                                "creo:featdefs:sketch_entity#{}:{}",
-                                definition.id, line.entity_id
-                            )),
+                            point: section_skamp_locus(definition, sketch, point)?,
+                            entity: sketch_entity_id(sketch, line.entity_id),
                         }
                     }
                     (14, [axis, first, second])
                         if axis.sense == 0
                             && section_skamp_is_line(definition, axis)
-                            && section_skamp_point_locus(definition, first).is_some()
-                            && section_skamp_point_locus(definition, second).is_some() =>
+                            && section_skamp_point_locus(definition, sketch, first).is_some()
+                            && section_skamp_point_locus(definition, sketch, second).is_some() =>
                     {
                         SketchConstraintDefinition::Symmetric {
-                            first: section_skamp_point_locus(definition, first)?,
-                            second: section_skamp_point_locus(definition, second)?,
-                            axis: SketchEntityId(format!(
-                                "creo:featdefs:sketch_entity#{}:{}",
-                                definition.id, axis.entity_id
-                            )),
+                            first: section_skamp_point_locus(definition, sketch, first)?,
+                            second: section_skamp_point_locus(definition, sketch, second)?,
+                            axis: sketch_entity_id(sketch, axis.entity_id),
                         }
                     }
                     (14, [center, first, second])
                         if center.sense == 0
                             && section_skamp_is_point(definition, center)
-                            && section_skamp_endpoint(definition, first).is_some()
-                            && section_skamp_endpoint(definition, second).is_some() =>
+                            && section_skamp_endpoint(definition, sketch, first).is_some()
+                            && section_skamp_endpoint(definition, sketch, second).is_some() =>
                     {
                         SketchConstraintDefinition::PointSymmetric {
-                            first: section_skamp_endpoint(definition, first)?,
-                            second: section_skamp_endpoint(definition, second)?,
-                            center: section_skamp_locus(definition, center)?,
+                            first: section_skamp_endpoint(definition, sketch, first)?,
+                            second: section_skamp_endpoint(definition, sketch, second)?,
+                            center: section_skamp_locus(definition, sketch, center)?,
                         }
                     }
                     (17, [_, _]) => {
                         if let Some((first, second, axis)) =
-                            section_skamp_same_coordinate(definition, skamp)
+                            section_skamp_same_coordinate(definition, sketch, skamp)
                         {
                             SketchConstraintDefinition::SameCoordinate {
                                 first,
@@ -9789,17 +9784,11 @@ fn section_skamp_constraints(
             };
             Some((
                 SketchConstraint {
-                    id: SketchConstraintId(if unique_skamp_id {
-                        format!(
-                            "creo:featdefs:sketch_constraint#{}:skamp:{}",
-                            definition.id, skamp.id
-                        )
+                    id: if unique_skamp_id {
+                        sketch_constraint_id(sketch, format_args!("skamp:{}", skamp.id))
                     } else {
-                        format!(
-                            "creo:featdefs:sketch_constraint#{}:skamp:offset:{}",
-                            definition.id, skamp.offset
-                        )
-                    }),
+                        sketch_constraint_id(sketch, format_args!("skamp:offset:{}", skamp.offset))
+                    },
                     sketch: sketch.clone(),
                     definition: constraint_definition,
                     name: None,
@@ -9811,7 +9800,7 @@ fn section_skamp_constraints(
                     label_distance: None,
                     label_position: None,
                     metadata: None,
-                    native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                    native_ref: Some(sketch_native_ref(sketch)),
                 },
                 skamp.offset,
             ))
@@ -9962,29 +9951,26 @@ fn unresolved_saved_section_entity(
     } else {
         format!("saved:offset:{offset}")
     };
-    let id = SketchEntityId(external_id.map_or_else(
+    let id = external_id.map_or_else(
         || match kind {
-            SavedSectionEntityKind::Spline => {
-                format!("creo:featdefs:saved_spline#{}:{suffix}", definition.id)
-            }
-            SavedSectionEntityKind::Dummy => {
-                format!("creo:featdefs:saved_dummy#{}:{suffix}", definition.id)
-            }
-            _ => format!("creo:featdefs:sketch_entity#{}:{suffix}", definition.id),
+            SavedSectionEntityKind::Spline => SketchEntityId(format!(
+                "creo:featdefs:saved_spline#{}:{suffix}",
+                sketch_identity_scope(sketch)
+            )),
+            SavedSectionEntityKind::Dummy => SketchEntityId(format!(
+                "creo:featdefs:saved_dummy#{}:{suffix}",
+                sketch_identity_scope(sketch)
+            )),
+            _ => sketch_entity_id(sketch, &suffix),
         },
-        |external_id| {
-            format!(
-                "creo:featdefs:sketch_entity#{}:{external_id}",
-                definition.id
-            )
-        },
-    ));
+        |external_id| sketch_entity_id(sketch, external_id),
+    );
     (
         SketchEntity {
             id,
             sketch: sketch.clone(),
             construction: true,
-            native_ref: Some(feature_sketch_record_id(definition)),
+            native_ref: Some(sketch_native_ref(sketch)),
             geometry_ref: None,
             endpoint_refs: Vec::new(),
             geometry: SketchGeometry::Native {
@@ -10036,13 +10022,14 @@ fn section_segment_identity_suffix(
 
 fn resolved_profile_chains(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     emitted: &BTreeSet<u32>,
 ) -> Vec<Vec<SketchEntityUse>> {
     let Some(table) = &definition.trim_entities else {
-        return resolved_segment_profile_chains(definition, emitted);
+        return resolved_segment_profile_chains(definition, sketch, emitted);
     };
     if !table.has_complete_bucket_frame() || !table.has_unique_external_ids() {
-        return resolved_segment_profile_chains(definition, emitted);
+        return resolved_segment_profile_chains(definition, sketch, emitted);
     }
     let rows = table
         .rows
@@ -10134,10 +10121,7 @@ fn resolved_profile_chains(
                         && segment.arc_orientation == Some(0)
                 });
             profile.push(SketchEntityUse {
-                entity: SketchEntityId(format!(
-                    "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id, external_id
-                )),
+                entity: sketch_entity_id(sketch, external_id),
                 reversed: row_reversed ^ arc_orientation_reversed,
             });
             vertex = if row_reversed {
@@ -10161,6 +10145,7 @@ fn resolved_profile_chains(
 
 fn resolved_segment_profile_chains(
     definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
     emitted: &BTreeSet<u32>,
 ) -> Vec<Vec<SketchEntityUse>> {
     let Some(table) = definition
@@ -10244,10 +10229,7 @@ fn resolved_segment_profile_chains(
             let analytic_reversed = segment.kind == crate::feature::FeatureSegmentKind::Arc
                 && segment.arc_orientation == Some(0);
             profile.push(SketchEntityUse {
-                entity: SketchEntityId(format!(
-                    "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id, segment.external_id
-                )),
+                entity: sketch_entity_id(sketch, segment.external_id),
                 reversed: traversal_reversed ^ analytic_reversed,
             });
             point = if traversal_reversed {
@@ -10266,11 +10248,14 @@ fn resolved_segment_profile_chains(
 
 fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     for definition in &scan.feature_definitions {
-        if unique_feature_definition(&scan.feature_definitions, definition.id).is_none() {
-            continue;
-        }
-        let transform =
-            unique_feature_section_transform(&scan.feature_section_transforms, definition.id);
+        let unique_definition =
+            unique_feature_definition(&scan.feature_definitions, definition.id).is_some();
+        let transform = unique_definition
+            .then(|| {
+                unique_feature_section_transform(&scan.feature_section_transforms, definition.id)
+            })
+            .flatten();
+        let sketch_id = model_sketch_id(scan, definition);
         let segments = section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(definition);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
@@ -10321,14 +10306,11 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             })
             .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
-        let mut profiles = resolved_profile_chains(definition, &emitted);
+        let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let profile_segments = segments
             .iter()
             .filter(|segment| {
-                let id = SketchEntityId(format!(
-                    "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id, segment.external_id
-                ));
+                let id = sketch_entity_id(&sketch_id, segment.external_id);
                 profiles
                     .iter()
                     .flatten()
@@ -10336,7 +10318,6 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             })
             .map(|segment| segment.external_id)
             .collect::<BTreeSet<_>>();
-        let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
         let mut entities = segments
             .iter()
             .filter_map(|segment| {
@@ -10352,11 +10333,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 } else {
                     resolved_section_segment_geometry(definition, &points, segment)?
                 };
-                let id = SketchEntityId(format!(
-                    "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id,
-                    section_segment_identity_suffix(&unique_segment_ids, segment)
-                ));
+                let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+                let id = sketch_entity_id(&sketch_id, &suffix);
                 annotate(
                     annotations,
                     &id.0,
@@ -10375,12 +10353,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     construction: !unique_segment_ids.contains(&segment.external_id)
                         || (!solved.contains(&segment.external_id)
                             && !profile_segments.contains(&segment.external_id)),
-                    native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
-                    geometry_ref: Some(format!(
-                        "creo:featdefs:section_curve#{}:{}",
-                        definition.id,
-                        section_segment_identity_suffix(&unique_segment_ids, segment)
-                    )),
+                    native_ref: Some(sketch_native_ref(&sketch_id)),
+                    geometry_ref: Some(sketch_section_curve_id(&sketch_id, suffix)),
                     endpoint_refs: match segment.kind {
                         crate::feature::FeatureSegmentKind::Arc => {
                             vec![segment.point_ids[1], segment.point_ids[0]]
@@ -10389,7 +10363,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                         crate::feature::FeatureSegmentKind::Point => vec![segment.point_ids[0]],
                     }
                     .into_iter()
-                    .map(|point| format!("creo:featdefs:sketch#{}:point#{point}", definition.id))
+                    .map(|point| sketch_point_ref(&sketch_id, point))
                     .collect(),
                     geometry,
                 })
@@ -10399,11 +10373,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .iter()
             .filter(|segment| !resolved_segment_offsets.contains(&segment.offset))
         {
-            let id = SketchEntityId(format!(
-                "creo:featdefs:sketch_entity#{}:{}",
-                definition.id,
-                section_segment_identity_suffix(&unique_segment_ids, segment)
-            ));
+            let id = sketch_entity_id(
+                &sketch_id,
+                section_segment_identity_suffix(&unique_segment_ids, segment),
+            );
             annotate(
                 annotations,
                 &id.0,
@@ -10416,7 +10389,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 id,
                 sketch: sketch_id.clone(),
                 construction: true,
-                native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                native_ref: Some(sketch_native_ref(&sketch_id)),
                 geometry_ref: None,
                 endpoint_refs: match segment.kind {
                     crate::feature::FeatureSegmentKind::Arc => {
@@ -10426,7 +10399,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     crate::feature::FeatureSegmentKind::Point => vec![segment.point_ids[0]],
                 }
                 .into_iter()
-                .map(|point| format!("creo:featdefs:sketch#{}:point#{point}", definition.id))
+                .map(|point| sketch_point_ref(&sketch_id, point))
                 .collect(),
                 geometry: SketchGeometry::Native {
                     native_kind: match segment.kind {
@@ -10449,10 +10422,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             } else {
                 format!("opaque:offset:{}", segment.offset)
             };
-            let id = SketchEntityId(format!(
-                "creo:featdefs:sketch_entity#{}:{suffix}",
-                definition.id
-            ));
+            let id = sketch_entity_id(&sketch_id, suffix);
             annotate(
                 annotations,
                 &id.0,
@@ -10465,7 +10435,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 id,
                 sketch: sketch_id.clone(),
                 construction: true,
-                native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                native_ref: Some(sketch_native_ref(&sketch_id)),
                 geometry_ref: None,
                 endpoint_refs: Vec::new(),
                 geometry: SketchGeometry::Native {
@@ -10503,10 +10473,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             } else {
                 format!("saved:offset:{offset}")
             };
-            let entity_id = SketchEntityId(format!(
-                "creo:featdefs:sketch_entity#{}:{suffix}",
-                definition.id
-            ));
+            let entity_id = sketch_entity_id(&sketch_id, &suffix);
             if entities.iter().any(|entity| entity.id == entity_id) {
                 continue;
             }
@@ -10526,10 +10493,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     &scan.surface_rows,
                 )
             });
-            let curve_id = CurveId(format!(
-                "creo:featdefs:section_curve#{}:{suffix}",
-                definition.id
-            ));
+            let curve_id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
             annotate(
                 annotations,
                 &entity_id.0,
@@ -10545,7 +10509,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 id: entity_id,
                 sketch: sketch_id.clone(),
                 construction: !generated,
-                native_ref: Some(format!("creo:featdefs:saved_entity#{internal_id}")),
+                native_ref: Some(format!(
+                    "{}:saved_entity#{internal_id}",
+                    sketch_native_ref(&sketch_id)
+                )),
                 geometry_ref: Some(curve_id.0.clone()),
                 endpoint_refs: Vec::new(),
                 geometry: geometry.clone(),
@@ -10596,18 +10563,18 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     &scan.surface_rows,
                 )
             });
-            let entity_id = SketchEntityId(external_id.map_or_else(
-                || format!("creo:featdefs:saved_spline#{}:{suffix}", definition.id),
-                |external_id| {
-                    format!(
-                        "creo:featdefs:sketch_entity#{}:{external_id}",
-                        definition.id
-                    )
+            let entity_id = external_id.map_or_else(
+                || {
+                    SketchEntityId(format!(
+                        "creo:featdefs:saved_spline#{}:{suffix}",
+                        sketch_identity_scope(&sketch_id)
+                    ))
                 },
-            ));
+                |external_id| sketch_entity_id(&sketch_id, external_id),
+            );
             let curve_id = CurveId(format!(
                 "creo:featdefs:saved_spline_curve#{}:{suffix}",
-                definition.id
+                sketch_identity_scope(&sketch_id)
             ));
             if entities.iter().any(|entity| entity.id == entity_id) {
                 continue;
@@ -10642,7 +10609,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 id: entity_id,
                 sketch: sketch_id.clone(),
                 construction: !generated,
-                native_ref: Some(format!("creo:featdefs:saved_spline#{suffix}")),
+                native_ref: Some(format!(
+                    "{}:saved_spline#{suffix}",
+                    sketch_native_ref(&sketch_id)
+                )),
                 geometry_ref: Some(curve_id.0.clone()),
                 endpoint_refs: Vec::new(),
                 geometry: geometry.clone(),
@@ -10677,7 +10647,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             entities.push(entity);
         }
         profiles.extend(saved_profile_chains(
-            definition.id,
+            &sketch_id,
             &generated_saved_geometries,
         ));
         if entities.is_empty() {
@@ -10694,11 +10664,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 else {
                     continue;
                 };
-                let id = CurveId(format!(
-                    "creo:featdefs:section_curve#{}:{}",
-                    definition.id,
-                    section_segment_identity_suffix(&unique_segment_ids, segment)
-                ));
+                let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+                let id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
                 if ir.model.curves.iter().any(|existing| existing.id == id) {
                     continue;
                 }
@@ -10716,9 +10683,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     source_object: Some(SourceObjectAssociation {
                         format: "creo".to_string(),
                         object_id: format!(
-                            "FeatDefs:section#{}:{}",
-                            definition.id,
-                            section_segment_identity_suffix(&unique_segment_ids, segment)
+                            "FeatDefs:section#{}:{suffix}",
+                            sketch_identity_scope(&sketch_id)
                         ),
                         name: None,
                         color: None,
@@ -10753,7 +10719,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                         object_id: external_id.map_or_else(
                             || format!("FeatDefs:saved_entity#{internal_id}"),
                             |external_id| {
-                                format!("FeatDefs:section#{}:{external_id}", definition.id)
+                                format!(
+                                    "FeatDefs:section#{}:{external_id}",
+                                    sketch_identity_scope(&sketch_id)
+                                )
                             },
                         ),
                         name: None,
@@ -10772,22 +10741,15 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         let mut constraints = segments
             .iter()
             .filter_map(|segment| {
-                let entity = SketchEntityId(format!(
-                    "creo:featdefs:sketch_entity#{}:{}",
-                    definition.id,
-                    section_segment_identity_suffix(&unique_segment_ids, segment)
-                ));
+                let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
+                let entity = sketch_entity_id(&sketch_id, &suffix);
                 let mut constraint_definition = line_orientation_definition(segment, entity)?;
                 reconcile_constraint_entity_references(
                     &mut constraint_definition,
                     &emitted_entity_ids,
                 )
                 .then_some(())?;
-                let id = SketchConstraintId(format!(
-                    "creo:featdefs:sketch_constraint#{}:verhor:{}",
-                    definition.id,
-                    section_segment_identity_suffix(&unique_segment_ids, segment)
-                ));
+                let id = sketch_constraint_id(&sketch_id, format_args!("verhor:{suffix}"));
                 annotate(
                     annotations,
                     &id.0,
@@ -10809,7 +10771,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     label_distance: None,
                     label_position: None,
                     metadata: None,
-                    native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+                    native_ref: Some(sketch_native_ref(&sketch_id)),
                 })
             })
             .collect::<Vec<_>>();
@@ -10887,12 +10849,15 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 },
             ),
             profiles,
-            native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+            native_ref: Some(sketch_native_ref(&sketch_id)),
         });
-        if owned_section_feature_id(scan, definition.id).is_some() {
+        if unique_definition && owned_section_feature_id(scan, definition.id).is_some() {
             continue;
         }
-        let feature_id = IrFeatureId(format!("creo:model:sketch_feature#{}", definition.id));
+        let feature_id = IrFeatureId(format!(
+            "creo:model:sketch_feature#{}",
+            sketch_identity_scope(&sketch_id)
+        ));
         annotate(
             annotations,
             &feature_id.0,
@@ -10915,9 +10880,9 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             outputs: Vec::new(),
             definition: IrFeatureDefinition::Sketch {
                 space: SketchSpace::Planar,
-                sketch: Some(sketch_id),
+                sketch: Some(sketch_id.clone()),
             },
-            native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
+            native_ref: Some(sketch_native_ref(&sketch_id)),
         });
     }
 }
@@ -15870,7 +15835,7 @@ mod resolved_sketch_tests {
         );
         let (native_entity, offset) = unresolved_saved_section_entity(
             &incomplete,
-            &SketchId("sketch".into()),
+            &SketchId("creo:model:sketch#5".into()),
             &incomplete
                 .saved_section
                 .as_ref()
@@ -15978,7 +15943,11 @@ mod resolved_sketch_tests {
                 )]
         ));
         assert_eq!(
-            relation_incidence_entities(&constrained, 7),
+            relation_incidence_entities(
+                &constrained,
+                &SketchId("creo:model:sketch#5".to_string()),
+                7,
+            ),
             vec![SketchEntityId(
                 "creo:featdefs:sketch_entity#5:42".to_string()
             )]
@@ -16139,7 +16108,8 @@ mod resolved_sketch_tests {
             ),
         ];
 
-        let profiles = saved_profile_chains(917, &geometries);
+        let profiles =
+            saved_profile_chains(&SketchId("creo:model:sketch#917".to_string()), &geometries);
 
         assert_eq!(profiles.len(), 2);
         assert_eq!(
@@ -17279,7 +17249,8 @@ mod resolved_sketch_tests {
             resolved_section_radii(&saved_radius_definition),
             BTreeMap::from([(101, 4.0)])
         );
-        let constraints = section_skamp_constraints(&definition, &SketchId("sketch".into()));
+        let constraints =
+            section_skamp_constraints(&definition, &SketchId("creo:model:sketch#917".into()));
         let mut point_symmetry = definition.clone();
         point_symmetry.relations.as_mut().expect("relations").skamps =
             vec![crate::feature::FeatureSkamp {
@@ -17315,9 +17286,10 @@ mod resolved_sketch_tests {
             });
         synchronize_skamp_count(&mut point_symmetry);
         assert_eq!(
-            section_skamp_constraints(&point_symmetry, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_skamp_constraints(&point_symmetry, &SketchId("creo:model:sketch#917".into()))
+                [0]
+            .0
+            .definition,
             SketchConstraintDefinition::PointSymmetric {
                 first: SketchLocus::Start(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
@@ -17346,8 +17318,10 @@ mod resolved_sketch_tests {
             .as_mut()
             .expect("segments")
             .declared_count += 1;
-        let incomplete_constraints =
-            section_skamp_constraints(&incomplete_segments, &SketchId("sketch".into()));
+        let incomplete_constraints = section_skamp_constraints(
+            &incomplete_segments,
+            &SketchId("creo:model:sketch#917".into()),
+        );
         assert!(matches!(
             incomplete_constraints[0].0.definition,
             SketchConstraintDefinition::Horizontal { .. }
@@ -17365,7 +17339,7 @@ mod resolved_sketch_tests {
             .items[0]
             .sense = 2;
         assert!(matches!(
-            section_skamp_constraints(&locus_orientation, &SketchId("sketch".into()))[0]
+            section_skamp_constraints(&locus_orientation, &SketchId("creo:model:sketch#917".into()))[0]
                 .0
                 .definition,
             SketchConstraintDefinition::Native {
@@ -17399,7 +17373,7 @@ mod resolved_sketch_tests {
             "offset:500"
         );
         assert!(matches!(
-            section_skamp_constraints(&duplicate_entity, &SketchId("sketch".into()))[0]
+            section_skamp_constraints(&duplicate_entity, &SketchId("creo:model:sketch#917".into()))[0]
                 .0
                 .definition,
             SketchConstraintDefinition::Native {
@@ -17458,7 +17432,7 @@ mod resolved_sketch_tests {
             .skamps
             .push(redundant);
         let equivalent_constraints =
-            section_skamp_constraints(&equivalent_skamp, &SketchId("sketch".into()));
+            section_skamp_constraints(&equivalent_skamp, &SketchId("creo:model:sketch#917".into()));
         assert_eq!(
             equivalent_constraints[0].0.definition,
             equivalent_constraints
@@ -17485,8 +17459,10 @@ mod resolved_sketch_tests {
             .expect("relations")
             .skamps
             .push(duplicate);
-        let duplicate_constraints =
-            section_skamp_constraints(&duplicate_skamp_id, &SketchId("sketch".into()));
+        let duplicate_constraints = section_skamp_constraints(
+            &duplicate_skamp_id,
+            &SketchId("creo:model:sketch#917".into()),
+        );
         assert!(matches!(
             duplicate_constraints[0].0.definition,
             SketchConstraintDefinition::Native { .. }
@@ -17554,9 +17530,12 @@ mod resolved_sketch_tests {
             .skamps[4]
             .items = center_items;
         assert_eq!(
-            section_skamp_constraints(&center_coincidence, &SketchId("sketch".into()))[4]
-                .0
-                .definition,
+            section_skamp_constraints(
+                &center_coincidence,
+                &SketchId("creo:model:sketch#917".into())
+            )[4]
+            .0
+            .definition,
             SketchConstraintDefinition::CoincidentLoci {
                 loci: vec![
                     SketchLocus::Center(SketchEntityId(
@@ -17660,9 +17639,12 @@ mod resolved_sketch_tests {
             .items
             .reverse();
         assert_eq!(
-            section_skamp_constraints(&reversed_point_on_line, &SketchId("sketch".into()))[9]
-                .0
-                .definition,
+            section_skamp_constraints(
+                &reversed_point_on_line,
+                &SketchId("creo:model:sketch#917".into())
+            )[9]
+            .0
+            .definition,
             constraints[9].0.definition
         );
         let mut line_type_three = definition.clone();
@@ -17674,9 +17656,10 @@ mod resolved_sketch_tests {
             .items[0]
             .entity_id = 12;
         assert_eq!(
-            section_skamp_constraints(&line_type_three, &SketchId("sketch".into()))[8]
-                .0
-                .definition,
+            section_skamp_constraints(&line_type_three, &SketchId("creo:model:sketch#917".into()))
+                [8]
+            .0
+            .definition,
             SketchConstraintDefinition::PointOnObject {
                 point: SketchLocus::Center(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:13".to_string()
@@ -17745,7 +17728,10 @@ mod resolved_sketch_tests {
             .points
             .clear();
         assert_eq!(
-            section_skamp_constraints(&unsolved_same_coordinate, &SketchId("sketch".into()))[14]
+            section_skamp_constraints(
+                &unsolved_same_coordinate,
+                &SketchId("creo:model:sketch#917".into())
+            )[14]
                 .0
                 .definition,
             constraints[14].0.definition
@@ -17757,7 +17743,10 @@ mod resolved_sketch_tests {
             .skamps[14]
             .flags = 0;
         assert!(matches!(
-            section_skamp_constraints(&unsolved_same_coordinate, &SketchId("sketch".into()))[14]
+            section_skamp_constraints(
+                &unsolved_same_coordinate,
+                &SketchId("creo:model:sketch#917".into())
+            )[14]
                 .0
                 .definition,
             SketchConstraintDefinition::Native { .. }
@@ -17770,7 +17759,10 @@ mod resolved_sketch_tests {
             .skamps[14]
             .flags = 1;
         assert!(matches!(
-            section_skamp_constraints(&conflicting_same_coordinate, &SketchId("sketch".into()))[14]
+            section_skamp_constraints(
+                &conflicting_same_coordinate,
+                &SketchId("creo:model:sketch#917".into())
+            )[14]
                 .0
                 .definition,
             SketchConstraintDefinition::Native { .. }
@@ -17802,9 +17794,12 @@ mod resolved_sketch_tests {
             .skamps
             .clear();
         assert_eq!(
-            section_dimension_constraints(&distance_definition, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &distance_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::VerticalDistance {
                 first: SketchLocus::Start(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
@@ -17847,8 +17842,10 @@ mod resolved_sketch_tests {
             .expect("skamp header")
             .declared_count = 1;
         assert_eq!(
-            section_dimension_constraints(&incidence_oriented_distance, &SketchId("sketch".into()))
-                [0]
+            section_dimension_constraints(
+                &incidence_oriented_distance,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
             .0
             .definition,
             SketchConstraintDefinition::HorizontalDistance {
@@ -17872,9 +17869,12 @@ mod resolved_sketch_tests {
             offset: 82,
         });
         assert!(matches!(
-            section_dimension_constraints(&incomplete_skamps, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &incomplete_skamps,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::Native { .. }
         ));
         let mut conflicting_orientation = incidence_oriented_distance.clone();
@@ -17902,9 +17902,12 @@ mod resolved_sketch_tests {
             .expect("skamp header")
             .declared_count = 2;
         assert!(matches!(
-            section_dimension_constraints(&conflicting_orientation, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &conflicting_orientation,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::Native { .. }
         ));
         let mut solver_definition = distance_definition.clone();
@@ -18001,9 +18004,12 @@ mod resolved_sketch_tests {
             .push(incident);
         synchronize_segment_count(&mut shared_vertex_definition);
         assert_eq!(
-            section_dimension_constraints(&shared_vertex_definition, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &shared_vertex_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::VerticalDistance {
                 first: SketchLocus::Start(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string()
@@ -18028,8 +18034,10 @@ mod resolved_sketch_tests {
             .expect("relations")
             .rows
             .push(duplicate);
-        let duplicate_constraints =
-            section_dimension_constraints(&duplicate_relation_id, &SketchId("sketch".into()));
+        let duplicate_constraints = section_dimension_constraints(
+            &duplicate_relation_id,
+            &SketchId("creo:model:sketch#917".into()),
+        );
         assert!(duplicate_constraints.iter().all(|(constraint, _)| matches!(
             constraint.definition,
             SketchConstraintDefinition::Native { .. }
@@ -18059,7 +18067,7 @@ mod resolved_sketch_tests {
         assert!(matches!(
             section_dimension_constraints(
                 &duplicate_measured_segment,
-                &SketchId("sketch".into())
+                &SketchId("creo:model:sketch#917".into())
             )[0]
                 .0
                 .definition,
@@ -18079,7 +18087,7 @@ mod resolved_sketch_tests {
         assert!(matches!(
             section_dimension_constraints(
                 &duplicate_measured_segment,
-                &SketchId("sketch".into())
+                &SketchId("creo:model:sketch#917".into())
             )[0]
                 .0
                 .definition,
@@ -18096,7 +18104,7 @@ mod resolved_sketch_tests {
             .rows[0]
             .value_unit = crate::feature::DimensionUnit::Radians;
         assert!(matches!(
-            section_dimension_constraints(&angular_distance, &SketchId("sketch".into()))[0]
+            section_dimension_constraints(&angular_distance, &SketchId("creo:model:sketch#917".into()))[0]
                 .0
                 .definition,
             SketchConstraintDefinition::Native {
@@ -18119,9 +18127,12 @@ mod resolved_sketch_tests {
             .rows
             .push(duplicate);
         assert_eq!(
-            section_dimension_constraints(&duplicate_dimension, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &duplicate_dimension,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::Native {
                 native_kind: "creo:relation:0".to_string(),
                 entities: Vec::new(),
@@ -18149,9 +18160,12 @@ mod resolved_sketch_tests {
             [Some(15), Some(0), Some(0), Some(0)],
         ]);
         assert_eq!(
-            section_dimension_constraints(&radius_definition, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &radius_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::Radius {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
                 parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
@@ -18166,7 +18180,7 @@ mod resolved_sketch_tests {
             .push(duplicate);
         synchronize_segment_count(&mut radius_definition);
         assert!(matches!(
-            section_dimension_constraints(&radius_definition, &SketchId("sketch".into()))[0]
+            section_dimension_constraints(&radius_definition, &SketchId("creo:model:sketch#917".into()))[0]
                 .0
                 .definition,
             SketchConstraintDefinition::Native {
@@ -18188,7 +18202,7 @@ mod resolved_sketch_tests {
             .rows[0]
             .value_unit = crate::feature::DimensionUnit::Radians;
         assert!(matches!(
-            section_dimension_constraints(&radius_definition, &SketchId("sketch".into()))[0]
+            section_dimension_constraints(&radius_definition, &SketchId("creo:model:sketch#917".into()))[0]
                 .0
                 .definition,
             SketchConstraintDefinition::Native {
@@ -18234,9 +18248,12 @@ mod resolved_sketch_tests {
             offset: 82,
         });
         assert_eq!(
-            section_dimension_constraints(&incidence_distance, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &incidence_distance,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::DistanceLoci {
                 first: SketchLocus::Entity(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string(),
@@ -18266,9 +18283,12 @@ mod resolved_sketch_tests {
             .items[0]
             .sense = 2;
         assert_eq!(
-            section_dimension_constraints(&incidence_distance, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &incidence_distance,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::DistanceLoci {
                 first: SketchLocus::Start(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:12".to_string(),
@@ -18290,7 +18310,7 @@ mod resolved_sketch_tests {
         assert_eq!(
             section_dimension_constraints(
                 &partially_resolved_incidence,
-                &SketchId("sketch".into())
+                &SketchId("creo:model:sketch#917".into())
             )[0]
             .0
             .definition,
@@ -18352,9 +18372,12 @@ mod resolved_sketch_tests {
             offset: 89,
         });
         assert_eq!(
-            section_dimension_constraints(&angular_dimension, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &angular_dimension,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::Angle {
                 first: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
                 second: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
@@ -18374,12 +18397,16 @@ mod resolved_sketch_tests {
                 offset: 92,
             });
         assert!(matches!(
-            section_dimension_constraints(&ambiguous_angle, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_dimension_constraints(
+                &ambiguous_angle,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::Native { .. }
         ));
-        let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));
+        let relations =
+            section_dimension_constraints(&definition, &SketchId("creo:model:sketch#917".into()));
         assert_eq!(
             relations[0].0.definition,
             SketchConstraintDefinition::Native {
@@ -18659,6 +18686,7 @@ mod resolved_sketch_tests {
         assert_eq!(
             section_skamp_endpoint(
                 &saved_definition,
+                &SketchId("creo:model:sketch#917".to_string()),
                 &crate::feature::FeatureSkampItem {
                     entity_id: 14,
                     sense: 3,
@@ -18718,9 +18746,10 @@ mod resolved_sketch_tests {
         }];
         synchronize_skamp_count(&mut saved_definition);
         assert_eq!(
-            section_skamp_constraints(&saved_definition, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_skamp_constraints(&saved_definition, &SketchId("creo:model:sketch#917".into()))
+                [0]
+            .0
+            .definition,
             SketchConstraintDefinition::Horizontal {
                 entity: SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             }
@@ -18949,9 +18978,12 @@ mod resolved_sketch_tests {
         }];
         synchronize_skamp_count(&mut saved_same_coordinate);
         assert_eq!(
-            section_skamp_constraints(&saved_same_coordinate, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_skamp_constraints(
+                &saved_same_coordinate,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
             SketchConstraintDefinition::SameCoordinate {
                 first: SketchLocus::Start(SketchEntityId(
                     "creo:featdefs:sketch_entity#917:99".to_string()
@@ -18978,9 +19010,10 @@ mod resolved_sketch_tests {
             .entities
             .push(duplicate_saved);
         assert!(matches!(
-            section_skamp_constraints(&saved_definition, &SketchId("sketch".into()))[0]
-                .0
-                .definition,
+            section_skamp_constraints(&saved_definition, &SketchId("creo:model:sketch#917".into()))
+                [0]
+            .0
+            .definition,
             SketchConstraintDefinition::Native { .. }
         ));
     }
@@ -19056,6 +19089,7 @@ mod resolved_sketch_tests {
         };
         let profiles = resolved_profile_chains(
             &definition,
+            &SketchId("creo:model:sketch#40".to_string()),
             &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
         );
         assert_eq!(profiles.len(), 1);
@@ -19075,6 +19109,7 @@ mod resolved_sketch_tests {
         });
         assert!(resolved_profile_chains(
             &incomplete,
+            &SketchId("creo:model:sketch#40".to_string()),
             &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
         )
         .is_empty());
@@ -19086,10 +19121,12 @@ mod resolved_sketch_tests {
             None
         );
 
-        assert!(
-            resolved_profile_chains(&definition, &BTreeSet::from([10_u32, 11_u32, 12_u32]))
-                .is_empty()
-        );
+        assert!(resolved_profile_chains(
+            &definition,
+            &SketchId("creo:model:sketch#40".to_string()),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32]),
+        )
+        .is_empty());
 
         let mut arcs = definition.clone();
         arcs.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
@@ -19134,7 +19171,11 @@ mod resolved_sketch_tests {
             opaque_rows: Vec::new(),
             offset: 4,
         });
-        let arc_profile = resolved_profile_chains(&arcs, &BTreeSet::from([10, 11]));
+        let arc_profile = resolved_profile_chains(
+            &arcs,
+            &SketchId("creo:model:sketch#40".to_string()),
+            &BTreeSet::from([10, 11]),
+        );
         assert_eq!(arc_profile.len(), 1);
         assert!(arc_profile[0].iter().all(|entity| entity.reversed));
 
@@ -19167,8 +19208,11 @@ mod resolved_sketch_tests {
             opaque_rows: Vec::new(),
             offset: 4,
         });
-        let segment_profile =
-            resolved_profile_chains(&segment_graph, &BTreeSet::from([10, 11, 12, 13, 20]));
+        let segment_profile = resolved_profile_chains(
+            &segment_graph,
+            &SketchId("creo:model:sketch#40".to_string()),
+            &BTreeSet::from([10, 11, 12, 13, 20]),
+        );
         assert_eq!(segment_profile.len(), 1);
         assert_eq!(segment_profile[0].len(), 4);
         assert!(!segment_profile[0][0].reversed);
