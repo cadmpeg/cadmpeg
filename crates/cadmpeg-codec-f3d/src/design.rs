@@ -3096,7 +3096,7 @@ fn project_fixed_loft(
         .iter()
         .filter(|group| group.role == 0x4_0000_0000)
         .count();
-    let (profiles, guides) = match operation {
+    let (profiles, guides, centerline) = match operation {
         DesignExtrudeOperation::Join if body_count == 1 => (
             groups
                 .iter()
@@ -3104,6 +3104,7 @@ fn project_fixed_loft(
                 .map(|group| ProfileRef::Native(group.id.clone()))
                 .collect::<Vec<_>>(),
             Vec::new(),
+            None,
         ),
         DesignExtrudeOperation::NewBody if body_count == 0 => {
             let guided_profiles = groups
@@ -3112,14 +3113,22 @@ fn project_fixed_loft(
                 .map(|group| ProfileRef::Native(group.id.clone()))
                 .collect::<Vec<_>>();
             if guided_profiles.len() >= 2 {
-                (
-                    guided_profiles,
-                    groups
-                        .iter()
-                        .filter(|group| group.role == 0x5_0000_0000)
-                        .map(|group| cadmpeg_ir::features::PathRef::Native(group.id.clone()))
-                        .collect::<Vec<_>>(),
-                )
+                let guides = groups
+                    .iter()
+                    .filter(|group| group.role == 0x5_0000_0000)
+                    .map(|group| cadmpeg_ir::features::PathRef::Native(group.id.clone()))
+                    .collect::<Vec<_>>();
+                let centerlines = groups
+                    .iter()
+                    .filter(|group| group.role == 0x7_0000_0000)
+                    .map(|group| cadmpeg_ir::features::PathRef::Native(group.id.clone()))
+                    .collect::<Vec<_>>();
+                let centerline = match centerlines.as_slice() {
+                    [] => None,
+                    [centerline] if guides.is_empty() => Some(centerline.clone()),
+                    _ => return None,
+                };
+                (guided_profiles, guides, centerline)
             } else if guided_profiles.is_empty() {
                 let role = if groups.iter().all(|group| group.role == 0x41_0000_0000) {
                     0x41_0000_0000
@@ -3135,6 +3144,7 @@ fn project_fixed_loft(
                         .map(|group| ProfileRef::Native(group.id.clone()))
                         .collect::<Vec<_>>(),
                     Vec::new(),
+                    None,
                 )
             } else {
                 return None;
@@ -3142,12 +3152,16 @@ fn project_fixed_loft(
         }
         _ => return None,
     };
-    if profiles.len() < 2 || profiles.len() + guides.len() + body_count != groups.len() {
+    if profiles.len() < 2
+        || profiles.len() + guides.len() + usize::from(centerline.is_some()) + body_count
+            != groups.len()
+    {
         return None;
     }
     Some(FeatureDefinition::Loft {
         profiles,
         guides,
+        centerline,
         op: fixed_boolean_operation(*operation),
         closed: false,
     })
@@ -23554,6 +23568,27 @@ mod relation_tests {
             Some(cadmpeg_ir::features::FeatureDefinition::Loft { profiles, guides, .. })
                 if profiles.len() == 3 && guides.is_empty()
         ));
+        let centered = [
+            loft_group(0, 0x43_0000_0000),
+            loft_group(1, 0x43_0000_0000),
+            loft_group(2, 0x7_0000_0000),
+        ];
+        assert!(matches!(
+            super::project_fixed_loft(&loft_scope, &centered),
+            Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+                profiles,
+                guides,
+                centerline: Some(cadmpeg_ir::features::PathRef::Native(centerline)),
+                ..
+            }) if profiles.len() == 2 && guides.is_empty() && centerline == "stream:loft-group-2"
+        ));
+        let mixed = [
+            loft_group(0, 0x43_0000_0000),
+            loft_group(1, 0x43_0000_0000),
+            loft_group(2, 0x5_0000_0000),
+            loft_group(3, 0x7_0000_0000),
+        ];
+        assert_eq!(super::project_fixed_loft(&loft_scope, &mixed), None);
 
         let sweep_start = bytes.len();
         let mut sweep = vec![0; 499];

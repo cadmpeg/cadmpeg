@@ -1736,6 +1736,7 @@ fn encoder_writes_source_less_line_sketches() {
         FeatureDefinition::Loft {
             profiles: vec![profile.clone(), profile.clone()],
             guides: vec![path],
+            centerline: None,
             op: BooleanOp::NewBody,
             closed: false,
         },
@@ -11677,6 +11678,7 @@ fn semantic_writer_round_trips_typed_loft() {
         FeatureDefinition::Loft {
             profiles,
             guides,
+            centerline: None,
             op: BooleanOp::NewBody,
             closed: false,
         } if profiles == &vec![
@@ -11689,12 +11691,14 @@ fn semantic_writer_round_trips_typed_loft() {
     let FeatureDefinition::Loft {
         profiles,
         guides,
+        centerline,
         op,
         closed,
     } = &mut decoded.ir.model.features[5].definition
     else {
         panic!("typed loft");
     };
+    assert!(centerline.is_none());
     profiles.swap(0, 2);
     *guides = vec![PathRef::Native(refs[4].clone())];
     *op = BooleanOp::Join;
@@ -11733,6 +11737,7 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
         FeatureDefinition::Loft {
             ref profiles,
             ref guides,
+            centerline: None,
             op: BooleanOp::Unresolved,
             closed: false,
         } if profiles.is_empty() && guides.is_empty()
@@ -11786,6 +11791,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
         FeatureDefinition::Loft {
             profiles,
             guides,
+            centerline: None,
             op: BooleanOp::Join,
             closed: false,
         } if profiles == &vec![

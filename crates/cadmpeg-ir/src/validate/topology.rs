@@ -1854,10 +1854,15 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             FeatureDefinition::Loft {
                 profiles: values,
                 guides,
+                centerline,
                 ..
             } => {
                 profiles.extend(values);
                 paths.extend(guides);
+                paths.extend(centerline);
+                if centerline.is_some() && !guides.is_empty() {
+                    feature_geometry_error(findings, feature, "loft construction is invalid");
+                }
             }
             FeatureDefinition::Rib { construction, .. } => {
                 profiles.extend(&construction.profile);
@@ -3010,10 +3015,12 @@ fn check_feature_sketch_references(
             FeatureDefinition::Loft {
                 profiles: sections,
                 guides,
+                centerline,
                 ..
             } => {
                 profiles.extend(sections);
                 paths.extend(guides);
+                paths.extend(centerline);
             }
             FeatureDefinition::Pattern {
                 pattern:

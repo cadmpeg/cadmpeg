@@ -497,6 +497,9 @@ pub enum FeatureDefinition {
         /// Optional ordered guide trajectories.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         guides: Vec<PathRef>,
+        /// Optional centerline to which the loft sections remain normal.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        centerline: Option<PathRef>,
         /// Boolean combination with existing bodies.
         op: BooleanOp,
         /// Whether the loft closes from the last section to the first.

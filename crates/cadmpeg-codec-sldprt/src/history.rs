@@ -1782,6 +1782,7 @@ fn project_loft(
     Some(FeatureDefinition::Loft {
         profiles,
         guides: guides.into_iter().map(PathRef::Native).collect(),
+        centerline: None,
         op: feature
             .properties
             .get("Operation")
@@ -6338,6 +6339,7 @@ pub fn sync_neutral_features(
             FeatureDefinition::Loft {
                 profiles,
                 guides,
+                centerline,
                 op,
                 closed,
             } => {
@@ -6350,6 +6352,12 @@ pub fn sync_neutral_features(
                 if existing.is_none() && (profiles.len() < 2 || *op == BooleanOp::Unresolved) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has unresolved loft construction semantics",
+                        feature.id
+                    )));
+                }
+                if centerline.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unsupported loft centerline semantics",
                         feature.id
                     )));
                 }
