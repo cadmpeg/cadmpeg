@@ -906,9 +906,10 @@ A non-linear or schema-defined selected dimension does not define a neutral
 radius constraint.
 
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
-Positional rows may insert the two-byte `c0 80` wrapper before `type`. The
-wrapper does not change the following field layout. A compact `ext_id` value of
-zero is an identifier; the `f6` control sentinel represents an absent value.
+Positional rows may insert the two-byte `c0 80` or `c1 00` wrapper before
+`type`. The wrapper does not change the following field layout. A compact
+`ext_id` value of zero is an identifier; the `f6` control sentinel represents
+an absent value.
 The `c0 80` wrapper may also precede the named row's scalar `type`. Segment
 families other than types `2`, `3`, and `5` retain the same fields and count
 toward table completeness, but do not define line, arc, or point geometry.
@@ -1929,7 +1930,7 @@ when present, must equal the derived radius.
 
 When an `order_table` omission lies between adjacent stored `segtab` rows whose internal identifiers differ by two, the omitted row has the intervening internal identifier if a saved entity of the same family carries that identifier. For an evaluated saved line, if one `ent_tab` trim endpoint equals exactly one saved endpoint, the other saved endpoint determines the opposite trim endpoint. A line without an inline carrier is then determined by its two trim endpoints only when they satisfy its stored horizontal or vertical selector.
 
-The `segtab` positional replay stores `type`, three direction fields, two endpoint point identifiers, `cntrid`, `arcorient`, `verhor`, two radii, and `ext_id`. A raw `verhor` value of `f5` adds one field before `radius`.
+The `segtab` positional replay stores `type`, three direction fields, two endpoint point identifiers, `cntrid`, `arcorient`, `verhor`, two radii, and `ext_id`. Within each fixed-width field group, `e4` expands to one, `e5` expands to two zero values, `e6` expands to three zero values, and `f6` expands to one absent value. Expansion must end exactly at the field-group width. A raw `verhor` value of `f5` adds one field before `radius`.
 
 `segtab` and `ent_tab` compact identifiers may use `e3` as the tail byte of a two-byte compact integer. Such a tail is data, not a row delimiter. A `segtab` replay row is accepted only when its complete positional fields end at `e2`. An `ent_tab` replay row begins after a structural `e3`, ends with its zero field, and its external identifier joins a decoded `segtab` row.
 

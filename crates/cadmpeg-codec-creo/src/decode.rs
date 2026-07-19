@@ -29231,6 +29231,15 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
             .to_string(),
     );
     attributes.insert(
+        "decoded_feature_opaque_segment_count".to_string(),
+        scan.feature_definitions
+            .iter()
+            .filter_map(|definition| definition.segments.as_ref())
+            .map(|segments| segments.opaque_rows.len())
+            .sum::<usize>()
+            .to_string(),
+    );
+    attributes.insert(
         "decoded_feature_trim_entity_count".to_string(),
         scan.feature_definitions
             .iter()

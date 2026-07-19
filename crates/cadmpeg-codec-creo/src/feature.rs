@@ -1955,6 +1955,34 @@ fn next_nullable_segment_int(payload: &[u8], offset: &mut usize) -> Result<Optio
     next_segment_int(payload, offset).map(Some).ok_or(())
 }
 
+fn segment_slots(payload: &[u8], offset: &mut usize, count: usize) -> Option<Vec<Option<u32>>> {
+    let mut values = Vec::with_capacity(count);
+    while values.len() < count {
+        match *payload.get(*offset)? {
+            0xe4 => {
+                values.push(Some(1));
+                *offset += 1;
+            }
+            0xe5 => {
+                (values.len() + 2 <= count).then_some(())?;
+                values.extend([Some(0), Some(0)]);
+                *offset += 1;
+            }
+            0xe6 => {
+                (values.len() + 3 <= count).then_some(())?;
+                values.extend([Some(0), Some(0), Some(0)]);
+                *offset += 1;
+            }
+            0xf6 => {
+                values.push(None);
+                *offset += 1;
+            }
+            _ => values.push(Some(next_segment_int(payload, offset)?)),
+        }
+    }
+    Some(values)
+}
+
 /// Decode instantiated placement-instruction rows from one bounded feature
 /// definition.
 pub fn placement_instructions(definition: &FeatureDefinition) -> Vec<FeaturePlacementInstruction> {
@@ -2073,10 +2101,7 @@ fn segment_table_body(
         if label == b"type\0" && payload.get(p..p + 2) == Some(&[0xc0, 0x80]) {
             p += 2;
         }
-        let mut values = Vec::with_capacity(count);
-        for _ in 0..count {
-            values.push(next_segment_int(payload, &mut p));
-        }
+        let values = segment_slots(payload, &mut p, count)?;
         Some((offset, values))
     };
     let named_row = (|| {
@@ -2130,7 +2155,10 @@ fn segment_table_body(
     let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
     while cursor < region_end && rows.len() + opaque_rows.len() < row_limit {
         let row_start = cursor;
-        let kind_offset = if payload.get(cursor..cursor + 2) == Some(&[0xc0, 0x80]) {
+        let kind_offset = if matches!(
+            payload.get(cursor..cursor + 2),
+            Some([0xc0, 0x80] | [0xc1, 0x00])
+        ) {
             cursor + 2
         } else {
             cursor
@@ -2151,30 +2179,45 @@ fn segment_table_body(
             cursor += 1;
             continue;
         };
-        let directions = [
-            next_segment_int(payload, &mut p),
-            next_segment_int(payload, &mut p),
-            next_segment_int(payload, &mut p),
-        ];
-        let point0 = next_segment_int(payload, &mut p);
-        let point1 = next_segment_int(payload, &mut p);
-        let center_id = next_segment_int(payload, &mut p);
-        let arc_orientation = next_segment_int(payload, &mut p);
-        let verhor_flag = payload.get(p) == Some(&0xf5);
-        let vertical_horizontal = next_segment_int(payload, &mut p);
-        if verhor_flag {
-            let _ = next_segment_int(payload, &mut p);
-        }
-        let radius_ref = next_segment_int(payload, &mut p);
-        let radius2_ref = next_segment_int(payload, &mut p);
-        let Some(external_id) = next_segment_int(payload, &mut p) else {
+        let Some(prefix) = segment_slots(payload, &mut p, 7)
+            .and_then(|values| <[Option<u32>; 7]>::try_from(values).ok())
+        else {
             cursor += 1;
             continue;
         };
-        if payload.get(p) == Some(&0xe2)
-            && point0.is_none_or(|point| point < 256)
-            && point1.is_none_or(|point| point < 256)
-        {
+        let directions = [prefix[0], prefix[1], prefix[2]];
+        let point0 = prefix[3];
+        let point1 = prefix[4];
+        let center_id = prefix[5];
+        let arc_orientation = prefix[6];
+        let verhor_flag = payload.get(p) == Some(&0xf5);
+        let vertical_horizontal = if verhor_flag {
+            p += 1;
+            if segment_slots(payload, &mut p, 1).is_none() {
+                cursor += 1;
+                continue;
+            }
+            None
+        } else {
+            let Some(values) = segment_slots(payload, &mut p, 1) else {
+                cursor += 1;
+                continue;
+            };
+            values[0]
+        };
+        let Some(suffix) = segment_slots(payload, &mut p, 3)
+            .and_then(|values| <[Option<u32>; 3]>::try_from(values).ok())
+        else {
+            cursor += 1;
+            continue;
+        };
+        let radius_ref = suffix[0];
+        let radius2_ref = suffix[1];
+        let Some(external_id) = suffix[2] else {
+            cursor += 1;
+            continue;
+        };
+        if payload.get(p) == Some(&0xe2) {
             retain_segment_row(
                 FeatureOpaqueSegment {
                     kind,
@@ -7111,7 +7154,7 @@ mod tests {
         assert!(segments.rows.is_empty());
         assert_eq!(segments.opaque_rows.len(), 2);
         assert_eq!(segments.opaque_rows[0].kind, 1);
-        assert_eq!(segments.opaque_rows[0].point_ids, [None, None]);
+        assert_eq!(segments.opaque_rows[0].point_ids, [None, Some(1)]);
         assert_eq!(segments.opaque_rows[0].external_id, 4);
         assert_eq!(segments.opaque_rows[1].kind, 25);
         assert_eq!(segments.opaque_rows[1].point_ids, [Some(10), Some(11)]);
@@ -7126,6 +7169,23 @@ mod tests {
         assert!(!segments.is_complete());
         assert!(segments.rows.is_empty());
         assert!(segments.opaque_rows.is_empty());
+    }
+
+    #[test]
+    fn segment_rows_expand_compact_slots_and_accept_the_c1_type_wrapper() {
+        let payload = [
+            0xf8, 1, 0xf7, 1, 0xfb, 0xe2, 0xf2, 0xf7, 1, 0xe2, 0xc1, 0x00, 2, 0xe5, 0xe4, 9, 11,
+            0xf6, 3, 0, 0xe6, 0xe2,
+        ];
+
+        let segments = segment_table_body(&payload, 0, 0, payload.len()).expect("segment table");
+
+        assert!(segments.is_complete());
+        assert_eq!(segments.rows.len(), 1);
+        assert_eq!(segments.rows[0].kind, FeatureSegmentKind::Line);
+        assert_eq!(segments.rows[0].directions, [Some(0), Some(0), Some(1)]);
+        assert_eq!(segments.rows[0].point_ids, [9, 11]);
+        assert_eq!(segments.rows[0].external_id, 0);
     }
 
     #[test]
