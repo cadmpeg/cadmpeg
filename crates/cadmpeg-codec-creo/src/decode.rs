@@ -12903,7 +12903,7 @@ fn schema_feature_definition(
             };
         }
     }
-    if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude) {
+    if section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id)) {
         let transforms = scan
             .feature_section_transforms
             .iter()
@@ -12975,6 +12975,13 @@ fn schema_feature_definition(
         parameters: feature_parameters(scan, feature_id),
         properties: BTreeMap::new(),
     }
+}
+
+fn section_sweep_allows_linear_extrusion(
+    schema_class: u32,
+    recipe: Option<crate::feature::FeatureRecipeKind>,
+) -> bool {
+    matches!(schema_class, 916 | 917) && recipe != Some(crate::feature::FeatureRecipeKind::Revolve)
 }
 
 fn preceding_features_establish_body(ir: &CadIr) -> bool {
@@ -14526,6 +14533,17 @@ mod resolved_sketch_tests {
                 [0.0, -1.0, 0.0]
             ))
         );
+    }
+
+    #[test]
+    fn cap_proof_classifies_section_sweeps_without_overriding_revolves() {
+        use crate::feature::FeatureRecipeKind::{Extrude, Revolve};
+
+        assert!(section_sweep_allows_linear_extrusion(916, None));
+        assert!(section_sweep_allows_linear_extrusion(917, None));
+        assert!(section_sweep_allows_linear_extrusion(917, Some(Extrude)));
+        assert!(!section_sweep_allows_linear_extrusion(917, Some(Revolve)));
+        assert!(!section_sweep_allows_linear_extrusion(923, None));
     }
 
     #[test]
