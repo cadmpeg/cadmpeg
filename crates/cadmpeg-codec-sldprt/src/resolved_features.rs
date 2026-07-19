@@ -668,8 +668,8 @@ mod marker_tests {
             (24, 0.25),
             (32, 0.6),
             (40, 0.1),
-            (48, 0.5),
-            (56, 0.5),
+            (48, 0.0),
+            (56, -0.5),
             (64, 0.0),
             (72, 1.0),
             (80, 0.0),
@@ -6273,6 +6273,8 @@ pub(crate) fn enrich_history_reference_axes(
 fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
     const NATIVE_TO_IR: f64 = 1000.0;
     const UNIT_TOLERANCE: f64 = 1.0e-9;
+    const ORIGIN_ZERO_TOLERANCE_MM: f64 = 1.0e-9;
+    const DIRECTION_ZERO_TOLERANCE: f64 = 1.0e-12;
 
     let scalar = |bytes: &[u8], offset: usize| {
         let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
@@ -6295,9 +6297,6 @@ fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
                 .sqrt();
             if delta_length <= 1.0e-12
                 || (direction_length - 1.0).abs() > UNIT_TOLERANCE
-                || first_extent <= 0.0
-                || second_extent <= 0.0
-                || !same_dimension_length(first_extent, second_extent)
                 || [first.x, first.y, first.z, second.x, second.y, second.z]
                     .into_iter()
                     .any(|value| value.abs() > 1.0e6)
@@ -6315,25 +6314,40 @@ fn explicit_reference_axis_frame(payload: &[u8]) -> Option<(Point3, Vector3)> {
                 return None;
             }
             let projection = first.x * direction.x + first.y * direction.y + first.z * direction.z;
-            let canonical_zero = |value: f64| if value == 0.0 { 0.0 } else { value };
             let origin = Point3::new(
                 (first.x - projection * direction.x) * NATIVE_TO_IR,
                 (first.y - projection * direction.y) * NATIVE_TO_IR,
                 (first.z - projection * direction.z) * NATIVE_TO_IR,
             );
+            let canonical_zero =
+                |value: f64, tolerance: f64| if value.abs() <= tolerance { 0.0 } else { value };
+            let layout_rank = usize::from(
+                first_extent <= 0.0
+                    || second_extent <= 0.0
+                    || !same_dimension_length(first_extent, second_extent),
+            );
             Some((
-                Point3::new(
-                    canonical_zero(origin.x),
-                    canonical_zero(origin.y),
-                    canonical_zero(origin.z),
-                ),
-                Vector3::new(
-                    canonical_zero(direction.x),
-                    canonical_zero(direction.y),
-                    canonical_zero(direction.z),
+                layout_rank,
+                (
+                    Point3::new(
+                        canonical_zero(origin.x, ORIGIN_ZERO_TOLERANCE_MM),
+                        canonical_zero(origin.y, ORIGIN_ZERO_TOLERANCE_MM),
+                        canonical_zero(origin.z, ORIGIN_ZERO_TOLERANCE_MM),
+                    ),
+                    Vector3::new(
+                        canonical_zero(direction.x, DIRECTION_ZERO_TOLERANCE),
+                        canonical_zero(direction.y, DIRECTION_ZERO_TOLERANCE),
+                        canonical_zero(direction.z, DIRECTION_ZERO_TOLERANCE),
+                    ),
                 ),
             ))
         })
+        .collect::<Vec<_>>();
+    let best_rank = candidates.iter().map(|(rank, _)| *rank).min()?;
+    candidates.retain(|(rank, _)| *rank == best_rank);
+    let mut candidates = candidates
+        .into_iter()
+        .map(|(_, frame)| frame)
         .collect::<Vec<_>>();
     candidates.sort_by_key(|(origin, direction)| {
         [
