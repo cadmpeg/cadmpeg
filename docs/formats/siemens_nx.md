@@ -838,6 +838,8 @@ is retained, so the neutral retained side is unresolved.
 
 A `DELETE` operation projects as a neutral delete-selected-bodies feature. Its primary-body field is the selected body, not an output. A uniquely bound body image resolves the selection; an absent or ambiguous binding leaves the selection unresolved.
 
+A `TEXT` operation with exactly two payload strings projects the first string as a text semantic annotation and the second as its font family. The owning ordered feature is a non-modeling annotation node and retains the operation record as its native identity.
+
 Bodies named by validated segment binding tuples exist at the start of retained feature history. A `DELETE` primary-body field consumes the selected body image and never establishes a writer. A `SEW` or `TRIM BODY` body operand consumes that body image when the body's latest decoded writer precedes the operation. Boolean tool operands follow the same ordering rule. A later writer supersedes earlier consumption. Terminal body selection is applied only when every emitted partition has one unambiguous terminal status and at least one, but not every, emitted body remains terminal.
 
 An `OFFSET` operation projects as a neutral surface-offset feature. Exactly one

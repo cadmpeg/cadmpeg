@@ -3063,6 +3063,24 @@ fn nx_named_operation_families_preserve_unresolved_semantics() {
     ));
     assert!(matches!(
         crate::decode::non_boolean_feature_definition(
+            "TEXT",
+            &["annotation", "Arial"],
+            None,
+            None,
+            None,
+        ),
+        cadmpeg_ir::features::FeatureDefinition::TreeNode {
+            role: cadmpeg_ir::features::FeatureTreeNodeRole::Annotations,
+            ref children,
+            active_child: None,
+        } if children.is_empty()
+    ));
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition("TEXT", &["annotation"], None, None, None),
+        cadmpeg_ir::features::FeatureDefinition::Native { .. }
+    ));
+    assert!(matches!(
+        crate::decode::non_boolean_feature_definition(
             "BLOCK",
             &[],
             Some([10.0, 20.0, 30.0]),

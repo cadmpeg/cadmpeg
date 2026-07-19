@@ -11576,6 +11576,13 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
     match kind {
         "DATUM_PLANE" => FeatureDefinition::DatumPlaneUnresolved,
         "DATUM_CSYS" => FeatureDefinition::DatumCoordinateSystemUnresolved,
+        "TEXT" if matches!(payload_strings, [text, font] if !text.is_empty() && !font.is_empty()) => {
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::Annotations,
+                children: Vec::new(),
+                active_child: None,
+            }
+        }
         "BLOCK" => FeatureDefinition::Block {
             dimensions: None,
             placement: None,
