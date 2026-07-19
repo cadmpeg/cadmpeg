@@ -945,6 +945,12 @@ and sketch identities; their parameter rows use occurrence-qualified identities
 in source order. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
+The positional `value` lane uses the positive DICT lattice `5b..a3`; the first
+two IEEE bytes are `3F75 + prefix` and the following six bytes complete the
+value; `ad` is an alias for leading bytes `3F D9`. A bare `18` value is zero. Unresolved `00 XX YY`, `01 XX YY ZZ`, and
+`53 <tail6>` value forms occupy three, four, and seven bytes respectively, so
+the following one-byte `direct`, `aux_value`, and compact `ext_id` fields remain
+aligned.
 Type `0x03` has radius display semantics.
 
 A `segtab` line whose two endpoint identifiers each have complete type-1 and

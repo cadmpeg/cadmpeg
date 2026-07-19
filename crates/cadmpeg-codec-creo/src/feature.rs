@@ -1617,15 +1617,8 @@ fn decode_variable_scalar(
         return (Some(f64::from_be_bytes(raw)), offset + 8, false);
     }
     let variable_dict = match prefix {
-        0x64 | 0xad => Some([0x3f, 0xd9]),
-        0x69 => Some([0x3f, 0xde]),
-        0x7e => Some([0x3f, 0xf3]),
-        0x80 => Some([0x3f, 0xf5]),
-        0x97 => Some([0x40, 0x0c]),
-        0x9c => Some([0x40, 0x11]),
-        0x9d => Some([0x40, 0x12]),
-        0x9f => Some([0x40, 0x14]),
-        0xa0 => Some([0x40, 0x15]),
+        0x5b..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
+        0xad => Some([0x3f, 0xd9]),
         0xb3 => Some([0xbf, 0xe0]),
         0xc6 => Some([0xbf, 0xf3]),
         0xc8 => Some([0xbf, 0xf5]),
@@ -3514,10 +3507,12 @@ fn positional_dimension(
 ) -> Option<FeatureDimension> {
     let (dimension_type, cursor) = segment_int(payload, start);
     let dimension_type = dimension_type?;
-    let (value, cursor, _) = if payload.get(cursor) == Some(&0x53) && cursor + 7 <= end {
-        (None, cursor + 7, true)
-    } else {
-        decode_variable_scalar(payload, cursor, end, cache)
+    let (value, cursor, _) = match payload.get(cursor) {
+        Some(0x00) if cursor + 3 <= end => (None, cursor + 3, true),
+        Some(0x01) if cursor + 4 <= end => (None, cursor + 4, true),
+        Some(0x18) => (Some(0.0), cursor + 1, false),
+        Some(0x53) if cursor + 7 <= end => (None, cursor + 7, true),
+        _ => decode_variable_scalar(payload, cursor, end, cache),
     };
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
     let auxiliary_start = cursor + 1;
@@ -7226,6 +7221,34 @@ mod tests {
         assert_eq!(dimensions.rows[1].external_id, 44);
         assert_eq!(dimensions.rows[2].value, Some(-1.0));
         assert_eq!(dimensions.rows[2].external_id, 45);
+    }
+
+    #[test]
+    fn positional_dimensions_decode_the_positive_dict_lattice_and_bounded_opaque_forms() {
+        let positive = [1, 0x5b, 0xad, 0xc3, 0xcd, 0x1f, 0x59, 0x5f, 0, 0x18, 46];
+        let opaque_three = [1, 0x00, 0x04, 0xa6, 0, 0x18, 47];
+        let opaque_four = [1, 0x01, 0x04, 0xfe, 0xf2, 0, 0x18, 48];
+        let zero = [2, 0x18, 0, 0x18, 49];
+        let cache = scalar::ScalarCache::default();
+
+        let positive_row = positional_dimension(&positive, 0, positive.len(), &cache)
+            .expect("positive dictionary dimension");
+        assert_eq!(
+            positive_row.value,
+            Some(f64::from_be_bytes([
+                0x3f, 0xd0, 0xad, 0xc3, 0xcd, 0x1f, 0x59, 0x5f,
+            ]))
+        );
+        assert_eq!(positive_row.external_id, 46);
+        for (body, external_id) in [(&opaque_three[..], 47), (&opaque_four[..], 48)] {
+            let row = positional_dimension(body, 0, body.len(), &cache)
+                .expect("bounded opaque dimension");
+            assert_eq!(row.value, None);
+            assert_eq!(row.external_id, external_id);
+        }
+        let zero_row = positional_dimension(&zero, 0, zero.len(), &cache).expect("zero dimension");
+        assert_eq!(zero_row.value, Some(0.0));
+        assert_eq!(zero_row.external_id, 49);
     }
 
     #[test]
