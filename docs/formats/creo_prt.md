@@ -1135,6 +1135,9 @@ surface-of-revolution reductions require `ratio = 1`.
 `Surface`. Reference-backed `Thicken <decimal-ordinal>` and
 `Fill <decimal-ordinal>` names identify thicken and filled-surface operations.
 `Merge <decimal-ordinal>` identifies a surface-merge operation.
+Root feature-definition class `946` identifies the same surface-merge family
+when the current-state record omits its display name. The class value does not
+encode face selection or merge operands.
 `Extrude <decimal-ordinal>` identifies an extrusion operation.
 `Boundary Blend <decimal-ordinal>` identifies a boundary-surface operation.
 `Protrusion` identifies a linear extrusion operation; absent section operands

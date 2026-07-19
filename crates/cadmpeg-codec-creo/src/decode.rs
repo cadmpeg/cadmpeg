@@ -13083,6 +13083,9 @@ fn schema_feature_definition(
         }
         return IrFeatureDefinition::DatumPlaneUnresolved;
     }
+    if schema_class == 946 {
+        return unresolved_surface_merge_feature_definition();
+    }
     if numbered_feature_name_has_family(kind, "Extrude") {
         return unresolved_extrude_feature_definition();
     }
@@ -13239,12 +13242,7 @@ fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition>
         });
     }
     if numbered_feature_name_has_family(kind, "Merge") {
-        return Some(IrFeatureDefinition::KnitSurface {
-            faces: FaceSelection::Unresolved,
-            merge_entities: None,
-            create_solid: None,
-            gap_tolerance: None,
-        });
+        return Some(unresolved_surface_merge_feature_definition());
     }
     numbered_feature_name_has_family(kind, "Fill").then_some(IrFeatureDefinition::FilledSurface {
         boundary: EdgeSelection::Unresolved,
@@ -13252,6 +13250,15 @@ fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition>
         continuity: None,
         merge_result: None,
     })
+}
+
+fn unresolved_surface_merge_feature_definition() -> IrFeatureDefinition {
+    IrFeatureDefinition::KnitSurface {
+        faces: FaceSelection::Unresolved,
+        merge_entities: None,
+        create_solid: None,
+        gap_tolerance: None,
+    }
 }
 
 fn retain_native_feature_parameters(

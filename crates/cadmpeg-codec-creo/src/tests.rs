@@ -1635,6 +1635,34 @@ fn decode_types_class_914_as_unresolved_chamfer() {
 }
 
 #[test]
+fn decode_types_class_946_as_unresolved_surface_merge() {
+    let mut geometry = visibgeom_payload(1, 0);
+    geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    let allfeatur = vec![
+        4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0xb2, 0xe1,
+    ];
+    let data = build_prt("c", &[("VisibGeom", geometry), ("AllFeatur", allfeatur)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("surface merge feature");
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::KnitSurface {
+            faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+            merge_entities: None,
+            create_solid: None,
+            gap_tolerance: None,
+        }
+    ));
+}
+
+#[test]
 fn decode_types_named_draft_with_unresolved_operands() {
     for name in ["Draft", "Schräge"] {
         let stored_name = format!("{name} id 40\0");
