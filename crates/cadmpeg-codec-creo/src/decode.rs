@@ -3907,9 +3907,63 @@ fn resolved_section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
-    section_segment_geometry(points, segment)
-        .or_else(|| saved_section_line_geometry(definition, segment))
-        .or_else(|| saved_section_arc_geometry(definition, segment))
+    let stored = section_segment_geometry(points, segment);
+    let saved = saved_section_line_geometry(definition, segment)
+        .or_else(|| saved_section_arc_geometry(definition, segment));
+    match (stored, saved) {
+        (Some(stored), Some(saved)) => {
+            let agree = match (&stored, &saved) {
+                (
+                    SketchGeometry::Line {
+                        start: stored_start,
+                        end: stored_end,
+                    },
+                    SketchGeometry::Line {
+                        start: saved_start,
+                        end: saved_end,
+                    },
+                ) => {
+                    saved_points_coincide(
+                        [stored_start.u, stored_start.v],
+                        [saved_start.u, saved_start.v],
+                    ) && saved_points_coincide(
+                        [stored_end.u, stored_end.v],
+                        [saved_end.u, saved_end.v],
+                    )
+                }
+                (
+                    SketchGeometry::Arc {
+                        center: stored_center,
+                        radius: stored_radius,
+                        ..
+                    },
+                    SketchGeometry::Arc {
+                        center: saved_center,
+                        radius: saved_radius,
+                        ..
+                    },
+                ) => {
+                    let radius_scale = stored_radius.0.max(saved_radius.0).max(1.0);
+                    saved_points_coincide(
+                        [stored_center.u, stored_center.v],
+                        [saved_center.u, saved_center.v],
+                    ) && (stored_radius.0 - saved_radius.0).abs() <= 1e-9 * radius_scale
+                        && saved_geometry_endpoints(&stored)
+                            .zip(saved_geometry_endpoints(&saved))
+                            .is_some_and(|(stored, saved)| {
+                                stored
+                                    .into_iter()
+                                    .zip(saved)
+                                    .all(|(stored, saved)| saved_points_coincide(stored, saved))
+                            })
+                }
+                _ => false,
+            };
+            agree.then_some(stored)
+        }
+        (Some(geometry), None) | (None, Some(geometry)) => Some(geometry),
+        (None, None) => None,
+    }
 }
 
 pub(crate) fn resolved_section_points(
@@ -15880,6 +15934,18 @@ mod resolved_sketch_tests {
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
             })
         );
+        assert!(resolved_section_segment_geometry(
+            &definition,
+            &BTreeMap::from([(7, [-8.0, -0.85]), (9, [8.0, -0.85])]),
+            &segment,
+        )
+        .is_some());
+        assert!(resolved_section_segment_geometry(
+            &definition,
+            &BTreeMap::from([(7, [-8.0, -0.85]), (9, [8.0, 0.85])]),
+            &segment,
+        )
+        .is_none());
         assert_eq!(
             section_entity_external_ids(&definition),
             BTreeSet::from([42])
@@ -16269,6 +16335,18 @@ mod resolved_sketch_tests {
                 end_angle: Angle(3.0 * std::f64::consts::FRAC_PI_2),
             })
         );
+        assert!(resolved_section_segment_geometry(
+            &definition,
+            &BTreeMap::from([(7, [0.0, -2.0]), (8, [0.0, 0.0]), (9, [-2.0, 0.0])]),
+            &segment,
+        )
+        .is_some());
+        assert!(resolved_section_segment_geometry(
+            &definition,
+            &BTreeMap::from([(7, [0.0, -3.0]), (8, [0.0, 0.0]), (9, [-3.0, 0.0])]),
+            &segment,
+        )
+        .is_none());
         let mut duplicate_order_row = definition.clone();
         duplicate_order_row
             .order_table

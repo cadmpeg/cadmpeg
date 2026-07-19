@@ -1821,6 +1821,9 @@ A saved entity with a unique internal identifier takes the corresponding unique
 has that external identifier. More than one saved entity with the internal
 identifier, or more than one `segtab` row with the external identifier, makes
 the join ambiguous.
+When both `var_arr` and the joined saved entity define complete line or arc
+geometry, their ordered endpoints and carrier equations must agree. Conflicting
+complete forms leave the section entity unresolved.
 
 For a linear section sweep with a resolved model-space section frame, a complete
 saved line joined through this chain generates a plane parallel to the sweep
