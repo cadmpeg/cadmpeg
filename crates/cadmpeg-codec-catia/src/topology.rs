@@ -1420,18 +1420,7 @@ impl IncidenceComponentSearch<'_> {
                     }
                 })
         });
-        viable
-            && self.mesh_quotient.is_none_or(|quotient| {
-                compact_boundary_domains_jointly_viable(
-                    mesh_assignments,
-                    self.choices,
-                    &self.assignment,
-                    Some((edge, pair)),
-                    quotient,
-                    self.budget,
-                )
-            })
-            && !self.budget.exhausted.get()
+        viable && !self.budget.exhausted.get()
     }
 
     fn constraint_options(&self, face: usize, point: usize) -> Vec<(usize, [usize; 2])> {
@@ -1619,6 +1608,7 @@ impl IncidenceComponentSearch<'_> {
     fn search_face_configurations(&mut self, options: MeshFaceEndpointConfigurations) {
         for option in options {
             let mut assigned = Vec::new();
+            let mut affected_faces = HashSet::new();
             let mut viable = true;
             for (edge, pair) in option {
                 if !self.active[edge] || self.assignment[edge].is_some() {
@@ -1634,8 +1624,9 @@ impl IncidenceComponentSearch<'_> {
                 self.adjust(edge, pair, true);
                 self.assignment[edge] = Some(pair);
                 assigned.push((edge, pair));
+                affected_faces.extend(self.edge_faces[edge]);
             }
-            if viable && !assigned.is_empty() {
+            if viable && !assigned.is_empty() && self.ordered_faces_feasible(affected_faces) {
                 self.search();
             }
             for (edge, pair) in assigned.into_iter().rev() {
@@ -10123,6 +10114,61 @@ mod motif_tests {
 
         assert!(search.exhausted);
         assert!(search.solutions.is_empty());
+    }
+
+    #[test]
+    fn incidence_candidate_defers_global_quotient_validation_until_selection() {
+        let choices = vec![vec![[0, 0]]];
+        let edge_faces = [[0, 0]];
+        let face_edges = vec![vec![0]];
+        let assignments = vec![MeshFaceBoundaryDomain::DeferredValidation(
+            super::MeshDeferredFaceBoundary {
+                cycles: vec![super::MeshDeferredBoundaryCycle {
+                    length: 1,
+                    exact_uses: vec![(
+                        MeshBoundaryEdgeCandidate {
+                            edge: 0,
+                            start: 0,
+                            end: 0,
+                            reversed: Some(false),
+                        },
+                        1,
+                    )],
+                }],
+                missing_edges: Vec::new(),
+            },
+        )];
+        let quotient = MeshQuotient {
+            union: UnionFind::new(2),
+            domains: vec![Arc::new(HashSet::from([0])); 2],
+            members: vec![vec![0], vec![1]],
+        };
+        let budget = MeshConstraintBudget::new(0);
+        let mut search = super::IncidenceComponentSearch {
+            choices: &choices,
+            edge_faces: &edge_faces,
+            face_edges: &face_edges,
+            mesh_assignments: Some(&assignments),
+            mesh_quotient: Some(&quotient),
+            active: vec![true],
+            edges: &[0],
+            constraints: vec![(0, 0)],
+            assignment: vec![None],
+            degrees: vec![vec![0]],
+            solutions: Vec::new(),
+            solution_filter: None,
+            dead_states: HashSet::new(),
+            budget: &budget,
+            states: 0,
+            exhausted: false,
+        };
+
+        assert!(search.candidate_fits(0, [0, 0]));
+        assert!(!budget.exhausted.get());
+        search.adjust(0, [0, 0], true);
+        search.assignment[0] = Some([0, 0]);
+        assert!(!search.ordered_faces_feasible([0]));
+        assert!(budget.exhausted.get());
     }
 
     #[test]
