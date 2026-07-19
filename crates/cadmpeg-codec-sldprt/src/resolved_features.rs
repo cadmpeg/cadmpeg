@@ -433,7 +433,8 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     ) || (payload.get(offset..offset + SKETCH_MARKER.len())? == SKETCH_MARKER
         && payload.get(offset + 17..offset + 21)? == 0u32.to_le_bytes()))
         && (marker_is_geometry_locus(payload, offset)
-            || legacy_extended_profile_vertex(payload, offset))
+            || legacy_extended_profile_vertex(payload, offset)
+            || compact_profile_coordinate_candidate(payload, offset))
         && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
     {
         offset.checked_add(58)?
@@ -453,6 +454,14 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
             .ok()?,
     );
     (first.is_finite() && second.is_finite()).then_some([first, second])
+}
+
+fn compact_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && [134usize, 138, 154]
+            .into_iter()
+            .any(|size| sketch_marker_prefix_at(payload, offset.saturating_add(size)))
 }
 
 pub(crate) fn marker_object_index(payload: &[u8], offset: usize) -> Option<u32> {
@@ -2710,6 +2719,10 @@ mod marker_tests {
             entities[0].kind,
             SketchInputKind::Relation(SketchRelationKind::Distance)
         );
+
+        payload.resize(154 + LEGACY_SKETCH_MARKER.len(), 0);
+        payload[154..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
     }
 
     #[test]
@@ -2745,6 +2758,11 @@ mod marker_tests {
         );
 
         payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(
+            compact_indexed_curve_endpoint_indices(&payload, 0),
+            Some([7, 11])
+        );
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         assert_eq!(
             compact_indexed_curve_endpoint_indices(&payload, 0),
             Some([7, 11])
@@ -17068,7 +17086,8 @@ fn compact_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
         payload.get(offset..offset + SKETCH_MARKER.len()),
         Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_SKETCH_MARKER
     ) || !matches!(code, 0..=2)
-        || !marker_is_geometry_locus(payload, offset)
+        || !(marker_is_geometry_locus(payload, offset)
+            || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]))
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 31..offset + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
         || payload.get(offset + 35..offset + 39) != Some(&[0x00, 0x00, 0x04, 0x00])
