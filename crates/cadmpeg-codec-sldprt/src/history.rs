@@ -1820,6 +1820,8 @@ mod history_reference_tests {
     fn sketch_block_instances_bind_to_adjacent_typed_definition_objects() {
         let mut instance = feature("instance", Some("25"), 1);
         instance.input_class = Some("moSketchBlockInst_c".into());
+        let mut compact_instance = feature("compact instance", Some("34"), 2);
+        compact_instance.input_class = Some("moSketchBlockInst_c".into());
         let mut definition = feature("definition", Some("23"), 0);
         definition.input_class = Some("moSketchBlockDef_c".into());
         let mut histories = vec![FeatureHistory {
@@ -1828,9 +1830,20 @@ mod history_reference_tests {
             properties: BTreeMap::new(),
             content: Vec::new(),
             configurations: Vec::new(),
-            features: vec![definition, instance],
+            features: vec![definition, instance, compact_instance],
         }];
         let mut lane = feature_input_lane("lane", None);
+        lane.native_payload.resize(450, 0);
+        let write_local_id = |payload: &mut [u8], offset: usize, local_id: u16| {
+            payload[offset..offset + 8]
+                .copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xd4, 0xa7, 0xcf, 0x01]);
+            payload[offset + 12..offset + 18].copy_from_slice(&[0x02, 0, 0, 0, 0, 0]);
+            payload[offset + 18..offset + 20].copy_from_slice(&local_id.to_le_bytes());
+        };
+        write_local_id(&mut lane.native_payload, 180, 0);
+        write_local_id(&mut lane.native_payload, 250, 0x0115);
+        lane.native_payload[348..350].copy_from_slice(&0x0115_u16.to_le_bytes());
+        write_local_id(&mut lane.native_payload, 380, 0x0115);
         lane.names = vec![
             crate::records::FeatureInputName {
                 id: "instance-name".into(),
@@ -1848,12 +1861,27 @@ mod history_reference_tests {
                 object_id: Some(23),
                 value: "definition".into(),
             },
+            crate::records::FeatureInputName {
+                id: "compact-instance-name".into(),
+                parent: "lane".into(),
+                ordinal: 2,
+                offset: 300,
+                object_id: Some(34),
+                value: "compact".into(),
+            },
         ];
 
         crate::resolved_features::enrich_history_sketch_block_references(&mut histories, &[lane]);
 
         assert_eq!(
             histories[0].features[1]
+                .properties
+                .get("BlockDefinition")
+                .map(String::as_str),
+            Some("23")
+        );
+        assert_eq!(
+            histories[0].features[2]
                 .properties
                 .get("BlockDefinition")
                 .map(String::as_str),

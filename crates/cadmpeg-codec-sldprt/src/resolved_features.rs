@@ -5821,6 +5821,43 @@ pub(crate) fn enrich_history_sketch_block_references(
         for lane in lanes {
             let mut names = lane.names.iter().collect::<Vec<_>>();
             names.sort_by_key(|name| name.offset);
+            let instance_names = names
+                .iter()
+                .filter_map(|name| {
+                    let source = name.object_id?;
+                    let (feature_index, kind) = by_source.get(&source).and_then(|entry| *entry)?;
+                    (kind == NativeClassKind::SketchBlockInstance).then_some((*name, feature_index))
+                })
+                .collect::<Vec<_>>();
+            let mut definitions_by_local_id = HashMap::<u16, Option<u32>>::new();
+            for (position, (name, _)) in instance_names.iter().enumerate() {
+                let Some(next) = names.iter().find(|next| next.offset > name.offset) else {
+                    continue;
+                };
+                let Some(definition_source) = next.object_id.filter(|source| {
+                    by_source
+                        .get(source)
+                        .and_then(|entry| *entry)
+                        .is_some_and(|(_, kind)| kind == NativeClassKind::SketchBlockDefinition)
+                }) else {
+                    continue;
+                };
+                let end = instance_names
+                    .get(position + 1)
+                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
+                    .unwrap_or(lane.native_payload.len());
+                let Some(start) = usize::try_from(name.offset).ok() else {
+                    continue;
+                };
+                let Some(local_id) = sketch_block_record_local_id(&lane.native_payload, start, end)
+                else {
+                    continue;
+                };
+                definitions_by_local_id
+                    .entry(local_id)
+                    .and_modify(|entry| *entry = None)
+                    .or_insert(Some(definition_source));
+            }
             for pair in names.windows(2) {
                 let (Some(instance_source), Some(definition_source)) =
                     (pair[0].object_id, pair[1].object_id)
@@ -5842,6 +5879,26 @@ pub(crate) fn enrich_history_sketch_block_references(
                     .or_default()
                     .push(definition_source);
             }
+            for (position, (name, instance_index)) in instance_names.iter().enumerate() {
+                let end = instance_names
+                    .get(position + 1)
+                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
+                    .unwrap_or(lane.native_payload.len());
+                let Some(local_id) = sketch_block_compact_local_id(&lane.native_payload, name, end)
+                else {
+                    continue;
+                };
+                let Some(definition_source) = definitions_by_local_id
+                    .get(&local_id)
+                    .and_then(|entry| *entry)
+                else {
+                    continue;
+                };
+                candidates
+                    .entry(*instance_index)
+                    .or_default()
+                    .push(definition_source);
+            }
         }
         for (feature_index, mut sources) in candidates {
             sources.sort_unstable();
@@ -5854,6 +5911,32 @@ pub(crate) fn enrich_history_sketch_block_references(
                 .insert("BlockDefinition".into(), source.to_string());
         }
     }
+}
+
+const SKETCH_BLOCK_TRAILER: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0xd4, 0xa7, 0xcf, 0x01];
+
+fn sketch_block_record_local_id(payload: &[u8], start: usize, end: usize) -> Option<u16> {
+    let bytes = payload.get(start..end)?;
+    bytes.windows(20).rev().find_map(|window| {
+        (window.get(..8) == Some(SKETCH_BLOCK_TRAILER)
+            && window.get(12..18) == Some(&[0x02, 0, 0, 0, 0, 0]))
+        .then(|| u16::from_le_bytes([window[18], window[19]]))
+    })
+}
+
+fn sketch_block_compact_local_id(
+    payload: &[u8],
+    name: &FeatureInputName,
+    record_end: usize,
+) -> Option<u16> {
+    let name_start = usize::try_from(name.offset).ok()?;
+    let name_end = name_start
+        .checked_add(NAME_MARKER.len() + 1)?
+        .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
+    let header_start = name_end.checked_add(28)?;
+    let header_end = header_start.checked_add(2)?;
+    let header = u16::from_le_bytes(payload.get(header_start..header_end)?.try_into().ok()?);
+    (sketch_block_record_local_id(payload, name_start, record_end)? == header).then_some(header)
 }
 
 /// Add the two serialized construction-plane operands to plane-intersection axes.
