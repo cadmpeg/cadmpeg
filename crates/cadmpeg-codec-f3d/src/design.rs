@@ -13284,7 +13284,7 @@ fn exact_fixed_scalar(bytes: &[u8], record_index: u32) -> Option<FixedScalarFram
         .windows(2)
         .filter_map(|pair| {
             let start = pair[0];
-            (pair[1].checked_sub(start)? == 104).then_some(())?;
+            matches!(pair[1].checked_sub(start)?, 104 | 105).then_some(())?;
             let value = f64_at(bytes, start + 40)?;
             value.is_finite().then_some(FixedScalarFrame {
                 owner_record_index: (bytes.get(start + 24) == Some(&1))
@@ -13309,9 +13309,10 @@ fn exact_direct_face_operation(
     let start = usize::try_from(scope.byte_offset).ok()?;
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::OffsetFaces
-            if scope.frame_length == 286
-                && bytes.get(start + 25) == Some(&1)
-                && scope.reference_members.len() == 4 =>
+            if matches!(
+                (scope.frame_length, scope.reference_members.len()),
+                (286, 4) | (275, 3)
+            ) && bytes.get(start + 25) == Some(&1) =>
         {
             let distance_record_index = u32_at(bytes, start + 26)?;
             if scope.reference_members.last() != Some(&distance_record_index) {
@@ -21365,6 +21366,34 @@ mod relation_tests {
             Some(DesignDirectFaceOperation::OffsetFaces {
                 distance: -0.5,
                 distance_record_index: 73,
+                ..
+            })
+        ));
+
+        let compact_offset_at = bytes.len();
+        let mut compact_offset = vec![0; 275];
+        compact_offset[25] = 1;
+        compact_offset[26..30].copy_from_slice(&1_777u32.to_le_bytes());
+        bytes.extend_from_slice(&compact_offset);
+        let mut compact_distance = vec![0; 105];
+        compact_distance[0..4].copy_from_slice(&3u32.to_le_bytes());
+        compact_distance[4..7].copy_from_slice(b"312");
+        compact_distance[7..11].copy_from_slice(&1_777u32.to_le_bytes());
+        compact_distance[24] = 1;
+        compact_distance[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        compact_distance[40..48].copy_from_slice(&0.254f64.to_le_bytes());
+        compact_distance.extend_from_slice(&3u32.to_le_bytes());
+        compact_distance.extend_from_slice(b"259");
+        compact_distance.extend_from_slice(&1_777u32.to_le_bytes());
+        bytes.extend_from_slice(&compact_distance);
+        offset_scope.byte_offset = compact_offset_at as u64;
+        offset_scope.frame_length = 275;
+        offset_scope.reference_members = vec![1, 2, 1_777];
+        assert!(matches!(
+            exact_direct_face_operation(&bytes, &offset_scope),
+            Some(DesignDirectFaceOperation::OffsetFaces {
+                distance: 0.254,
+                distance_record_index: 1_777,
                 ..
             })
         ));
