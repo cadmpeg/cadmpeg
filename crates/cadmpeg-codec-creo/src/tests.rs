@@ -2624,7 +2624,8 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     payload.extend_from_slice(&[5, 1, 0, 0xe4, 13, 0xe4, 0xf6, 0, 2, 0xf6, 0xf6, 4, 0xe2]);
     payload.extend_from_slice(b"dimtab_ptr\0");
     payload.extend_from_slice(&[2, 0, 0, 0, 11, 12, 0xf6, 0, 0, 0xf6, 0xf6, 44, 0xe2]);
-    let scan = container::scan_bytes(build_prt("c", &[("FeatDefs", payload)]));
+    let data = build_prt("c", &[("FeatDefs", payload)]);
+    let scan = container::scan_bytes(data.clone());
 
     let segments = scan.feature_definitions[0]
         .segments
@@ -2653,6 +2654,29 @@ fn scan_decodes_featdefs_segtab_line_and_arc_rows() {
     );
     assert_eq!(segments.rows[4].point_ids, [13, 13]);
     assert_eq!(segments.rows[4].external_id, 4);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let sketch = result
+        .ir
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id.0 == "creo:model:sketch#40")
+        .expect("neutral unplaced sketch");
+    assert_eq!(
+        sketch.placement,
+        cadmpeg_ir::sketches::SketchPlacement::Unresolved
+    );
+    assert_eq!(
+        result
+            .ir
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch.id)
+            .count(),
+        5
+    );
 }
 
 #[test]

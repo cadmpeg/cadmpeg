@@ -35,18 +35,52 @@ pub struct Sketch {
     /// Source configuration key, when scoped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<String>,
-    /// Sketch-plane origin in model space.
-    pub origin: Point3,
-    /// Sketch-plane unit normal.
-    pub normal: Vector3,
-    /// Sketch-plane u-axis.
-    pub u_axis: Vector3,
+    /// Placement of sketch coordinates in model space.
+    pub placement: SketchPlacement,
     /// Ordered closed or open profile chains.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub profiles: Vec<Vec<SketchEntityUse>>,
     /// Identifier of the full-fidelity native input lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+/// Placement of a planar sketch's local coordinates in model space.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SketchPlacement {
+    /// The source defines local sketch geometry but its model-space frame is unresolved.
+    Unresolved,
+    /// A complete model-space sketch frame.
+    Resolved {
+        /// Sketch-plane origin in model space.
+        origin: Point3,
+        /// Sketch-plane unit normal.
+        normal: Vector3,
+        /// Sketch-plane u-axis.
+        u_axis: Vector3,
+    },
+}
+
+impl SketchPlacement {
+    /// Returns the complete frame when model-space placement is resolved.
+    pub fn resolved(self) -> Option<(Point3, Vector3, Vector3)> {
+        match self {
+            Self::Unresolved => None,
+            Self::Resolved {
+                origin,
+                normal,
+                u_axis,
+            } => Some((origin, normal, u_axis)),
+        }
+    }
+}
+
+impl Sketch {
+    /// Returns the complete model-space frame when placement is resolved.
+    pub fn resolved_placement(&self) -> Option<(Point3, Vector3, Vector3)> {
+        self.placement.resolved()
+    }
 }
 
 /// Oriented use of one sketch entity in a profile chain.

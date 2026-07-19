@@ -907,9 +907,11 @@ fn parse_sketch(
             id,
             name: Some(object.name.clone()),
             configuration: None,
-            origin,
-            normal,
-            u_axis,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin,
+                normal,
+                u_axis,
+            },
             profiles,
             native_ref: Some(object.id.clone()),
         },
@@ -2473,7 +2475,8 @@ fn extrusion_definition(
             sketches
                 .iter()
                 .find(|sketch| sketch.id == *sketch_id)?
-                .normal,
+                .resolved_placement()?
+                .1,
             ExtrusionDirectionSource::ProfileNormal,
         )
     };

@@ -3,7 +3,9 @@
 #![allow(clippy::wildcard_imports)] // Split checks share private orchestration context.
 
 use super::*;
-use crate::sketches::{SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus};
+use crate::sketches::{
+    SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus, SketchPlacement,
+};
 use std::collections::HashMap;
 
 fn finding(findings: &mut Vec<Finding>, check: Check, id: &str, message: &str) {
@@ -27,36 +29,42 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
     for sketch in &ir.model.sketches {
-        let normal = sketch.normal.norm();
-        let u_norm = sketch.u_axis.norm();
-        let dot = sketch.normal.x * sketch.u_axis.x
-            + sketch.normal.y * sketch.u_axis.y
-            + sketch.normal.z * sketch.u_axis.z;
-        if !normal.is_finite() || normal <= 0.0 || !u_norm.is_finite() || u_norm <= 0.0 {
-            finding(
-                findings,
-                Check::Bounds,
-                &sketch.id.0,
-                "sketch plane has a degenerate axis",
-            );
-        } else if dot.abs() > 1.0e-9 * normal * u_norm {
-            finding(
-                findings,
-                Check::GeometricConsistency,
-                &sketch.id.0,
-                "sketch plane axes are not perpendicular",
-            );
-        }
-        if !sketch.origin.x.is_finite()
-            || !sketch.origin.y.is_finite()
-            || !sketch.origin.z.is_finite()
+        if let SketchPlacement::Resolved {
+            origin,
+            normal,
+            u_axis,
+        } = sketch.placement
         {
-            finding(
-                findings,
-                Check::Bounds,
-                &sketch.id.0,
-                "sketch origin is not finite",
-            );
+            let normal_length = normal.norm();
+            let u_norm = u_axis.norm();
+            let dot = normal.x * u_axis.x + normal.y * u_axis.y + normal.z * u_axis.z;
+            if !normal_length.is_finite()
+                || normal_length <= 0.0
+                || !u_norm.is_finite()
+                || u_norm <= 0.0
+            {
+                finding(
+                    findings,
+                    Check::Bounds,
+                    &sketch.id.0,
+                    "sketch plane has a degenerate axis",
+                );
+            } else if dot.abs() > 1.0e-9 * normal_length * u_norm {
+                finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    &sketch.id.0,
+                    "sketch plane axes are not perpendicular",
+                );
+            }
+            if !origin.x.is_finite() || !origin.y.is_finite() || !origin.z.is_finite() {
+                finding(
+                    findings,
+                    Check::Bounds,
+                    &sketch.id.0,
+                    "sketch origin is not finite",
+                );
+            }
         }
         if sketch.profiles.iter().any(Vec::is_empty) {
             finding(

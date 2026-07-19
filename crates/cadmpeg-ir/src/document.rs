@@ -95,10 +95,10 @@ macro_rules! declare_model {
 }
 
 /// The IR schema version this build produces and accepts.
-pub const IR_VERSION: &str = "53";
+pub const IR_VERSION: &str = "54";
 
 /// Immediately preceding IR version supported by the explicit JSON migration.
-pub const PREVIOUS_IR_VERSION: &str = "52";
+pub const PREVIOUS_IR_VERSION: &str = "53";
 
 arena_registry!(declare_model);
 
@@ -257,7 +257,7 @@ impl CadIr {
         match version {
             Some(IR_VERSION) => serde_json::from_value(value),
             Some(PREVIOUS_IR_VERSION) => {
-                migrate_previous_external_documents(&mut value);
+                migrate_previous_sketch_placements(&mut value);
                 value
                     .as_object_mut()
                     .expect("a versioned CADIR document is a JSON object")
@@ -277,36 +277,34 @@ impl CadIr {
     }
 }
 
-fn migrate_previous_external_documents(value: &mut serde_json::Value) {
-    let Some(occurrences) = value
+fn migrate_previous_sketch_placements(value: &mut serde_json::Value) {
+    let Some(sketches) = value
         .get_mut("model")
-        .and_then(|model| model.get_mut("occurrences"))
+        .and_then(|model| model.get_mut("sketches"))
         .and_then(serde_json::Value::as_array_mut)
     else {
         return;
     };
-    for occurrence in occurrences {
-        let Some(document) = occurrence
-            .get_mut("prototype")
-            .and_then(serde_json::Value::as_object_mut)
-            .filter(|prototype| {
-                prototype.get("scope").and_then(serde_json::Value::as_str) == Some("external")
-            })
-            .and_then(|prototype| prototype.get_mut("document"))
-        else {
+    for sketch in sketches {
+        let Some(sketch) = sketch.as_object_mut() else {
             continue;
         };
-        if let Some(identity) = document.as_str().map(str::to_owned) {
-            let resolution = if identity.is_empty() {
-                "missing_reference"
-            } else {
-                "unresolved"
-            };
-            *document = serde_json::json!({
-                "document_id": identity,
-                "resolution": resolution
-            });
-        }
+        let (Some(origin), Some(normal), Some(u_axis)) = (
+            sketch.remove("origin"),
+            sketch.remove("normal"),
+            sketch.remove("u_axis"),
+        ) else {
+            continue;
+        };
+        sketch.insert(
+            "placement".into(),
+            serde_json::json!({
+                "kind": "resolved",
+                "origin": origin,
+                "normal": normal,
+                "u_axis": u_axis
+            }),
+        );
     }
 }
 

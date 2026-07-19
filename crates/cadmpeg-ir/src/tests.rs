@@ -308,9 +308,11 @@ fn malformed_sketch_geometry_and_constraints_are_rejected() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 1.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 1.0),
+        },
         profiles: vec![vec![SketchEntityUse {
             entity: circle_id.clone(),
             reversed: false,
@@ -499,9 +501,11 @@ fn locus_aware_sketch_constraints_round_trip_and_validate_geometry() {
         id: sketch.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -564,9 +568,11 @@ fn sketch_profiles_and_constraints_enforce_local_connectivity() {
         id,
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles,
         native_ref: None,
     };
@@ -1405,43 +1411,36 @@ fn direct_deserialization_accepts_current_version_and_canonical_round_trip() {
 }
 
 #[test]
-fn explicit_migration_upgrades_previous_version_without_semantic_changes() {
-    let current = unit_cube();
+fn explicit_migration_upgrades_previous_sketch_placement() {
+    let mut current = unit_cube();
+    current.model.sketches.push(crate::Sketch {
+        id: crate::SketchId("sketch:migration".into()),
+        name: None,
+        configuration: None,
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
+        profiles: Vec::new(),
+        native_ref: None,
+    });
     let mut legacy = serde_json::to_value(&current).unwrap();
     legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
+    let sketch = legacy["model"]["sketches"][0]
+        .as_object_mut()
+        .expect("legacy sketch object");
+    let placement = sketch
+        .remove("placement")
+        .expect("current sketch placement");
+    sketch.insert("origin".into(), placement["origin"].clone());
+    sketch.insert("normal".into(), placement["normal"].clone());
+    sketch.insert("u_axis".into(), placement["u_axis"].clone());
     let legacy = serde_json::to_string(&legacy).unwrap();
 
     assert!(CadIr::from_json(&legacy).is_err());
     let migrated = CadIr::migrate_json(&legacy).expect("previous-version migration");
     assert_eq!(migrated, current);
-}
-
-#[test]
-fn previous_external_occurrence_document_token_migrates_deterministically() {
-    let mut legacy = serde_json::to_value(unit_cube()).unwrap();
-    legacy["ir_version"] = serde_json::json!(crate::PREVIOUS_IR_VERSION);
-    legacy["model"]["occurrences"] = serde_json::json!([{
-        "id": "synthetic:test:occurrence#external",
-        "prototype": {
-            "scope": "external",
-            "document": "legacy-document",
-            "object": "Body"
-        },
-        "local_transform": crate::transform::Transform::identity().rows,
-        "resolved_transform": crate::transform::Transform::identity().rows,
-        "scale": [1.0, 1.0, 1.0]
-    }]);
-    let migrated = CadIr::migrate_json(&serde_json::to_string(&legacy).unwrap())
-        .expect("external occurrence migration");
-    let crate::ComponentReference::External { document, object } =
-        &migrated.model.occurrences[0].prototype
-    else {
-        panic!("migrated external prototype");
-    };
-    assert_eq!(document.path, None);
-    assert_eq!(document.document_id.as_deref(), Some("legacy-document"));
-    assert_eq!(document.resolution, crate::ExternalResolution::Unresolved);
-    assert_eq!(object.as_deref(), Some("Body"));
 }
 
 #[test]
@@ -2413,9 +2412,11 @@ fn sketch_feature_ownership_and_order_are_validated() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -2491,9 +2492,11 @@ fn spatial_sketch_cannot_own_planar_geometry() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: crate::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: Vec::new(),
         native_ref: None,
     });
@@ -2989,6 +2992,6 @@ fn current_document_excludes_source_byte_accounting() {
     let ir = CadIr::empty(crate::units::Units::default());
     let json = serde_json::to_value(&ir).unwrap();
 
-    assert_eq!(json["ir_version"], "53");
+    assert_eq!(json["ir_version"], "54");
     assert!(json.get("byte_ledger").is_none());
 }

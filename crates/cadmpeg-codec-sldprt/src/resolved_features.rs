@@ -1255,9 +1255,11 @@ fn project_brep(
             id: sketch_id,
             name: (!sketch_name.is_empty()).then(|| sketch_name.to_string()),
             configuration: configuration.map(str::to_string),
-            origin: *origin,
-            normal: *normal,
-            u_axis: *u_axis,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: *origin,
+                normal: *normal,
+                u_axis: *u_axis,
+            },
             profiles,
             native_ref: Some(native_ref.to_string()),
         });
@@ -1558,7 +1560,13 @@ fn validate_source_less_constraints(
                     constraint.id.0, constraint.sketch.0
                 ))
             })?;
-        let v_axis = cross(sketch.normal, sketch.u_axis);
+        let (_, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "sketch {} has unresolved model-space placement",
+                sketch.id.0
+            ))
+        })?;
+        let v_axis = cross(normal, u_axis);
         let mut expected = None;
         for locus in loci {
             let (entity_id, start) = match locus {
@@ -1639,6 +1647,12 @@ fn sketch_brep(
     source: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
 ) -> Result<cadmpeg_ir::CadIr, cadmpeg_ir::codec::CodecError> {
+    let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} requires resolved model-space placement",
+            sketch.id.0
+        ))
+    })?;
     let mut ir = cadmpeg_ir::CadIr::empty(source.units.clone());
     let prefix = format!("generated:sldprt:sketch:{}", sketch.id.0);
     let body_id = BodyId(format!("{prefix}:body"));
@@ -1646,13 +1660,13 @@ fn sketch_brep(
     let shell_id = ShellId(format!("{prefix}:shell"));
     let face_id = FaceId(format!("{prefix}:face"));
     let surface_id = SurfaceId(format!("{prefix}:surface"));
-    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let v_axis = cross(normal, u_axis);
     ir.model.surfaces.push(Surface {
         id: surface_id.clone(),
         geometry: SurfaceGeometry::Plane {
-            origin: sketch.origin,
-            normal: sketch.normal,
-            u_axis: sketch.u_axis,
+            origin,
+            normal,
+            u_axis,
         },
         source_object: None,
     });
@@ -1729,7 +1743,8 @@ fn sketch_brep(
                 &mut vertex_by_position,
                 &prefix,
                 generated.start,
-                sketch,
+                origin,
+                u_axis,
                 v_axis,
             );
             let end_vertex = sketch_vertex(
@@ -1737,11 +1752,12 @@ fn sketch_brep(
                 &mut vertex_by_position,
                 &prefix,
                 generated.end,
-                sketch,
+                origin,
+                u_axis,
                 v_axis,
             );
-            let start_3d = lift_point(generated.start, sketch.origin, sketch.u_axis, v_axis);
-            let end_3d = lift_point(generated.end, sketch.origin, sketch.u_axis, v_axis);
+            let start_3d = lift_point(generated.start, origin, u_axis, v_axis);
+            let end_3d = lift_point(generated.end, origin, u_axis, v_axis);
             let delta = Vector3::new(
                 end_3d.x - start_3d.x,
                 end_3d.y - start_3d.y,
@@ -1815,7 +1831,7 @@ fn sketch_brep(
         let vertex_id = VertexId(format!("{prefix}:free-vertex:{ordinal}"));
         ir.model.points.push(Point {
             id: point_id.clone(),
-            position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+            position: lift_point(position, origin, u_axis, v_axis),
             source_object: None,
         });
         ir.model.vertices.push(Vertex {
@@ -1906,12 +1922,18 @@ fn generated_sketch_curve(
     sketch: &Sketch,
     v_axis: Vector3,
 ) -> Result<GeneratedSketchCurve, cadmpeg_ir::codec::CodecError> {
-    let lift = |point| lift_point(point, sketch.origin, sketch.u_axis, v_axis);
+    let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+        cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+            "source-less SLDPRT sketch {} requires resolved model-space placement",
+            sketch.id.0
+        ))
+    })?;
+    let lift = |point| lift_point(point, origin, u_axis, v_axis);
     let vector = |u: f64, v: f64| {
         Vector3::new(
-            sketch.u_axis.x * u + v_axis.x * v,
-            sketch.u_axis.y * u + v_axis.y * v,
-            sketch.u_axis.z * u + v_axis.z * v,
+            u_axis.x * u + v_axis.x * v,
+            u_axis.y * u + v_axis.y * v,
+            u_axis.z * u + v_axis.z * v,
         )
     };
     match geometry {
@@ -1948,8 +1970,8 @@ fn generated_sketch_curve(
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Circle {
                     center: lift(*center),
-                    axis: sketch.normal,
-                    ref_direction: sketch.u_axis,
+                    axis: normal,
+                    ref_direction: u_axis,
                     radius: radius.0,
                 },
                 start: point,
@@ -1965,8 +1987,8 @@ fn generated_sketch_curve(
         } => Ok(GeneratedSketchCurve {
             curve: CurveGeometry::Circle {
                 center: lift(*center),
-                axis: sketch.normal,
-                ref_direction: sketch.u_axis,
+                axis: normal,
+                ref_direction: u_axis,
                 radius: radius.0,
             },
             start: offset_point(*center, polar(radius.0, start_angle.0)),
@@ -1998,7 +2020,7 @@ fn generated_sketch_curve(
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Ellipse {
                     center: lift(*center),
-                    axis: sketch.normal,
+                    axis: normal,
                     major_direction: vector(major_angle.0.cos(), major_angle.0.sin()),
                     major_radius: major_radius.0,
                     minor_radius: minor_radius.0,
@@ -2055,7 +2077,8 @@ fn sketch_vertex(
     vertices: &mut HashMap<(u64, u64), VertexId>,
     prefix: &str,
     position: Point2,
-    sketch: &Sketch,
+    origin: Point3,
+    u_axis: Vector3,
     v_axis: Vector3,
 ) -> VertexId {
     if let Some((_, id)) = vertices.iter().find(|((u, v), _)| {
@@ -2072,7 +2095,7 @@ fn sketch_vertex(
     let vertex_id = VertexId(format!("{prefix}:vertex:{ordinal}"));
     ir.model.points.push(Point {
         id: point_id.clone(),
-        position: lift_point(position, sketch.origin, sketch.u_axis, v_axis),
+        position: lift_point(position, origin, u_axis, v_axis),
         source_object: None,
     });
     ir.model.vertices.push(Vertex {
@@ -2101,7 +2124,13 @@ fn patch_line_profiles(
                 "SLDPRT sketch write-back requires native sketch provenance".into(),
             )
         })?;
-        let v_axis = cross(sketch.normal, sketch.u_axis);
+        let (origin, normal, u_axis) = sketch.resolved_placement().ok_or_else(|| {
+            cadmpeg_ir::codec::CodecError::NotImplemented(format!(
+                "SLDPRT sketch write-back requires resolved placement for {}",
+                sketch.id.0
+            ))
+        })?;
+        let v_axis = cross(normal, u_axis);
         for entity in ir
             .model
             .sketch_entities
@@ -2118,13 +2147,13 @@ fn patch_line_profiles(
                 SketchGeometry::Point { position } => {
                     let reference = &entity.endpoint_refs[0];
                     let (stream, attr) = parse_point_ref(reference)?;
-                    let point = lift_point(*position, sketch.origin, sketch.u_axis, v_axis);
+                    let point = lift_point(*position, origin, u_axis, v_axis);
                     requested.insert((lane_id.clone(), stream, attr), point);
                 }
                 SketchGeometry::Line { start, end } => {
                     for (reference, point) in entity.endpoint_refs.iter().zip([start, end]) {
                         let (stream, attr) = parse_point_ref(reference)?;
-                        let point = lift_point(*point, sketch.origin, sketch.u_axis, v_axis);
+                        let point = lift_point(*point, origin, u_axis, v_axis);
                         let key = (lane_id.clone(), stream, attr);
                         if let Some(previous) = requested.insert(key, point) {
                             if distance(previous, point) > 1.0e-9 {
@@ -2150,7 +2179,7 @@ fn patch_line_profiles(
                     if let Some(endpoints) = bounded_endpoints(geometry) {
                         for (reference, point) in entity.endpoint_refs.iter().zip(endpoints) {
                             let (point_stream, attr) = parse_point_ref(reference)?;
-                            let point = lift_point(point, sketch.origin, sketch.u_axis, v_axis);
+                            let point = lift_point(point, origin, u_axis, v_axis);
                             let key = (lane_id.clone(), point_stream, attr);
                             if let Some(previous) = requested.insert(key, point) {
                                 if distance(previous, point) > 1.0e-9 {
@@ -2168,8 +2197,8 @@ fn patch_line_profiles(
                         start_attr,
                         end_attr,
                         geometry: geometry.clone(),
-                        origin: sketch.origin,
-                        u_axis: sketch.u_axis,
+                        origin,
+                        u_axis,
                         v_axis,
                     });
                 }

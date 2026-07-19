@@ -1690,9 +1690,11 @@ fn encoder_writes_source_less_line_sketches() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![entity_ids
             .iter()
             .cloned()
@@ -1961,9 +1963,11 @@ fn encoder_rejects_unrepresentable_source_less_sketch_constraints() {
         id: sketch_id.clone(),
         name: Some("Profile".into()),
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![vec![SketchEntityUse {
             entity: entity_id.clone(),
             reversed: false,
@@ -2091,9 +2095,11 @@ fn encoder_writes_source_less_curved_sketches() {
         id: sketch_id,
         name: Some("Curves".into()),
         configuration: Some("Main".into()),
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
+        placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+        },
         profiles: vec![
             profile(&[0]),
             profile(&[1, 2]),
@@ -2163,9 +2169,11 @@ fn encoder_binds_multiple_source_less_sketches_by_name() {
             id: sketch_id.clone(),
             name: Some(name.into()),
             configuration: None,
-            origin: Point3::new(0.0, 0.0, ordinal as f64),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, ordinal as f64),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: None,
         });
@@ -13298,8 +13306,11 @@ fn decode_projects_nested_feature_input_profile_as_a_sketch() {
     assert_eq!(decoded.ir.model.sketch_constraints.len(), 3);
     let sketch = &decoded.ir.model.sketches[0];
     assert_eq!(sketch.configuration.as_deref(), Some("0"));
-    assert_eq!(sketch.origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
-    assert_eq!(sketch.normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+    let (origin, normal, _) = sketch
+        .resolved_placement()
+        .expect("resolved sketch placement");
+    assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
     assert_eq!(sketch.profiles.len(), 1);
     assert_eq!(sketch.profiles[0].len(), 3);
     assert!(decoded

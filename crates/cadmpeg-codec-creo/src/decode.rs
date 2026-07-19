@@ -10264,25 +10264,13 @@ fn resolved_segment_profile_chains(
     profiles
 }
 
-fn transfer_resolved_sketches(
-    scan: &ContainerScan,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-) {
-    for transform in &scan.feature_section_transforms {
-        if unique_feature_section_transform(
-            &scan.feature_section_transforms,
-            transform.definition_id,
-        )
-        .is_none()
-        {
+fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
+    for definition in &scan.feature_definitions {
+        if unique_feature_definition(&scan.feature_definitions, definition.id).is_none() {
             continue;
         }
-        let Some(definition) =
-            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
-        else {
-            continue;
-        };
+        let transform =
+            unique_feature_section_transform(&scan.feature_section_transforms, definition.id);
         let segments = section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(definition);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
@@ -10695,80 +10683,87 @@ fn transfer_resolved_sketches(
         if entities.is_empty() {
             continue;
         }
-        for segment in segments {
-            let Some(section_geometry) =
-                resolved_section_segment_geometry(definition, &points, segment)
-            else {
-                continue;
-            };
-            let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
-                continue;
-            };
-            let id = CurveId(format!(
-                "creo:featdefs:section_curve#{}:{}",
-                definition.id,
-                section_segment_identity_suffix(&unique_segment_ids, segment)
-            ));
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
-                continue;
+        if let Some(transform) = transform {
+            for segment in segments {
+                let Some(section_geometry) =
+                    resolved_section_segment_geometry(definition, &points, segment)
+                else {
+                    continue;
+                };
+                let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry)
+                else {
+                    continue;
+                };
+                let id = CurveId(format!(
+                    "creo:featdefs:section_curve#{}:{}",
+                    definition.id,
+                    section_segment_identity_suffix(&unique_segment_ids, segment)
+                ));
+                if ir.model.curves.iter().any(|existing| existing.id == id) {
+                    continue;
+                }
+                annotate(
+                    annotations,
+                    &id,
+                    "FeatDefs",
+                    segment.offset as u64,
+                    "placed_section_curve",
+                    Exactness::Derived,
+                );
+                ir.model.curves.push(Curve {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: "creo".to_string(),
+                        object_id: format!(
+                            "FeatDefs:section#{}:{}",
+                            definition.id,
+                            section_segment_identity_suffix(&unique_segment_ids, segment)
+                        ),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                });
             }
-            annotate(
-                annotations,
-                &id,
-                "FeatDefs",
-                segment.offset as u64,
-                "placed_section_curve",
-                Exactness::Derived,
-            );
-            ir.model.curves.push(Curve {
-                id,
-                geometry,
-                source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
-                    object_id: format!(
-                        "FeatDefs:section#{}:{}",
-                        definition.id,
-                        section_segment_identity_suffix(&unique_segment_ids, segment)
-                    ),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
-        }
-        for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries {
-            if ir.model.curves.iter().any(|existing| existing.id == id) {
-                continue;
+            for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries
+            {
+                if ir.model.curves.iter().any(|existing| existing.id == id) {
+                    continue;
+                }
+                let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry)
+                else {
+                    continue;
+                };
+                annotate(
+                    annotations,
+                    &id,
+                    "FeatDefs",
+                    offset as u64,
+                    "placed_saved_section_curve",
+                    Exactness::Derived,
+                );
+                ir.model.curves.push(Curve {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: "creo".to_string(),
+                        object_id: external_id.map_or_else(
+                            || format!("FeatDefs:saved_entity#{internal_id}"),
+                            |external_id| {
+                                format!("FeatDefs:section#{}:{external_id}", definition.id)
+                            },
+                        ),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                });
             }
-            let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry) else {
-                continue;
-            };
-            annotate(
-                annotations,
-                &id,
-                "FeatDefs",
-                offset as u64,
-                "placed_saved_section_curve",
-                Exactness::Derived,
-            );
-            ir.model.curves.push(Curve {
-                id,
-                geometry,
-                source_object: Some(SourceObjectAssociation {
-                    format: "creo".to_string(),
-                    object_id: external_id.map_or_else(
-                        || format!("FeatDefs:saved_entity#{internal_id}"),
-                        |external_id| format!("FeatDefs:section#{}:{external_id}", definition.id),
-                    ),
-                    name: None,
-                    color: None,
-                    visible: None,
-                    layer: None,
-                    instance_path: Vec::new(),
-                }),
-            });
         }
         let emitted_entity_ids = entities
             .iter()
@@ -10854,32 +10849,42 @@ fn transfer_resolved_sketches(
         }
         ir.model.sketch_entities.extend(entities);
         ir.model.sketch_constraints.extend(constraints);
+        let source_offset = transform.map_or(definition.offset, |transform| transform.offset);
         annotate(
             annotations,
             &sketch_id.0,
             "FeatDefs",
-            transform.offset as u64,
-            "datum_placed_section",
+            source_offset as u64,
+            if transform.is_some() {
+                "datum_placed_section"
+            } else {
+                "unplaced_section"
+            },
             Exactness::Derived,
         );
         ir.model.sketches.push(Sketch {
             id: sketch_id.clone(),
             name: None,
             configuration: None,
-            origin: Point3::new(
-                transform.origin[0],
-                transform.origin[1],
-                transform.origin[2],
-            ),
-            normal: Vector3::new(
-                transform.normal[0],
-                transform.normal[1],
-                transform.normal[2],
-            ),
-            u_axis: Vector3::new(
-                transform.u_axis[0],
-                transform.u_axis[1],
-                transform.u_axis[2],
+            placement: transform.map_or(
+                cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+                |transform| cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                    origin: Point3::new(
+                        transform.origin[0],
+                        transform.origin[1],
+                        transform.origin[2],
+                    ),
+                    normal: Vector3::new(
+                        transform.normal[0],
+                        transform.normal[1],
+                        transform.normal[2],
+                    ),
+                    u_axis: Vector3::new(
+                        transform.u_axis[0],
+                        transform.u_axis[1],
+                        transform.u_axis[2],
+                    ),
+                },
             ),
             profiles,
             native_ref: Some(format!("creo:featdefs:sketch#{}", definition.id)),
@@ -10892,7 +10897,7 @@ fn transfer_resolved_sketches(
             annotations,
             &feature_id.0,
             "FeatDefs",
-            transform.offset as u64,
+            source_offset as u64,
             "section_sketch_feature",
             Exactness::Derived,
         );
@@ -15030,9 +15035,11 @@ mod resolved_sketch_tests {
             id: SketchId("creo:model:sketch#917".to_string()),
             name: None,
             configuration: None,
-            origin: Point3::new(0.0, 0.0, 0.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            placement: cadmpeg_ir::sketches::SketchPlacement::Resolved {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+                u_axis: Vector3::new(1.0, 0.0, 0.0),
+            },
             profiles: Vec::new(),
             native_ref: Some("creo:featdefs:sketch#917".to_string()),
         });
@@ -28840,7 +28847,7 @@ fn build_ir(
     transfer_fc05_cap_circles(scan, &mut ir, &mut annotations);
     transfer_cap_pair_cylinders(scan, &mut ir, &mut annotations);
     let saved_spline_curve_count = transfer_saved_spline_curves(scan, &mut ir, &mut annotations);
-    transfer_resolved_sketches(scan, &mut ir, &mut annotations);
+    transfer_sketches(scan, &mut ir, &mut annotations);
     let feature_revolution_surface_count =
         transfer_resolved_revolution_surfaces(scan, &mut ir, &mut annotations);
     let feature_revolution_vertex_orbit_curve_count =
