@@ -488,6 +488,11 @@ slots 6..8    second in-plane support direction
 slots 9..11   support-frame origin
 ```
 
+The twelve-slot macro language must consume the complete local-system body. A
+terminal `e1` after a complete frame is a null row-tail marker and is not a
+scalar slot. If any other bytes remain, none of the twelve slot positions is
+assigned a numeric value.
+
 When the rank-2 guard holds, derive the normal as:
 
 ```text

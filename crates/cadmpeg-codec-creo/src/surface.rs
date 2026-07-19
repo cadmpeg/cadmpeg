@@ -2149,6 +2149,14 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
     }
 }
 
+fn complete_plane_local_system_slots(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<[f64; 12]> {
+    let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
+    scalar::decode_curve_expression_local_system_slots(frame_body, cache)
+}
+
 /// Decode the e3-bounded local-system chunk following each plane envelope.
 pub fn plane_local_systems(payload: &[u8]) -> Vec<PlaneLocalSystem> {
     plane_local_systems_for_rows(payload, rows(payload))
@@ -2183,7 +2191,8 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: Vec<SurfaceRow>) -> Vec<Pl
             continue;
         }
         let body = payload[chunk_start..chunk_end].to_vec();
-        let slots = row_scalar_slots(&body, 12, &cache);
+        let slots = complete_plane_local_system_slots(&body, &cache)
+            .map_or([None; 12], |slots| slots.map(Some));
         let frame = plane_frame(&slots);
         let simple = matches!(body.first(), Some(0x0f | 0x10 | 0x18))
             && body.len() <= 24
@@ -2193,7 +2202,7 @@ fn plane_local_systems_for_rows(payload: &[u8], rows: Vec<SurfaceRow>) -> Vec<Pl
         systems.push(PlaneLocalSystem {
             surface_id: row.id,
             body,
-            slots,
+            slots: slots.to_vec(),
             origin: frame.origin,
             u_axis: frame.u_axis,
             normal: frame.normal,
@@ -3118,6 +3127,26 @@ mod tests {
         assert_eq!(
             frame_bound_outline_planes(&records, &frames)[0].origin,
             [0.0, -4.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn positional_plane_frame_consumes_identity_macro_before_null_tail() {
+        let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1];
+
+        assert_eq!(
+            complete_plane_local_system_slots(&body, &scalar::ScalarCache::default()),
+            Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+        );
+    }
+
+    #[test]
+    fn positional_plane_frame_rejects_unconsumed_row_bytes() {
+        let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0x00];
+
+        assert_eq!(
+            complete_plane_local_system_slots(&body, &scalar::ScalarCache::default()),
+            None
         );
     }
 
