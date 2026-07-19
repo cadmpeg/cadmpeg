@@ -2622,6 +2622,35 @@ fn offset_only_indexed_om_section() -> Vec<u8> {
     bytes
 }
 
+fn control_root_offset_only_indexed_om_section() -> Vec<u8> {
+    let mut bytes = vec![0xaa; 8];
+    let class_name = b"UGS::ModlFeature";
+    bytes.push((class_name.len() + 1) as u8);
+    bytes.extend_from_slice(class_name);
+    bytes.push(0x81);
+    let index_start = bytes.len();
+    bytes.extend_from_slice(&[0; 16]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    let control = bytes.len();
+    bytes.extend_from_slice(&[0xf0, 1, 0, 0]);
+    bytes.extend_from_slice(b"\x05\x01\x0eNX 2027.3102\0control-tail");
+    let first = bytes.len();
+    bytes.extend_from_slice(&[0; 32]);
+    let second = bytes.len();
+    let text = b"(Number [mm]) length: 25; ";
+    bytes.extend_from_slice(b"hostglobalvariables");
+    bytes.extend_from_slice(&[0x04, 0x00, 0x2a, 0x02, 0x0b]);
+    bytes.extend_from_slice(&[0x99, 0x04, (text.len() + 2) as u8]);
+    bytes.extend_from_slice(text);
+    bytes.push(0);
+    let end = bytes.len();
+    for (index, offset) in [control, first, second, end].into_iter().enumerate() {
+        bytes[index_start + index * 4..index_start + index * 4 + 4]
+            .copy_from_slice(&(offset as u32).to_le_bytes());
+    }
+    bytes
+}
+
 fn size_framed_om_section() -> Vec<u8> {
     let mut bytes = vec![0xff; 16];
     bytes[4..8].fill(0);
@@ -7669,6 +7698,45 @@ fn om_offset_only_index_bounds_storage_blocks() {
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].name, "length");
     assert_eq!(expressions[0].value, Some(25.0));
+}
+
+#[test]
+fn om_offset_only_index_accepts_one_root_record_inside_control_block() {
+    let bytes = control_root_offset_only_indexed_om_section();
+    let sections = crate::om::indexed_sections(&bytes);
+
+    assert_eq!(sections.len(), 1);
+    assert!(sections[0]
+        .control
+        .as_ref()
+        .unwrap()
+        .bytes
+        .windows(b"NX 2027.3102".len())
+        .any(|window| window == b"NX 2027.3102"));
+    assert_eq!(sections[0].records.len(), 2);
+    assert_eq!(sections[0].records[0].bytes, &[0; 32]);
+    assert_eq!(sections[0].numeric_expressions()[0].name, "length");
+}
+
+#[test]
+fn om_offset_only_index_requires_one_supported_product_record() {
+    let mut duplicate = control_root_offset_only_indexed_om_section();
+    let first_column = duplicate
+        .windows(32)
+        .position(|window| window == [0; 32])
+        .expect("zero first column");
+    let duplicate_product = b"\x04\x01\x0eNX 2027.3102\0";
+    duplicate[first_column..first_column + duplicate_product.len()]
+        .copy_from_slice(duplicate_product);
+    assert!(crate::om::indexed_sections(&duplicate).is_empty());
+
+    let mut unsupported = control_root_offset_only_indexed_om_section();
+    let product = unsupported
+        .windows(b"\x05\x01\x0eNX 2027.3102\0".len())
+        .position(|window| window == b"\x05\x01\x0eNX 2027.3102\0")
+        .expect("product record");
+    unsupported[product] = 0x03;
+    assert!(crate::om::indexed_sections(&unsupported).is_empty());
 }
 
 #[test]

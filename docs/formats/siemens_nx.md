@@ -321,7 +321,7 @@ The wrapper `00 ce` instance owns the stream BODY (`child`), attribute-definitio
 
 ### 3.3 NX object-model framing
 
-An indexed object-model section carries an entity-boundary array followed by an object count and object-ID array. Boundary slot zero is zero. Subsequent values are monotonic offsets relative to the section base. Object IDs in slots `1..count` pair with entity spans bounded by adjacent boundary values. The first entity begins with `04 01 0e "NX "`.
+An indexed object-model section carries an entity-boundary array followed by an object count and object-ID array. Boundary slot zero is zero. Subsequent values are monotonic offsets relative to the section base. Object IDs in slots `1..count` pair with entity spans bounded by adjacent boundary values. The first entity begins with `(04|05) 01 text_length:u8 "NX "`.
 
 An offset-only object-model store instead carries an absolute boundary array,
 then a record count. Boundary slot zero bounds the store root/control block;
@@ -334,10 +334,11 @@ separator or padding. Block ordinals include the root/control block when it is
 present: that block is ordinal zero and column blocks begin at one. A store
 without a distinct root/control block numbers its first column block zero.
 
-Each indexed store contains one self-framed product/version header:
-`04 01 text_length:u8 "NX " version_text 00`. `text_length` equals the
-printable text length plus two. Store metadata may precede this
-header inside its bounded control or first data block.
+Each indexed store contains exactly one self-framed product/version header in
+the combined control and first-data-block span:
+`(04|05) 01 text_length:u8 "NX " version_text 00`. `text_length` equals the
+printable text length plus two. Store metadata may precede the header inside
+either bounded block.
 
 Class definitions before the boundary array use `declared_length:u8 + "UGS::" name bytes + trailing_code:u8`, where `declared_length` includes the trailing code. Bytes between the trailing code and the next class declaration form that declaration's registry suffix; an empty suffix is valid. An 11–14-byte suffix consists of a 2–5-byte layout prefix, an eight-byte schema fingerprint, and one terminal layout byte. Member definitions in the same indexed schema use the same framing with an `m_` name. Declaration order supplies section-local class and member identity.
 

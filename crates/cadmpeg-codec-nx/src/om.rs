@@ -2868,7 +2868,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         else {
             continue;
         };
-        if !is_root_record(bytes.get(table_end..).unwrap_or_default())
+        if !is_product_record(bytes.get(table_end..).unwrap_or_default())
             || u32_at(bytes, index_start) != Some(0)
             || !seen_record_starts.insert(table_end)
         {
@@ -2956,9 +2956,6 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
         if first < count_offset + 4 || first >= second || second > last || last > bytes.len() {
             continue;
         }
-        if !is_root_record(bytes.get(second..).unwrap_or_default()) {
-            continue;
-        }
         let mut offsets = Vec::with_capacity(offset_count);
         for index in 0..offset_count {
             let Some(offset) = u32_at(bytes, index_start + index * 4).map(|v| v as usize) else {
@@ -2971,8 +2968,12 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             || offsets[0] < count_offset + 4
             || !offsets.windows(2).all(|pair| pair[0] <= pair[1])
             || offsets.last().is_none_or(|end| *end > bytes.len())
-            || !seen_record_starts.insert(offsets[1])
         {
+            continue;
+        }
+        let product_record_count = root_record_count(&bytes[offsets[0]..offsets[1]])
+            + root_record_count(&bytes[offsets[1]..offsets[2]]);
+        if product_record_count != 1 || !seen_record_starts.insert(offsets[1]) {
             continue;
         }
         let records = offsets[1..]
@@ -3001,34 +3002,17 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
     out
 }
 
-fn is_root_record(bytes: &[u8]) -> bool {
-    if bytes.get(..2) != Some(&[0x04, 0x01]) {
-        return false;
-    }
-    let Some(length) = bytes
-        .get(2)
-        .copied()
-        .map(usize::from)
-        .and_then(|declared| declared.checked_sub(2))
-    else {
-        return false;
-    };
-    let Some(end) = 3usize.checked_add(length) else {
-        return false;
-    };
-    bytes.get(3..end).is_some_and(|text| {
-        text.starts_with(b"NX ")
-            && text
-                .iter()
-                .all(|byte| byte.is_ascii_graphic() || *byte == b' ')
-    }) && bytes.get(end) == Some(&0)
+fn root_record_count(bytes: &[u8]) -> usize {
+    (0..bytes.len())
+        .filter(|offset| is_product_record(&bytes[*offset..]))
+        .count()
 }
 
 /// Decode the first self-framed NX product/version marker in `bytes`.
 pub fn store_version(bytes: &[u8], base_offset: usize) -> Option<StoreVersion<'_>> {
     (0..bytes.len().saturating_sub(3)).find_map(|at| {
         let suffix = &bytes[at..];
-        is_root_record(suffix).then(|| {
+        is_product_record(suffix).then(|| {
             let length = usize::from(suffix[2]) - 2;
             StoreVersion {
                 offset: base_offset + at,
@@ -3075,7 +3059,7 @@ pub fn offset_store_control_class_ordinals(bytes: &[u8], class_count: usize) -> 
 /// Decode the aligned little-endian value array preceding one product record.
 pub fn offset_store_index_values(bytes: &[u8]) -> Option<(usize, Vec<u32>)> {
     let matches = (0..bytes.len())
-        .filter(|offset| is_root_record(&bytes[*offset..]))
+        .filter(|offset| is_product_record(&bytes[*offset..]))
         .collect::<Vec<_>>();
     let [product_offset] = matches.as_slice() else {
         return None;
