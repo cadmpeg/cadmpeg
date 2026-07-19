@@ -6902,6 +6902,52 @@ pub(crate) fn bind_history_classes(
         }
     }
 
+    let mut direct_classes_by_name = HashMap::<&str, Vec<&str>>::new();
+    for lane in lanes {
+        let names_by_offset = lane
+            .names
+            .iter()
+            .map(|name| (name.offset, name.value.as_str()))
+            .collect::<HashMap<_, _>>();
+        for class in &lane.classes {
+            let name_offset = class.offset + 6 + class.name.len() as u64;
+            let Some(name) = names_by_offset.get(&name_offset) else {
+                continue;
+            };
+            if native_object_class(&class.name).role != FeatureInputClassRole::Native {
+                direct_classes_by_name
+                    .entry(name)
+                    .or_default()
+                    .push(&class.name);
+            }
+        }
+    }
+    for classes in direct_classes_by_name.values_mut() {
+        classes.sort_unstable();
+        classes.dedup();
+    }
+    let mut history_name_counts = HashMap::<String, usize>::new();
+    for feature in histories.iter().flat_map(|history| &history.features) {
+        if !feature.name.is_empty() {
+            *history_name_counts.entry(feature.name.clone()).or_default() += 1;
+        }
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| feature.input_class.is_none() && feature.source_id.is_none())
+    {
+        if history_name_counts.get(&feature.name) == Some(&1) {
+            let Some([class]) = direct_classes_by_name
+                .get(feature.name.as_str())
+                .map(Vec::as_slice)
+            else {
+                continue;
+            };
+            feature.input_class = Some((*class).to_string());
+        }
+    }
+
     let mut native_startups = Vec::<[&str; 6]>::new();
     for lane in lanes {
         let resolved = lane
@@ -7150,6 +7196,72 @@ mod idless_history_binding_tests {
                 Some("moExtrusion_c"),
             ]
         );
+    }
+
+    #[test]
+    fn unique_idless_name_binds_to_its_direct_class_declaration() {
+        let mut unique = feature(0, "localized thread");
+        unique.name = "unique generated name".into();
+        let mut duplicate_a = feature(1, "localized duplicate");
+        duplicate_a.name = "duplicate name".into();
+        let mut duplicate_b = feature(2, "localized duplicate");
+        duplicate_b.name = duplicate_a.name.clone();
+        let mut histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![unique, duplicate_a, duplicate_b],
+        }];
+        let class = |ordinal: u32, offset: u64, name: &str| FeatureInputClass {
+            id: format!("class-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            offset,
+            name: name.into(),
+            role: native_object_class(name).role,
+        };
+        let classes = vec![
+            class(0, 100, "moCosmeticThread_c"),
+            class(1, 200, "moRefAxis_c"),
+        ];
+        let name = |ordinal: u32, class: &FeatureInputClass, value: &str| FeatureInputName {
+            id: format!("name-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            offset: class.offset + 6 + class.name.len() as u64,
+            object_id: None,
+            value: value.into(),
+        };
+        let names = vec![
+            name(0, &classes[0], "unique generated name"),
+            name(1, &classes[1], "duplicate name"),
+        ];
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes,
+            names,
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        bind_history_classes(&mut histories, &[lane]);
+
+        assert_eq!(
+            histories[0].features[0].input_class.as_deref(),
+            Some("moCosmeticThread_c")
+        );
+        assert_eq!(histories[0].features[1].input_class, None);
+        assert_eq!(histories[0].features[2].input_class, None);
     }
 }
 
