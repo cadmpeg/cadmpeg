@@ -1229,8 +1229,8 @@ fn compact_boundary_domain_viable(
     }
 }
 
-fn compact_boundary_domains_jointly_viable(
-    domains: &[MeshFaceBoundaryDomain],
+fn compact_boundary_domains_jointly_viable<'a>(
+    domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
@@ -1516,7 +1516,10 @@ impl IncidenceComponentSearch<'_> {
         let Some(mesh_assignments) = self.mesh_assignments else {
             return true;
         };
-        let viable = faces.into_iter().all(|face| {
+        let mut faces = faces.into_iter().collect::<Vec<_>>();
+        faces.sort_unstable();
+        faces.dedup();
+        let viable = faces.iter().copied().all(|face| {
             mesh_assignments
                 .get(face)
                 .is_some_and(|domain| match domain {
@@ -1540,7 +1543,7 @@ impl IncidenceComponentSearch<'_> {
         viable
             && self.mesh_quotient.is_none_or(|quotient| {
                 compact_boundary_domains_jointly_viable(
-                    mesh_assignments,
+                    faces.iter().filter_map(|face| mesh_assignments.get(*face)),
                     self.choices,
                     &self.assignment,
                     None,
@@ -10169,6 +10172,49 @@ mod motif_tests {
         search.assignment[0] = Some([0, 0]);
         assert!(!search.ordered_faces_feasible([0]));
         assert!(budget.exhausted.get());
+    }
+
+    #[test]
+    fn incidence_selection_validates_only_its_affected_faces() {
+        let choices = vec![vec![[0, 0]], vec![[0, 1]]];
+        let edge_faces = [[0, 0], [1, 1]];
+        let face_edges = vec![vec![0], vec![1]];
+        let assignments = vec![
+            MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0]),
+            MeshFaceBoundaryDomain::UnorderedFullCycle(vec![1]),
+        ];
+        let quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![
+                Arc::new(HashSet::from([0])),
+                Arc::new(HashSet::from([0])),
+                Arc::new(HashSet::from([0, 1])),
+                Arc::new(HashSet::from([0, 1])),
+            ],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let budget = MeshConstraintBudget::new(1_000);
+        let search = super::IncidenceComponentSearch {
+            choices: &choices,
+            edge_faces: &edge_faces,
+            face_edges: &face_edges,
+            mesh_assignments: Some(&assignments),
+            mesh_quotient: Some(&quotient),
+            active: vec![true, false],
+            edges: &[0],
+            constraints: vec![(0, 0)],
+            assignment: vec![Some([0, 0]), Some([0, 1])],
+            degrees: vec![vec![2, 0], vec![1, 1]],
+            solutions: Vec::new(),
+            solution_filter: None,
+            dead_states: HashSet::new(),
+            budget: &budget,
+            states: 0,
+            exhausted: false,
+        };
+
+        assert!(search.ordered_faces_feasible([0]));
+        assert!(!search.ordered_faces_feasible([1]));
     }
 
     #[test]
