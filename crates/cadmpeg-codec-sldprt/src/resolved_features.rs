@@ -12196,6 +12196,157 @@ pub(crate) fn project_dimensioned_sketch_geometry(
     }
 }
 
+/// Materialize marker-only concentric circles whose radial witnesses form a
+/// complete one-to-one match with the sketch's diameter parameters.
+pub(crate) fn project_marker_dimensioned_circles(
+    entities: &mut Vec<SketchEntity>,
+    sketches: &mut [Sketch],
+    features: &[cadmpeg_ir::features::Feature],
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+    lanes: &[FeatureInputLane],
+) {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    const QUANTUM: f64 = 1.0e-8;
+
+    let transforms = marker_transform_candidates_by_feature(features, sketches, entities, lanes);
+    for feature in features {
+        let (
+            Some(native_ref),
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch_id),
+                ..
+            },
+        ) = (feature.native_ref.as_deref(), &feature.definition)
+        else {
+            continue;
+        };
+        let diameters = parameters
+            .iter()
+            .filter(|parameter| parameter.owner == feature.id)
+            .filter_map(|parameter| {
+                let cadmpeg_ir::features::ParameterValue::Length(diameter) =
+                    parameter.value.as_ref()?
+                else {
+                    return None;
+                };
+                (parameter.display == Some(cadmpeg_ir::features::DimensionDisplay::Diameter)
+                    && diameter.0.is_finite()
+                    && diameter.0 > 0.0)
+                    .then_some((parameter, diameter.0 * 0.5))
+            })
+            .collect::<Vec<_>>();
+        if diameters.is_empty() {
+            continue;
+        }
+        let markers = lanes
+            .iter()
+            .flat_map(|lane| &lane.sketch_entities)
+            .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+            .filter(|marker| marker.coordinates_m.is_some())
+            .collect::<Vec<_>>();
+        let centers = markers
+            .iter()
+            .copied()
+            .filter(|marker| marker.kind == SketchInputKind::LineOrCircle)
+            .collect::<Vec<_>>();
+        let radial = markers
+            .iter()
+            .copied()
+            .filter(|marker| {
+                matches!(
+                    marker.kind,
+                    SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                )
+            })
+            .collect::<Vec<_>>();
+        let [center] = centers.as_slice() else {
+            continue;
+        };
+        if radial.len() != diameters.len() {
+            continue;
+        }
+        let [cu, cv] = center
+            .coordinates_m
+            .expect("coordinate markers carry coordinates");
+        let matches = diameters
+            .iter()
+            .map(|(_, radius)| {
+                radial
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, marker)| {
+                        let [u, v] = marker
+                            .coordinates_m
+                            .expect("coordinate markers carry coordinates");
+                        same_dimension_length((u - cu).hypot(v - cv) * NATIVE_TO_IR, *radius)
+                            .then_some(index)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        if matches.iter().any(|matches| matches.len() != 1)
+            || matches
+                .iter()
+                .map(|matches| matches[0])
+                .collect::<HashSet<_>>()
+                .len()
+                != radial.len()
+        {
+            continue;
+        }
+        let native_center = quantize(Point2::new(cu * NATIVE_TO_IR, cv * NATIVE_TO_IR), QUANTUM);
+        let centers = transforms
+            .get(native_ref)
+            .into_iter()
+            .flatten()
+            .filter_map(|transform| transform.apply(native_center))
+            .collect::<HashSet<_>>();
+        let centers = centers.into_iter().collect::<Vec<_>>();
+        let [(u, v)] = centers.as_slice() else {
+            continue;
+        };
+        let center = Point2::new(*u as f64 * QUANTUM, *v as f64 * QUANTUM);
+        let Some(sketch) = sketches.iter_mut().find(|sketch| sketch.id == *sketch_id) else {
+            continue;
+        };
+        for (parameter, radius) in diameters {
+            if entities.iter().any(|entity| {
+                entity.sketch == *sketch_id
+                    && matches!(&entity.geometry, SketchGeometry::Circle { center: existing, radius: existing_radius }
+                        if quantize(*existing, QUANTUM) == quantize(center, QUANTUM)
+                            && same_dimension_length(existing_radius.0, radius))
+            }) {
+                continue;
+            }
+            let feature_key = feature
+                .id
+                .0
+                .rsplit_once('#')
+                .map_or(feature.id.0.as_str(), |(_, key)| key);
+            let entity_id = SketchEntityId(format!(
+                "sldprt:model:sketch-entity#marker-circle:{}:{}",
+                feature_key, parameter.ordinal
+            ));
+            entities.push(SketchEntity {
+                id: entity_id.clone(),
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: parameter.native_ref.clone(),
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Circle {
+                    center,
+                    radius: Length(radius),
+                },
+            });
+            sketch.profiles.push(vec![SketchEntityUse {
+                entity: entity_id,
+                reversed: false,
+            }]);
+        }
+    }
+}
+
 /// Materialize relation-addressed point geometry omitted from selected profile streams.
 pub(crate) fn project_relation_point_geometry(
     entities: &mut Vec<SketchEntity>,
@@ -16454,11 +16605,11 @@ mod profile_join_tests {
         dimensioned_circle_transform, implicit_circle_marker, line_endpoint_markers,
         line_reference_direction, marker_entities, marker_point_locus, owned_relation_parameters,
         profile_loci_by_marker, project_dimensioned_sketch_geometry, project_dissected_sketches,
-        project_marker_backed_sketches, project_relation_point_geometry,
-        project_relation_solved_point_geometry, relation_operand_marker, relation_owner_markers,
-        relation_parameter_by_display_name, resolved_marker_locus,
-        select_marker_transforms_by_frame, single_marker_curve_entity, single_marker_line_entity,
-        sketch_frame_marker_transform, type_display_relation_parameters,
+        project_marker_backed_sketches, project_marker_dimensioned_circles,
+        project_relation_point_geometry, project_relation_solved_point_geometry,
+        relation_operand_marker, relation_owner_markers, relation_parameter_by_display_name,
+        resolved_marker_locus, select_marker_transforms_by_frame, single_marker_curve_entity,
+        single_marker_line_entity, sketch_frame_marker_transform, type_display_relation_parameters,
         typed_marker_relation_definition, typed_marker_relation_definition_in_sketch,
         typed_relation_definition, unique_axis_aligned_linked_loci,
         unique_compatible_marker_transform, unique_linked_endpoint_locus, unique_marker_transform,
@@ -16762,6 +16913,120 @@ mod profile_join_tests {
                 ..
             } if sketch == &expected_sketch
         ));
+    }
+
+    #[test]
+    fn marker_center_and_radial_points_project_complete_diameter_circles() {
+        let sketch_id = SketchId("sketch".into());
+        let feature = Feature {
+            id: FeatureId("feature".into()),
+            ordinal: 0,
+            name: None,
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: BTreeMap::new(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Sketch {
+                space: SketchSpace::Planar,
+                sketch: Some(sketch_id.clone()),
+            },
+            native_ref: Some("feature-native".into()),
+        };
+        let mut sketches = vec![Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: Some("lane".into()),
+        }];
+        let parameter = |ordinal: u32, diameter: f64| DesignParameter {
+            id: ParameterId(format!("parameter-{ordinal}")),
+            owner: feature.id.clone(),
+            name: format!("D{}", ordinal + 1),
+            ordinal,
+            expression: diameter.to_string(),
+            value: Some(ParameterValue::Length(Length(diameter))),
+            display: Some(DimensionDisplay::Diameter),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: Some(format!("scalar-{ordinal}")),
+            dependencies: Vec::new(),
+        };
+        let mut center = marker("center", Some([0.0, 0.0]));
+        center.kind = SketchInputKind::LineOrCircle;
+        let first = marker("first", Some([0.005, 0.0]));
+        let second = marker("second", Some([0.0, 0.008]));
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![center, first, second],
+        };
+        let mut entities = vec![
+            SketchEntity {
+                id: SketchEntityId("first-entity".into()),
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some("first".into()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(5.0, 0.0),
+                },
+            },
+            SketchEntity {
+                id: SketchEntityId("second-entity".into()),
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some("second".into()),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Point {
+                    position: Point2::new(0.0, 8.0),
+                },
+            },
+        ];
+
+        project_marker_dimensioned_circles(
+            &mut entities,
+            &mut sketches,
+            std::slice::from_ref(&feature),
+            &[parameter(0, 10.0), parameter(1, 16.0)],
+            std::slice::from_ref(&lane),
+        );
+
+        assert_eq!(entities.len(), 4);
+        assert_eq!(sketches[0].profiles.len(), 2);
+        assert!(entities.iter().any(|entity| matches!(
+            entity.geometry,
+            SketchGeometry::Circle {
+                center,
+                radius: Length(5.0)
+            } if center == Point2::new(0.0, 0.0)
+        )));
+        assert!(entities.iter().any(|entity| matches!(
+            entity.geometry,
+            SketchGeometry::Circle {
+                center,
+                radius: Length(8.0)
+            } if center == Point2::new(0.0, 0.0)
+        )));
     }
 
     #[test]

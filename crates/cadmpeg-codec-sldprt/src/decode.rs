@@ -1584,6 +1584,13 @@ fn build_geometry_ir(
         &ir.model.parameters,
         &lanes,
     );
+    crate::resolved_features::project_marker_dimensioned_circles(
+        &mut sketch_entities,
+        &mut sketches,
+        &ir.model.features,
+        &ir.model.parameters,
+        &lanes,
+    );
     crate::resolved_features::project_relation_point_geometry(
         &mut sketch_entities,
         &sketches,
