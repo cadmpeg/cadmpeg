@@ -1132,9 +1132,10 @@ surface-of-revolution reductions require `ratio = 1`.
 `Annotation Feature`, `Cross Section`, `Datum Plane`, `Round`, `Chamfer`,
 `Protrusion`, `Extrude`, `Revolve`, `Hole`, `Cut`, `Draft`, `Mirror`, and
 `Surface`. A reference-backed `Thicken <decimal-ordinal>` name identifies a
-thicken operation. The German operation-family names `Bezugsebene` and `Rundung`
-denote the same datum-plane and round families as `Datum Plane` and `Round`,
-respectively. `Annotation Feature` is a non-modeling annotation container.
+thicken operation. The German operation-family names `Bezugsebene`, `Rundung`,
+and `Schräge` denote the same datum-plane, round, and draft families as
+`Datum Plane`, `Round`, and `Draft`, respectively. `Annotation Feature` is a
+non-modeling annotation container.
 `Cross Section` and its German operation-family name `Querschnitt` are
 non-modeling cross-section definitions. `Mirror` identifies a reflection
 operation.

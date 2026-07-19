@@ -2120,7 +2120,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             } => {
                 face_selections.push(faces);
                 face_selections.push(neutral_plane);
-                if !valid_feature_direction(*pull_direction) || !angle.0.is_finite() {
+                if pull_direction.is_some_and(|direction| !valid_feature_direction(direction))
+                    || angle.is_some_and(|angle| !angle.0.is_finite())
+                {
                     feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
             }

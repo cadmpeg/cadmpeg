@@ -2334,14 +2334,14 @@ fn project_draft(feature: &Feature) -> Option<FeatureDefinition> {
             .get("NeutralPlane")
             .cloned()
             .map_or(FaceSelection::Unresolved, FaceSelection::Native),
-        pull_direction,
-        angle: Angle(
+        pull_direction: Some(pull_direction),
+        angle: Some(Angle(
             feature
                 .parameters
                 .get("Angle")
                 .and_then(|value| parse_angle_rad(value))?,
-        ),
-        outward: parse_bool(feature.properties.get("Outward")?)?,
+        )),
+        outward: Some(parse_bool(feature.properties.get("Outward")?)?),
     })
 }
 
@@ -5439,14 +5439,18 @@ pub fn sync_neutral_features(
                     .is_some_and(|record| !feature_family(record, "Draft"))
                     || !operands_supported(face_selection, faces.as_ref())
                     || !operands_supported(plane_selection, neutral_plane.as_ref())
+                    || existing.is_none()
+                        && (pull_direction.is_none() || angle.is_none() || outward.is_none())
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported draft semantics",
                         feature.id
                     )));
                 }
-                require_direction(*pull_direction, &feature.id, "draft direction")?;
-                if !angle.0.is_finite() {
+                if let Some(pull_direction) = pull_direction {
+                    require_direction(*pull_direction, &feature.id, "draft direction")?;
+                }
+                if angle.is_some_and(|angle| !angle.0.is_finite()) {
                     return Err(CodecError::Malformed(format!(
                         "SLDPRT feature {} has a non-finite draft angle",
                         feature.id
@@ -5456,7 +5460,9 @@ pub fn sync_neutral_features(
                     .as_deref()
                     .map(|record| record.parameters.clone())
                     .unwrap_or_default();
-                parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                if let Some(angle) = angle {
+                    parameters.insert("Angle".into(), format_angle_rad(angle.0));
+                }
                 let mut properties = feature.source_properties.clone();
                 let fallback = existing.as_deref().map_or("", |record| record.id.as_str());
                 if let Some(faces) = faces {
@@ -5470,8 +5476,12 @@ pub fn sync_neutral_features(
                         fallback,
                     );
                 }
-                properties.insert("Direction".into(), format_vector3(*pull_direction));
-                properties.insert("Outward".into(), outward.to_string());
+                if let Some(pull_direction) = pull_direction {
+                    properties.insert("Direction".into(), format_vector3(*pull_direction));
+                }
+                if let Some(outward) = outward {
+                    properties.insert("Outward".into(), outward.to_string());
+                }
                 (
                     existing
                         .as_deref()

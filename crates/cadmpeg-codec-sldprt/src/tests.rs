@@ -2303,9 +2303,9 @@ fn encoder_writes_source_less_native_features() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native("face-b".into()),
             neutral_plane: FaceSelection::Native("face-c".into()),
-            pull_direction: Vector3::new(0.0, 0.0, 1.0),
-            angle: Angle(0.2),
-            outward: false,
+            pull_direction: Some(Vector3::new(0.0, 0.0, 1.0)),
+            angle: Some(Angle(0.2)),
+            outward: Some(false),
         },
         FeatureDefinition::Combine {
             target: BodySelection::Resolved {
@@ -8565,9 +8565,9 @@ fn semantic_writer_round_trips_typed_draft() {
         FeatureDefinition::Draft {
             faces: FaceSelection::Native(faces),
             neutral_plane: FaceSelection::Native(neutral_plane),
-            pull_direction: Vector3 { x: 0.0, y: 0.0, z: 1.0 },
-            angle: Angle(value),
-            outward: false,
+            pull_direction: Some(Vector3 { x: 0.0, y: 0.0, z: 1.0 }),
+            angle: Some(Angle(value)),
+            outward: Some(false),
         } if faces == "face:1,face:2"
             && neutral_plane == "face:3"
             && (*value - 3f64.to_radians()).abs() < 1e-12
@@ -8583,9 +8583,9 @@ fn semantic_writer_round_trips_typed_draft() {
     else {
         panic!("typed draft");
     };
-    *pull_direction = Vector3::new(0.0, 1.0, 0.0);
-    *angle = Angle(7f64.to_radians());
-    *outward = true;
+    *pull_direction = Some(Vector3::new(0.0, 1.0, 0.0));
+    *angle = Some(Angle(7f64.to_radians()));
+    *outward = Some(true);
     *faces = FaceSelection::Native("face:4".into());
     *neutral_plane = FaceSelection::Native("face:5".into());
 
@@ -8608,12 +8608,12 @@ fn semantic_writer_round_trips_typed_draft() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::Draft {
-            pull_direction: Vector3 {
+            pull_direction: Some(Vector3 {
                 x: 0.0,
                 y: 1.0,
                 z: 0.0
-            },
-            outward: true,
+            }),
+            outward: Some(true),
             ..
         }
     ));
@@ -8677,7 +8677,7 @@ fn semantic_writer_preserves_absent_feature_selections() {
     else {
         panic!("typed draft");
     };
-    *angle = Angle(5f64.to_radians());
+    *angle = Some(Angle(5f64.to_radians()));
 
     let mut encoded = Vec::new();
     SldprtCodec

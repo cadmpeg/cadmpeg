@@ -1632,6 +1632,34 @@ fn decode_types_class_914_as_unresolved_chamfer() {
 }
 
 #[test]
+fn decode_types_named_draft_with_unresolved_operands() {
+    for name in ["Draft", "Schräge"] {
+        let stored_name = format!("{name} id 40\0");
+        let data = build_prt("c", &[("MdlStatus", stored_name.into_bytes())]);
+        let result =
+            decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+        let feature = result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == "creo:model:feature#40")
+            .expect("draft feature");
+
+        assert!(matches!(
+            &feature.definition,
+            cadmpeg_ir::features::FeatureDefinition::Draft {
+                faces: cadmpeg_ir::features::FaceSelection::Unresolved,
+                neutral_plane: cadmpeg_ir::features::FaceSelection::Unresolved,
+                pull_direction: None,
+                angle: None,
+                outward: None,
+            }
+        ));
+    }
+}
+
+#[test]
 fn decode_types_named_mirror_with_unresolved_operands() {
     let data = build_prt("c", &[("MdlStatus", b"oMirror id 4\0".to_vec())]);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");

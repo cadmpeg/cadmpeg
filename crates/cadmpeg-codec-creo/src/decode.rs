@@ -12913,6 +12913,15 @@ fn schema_feature_definition(
             flip_direction: false,
         };
     }
+    if schema_class == 927 {
+        return IrFeatureDefinition::Draft {
+            faces: FaceSelection::Unresolved,
+            neutral_plane: FaceSelection::Unresolved,
+            pull_direction: None,
+            angle: None,
+            outward: None,
+        };
+    }
     if schema_class == 917
         && feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude)
     {
@@ -13171,6 +13180,7 @@ fn named_feature_definition(
         "Hole" => 911,
         "Round" | "Rundung" => 913,
         "Chamfer" => 914,
+        "Draft" | "Schräge" => 927,
         _ => return None,
     };
     Some(schema_feature_definition(

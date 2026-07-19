@@ -2870,9 +2870,11 @@ fn draft_definition(
     Some(FeatureDefinition::Draft {
         faces: cadmpeg_ir::features::FaceSelection::Native(faces.id.clone()),
         neutral_plane: cadmpeg_ir::features::FaceSelection::Native(neutral_plane.id.clone()),
-        pull_direction,
-        angle: cadmpeg_ir::features::Angle(if reversed { -angle } else { angle }.to_radians()),
-        outward: reversed,
+        pull_direction: Some(pull_direction),
+        angle: Some(cadmpeg_ir::features::Angle(
+            if reversed { -angle } else { angle }.to_radians(),
+        )),
+        outward: Some(reversed),
     })
 }
 

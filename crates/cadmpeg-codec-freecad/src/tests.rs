@@ -2811,13 +2811,14 @@ fn transfers_draft_with_resolved_neutral_plane_and_pull_direction() {
             faces: cadmpeg_ir::features::FaceSelection::Native(faces),
             neutral_plane: cadmpeg_ir::features::FaceSelection::Native(plane),
             pull_direction,
-            angle: cadmpeg_ir::features::Angle(angle),
-            outward: true,
+            angle: Some(cadmpeg_ir::features::Angle(angle)),
+            outward: Some(true),
         } if faces.ends_with(":Base")
             && plane.ends_with(":NeutralPlane")
-            && (pull_direction.x - 0.0).abs() < 1e-12
-            && (pull_direction.y + 1.0).abs() < 1e-12
-            && pull_direction.z.abs() < 1e-12
+            && pull_direction.is_some_and(|direction|
+                (direction.x - 0.0).abs() < 1e-12
+                    && (direction.y + 1.0).abs() < 1e-12
+                    && direction.z.abs() < 1e-12)
             && (*angle + 5f64.to_radians()).abs() < 1e-12
     ));
     assert_eq!(draft.dependencies.len(), 3);

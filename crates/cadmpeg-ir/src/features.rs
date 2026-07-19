@@ -821,12 +821,15 @@ pub enum FeatureDefinition {
         faces: FaceSelection,
         /// Neutral plane that remains fixed during the operation.
         neutral_plane: FaceSelection,
-        /// Pull direction used to measure the draft angle.
-        pull_direction: Vector3,
-        /// Signed draft angle.
-        angle: Angle,
-        /// Whether material is added away from the pull direction.
-        outward: bool,
+        /// Pull direction used to measure the draft angle, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pull_direction: Option<Vector3>,
+        /// Signed draft angle, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        angle: Option<Angle>,
+        /// Whether material is added away from the pull direction, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        outward: Option<bool>,
     },
     /// Boolean operation between existing bodies.
     Combine {
