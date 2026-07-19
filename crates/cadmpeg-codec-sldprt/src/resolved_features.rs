@@ -3680,7 +3680,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn revolution_cut_consumes_the_preceding_profile_object() {
+    fn revolution_consumes_the_preceding_profile_object() {
         let feature = |id: &str, source: &str, class: &str| Feature {
             id: id.into(),
             parent: "history".into(),
@@ -3707,7 +3707,9 @@ mod marker_tests {
             configurations: Vec::new(),
             features: vec![
                 feature("profile", "23", "moProfileFeature_c"),
-                feature("cut", "28", "moRevCut_c"),
+                feature("revolution", "28", "moRevolution_c"),
+                feature("cut-profile", "29", "moProfileFeature_c"),
+                feature("cut", "30", "moRevCut_c"),
             ],
         }];
         let lane = FeatureInputLane {
@@ -3725,11 +3727,27 @@ mod marker_tests {
                     value: "profile".into(),
                 },
                 FeatureInputName {
-                    id: "cut-name".into(),
+                    id: "revolution-name".into(),
                     parent: "lane".into(),
                     ordinal: 1,
                     offset: 200,
                     object_id: Some(28),
+                    value: "revolution".into(),
+                },
+                FeatureInputName {
+                    id: "cut-profile-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 2,
+                    offset: 220,
+                    object_id: Some(29),
+                    value: "cut-profile".into(),
+                },
+                FeatureInputName {
+                    id: "cut-name".into(),
+                    parent: "lane".into(),
+                    ordinal: 3,
+                    offset: 240,
+                    object_id: Some(30),
                     value: "cut".into(),
                 },
             ],
@@ -3748,6 +3766,10 @@ mod marker_tests {
         assert_eq!(
             histories[0].features[1].properties.get("Profile"),
             Some(&"23".into())
+        );
+        assert_eq!(
+            histories[0].features[3].properties.get("Profile"),
+            Some(&"29".into())
         );
     }
 }
@@ -4201,15 +4223,13 @@ pub(crate) fn enrich_history_revolution_inputs(
             ) {
                 continue;
             }
-            if feature.input_class.as_deref() == Some("moRevCut_c") {
-                let source = index
-                    .checked_sub(1)
-                    .and_then(|index| objects.get(index))
-                    .map(|(_, feature)| *feature)
-                    .filter(|feature| is_profile_feature_object(feature))
-                    .and_then(|feature| feature.source_id.as_deref()?.parse::<u32>().ok());
-                profiles.entry(feature.id.clone()).or_default().push(source);
-            }
+            let source = index
+                .checked_sub(1)
+                .and_then(|index| objects.get(index))
+                .map(|(_, feature)| *feature)
+                .filter(|feature| is_profile_feature_object(feature))
+                .and_then(|feature| feature.source_id.as_deref()?.parse::<u32>().ok());
+            profiles.entry(feature.id.clone()).or_default().push(source);
             let mut declarations = lane.classes.iter().filter(|class| {
                 Some(class.name.as_str()) == feature.input_class.as_deref()
                     && class.offset < start
