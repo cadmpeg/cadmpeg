@@ -475,13 +475,13 @@ mod marker_tests {
         patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
         principal_sketch_frame, profile_roster_construction_axis, reconcile_reference_plane_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        revolution_line_reference_inputs, revolution_operation, roster_curve_endpoint_markers,
-        sketch_block_identity_normalization_origin, sketch_block_record_origin,
-        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate, BooleanOp,
-        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
-        NAME_MARKER, SCALAR_HEADER,
+        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
+        roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
+        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, BooleanOp, CompactPointReferenceKind, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER,
+        LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
@@ -3721,6 +3721,32 @@ mod marker_tests {
     }
 
     #[test]
+    fn revolution_temporary_axis_decodes_placed_axis_record() {
+        let mut payload = vec![0; 400];
+        let declaration = 40;
+        payload[declaration..declaration + 4].copy_from_slice(CLASS_MARKER);
+        payload[declaration + 4..declaration + 6].copy_from_slice(&15u16.to_le_bytes());
+        payload[declaration + 6..declaration + 21].copy_from_slice(b"moTempAxisRef_w");
+        for offset in [declaration + 223, declaration + 227] {
+            payload[offset..offset + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        }
+        payload[declaration + 235..declaration + 239].copy_from_slice(&5000u32.to_le_bytes());
+        for (index, value) in [0.0, 0.0, 0.03, 0.0, 0.0, 0.072, 0.0, 0.0, -1.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = declaration + 239 + index * 8;
+            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        payload[declaration + 312..declaration + 316].copy_from_slice(CLASS_MARKER);
+
+        assert_eq!(
+            revolution_temporary_axis(&payload, 32, payload.len()),
+            Some((Point3::new(0.0, 0.0, 30.0), Vector3::new(0.0, 0.0, -1.0)))
+        );
+    }
+
+    #[test]
     fn indexed_profile_construction_line_places_a_revolution_axis() {
         let mut payload = vec![0; 300];
         for offset in [0, 100, 200] {
@@ -4661,7 +4687,65 @@ fn revolution_line_reference_inputs(
     Some(*candidate)
 }
 
-/// Add profile ownership and placed axes carried by revolution line references.
+fn revolution_temporary_axis(
+    payload: &[u8],
+    object_start: usize,
+    object_end: usize,
+) -> Option<(Point3, Vector3)> {
+    const DECLARATION: &[u8] = b"\xff\xff\x01\x00\x0f\x00moTempAxisRef_w";
+    const HANDLE_PAIR: &[u8] = b"\xc7\xcf\xff\xff\xc7\xcf\xff\xff";
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let end = object_end.min(payload.len());
+    let last_declaration = end.checked_sub(316)?;
+    let mut candidates = (object_start..=last_declaration).filter_map(|declaration| {
+        if payload.get(declaration..declaration + DECLARATION.len()) != Some(DECLARATION)
+            || payload.get(declaration + 223..declaration + 231) != Some(HANDLE_PAIR)
+            || payload.get(declaration + 231..declaration + 235) != Some(&[0; 4])
+            || payload
+                .get(declaration + 235..declaration + 239)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_none_or(|address| address == 0)
+        {
+            return None;
+        }
+        let scalar = |index: usize| {
+            let offset = declaration + 239 + index * 8;
+            let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
+            (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
+        };
+        let origin = Point3::new(
+            scalar(0)? * NATIVE_TO_IR,
+            scalar(1)? * NATIVE_TO_IR,
+            scalar(2)? * NATIVE_TO_IR,
+        );
+        let direction = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
+        let norm =
+            (direction.x * direction.x + direction.y * direction.y + direction.z * direction.z)
+                .sqrt();
+        if (norm - 1.0).abs() > 1.0e-9 {
+            return None;
+        }
+        let record_end = declaration + 311;
+        let next_class = (record_end..=record_end + 24).find(|offset| {
+            payload.get(record_end..*offset).is_some_and(|padding| {
+                padding.iter().all(|byte| *byte == 0)
+                    && payload.get(*offset..*offset + 4) == Some(CLASS_MARKER)
+            })
+        })?;
+        (next_class < end).then_some((
+            origin,
+            Vector3::new(direction.x / norm, direction.y / norm, direction.z / norm),
+        ))
+    });
+    let first = candidates.next()?;
+    candidates
+        .all(|candidate| candidate == first)
+        .then_some(first)
+}
+
+/// Add profile ownership and placed axes carried by revolution reference records.
 pub(crate) fn enrich_history_revolution_inputs(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -4715,7 +4799,7 @@ pub(crate) fn enrich_history_revolution_inputs(
         }
     }
     let mut profiles = HashMap::<String, Vec<Option<u32>>>::new();
-    let mut inputs = HashMap::<String, Vec<Option<(u32, Point3, Vector3)>>>::new();
+    let mut inputs = HashMap::<String, Vec<Option<(Point3, Vector3)>>>::new();
     for lane in lanes {
         for history in histories.iter() {
             let mut objects = history
@@ -4753,6 +4837,9 @@ pub(crate) fn enrich_history_revolution_inputs(
                     end,
                     known_profiles,
                 );
+                let placed_axis = line_reference
+                    .map(|(_, origin, direction)| (origin, direction))
+                    .or_else(|| revolution_temporary_axis(&lane.native_payload, start, end));
                 profiles
                     .entry(feature.id.clone())
                     .or_default()
@@ -4760,7 +4847,7 @@ pub(crate) fn enrich_history_revolution_inputs(
                 inputs
                     .entry(feature.id.clone())
                     .or_default()
-                    .push(line_reference);
+                    .push(placed_axis);
             }
         }
     }
@@ -4797,11 +4884,11 @@ pub(crate) fn enrich_history_revolution_inputs(
         {
             feature.properties.insert(
                 "AxisOrigin".into(),
-                format!("{}mm,{}mm,{}mm", first.1.x, first.1.y, first.1.z),
+                format!("{}mm,{}mm,{}mm", first.0.x, first.0.y, first.0.z),
             );
             feature.properties.insert(
                 "AxisDirection".into(),
-                format!("{},{},{}", first.2.x, first.2.y, first.2.z),
+                format!("{},{},{}", first.1.x, first.1.y, first.1.z),
             );
         }
     }
