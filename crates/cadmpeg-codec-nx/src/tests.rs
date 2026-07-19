@@ -6773,6 +6773,32 @@ fn om_datum_csys_descriptor_requires_one_maximal_hex_identity() {
 }
 
 #[test]
+fn om_draft_identity_frames_require_complete_typed_framing() {
+    let bytes = b"\x00A\x81\x54\xf0\x38\x02\x01abc123?A\xf0\x27\xff\x02\x01def456?\x00";
+    let frames = crate::om::draft_construction_identity_frames(bytes);
+    assert_eq!(frames.len(), 2);
+    assert_eq!(frames[0].offset, 1);
+    assert_eq!(frames[0].prefix, b"A\x81\x54\xf0\x38\x02\x01");
+    assert_eq!(frames[0].identity, "abc123");
+    assert_eq!(frames[0].identity_offset, 8);
+    assert_eq!(frames[1].offset, 15);
+    assert_eq!(frames[1].prefix, b"A\xf0\x27\xff\x02\x01");
+    assert_eq!(frames[1].identity, "def456");
+
+    assert!(
+        crate::om::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x02\x01abc123")
+            .is_empty()
+    );
+    assert!(
+        crate::om::draft_construction_identity_frames(b"A\x81\x54\xf0\x38\x04\x01abc123?")
+            .is_empty()
+    );
+    assert!(
+        crate::om::draft_construction_identity_frames(b"A\xf0\x27\xff\x02\x01ABC123?").is_empty()
+    );
+}
+
+#[test]
 fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
     let plane = crate::native::FeatureDatumPlaneDescriptor {
         id: "plane-descriptor".into(),

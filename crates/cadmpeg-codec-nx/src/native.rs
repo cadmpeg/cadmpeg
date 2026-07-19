@@ -5292,6 +5292,31 @@ pub struct FeatureDraftConstructionPayload {
     pub block_source_offsets: Vec<u64>,
 }
 
+/// Complete identity frame in a reconstructed draft construction payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDraftConstructionIdentityFrame {
+    /// Globally unique frame identity.
+    pub id: String,
+    /// Owning `DRAFT` operation label.
+    pub operation_label: String,
+    /// Reconstructed payload carrying the frame.
+    pub draft_construction_payload: String,
+    /// Zero-based frame order in the reconstructed payload.
+    pub ordinal: u32,
+    /// Exact bytes from the opening marker through the identity introducer.
+    pub prefix: Vec<u8>,
+    /// Nonempty lowercase hexadecimal identity.
+    pub identity: String,
+    /// Payload-relative offset of the opening marker.
+    pub payload_offset: u64,
+    /// Payload-relative identity offset.
+    pub identity_payload_offset: u64,
+    /// Absolute source offset of the opening marker.
+    pub source_offset: u64,
+    /// Absolute source offset of the identity.
+    pub identity_source_offset: u64,
+}
+
 /// End-anchored compact-index lane in a bounded draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDraftConstructionTerminalLane {
@@ -8940,6 +8965,54 @@ pub fn feature_draft_construction_payloads(
                 block_byte_lengths,
                 block_source_offsets,
             })
+        })
+        .collect()
+}
+
+/// Decode complete identity frames from reconstructed draft construction payloads.
+pub fn feature_draft_construction_identity_frames(
+    container: &Container,
+    payloads: &[FeatureDraftConstructionPayload],
+) -> Vec<FeatureDraftConstructionIdentityFrame> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::draft_construction_identity_frames(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, frame)| {
+                    let payload_offset = frame.offset as u64;
+                    let identity_payload_offset = frame.identity_offset as u64;
+                    Some(FeatureDraftConstructionIdentityFrame {
+                        id: format!("{}-identity-frame-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        draft_construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        prefix: frame.prefix,
+                        identity: frame.identity,
+                        payload_offset,
+                        identity_payload_offset,
+                        source_offset: joined_payload_source_offset(
+                            payload_offset,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
+                        identity_source_offset: joined_payload_source_offset(
+                            identity_payload_offset,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
+                    })
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }

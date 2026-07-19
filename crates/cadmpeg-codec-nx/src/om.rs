@@ -981,6 +981,19 @@ pub struct DatumCsysDescriptorBlock {
     pub identity_offset: usize,
 }
 
+/// Complete identity frame in a reconstructed draft construction payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftConstructionIdentityFrame {
+    /// Payload-relative offset of the opening `41` marker.
+    pub offset: usize,
+    /// Exact bytes from the opening marker through the identity introducer.
+    pub prefix: Vec<u8>,
+    /// Nonempty lowercase hexadecimal identity.
+    pub identity: String,
+    /// Payload-relative identity offset.
+    pub identity_offset: usize,
+}
+
 /// Compact object frame in a bounded offset-store block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DataBlockObjectFrame {
@@ -3191,6 +3204,63 @@ pub fn datum_csys_descriptor_block(bytes: &[u8]) -> Option<DatumCsysDescriptorBl
         suffix: bytes[*end..].to_vec(),
         identity_offset: *start,
     })
+}
+
+/// Decode every complete identity frame in a reconstructed draft construction payload.
+pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<DraftConstructionIdentityFrame> {
+    let mut frames = Vec::new();
+    for offset in 0..bytes.len() {
+        if bytes[offset] != 0x41 {
+            continue;
+        }
+        let Some(prefix_len) = draft_identity_prefix(&bytes[offset..]) else {
+            continue;
+        };
+        let identity_start = offset + prefix_len;
+        let mut identity_end = identity_start;
+        while bytes
+            .get(identity_end)
+            .is_some_and(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(byte))
+        {
+            identity_end += 1;
+        }
+        if identity_end == identity_start || bytes.get(identity_end) != Some(&b'?') {
+            continue;
+        }
+        frames.push(DraftConstructionIdentityFrame {
+            offset,
+            prefix: bytes[offset..offset + prefix_len].to_vec(),
+            identity: String::from_utf8(bytes[identity_start..identity_end].to_vec())
+                .expect("lowercase hexadecimal bytes are UTF-8"),
+            identity_offset: identity_start,
+        });
+    }
+    frames
+}
+
+fn draft_identity_prefix(bytes: &[u8]) -> Option<usize> {
+    if bytes.first() != Some(&0x41) {
+        return None;
+    }
+    if bytes.get(1) == Some(&0xf0) {
+        let (_, schema_width) = compact_index(bytes.get(2..)?)?;
+        let end = 2 + schema_width + 3;
+        (bytes.get(2 + schema_width..end) == Some(&[0xff, 0x02, 0x01])).then_some(end)
+    } else {
+        let (CompactIndex::Value(_), owner_width) = compact_index(bytes.get(1..)?)? else {
+            return None;
+        };
+        let schema_at = 1 + owner_width + 1;
+        if bytes.get(1 + owner_width) != Some(&0xf0) {
+            return None;
+        }
+        let (_, schema_width) = compact_index(bytes.get(schema_at..)?)?;
+        let branch_at = schema_at + schema_width;
+        let end = branch_at + 2;
+        (matches!(bytes.get(branch_at), Some(0x02 | 0x03))
+            && bytes.get(branch_at + 1) == Some(&0x01))
+        .then_some(end)
+    }
 }
 
 /// Decode compact object IDs followed by their complete frame discriminator.
