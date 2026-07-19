@@ -2413,6 +2413,36 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn revolve_uses_its_ordered_angle_dimension_name() {
+        let mut revolve = feature("revolve", Some("42"), 0);
+        revolve.input_class = Some("moRevolution_c".into());
+        revolve.parameters.insert("FIX_1".into(), "360°".into());
+        revolve
+            .content
+            .push(FeatureContent::Dimension("FIX_1".into()));
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![revolve],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::Revolve {
+                construction: RevolutionConstruction {
+                    extent: Some(Extent::Angle { angle: Angle(value) }),
+                    ..
+                },
+                ..
+            } if (value - std::f64::consts::TAU).abs() < 1.0e-12
+        ));
+    }
+
+    #[test]
     fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         let mut thread = feature("thread", Some("42"), 0);
         thread.input_class = Some("moCosmeticThread_c".into());
@@ -4977,7 +5007,18 @@ fn parse_count(value: &str) -> Option<u32> {
 }
 
 fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) -> FeatureDefinition {
-    let angle = |name| {
+    let ordered_angle = |ordinal| {
+        feature
+            .content
+            .iter()
+            .filter_map(|content| match content {
+                FeatureContent::Dimension(name) => feature.parameters.get(name),
+                FeatureContent::Feature(_) | FeatureContent::Text(_) => None,
+            })
+            .filter_map(|value| parse_positive_angle_rad(value))
+            .nth(ordinal)
+    };
+    let angle = |name, ordinal| {
         feature
             .parameters
             .get(name)
@@ -4987,13 +5028,14 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
                 _ => None,
             })
             .and_then(|value| parse_positive_angle_rad(value))
+            .or_else(|| ordered_angle(ordinal))
             .map(Angle)
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
-        None | Some("OneSided") => angle("Angle").map(|angle| Extent::Angle { angle }),
-        Some("Symmetric") => angle("Angle").map(|angle| Extent::SymmetricAngle { angle }),
-        Some("TwoSided") => angle("Angle")
-            .zip(angle("Angle2"))
+        None | Some("OneSided") => angle("Angle", 0).map(|angle| Extent::Angle { angle }),
+        Some("Symmetric") => angle("Angle", 0).map(|angle| Extent::SymmetricAngle { angle }),
+        Some("TwoSided") => angle("Angle", 0)
+            .zip(angle("Angle2", 1))
             .map(|(first, second)| Extent::TwoSidedAngles { first, second }),
         Some(_) => None,
     };
