@@ -413,13 +413,13 @@ mod marker_tests {
         coordinate_marker_local_links, fixed_reference_plane_frame, legacy_feature_input_section,
         legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
-        named_scalars, native_scalar_matches_discrete_parameter, object_names,
-        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
-        plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
-        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
-        resolve_scalar_operand_markers, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        minimal_reference_plane_frame, named_scalars, native_scalar_matches_discrete_parameter,
+        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
+        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
+        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers, sketch_plane_frames,
+        solved_tangent, spatial_vertex_coordinates, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
         COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
@@ -553,10 +553,16 @@ mod marker_tests {
             .collect::<Vec<_>>();
         assert_eq!(
             legacy_reference_axis_triads(&features),
-            vec![(0, [[40, 41], [40, 42], [42, 41]])]
+            vec![([3, 4, 5], [[40, 41], [40, 42], [42, 41]])]
         );
 
-        features[4].source_id = Some("99".into());
+        features.insert(3, feature(99, 4, "moRefPlane_c"));
+        assert_eq!(
+            legacy_reference_axis_triads(&features),
+            vec![([4, 5, 6], [[40, 41], [40, 42], [42, 41]])]
+        );
+
+        features[5].source_id = Some("99".into());
         assert!(legacy_reference_axis_triads(&features).is_empty());
     }
 
@@ -784,6 +790,38 @@ mod marker_tests {
 
         payload[root + 113..root + 121].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(matrix_reference_plane_frame(&payload), None);
+    }
+
+    #[test]
+    fn minimal_reference_plane_validates_its_redundant_offset_tail() {
+        let root = 13;
+        let mut payload = vec![0; root + 81];
+        let distance = -0.052_f64;
+        for (relative, value) in [
+            (0, 0.0_f64),
+            (8, 0.0),
+            (16, distance),
+            (24, 0.0),
+            (32, 0.0),
+            (40, 1.0),
+            (57, -0.0),
+            (65, -distance),
+            (73, 1.0),
+        ] {
+            payload[root + relative..root + relative + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[root + 56] = 0x80;
+        assert_eq!(
+            minimal_reference_plane_frame(&payload),
+            Some((
+                Point3::new(0.0, 0.0, -52.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            ))
+        );
+
+        payload[root + 65..root + 73].copy_from_slice(&0.051f64.to_le_bytes());
+        assert_eq!(minimal_reference_plane_frame(&payload), None);
     }
 
     #[test]
@@ -5647,6 +5685,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .collect::<Vec<_>>();
             frames.extend(angled_reference_plane_frame(bytes));
             frames.extend(matrix_reference_plane_frame(bytes));
+            frames.extend(minimal_reference_plane_frame(bytes));
             frames.extend(compact_reference_plane_frame(bytes));
             frames.sort_by_key(|(origin, normal, u_axis)| {
                 [
@@ -5775,8 +5814,9 @@ pub(crate) fn enrich_history_reference_axes(
     }
 
     for history in histories.iter_mut() {
-        for (start, pairs) in legacy_reference_axis_triads(&history.features) {
-            for (axis, planes) in history.features[start + 3..start + 6].iter_mut().zip(pairs) {
+        for (axes, pairs) in legacy_reference_axis_triads(&history.features) {
+            for (axis_index, planes) in axes.into_iter().zip(pairs) {
+                let axis = &mut history.features[axis_index];
                 axis.properties
                     .entry("Planes".into())
                     .or_insert_with(|| format!("{},{}", planes[0], planes[1]));
@@ -5824,11 +5864,37 @@ pub(crate) fn enrich_history_reference_axes(
 
 fn legacy_reference_axis_triads(
     features: &[crate::records::Feature],
-) -> Vec<(usize, [[u32; 2]; 3])> {
+) -> Vec<([usize; 3], [[u32; 2]; 3])> {
+    let mut by_source = HashMap::<u32, Option<usize>>::new();
+    for (index, feature) in features.iter().enumerate() {
+        let Some(source) = feature
+            .source_id
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        by_source
+            .entry(source)
+            .and_modify(|index| *index = None)
+            .or_insert(Some(index));
+    }
     features
-        .windows(6)
-        .enumerate()
-        .filter_map(|(start, records)| {
+        .iter()
+        .filter_map(|first| {
+            let source = first.source_id.as_deref()?.parse::<u32>().ok()?;
+            let indices = (0..6)
+                .map(|offset| {
+                    by_source
+                        .get(&source.checked_add(offset)?)
+                        .copied()
+                        .flatten()
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let records = indices
+                .iter()
+                .map(|index| &features[*index])
+                .collect::<Vec<_>>();
             let classes = records
                 .iter()
                 .map(|feature| {
@@ -5841,9 +5907,6 @@ fn legacy_reference_axis_triads(
                 || classes[3..]
                     .iter()
                     .any(|class| *class != NativeClassKind::ReferenceAxis)
-                || records
-                    .windows(2)
-                    .any(|pair| pair[1].ordinal != pair[0].ordinal + 1)
             {
                 return None;
             }
@@ -5851,14 +5914,8 @@ fn legacy_reference_axis_triads(
                 .iter()
                 .map(|feature| feature.source_id.as_deref()?.parse::<u32>().ok())
                 .collect::<Option<Vec<_>>>()?;
-            if sources
-                .windows(2)
-                .any(|pair| pair[1] != pair[0].saturating_add(1))
-            {
-                return None;
-            }
             Some((
-                start,
+                [indices[3], indices[4], indices[5]],
                 [
                     [sources[0], sources[1]],
                     [sources[0], sources[2]],
@@ -6239,6 +6296,48 @@ fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vect
             u_axis.z.to_bits(),
         ]
     });
+    frames.dedup();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const RECORD_LEN: usize = 81;
+    const NATIVE_TO_IR: f64 = 1000.0;
+    let scalar = |bytes: &[u8], relative| {
+        let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let mut frames = payload
+        .windows(RECORD_LEN)
+        .filter_map(|bytes| {
+            let origin = Point3::new(scalar(bytes, 0)?, scalar(bytes, 8)?, scalar(bytes, 16)?);
+            let normal = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
+            let tail = [scalar(bytes, 57)?, scalar(bytes, 65)?, scalar(bytes, 73)?];
+            if normal != Vector3::new(0.0, 0.0, 1.0)
+                || bytes[48..56].iter().any(|byte| *byte != 0)
+                || bytes[56] != 0x80
+                || tail[0].to_bits() != (-0.0_f64).to_bits()
+                || tail[1].to_bits() != (-origin.z).to_bits()
+                || tail[2] != 1.0
+            {
+                return None;
+            }
+            Some((
+                Point3::new(
+                    origin.x * NATIVE_TO_IR,
+                    origin.y * NATIVE_TO_IR,
+                    origin.z * NATIVE_TO_IR,
+                ),
+                normal,
+                Vector3::new(1.0, 0.0, 0.0),
+            ))
+        })
+        .collect::<Vec<_>>();
+    frames
+        .sort_by_key(|(origin, _, _)| [origin.x.to_bits(), origin.y.to_bits(), origin.z.to_bits()]);
     frames.dedup();
     let [frame] = frames.as_slice() else {
         return None;
