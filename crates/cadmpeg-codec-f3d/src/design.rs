@@ -4584,7 +4584,7 @@ pub fn project_spatial_sketch_constraints(
                     native_stream(&placement.id)?,
                     u32::try_from(placement.entity_suffix).ok()?,
                 ),
-                id,
+                (id, placement),
             ))
         })
         .collect::<HashMap<_, _>>();
@@ -4614,7 +4614,7 @@ pub fn project_spatial_sketch_constraints(
                 return None;
             }
             let scope = native_stream(&relation.id)?;
-            let sketch = sketches.get(&(scope, relation.owner_reference))?.clone();
+            let (sketch, placement) = sketches.get(&(scope, relation.owner_reference))?;
             let member_entities = relation
                 .members
                 .iter()
@@ -4714,11 +4714,45 @@ pub fn project_spatial_sketch_constraints(
                         entity: line.id.clone(),
                     }
                 }
+                SketchConstraintKind::Horizontal | SketchConstraintKind::Vertical => {
+                    let [entity] = member_entities.as_slice() else {
+                        return None;
+                    };
+                    let SpatialSketchGeometry::Line { start, end } = entity.geometry else {
+                        return None;
+                    };
+                    let direction = match relation.constraint_kinds[0] {
+                        SketchConstraintKind::Horizontal => Vector3::new(
+                            placement.transform[0][0],
+                            placement.transform[1][0],
+                            placement.transform[2][0],
+                        ),
+                        SketchConstraintKind::Vertical => Vector3::new(
+                            placement.transform[0][1],
+                            placement.transform[1][1],
+                            placement.transform[2][1],
+                        ),
+                        _ => unreachable!(),
+                    };
+                    let line = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+                    let cross = Vector3::new(
+                        line.y * direction.z - line.z * direction.y,
+                        line.z * direction.x - line.x * direction.z,
+                        line.x * direction.y - line.y * direction.x,
+                    );
+                    if line.norm() <= 1.0e-12 || cross.norm() > 1.0e-9 * line.norm() {
+                        return None;
+                    }
+                    Definition::ParallelToDirection {
+                        entity: entity.id.clone(),
+                        direction,
+                    }
+                }
                 _ => return None,
             };
             Some(SpatialSketchConstraint {
                 id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
-                sketch,
+                sketch: sketch.clone(),
                 definition,
                 native_ref: Some(relation.id.clone()),
             })
@@ -17825,6 +17859,10 @@ pub fn decode_sketch_curve_identities(
                         (Some(geometry), geometry_shift + 133 + 12 * 8)
                     } else if let Some(geometry) = decode_referenced_analytic(geometry_payload) {
                         (Some(geometry), geometry_shift + 11 + 133 + 12 * 8)
+                    } else if let Some((geometry, end)) =
+                        decode_text_frame_line(payload, geometry_shift, record_index)
+                    {
+                        (Some(geometry), end)
                     } else {
                         (None, geometry_shift + 133)
                     };
@@ -18094,6 +18132,43 @@ fn decode_referenced_analytic(payload: &[u8]) -> Option<SketchCurveGeometry> {
     decode_circular_arc(shifted).or_else(|| decode_line(shifted))
 }
 
+/// Decode a text-frame boundary line after its two point references and
+/// inline analytic-curve record. The first point reference has a trailing
+/// null-role byte in addition to its six-byte reference padding. The inline
+/// record repeats the enclosing record index and carries eight zero bytes
+/// before the line values.
+fn decode_text_frame_line(
+    payload: &[u8],
+    geometry_shift: usize,
+    record_index: u32,
+) -> Option<(SketchCurveGeometry, usize)> {
+    let mut cursor = geometry_shift.checked_add(133)?;
+    for zero_count in [7, 6] {
+        let (_, end) = marked_u32(payload, cursor)?;
+        if !payload
+            .get(end..end + zero_count)?
+            .iter()
+            .all(|byte| *byte == 0)
+        {
+            return None;
+        }
+        cursor = end + zero_count;
+    }
+    let (class_tag, after_tag) = lp_ascii(payload, cursor)?;
+    if class_tag.len() != 3
+        || !class_tag.bytes().all(|byte| byte.is_ascii_digit())
+        || u32_at(payload, after_tag) != Some(record_index)
+        || payload.get(after_tag + 4..after_tag + 12) != Some(&[0; 8])
+    {
+        return None;
+    }
+    let values_at = after_tag.checked_add(12)?;
+    Some((
+        decode_line_values(payload, values_at)?,
+        values_at.checked_add(12 * 8)?,
+    ))
+}
+
 fn decode_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, usize)> {
     let base = 133usize;
     let prefix = payload.get(base..base + 8)?;
@@ -18269,8 +18344,12 @@ fn decode_legacy_sketch_nurbs(payload: &[u8]) -> Option<(SketchCurveGeometry, us
 }
 
 fn decode_line(payload: &[u8]) -> Option<SketchCurveGeometry> {
+    decode_line_values(payload, 133)
+}
+
+fn decode_line_values(payload: &[u8], values_at: usize) -> Option<SketchCurveGeometry> {
     let values = (0..12)
-        .map(|ordinal| f64_at(payload, 133 + ordinal * 8))
+        .map(|ordinal| f64_at(payload, values_at + ordinal * 8))
         .collect::<Option<Vec<_>>>()?;
     if values.iter().any(|value| !value.is_finite()) {
         return None;
@@ -24528,6 +24607,38 @@ mod relation_tests {
     }
 
     #[test]
+    fn text_frame_line_decodes_after_point_references() {
+        let mut bytes = vec![0u8; 52 + 133];
+        for reference in [2397u32, 2395] {
+            bytes.push(1);
+            bytes.extend_from_slice(&reference.to_le_bytes());
+            bytes.extend_from_slice(&[0; 6]);
+            if reference == 2397 {
+                bytes.push(0);
+            }
+        }
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"289");
+        bytes.extend_from_slice(&2403u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 8]);
+        for value in [
+            -5.75f64, 1.0, 0.0, 5.25, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ] {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+
+        let (geometry, end) =
+            super::decode_text_frame_line(&bytes, 52, 2403).expect("text-frame boundary line");
+        assert_eq!(end, bytes.len());
+        assert!(matches!(
+            geometry,
+            SketchCurveGeometry::Line { start, end, .. }
+                if start == Point3::new(-57.5, 10.0, 0.0)
+                    && end == Point3::new(-5.0, 10.0, 0.0)
+        ));
+    }
+
+    #[test]
     fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         fn marked_reference(bytes: &mut Vec<u8>, record_index: u32) {
             bytes.push(1);
@@ -25186,8 +25297,8 @@ mod relation_tests {
                 7,
                 SketchCurveGeometry::Line {
                     start: Point3::new(1.0, 2.0, 0.0),
-                    end: Point3::new(4.0, 5.0, 0.0),
-                    direction: Vector3::new(1.0, 1.0, 0.0),
+                    end: Point3::new(4.0, 2.0, 0.0),
+                    direction: Vector3::new(1.0, 0.0, 0.0),
                     normal: Vector3::new(0.0, 0.0, 1.0),
                 },
             ),
@@ -25278,9 +25389,21 @@ mod relation_tests {
         coincident_relation.constraint_kinds = vec![SketchConstraintKind::Coincident];
         coincident_relation.members = vec![106, 107];
         coincident_relation.return_members = vec![106, 107];
+        let mut horizontal_relation = relation.clone();
+        horizontal_relation.id = "f3d:Design/BulkStream.dat:relation#108".into();
+        horizontal_relation.record_index = 108;
+        horizontal_relation.state = 0x40;
+        horizontal_relation.constraint_kinds = vec![SketchConstraintKind::Horizontal];
+        horizontal_relation.members = vec![108];
+        horizontal_relation.return_members = vec![108];
 
         let points = [point, coincident_point];
-        let relations = [relation, midpoint_relation, coincident_relation];
+        let relations = [
+            relation,
+            midpoint_relation,
+            coincident_relation,
+            horizontal_relation,
+        ];
         let (planar_sketches, planar_entities) =
             project_sketch_design(&[placement.clone()], &points, &curves, 1.0e-6);
         assert!(planar_sketches.is_empty());
@@ -25305,7 +25428,7 @@ mod relation_tests {
             entity.geometry,
             SpatialSketchGeometry::Line { start, end }
                 if start == Point3::new(10.0, 21.0, 32.0)
-                    && end == Point3::new(10.0, 24.0, 35.0)
+                    && end == Point3::new(10.0, 24.0, 32.0)
         )));
         let constraints = project_spatial_sketch_constraints(
             &[placement],
@@ -25334,6 +25457,20 @@ mod relation_tests {
                 definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Coincident { .. },
                 ..
             })
+        ));
+        assert!(matches!(
+            constraints.get(3),
+            Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
+                definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelToDirection {
+                    entity,
+                    direction,
+                },
+                ..
+            }) if entity == &super::neutral_spatial_sketch_curve_id(
+                "f3d:Design/BulkStream.dat:curve#108",
+                7,
+                0,
+            ) && direction == &Vector3::new(0.0, 1.0, 0.0)
         ));
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,

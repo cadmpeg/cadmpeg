@@ -396,9 +396,14 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::Midpoint { point, entity } => {
                 vec![point.clone(), entity.clone()]
             }
+            SpatialConstraint::ParallelToDirection { entity, .. } => vec![entity.clone()],
         };
         let distinct = entities.iter().collect::<HashSet<_>>();
-        if entities.len() < 2 || distinct.len() != entities.len() {
+        let valid_arity = match &constraint.definition {
+            SpatialConstraint::ParallelToDirection { .. } => entities.len() == 1,
+            _ => entities.len() >= 2,
+        };
+        if !valid_arity || distinct.len() != entities.len() {
             finding(
                 findings,
                 Check::Counts,
@@ -464,6 +469,40 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     &constraint.id.0,
                     "spatial tangent requires two curves",
                 );
+            }
+            SpatialConstraint::ParallelToDirection { entity, direction } => {
+                let direction_norm = direction.norm();
+                let Some(SpatialSketchGeometry::Line { start, end }) = spatial_geometry.get(entity)
+                else {
+                    finding(
+                        findings,
+                        Check::ReferentialIntegrity,
+                        &constraint.id.0,
+                        "spatial directional constraint requires a line",
+                    );
+                    continue;
+                };
+                let line =
+                    crate::math::Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+                let line_norm = line.norm();
+                let cross = crate::math::Vector3::new(
+                    line.y * direction.z - line.z * direction.y,
+                    line.z * direction.x - line.x * direction.z,
+                    line.x * direction.y - line.y * direction.x,
+                );
+                if !direction_norm.is_finite()
+                    || (direction_norm - 1.0).abs() > 1.0e-9
+                    || !line_norm.is_finite()
+                    || line_norm <= 1.0e-12
+                    || cross.norm() > 1.0e-9 * line_norm
+                {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial line is not parallel to its constraint direction",
+                    );
+                }
             }
             _ => {}
         }

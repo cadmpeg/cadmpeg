@@ -3082,6 +3082,21 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#direction".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::ParallelToDirection {
+                entity: line.clone(),
+                direction: Vector3::new(
+                    1.0 / 3.0f64.sqrt(),
+                    1.0 / 3.0f64.sqrt(),
+                    1.0 / 3.0f64.sqrt(),
+                ),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
             id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#tangent".into()),
             sketch,
             definition: SpatialSketchConstraintDefinition::Tangent {

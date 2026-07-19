@@ -248,6 +248,13 @@ pub enum SpatialSketchConstraintDefinition {
         /// Second tangent curve.
         second: SpatialSketchEntityId,
     },
+    /// A model-space line is parallel to one fixed model-space direction.
+    ParallelToDirection {
+        /// Line constrained to the direction.
+        entity: SpatialSketchEntityId,
+        /// Unit model-space direction; either sign denotes the same axis.
+        direction: Vector3,
+    },
     /// A spline's defining model-space entities grouped by one native relation.
     SplineGroup {
         /// Ordered spline-group members.

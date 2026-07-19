@@ -585,7 +585,7 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     push(
         gaps.unprojected_sketch_relations,
         format!(
-            "{} decoded sketch relation(s) have no neutral constraint because their owning Sketch placement was not resolved.",
+            "{} decoded sketch relation(s) have no neutral constraint.",
             gaps.unprojected_sketch_relations
         ),
     );
