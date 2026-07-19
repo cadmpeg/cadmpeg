@@ -3282,8 +3282,8 @@ pub(crate) fn bind_pattern_inputs(
     )>::new();
     let mut linear_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
-    let mut mirror_assignments =
-        Vec::<(usize, cadmpeg_ir::features::FeatureId, Point3, Vector3)>::new();
+    let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
+    let mut mirror_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
 
     for lane in lanes {
         let mut starts = history_features
@@ -3317,6 +3317,7 @@ pub(crate) fn bind_pattern_inputs(
                 let Ok(Some((origin, normal, _))) = explicit_reference_plane_frame(object) else {
                     continue;
                 };
+                mirror_plane_assignments.push((model_index, origin, normal));
                 let mut terminals = (0..object
                     .len()
                     .saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
@@ -3348,12 +3349,7 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&seed_index) = model_by_native.get(terminal.as_str()) else {
                     continue;
                 };
-                mirror_assignments.push((
-                    model_index,
-                    model_features[seed_index].id.clone(),
-                    origin,
-                    normal,
-                ));
+                mirror_seed_assignments.push((model_index, model_features[seed_index].id.clone()));
                 continue;
             }
             if feature.input_class.as_deref() == Some("moLPattern_c") {
@@ -3526,31 +3522,45 @@ pub(crate) fn bind_pattern_inputs(
             }
         }
     }
-    let mut mirrors_by_pattern = HashMap::<usize, Vec<_>>::new();
-    for (index, seed, origin, normal) in mirror_assignments {
-        let candidates = mirrors_by_pattern.entry(index).or_default();
-        if !candidates.contains(&(seed.clone(), origin, normal)) {
-            candidates.push((seed, origin, normal));
+    let mut mirror_planes_by_pattern = HashMap::<usize, Vec<_>>::new();
+    for (index, origin, normal) in mirror_plane_assignments {
+        let candidates = mirror_planes_by_pattern.entry(index).or_default();
+        if !candidates.contains(&(origin, normal)) {
+            candidates.push((origin, normal));
         }
     }
-    for (index, candidates) in mirrors_by_pattern {
-        let [(seed, origin, normal)] = candidates.as_slice() else {
+    for (index, candidates) in mirror_planes_by_pattern {
+        let [(origin, normal)] = candidates.as_slice() else {
+            continue;
+        };
+        if let FeatureDefinition::Pattern {
+            pattern: slot @ PatternKind::Unresolved { .. },
+            ..
+        } = &mut model_features[index].definition
+        {
+            *slot = PatternKind::Mirror {
+                plane_origin: *origin,
+                plane_normal: *normal,
+            };
+        }
+    }
+    let mut mirror_seeds_by_pattern = HashMap::<usize, Vec<_>>::new();
+    for (index, seed) in mirror_seed_assignments {
+        let candidates = mirror_seeds_by_pattern.entry(index).or_default();
+        if !candidates.contains(&seed) {
+            candidates.push(seed);
+        }
+    }
+    for (index, candidates) in mirror_seeds_by_pattern {
+        let [seed] = candidates.as_slice() else {
             continue;
         };
         if !model_features[index].dependencies.contains(seed) {
             model_features[index].dependencies.push(seed.clone());
         }
-        if let FeatureDefinition::Pattern {
-            seeds,
-            pattern: slot @ PatternKind::Unresolved { .. },
-        } = &mut model_features[index].definition
-        {
+        if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
             if seeds.is_empty() {
                 seeds.push(seed.clone());
-                *slot = PatternKind::Mirror {
-                    plane_origin: *origin,
-                    plane_normal: *normal,
-                };
             }
         }
     }
@@ -18264,6 +18274,57 @@ mod profile_join_tests {
                 },
                 ..
             } if x == -1.0 && y == 0.0 && z == 0.0
+        ));
+
+        let mut mirror_history = history.clone();
+        mirror_history.features[1].input_class = Some("moMirrorPattern_c".into());
+        let mut mirror_lane = lane.clone();
+        mirror_lane.native_payload.resize(700, 0);
+        mirror_lane.native_payload.fill(0);
+        mirror_lane.classes.clear();
+        let frame = 160;
+        for (relative, value) in [
+            (0, 0.012_f64),
+            (8, -0.025),
+            (16, 0.0),
+            (24, 0.0),
+            (32, 1.0),
+            (40, 0.0),
+            (49, 1.0),
+            (57, 0.0),
+            (65, 0.0),
+            (73, 0.0),
+            (81, 0.0),
+            (89, -1.0),
+        ] {
+            mirror_lane.native_payload[frame + relative..frame + relative + 8]
+                .copy_from_slice(&value.to_le_bytes());
+        }
+        mirror_lane.native_payload[frame + 48] = 1;
+        features[0].dependencies.clear();
+        features[0].definition = FeatureDefinition::Pattern {
+            seeds: Vec::new(),
+            pattern: PatternKind::Unresolved {
+                form: Some(cadmpeg_ir::features::PatternForm::Mirror),
+            },
+        };
+        bind_pattern_inputs(
+            &mut features,
+            &[mirror_history],
+            std::slice::from_ref(&mirror_lane),
+        );
+        assert!(features[0].dependencies.is_empty());
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Pattern {
+                ref seeds,
+                pattern: PatternKind::Mirror {
+                    plane_origin: Point3 { x, y, z },
+                    plane_normal: Vector3 { x: nx, y: ny, z: nz },
+                },
+            } if seeds.is_empty()
+                && x == 12.0 && y == -25.0 && z == 0.0
+                && nx == 0.0 && ny == 1.0 && nz == 0.0
         ));
 
         let mut sweep_history = history;
