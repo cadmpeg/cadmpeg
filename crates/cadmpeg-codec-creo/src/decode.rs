@@ -12967,27 +12967,25 @@ fn schema_feature_definition(
         } else {
             (None, None)
         };
-        if profile.is_some() || axis.is_some() || extent.is_some() {
-            let output_kind = evaluated_sweep_body_kind(ir, "revolution", feature_id);
-            return IrFeatureDefinition::Revolve {
-                construction: RevolutionConstruction {
-                    profile,
-                    axis,
-                    extent,
-                    axis_reference: None,
-                    solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
-                    face_maker_class: None,
-                    fuse_order: None,
-                    allow_multi_profile_faces: None,
-                },
-                op: section_sweep_boolean_operation(
-                    feature_recipe_effect(scan, feature_id),
-                    kind,
-                    output_kind.is_some(),
-                    preceding_features_establish_body(ir),
-                ),
-            };
-        }
+        let output_kind = evaluated_sweep_body_kind(ir, "revolution", feature_id);
+        return IrFeatureDefinition::Revolve {
+            construction: RevolutionConstruction {
+                profile,
+                axis,
+                extent,
+                axis_reference: None,
+                solid: (output_kind == Some(BodyKind::Solid)).then_some(true),
+                face_maker_class: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            },
+            op: section_sweep_boolean_operation(
+                feature_recipe_effect(scan, feature_id),
+                kind,
+                output_kind.is_some(),
+                preceding_features_establish_body(ir),
+            ),
+        };
     }
     if section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id)) {
         let transforms = scan
@@ -28881,6 +28879,19 @@ fn build_ir(
                 current_operation
                     .and_then(|operation| {
                         named_feature_definition(scan, &ir, operation.feature_id, &operation.kind)
+                    })
+                    .or_else(|| {
+                        current_feature_recipe(&scan.feature_operations, operation.feature_id).map(
+                            |_| {
+                                schema_feature_definition(
+                                    scan,
+                                    &ir,
+                                    operation.feature_id,
+                                    0,
+                                    &operation.kind,
+                                )
+                            },
+                        )
                     })
                     .unwrap_or_else(|| IrFeatureDefinition::Native {
                         kind: current_operation

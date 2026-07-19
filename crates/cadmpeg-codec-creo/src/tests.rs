@@ -2312,6 +2312,33 @@ fn decode_types_full_turn_revolution_from_positional_angle_choice() {
 }
 
 #[test]
+fn decode_retains_recipe_proven_revolution_with_unresolved_operands() {
+    let mdlstatus = b"\xe3icon\0cutrevolve\0K\xc3\xb6rper id 40\0".to_vec();
+    let data = build_prt("c", &[("MdlStatus", mdlstatus)]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.0 == "creo:model:feature#40")
+        .expect("revolution feature");
+
+    assert!(matches!(
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: None,
+                axis: None,
+                extent: None,
+                ..
+            },
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+        }
+    ));
+}
+
+#[test]
 fn scan_decodes_featdefs_records_and_parameter_frames() {
     let mut payload = b"feat_defs_40\0local_sys\0\xf9\x04\x03".to_vec();
     for _ in 0..3 {
@@ -5444,10 +5471,18 @@ fn decode_retains_recipe_history_and_projects_the_final_state() {
         .features
         .iter()
         .find(|feature| feature.id.as_str() == "creo:model:feature#8053")
-        .expect("native feature");
+        .expect("revolution feature");
     assert!(matches!(
-        feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { .. }
+        &feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: None,
+                axis: None,
+                extent: None,
+                ..
+            },
+            op: cadmpeg_ir::features::BooleanOp::NewBody,
+        }
     ));
     assert_eq!(
         feature
