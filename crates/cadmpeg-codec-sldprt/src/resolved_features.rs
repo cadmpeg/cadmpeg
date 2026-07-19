@@ -2107,6 +2107,22 @@ mod marker_tests {
     }
 
     #[test]
+    fn extrusion_form_codes_are_scoped_to_their_native_classes() {
+        use super::extrusion_operation;
+        use cadmpeg_ir::features::BooleanOp;
+
+        assert_eq!(
+            extrusion_operation(Some("moExtrusion_c"), 82),
+            Some(BooleanOp::Join)
+        );
+        assert_eq!(extrusion_operation(Some("moICE_c"), 82), None);
+        assert_eq!(
+            extrusion_operation(Some("moICE_c"), 10),
+            Some(BooleanOp::Cut)
+        );
+    }
+
+    #[test]
     fn compact_extrusion_through_all_both_accepts_both_carriers() {
         let dimension_tail = |payload: &mut Vec<u8>| {
             let block = payload.len();
@@ -9146,6 +9162,14 @@ fn revolution_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
     }
 }
 
+fn extrusion_operation(class: Option<&str>, code: u32) -> Option<BooleanOp> {
+    match (class, code) {
+        (Some("moExtrusion_c"), 1 | 82) | (_, 3) => Some(BooleanOp::Join),
+        (Some("moICE_c"), 1 | 2 | 10) | (_, 11) => Some(BooleanOp::Cut),
+        _ => None,
+    }
+}
+
 /// Project revolution Boolean form words from declared and compact objects.
 pub(crate) fn bind_revolution_operations(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -9310,15 +9334,10 @@ pub(crate) fn bind_extrusion_operations(
             if let Some(operation) = feature_inline_operation(lane, name) {
                 return Some(operation);
             }
-            match (
+            extrusion_operation(
                 history.input_class.as_deref(),
                 feature_operation_code(lane, name)?,
-            ) {
-                (Some("moExtrusion_c"), 1) | (_, 3) => Some(BooleanOp::Join),
-                (Some("moICE_c"), 1 | 2 | 10) => Some(BooleanOp::Cut),
-                (_, 11) => Some(BooleanOp::Cut),
-                _ => None,
-            }
+            )
         });
         let Some(first) = operations.next() else {
             continue;
