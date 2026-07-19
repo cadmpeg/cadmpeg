@@ -483,8 +483,8 @@ Plane row bodies contain envelope/domain data, `local_sys f9 04 03`, and a row/t
 
 ```text
 slots 0..2    first in-plane support direction
-slots 3..5    [0, 0, 0] rank-2 marker
-slots 6..8    second in-plane support direction
+slots 3..5    second in-plane support direction or [0, 0, 0]
+slots 6..8    [0, 0, 0] or second in-plane support direction
 slots 9..11   support-frame origin
 ```
 
@@ -493,13 +493,15 @@ terminal `e1` after a complete frame is a null row-tail marker and is not a
 scalar slot. If any other bytes remain, none of the twelve slot positions is
 assigned a numeric value.
 
-When the rank-2 guard holds, derive the normal as:
+When the support-frame guard holds, derive the normal as:
 
 ```text
-normal = normalize(cross(slots[0..2], slots[6..8]))
+second = the nonzero triple among slots 3..5 and slots 6..8
+normal = normalize(cross(slots[0..2], second))
 ```
 
-The guard requires orthogonal, equal-scale nonzero support directions. `outline f9 02 03` stores two XYZ corners. In these positional scalar lanes, `73` and `bb` each begin a seven-byte scalar token. Repeated identical tokens denote equal stored values; tokens with different prefixes denote distinct values. Token equality remains defined when the scalar magnitude is not decoded.
+Exactly one of slots 3..5 and slots 6..8 is the zero triple. The guard requires
+orthogonal, equal-scale nonzero support directions. `outline f9 02 03` stores two XYZ corners. In these positional scalar lanes, `73` and `bb` each begin a seven-byte scalar token. Repeated identical tokens denote equal stored values; tokens with different prefixes denote distinct values. Token equality remains defined when the scalar magnitude is not decoded.
 
 When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. Zero or multiple held coordinates do not establish a plane equation from the outline.
 The held coordinate establishes only the plane equation. It does not establish

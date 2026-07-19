@@ -100,8 +100,8 @@ fn push_generated_plane_row(
     payload.push(0xe3);
     for value in u_axis
         .into_iter()
-        .chain([0.0; 3])
         .chain(v_axis)
+        .chain([0.0; 3])
         .chain(origin)
     {
         push_generated_scalar(payload, value);
@@ -987,8 +987,8 @@ fn scan_decodes_plane_local_system_support_frame() {
     payload.push(0xe3);
     payload.extend_from_slice(&[
         0x18, 0xe5, // stock first in-plane direction [0, 1, 0]
-        0x0f, 0x0f, 0x0f, // structural zero row
         0xe4, 0x0f, 0x0f, // second in-plane direction
+        0x0f, 0x0f, 0x0f, // structural zero row
     ]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
@@ -1031,7 +1031,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         push_generated_scalar(&mut payload, value);
     }
     payload.push(0xe3);
-    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0xe4, 0x0f, 0x0f]);
+    payload.extend_from_slice(&[0x0f, 0xe4, 0x0f, 0xe4, 0x0f, 0x0f, 0x0f, 0x0f, 0x0f]);
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);

@@ -2105,7 +2105,9 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         ])
     };
     let origin = triple([9, 10, 11]);
-    let (Some(first), Some(second)) = (triple([0, 1, 2]), triple([6, 7, 8])) else {
+    let (Some(first), Some(middle), Some(third)) =
+        (triple([0, 1, 2]), triple([3, 4, 5]), triple([6, 7, 8]))
+    else {
         return PlaneFrame {
             origin,
             u_axis: None,
@@ -2113,9 +2115,29 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
         };
     };
     let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let middle_magnitude = middle.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let third_magnitude = third.iter().map(|value| value * value).sum::<f64>().sqrt();
+    let second = match (middle_magnitude > 1e-6, third_magnitude > 1e-6) {
+        (true, false) if third_magnitude <= 1e-9 => middle,
+        (false, true) if middle_magnitude <= 1e-9 => third,
+        _ => {
+            return PlaneFrame {
+                origin,
+                u_axis: None,
+                normal: None,
+            };
+        }
+    };
     let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
     let scale = first_magnitude.max(second_magnitude);
-    if (first_magnitude - second_magnitude).abs() > 0.05 * scale.max(1e-9) {
+    let support_dot = first
+        .iter()
+        .zip(second)
+        .map(|(first, second)| first * second)
+        .sum::<f64>();
+    if (first_magnitude - second_magnitude).abs() > 1e-9 * scale.max(1.0)
+        || support_dot.abs() > 1e-9 * first_magnitude * second_magnitude
+    {
         return PlaneFrame {
             origin,
             u_axis: None,
@@ -2154,7 +2176,7 @@ fn complete_plane_local_system_slots(
     cache: &scalar::ScalarCache,
 ) -> Option<[f64; 12]> {
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
-    scalar::decode_curve_expression_local_system_slots(frame_body, cache)
+    scalar::decode_positional_plane_local_system_slots(frame_body, cache)
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
@@ -3131,23 +3153,64 @@ mod tests {
     }
 
     #[test]
-    fn positional_plane_frame_consumes_identity_macro_before_null_tail() {
-        let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0xe1];
+    fn positional_plane_frame_decodes_terminal_zero_before_null_tail() {
+        let body = [
+            0x18, 0xe4, 0x0f, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x2f, 0x18, 0x00, 0x2d, 0x29, 0x3d,
+            0x70, 0xa3, 0xd7, 0x0a, 0x3d, 0x18, 0xe1,
+        ];
 
+        let slots = complete_plane_local_system_slots(&body, &scalar::ScalarCache::default())
+            .expect("complete frame");
         assert_eq!(
-            complete_plane_local_system_slots(&body, &scalar::ScalarCache::default()),
-            Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            slots,
+            [0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 6.0, -12.62, 0.0]
         );
+        let frame = plane_frame(&slots.map(Some));
+        assert_eq!(frame.origin, Some([6.0, -12.62, 0.0]));
+        assert_eq!(frame.u_axis, Some([0.0, 1.0, 0.0]));
+        assert_eq!(frame.normal, Some([1.0, 0.0, 0.0]));
     }
 
     #[test]
     fn positional_plane_frame_rejects_unconsumed_row_bytes() {
-        let body = [0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0xe6, 0x00];
+        let body = [
+            0x18, 0xe4, 0x0f, 0x10, 0x18, 0xe5, 0x10, 0x18, 0x2f, 0x18, 0x00, 0x2d, 0x29, 0x3d,
+            0x70, 0xa3, 0xd7, 0x0a, 0x3d, 0x18, 0x00,
+        ];
 
         assert_eq!(
             complete_plane_local_system_slots(&body, &scalar::ScalarCache::default()),
             None
         );
+    }
+
+    #[test]
+    fn positional_plane_frame_requires_exactly_one_zero_support_triple() {
+        let options = |slots: [f64; 12]| slots.map(Some);
+        assert_eq!(
+            plane_frame(&options([
+                1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ]))
+            .normal,
+            Some([0.0, 0.0, 1.0])
+        );
+        assert_eq!(
+            plane_frame(&options([
+                1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
+            ]))
+            .normal,
+            Some([0.0, 0.0, 1.0])
+        );
+        assert!(plane_frame(&options([
+            1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+        ]))
+        .normal
+        .is_none());
+        assert!(plane_frame(&options([
+            1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ]))
+        .normal
+        .is_none());
     }
 
     #[test]

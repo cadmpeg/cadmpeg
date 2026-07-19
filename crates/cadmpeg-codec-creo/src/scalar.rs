@@ -441,6 +441,14 @@ pub fn decode_feature_local_system_slots(body: &[u8], cache: &ScalarCache) -> Op
     decode_local_system_slots(body, cache, true, true)
 }
 
+/// Decode a positional plane local system, including its terminal-zero macro.
+pub fn decode_positional_plane_local_system_slots(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<[f64; 12]> {
+    decode_local_system_slots(body, cache, false, true)
+}
+
 fn decode_local_system_slots(
     body: &[u8],
     cache: &ScalarCache,
