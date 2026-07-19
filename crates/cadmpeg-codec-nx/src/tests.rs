@@ -5175,8 +5175,8 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
 #[test]
 fn feature_input_column_row_uses_preserve_linked_row_slots() {
     use crate::native::{
-        feature_input_column_row_uses, ColumnIndexRowKind, DataBlockLinkedIndexRow,
-        FeatureInputBlock,
+        feature_input_column_row_uses, feature_input_column_targets, ColumnIndexRowKind,
+        DataBlockColumnIndexTable, DataBlockLinkedIndexRow, FeatureInputBlock,
     };
 
     let input = FeatureInputBlock {
@@ -5212,7 +5212,18 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         index_source_offsets: [112, 113, 114],
     };
 
-    let uses = feature_input_column_row_uses(&[input], &[], &[row], &[], &[]);
+    let table = DataBlockColumnIndexTable {
+        id: "column-table".into(),
+        section_ordinal: 0,
+        opening_linked_row: row.id.clone(),
+        target_rows: vec!["target-row".into()],
+        linked_rows: vec!["suffix-row".into()],
+        first_target_index: 4,
+        last_target_index: 2,
+        source_entry: "entry".into(),
+        source_offset: 100,
+    };
+    let uses = feature_input_column_row_uses(&[input.clone()], &[], &[row.clone()], &[], &[table]);
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -5223,6 +5234,14 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
     assert_eq!(uses[0].source_offset, 107);
     assert_eq!(uses[1].row_slot, 3);
     assert_eq!(uses[1].source_offset, 114);
+    let targets = feature_input_column_targets(&[input], &uses, &[row], &[]);
+    assert_eq!(targets.len(), 1);
+    assert_eq!(targets[0].leading_index, Some(20));
+    assert_eq!(targets[0].leading_index_source_offset, Some(102));
+    assert_eq!(targets[0].discriminator, Some(0x16));
+    assert_eq!(targets[0].field_indices, [5, 6, 4]);
+    assert_eq!(targets[0].flag, Some(3));
+    assert_eq!(targets[0].mode, 4);
 }
 
 #[test]
@@ -5280,7 +5299,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         &[table.clone(), table.clone()],
     );
     assert!(ambiguous.iter().all(|use_| use_.column_table.is_none()));
-    let uses = feature_input_column_row_uses(&[input.clone()], &[], &[], &[row], &[table]);
+    let uses = feature_input_column_row_uses(&[input.clone()], &[], &[], &[row.clone()], &[table]);
     assert_eq!(uses.len(), 2);
     assert_eq!(uses[0].input_block, "input#0000000001");
     assert_eq!(uses[0].operation_label, "operation#1");
@@ -5292,14 +5311,22 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
     assert_eq!(uses[0].source_offset, 105);
     assert_eq!(uses[1].row_slot, 3);
     assert_eq!(uses[1].source_offset, 112);
-    let targets = feature_input_column_targets(&[input.clone()], &uses);
+    let targets = feature_input_column_targets(&[input.clone()], &uses, &[], &[row.clone()]);
     assert_eq!(targets.len(), 1);
     assert_eq!(targets[0].input_block, input.id);
     assert_eq!(targets[0].column_row, "target-row#3");
     assert_eq!(targets[0].column_table, "column-table");
+    assert_eq!(targets[0].field_indices, [5, 6, 4]);
+    assert_eq!(
+        targets[0].field_data_blocks,
+        ["block#5", "block#6", "block#4"]
+    );
+    assert_eq!(targets[0].field_source_offsets, [110, 111, 112]);
+    assert_eq!(targets[0].mode, 7);
+    assert_eq!(targets[0].leading_index, None);
     let mut duplicate = uses.clone();
     duplicate.push(uses[0].clone());
-    assert!(feature_input_column_targets(&[input], &duplicate).is_empty());
+    assert!(feature_input_column_targets(&[input], &duplicate, &[], &[row]).is_empty());
 }
 
 #[test]
