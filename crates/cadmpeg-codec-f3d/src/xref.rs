@@ -403,8 +403,7 @@ fn indexed_transform(
     let mut matrices = records
         .iter()
         .filter(|record| record.record_index == record_index)
-        .flat_map(|record| record.offset..record.end.saturating_sub(127))
-        .filter_map(|at| decode_rigid_matrix(bytes, at))
+        .flat_map(|record| indexed_placement_matrices(bytes, record))
         .collect::<Vec<_>>();
     matrices.sort_by(matrix_order);
     matrices.dedup();
@@ -414,6 +413,20 @@ fn indexed_transform(
     };
     cache.insert(record_index, resolved);
     resolved
+}
+
+fn indexed_placement_matrices<'a>(
+    bytes: &'a [u8],
+    record: &'a IndexedRecord,
+) -> impl Iterator<Item = [[f64; 4]; 4]> + 'a {
+    const FIRST_MATRIX_OFFSET: usize = 32;
+    const MATRIX_STRIDE: usize = 142;
+
+    std::iter::successors(record.offset.checked_add(FIRST_MATRIX_OFFSET), |at| {
+        at.checked_add(MATRIX_STRIDE)
+    })
+    .take_while(|at| at.checked_add(128).is_some_and(|end| end <= record.end))
+    .filter_map(|at| decode_rigid_matrix(bytes, at))
 }
 
 fn matrix_order(left: &[[f64; 4]; 4], right: &[[f64; 4]; 4]) -> std::cmp::Ordering {
@@ -462,14 +475,29 @@ fn lp_ascii(bytes: &[u8], at: usize) -> Option<(String, usize)> {
 
 #[cfg(test)]
 mod tests {
-    fn placement_record(index: u64, transform: [[f64; 4]; 4]) -> Vec<u8> {
+    fn placement_record(
+        index: u64,
+        transforms: &[[[f64; 4]; 4]],
+        decoy: Option<[[f64; 4]; 4]>,
+    ) -> Vec<u8> {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3_u32.to_le_bytes());
         bytes.extend_from_slice(b"381");
         bytes.extend_from_slice(&index.to_le_bytes());
         bytes.extend_from_slice(&[0; 17]);
-        for value in transform.into_iter().flatten() {
-            bytes.extend_from_slice(&value.to_le_bytes());
+        for (ordinal, transform) in transforms.iter().enumerate() {
+            if ordinal != 0 {
+                bytes.extend_from_slice(&[0; 14]);
+            }
+            for value in transform.iter().flatten() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        if let Some(decoy) = decoy {
+            bytes.extend_from_slice(&[0; 5]);
+            for value in decoy.into_iter().flatten() {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
         }
         bytes
     }
@@ -583,7 +611,7 @@ mod tests {
             [-1.0, 0.0, 0.0, 4.0],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        let mut bytes = placement_record(42, transform);
+        let mut bytes = placement_record(42, &[transform], None);
         bytes.extend_from_slice(&occurrence_record("role", 10, &[42], None));
         let records = super::indexed_records(&bytes);
         let mut matrices = std::collections::HashMap::new();
@@ -610,7 +638,7 @@ mod tests {
             [0.0, 0.0, 1.0, 4.0],
             [0.0, 0.0, 0.0, 1.0],
         ];
-        let mut bytes = placement_record(42, referenced);
+        let mut bytes = placement_record(42, &[referenced], None);
         bytes.extend_from_slice(&occurrence_record("role", 10, &[42], Some(local)));
         let records = super::indexed_records(&bytes);
         let mut matrices = std::collections::HashMap::new();
@@ -618,6 +646,54 @@ mod tests {
         assert_eq!(
             super::occurrence_transforms(&bytes, &records, "role", "380", &mut matrices),
             vec![Some(local)]
+        );
+    }
+
+    #[test]
+    fn indexed_placement_ignores_rigid_matrices_outside_list_slots() {
+        let placement = [
+            [1.0, 0.0, 0.0, 2.0],
+            [0.0, 1.0, 0.0, 3.0],
+            [0.0, 0.0, 1.0, 4.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let decoy = [
+            [0.0, -1.0, 0.0, 5.0],
+            [1.0, 0.0, 0.0, 6.0],
+            [0.0, 0.0, 1.0, 7.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let mut bytes = placement_record(42, &[placement], Some(decoy));
+        bytes.extend_from_slice(&occurrence_record("role", 10, &[42], None));
+        let records = super::indexed_records(&bytes);
+        let mut matrices = std::collections::HashMap::new();
+
+        assert_eq!(
+            super::occurrence_transforms(&bytes, &records, "role", "380", &mut matrices),
+            vec![Some(placement)]
+        );
+    }
+
+    #[test]
+    fn indexed_placement_decodes_back_to_back_matrix_list() {
+        let first = [
+            [1.0, 0.0, 0.0, 2.0],
+            [0.0, 1.0, 0.0, 3.0],
+            [0.0, 0.0, 1.0, 4.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let second = [
+            [0.0, -1.0, 0.0, 5.0],
+            [1.0, 0.0, 0.0, 6.0],
+            [0.0, 0.0, 1.0, 7.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let bytes = placement_record(42, &[first, second], None);
+        let records = super::indexed_records(&bytes);
+
+        assert_eq!(
+            super::indexed_placement_matrices(&bytes, &records[0]).collect::<Vec<_>>(),
+            vec![first, second]
         );
     }
 }
