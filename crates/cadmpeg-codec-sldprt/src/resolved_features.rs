@@ -2873,19 +2873,50 @@ mod marker_tests {
 
     #[test]
     fn cosmetic_thread_cylinder_reference_uses_the_typed_child_layout() {
-        let class_offset = 9;
-        let marker = class_offset + 115;
+        let body_offset = 30;
+        let marker = body_offset + 94;
         let mut payload = vec![0; marker - 12];
+        payload[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+        payload[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
         let actual_marker = selection_vector_tail(&mut payload, &[3]);
         assert_eq!(actual_marker, marker);
         let (actual_marker, components) =
-            cosmetic_thread_cylinder_reference_at(&payload, class_offset).unwrap();
+            cosmetic_thread_cylinder_reference_at(&payload, body_offset).unwrap();
         assert_eq!(actual_marker, marker);
         assert_eq!(components.last().unwrap().local_id, 3);
 
         assert_eq!(
-            cosmetic_thread_cylinder_reference_at(&payload, class_offset + 1),
+            cosmetic_thread_cylinder_reference_at(&payload, body_offset + 1),
             None
+        );
+
+        let mut payload = vec![0; marker - 12];
+        payload[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+        payload[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        payload.extend(3u32.to_le_bytes());
+        payload.extend([0, 2, 0, 0]);
+        payload.extend([0; 4]);
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0; 2]);
+        for (instance, signature, local_id, gap) in [
+            (0x8032_u16, [1; 12], 3_u32, Some(6_u32)),
+            (0x803e, [2; 12], 7, None),
+        ] {
+            payload.extend(instance.to_le_bytes());
+            payload.extend([0; 2]);
+            payload.extend(signature);
+            payload.extend(local_id.to_le_bytes());
+            if let Some(gap) = gap {
+                payload.extend(gap.to_le_bytes());
+            }
+        }
+        let (_, components) = cosmetic_thread_cylinder_reference_at(&payload, body_offset).unwrap();
+        assert_eq!(
+            components
+                .iter()
+                .map(|component| component.local_id)
+                .collect::<Vec<_>>(),
+            [3, 7]
         );
     }
 
@@ -4497,6 +4528,19 @@ fn compact_surface_selections(
             .and_then(|offset| offset.checked_add(6 + class.name.len()))
             .and_then(|offset| lane.native_payload.get(offset..offset + 2))
     });
+    let cylinder_reference_tokens = lane
+        .classes
+        .iter()
+        .filter(|class| class.name == "moCylinderRef_w")
+        .filter_map(|class| {
+            let body = usize::try_from(class.offset)
+                .ok()?
+                .checked_add(6 + class.name.len())?;
+            let token =
+                u16::from_le_bytes(lane.native_payload.get(body..body + 2)?.try_into().ok()?);
+            (token & 0x8000 != 0 && token != 0xffff).then_some(token)
+        })
+        .collect::<HashSet<_>>();
     let mut objects = histories
         .iter()
         .flat_map(|history| &history.features)
@@ -4553,15 +4597,18 @@ fn compact_surface_selections(
                         .map(|ids| (marker, ids))
                 })
                 .collect(),
-            NativeClassKind::CosmeticThread => lane
-                .classes
-                .iter()
-                .filter(|class| class.name == "moCylinderRef_w")
-                .filter_map(|class| usize::try_from(class.offset).ok())
-                .filter(|offset| (start..end).contains(offset))
-                .filter_map(|offset| {
-                    cosmetic_thread_cylinder_reference_at(&lane.native_payload, offset)
+            NativeClassKind::CosmeticThread => (start..end.saturating_sub(95))
+                .find_map(|offset| {
+                    let token = lane
+                        .native_payload
+                        .get(offset..offset + 2)
+                        .and_then(|bytes| bytes.try_into().ok())
+                        .map(u16::from_le_bytes)?;
+                    cylinder_reference_tokens.contains(&token).then(|| {
+                        cosmetic_thread_cylinder_reference_at(&lane.native_payload, offset)
+                    })?
                 })
+                .into_iter()
                 .collect(),
             _ => continue,
         };
@@ -4585,11 +4632,21 @@ fn compact_surface_selections(
 
 fn cosmetic_thread_cylinder_reference_at(
     payload: &[u8],
-    class_offset: usize,
+    body_offset: usize,
 ) -> Option<(usize, Vec<FeatureInputComponentPathEntry>)> {
-    let marker = class_offset.checked_add(115)?;
-    compact_edge_component_path_at(payload, marker)
-        .or_else(|| compact_termination_reference_path_at(payload, marker))
+    let body = payload.get(body_offset..body_offset + 11)?;
+    let nested_token = u16::from_le_bytes(body[2..4].try_into().ok()?);
+    if nested_token & 0x8000 == 0
+        || nested_token == 0xffff
+        || body[4..8] != 2u32.to_le_bytes()
+        || !matches!(body[8], 0 | 0x40)
+        || body[9..11] != [0, 0]
+    {
+        return None;
+    }
+    let marker = body_offset.checked_add(94)?;
+    compact_termination_reference_path_at(payload, marker)
+        .or_else(|| compact_edge_component_path_at(payload, marker))
         .map(|components| (marker, components))
 }
 
@@ -7228,6 +7285,76 @@ pub(crate) fn bind_history_classes(
         }
     }
 
+    let mut cosmetic_thread_classes = HashMap::<String, Vec<String>>::new();
+    for lane in lanes {
+        let mut declared = lane
+            .classes
+            .iter()
+            .filter(|class| {
+                native_object_class(&class.name).kind == NativeClassKind::CosmeticThread
+            })
+            .map(|class| class.name.clone())
+            .collect::<Vec<_>>();
+        declared.sort();
+        declared.dedup();
+        let [class] = declared.as_slice() else {
+            continue;
+        };
+        let direct_name_offsets = lane
+            .classes
+            .iter()
+            .map(|class| class.offset + 6 + class.name.len() as u64)
+            .collect::<HashSet<_>>();
+        let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
+        for feature in histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|feature| feature.input_class.is_none())
+        {
+            let Some(name) = feature_object_name(feature, lane).filter(|name| {
+                !direct_name_offsets.contains(&name.offset)
+                    && name.object_id.is_some()
+                    && name.value == feature.name
+            }) else {
+                continue;
+            };
+            let Some(token) = usize::try_from(name.offset)
+                .ok()
+                .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
+                .filter(|token| token & 0x8000 != 0 && *token != 0xffff)
+            else {
+                continue;
+            };
+            groups.entry(token).or_default().push(feature);
+        }
+        for features in groups.values() {
+            if features
+                .iter()
+                .all(|feature| cosmetic_thread_parameter_shape(feature))
+            {
+                for feature in features {
+                    cosmetic_thread_classes
+                        .entry(feature.id.clone())
+                        .or_default()
+                        .push(class.clone());
+                }
+            }
+        }
+    }
+    for classes in cosmetic_thread_classes.values_mut() {
+        classes.sort();
+        classes.dedup();
+    }
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| feature.input_class.is_none())
+    {
+        if let Some([class]) = cosmetic_thread_classes.get(&feature.id).map(Vec::as_slice) {
+            feature.input_class = Some(class.clone());
+        }
+    }
+
     let mut native_startups = Vec::<[&str; 6]>::new();
     for lane in lanes {
         let resolved = lane
@@ -7397,6 +7524,18 @@ pub(crate) fn bind_history_classes(
             feature.input_class = Some(class.clone());
         }
     }
+}
+
+fn cosmetic_thread_parameter_shape(feature: &crate::records::Feature) -> bool {
+    feature.xml_tag.eq_ignore_ascii_case("Feature")
+        && feature
+            .parameters
+            .keys()
+            .all(|name| matches!(name.as_str(), "D1" | "D2"))
+        && feature.parameters.get("D2").is_some_and(|expression| {
+            let expression = expression.trim();
+            expression.starts_with("<MOD-DIAM>") || expression.starts_with("&lt;MOD-DIAM&gt;")
+        })
 }
 
 #[cfg(test)]
@@ -7639,6 +7778,75 @@ mod idless_history_binding_tests {
             .features
             .iter()
             .all(|feature| feature.input_class.as_deref() == Some("moHoleWzd_c")));
+    }
+
+    #[test]
+    fn diameter_parameter_schema_binds_a_repeated_cosmetic_thread_group() {
+        let mut first = feature(0, "localized external thread");
+        first.source_id = Some("11".into());
+        first.parameters.insert("D1".into(), "12".into());
+        first.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
+        let mut second = feature(1, "localized hole thread");
+        second.source_id = Some("12".into());
+        second
+            .parameters
+            .insert("D2".into(), "&lt;MOD-DIAM&gt;6".into());
+        let mut histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![first, second],
+        }];
+        let class = FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 100,
+            name: "moCosmeticThread_c".into(),
+            role: native_object_class("moCosmeticThread_c").role,
+        };
+        let names = histories[0]
+            .features
+            .iter()
+            .enumerate()
+            .map(|(index, feature)| FeatureInputName {
+                id: format!("name-{index}"),
+                parent: "lane".into(),
+                ordinal: index as u32,
+                offset: 300 + index as u64 * 100,
+                object_id: feature.source_id.as_deref().and_then(|id| id.parse().ok()),
+                value: feature.name.clone(),
+            })
+            .collect::<Vec<_>>();
+        let mut payload = vec![0; 500];
+        for name in &names {
+            let offset = usize::try_from(name.offset).unwrap();
+            payload[offset - 2..offset].copy_from_slice(&0x82a4_u16.to_le_bytes());
+        }
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: vec![class],
+            names,
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        bind_history_classes(&mut histories, &[lane]);
+
+        assert!(histories[0]
+            .features
+            .iter()
+            .all(|feature| { feature.input_class.as_deref() == Some("moCosmeticThread_c") }));
     }
 }
 
@@ -9430,6 +9638,8 @@ pub(crate) fn project_compact_surface_selections(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
+        let first_component =
+            matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
         let slot = match &mut feature.definition {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
@@ -9446,11 +9656,19 @@ pub(crate) fn project_compact_surface_selections(
             _ => continue,
         };
         let native = compact_surface_selection_value(&selection.components);
-        let generated = selection
-            .terminal_feature_ref
-            .as_ref()
+        let producer = if first_component {
+            selection.producer_feature_refs.first()
+        } else {
+            selection.terminal_feature_ref.as_ref()
+        };
+        let component = if first_component {
+            selection.components.first()
+        } else {
+            selection.components.last()
+        };
+        let generated = producer
             .and_then(|producer| feature_ids_by_native.get(producer))
-            .zip(selection.components.last());
+            .zip(component);
         match slot {
             SelectionSlot::Face(faces) => {
                 if matches!(
@@ -10623,6 +10841,18 @@ pub(crate) fn compact_termination_reference_path_at(
     }
     let mut entries = Vec::new();
     while entries.len() < count {
+        let ordinal_gap = payload
+            .get(cursor..cursor + 4)
+            .and_then(|bytes| {
+                let ordinal = u16::from_le_bytes(bytes[..2].try_into().ok()?);
+                (ordinal != 0 && ordinal & 0x8000 == 0 && bytes[2..4] == [0, 0]).then_some(ordinal)
+            })
+            .is_some()
+            && entry_at(cursor + 4).is_some();
+        if ordinal_gap {
+            cursor += 4;
+            continue;
+        }
         if let Some(entry) = entry_at(cursor) {
             entries.push(entry);
             cursor += 20;

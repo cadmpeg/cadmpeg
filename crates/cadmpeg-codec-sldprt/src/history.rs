@@ -7028,6 +7028,8 @@ fn validate_compact_surface_selection_edits(
         let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
             continue;
         };
+        let first_component =
+            matches!(feature.definition, FeatureDefinition::CosmeticThread { .. });
         let slot = match &feature.definition {
             FeatureDefinition::Thicken { faces, .. } => SelectionSlot::Face(faces),
             FeatureDefinition::CosmeticThread { face, .. } => SelectionSlot::Face(face),
@@ -7045,11 +7047,19 @@ fn validate_compact_surface_selection_edits(
         };
         let native =
             crate::resolved_features::compact_surface_selection_value(&selection.components);
-        let generated = selection
-            .terminal_feature_ref
-            .as_deref()
+        let producer = if first_component {
+            selection.producer_feature_refs.first().map(String::as_str)
+        } else {
+            selection.terminal_feature_ref.as_deref()
+        };
+        let component = if first_component {
+            selection.components.first()
+        } else {
+            selection.components.last()
+        };
+        let generated = producer
             .and_then(|producer| feature_ids_by_native.get(producer))
-            .zip(selection.components.last());
+            .zip(component);
         let changed = match slot {
             SelectionSlot::Face(faces) => {
                 let expected = match generated {
