@@ -1859,6 +1859,58 @@ mod history_reference_tests {
             );
         }
 
+        let roster_from = |node: &Feature, classes: &[(&str, &str)], classless_sources: &[&str]| {
+            let mut features = vec![node.clone()];
+            for (source, class) in classes {
+                let mut sentinel = feature("sentinel", Some(source), features.len() as u32);
+                sentinel.input_class = Some((*class).into());
+                features.push(sentinel);
+            }
+            for source in classless_sources {
+                features.push(feature("reserved", Some(source), features.len() as u32));
+            }
+            features
+        };
+        let default_frame = [
+            ("1", "moDetailCabinet_c"),
+            ("2", "moRefPlane_c"),
+            ("3", "moRefPlane_c"),
+            ("4", "moRefPlane_c"),
+            ("5", "moOriginProfileFeature_c"),
+        ];
+        let lights = feature("lights", Some("6"), 0);
+        assert_eq!(
+            feature_tree_node_role(&lights, &roster_from(&lights, &default_frame, &["7", "8"])),
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        );
+
+        let ambient = feature("ambient", Some("10"), 0);
+        let mut folders_at_seven = default_frame.to_vec();
+        folders_at_seven.extend([("7", "moSolidBodyFolder_c"), ("8", "moSurfaceBodyFolder_c")]);
+        assert_eq!(
+            feature_tree_node_role(
+                &ambient,
+                &roster_from(&ambient, &folders_at_seven, &["6", "11", "12"]),
+            ),
+            Some(FeatureTreeNodeRole::AmbientLight)
+        );
+
+        let early_lights = feature("lights", Some("2"), 0);
+        let origin_at_six = [
+            ("1", "moDetailCabinet_c"),
+            ("3", "moRefPlane_c"),
+            ("4", "moRefPlane_c"),
+            ("5", "moRefPlane_c"),
+            ("6", "moOriginProfileFeature_c"),
+        ];
+        assert_eq!(
+            feature_tree_node_role(
+                &early_lights,
+                &roster_from(&early_lights, &origin_at_six, &["7", "8"]),
+            ),
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        );
+
         let ambiguous = feature("node", Some("99"), 0);
         assert_eq!(feature_tree_node_role(&ambiguous, &[]), None);
 
@@ -3446,6 +3498,37 @@ fn reserved_feature_tree_node_role(
         (FeatureManagerLayout::Legacy, tag, "8") if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
+        (FeatureManagerLayout::LightsAtSix, tag, "6")
+        | (FeatureManagerLayout::FoldersAtSeven, tag, "6")
+            if tag.eq_ignore_ascii_case("Feature") =>
+        {
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        }
+        (FeatureManagerLayout::LightsAtSix, tag, "7") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::AmbientLight)
+        }
+        (FeatureManagerLayout::LightsAtSix, tag, "8") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        }
+        (FeatureManagerLayout::FoldersAtSeven, tag, "10")
+            if tag.eq_ignore_ascii_case("Feature") =>
+        {
+            Some(FeatureTreeNodeRole::AmbientLight)
+        }
+        (FeatureManagerLayout::FoldersAtSeven, tag, "11" | "12")
+            if tag.eq_ignore_ascii_case("Feature") =>
+        {
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        }
+        (FeatureManagerLayout::OriginAtSix, tag, "2") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        }
+        (FeatureManagerLayout::OriginAtSix, tag, "7") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::AmbientLight)
+        }
+        (FeatureManagerLayout::OriginAtSix, tag, "8") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::DirectionalLight)
+        }
         (_, tag, _)
             if tag.eq_ignore_ascii_case("Feature")
                 && repeated_builtin_node_kind(
@@ -3483,8 +3566,11 @@ fn classless_builtin_node(feature: &Feature) -> bool {
         && feature.content.is_empty()
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FeatureManagerLayout {
+    OriginAtSix,
+    LightsAtSix,
+    FoldersAtSeven,
     Legacy,
     Current,
 }
@@ -3495,6 +3581,14 @@ fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> 
             let mut matches = features.iter().filter(|feature| {
                 feature.source_id.as_deref() == Some(*source)
                     && feature.input_class.as_deref() == Some(*class)
+            });
+            matches.next().is_some() && matches.next().is_none()
+        })
+    };
+    let matches_classless = |sources: &[&str]| {
+        sources.iter().all(|source| {
+            let mut matches = features.iter().filter(|feature| {
+                feature.source_id.as_deref() == Some(*source) && classless_builtin_node(feature)
             });
             matches.next().is_some() && matches.next().is_none()
         })
@@ -3512,11 +3606,35 @@ fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> 
         ("9", "moSolidBodyFolder_c"),
         ("10", "moSurfaceBodyFolder_c"),
     ]);
-    match (legacy, current) {
-        (true, false) => Some(FeatureManagerLayout::Legacy),
-        (false, true) => Some(FeatureManagerLayout::Current),
-        _ => None,
-    }
+    let default_frame = matches_roster(&[
+        ("1", "moDetailCabinet_c"),
+        ("2", "moRefPlane_c"),
+        ("3", "moRefPlane_c"),
+        ("4", "moRefPlane_c"),
+        ("5", "moOriginProfileFeature_c"),
+    ]);
+    let origin_at_six = matches_roster(&[
+        ("1", "moDetailCabinet_c"),
+        ("3", "moRefPlane_c"),
+        ("4", "moRefPlane_c"),
+        ("5", "moRefPlane_c"),
+        ("6", "moOriginProfileFeature_c"),
+    ]) && matches_classless(&["2", "7", "8"]);
+    let lights_at_six = default_frame && matches_classless(&["6", "7", "8"]);
+    let folders_at_seven = default_frame
+        && matches_roster(&[("7", "moSolidBodyFolder_c"), ("8", "moSurfaceBodyFolder_c")])
+        && matches_classless(&["6", "10", "11", "12"]);
+    let mut layouts = [
+        (origin_at_six, FeatureManagerLayout::OriginAtSix),
+        (lights_at_six, FeatureManagerLayout::LightsAtSix),
+        (folders_at_seven, FeatureManagerLayout::FoldersAtSeven),
+        (legacy, FeatureManagerLayout::Legacy),
+        (current, FeatureManagerLayout::Current),
+    ]
+    .into_iter()
+    .filter_map(|(matches, layout)| matches.then_some(layout));
+    let layout = layouts.next()?;
+    layouts.next().is_none().then_some(layout)
 }
 
 fn repeated_builtin_node_kind(
@@ -3526,6 +3644,12 @@ fn repeated_builtin_node_kind(
     role: FeatureTreeNodeRole,
 ) -> bool {
     let reserved_source = match (layout, role) {
+        (FeatureManagerLayout::OriginAtSix, FeatureTreeNodeRole::AmbientLight)
+        | (FeatureManagerLayout::LightsAtSix, FeatureTreeNodeRole::AmbientLight) => "7",
+        (FeatureManagerLayout::OriginAtSix, FeatureTreeNodeRole::DirectionalLight)
+        | (FeatureManagerLayout::LightsAtSix, FeatureTreeNodeRole::DirectionalLight) => "8",
+        (FeatureManagerLayout::FoldersAtSeven, FeatureTreeNodeRole::AmbientLight) => "10",
+        (FeatureManagerLayout::FoldersAtSeven, FeatureTreeNodeRole::DirectionalLight) => "11",
         (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::AmbientLight) => "7",
         (FeatureManagerLayout::Legacy, FeatureTreeNodeRole::DirectionalLight) => "8",
         (FeatureManagerLayout::Current, FeatureTreeNodeRole::AmbientLight) => "12",
