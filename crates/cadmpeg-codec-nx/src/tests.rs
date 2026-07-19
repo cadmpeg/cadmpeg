@@ -3670,7 +3670,7 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
 }
 
 #[test]
-fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() {
+fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
     use crate::native::{
         FeatureSimpleHoleConstructionGroup, FeatureSimpleHoleTemplate, SimpleHoleEndTreatment,
         SimpleHoleExtent, SimpleHoleFamily, SimpleHoleForm,
@@ -3864,6 +3864,31 @@ fn nx_simple_hole_diameter_requires_a_complete_uniform_through_bore_bijection() 
     }
     assert_eq!(
         crate::decode::hole_directions_for_operations(&opposite_axis, &operations, &outputs),
+        expected_directions
+    );
+    let mut different_radii = ir.clone();
+    let SurfaceGeometry::Cylinder { radius, .. } = &mut different_radii.model.surfaces[1].geometry
+    else {
+        unreachable!()
+    };
+    *radius = 3.1;
+    for curve in different_radii
+        .model
+        .curves
+        .iter_mut()
+        .filter(|curve| curve.id.0.starts_with("bore-curve-1-"))
+    {
+        let CurveGeometry::Circle { radius, .. } = &mut curve.geometry else {
+            unreachable!()
+        };
+        *radius = 3.1;
+    }
+    assert!(
+        crate::decode::hole_diameters_for_operations(&different_radii, &operations, &outputs,)
+            .is_empty()
+    );
+    assert_eq!(
+        crate::decode::hole_directions_for_operations(&different_radii, &operations, &outputs),
         expected_directions
     );
     assert_eq!(

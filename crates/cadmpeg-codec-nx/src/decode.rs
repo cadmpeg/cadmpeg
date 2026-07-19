@@ -10026,16 +10026,17 @@ fn attach_feature_operations(
             ))
         })
         .collect::<BTreeMap<_, _>>();
+    let simple_hole_operations =
+        simple_hole_operations(simple_hole_templates, simple_hole_construction_groups)
+            .unwrap_or_default();
     let simple_hole_diameters = simple_hole_diameters(
         ir,
         simple_hole_templates,
         simple_hole_construction_groups,
         &hole_outputs,
     );
-    let simple_hole_direction_operations =
-        simple_hole_diameters.keys().cloned().collect::<Vec<_>>();
     let simple_hole_directions =
-        hole_directions_for_operations(ir, &simple_hole_direction_operations, &hole_outputs);
+        hole_directions_for_operations(ir, &simple_hole_operations, &hole_outputs);
     let hole_package_operations = labels
         .iter()
         .filter(|label| label.value == "HOLE PACKAGE")
@@ -10053,13 +10054,8 @@ fn attach_feature_operations(
         .collect::<BTreeMap<_, _>>();
     let hole_package_diameters =
         hole_diameters_for_operations(ir, &hole_package_operations, &hole_package_outputs);
-    let hole_package_direction_operations =
-        hole_package_diameters.keys().cloned().collect::<Vec<_>>();
-    let hole_package_directions = hole_directions_for_operations(
-        ir,
-        &hole_package_direction_operations,
-        &hole_package_outputs,
-    );
+    let hole_package_directions =
+        hole_directions_for_operations(ir, &hole_package_operations, &hole_package_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
@@ -11844,6 +11840,17 @@ pub(crate) fn simple_hole_diameters(
     groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
     outputs: &BTreeMap<String, Vec<BodyId>>,
 ) -> BTreeMap<String, Length> {
+    let Some(operations) = simple_hole_operations(templates, groups) else {
+        return BTreeMap::new();
+    };
+
+    hole_diameters_for_operations(ir, &operations, outputs)
+}
+
+fn simple_hole_operations(
+    templates: &[crate::native::FeatureSimpleHoleTemplate],
+    groups: &[crate::native::FeatureSimpleHoleConstructionGroup],
+) -> Option<Vec<String>> {
     let template_operations = templates
         .iter()
         .filter(|template| {
@@ -11853,9 +11860,9 @@ pub(crate) fn simple_hole_diameters(
         .map(|template| template.operation_label.as_str())
         .collect::<BTreeSet<_>>();
     if template_operations.len() != templates.len() || template_operations.is_empty() {
-        return BTreeMap::new();
+        return None;
     }
-    let operations = match groups {
+    Some(match groups {
         [] => templates
             .iter()
             .map(|template| template.operation_label.clone())
@@ -11869,14 +11876,12 @@ pub(crate) fn simple_hole_diameters(
             if group_operations.len() != group.operation_labels.len()
                 || template_operations != group_operations
             {
-                return BTreeMap::new();
+                return None;
             }
             group.operation_labels.clone()
         }
-        _ => return BTreeMap::new(),
-    };
-
-    hole_diameters_for_operations(ir, &operations, outputs)
+        _ => return None,
+    })
 }
 
 /// Derive one diameter per operation when the complete operation set and its
@@ -11927,7 +11932,9 @@ pub(crate) fn hole_diameters_for_operations(
 }
 
 /// Derive one canonical model-space direction per operation when every bore
-/// in an already matched body partition has one common axis direction.
+/// in a body partition has one common axis direction. Radii need not match:
+/// direction remains invariant when operation-to-bore diameter ownership is
+/// ambiguous.
 pub(crate) fn hole_directions_for_operations(
     ir: &CadIr,
     operations: &[String],
@@ -11953,7 +11960,7 @@ pub(crate) fn hole_directions_for_operations(
         if bores.len() != operations.len() {
             return BTreeMap::new();
         }
-        let Some((_, first_axis, first_radius)) = bores.first().copied() else {
+        let Some((_, first_axis, _)) = bores.first().copied() else {
             return BTreeMap::new();
         };
         let Some(mut direction) = unit_vector(first_axis) else {
@@ -11968,11 +11975,9 @@ pub(crate) fn hole_directions_for_operations(
         if leading < 0.0 {
             direction = Vector3::new(-direction.x, -direction.y, -direction.z);
         }
-        if bores.iter().any(|(_, axis, radius)| {
-            radius.to_bits() != first_radius.to_bits()
-                || unit_vector(*axis).is_none_or(|axis| {
-                    (1.0 - dot_vector(direction, axis).abs()) > angular_tolerance
-                })
+        if bores.iter().any(|(_, axis, _)| {
+            unit_vector(*axis)
+                .is_none_or(|axis| (1.0 - dot_vector(direction, axis).abs()) > angular_tolerance)
         }) {
             return BTreeMap::new();
         }
