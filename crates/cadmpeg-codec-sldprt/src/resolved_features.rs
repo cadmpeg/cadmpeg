@@ -5913,14 +5913,15 @@ pub(crate) fn enrich_history_sketch_block_references(
     }
 }
 
-const SKETCH_BLOCK_TRAILER: &[u8] = &[0xff, 0xff, 0xff, 0xff, 0xd4, 0xa7, 0xcf, 0x01];
-
 fn sketch_block_record_local_id(payload: &[u8], start: usize, end: usize) -> Option<u16> {
     let bytes = payload.get(start..end)?;
-    bytes.windows(20).rev().find_map(|window| {
-        (window.get(..8) == Some(SKETCH_BLOCK_TRAILER)
-            && window.get(12..18) == Some(&[0x02, 0, 0, 0, 0, 0]))
-        .then(|| u16::from_le_bytes([window[18], window[19]]))
+    bytes.windows(44).rev().find_map(|window| {
+        let local_id = u16::from_le_bytes([window[18], window[19]]);
+        (window.get(..4) == Some(&[0xff; 4])
+            && window.get(12..18) == Some(&[0x02, 0, 0, 0, 0, 0])
+            && local_id != 0
+            && window.get(40..44) == Some(&[0, 0, 1, 0]))
+        .then_some(local_id)
     })
 }
 

@@ -1834,16 +1834,27 @@ mod history_reference_tests {
         }];
         let mut lane = feature_input_lane("lane", None);
         lane.native_payload.resize(450, 0);
-        let write_local_id = |payload: &mut [u8], offset: usize, local_id: u16| {
-            payload[offset..offset + 8]
-                .copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0xd4, 0xa7, 0xcf, 0x01]);
+        let write_local_id = |payload: &mut [u8], offset: usize, token: [u8; 4], local_id: u16| {
+            payload[offset..offset + 4].copy_from_slice(&[0xff; 4]);
+            payload[offset + 4..offset + 8].copy_from_slice(&token);
             payload[offset + 12..offset + 18].copy_from_slice(&[0x02, 0, 0, 0, 0, 0]);
             payload[offset + 18..offset + 20].copy_from_slice(&local_id.to_le_bytes());
+            payload[offset + 40..offset + 44].copy_from_slice(&[0, 0, 1, 0]);
         };
-        write_local_id(&mut lane.native_payload, 180, 0);
-        write_local_id(&mut lane.native_payload, 250, 0x0115);
+        write_local_id(&mut lane.native_payload, 180, [0x11, 0x22, 0x33, 0x01], 0);
+        write_local_id(
+            &mut lane.native_payload,
+            250,
+            [0x11, 0x22, 0x33, 0x01],
+            0x0115,
+        );
         lane.native_payload[348..350].copy_from_slice(&0x0115_u16.to_le_bytes());
-        write_local_id(&mut lane.native_payload, 380, 0x0115);
+        write_local_id(
+            &mut lane.native_payload,
+            380,
+            [0x44, 0x55, 0x66, 0x01],
+            0x0115,
+        );
         lane.names = vec![
             crate::records::FeatureInputName {
                 id: "instance-name".into(),
