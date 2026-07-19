@@ -3546,6 +3546,39 @@ mod marker_tests {
     }
 
     #[test]
+    fn revolution_line_reference_inputs_decode_declared_pre_handle_address() {
+        let mut payload = vec![0; 240];
+        let handles = 108;
+        let source = handles - 44;
+        payload[source..source + 4].copy_from_slice(&42u32.to_le_bytes());
+        payload[source + 4..source + 8].copy_from_slice(&0x4901_2c88u32.to_le_bytes());
+        payload[source + 8..source + 10].copy_from_slice(&0x810fu16.to_le_bytes());
+        payload[source + 12..source + 16].copy_from_slice(&[0xff; 4]);
+        payload[source + 16..source + 20].copy_from_slice(&1u32.to_le_bytes());
+        payload[source + 20..source + 24].copy_from_slice(&1u32.to_le_bytes());
+        payload[source + 28..source + 32].copy_from_slice(&122u32.to_le_bytes());
+        payload[handles..handles + 4].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        payload[handles + 4..handles + 8].copy_from_slice(&[0xc7, 0xcf, 0xff, 0xff]);
+        for (index, value) in [1.0, 0.0, 0.060_285_851_239_7, 0.0, 0.0, -1.0]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = handles + 24 + index * 8;
+            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        payload[handles + 72..handles + 76].copy_from_slice(CLASS_MARKER);
+
+        assert_eq!(
+            revolution_line_reference_inputs(&payload, 32, payload.len(), &HashSet::from([42])),
+            Some((
+                42,
+                Point3::new(1000.0, 0.0, 0.060_285_851_239_7 * 1000.0),
+                Vector3::new(0.0, 0.0, -1.0)
+            ))
+        );
+    }
+
+    #[test]
     fn indexed_profile_construction_line_places_a_revolution_axis() {
         let mut payload = vec![0; 300];
         for offset in [0, 100, 200] {
@@ -4105,10 +4138,79 @@ fn revolution_line_reference_inputs(
         let value = f64::from_le_bytes(payload.get(offset..offset + 8)?.try_into().ok()?);
         (value.is_finite() && value.abs() <= 1.0e6).then_some(value)
     };
+    let source_cell = |offset: usize| {
+        let source = u32::from_le_bytes(payload.get(offset..offset + 4)?.try_into().ok()?);
+        let identity = u32::from_le_bytes(payload.get(offset + 4..offset + 8)?.try_into().ok()?);
+        let token = u16::from_le_bytes(payload.get(offset + 8..offset + 10)?.try_into().ok()?);
+        (profile_sources.contains(&source)
+            && identity != 0
+            && token & 0x8000 != 0
+            && token != u16::MAX
+            && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]))
+        .then_some(source)
+    };
     let mut candidates = Vec::new();
     for handle_start in object_start..search_end.saturating_sub(64) {
         if payload.get(handle_start..handle_start + 4) != Some(HANDLE.as_slice()) {
             continue;
+        }
+        if handle_start >= object_start + 44
+            && payload.get(handle_start + 4..handle_start + 8) == Some(HANDLE.as_slice())
+            && payload.get(handle_start - 28..handle_start - 24) == Some(&1u32.to_le_bytes())
+            && payload.get(handle_start - 24..handle_start - 20) == Some(&1u32.to_le_bytes())
+            && payload.get(handle_start - 20..handle_start - 16) == Some(&[0; 4])
+            && payload.get(handle_start - 12..handle_start) == Some(&[0; 12])
+            && payload
+                .get(handle_start - 16..handle_start - 12)
+                .and_then(|bytes| bytes.try_into().ok())
+                .map(u32::from_le_bytes)
+                .is_some_and(|address| address != 0)
+        {
+            let source_offset = handle_start - 44;
+            if let Some(source) = source_cell(source_offset) {
+                let handles_end = handle_start + 8;
+                let frame_gap = 16;
+                if payload
+                    .get(handles_end..handles_end + frame_gap)
+                    .is_none_or(|bytes| bytes.iter().any(|byte| *byte != 0))
+                {
+                    continue;
+                }
+                let frame = handles_end + frame_gap;
+                let Some((x, y, z, dx, dy, dz)) = scalar(frame)
+                    .zip(scalar(frame + 8))
+                    .zip(scalar(frame + 16))
+                    .zip(scalar(frame + 24))
+                    .zip(scalar(frame + 32))
+                    .zip(scalar(frame + 40))
+                    .map(|(((((x, y), z), dx), dy), dz)| (x, y, z, dx, dy, dz))
+                else {
+                    continue;
+                };
+                let record_end = frame + 48;
+                let Some(next_record) = (record_end..=record_end + 24)
+                    .find(|offset| payload.get(*offset..*offset + 4) == Some(CLASS_MARKER))
+                else {
+                    continue;
+                };
+                if payload
+                    .get(record_end..next_record)
+                    .is_some_and(|bytes| bytes.iter().any(|byte| *byte != 0))
+                {
+                    continue;
+                }
+                let norm = (dx * dx + dy * dy + dz * dz).sqrt();
+                if (norm - 1.0).abs() <= 1.0e-9 {
+                    candidates.push((
+                        6,
+                        (
+                            source,
+                            Point3::new(x * NATIVE_TO_IR, y * NATIVE_TO_IR, z * NATIVE_TO_IR),
+                            Vector3::new(dx / norm, dy / norm, dz / norm),
+                        ),
+                    ));
+                }
+            }
         }
         for handle_count in [2usize, 3] {
             let handles_end = handle_start.checked_add(handle_count * HANDLE.len())?;
@@ -4129,20 +4231,7 @@ fn revolution_line_reference_inputs(
                 continue;
             }
             let mut source_cells = (object_start..handle_start.saturating_sub(15))
-                .filter_map(|offset| {
-                    let source =
-                        u32::from_le_bytes(payload.get(offset..offset + 4)?.try_into().ok()?);
-                    let identity =
-                        u32::from_le_bytes(payload.get(offset + 4..offset + 8)?.try_into().ok()?);
-                    let token =
-                        u16::from_le_bytes(payload.get(offset + 8..offset + 10)?.try_into().ok()?);
-                    (profile_sources.contains(&source)
-                        && identity != 0
-                        && token & 0x8000 != 0
-                        && token != u16::MAX
-                        && payload.get(offset + 12..offset + 16) == Some(&[0xff; 4]))
-                    .then_some(source)
-                })
+                .filter_map(source_cell)
                 .collect::<Vec<_>>();
             source_cells.sort_unstable();
             source_cells.dedup();
