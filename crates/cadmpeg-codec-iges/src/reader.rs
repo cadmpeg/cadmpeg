@@ -55,11 +55,8 @@ pub(crate) fn decode(
     let directory = directory::parse(&scan)?;
     let parameters = parameter::assemble(&scan, &directory, &global)?;
     let references = graph::build(&directory);
-    let byte_ledger = byte_ledger::build(&scan, &global, &parameters);
-    let mut source_fidelity = SourceFidelity {
-        byte_ledger: byte_ledger.clone(),
-        ..SourceFidelity::default()
-    };
+    let mut source_fidelity =
+        SourceFidelity::new(vec![byte_ledger::build(&scan, &global, &parameters)]);
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));

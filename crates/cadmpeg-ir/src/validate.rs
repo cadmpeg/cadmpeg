@@ -26,7 +26,6 @@ use crate::topology::{Body, Coedge, Edge, Face, Loop, Point, Region, Shell, Vert
 use crate::units::LengthUnit;
 
 mod annotations_native;
-mod byte_ledger;
 mod carriers_parameterization;
 mod drawings;
 mod geometry_consistency;
@@ -43,7 +42,6 @@ mod subd;
 mod topology;
 
 use annotations_native::{check_annotations, check_native_links};
-use byte_ledger::check_byte_ledger;
 use carriers_parameterization::{check_carrier_reachability, check_parameter_domains};
 use drawings::check_drawings;
 use geometry_consistency::{check_edge_endpoint_consistency, check_pcurve_surface_consistency};
@@ -131,11 +129,6 @@ pub fn validate_with_source_fidelity(
             entity: None,
         });
     }
-    check_byte_ledger(
-        &source_fidelity.byte_ledger,
-        &source_fidelity.retained_records,
-        &mut report.findings,
-    );
     all_ids.extend(
         source_fidelity
             .retained_records

@@ -21,7 +21,6 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::annotations::Annotations;
-use crate::byte_ledger::ByteLedger;
 use crate::document::CadIr;
 use crate::native::NativeConvertError;
 use crate::unknown::UnknownRecord;
@@ -410,10 +409,6 @@ pub struct SourceFidelity {
     pub version: String,
     /// The address spaces, in canonical (id-ascending) order.
     pub spaces: Vec<AddressSpaceLedger>,
-    /// Flat source-stream accounting used by codecs that do not expose derived
-    /// address spaces.
-    #[serde(default)]
-    pub byte_ledger: ByteLedger,
     /// Sparse source locations and conversion exactness.
     #[serde(default)]
     pub annotations: Annotations,
@@ -427,7 +422,6 @@ impl Default for SourceFidelity {
         Self {
             version: SOURCE_FIDELITY_VERSION.into(),
             spaces: Vec::new(),
-            byte_ledger: ByteLedger::default(),
             annotations: Annotations::default(),
             retained_records: Vec::new(),
         }
@@ -462,7 +456,6 @@ impl SourceFidelity {
             });
         }
         self.spaces.sort_by(|a, b| a.id.cmp(&b.id));
-        self.byte_ledger.finalize();
         self.retained_records.sort_by(|left, right| {
             (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
         });

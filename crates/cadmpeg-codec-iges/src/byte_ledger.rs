@@ -4,7 +4,10 @@
 use crate::card::{CardScan, PhysicalLine, Section};
 use crate::global::Global;
 use crate::parameter::ParameterRecord;
-use cadmpeg_ir::{ByteLedger, ByteSpan, ByteSpanClass};
+use cadmpeg_ir::{
+    AddressSpaceLedger, ByteLedger, ByteSpan, ByteSpanClass, CanonicalSpaceId, LedgerSpan,
+    RetainedRef, SerializedOrigin, SerializedRange, SpanClass,
+};
 use std::collections::BTreeMap;
 
 fn push(
@@ -275,7 +278,7 @@ pub(crate) fn build(
     scan: &CardScan,
     global: &Global,
     parameters: &[ParameterRecord],
-) -> ByteLedger {
+) -> AddressSpaceLedger {
     let parameter_by_line = parameters
         .iter()
         .flat_map(|record| record.line_range.clone().map(move |line| (line, record)))
@@ -347,5 +350,41 @@ pub(crate) fn build(
         spans,
     };
     ledger.finalize();
-    ledger
+    AddressSpaceLedger {
+        id: CanonicalSpaceId::source(),
+        length: ledger.source_length,
+        origin: SerializedOrigin::Root,
+        spans: ledger
+            .spans
+            .into_iter()
+            .map(|span| {
+                let start = usize::try_from(span.start).unwrap_or(scan.source.len());
+                let end = usize::try_from(span.end).unwrap_or(scan.source.len());
+                let bytes = scan.source.get(start..end).unwrap_or_default();
+                let class = match span.class {
+                    ByteSpanClass::Typed => SpanClass::Typed,
+                    ByteSpanClass::Structural => SpanClass::Structural,
+                    ByteSpanClass::Opaque => SpanClass::Opaque,
+                };
+                let retained = span.retained_record.map(|blob| RetainedRef {
+                    blob,
+                    range: SerializedRange {
+                        start: 0,
+                        end: span.end.saturating_sub(span.start),
+                    },
+                });
+                LedgerSpan {
+                    range: SerializedRange {
+                        start: span.start,
+                        end: span.end,
+                    },
+                    class,
+                    owner: span.owner,
+                    meaning: span.meaning,
+                    digest: cadmpeg_ir::hash::sha256_hex(bytes),
+                    retained,
+                }
+            })
+            .collect(),
+    }
 }

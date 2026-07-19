@@ -8,7 +8,7 @@ use crate::global::Global;
 use crate::graph::ReferenceEdge;
 use crate::parameter::{trailing_pointer_groups, ParameterRecord, Token, TokenValue};
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::{ByteSpanClass, CadIr, RetainedSourceRecord, SourceFidelity};
+use cadmpeg_ir::{CadIr, RetainedSourceRecord, SourceFidelity, SpanClass};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -1251,19 +1251,24 @@ pub(crate) fn store(
         })
         .collect::<Vec<_>>();
     source_fidelity.retained_records = source_fidelity
-        .byte_ledger
-        .spans
-        .iter()
-        .filter(|span| span.class == ByteSpanClass::Opaque)
+        .spaces
+        .first()
+        .into_iter()
+        .flat_map(|space| &space.spans)
+        .filter(|span| span.class == SpanClass::Opaque)
         .map(|span| {
-            let start = usize::try_from(span.start).unwrap_or(scan.source.len());
-            let end = usize::try_from(span.end).unwrap_or(scan.source.len());
+            let start = usize::try_from(span.range.start).unwrap_or(scan.source.len());
+            let end = usize::try_from(span.range.end).unwrap_or(scan.source.len());
             let bytes = scan.source.get(start..end).unwrap_or_default().to_vec();
             RetainedSourceRecord {
-                id: span.retained_record.clone().unwrap_or_default(),
+                id: span
+                    .retained
+                    .as_ref()
+                    .map(|r| r.blob.clone())
+                    .unwrap_or_default(),
                 stream: "source".into(),
-                offset: span.start,
-                byte_len: span.end.saturating_sub(span.start),
+                offset: span.range.start,
+                byte_len: span.range.len(),
                 sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
                 data: Some(bytes),
             }

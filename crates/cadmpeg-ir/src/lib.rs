@@ -79,7 +79,6 @@ pub use codec::{
 };
 pub use decode::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use diff::{diff, ArenaDiff, IrDiff, ModifiedEntity};
-pub use diff::{diff_byte_ledger, AnnotationDiff, ByteLedgerDiff, SourceFidelityDiff};
 pub use document::{CadIr, SourceMeta, IR_VERSION, PREVIOUS_IR_VERSION};
 pub use features::{
     BodyRetentionMode, BodySelection, ConfigurationId, DesignConfiguration, DesignParameter,

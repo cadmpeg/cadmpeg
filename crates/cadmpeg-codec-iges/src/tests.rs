@@ -371,23 +371,23 @@ fn decode_retains_short_and_extended_physical_records_before_terminate() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let spans = result
-        .source_fidelity
-        .byte_ledger
+    let spans = result.source_fidelity.spaces[0]
         .spans
         .iter()
         .filter(|span| span.meaning == "noncanonical_physical_record")
         .collect::<Vec<_>>();
     assert_eq!(spans.len(), 2);
-    assert_eq!(spans[0].end - spans[0].start, 12);
-    assert_eq!(spans[1].end - spans[1].start, 81);
+    assert_eq!(spans[0].range.end - spans[0].range.start, 12);
+    assert_eq!(spans[1].range.end - spans[1].range.start, 81);
     assert!(spans.iter().all(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Opaque
+        span.class == cadmpeg_ir::SpanClass::Opaque
             && result
                 .source_fidelity
                 .retained_records
                 .iter()
-                .any(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
+                .any(|record| {
+                    Some(record.id.as_str()) == span.retained.as_ref().map(|r| r.blob.as_str())
+                })
     }));
     let validation =
         cadmpeg_ir::validate_with_source_fidelity(&result.ir, &result.source_fidelity, Vec::new());
@@ -473,9 +473,7 @@ fn decode_classifies_cross_card_hollerith_bytes_as_one_global_value() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    let value_spans = result
-        .source_fidelity
-        .byte_ledger
+    let value_spans = result.source_fidelity.spaces[0]
         .spans
         .iter()
         .filter(|span| span.meaning == "global_value_2")
@@ -484,18 +482,15 @@ fn decode_classifies_cross_card_hollerith_bytes_as_one_global_value() {
     assert_eq!(value_spans.len(), 2);
     assert!(value_spans
         .iter()
-        .all(|span| span.class == cadmpeg_ir::ByteSpanClass::Typed));
+        .all(|span| span.class == cadmpeg_ir::SpanClass::Typed));
     assert_eq!(
         value_spans
             .iter()
-            .map(|span| span.end - span.start)
+            .map(|span| span.range.end - span.range.start)
             .sum::<u64>(),
         73
     );
-    assert_eq!(
-        result.source_fidelity.byte_ledger.source_length,
-        bytes.len() as u64
-    );
+    assert_eq!(result.source_fidelity.spaces[0].length, bytes.len() as u64);
     let validation =
         cadmpeg_ir::validate_with_source_fidelity(&result.ir, &result.source_fidelity, Vec::new());
     assert!(validation.is_ok(), "{:#?}", validation.findings);
@@ -7691,35 +7686,35 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
         .unwrap();
 
     assert_eq!(result.ir.source.as_ref().unwrap().format, "iges");
-    let ledger = &result.source_fidelity.byte_ledger;
-    assert_eq!(ledger.source_length, source_length);
-    assert_eq!(ledger.spans.first().unwrap().start, 0);
-    assert_eq!(ledger.spans.last().unwrap().end, source_length);
+    let ledger = &result.source_fidelity.spaces[0];
+    assert_eq!(ledger.length, source_length);
+    assert_eq!(ledger.spans.first().unwrap().range.start, 0);
+    assert_eq!(ledger.spans.last().unwrap().range.end, source_length);
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Typed
+        span.class == cadmpeg_ir::SpanClass::Typed
             && span.meaning == "parameter_token_0"
             && span.owner == "iges:parameter-record#D1"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Structural
+        span.class == cadmpeg_ir::SpanClass::Structural
             && span.meaning == "parameter_delimiter_or_padding"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Typed && span.meaning == "global_value_0"
+        span.class == cadmpeg_ir::SpanClass::Typed && span.meaning == "global_value_0"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Structural && span.meaning == "global_delimiter"
+        span.class == cadmpeg_ir::SpanClass::Structural && span.meaning == "global_delimiter"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Structural && span.meaning == "reserved_1"
+        span.class == cadmpeg_ir::SpanClass::Structural && span.meaning == "reserved_1"
     }));
     assert!(ledger.spans.iter().any(|span| {
-        span.class == cadmpeg_ir::ByteSpanClass::Opaque
+        span.class == cadmpeg_ir::SpanClass::Opaque
             && span.meaning == "parameter_comment"
             && span
-                .retained_record
-                .as_deref()
-                .is_some_and(|id| id.starts_with("iges:opaque:bytes#"))
+                .retained
+                .as_ref()
+                .is_some_and(|reference| reference.blob.starts_with("iges:opaque:bytes#"))
     }));
     let native = result.ir.native.namespace("iges").unwrap();
     assert_eq!(native.version, 2);
@@ -7728,25 +7723,26 @@ fn decode_preserves_native_entities_graph_and_complete_byte_ledger() {
     assert!(native.arenas["colors"].is_empty());
     assert_eq!(native.arenas["display_attributes"].len(), 1);
     assert!(!native.arenas.contains_key("opaque_bytes"));
-    for span in result
-        .source_fidelity
-        .byte_ledger
+    for span in result.source_fidelity.spaces[0]
         .spans
         .iter()
-        .filter(|span| span.class == cadmpeg_ir::ByteSpanClass::Opaque)
+        .filter(|span| span.class == cadmpeg_ir::SpanClass::Opaque)
     {
         let retained = result
             .source_fidelity
             .retained_records
             .iter()
-            .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
+            .find(|record| {
+                Some(record.id.as_str()) == span.retained.as_ref().map(|r| r.blob.as_str())
+            })
             .unwrap();
-        assert_eq!(retained.offset, span.start);
-        assert_eq!(retained.byte_len, span.end - span.start);
+        assert_eq!(retained.offset, span.range.start);
+        assert_eq!(retained.byte_len, span.range.end - span.range.start);
         assert_eq!(
             retained.sha256,
             cadmpeg_ir::hash::sha256_hex(
-                &bytes[usize::try_from(span.start).unwrap()..usize::try_from(span.end).unwrap()]
+                &bytes[usize::try_from(span.range.start).unwrap()
+                    ..usize::try_from(span.range.end).unwrap()]
             )
         );
     }
@@ -7887,27 +7883,25 @@ fn decode_retains_and_accounts_for_post_terminate_records() {
         )
         .unwrap();
 
-    let ledger = &result.source_fidelity.byte_ledger;
-    assert_eq!(ledger.source_length, source_length);
-    assert_eq!(ledger.spans.last().unwrap().end, source_length);
+    let ledger = &result.source_fidelity.spaces[0];
+    assert_eq!(ledger.length, source_length);
+    assert_eq!(ledger.spans.last().unwrap().range.end, source_length);
     assert_eq!(
         result.ir.native.namespace("iges").unwrap().arenas["cards"].len(),
         8
     );
-    let span = result
-        .source_fidelity
-        .byte_ledger
+    let span = result.source_fidelity.spaces[0]
         .spans
         .iter()
         .find(|span| span.meaning == "post_terminate_bytes")
         .unwrap();
-    assert_eq!(span.class, cadmpeg_ir::ByteSpanClass::Opaque);
-    assert_eq!(span.end - span.start, 17);
+    assert_eq!(span.class, cadmpeg_ir::SpanClass::Opaque);
+    assert_eq!(span.range.end - span.range.start, 17);
     let retained = result
         .source_fidelity
         .retained_records
         .iter()
-        .find(|record| Some(record.id.as_str()) == span.retained_record.as_deref())
+        .find(|record| Some(record.id.as_str()) == span.retained.as_ref().map(|r| r.blob.as_str()))
         .unwrap();
     assert_eq!(
         retained.data.as_deref(),

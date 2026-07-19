@@ -5,7 +5,7 @@
 //! what changed in conservation terms — spaces
 //! that appeared or disappeared, and per-space byte movement between the
 //! [`SpanClass`] categories — rather than dumping raw spans. Equality still
-//! covers every serialized field: origins, full span metadata, flat accounting,
+//! covers every serialized field: origins, full span metadata,
 //! annotations, and retained records cannot disappear behind the summary.
 
 use crate::source_fidelity::{AddressSpaceLedger, SourceFidelity, SpanClass};
@@ -82,8 +82,6 @@ pub struct FidelityDiff {
     pub removed_spaces: Vec<String>,
     /// Interpreted deltas for spaces present in both, materially changed.
     pub changed_spaces: Vec<SpaceDelta>,
-    /// Whether flat byte-ledger accounting changed.
-    pub byte_ledger_changed: bool,
     /// Whether provenance or exactness annotations changed.
     pub annotations_changed: bool,
     /// Whether retained-record metadata or bytes changed.
@@ -97,7 +95,6 @@ impl FidelityDiff {
             && self.added_spaces.is_empty()
             && self.removed_spaces.is_empty()
             && self.changed_spaces.is_empty()
-            && !self.byte_ledger_changed
             && !self.annotations_changed
             && !self.retained_records_changed
     }
@@ -146,7 +143,6 @@ pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> Fi
         added_spaces,
         removed_spaces,
         changed_spaces,
-        byte_ledger_changed: left.byte_ledger != right.byte_ledger,
         annotations_changed: left.annotations != right.annotations,
         retained_records_changed: left.retained_records != right.retained_records,
     }
