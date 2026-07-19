@@ -4440,11 +4440,11 @@ mod marker_tests {
         lane.native_payload[detail + 31..detail + 39]
             .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
         lane.native_payload[detail + 48..detail + 56].copy_from_slice(&1.0f64.to_le_bytes());
-        lane.native_payload[detail + 64..detail + 72].copy_from_slice(&0.0f64.to_le_bytes());
-        lane.native_payload[detail + 72..detail + 80].copy_from_slice(&1.0f64.to_le_bytes());
+        lane.native_payload[detail + 64..detail + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        lane.native_payload[detail + 72..detail + 80].copy_from_slice(&0.0f64.to_le_bytes());
         assert_eq!(
             compact_bounded_curve_tangent(&lane.native_payload, curve),
-            Some([0.0, 1.0])
+            Some([-1.0, 0.0])
         );
         assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
     }
@@ -5646,29 +5646,13 @@ fn profile_roster_implicit_axis_chord<'a>(
             == Some(SKETCH_MARKER)
             && lane.native_payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
             && compact_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some();
-        let extended_detailed_line = lane
+        let extended_detailed_curve = lane
             .native_payload
             .get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
             == Some(LEGACY_EXTENDED_SKETCH_MARKER)
             && lane.native_payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
-            && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some_and(|tangent| {
-                let endpoints =
-                    roster_curve_endpoint_markers(&lane.native_payload, marker, markers);
-                let [start, end] = endpoints.as_slice() else {
-                    return false;
-                };
-                let (Some([start_u, start_v]), Some([end_u, end_v])) =
-                    (start.coordinates_m, end.coordinates_m)
-                else {
-                    return false;
-                };
-                let delta_u = end_u - start_u;
-                let delta_v = end_v - start_v;
-                let length = delta_u.hypot(delta_v);
-                length > TOLERANCE_M
-                    && (delta_u * tangent[1] - delta_v * tangent[0]).abs() <= length * TOLERANCE_M
-            });
-        current_code_two || extended_detailed_line
+            && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some();
+        current_code_two || extended_detailed_curve
     });
     let candidate = candidates.next()?;
     if candidates.next().is_some() {
