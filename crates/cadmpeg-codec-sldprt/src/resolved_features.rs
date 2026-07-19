@@ -418,10 +418,11 @@ mod marker_tests {
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
         plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        sketch_block_record_origin, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        sketch_block_identity_normalization_origin, sketch_block_record_origin,
+        sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -473,6 +474,34 @@ mod marker_tests {
         assert_eq!(
             sketch_block_record_origin(&payload, 0, payload.len()),
             Some(Point3::new(0.0, 0.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn sketch_block_identity_normalization_is_inverted_for_placement() {
+        let mut payload = vec![0; 240];
+        payload.extend_from_slice(CLASS_MARKER);
+        payload.extend_from_slice(&7_u16.to_le_bytes());
+        payload.extend_from_slice(b"sgBlock");
+        let body = payload.len();
+        payload.resize(body + 184, 0);
+        for (index, value) in [1.0_f64, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+            .into_iter()
+            .enumerate()
+        {
+            let start = body + 72 + index * 8;
+            payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[body + 144..body + 152].copy_from_slice(&1_u64.to_le_bytes());
+        for (index, value) in [-0.21_f64, 0.661, 0.0].into_iter().enumerate() {
+            let start = body + 152 + index * 8;
+            payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[body + 176..body + 184].copy_from_slice(&1.0_f64.to_le_bytes());
+
+        assert_eq!(
+            sketch_block_identity_normalization_origin(&payload, 200, payload.len()),
+            Some(Point3::new(210.0, -661.0, 0.0))
         );
     }
 
@@ -5894,7 +5923,11 @@ pub(crate) fn enrich_history_sketch_block_references(
                 let Some(start) = usize::try_from(name.offset).ok() else {
                     continue;
                 };
-                if let Some(origin) = sketch_block_record_origin(&lane.native_payload, start, end) {
+                if let Some(origin) = sketch_block_record_origin(&lane.native_payload, start, end)
+                    .or_else(|| {
+                        sketch_block_identity_normalization_origin(&lane.native_payload, start, end)
+                    })
+                {
                     placement_candidates
                         .entry(*instance_index)
                         .or_default()
@@ -6016,6 +6049,66 @@ fn sketch_block_record_origin(payload: &[u8], start: usize, end: usize) -> Optio
         (value.is_finite() && value.abs() <= 1.0e9).then_some(value)
     };
     Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
+}
+
+fn sketch_block_identity_normalization_origin(
+    payload: &[u8],
+    start: usize,
+    end: usize,
+) -> Option<Point3> {
+    const CLASS: &[u8] = b"sgBlock";
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let bytes = payload.get(start..end)?;
+    let record_len = CLASS_MARKER.len() + 2 + CLASS.len();
+    let mut records = bytes
+        .windows(record_len)
+        .enumerate()
+        .filter_map(|(relative, record)| {
+            (record.get(..CLASS_MARKER.len()) == Some(CLASS_MARKER)
+                && record.get(CLASS_MARKER.len()..CLASS_MARKER.len() + 2)
+                    == Some(&(CLASS.len() as u16).to_le_bytes())
+                && record.get(CLASS_MARKER.len() + 2..) == Some(CLASS))
+            .then_some(start + relative + record_len)
+        });
+    let body = records.next()?;
+    if records.next().is_some() {
+        return None;
+    }
+    let scalar = |relative: usize| {
+        let value = f64::from_le_bytes(
+            payload
+                .get(body + relative..body + relative + 8)?
+                .try_into()
+                .ok()?,
+        );
+        value.is_finite().then_some(value)
+    };
+    let basis = [
+        scalar(72)?,
+        scalar(80)?,
+        scalar(88)?,
+        scalar(96)?,
+        scalar(104)?,
+        scalar(112)?,
+        scalar(120)?,
+        scalar(128)?,
+        scalar(136)?,
+    ];
+    if basis != [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
+        || payload.get(body + 144..body + 152) != Some(&1_u64.to_le_bytes())
+        || scalar(176)? != 1.0
+    {
+        return None;
+    }
+    let translation = [scalar(152)?, scalar(160)?, scalar(168)?];
+    (translation.iter().all(|value| value.abs() <= 1.0e6)).then(|| {
+        Point3::new(
+            -translation[0] * NATIVE_TO_IR,
+            -translation[1] * NATIVE_TO_IR,
+            -translation[2] * NATIVE_TO_IR,
+        )
+    })
 }
 
 fn sketch_block_compact_local_id(
