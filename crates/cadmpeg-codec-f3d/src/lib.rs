@@ -459,7 +459,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset
             && !scope.reference_members.is_empty()
-            && (scope.kind != "Sketch" || scope.reference_members.len() == 1)
             && scope.reference_members.len() == scope.reference_member_offsets.len()
             && scope.reference_member_offsets.first()
                 == Some(&scope.reference_count_offset.saturating_add(5))
@@ -604,6 +603,21 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::Move) => {
+                        group.role == 0x0000_0004_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::OffsetFaces) => {
+                        group.role == 0x0000_0010_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::Thicken) => {
+                        matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0012_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(design::DesignFeatureFamily::Loft) => {
                         (scope.path_feature_construction.is_none()
                             || matches!(
@@ -611,6 +625,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 0x0000_0004_0000_0000
                                     | 0x0000_0005_0000_0000
                                     | 0x0000_0041_0000_0000
+                                    | 0x0000_0043_0000_0000
                             ))
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
@@ -618,6 +633,21 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Some(design::DesignFeatureFamily::Sweep) => {
                         (scope.path_feature_construction.is_none()
                             || matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0041_0000_0000))
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::SurfacePatch) => {
+                        group.role == 0x0000_0004_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::BoundaryFill) => {
+                        matches!(group.role, 0x0000_0004_0000_0000 | 0x0000_0005_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    Some(design::DesignFeatureFamily::Split) => {
+                        group.role == 0x0000_0004_0000_0000
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
@@ -697,7 +727,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         && role_count(0x0000_0041_0000_0000) == 2
                 }
                 records::DesignExtrudeOperation::NewBody => {
-                    groups.len() == 2 && role_count(0x0000_0005_0000_0000) == 2
+                    (groups.len() == 2 && role_count(0x0000_0005_0000_0000) == 2)
+                        || (groups.len() >= 3
+                            && role_count(0x0000_0043_0000_0000) == 2
+                            && role_count(0x0000_0005_0000_0000) == groups.len() - 2)
                 }
                 _ => false,
             },
