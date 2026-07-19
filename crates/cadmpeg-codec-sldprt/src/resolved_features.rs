@@ -11741,16 +11741,21 @@ pub(crate) fn project_marker_backed_sketches(
             .collect::<Vec<_>>();
         objects.sort_by_key(|(offset, _)| *offset);
         for (object_index, &(start, native_feature)) in objects.iter().enumerate() {
-            let Some(feature_index) = features.iter().position(|feature| {
-                feature.native_ref.as_deref() == Some(native_feature.id.as_str())
-                    && matches!(
-                        feature.definition,
-                        cadmpeg_ir::features::FeatureDefinition::Sketch {
-                            space: cadmpeg_ir::features::SketchSpace::Planar,
-                            sketch: None,
-                        }
-                    )
-            }) else {
+            let Some((feature_index, already_bound)) =
+                features.iter().enumerate().find_map(|(index, feature)| {
+                    if feature.native_ref.as_deref() != Some(native_feature.id.as_str()) {
+                        return None;
+                    }
+                    let cadmpeg_ir::features::FeatureDefinition::Sketch {
+                        space: cadmpeg_ir::features::SketchSpace::Planar,
+                        sketch,
+                    } = &feature.definition
+                    else {
+                        return None;
+                    };
+                    Some((index, sketch.is_some()))
+                })
+            else {
                 continue;
             };
             let object_markers = lane
@@ -12024,7 +12029,7 @@ pub(crate) fn project_marker_backed_sketches(
                 .collect::<Vec<_>>();
             resolve_connected_marker_arcs(&mut projected, QUANTUM);
             sketch.profiles = closed_marker_profiles(&projected);
-            if projected.is_empty() {
+            if projected.is_empty() || (already_bound && sketch.profiles.is_empty()) {
                 continue;
             }
             sketch_entities.extend(projected);
