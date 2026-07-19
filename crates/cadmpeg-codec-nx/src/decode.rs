@@ -2378,6 +2378,7 @@ fn pending_support_lanes_requiring_completion(
 
 fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
     let mut replacements = Vec::new();
+    let mut blend_parameter_grids = BTreeMap::<SurfaceId, Option<Vec<(Point2, Point3)>>>::new();
     for (procedural_id, points, parameters, fit_tolerance, _) in pending {
         let Some(procedural) = ir
             .model
@@ -2407,8 +2408,6 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
             };
             let effective_fit_tolerance =
                 blend_spine_cache_fit_tolerance(ir, surface_id, *fit_tolerance);
-            let mut blend_grid = None;
-            let mut blend_grid_initialized = false;
             let mut uv = Vec::with_capacity(points.len());
             for (point_index, point) in points.iter().enumerate() {
                 let seed =
@@ -2453,20 +2452,17 @@ fn complete_support_uv_wave(ir: &mut CadIr, pending: &[PendingExt11SupportUv]) {
                                 )
                             })
                             .or_else(|| {
-                                if !blend_grid_initialized {
-                                    blend_grid = blend_surface_parameter_grid(ir, surface_id, 0);
-                                    blend_grid_initialized = true;
-                                }
-                                blend_surface_parameters_for_fit_with_grid(
+                                let blend_grid = blend_parameter_grids
+                                    .entry(surface_id.clone())
+                                    .or_insert_with(|| {
+                                        blend_surface_parameter_grid(ir, surface_id, 0)
+                                    });
+                                blend_surface_parameters_from_grid_for_fit(
                                     ir,
                                     surface_id,
                                     *point,
-                                    seed,
                                     effective_fit_tolerance,
-                                    blend_grid.as_deref().map_or(
-                                        BlendParameterGrid::Disabled,
-                                        BlendParameterGrid::Cached,
-                                    ),
+                                    blend_grid.as_deref()?,
                                 )
                             })
                     }
@@ -2909,9 +2905,8 @@ pub(crate) fn blend_surface_parameters_for_fit(
 }
 
 #[derive(Clone, Copy)]
-enum BlendParameterGrid<'a> {
+enum BlendParameterGrid {
     Build,
-    Cached(&'a [(Point2, Point3)]),
     Disabled,
 }
 
@@ -2921,7 +2916,7 @@ fn blend_surface_parameters_for_fit_with_grid(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: f64,
-    grid: BlendParameterGrid<'_>,
+    grid: BlendParameterGrid,
 ) -> Option<Point2> {
     blend_surface_parameters_inner(ir, surface, point, seed, Some(fit_tolerance), grid, 0)
 }
@@ -2932,7 +2927,7 @@ fn blend_surface_parameters_inner(
     point: Point3,
     seed: Option<Point2>,
     fit_tolerance: Option<f64>,
-    grid: BlendParameterGrid<'_>,
+    grid: BlendParameterGrid,
     depth: usize,
 ) -> Option<Point2> {
     (depth < 32).then_some(())?;
@@ -3012,7 +3007,6 @@ fn blend_surface_parameters_inner(
     }
     let initial = match grid {
         BlendParameterGrid::Build => coarse_blend_surface_parameters(ir, surface, point, depth + 1),
-        BlendParameterGrid::Cached(grid) => closest_blend_surface_grid_parameters(grid, point),
         BlendParameterGrid::Disabled => None,
     }?;
     let parameters =
@@ -3083,6 +3077,21 @@ fn closest_blend_surface_grid_parameters(
             point_distance(*first, point).total_cmp(&point_distance(*second, point))
         })
         .map(|(parameters, _)| *parameters)
+}
+
+fn blend_surface_parameters_from_grid_for_fit(
+    ir: &CadIr,
+    surface: &SurfaceId,
+    point: Point3,
+    fit_tolerance: f64,
+    grid: &[(Point2, Point3)],
+) -> Option<Point2> {
+    let initial = closest_blend_surface_grid_parameters(grid, point)?;
+    let parameters =
+        refine_blend_surface_parameters(ir, surface, point, initial, 0).unwrap_or(initial);
+    (0.0..=1.0).contains(&parameters.v).then_some(())?;
+    let candidate = blend_surface_point_inner(ir, surface, parameters.u, parameters.v, 0)?;
+    (point_distance(candidate, point) <= fit_tolerance).then_some(parameters)
 }
 
 pub(crate) fn refine_blend_surface_parameters(
