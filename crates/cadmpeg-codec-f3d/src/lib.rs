@@ -82,6 +82,7 @@ pub mod nurbs;
 mod protein;
 pub mod records;
 pub mod sab;
+mod tsm;
 mod writer;
 pub mod xref;
 

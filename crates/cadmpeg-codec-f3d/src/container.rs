@@ -63,6 +63,8 @@ pub mod role {
     pub const PREVIEW: &str = "preview";
     /// An optional appearance/decal image blob.
     pub const IMAGE: &str = "image";
+    /// A T-spline Form control-cage source.
+    pub const TSPLINE: &str = "tspline";
     /// Secondary tessellated mesh data (`.paramesh`), not the exact source.
     pub const PARAMESH: &str = "paramesh";
     /// An empty/placeholder design-configuration entry.
@@ -111,6 +113,12 @@ pub fn classify(name: &str) -> &'static str {
         role::BREP_SMB
     } else if name.ends_with(".protein") {
         role::PROTEIN
+    } else if std::path::Path::new(name)
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("tsm"))
+        && name.contains("TSplines.BlobParts/")
+    {
+        role::TSPLINE
     } else if name.ends_with(".paramesh") {
         role::PARAMESH
     } else if name.ends_with(".dsgcfg") || name.ends_with(".dsgcfgrule") {

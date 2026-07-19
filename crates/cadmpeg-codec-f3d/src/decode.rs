@@ -738,6 +738,7 @@ pub fn decode(
             }
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let (mut ir, mut native) = build_geometry_ir(&scan, &active, brep)?;
+            ir.model.subds = crate::tsm::decode(&scan)?;
             native.body_visibilities = body_visibilities;
             if let Some(history) = decode_asm_history(&scan, &active)? {
                 native.asm_histories.push(history);
