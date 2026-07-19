@@ -4414,11 +4414,17 @@ mod marker_tests {
             })
         );
 
-        lane.sketch_entities[2].coordinates_m = Some([-0.01, 0.03]);
+        lane.sketch_entities.push(marker(
+            "opposite-profile-point",
+            250,
+            Some(4),
+            Some([0.01, 0.01]),
+        ));
         assert_eq!(
             profile_roster_construction_axis(&lane, "profile-native", &sketch),
             None
         );
+        lane.sketch_entities.pop();
 
         lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
         assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
@@ -5697,14 +5703,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some();
         current_code_two || detailed_indexed_curve
     });
-    let mut endpoint_candidates = Vec::new();
     let curve_candidates = curve_candidates.collect::<Vec<_>>();
-    if let [candidate] = curve_candidates.as_slice() {
-        let endpoints = roster_curve_endpoint_markers(&lane.native_payload, candidate, markers);
-        if let [start, end] = endpoints.as_slice() {
-            endpoint_candidates.push([*start, *end]);
-        }
-    }
     let curve_endpoints = markers
         .iter()
         .copied()
@@ -5726,14 +5725,20 @@ fn profile_roster_implicit_axis_endpoints<'a>(
         })
         .collect::<Vec<_>>();
     if let [start, end] = unreferenced_points.as_slice() {
-        endpoint_candidates.push([*start, *end]);
+        let endpoints = [*start, *end];
+        if bounded_profile_axis_endpoints(profile_native, markers, endpoints) {
+            return Some(endpoints);
+        }
     }
-    endpoint_candidates
-        .retain(|endpoints| bounded_profile_axis_endpoints(profile_native, markers, *endpoints));
-    let [endpoints] = endpoint_candidates.as_slice() else {
+    let [candidate] = curve_candidates.as_slice() else {
         return None;
     };
-    Some(*endpoints)
+    let endpoints = roster_curve_endpoint_markers(&lane.native_payload, candidate, markers);
+    let [start, end] = endpoints.as_slice() else {
+        return None;
+    };
+    let endpoints = [*start, *end];
+    bounded_profile_axis_endpoints(profile_native, markers, endpoints).then_some(endpoints)
 }
 
 fn bounded_profile_axis_endpoints(
@@ -5769,10 +5774,6 @@ fn bounded_profile_axis_endpoints(
     }) {
         let relative_u = u - start_u;
         let relative_v = v - start_v;
-        let along = relative_u * tangent_u + relative_v * tangent_v;
-        if along < -TOLERANCE_M || along > length + TOLERANCE_M {
-            return false;
-        }
         let side = relative_u * -tangent_v + relative_v * tangent_u;
         minimum_side = minimum_side.min(side);
         maximum_side = maximum_side.max(side);
