@@ -6103,6 +6103,37 @@ fn compact_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vec
     Some(*frame)
 }
 
+/// Recognize the source-less legacy plane/origin/sketch/extrusion prefix.
+fn idless_legacy_startup_shape(records: &[crate::records::Feature]) -> bool {
+    let [front, top, right, origin, sketch, extrusion] = records else {
+        return false;
+    };
+    let plain = |record: &crate::records::Feature| {
+        record.input_class.is_none()
+            && record.source_id.is_none()
+            && record.tree_parent.is_none()
+            && record.parent_source_id.is_none()
+            && record.xml_tag.eq_ignore_ascii_case("Feature")
+            && record.properties.is_empty()
+    };
+    [front, top, right, origin, sketch, extrusion]
+        .into_iter()
+        .all(plain)
+        && [front, top, right, origin, sketch]
+            .into_iter()
+            .all(|record| record.parameters.is_empty())
+        && !extrusion.parameters.is_empty()
+        && !front.kind.is_empty()
+        && front.kind == top.kind
+        && front.kind == right.kind
+        && origin.kind != front.kind
+        && sketch.kind != origin.kind
+        && extrusion.kind != sketch.kind
+        && [front, top, right, origin, sketch, extrusion]
+            .windows(2)
+            .all(|pair| pair[1].ordinal == pair[0].ordinal + 1)
+}
+
 /// Bind Keywords history records to their serialized feature-input object classes.
 pub(crate) fn bind_history_classes(
     histories: &mut [crate::records::FeatureHistory],
@@ -6152,6 +6183,55 @@ pub(crate) fn bind_history_classes(
         };
         if rest.iter().all(|class| *class == first) {
             feature.input_class = Some(first.to_string());
+        }
+    }
+
+    let mut native_startups = Vec::<[&str; 6]>::new();
+    for lane in lanes {
+        let resolved = lane
+            .classes
+            .iter()
+            .filter_map(|class| {
+                matches!(
+                    native_object_class(&class.name).kind,
+                    NativeClassKind::ReferencePlane
+                        | NativeClassKind::OriginProfileFeature
+                        | NativeClassKind::ProfileFeature
+                        | NativeClassKind::Extrusion
+                )
+                .then_some(class.name.as_str())
+            })
+            .collect::<Vec<_>>();
+        for classes in resolved.windows(4) {
+            let [plane, origin, sketch, extrusion] = classes else {
+                continue;
+            };
+            if native_object_class(plane).kind == NativeClassKind::ReferencePlane
+                && native_object_class(origin).kind == NativeClassKind::OriginProfileFeature
+                && native_object_class(sketch).kind == NativeClassKind::ProfileFeature
+                && native_object_class(extrusion).kind == NativeClassKind::Extrusion
+            {
+                native_startups.push([plane, plane, plane, origin, sketch, extrusion]);
+            }
+        }
+    }
+    native_startups.sort_unstable();
+    native_startups.dedup();
+    if let [classes] = native_startups.as_slice() {
+        for history in histories.iter_mut() {
+            let candidates = history
+                .features
+                .windows(6)
+                .enumerate()
+                .filter(|(_, records)| idless_legacy_startup_shape(records))
+                .map(|(index, _)| index)
+                .collect::<Vec<_>>();
+            if let [index] = candidates.as_slice() {
+                for (feature, class) in history.features[*index..*index + 6].iter_mut().zip(classes)
+                {
+                    feature.input_class = Some((*class).to_string());
+                }
+            }
         }
     }
 
@@ -6255,6 +6335,104 @@ pub(crate) fn bind_history_classes(
         if let [class] = candidates.as_slice() {
             feature.input_class = Some(class.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod idless_history_binding_tests {
+    use super::*;
+    use crate::records::{Feature, FeatureHistory};
+
+    fn feature(ordinal: u32, kind: &str) -> Feature {
+        Feature {
+            id: format!("feature-{ordinal}"),
+            parent: "history".into(),
+            xml_tag: "Feature".into(),
+            tree_parent: None,
+            source_id: None,
+            parent_source_id: None,
+            ordinal,
+            name: format!("name-{ordinal}"),
+            kind: kind.into(),
+            input_class: None,
+            suppressed: false,
+            parameters: BTreeMap::new(),
+            dimension_properties: BTreeMap::new(),
+            properties: BTreeMap::new(),
+            text: None,
+            content: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn exact_idless_startup_binds_from_the_native_class_roster() {
+        let mut features = vec![
+            feature(10, "localized plane"),
+            feature(11, "localized plane"),
+            feature(12, "localized plane"),
+            feature(13, "localized origin"),
+            feature(14, "localized sketch"),
+            feature(15, "localized extrusion"),
+        ];
+        features[5].parameters.insert("D1".into(), "20".into());
+        let mut histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features,
+        }];
+        let classes = [
+            "moRefPlane_c",
+            "moOriginProfileFeature_c",
+            "moProfileFeature_c",
+            "moExtrusion_c",
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, name)| FeatureInputClass {
+            id: format!("class-{ordinal}"),
+            parent: "lane".into(),
+            ordinal: ordinal as u32,
+            offset: ordinal as u64 * 100,
+            name: name.into(),
+            role: native_object_class(name).role,
+        })
+        .collect();
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes,
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        bind_history_classes(&mut histories, &[lane]);
+
+        assert_eq!(
+            histories[0]
+                .features
+                .iter()
+                .map(|feature| feature.input_class.as_deref())
+                .collect::<Vec<_>>(),
+            vec![
+                Some("moRefPlane_c"),
+                Some("moRefPlane_c"),
+                Some("moRefPlane_c"),
+                Some("moOriginProfileFeature_c"),
+                Some("moProfileFeature_c"),
+                Some("moExtrusion_c"),
+            ]
+        );
     }
 }
 

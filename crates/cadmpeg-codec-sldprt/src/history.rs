@@ -3318,7 +3318,15 @@ fn principal_plane_in_history(
         };
         let triplet = [front, top, right];
         if !triplet.into_iter().all(|record| {
-            legacy_shape(record)
+            record.xml_tag.eq_ignore_ascii_case("Feature")
+                && record.parameters.is_empty()
+                && !record.kind.is_empty()
+                && match record.input_class.as_deref() {
+                    Some(class) => {
+                        native_object_class(class).kind == NativeClassKind::ReferencePlane
+                    }
+                    None => record.properties.is_empty(),
+                }
                 && record.source_id.is_none()
                 && record.tree_parent.is_none()
                 && record.parent_source_id.is_none()
@@ -3326,7 +3334,13 @@ fn principal_plane_in_history(
             || front.kind != right.kind
             || top.ordinal != front.ordinal + 1
             || right.ordinal != top.ordinal + 1
-            || !legacy_shape(successor)
+            || !successor.xml_tag.eq_ignore_ascii_case("Feature")
+            || !successor.parameters.is_empty()
+            || !successor.properties.is_empty()
+            || successor.kind.is_empty()
+            || successor.input_class.as_deref().is_some_and(|class| {
+                native_object_class(class).kind != NativeClassKind::OriginProfileFeature
+            })
             || successor.source_id.is_some()
             || successor.tree_parent.is_some()
             || successor.parent_source_id.is_some()
