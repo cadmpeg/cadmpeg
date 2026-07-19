@@ -1424,6 +1424,8 @@ orbit, the common point among the unordered mapped endpoint pairs of at least
 two incident curves is its model-space point when exactly one point remains.
 A unique orbit point selects the opposite endpoint of every incident
 pcurve-backed edge and propagates through the connected endpoint component.
+A candidate point must also lie on every independently placed analytic curve
+carrier incident to that vertex orbit.
 A carrier-derived point for the same orbit must agree with that point. An
 empty endpoint domain withholds every dependent point in the component.
 An edge transfers independently when both endpoint vertex orbits are solved;

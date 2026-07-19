@@ -22044,6 +22044,7 @@ type PcurveVertexConstraint = ([u32; 2], [[f64; 3]; 2]);
 fn solve_pcurve_vertex_domains(
     constraints: &[PcurveVertexConstraint],
     carrier_points: &BTreeMap<u32, [f64; 3]>,
+    incident_curves: &BTreeMap<u32, Vec<&CurveGeometry>>,
 ) -> BTreeMap<u32, [f64; 3]> {
     let mut domains = BTreeMap::<u32, Vec<[f64; 3]>>::new();
     for (vertices, points) in constraints {
@@ -22079,6 +22080,15 @@ fn solve_pcurve_vertex_domains(
     for (vertex, point) in carrier_points {
         let domain = domains.entry(*vertex).or_insert_with(|| vec![*point]);
         domain.retain(|candidate| model_points_agree(*candidate, *point));
+    }
+    for (vertex, curves) in incident_curves {
+        if let Some(domain) = domains.get_mut(vertex) {
+            domain.retain(|candidate| {
+                curves
+                    .iter()
+                    .all(|curve| curve_contains_points(curve, [*candidate, *candidate]))
+            });
+        }
     }
     let compatible = |first: [f64; 3], second: [f64; 3], points: [[f64; 3]; 2]| {
         (model_points_agree(first, points[0]) && model_points_agree(second, points[1]))
@@ -22178,7 +22188,40 @@ fn solved_topological_vertices(
             .then_some(([forward.start_vertex_id, end], points))
         })
         .collect::<Vec<_>>();
-    solve_pcurve_vertex_domains(&constraints, &carrier_points)
+    let analytic_curves = crate::topology::uniquely_identified_rows(&scan.curve_topology_rows)
+        .into_iter()
+        .filter_map(|row| {
+            let id = CurveId(format!("creo:visibgeom:curve#{}", row.id));
+            let geometry = &ir
+                .model
+                .curves
+                .iter()
+                .find(|curve| curve.id == id)?
+                .geometry;
+            matches!(
+                geometry,
+                CurveGeometry::Line { .. }
+                    | CurveGeometry::Circle { .. }
+                    | CurveGeometry::Ellipse { .. }
+                    | CurveGeometry::Parabola { .. }
+                    | CurveGeometry::Hyperbola { .. }
+            )
+            .then_some((row.id, geometry))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let incident_curves = scan
+        .topological_vertices
+        .iter()
+        .filter_map(|vertex| {
+            let curves = vertex
+                .half_edges
+                .iter()
+                .filter_map(|half_edge| analytic_curves.get(&half_edge.curve_id).copied())
+                .collect::<Vec<_>>();
+            (!curves.is_empty()).then_some((vertex.id, curves))
+        })
+        .collect::<BTreeMap<_, _>>();
+    solve_pcurve_vertex_domains(&constraints, &carrier_points, &incident_curves)
 }
 
 fn orient_line_edge_carrier(
@@ -23743,13 +23786,31 @@ mod native_pcurve_tests {
         let c = [3.0, 0.0, 0.0];
         let constraints = [([1, 2], [a, b]), ([2, 3], [c, b])];
         assert_eq!(
-            solve_pcurve_vertex_domains(&constraints, &BTreeMap::new()),
+            solve_pcurve_vertex_domains(&constraints, &BTreeMap::new(), &BTreeMap::new()),
             BTreeMap::from([(1, a), (2, b), (3, c)])
         );
-        assert!(solve_pcurve_vertex_domains(&constraints[..1], &BTreeMap::new()).is_empty());
         assert!(
-            solve_pcurve_vertex_domains(&constraints, &BTreeMap::from([(2, [9.0, 0.0, 0.0])]),)
+            solve_pcurve_vertex_domains(&constraints[..1], &BTreeMap::new(), &BTreeMap::new())
                 .is_empty()
+        );
+        assert!(solve_pcurve_vertex_domains(
+            &constraints,
+            &BTreeMap::from([(2, [9.0, 0.0, 0.0])]),
+            &BTreeMap::new(),
+        )
+        .is_empty());
+
+        let line = CurveGeometry::Line {
+            origin: Point3::new(a[0], a[1], a[2]),
+            direction: Vector3::new(0.0, 1.0, 0.0),
+        };
+        assert_eq!(
+            solve_pcurve_vertex_domains(
+                &constraints[..1],
+                &BTreeMap::new(),
+                &BTreeMap::from([(1, vec![&line])]),
+            ),
+            BTreeMap::from([(1, a), (2, b)])
         );
     }
 
@@ -30124,7 +30185,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             category: LossCategory::Geometry,
             severity: Severity::Info,
             message: format!(
-                "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or agreeing pcurve endpoint maps."
+                "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or pcurve endpoint domains constrained by agreeing face maps and incident analytic edge carriers."
             ),
             provenance: None,
         });
