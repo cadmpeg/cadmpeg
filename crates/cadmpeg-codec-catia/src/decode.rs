@@ -264,7 +264,7 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<ProjectedDecode> {
         annotate(
             &mut annotations,
             &vertex_id,
-            "MainDataStream+SurfacicReps",
+            "zero_entity_a9_03",
             0,
             "vertex_05_08_01",
             Exactness::ByteExact,
@@ -291,6 +291,14 @@ fn try_decode_zero_entity(scan: &ContainerScan) -> Option<ProjectedDecode> {
             geometry: surface.geometry.clone(),
             source_object: None,
         });
+    }
+    if !ir.model.vertices.is_empty() {
+        attach_free_vertices(
+            &mut ir,
+            &mut annotations,
+            "zero-entity",
+            "zero_entity_a9_03",
+        );
     }
     link_payload_carriers(&ir, &mut unknowns, &mut annotations);
     let annotations = annotations.build();
@@ -1372,7 +1380,7 @@ fn scalar_product(left: Vector3, right: Vector3) -> f64 {
 #[cfg(test)]
 mod chart_tests {
     use super::{
-        attach_standard_free_vertices, build_standard_edge_curve,
+        attach_free_vertices, build_standard_edge_curve,
         circle_parameter_range_from_surface_branch,
         circular_ranges_are_nonoverlapping_or_coincident, combine_propagated_endpoint_pairs,
         e5_boundary_curve, e5_occurrence_intersection_context, e5_ownership_plan,
@@ -2153,7 +2161,12 @@ mod chart_tests {
             tolerance: None,
         });
         let mut annotations = AnnotationBuilder::new();
-        attach_standard_free_vertices(&mut ir, &mut annotations);
+        attach_free_vertices(
+            &mut ir,
+            &mut annotations,
+            "standard",
+            "MainDataStream+SurfacicReps",
+        );
         assert_eq!(ir.model.bodies.len(), 1);
         assert_eq!(ir.model.regions.len(), 1);
         assert_eq!(ir.model.shells.len(), 1);
@@ -5471,7 +5484,12 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         attach_standard_circles(&mut ir, &mut annotations, &face_bindings, brep);
         attach_standard_lines(&mut ir, &mut annotations, &face_bindings, brep);
         if !ir.model.vertices.is_empty() {
-            attach_standard_free_vertices(&mut ir, &mut annotations);
+            attach_free_vertices(
+                &mut ir,
+                &mut annotations,
+                "standard",
+                "MainDataStream+SurfacicReps",
+            );
         }
     }
     append_freeform_surface_pools(&mut ir, &mut annotations, &scan.data);
@@ -5591,15 +5609,20 @@ fn attach_standard_faces(
     });
 }
 
-fn attach_standard_free_vertices(ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
-    let body_id = BodyId("catia:standard:body#unbound-points".to_string());
-    let region_id = RegionId("catia:standard:region#unbound-points".to_string());
-    let shell_id = ShellId("catia:standard:shell#unbound-points".to_string());
+fn attach_free_vertices(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    namespace: &str,
+    stream: &str,
+) {
+    let body_id = BodyId(format!("catia:{namespace}:body#unbound-points"));
+    let region_id = RegionId(format!("catia:{namespace}:region#unbound-points"));
+    let shell_id = ShellId(format!("catia:{namespace}:shell#unbound-points"));
     for id in [&body_id.0, &region_id.0, &shell_id.0] {
         annotate(
             annotations,
             id,
-            "MainDataStream+SurfacicReps",
+            stream,
             0,
             "unbound_point_owner",
             Exactness::Inferred,

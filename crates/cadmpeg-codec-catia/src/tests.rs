@@ -2899,6 +2899,12 @@ fn decode_zero_entity_transfers_framed_cylinder() {
     assert!(result.report.geometry_transferred);
     assert_eq!(result.ir.model.surfaces.len(), 1);
     assert_eq!(result.ir.model.vertices.len(), 1);
+    assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(result.ir.model.shells.len(), 1);
+    assert_eq!(
+        result.ir.model.shells[0].free_vertices,
+        [result.ir.model.vertices[0].id.clone()]
+    );
     match &result.ir.model.surfaces[0].geometry {
         SurfaceGeometry::Cylinder {
             origin,
@@ -2916,6 +2922,8 @@ fn decode_zero_entity_transfers_framed_cylinder() {
         }
         other => panic!("expected cylinder, got {other:?}"),
     }
+    let validation = cadmpeg_ir::validate::validate(&result.ir, Vec::new());
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
 }
 
 #[test]
