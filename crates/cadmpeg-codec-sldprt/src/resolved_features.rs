@@ -273,7 +273,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 && matches!(marker_profile_curve_role(payload, offset), Some(1 | 2))
             {
                 SketchInputKind::LineOrCircle
-            } else if extended_reference_curve_endpoint_indices(payload, offset).is_some() {
+            } else if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
                 match code {
                     0 | 1 => SketchInputKind::LineOrCircle,
                     2 => SketchInputKind::Arc,
@@ -513,8 +513,7 @@ mod marker_tests {
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         current_compact_curve_endpoint_indices, enrich_history_revolution_inputs,
-        explicit_reference_axis_frame, explicit_reference_plane_frame,
-        extended_reference_curve_endpoint_indices, fixed_reference_plane_frame,
+        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
         inline_surface_reference_at, legacy_extended_profile_curve_kind,
         legacy_extended_profile_vertex, legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, marker_coordinates, marker_is_geometry_locus,
@@ -530,9 +529,10 @@ mod marker_tests {
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         tangent_bounded_curve, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, Angle, BooleanOp, CompactPointReferenceKind, Length, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER,
-        LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
+        unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
+        CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
+        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
@@ -2741,7 +2741,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn extended_reference_curve_owns_its_endpoint_trailer() {
+    fn wide_indexed_curve_owns_its_endpoint_trailer_in_both_generations() {
         let detail = 92;
         let mut payload = vec![0; detail + 80];
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -2769,11 +2769,22 @@ mod marker_tests {
         payload[detail + 64..detail + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
 
         assert_eq!(
-            extended_reference_curve_endpoint_indices(&payload, 0),
+            wide_indexed_curve_endpoint_indices(&payload, 0),
             Some([7, 11])
         );
         assert_eq!(marker_local_links(&payload, 0), None);
         assert!(!marker_is_selected_construction_line(&payload, 0));
+        assert_eq!(
+            compact_bounded_curve_tangent(&payload, 0),
+            Some([-1.0, 0.0])
+        );
+
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&payload, 0),
+            Some([7, 11])
+        );
+        assert_eq!(marker_local_links(&payload, 0), None);
         assert_eq!(
             compact_bounded_curve_tangent(&payload, 0),
             Some([-1.0, 0.0])
@@ -7804,7 +7815,7 @@ fn operand_allows_compatible_ordinal_fallback(kind: FeatureInputOperandKind) -> 
 }
 
 fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> {
-    if extended_reference_curve_endpoint_indices(payload, offset).is_some() {
+    if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
         return None;
     }
     let coordinate_layout = payload.get(offset + 5..offset + 17)?
@@ -11529,7 +11540,7 @@ pub(crate) fn project_marker_backed_sketches(
 }
 
 fn compact_bounded_curve_tangent(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
-    let record_size = if extended_reference_curve_endpoint_indices(payload, offset).is_some() {
+    let record_size = if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
         92
     } else {
         84
@@ -16875,7 +16886,7 @@ fn roster_curve_endpoint_markers<'a>(
     {
         return Vec::new();
     }
-    if let Some(indices) = extended_reference_curve_endpoint_indices(payload, offset)
+    if let Some(indices) = wide_indexed_curve_endpoint_indices(payload, offset)
         .or_else(|| current_compact_curve_endpoint_indices(payload, offset))
     {
         return indices
@@ -16958,14 +16969,14 @@ fn current_compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
     Some([endpoint(56)?, endpoint(58)?])
 }
 
-fn extended_reference_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
-    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || !matches!(
-            u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?),
-            0..=2
-        )
-        || !marker_is_geometry_locus(payload, offset)
+fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if !matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+    ) || !matches!(
+        u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?),
+        0..=2
+    ) || !marker_is_geometry_locus(payload, offset)
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 31..offset + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
         || payload.get(offset + 35..offset + 39) != Some(&[0x00, 0x00, 0x04, 0x00])
@@ -17000,7 +17011,7 @@ fn marker_is_selected_construction_line(payload: &[u8], offset: usize) -> bool {
         == Some(LEGACY_EXTENDED_SKETCH_MARKER)
     {
         payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
-            && extended_reference_curve_endpoint_indices(payload, offset).is_none()
+            && wide_indexed_curve_endpoint_indices(payload, offset).is_none()
     } else if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
     {
         marker_profile_curve_role(payload, offset) == Some(2)
