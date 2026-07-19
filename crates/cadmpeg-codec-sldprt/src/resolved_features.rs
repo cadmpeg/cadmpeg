@@ -418,10 +418,10 @@ mod marker_tests {
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
         plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
         resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        sketch_block_record_origin, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -447,6 +447,33 @@ mod marker_tests {
             vec![replacement, second]
         );
         assert_eq!(payload.len(), 138);
+    }
+
+    #[test]
+    fn sketch_block_terminal_identity_carries_its_origin() {
+        let mut payload = vec![0; 100];
+        payload[8..12].copy_from_slice(&[0xff; 4]);
+        payload[20..26].copy_from_slice(&[0x02, 0, 0, 0, 0, 0]);
+        payload[26..28].copy_from_slice(&17_u16.to_le_bytes());
+        payload[48..52].copy_from_slice(&[0, 0, 1, 0]);
+        payload[52..54].copy_from_slice(&[0x73, 0x81]);
+        for (index, value) in [0.125_f64, -0.25, 0.0].into_iter().enumerate() {
+            let start = 54 + index * 8;
+            payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        assert_eq!(
+            sketch_block_record_origin(&payload, 0, payload.len()),
+            Some(Point3::new(125.0, -250.0, 0.0))
+        );
+
+        payload[52..].fill(0);
+        payload[52..56].copy_from_slice(CLASS_MARKER);
+        payload[56..58].copy_from_slice(&17_u16.to_le_bytes());
+        payload[58..75].copy_from_slice(b"moAbsolutePoint_c");
+        assert_eq!(
+            sketch_block_record_origin(&payload, 0, payload.len()),
+            Some(Point3::new(0.0, 0.0, 0.0))
+        );
     }
 
     #[test]
@@ -5793,7 +5820,7 @@ pub(crate) fn enrich_history_reference_planes(
     }
 }
 
-/// Resolve sketch-block instance ownership from adjacent typed object records.
+/// Resolve sketch-block definition ownership and placement from typed object records.
 pub(crate) fn enrich_history_sketch_block_references(
     histories: &mut [crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
@@ -5818,6 +5845,7 @@ pub(crate) fn enrich_history_sketch_block_references(
                 .or_insert(Some(identity));
         }
         let mut candidates = HashMap::<usize, Vec<u32>>::new();
+        let mut placement_candidates = HashMap::<usize, Vec<Point3>>::new();
         for lane in lanes {
             let mut names = lane.names.iter().collect::<Vec<_>>();
             names.sort_by_key(|name| name.offset);
@@ -5857,6 +5885,21 @@ pub(crate) fn enrich_history_sketch_block_references(
                     .entry(local_id)
                     .and_modify(|entry| *entry = None)
                     .or_insert(Some(definition_source));
+            }
+            for (position, (name, instance_index)) in instance_names.iter().enumerate() {
+                let end = instance_names
+                    .get(position + 1)
+                    .and_then(|(next, _)| usize::try_from(next.offset).ok())
+                    .unwrap_or(lane.native_payload.len());
+                let Some(start) = usize::try_from(name.offset).ok() else {
+                    continue;
+                };
+                if let Some(origin) = sketch_block_record_origin(&lane.native_payload, start, end) {
+                    placement_candidates
+                        .entry(*instance_index)
+                        .or_default()
+                        .push(origin);
+                }
             }
             for pair in names.windows(2) {
                 let (Some(instance_source), Some(definition_source)) =
@@ -5910,19 +5953,69 @@ pub(crate) fn enrich_history_sketch_block_references(
                 .properties
                 .insert("BlockDefinition".into(), source.to_string());
         }
+        for (feature_index, mut origins) in placement_candidates {
+            origins
+                .sort_by_key(|origin| [origin.x.to_bits(), origin.y.to_bits(), origin.z.to_bits()]);
+            origins.dedup();
+            let [origin] = origins.as_slice() else {
+                continue;
+            };
+            history.features[feature_index].properties.insert(
+                "BlockOrigin".into(),
+                format!("{}mm,{}mm,{}mm", origin.x, origin.y, origin.z),
+            );
+        }
     }
 }
 
-fn sketch_block_record_local_id(payload: &[u8], start: usize, end: usize) -> Option<u16> {
+fn sketch_block_record_identity(payload: &[u8], start: usize, end: usize) -> Option<(u16, usize)> {
     let bytes = payload.get(start..end)?;
-    bytes.windows(44).rev().find_map(|window| {
-        let local_id = u16::from_le_bytes([window[18], window[19]]);
-        (window.get(..4) == Some(&[0xff; 4])
-            && window.get(12..18) == Some(&[0x02, 0, 0, 0, 0, 0])
-            && local_id != 0
-            && window.get(40..44) == Some(&[0, 0, 1, 0]))
-        .then_some(local_id)
-    })
+    bytes
+        .windows(44)
+        .enumerate()
+        .rev()
+        .find_map(|(relative, window)| {
+            let local_id = u16::from_le_bytes([window[18], window[19]]);
+            (window.get(..4) == Some(&[0xff; 4])
+                && window.get(12..18) == Some(&[0x02, 0, 0, 0, 0, 0])
+                && local_id != 0
+                && window.get(40..44) == Some(&[0, 0, 1, 0]))
+            .then_some((local_id, start + relative))
+        })
+}
+
+fn sketch_block_record_local_id(payload: &[u8], start: usize, end: usize) -> Option<u16> {
+    sketch_block_record_identity(payload, start, end).map(|(local_id, _)| local_id)
+}
+
+fn sketch_block_record_origin(payload: &[u8], start: usize, end: usize) -> Option<Point3> {
+    const ABSOLUTE_POINT_CLASS: &[u8] = b"moAbsolutePoint_c";
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let (_, identity) = sketch_block_record_identity(payload, start, end)?;
+    let body = identity.checked_add(44)?;
+    if payload.get(body..body + CLASS_MARKER.len()) == Some(CLASS_MARKER)
+        && payload.get(body + 4..body + 6)
+            == Some(&(ABSOLUTE_POINT_CLASS.len() as u16).to_le_bytes())
+        && payload.get(body + 6..body + 6 + ABSOLUTE_POINT_CLASS.len())
+            == Some(ABSOLUTE_POINT_CLASS)
+    {
+        return Some(Point3::new(0.0, 0.0, 0.0));
+    }
+    let point_token = u16::from_le_bytes(payload.get(body..body + 2)?.try_into().ok()?);
+    if point_token & 0x8000 == 0 || point_token == 0xffff {
+        return None;
+    }
+    let scalar = |relative: usize| {
+        let value = f64::from_le_bytes(
+            payload
+                .get(body + 2 + relative..body + 10 + relative)?
+                .try_into()
+                .ok()?,
+        ) * NATIVE_TO_IR;
+        (value.is_finite() && value.abs() <= 1.0e9).then_some(value)
+    };
+    Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))
 }
 
 fn sketch_block_compact_local_id(

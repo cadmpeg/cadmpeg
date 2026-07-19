@@ -23,6 +23,7 @@ use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::AttributeId;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::{Body, Edge, Face};
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::Exactness;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1833,7 +1834,7 @@ mod history_reference_tests {
             features: vec![definition, instance, compact_instance],
         }];
         let mut lane = feature_input_lane("lane", None);
-        lane.native_payload.resize(450, 0);
+        lane.native_payload.resize(500, 0);
         let write_local_id = |payload: &mut [u8], offset: usize, token: [u8; 4], local_id: u16| {
             payload[offset..offset + 4].copy_from_slice(&[0xff; 4]);
             payload[offset + 4..offset + 8].copy_from_slice(&token);
@@ -1848,13 +1849,23 @@ mod history_reference_tests {
             [0x11, 0x22, 0x33, 0x01],
             0x0115,
         );
-        lane.native_payload[348..350].copy_from_slice(&0x0115_u16.to_le_bytes());
+        lane.native_payload[294..296].copy_from_slice(&[0x26, 0x81]);
+        for (index, value) in [0.00575_f64, -0.169, 0.0].into_iter().enumerate() {
+            let start = 296 + index * 8;
+            lane.native_payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        lane.native_payload[388..390].copy_from_slice(&0x0115_u16.to_le_bytes());
         write_local_id(
             &mut lane.native_payload,
-            380,
+            420,
             [0x44, 0x55, 0x66, 0x01],
             0x0115,
         );
+        lane.native_payload[464..466].copy_from_slice(&[0x73, 0x81]);
+        for (index, value) in [0.01075_f64, -0.132, 0.0].into_iter().enumerate() {
+            let start = 466 + index * 8;
+            lane.native_payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
         lane.names = vec![
             crate::records::FeatureInputName {
                 id: "instance-name".into(),
@@ -1876,7 +1887,7 @@ mod history_reference_tests {
                 id: "compact-instance-name".into(),
                 parent: "lane".into(),
                 ordinal: 2,
-                offset: 300,
+                offset: 340,
                 object_id: Some(34),
                 value: "compact".into(),
             },
@@ -1890,6 +1901,20 @@ mod history_reference_tests {
                 .get("BlockDefinition")
                 .map(String::as_str),
             Some("23")
+        );
+        assert_eq!(
+            histories[0].features[1]
+                .properties
+                .get("BlockOrigin")
+                .map(String::as_str),
+            Some("5.75mm,-169mm,0mm")
+        );
+        assert_eq!(
+            histories[0].features[2]
+                .properties
+                .get("BlockOrigin")
+                .map(String::as_str),
+            Some("10.75mm,-132mm,0mm")
         );
         assert_eq!(
             histories[0].features[2]
@@ -3197,7 +3222,7 @@ fn project_definition(
                 .properties
                 .get("BlockDefinition")
                 .and_then(|source| by_source.get(source.as_str()).cloned()),
-            placement: None,
+            placement: sketch_block_placement(feature),
         };
     }
     if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
@@ -3300,6 +3325,15 @@ fn project_definition(
     } else {
         native_definition(feature)
     }
+}
+
+fn sketch_block_placement(feature: &Feature) -> Option<Transform> {
+    let origin = parse_point3_mm(feature.properties.get("BlockOrigin")?)?;
+    let mut placement = Transform::identity();
+    placement.rows[0][3] = origin.x;
+    placement.rows[1][3] = origin.y;
+    placement.rows[2][3] = origin.z;
+    Some(placement)
 }
 
 fn feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeRole> {
@@ -7753,7 +7787,10 @@ pub fn sync_neutral_features(
                 let block_source = block
                     .as_ref()
                     .and_then(|block| feature_sources.get(block).copied());
-                if retained_source != block_source || placement.is_some() {
+                let retained_placement = existing.as_deref().and_then(sketch_block_placement);
+                if retained_source != block_source
+                    || retained_placement.as_ref() != placement.as_ref()
+                {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes sketch-block instance semantics",
                         feature.id
