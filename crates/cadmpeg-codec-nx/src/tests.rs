@@ -3845,6 +3845,35 @@ fn nx_hole_geometry_projection_requires_complete_through_bore_partitions() {
         ),
         expected_directions
     );
+    assert!(crate::decode::hole_positions_for_operations(&ir, &operations, &outputs).is_empty());
+    let mut single_hole = ir.clone();
+    single_hole.model.shells[0].faces = vec![FaceId("face-1".into())];
+    let single_operation = [operations[1].clone()];
+    let single_output = std::collections::BTreeMap::from([(
+        operations[1].clone(),
+        outputs[&operations[1]].clone(),
+    )]);
+    assert_eq!(
+        crate::decode::hole_positions_for_operations(
+            &single_hole,
+            &single_operation,
+            &single_output,
+        ),
+        std::collections::BTreeMap::from([(operations[1].clone(), Point3::new(1.0, 0.0, 0.0),)])
+    );
+    let SurfaceGeometry::Cylinder { origin, .. } = &mut single_hole.model.surfaces[1].geometry
+    else {
+        unreachable!()
+    };
+    origin.y = 91.0;
+    assert_eq!(
+        crate::decode::hole_positions_for_operations(
+            &single_hole,
+            &single_operation,
+            &single_output,
+        ),
+        std::collections::BTreeMap::from([(operations[1].clone(), Point3::new(1.0, 0.0, 0.0),)])
+    );
     let mut opposite_axis = ir.clone();
     let SurfaceGeometry::Cylinder { axis, .. } = &mut opposite_axis.model.surfaces[1].geometry
     else {

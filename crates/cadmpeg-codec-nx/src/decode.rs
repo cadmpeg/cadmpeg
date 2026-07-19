@@ -10058,6 +10058,8 @@ fn attach_feature_operations(
     );
     let simple_hole_directions =
         hole_directions_for_operations(ir, &simple_hole_operations, &hole_outputs);
+    let simple_hole_positions =
+        hole_positions_for_operations(ir, &simple_hole_operations, &hole_outputs);
     let hole_package_operations = labels
         .iter()
         .filter(|label| label.value == "HOLE PACKAGE")
@@ -10077,6 +10079,8 @@ fn attach_feature_operations(
         hole_diameters_for_operations(ir, &hole_package_operations, &hole_package_outputs);
     let hole_package_directions =
         hole_directions_for_operations(ir, &hole_package_operations, &hole_package_outputs);
+    let hole_package_positions =
+        hole_positions_for_operations(ir, &hole_package_operations, &hole_package_outputs);
     let simple_hole_chamfers = simple_hole_chamfers(ir, simple_hole_templates, &hole_outputs);
     let mut parameter_bindings_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureParameterBinding>>::new();
@@ -10769,6 +10773,10 @@ fn attach_feature_operations(
                             projected_block_dimensions,
                             block_placement,
                             HoleProjection {
+                                position: simple_hole_positions
+                                    .get(label.id.as_str())
+                                    .or_else(|| hole_package_positions.get(label.id.as_str()))
+                                    .copied(),
                                 diameter: simple_hole_diameters
                                     .get(label.id.as_str())
                                     .or_else(|| hole_package_diameters.get(label.id.as_str()))
@@ -11623,6 +11631,7 @@ pub(crate) fn non_boolean_feature_definition(
 /// Permutation-invariant hole properties derived from one complete body partition.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct HoleProjection {
+    position: Option<Point3>,
     diameter: Option<Length>,
     direction: Option<Vector3>,
     chamfer: Option<HoleKind>,
@@ -11698,7 +11707,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             profile: None,
             profile_filter: None,
             face: None,
-            position: None,
+            position: hole.position,
             direction: hole.direction,
             kind: hole.chamfer.unwrap_or_else(|| {
                 if simple_hole_template.is_some() {
@@ -11737,7 +11746,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
             profile: None,
             profile_filter: None,
             face: None,
-            position: None,
+            position: hole.position,
             direction: hole.direction,
             kind: HoleKind::Unresolved {
                 form: None,
@@ -12009,6 +12018,53 @@ pub(crate) fn hole_directions_for_operations(
         );
     }
     directions
+}
+
+/// Derive the canonical point on a hole axis when one operation owns exactly
+/// one through bore. The closest point to the model origin is invariant under
+/// axial shifts of the serialized cylinder origin.
+pub(crate) fn hole_positions_for_operations(
+    ir: &CadIr,
+    operations: &[String],
+    outputs: &BTreeMap<String, Vec<BodyId>>,
+) -> BTreeMap<String, Point3> {
+    if operations.is_empty() || operations.iter().collect::<BTreeSet<_>>().len() != operations.len()
+    {
+        return BTreeMap::new();
+    }
+    let Some(operations_by_body) = hole_operations_by_body(ir, operations, outputs) else {
+        return BTreeMap::new();
+    };
+
+    let mut positions = BTreeMap::new();
+    for (body, operations) in operations_by_body {
+        let [operation] = operations.as_slice() else {
+            continue;
+        };
+        let Some(body_faces) = connected_solid_body_faces(ir, &body) else {
+            continue;
+        };
+        let Some(bores) = through_bore_cylinders(ir, &body_faces) else {
+            continue;
+        };
+        let [(origin, axis, _)] = bores.as_slice() else {
+            continue;
+        };
+        let Some(axis) = unit_vector(*axis) else {
+            continue;
+        };
+        let axial_offset = origin.x * axis.x + origin.y * axis.y + origin.z * axis.z;
+        let position = Point3::new(
+            origin.x - axial_offset * axis.x,
+            origin.y - axial_offset * axis.y,
+            origin.z - axial_offset * axis.z,
+        );
+        if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
+            continue;
+        }
+        positions.insert(operation.clone(), position);
+    }
+    positions
 }
 
 /// Resolve hole operations to their explicit output bodies, or to the one
