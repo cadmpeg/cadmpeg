@@ -2007,6 +2007,17 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "draft geometry is invalid");
                 }
             }
+            FeatureDefinition::BoundaryFill { tools, cells } => {
+                body_selections.push(tools);
+                body_selections.extend(cells);
+                if cells.is_empty() {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "boundary fill has no selected cells",
+                    );
+                }
+            }
             FeatureDefinition::DeleteFace { faces, .. } => {
                 face_selections.push(faces);
             }

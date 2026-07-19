@@ -622,6 +622,13 @@ pub enum FeatureDefinition {
         /// Join, cut, or intersection operation.
         op: BooleanOp,
     },
+    /// Creates solid bodies from selected cells enclosed by boundary bodies.
+    BoundaryFill {
+        /// Bodies whose faces partition space into candidate cells.
+        tools: BodySelection,
+        /// Enclosed cells retained as result bodies, in source order.
+        cells: Vec<BodySelection>,
+    },
     /// Removes one side of selected bodies using selected surface faces.
     CutWithSurface {
         /// Bodies cut by the operation.

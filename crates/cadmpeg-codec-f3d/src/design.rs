@@ -836,6 +836,14 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     }
                 })
+            } else if family == Some(DesignFeatureFamily::BoundaryFill) {
+                project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else if let Some(primitive) = scope.solid_primitive.as_ref() {
                 let operation = |operation| match operation {
                     DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
@@ -2991,6 +2999,55 @@ fn project_surface_patch(
         support_faces: FaceSelection::Faces(Vec::new()),
         continuity: None,
         merge_result: None,
+    })
+}
+
+fn project_boundary_fill(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{BodySelection, FeatureDefinition};
+
+    if scope.kind != "BoundaryFill" || scope.reference_members.len() < 5 {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let (tools, cells) = groups.split_first()?;
+    if tools.scope_reference_ordinal != 0
+        || tools.record_index != scope.reference_members[0]
+        || tools.role != 0x0000_0004_0000_0000
+        || cells.is_empty()
+    {
+        return None;
+    }
+    for (index, group) in groups.iter().enumerate() {
+        let start = usize::try_from(group.scope_reference_ordinal).ok()?;
+        let end = groups
+            .get(index + 1)
+            .and_then(|next| usize::try_from(next.scope_reference_ordinal).ok())
+            .unwrap_or(scope.reference_members.len() - 1);
+        if start >= end
+            || group.record_index != scope.reference_members[start]
+            || group.members.as_slice() != &scope.reference_members[start + 1..end]
+            || (index > 0 && group.role != 0x0000_0005_0000_0000)
+        {
+            return None;
+        }
+    }
+    Some(FeatureDefinition::BoundaryFill {
+        tools: BodySelection::Native(tools.id.clone()),
+        cells: cells
+            .iter()
+            .map(|cell| BodySelection::Native(cell.id.clone()))
+            .collect(),
     })
 }
 
@@ -28245,6 +28302,22 @@ mod relation_tests {
                 continuity: None,
                 merge_result: None,
             }) if native == &patch_group.id && faces.is_empty()
+        ));
+
+        let mut fill_scope = scope.clone();
+        fill_scope.kind = "BoundaryFill".into();
+        fill_scope.reference_members = vec![100, 200, 201, 300, 301, 400];
+        let mut tools = group(100, 0, vec![200, 201]);
+        tools.role = 0x0000_0004_0000_0000;
+        let mut cell = group(300, 3, vec![301]);
+        cell.role = 0x0000_0005_0000_0000;
+        assert!(matches!(
+            super::project_boundary_fill(&fill_scope, &[tools.clone(), cell.clone()]),
+            Some(FeatureDefinition::BoundaryFill {
+                tools: cadmpeg_ir::features::BodySelection::Native(ref tool_selection),
+                cells: ref cell_selections,
+            }) if tool_selection == &tools.id
+                && cell_selections == &[cadmpeg_ir::features::BodySelection::Native(cell.id)]
         ));
     }
 

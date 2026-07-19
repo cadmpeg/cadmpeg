@@ -879,6 +879,12 @@ pub fn bind_topology_selections(
                 resolve_body_selection(target, &body_ids);
                 resolve_body_selection(tools, &body_ids);
             }
+            FeatureDefinition::BoundaryFill { tools, cells } => {
+                resolve_body_selection(tools, &body_ids);
+                for cell in cells {
+                    resolve_body_selection(cell, &body_ids);
+                }
+            }
             FeatureDefinition::CutWithSurface { targets, tools, .. } => {
                 resolve_body_selection(targets, &body_ids);
                 resolve_face_selection(tools, &face_ids);
@@ -5444,6 +5450,12 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::BoundaryFill { .. } => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} uses a boundary-fill operation",
+                    feature.id
+                )));
+            }
             FeatureDefinition::CutWithSurface {
                 targets,
                 tools,
@@ -7112,6 +7124,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::RuledSurface { .. } => "RuledSurface",
         FeatureDefinition::Draft { .. } => "Draft",
         FeatureDefinition::Combine { .. } => "Combine",
+        FeatureDefinition::BoundaryFill { .. } => "BoundaryFill",
         FeatureDefinition::CutWithSurface { .. } => "CutWithSurface",
         FeatureDefinition::DeleteBody {
             mode: BodyRetentionMode::Unresolved,
