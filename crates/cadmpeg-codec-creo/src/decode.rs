@@ -5912,6 +5912,16 @@ fn placed_section_geometry_curve(
     }
 }
 
+fn placed_sketch_curve_ref(
+    transform: Option<&crate::placement::FeatureSectionTransform>,
+    sketch: &SketchId,
+    suffix: impl std::fmt::Display,
+    geometry: &SketchGeometry,
+) -> Option<String> {
+    placed_section_geometry_curve(transform?, geometry)?;
+    Some(sketch_section_curve_id(sketch, suffix))
+}
+
 fn bspline_basis(index: usize, degree: usize, parameter: f64, knots: &[f64], count: usize) -> f64 {
     if parameter == *knots.last().expect("nonempty knots") {
         return if index + 1 == count { 1.0 } else { 0.0 };
@@ -10374,7 +10384,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                         || (!solved.contains(&segment.external_id)
                             && !profile_segments.contains(&segment.external_id)),
                     native_ref: Some(sketch_native_ref(&sketch_id)),
-                    geometry_ref: Some(sketch_section_curve_id(&sketch_id, suffix)),
+                    geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
                     endpoint_refs: match segment.kind {
                         crate::feature::FeatureSegmentKind::Arc => {
                             vec![segment.point_ids[1], segment.point_ids[0]]
@@ -10533,7 +10543,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     "{}:saved_entity#{internal_id}",
                     sketch_native_ref(&sketch_id)
                 )),
-                geometry_ref: Some(curve_id.0.clone()),
+                geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, &suffix, &geometry),
                 endpoint_refs: Vec::new(),
                 geometry: geometry.clone(),
             });
@@ -10633,7 +10643,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     "{}:saved_spline#{suffix}",
                     sketch_native_ref(&sketch_id)
                 )),
-                geometry_ref: Some(curve_id.0.clone()),
+                geometry_ref: transform.map(|_| curve_id.0.clone()),
                 endpoint_refs: Vec::new(),
                 geometry: geometry.clone(),
             });
@@ -16514,6 +16524,37 @@ mod resolved_sketch_tests {
                 origin: Point3::new(10.0, 22.0, 33.0),
                 direction: Vector3::new(0.0, 1.0, 0.0),
             })
+        );
+    }
+
+    #[test]
+    fn sketch_curve_references_require_a_materialized_curve() {
+        let transform = crate::placement::FeatureSectionTransform {
+            definition_id: 5,
+            feature_id: Some(5),
+            origin: [10.0, 20.0, 30.0],
+            u_axis: [0.0, 1.0, 0.0],
+            v_axis: [0.0, 0.0, 1.0],
+            normal: [1.0, 0.0, 0.0],
+            offset: 7,
+        };
+        let sketch = SketchId("creo:model:sketch#5".to_string());
+        let line = SketchGeometry::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(2.0, 0.0),
+        };
+        let point = SketchGeometry::Point {
+            position: Point2::new(1.0, 2.0),
+        };
+
+        assert_eq!(
+            placed_sketch_curve_ref(Some(&transform), &sketch, 3, &line),
+            Some("creo:featdefs:section_curve#5:3".to_string())
+        );
+        assert_eq!(placed_sketch_curve_ref(None, &sketch, 3, &line), None);
+        assert_eq!(
+            placed_sketch_curve_ref(Some(&transform), &sketch, 4, &point),
+            None
         );
     }
 
