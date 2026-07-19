@@ -784,6 +784,10 @@ Type-five and type-seven line incidences propagate perpendicular and parallel
 orientation, respectively, through their connected line component. A
 contradictory incidence cycle or conflicting stored or unary orientation leaves
 the component orientation unresolved.
+When trim vertices bound a line whose stored endpoint coordinates are
+incomplete, this resolved component orientation validates the trimmed line
+carrier against the corresponding equal section coordinate. An unresolved or
+disagreeing orientation does not define that carrier.
 Stored point ordinates, held-coordinate line equations, signed linear
 dimensions, coincidence, point-on-line, same-coordinate, and axis-symmetry
 incidences form affine equation components independently for `u` and `v` except

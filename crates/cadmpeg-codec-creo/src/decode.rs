@@ -5608,7 +5608,7 @@ fn trimmed_section_segment_geometry(
             .chain(end)
             .map(|value| value.abs())
             .fold(1.0, f64::max);
-        let orientation_matches = match segment.vertical_horizontal {
+        let orientation_matches = match section_line_fixed_coordinate(definition, segment) {
             Some(0) => (start[0] - end[0]).abs() <= 1e-9 * scale,
             Some(1) => (start[1] - end[1]).abs() <= 1e-9 * scale,
             _ => false,
@@ -16397,6 +16397,146 @@ mod resolved_sketch_tests {
                 end_angle: Angle(std::f64::consts::TAU),
             })
         );
+    }
+
+    #[test]
+    fn trimmed_line_uses_reconciled_solver_orientation() {
+        let segment = crate::feature::FeatureSegment {
+            kind: crate::feature::FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids: [7, 9],
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id: 42,
+            offset: 40,
+        };
+        let anchor = crate::feature::FeatureSegment {
+            point_ids: [5, 6],
+            external_id: 41,
+            offset: 39,
+            ..segment.clone()
+        };
+        let horizontal = crate::feature::FeatureSkamp {
+            id: 1,
+            kind: 1,
+            flags: 0,
+            status: 0,
+            items: vec![crate::feature::FeatureSkampItem {
+                entity_id: 41,
+                sense: 0,
+            }],
+            offset: 50,
+        };
+        let parallel = crate::feature::FeatureSkamp {
+            id: 2,
+            kind: 7,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 41,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 42,
+                    sense: 0,
+                },
+            ],
+            offset: 55,
+        };
+        let mut definition = crate::feature::FeatureDefinition {
+            id: 5,
+            owner_feature_id: Some(6),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 2,
+                entity_ref: None,
+                rows: vec![anchor, segment.clone()],
+                opaque_rows: Vec::new(),
+                offset: 20,
+            }),
+            trim_entities: Some(crate::feature::FeatureTrimEntityTable {
+                declared_count: None,
+                entity_ref: None,
+                entry_ref: None,
+                buckets: Vec::new(),
+                rows: vec![crate::feature::FeatureTrimEntity {
+                    external_id: 42,
+                    mode: Some(0),
+                    vertices: [1, 2],
+                    center_vertex: None,
+                    kind: crate::feature::TrimEntityKind::Line,
+                    offset: 30,
+                }],
+                solved_external_ids: vec![42],
+                offset: 28,
+            }),
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: Some(crate::feature::FeatureRelationTable {
+                declared_count: 2,
+                entity_ref: None,
+                rows: Vec::new(),
+                skamps: vec![horizontal, parallel],
+                skamp_header: Some(crate::feature::FeatureSolverTableHeader {
+                    declared_count: 2,
+                    entity_ref: 70,
+                    offset: 45,
+                }),
+                triples: Vec::new(),
+                triples_header: None,
+                offset: 44,
+            }),
+            saved_section: None,
+            offset: 0,
+        };
+        let trim_vertices = BTreeMap::from([(1, [-2.0, 3.0]), (2, [4.0, 3.0])]);
+
+        assert_eq!(
+            trimmed_section_segment_geometry(
+                &definition,
+                &BTreeMap::new(),
+                &trim_vertices,
+                &segment,
+            ),
+            Some(SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(-2.0, 3.0),
+                end: cadmpeg_ir::math::Point2::new(4.0, 3.0),
+            })
+        );
+
+        let relations = definition.relations.as_mut().expect("solver relations");
+        relations.skamps.push(crate::feature::FeatureSkamp {
+            id: 3,
+            kind: 2,
+            flags: 0,
+            status: 0,
+            items: vec![crate::feature::FeatureSkampItem {
+                entity_id: 41,
+                sense: 0,
+            }],
+            offset: 60,
+        });
+        relations
+            .skamp_header
+            .as_mut()
+            .expect("solver header")
+            .declared_count = 3;
+        assert!(trimmed_section_segment_geometry(
+            &definition,
+            &BTreeMap::new(),
+            &trim_vertices,
+            &segment,
+        )
+        .is_none());
     }
 
     #[test]
