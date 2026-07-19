@@ -6817,6 +6817,7 @@ impl MeshQuotient {
         self.point_assignment_exists_with_budget(point_count, edge_candidates, None)
     }
 
+    #[cfg(test)]
     fn point_assignment_exists_with_budget(
         &mut self,
         point_count: usize,
@@ -8344,7 +8345,6 @@ impl MeshSelectionSearch<'_> {
         &self,
         quotient: &MeshQuotient,
         changed_edges: &HashSet<usize>,
-        budget: &MeshConstraintBudget,
         propagation_budget: &MeshConstraintBudget,
     ) -> Option<MeshQuotient> {
         let mut measured = quotient.clone();
@@ -8360,15 +8360,6 @@ impl MeshSelectionSearch<'_> {
         }
         let root_count = measured.root_count();
         if root_count < self.vertex_points.len() {
-            return None;
-        }
-        if root_count == self.vertex_points.len()
-            && !measured.point_assignment_exists_with_budget(
-                self.vertex_points.len(),
-                self.edge_candidates,
-                Some(budget),
-            )
-        {
             return None;
         }
         self.fixed_remaining_faces_are_orientable()
@@ -8411,18 +8402,6 @@ impl MeshSelectionSearch<'_> {
             }
             let root_count = measured.root_count();
             if root_count < self.vertex_points.len() {
-                return;
-            }
-            if root_count == self.vertex_points.len()
-                && !measured.point_assignment_exists_with_budget(
-                    self.vertex_points.len(),
-                    self.edge_candidates,
-                    Some(budget),
-                )
-            {
-                if budget.exhausted.get() {
-                    self.exhausted = true;
-                }
                 return;
             }
             if !self.fixed_remaining_faces_are_orientable() {
@@ -8657,12 +8636,9 @@ impl MeshSelectionSearch<'_> {
             let changed_edges = changed_quotient_edges(&measured, &next_quotient);
             self.selected[face] = Some((assignment_index, directions));
             if self.selected_orientable() {
-                if let Some(next_quotient) = self.prepare_selected_branch(
-                    &next_quotient,
-                    &changed_edges,
-                    budget,
-                    propagation_budget,
-                ) {
+                if let Some(next_quotient) =
+                    self.prepare_selected_branch(&next_quotient, &changed_edges, propagation_budget)
+                {
                     if branching {
                         if self.states >= MAX_SELECTION_STATES {
                             self.exhausted = true;
@@ -11092,17 +11068,15 @@ mod motif_tests {
         let mut quotient = initial_mesh_quotient(&edge_candidates, 2, &[[0, 1], [2, 3]])
             .expect("initial quotient");
         quotient.merge(1, 2).expect("selected face corner");
-        let budget = MeshConstraintBudget::new(100);
         let propagation_budget = MeshConstraintBudget::new(0);
         let changed_edges = HashSet::from([0]);
 
         let mut prepared = search
-            .prepare_selected_branch(&quotient, &changed_edges, &budget, &propagation_budget)
+            .prepare_selected_branch(&quotient, &changed_edges, &propagation_budget)
             .expect("partial quotient remains viable");
 
         assert_eq!(prepared.root_count(), 3);
         assert!(propagation_budget.exhausted.get());
-        assert!(!budget.exhausted.get());
     }
 
     #[test]
