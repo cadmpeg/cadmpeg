@@ -5053,6 +5053,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     }
 
     let mut emitted_attributes = HashSet::new();
+    let mut attribute_targets = HashMap::new();
     for record in records {
         let index = record.index as i64;
         let target = match record.head.as_str() {
@@ -5072,6 +5073,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             _ => None,
         };
         if let Some(target) = target {
+            attribute_targets.insert(index, target.clone());
             collect_attributes(
                 record,
                 &target,
@@ -5084,37 +5086,13 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
 
     for record in records {
         let index = record.index as i64;
-        if record.name != "ATTRIB_CUSTOM-attrib" || emitted_attributes.contains(&index) {
+        if !record.name.ends_with("-attrib") || emitted_attributes.contains(&index) {
             continue;
         }
-        let Some(owner) = record.ref_at(4).and_then(|owner| by_index.get(&owner)) else {
-            continue;
-        };
-        let owner_index = owner.index as i64;
-        let target = match owner.head.as_str() {
-            "body"
-                if out
-                    .bodies
-                    .iter()
-                    .any(|entity| entity.id.0 == id(owner_index)) =>
-            {
-                Some(AttributeTarget::Body(BodyId(id(owner_index))))
-            }
-            "face" if kept_faces.contains(&owner_index) => {
-                Some(AttributeTarget::Face(FaceId(id(owner_index))))
-            }
-            "coedge" | "tcoedge" if kept_coedges.contains(&owner_index) => {
-                Some(AttributeTarget::Coedge(CoedgeId(id(owner_index))))
-            }
-            "edge" | "tedge" if kept_edges.contains(&owner_index) => {
-                Some(AttributeTarget::Edge(EdgeId(id(owner_index))))
-            }
-            "vertex" | "tvertex" if kept_vertices.contains(&owner_index) => {
-                Some(AttributeTarget::Vertex(VertexId(id(owner_index))))
-            }
-            _ => None,
-        };
-        if let Some(target) = target {
+        if let Some(target) = record
+            .ref_at(4)
+            .and_then(|owner| inherited_attribute_target(owner, &by_index, &attribute_targets))
+        {
             emitted_attributes.insert(index);
             out.attributes.push(source_attribute(record, target));
         }
@@ -5346,6 +5324,25 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
     clamp_edge_ranges_to_carrier_domains(&mut out);
 
     out
+}
+
+fn inherited_attribute_target(
+    mut owner: i64,
+    by_index: &HashMap<i64, &Record>,
+    targets: &HashMap<i64, AttributeTarget>,
+) -> Option<AttributeTarget> {
+    let mut visited = HashSet::new();
+    while visited.insert(owner) {
+        if let Some(target) = targets.get(&owner) {
+            return Some(target.clone());
+        }
+        let attribute = by_index.get(&owner)?;
+        if !attribute.name.ends_with("-attrib") {
+            return None;
+        }
+        owner = attribute.ref_at(4)?;
+    }
+    None
 }
 
 fn procedural_surface_definition_is_exact_carrier(
@@ -6800,6 +6797,46 @@ mod topology_tests {
         for head in ["subshell", "wire", "tcoedge", "tedge", "tvertex"] {
             assert!(is_known_record_head(head), "{head}");
         }
+    }
+
+    #[test]
+    fn nested_attributes_inherit_their_topology_owner() {
+        use cadmpeg_ir::attributes::AttributeTarget;
+        use cadmpeg_ir::ids::EdgeId;
+
+        let attribute = |index, owner| Record {
+            index,
+            name: "ATTRIB_CUSTOM-attrib".into(),
+            head: "ATTRIB_CUSTOM".into(),
+            tokens: vec![
+                Token::Ref(-1),
+                Token::Long(-1),
+                Token::Ref(-1),
+                Token::Ref(-1),
+                Token::Ref(owner),
+            ],
+            offset: 0,
+            len: 0,
+        };
+        let parent = attribute(7, 3);
+        let child = attribute(8, 7);
+        let records = HashMap::from([(7, &parent), (8, &child)]);
+        let expected = AttributeTarget::Edge(EdgeId("edge".into()));
+        let targets = HashMap::from([(3, expected.clone())]);
+
+        assert_eq!(
+            inherited_attribute_target(7, &records, &targets),
+            Some(expected.clone())
+        );
+        assert_eq!(
+            inherited_attribute_target(8, &records, &targets),
+            Some(expected)
+        );
+
+        let cycle_left = attribute(9, 10);
+        let cycle_right = attribute(10, 9);
+        let cycle = HashMap::from([(9, &cycle_left), (10, &cycle_right)]);
+        assert_eq!(inherited_attribute_target(9, &cycle, &targets), None);
     }
 
     fn ident(bytes: &mut Vec<u8>, name: &str) {

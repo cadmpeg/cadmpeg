@@ -361,7 +361,7 @@ An edge with `owner_coedge_ref == -1` and no reference from a reachable coedge i
 
 ### 6.6 Attributes on the topology graph
 
-Every entity carries an `attrib` ref-chain. `Entity.attrib` is the chain head, each record carries `next` and `previous` references, and `-1` terminates the chain. Color and feature-tag attributes can coexist on one chain. `ATTRIB_CUSTOM-attrib` records carry an owner ref at record-relative `+60..68` and a family name (`generic_tag_attrib_def`, `sketch_attrib_def`, `Timestamp_attrib_def`, `FPM_tracked_attrib_def`). Attribute records are variable-width.
+Every entity carries an `attrib` ref-chain. `Entity.attrib` is the chain head, each record carries `next` and `previous` references, and `-1` terminates the chain. Color and feature-tag attributes can coexist on one chain. Every `*-attrib` record's fifth payload field is its owner reference. An attribute owner may be another attribute; following fifth-field owners terminates at the topology entity that owns the complete nested attribute set. `ATTRIB_CUSTOM-attrib` records carry this owner ref at record-relative `+60..68` and a family name (`generic_tag_attrib_def`, `sketch_attrib_def`, `Timestamp_attrib_def`, `FPM_tracked_attrib_def`). Attribute records are variable-width.
 
 `no_combine_attribute-st-attrib` is a marker attribute: the standard attribute record followed by one boolean, with no other payload. It marks a face excluded from coplanar-face merging during Boolean and combine operations; carried on sheet-metal flange faces.
 
