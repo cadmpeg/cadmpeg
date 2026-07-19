@@ -434,8 +434,9 @@ mod marker_tests {
         compact_line_chain_addresses, compact_line_region_addresses, compact_offset_plane_source,
         compact_profile_reference_plane_source, compact_reference_plane_frame,
         compact_reference_plane_source, compact_single_face_reference_path_at,
-        compact_surface_selection_at, complete_ordered_compact_line_profile,
-        component_path_features, component_path_preceding_feature, component_path_terminal_feature,
+        compact_sketch_surface_component_path_at, compact_surface_selection_at,
+        complete_ordered_compact_line_profile, component_path_features,
+        component_path_preceding_feature, component_path_terminal_feature,
         component_profile_source_at, component_reference_curve_path_at, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_cylinder_reference_at, explicit_reference_axis_frame,
@@ -3033,6 +3034,35 @@ mod marker_tests {
     }
 
     #[test]
+    fn sketch_surface_component_path_has_two_implicit_root_slots() {
+        let marker = 12;
+        let mut payload = Vec::new();
+        payload.extend(5u32.to_le_bytes());
+        payload.extend([0, 3, 0, 0]);
+        payload.extend([0; 4]);
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0; 2]);
+        for (index, local_id) in [4u32, 3, 5].into_iter().enumerate() {
+            if index == 2 {
+                payload.extend([0; 2]);
+            }
+            payload.extend((0x8094 + index as u16).to_le_bytes());
+            payload.extend([0; 2]);
+            payload.extend([index as u8 + 1; 12]);
+            payload.extend(local_id.to_le_bytes());
+        }
+
+        assert_eq!(
+            compact_sketch_surface_component_path_at(&payload, marker)
+                .unwrap()
+                .iter()
+                .map(|component| component.local_id)
+                .collect::<Vec<_>>(),
+            [Some(4), Some(3), Some(5)]
+        );
+    }
+
+    #[test]
     fn mirror_pattern_path_count_includes_the_unserialized_root_cell() {
         let marker = 12;
         let mut payload = vec![0; marker];
@@ -5000,8 +5030,23 @@ fn cosmetic_thread_cylinder_reference_at(
         let marker = body_offset.checked_add(relative)?;
         compact_termination_reference_path_at(payload, marker)
             .or_else(|| compact_edge_component_path_at(payload, marker))
+            .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
             .map(|components| (marker, components))
     })
+}
+
+fn compact_sketch_surface_component_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    if payload.get(marker.checked_sub(12)?..marker - 8)? != 5u32.to_le_bytes()
+        || payload.get(marker - 8..marker - 4)? != [0, 3, 0, 0]
+        || payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    compact_heterogeneous_component_path(payload, marker + 18, 3).map(|(components, _)| components)
 }
 
 pub(crate) fn compact_surface_selection_at(
@@ -5048,6 +5093,7 @@ pub(crate) fn compact_surface_reference_at(
     compact_surface_selection_at(payload, marker)
         .or_else(|| mirror_surface_component_path_at(payload, marker))
         .or_else(|| compact_termination_reference_path_at(payload, marker))
+        .or_else(|| compact_sketch_surface_component_path_at(payload, marker))
         .or_else(|| inline_surface_reference_at(payload, marker))
 }
 
@@ -5514,10 +5560,11 @@ fn compact_heterogeneous_component_path(
         if index + 1 == count {
             continue;
         }
-        let gaps = [0usize, 4, 8]
+        let gaps = [0usize, 2, 4, 8]
             .into_iter()
             .filter(|gap| match *gap {
                 0 => true,
+                2 => payload.get(cursor..cursor + 2) == Some(&[0; 2]),
                 4 => payload.get(cursor..cursor + 4) == Some(&[0; 4]),
                 8 => matches!(
                     payload.get(cursor..cursor + 8),
