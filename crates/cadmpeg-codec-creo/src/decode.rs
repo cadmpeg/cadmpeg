@@ -4606,6 +4606,33 @@ fn unique_section_skamp_segment(
     definition.segments.as_ref()?.segment(external_id)
 }
 
+fn unique_decoded_section_segment(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureSegment> {
+    let segments = definition.segments.as_ref()?;
+    let mut matches = segments
+        .rows
+        .iter()
+        .filter(|segment| segment.external_id == external_id);
+    let segment = matches.next()?;
+    (matches.next().is_none()
+        && !segments
+            .opaque_rows
+            .iter()
+            .any(|row| row.external_id == external_id))
+    .then_some(segment)
+}
+
+fn section_segment_rows(
+    definition: &crate::feature::FeatureDefinition,
+) -> &[crate::feature::FeatureSegment] {
+    definition
+        .segments
+        .as_ref()
+        .map_or(&[], |table| table.rows.as_slice())
+}
+
 fn complete_section_segment_rows(
     definition: &crate::feature::FeatureDefinition,
 ) -> &[crate::feature::FeatureSegment] {
@@ -9271,7 +9298,7 @@ fn section_skamp_locus(
         "creo:featdefs:sketch_entity#{}:{}",
         definition.id, item.entity_id
     ));
-    if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
+    if let Some(segment) = unique_decoded_section_segment(definition, item.entity_id) {
         return match (segment.kind, item.sense) {
             (_, 0) => Some(SketchLocus::Entity(entity)),
             (crate::feature::FeatureSegmentKind::Arc, 2) => Some(SketchLocus::End(entity)),
@@ -9406,7 +9433,7 @@ fn section_skamp_is_line(
         .flat_map(|table| &table.rows)
         .any(|segment| segment.external_id == item.entity_id);
     if has_segment {
-        return unique_section_skamp_segment(definition, item.entity_id)
+        return unique_decoded_section_segment(definition, item.entity_id)
             .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Line);
     }
     section_saved_entity(definition, item.entity_id)
@@ -9417,7 +9444,7 @@ fn section_skamp_is_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    unique_section_skamp_segment(definition, item.entity_id)
+    unique_decoded_section_segment(definition, item.entity_id)
         .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
 }
 
@@ -9459,7 +9486,7 @@ fn section_skamp_circular_entity(
         .flat_map(|segments| &segments.rows)
         .any(|segment| segment.external_id == item.entity_id);
     let circular = if has_segment {
-        unique_section_skamp_segment(definition, item.entity_id)
+        unique_decoded_section_segment(definition, item.entity_id)
             .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
     } else {
         section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
@@ -9712,7 +9739,7 @@ fn section_skamp_constraints(
 }
 
 fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -> BTreeSet<u32> {
-    let segments = complete_section_segment_rows(definition);
+    let segments = section_segment_rows(definition);
     let mut ids = unique_section_segment_external_ids(segments);
     let Some(order) = &definition.order_table else {
         return ids;
@@ -10167,7 +10194,7 @@ fn transfer_resolved_sketches(
         else {
             continue;
         };
-        let segments = complete_section_segment_rows(definition);
+        let segments = section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(segments);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(segments);
         let points = resolved_section_points(definition);
@@ -16880,6 +16907,22 @@ mod resolved_sketch_tests {
         ));
         assert!(matches!(
             constraints[1].0.definition,
+            SketchConstraintDefinition::Vertical { .. }
+        ));
+        let mut incomplete_segments = definition.clone();
+        incomplete_segments
+            .segments
+            .as_mut()
+            .expect("segments")
+            .declared_count += 1;
+        let incomplete_constraints =
+            section_skamp_constraints(&incomplete_segments, &SketchId("sketch".into()));
+        assert!(matches!(
+            incomplete_constraints[0].0.definition,
+            SketchConstraintDefinition::Horizontal { .. }
+        ));
+        assert!(matches!(
+            incomplete_constraints[1].0.definition,
             SketchConstraintDefinition::Vertical { .. }
         ));
         let mut locus_orientation = definition.clone();
