@@ -894,6 +894,8 @@ pub enum FeatureDefinition {
         /// Whether material is added away from the pull direction.
         outward: bool,
     },
+    /// Draft family whose construction operands and angle remain unresolved.
+    DraftUnresolved,
     /// Boolean operation between existing bodies.
     Combine {
         /// Body modified by the operation.

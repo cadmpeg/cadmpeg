@@ -3181,6 +3181,10 @@ fn nx_mainstream_operation_labels_project_typed_unresolved_definitions() {
         crate::decode::non_boolean_feature_definition("Studio Surface", &[], None, None, None),
         FeatureDefinition::FreeformSurfaceUnresolved
     );
+    assert_eq!(
+        crate::decode::non_boolean_feature_definition("DRAFT", &[], None, None, None),
+        FeatureDefinition::DraftUnresolved
+    );
 
     assert!(matches!(
         crate::decode::non_boolean_feature_definition("HOLE PACKAGE", &[], None, None, None),
@@ -7733,6 +7737,64 @@ fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
     let mut nonfinite = target;
     nonfinite[5..13].copy_from_slice(&[0x6f, 0xf0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
     assert!(crate::om::point_feature_scalar_lane(&preceding, &nonfinite).is_none());
+}
+
+#[test]
+fn om_draft_feature_references_require_one_complete_graph() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "DRAFT",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let prefix = b"\x67\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\xff\xff";
+    let graph = b"\x01\x02\xf1\x1b\x7c\x01\x02\xf1\x1b\x7d\x68\x2f\x70\x62\x4d\xd2\xf1\xa9\xfc\x03\x50\x44\x00\x00\x01\x46\x8a\x2a\x01\xa3\x60\x10\x01\x01\x01\x04\x02\x01\x02\x01\x00\x00\x00\x00\x01\xf1\x1b\x7e\xff\x00\x00\x00\xf1\x1b\x7f\xff";
+    let payload = [prefix.as_slice(), graph.as_slice(), b"\xaa"].concat();
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: &payload,
+        payload_offset: 200,
+        payload: &payload,
+        label,
+    };
+    let field = crate::om::draft_feature_payload_references(record).expect("complete graph");
+    assert_eq!(
+        field.references.map(|reference| reference.object_index),
+        [7036, 7037, 7038, 7039]
+    );
+    assert_eq!(
+        field.references.map(|reference| reference.offset),
+        [218, 223, 261, 268]
+    );
+
+    let mut malformed = payload.clone();
+    malformed[41] = 0x00;
+    assert!(
+        crate::om::draft_feature_payload_references(crate::om::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+    let ambiguous = [prefix.as_slice(), graph.as_slice(), graph.as_slice()].concat();
+    assert!(
+        crate::om::draft_feature_payload_references(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+    assert!(
+        crate::om::draft_feature_payload_references(crate::om::OperationRecord {
+            bytes: &payload[..payload.len() - 2],
+            payload: &payload[..payload.len() - 2],
+            ..record
+        })
+        .is_none()
+    );
 }
 
 #[test]

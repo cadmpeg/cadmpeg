@@ -7185,6 +7185,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::DatumCoordinateSystemUnresolved => "datum coordinate system",
             FeatureDefinition::LoftUnresolved => "loft",
             FeatureDefinition::FreeformSurfaceUnresolved => "freeform surface",
+            FeatureDefinition::DraftUnresolved => "draft",
             _ => continue,
         };
         *unresolved_feature_families.entry(family).or_default() += 1;
@@ -7725,6 +7726,8 @@ fn attach_native_object_model(
             &scan.container,
             &feature_point_construction_headers,
         );
+    let feature_draft_construction_references =
+        crate::native::feature_draft_construction_references(&scan.container);
     let feature_surface_construction_references =
         crate::native::feature_surface_construction_references(&scan.container);
     let feature_surface_construction_branches =
@@ -8007,6 +8010,7 @@ fn attach_native_object_model(
         && feature_pattern_references.is_empty()
         && feature_point_construction_headers.is_empty()
         && feature_point_construction_scalar_lanes.is_empty()
+        && feature_draft_construction_references.is_empty()
         && feature_surface_construction_references.is_empty()
         && feature_surface_construction_branches.is_empty()
         && feature_extrude_profile_references.is_empty()
@@ -8798,6 +8802,7 @@ fn attach_native_object_model(
             pattern_references: &feature_pattern_references,
             point_construction_headers: &feature_point_construction_headers,
             point_construction_scalar_lanes: &feature_point_construction_scalar_lanes,
+            draft_construction_references: &feature_draft_construction_references,
             surface_construction_references: &feature_surface_construction_references,
             surface_construction_branches: &feature_surface_construction_branches,
             sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
@@ -9240,6 +9245,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_point_construction_scalar_lanes",
             &feature_point_construction_scalar_lanes,
+        )?;
+    }
+    if !feature_draft_construction_references.is_empty() {
+        namespace.set_arena(
+            "feature_draft_construction_references",
+            &feature_draft_construction_references,
         )?;
     }
     if !feature_surface_construction_references.is_empty() {
@@ -9929,6 +9940,7 @@ struct FeatureOperationSources<'a> {
     pattern_references: &'a [crate::native::FeaturePatternReference],
     point_construction_headers: &'a [crate::native::FeaturePointConstructionHeader],
     point_construction_scalar_lanes: &'a [crate::native::FeaturePointConstructionScalarLane],
+    draft_construction_references: &'a [crate::native::FeatureDraftConstructionReference],
     surface_construction_references: &'a [crate::native::FeatureSurfaceConstructionReference],
     surface_construction_branches: &'a [crate::native::FeatureSurfaceConstructionBranch],
     sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
@@ -10026,6 +10038,7 @@ fn attach_feature_operations(
         pattern_references,
         point_construction_headers,
         point_construction_scalar_lanes,
+        draft_construction_references,
         surface_construction_references,
         surface_construction_branches,
         sketch_named_point_block_uses,
@@ -10196,6 +10209,10 @@ fn attach_feature_operations(
         .iter()
         .map(|lane| (lane.operation_label.as_str(), lane))
         .collect::<BTreeMap<_, _>>();
+    let draft_construction_references_by_operation =
+        records_by_operation(draft_construction_references, |reference| {
+            &reference.operation_label
+        });
     let surface_construction_references_by_operation =
         records_by_operation(surface_construction_references, |reference| {
             &reference.operation_label
@@ -10947,6 +10964,19 @@ fn attach_feature_operations(
             source_properties.insert(
                 "point_construction_scalar_lane".to_string(),
                 lane.id.clone(),
+            );
+        }
+        for reference in draft_construction_references_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("draft_construction_reference.{}", reference.ordinal),
+                reference
+                    .data_block
+                    .clone()
+                    .unwrap_or_else(|| reference.object_index.to_string()),
             );
         }
         for reference in surface_construction_references_by_operation
@@ -12282,6 +12312,7 @@ pub(crate) fn non_boolean_feature_definition_with_parameters(
         },
         "SKIN" => FeatureDefinition::LoftUnresolved,
         "Studio Surface" => FeatureDefinition::FreeformSurfaceUnresolved,
+        "DRAFT" => FeatureDefinition::DraftUnresolved,
         "CPROJ" | "CPROJ_CMB" => FeatureDefinition::ProjectedCurve {
             source: PathRef::Unresolved,
             target_faces: FaceSelection::Unresolved,

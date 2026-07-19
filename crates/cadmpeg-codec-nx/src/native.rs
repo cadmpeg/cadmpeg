@@ -5233,6 +5233,24 @@ pub struct FeaturePointConstructionScalarLane {
     pub source_offsets: [u64; 6],
 }
 
+/// Ordered construction reference carried by a bounded draft-feature payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDraftConstructionReference {
+    /// Globally unique draft-construction-reference identity.
+    pub id: String,
+    /// Owning `DRAFT` operation label.
+    pub operation_label: String,
+    /// Zero-based slot order in the exact construction graph.
+    pub ordinal: u32,
+    /// Serialized object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
 /// Ordered construction reference carried by a bounded surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceConstructionReference {
@@ -8726,6 +8744,35 @@ pub fn feature_point_construction_scalar_lanes(
         });
     }
     lanes
+}
+
+/// Decode exact ordered draft construction references without assigning semantic roles.
+pub fn feature_draft_construction_references(
+    container: &Container,
+) -> Vec<FeatureDraftConstructionReference> {
+    resolved_feature_payload_references(container, |record| {
+        crate::om::draft_feature_payload_references(record)
+            .map(|field| field.references.into_iter().collect())
+    })
+    .into_iter()
+    .map(|reference| {
+        let operation_label = format!(
+            "nx:feature-history:operation-label#{}-{:010}",
+            reference.section_key, reference.operation_ordinal
+        );
+        FeatureDraftConstructionReference {
+            id: format!(
+                "nx:feature-history:draft-construction-reference#{}-{:010}-{:010}",
+                reference.section_key, reference.operation_ordinal, reference.ordinal
+            ),
+            operation_label,
+            ordinal: reference.ordinal as u32,
+            object_index: reference.object_index,
+            data_block: reference.data_block,
+            source_offset: reference.source_offset,
+        }
+    })
+    .collect()
 }
 
 /// Decode and resolve the exact common reference envelope in surface-feature

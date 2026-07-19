@@ -3887,6 +3887,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::DraftUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved draft semantics",
+                    feature.id
+                )));
+            }
             FeatureDefinition::ImportedGeometry { .. } => {
                 return Err(CodecError::NotImplemented(format!(
                     "SLDPRT feature {} uses unsupported external-import semantics",
@@ -7450,6 +7456,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Binder { .. } => "Feature",
         FeatureDefinition::LoftUnresolved => "Loft",
         FeatureDefinition::FreeformSurfaceUnresolved => "Feature",
+        FeatureDefinition::DraftUnresolved => "Draft",
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",
         FeatureDefinition::Fillet { .. } => "Fillet",
