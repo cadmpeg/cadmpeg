@@ -1852,12 +1852,52 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 }
             }
             FeatureDefinition::Loft {
-                profiles: values,
+                sections,
                 guides,
                 centerline,
                 ..
             } => {
-                profiles.extend(values);
+                for section in sections {
+                    match section {
+                        crate::features::LoftSection::Profile(profile) => profiles.push(profile),
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Native(native),
+                        ) if native.is_empty() => {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "loft point section has an empty native reference",
+                            );
+                        }
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Native(_),
+                        ) => {}
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Point(point),
+                        ) if !point.x.is_finite()
+                            || !point.y.is_finite()
+                            || !point.z.is_finite() =>
+                        {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "loft point section is invalid",
+                            );
+                        }
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Point(_),
+                        ) => {}
+                        crate::features::LoftSection::Point(
+                            crate::features::LoftPointSection::Vertex(vertex),
+                        ) => check_ids(
+                            findings,
+                            &feature.id.0,
+                            "loft section vertex",
+                            std::iter::once(vertex.0.as_str()),
+                            &ids.vertices,
+                        ),
+                    }
+                }
                 paths.extend(guides);
                 paths.extend(centerline);
                 if centerline.is_some() && !guides.is_empty() {
@@ -3013,12 +3053,15 @@ fn check_feature_sketch_references(
                 paths.extend(path);
             }
             FeatureDefinition::Loft {
-                profiles: sections,
+                sections,
                 guides,
                 centerline,
                 ..
             } => {
-                profiles.extend(sections);
+                profiles.extend(sections.iter().filter_map(|section| match section {
+                    crate::features::LoftSection::Profile(profile) => Some(profile),
+                    crate::features::LoftSection::Point(_) => None,
+                }));
                 paths.extend(guides);
                 paths.extend(centerline);
             }

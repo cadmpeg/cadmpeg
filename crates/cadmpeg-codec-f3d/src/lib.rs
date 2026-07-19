@@ -734,6 +734,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             })
             .collect::<Vec<_>>();
         let role_count = |role| groups.iter().filter(|group| group.role == role).count();
+        let singleton_role_5_ordinals = groups
+            .iter()
+            .enumerate()
+            .filter(|(_, group)| group.role == 0x0000_0005_0000_0000 && group.members.len() == 1)
+            .map(|(ordinal, _)| ordinal)
+            .collect::<Vec<_>>();
         let valid = match scope.path_feature_construction.as_ref() {
             Some(records::DesignPathFeatureConstruction::Revolve { .. }) => {
                 groups.len() == 2
@@ -758,6 +764,10 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 || (groups.len() == 3
                                     && role_count(0x0000_0005_0000_0000) == 0
                                     && role_count(0x0000_0007_0000_0000) == 1)))
+                        || (role_count(0x0000_0043_0000_0000) == 1
+                            && role_count(0x0000_0005_0000_0000) == groups.len() - 1
+                            && (singleton_role_5_ordinals.as_slice() == [0]
+                                || singleton_role_5_ordinals.as_slice() == [groups.len() - 1]))
                 }
                 _ => false,
             },

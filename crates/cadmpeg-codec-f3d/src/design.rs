@@ -3077,7 +3077,7 @@ fn project_fixed_loft(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{FeatureDefinition, LoftPointSection, LoftSection, ProfileRef};
 
     let DesignPathFeatureConstruction::Loft { operation, .. } =
         scope.path_feature_construction.as_ref()?
@@ -3096,12 +3096,12 @@ fn project_fixed_loft(
         .iter()
         .filter(|group| group.role == 0x4_0000_0000)
         .count();
-    let (profiles, guides, centerline) = match operation {
+    let (sections, guides, centerline) = match operation {
         DesignExtrudeOperation::Join if body_count == 1 => (
             groups
                 .iter()
                 .filter(|group| group.role == 0x41_0000_0000)
-                .map(|group| ProfileRef::Native(group.id.clone()))
+                .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
                 .collect::<Vec<_>>(),
             Vec::new(),
             None,
@@ -3110,9 +3110,9 @@ fn project_fixed_loft(
             let guided_profiles = groups
                 .iter()
                 .filter(|group| group.role == 0x43_0000_0000)
-                .map(|group| ProfileRef::Native(group.id.clone()))
+                .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
                 .collect::<Vec<_>>();
-            if guided_profiles.len() >= 2 {
+            if guided_profiles.len() == 2 {
                 let guides = groups
                     .iter()
                     .filter(|group| group.role == 0x5_0000_0000)
@@ -3141,8 +3141,41 @@ fn project_fixed_loft(
                     groups
                         .iter()
                         .filter(|group| group.role == role)
-                        .map(|group| ProfileRef::Native(group.id.clone()))
+                        .map(|group| LoftSection::Profile(ProfileRef::Native(group.id.clone())))
                         .collect::<Vec<_>>(),
+                    Vec::new(),
+                    None,
+                )
+            } else if guided_profiles.len() == 1
+                && groups
+                    .iter()
+                    .all(|group| matches!(group.role, 0x43_0000_0000 | 0x5_0000_0000))
+            {
+                let point_ordinal = groups
+                    .iter()
+                    .position(|group| group.role == 0x5_0000_0000 && group.members.len() == 1)?;
+                if !matches!(point_ordinal, 0) && point_ordinal + 1 != groups.len() {
+                    return None;
+                }
+                if groups.iter().enumerate().any(|(ordinal, group)| {
+                    ordinal != point_ordinal
+                        && group.role == 0x5_0000_0000
+                        && group.members.len() == 1
+                }) {
+                    return None;
+                }
+                (
+                    groups
+                        .iter()
+                        .enumerate()
+                        .map(|(ordinal, group)| {
+                            if ordinal == point_ordinal {
+                                LoftSection::Point(LoftPointSection::Native(group.id.clone()))
+                            } else {
+                                LoftSection::Profile(ProfileRef::Native(group.id.clone()))
+                            }
+                        })
+                        .collect(),
                     Vec::new(),
                     None,
                 )
@@ -3152,14 +3185,14 @@ fn project_fixed_loft(
         }
         _ => return None,
     };
-    if profiles.len() < 2
-        || profiles.len() + guides.len() + usize::from(centerline.is_some()) + body_count
+    if sections.len() < 2
+        || sections.len() + guides.len() + usize::from(centerline.is_some()) + body_count
             != groups.len()
     {
         return None;
     }
     Some(FeatureDefinition::Loft {
-        profiles,
+        sections,
         guides,
         centerline,
         op: fixed_boolean_operation(*operation),
@@ -23555,8 +23588,8 @@ mod relation_tests {
         let role_41 = [loft_group(0, 0x41_0000_0000), loft_group(1, 0x41_0000_0000)];
         assert!(matches!(
             super::project_fixed_loft(&loft_scope, &role_41),
-            Some(cadmpeg_ir::features::FeatureDefinition::Loft { profiles, guides, .. })
-                if profiles.len() == 2 && guides.is_empty()
+            Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
+                if sections.len() == 2 && guides.is_empty()
         ));
         let role_5 = [
             loft_group(0, 0x5_0000_0000),
@@ -23565,8 +23598,8 @@ mod relation_tests {
         ];
         assert!(matches!(
             super::project_fixed_loft(&loft_scope, &role_5),
-            Some(cadmpeg_ir::features::FeatureDefinition::Loft { profiles, guides, .. })
-                if profiles.len() == 3 && guides.is_empty()
+            Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
+                if sections.len() == 3 && guides.is_empty()
         ));
         let centered = [
             loft_group(0, 0x43_0000_0000),
@@ -23576,11 +23609,11 @@ mod relation_tests {
         assert!(matches!(
             super::project_fixed_loft(&loft_scope, &centered),
             Some(cadmpeg_ir::features::FeatureDefinition::Loft {
-                profiles,
+                sections,
                 guides,
                 centerline: Some(cadmpeg_ir::features::PathRef::Native(centerline)),
                 ..
-            }) if profiles.len() == 2 && guides.is_empty() && centerline == "stream:loft-group-2"
+            }) if sections.len() == 2 && guides.is_empty() && centerline == "stream:loft-group-2"
         ));
         let mixed = [
             loft_group(0, 0x43_0000_0000),
@@ -23589,6 +23622,26 @@ mod relation_tests {
             loft_group(3, 0x7_0000_0000),
         ];
         assert_eq!(super::project_fixed_loft(&loft_scope, &mixed), None);
+        let mut point = loft_group(0, 0x5_0000_0000);
+        point.members = vec![10];
+        let profile = loft_group(1, 0x43_0000_0000);
+        let mut boundary = loft_group(2, 0x5_0000_0000);
+        boundary.members = vec![20, 21, 22];
+        assert!(matches!(
+            super::project_fixed_loft(&loft_scope, &[point, profile, boundary]),
+            Some(cadmpeg_ir::features::FeatureDefinition::Loft {
+                sections,
+                guides,
+                centerline: None,
+                ..
+            }) if matches!(sections.as_slice(), [
+                cadmpeg_ir::features::LoftSection::Point(
+                    cadmpeg_ir::features::LoftPointSection::Native(_)
+                ),
+                cadmpeg_ir::features::LoftSection::Profile(_),
+                cadmpeg_ir::features::LoftSection::Profile(_),
+            ]) && guides.is_empty()
+        ));
 
         let sweep_start = bytes.len();
         let mut sweep = vec![0; 499];

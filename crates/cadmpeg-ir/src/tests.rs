@@ -2655,6 +2655,35 @@ fn explicit_extrusion_direction_must_be_nonzero() {
 }
 
 #[test]
+fn loft_sections_accept_legacy_profiles_and_preserve_profile_shape() {
+    use crate::features::{BooleanOp, FeatureDefinition, LoftSection, ProfileRef};
+
+    let legacy = serde_json::json!({
+        "definition": "loft",
+        "profiles": [{"kind": "native", "value": "native:section"}],
+        "op": "new_body",
+        "closed": false
+    });
+    let definition: FeatureDefinition = serde_json::from_value(legacy).unwrap();
+    assert!(matches!(
+        &definition,
+        FeatureDefinition::Loft {
+            sections,
+            guides,
+            centerline: None,
+            op: BooleanOp::NewBody,
+            closed: false,
+        } if sections == &vec![LoftSection::Profile(ProfileRef::Native("native:section".into()))]
+            && guides.is_empty()
+    ));
+    let encoded = serde_json::to_value(definition).unwrap();
+    assert_eq!(
+        encoded["sections"][0],
+        serde_json::json!({"kind": "native", "value": "native:section"})
+    );
+}
+
+#[test]
 fn opposite_side_extrusion_draft_requires_a_valid_two_sided_extent() {
     use crate::features::{
         Angle, BooleanOp, Extent, Feature, FeatureDefinition, FeatureId, Length, ProfileRef,

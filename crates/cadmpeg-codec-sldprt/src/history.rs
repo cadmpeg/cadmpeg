@@ -11,11 +11,11 @@ use cadmpeg_ir::features::{
     ChamferSpec, ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay,
     EdgeSelection, Extent, ExtrudeDirection, ExtrudeStart, FaceMotion, FaceSelection,
     FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FilletGroup, FlexForm,
-    FlexMode, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
-    PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors,
-    SurfaceBoundary, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius,
-    WrapMode,
+    FlexMode, HoleForm, HoleKind, Length, LoftSection, ParameterId, ParameterValue, PathRef,
+    PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
+    RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter,
+    ScaleFactors, SurfaceBoundary, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion,
+    VariableRadius, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -799,10 +799,12 @@ pub fn bind_topology_selections(
                 }
             }
             FeatureDefinition::Loft {
-                profiles, guides, ..
+                sections, guides, ..
             } => {
-                for profile in profiles {
-                    resolve_profile_ref(profile, &face_ids);
+                for section in sections {
+                    if let LoftSection::Profile(profile) = section {
+                        resolve_profile_ref(profile, &face_ids);
+                    }
                 }
                 for path in guides {
                     resolve_path_ref(path, &edge_ids, &curve_ids);
@@ -1069,11 +1071,13 @@ fn bind_definition_sketch(
         FeatureDefinition::ProjectedCurve { source, .. } => bind_path(source),
         FeatureDefinition::CompositeCurve { segments, .. } => segments.iter_mut().any(bind_path),
         FeatureDefinition::Loft {
-            profiles, guides, ..
+            sections, guides, ..
         } => {
             let mut profile_bound = false;
-            for profile in profiles {
-                profile_bound |= bind_profile(profile);
+            for section in sections {
+                if let LoftSection::Profile(profile) = section {
+                    profile_bound |= bind_profile(profile);
+                }
             }
             let mut guide_bound = false;
             for path in guides {
@@ -1764,13 +1768,13 @@ fn project_loft(
     feature: &Feature,
     native_by_source: &HashMap<&str, &str>,
 ) -> Option<FeatureDefinition> {
-    let profiles = feature.properties.get("Profiles").map_or_else(
+    let sections = feature.properties.get("Profiles").map_or_else(
         || Some(Vec::new()),
         |value| {
             Some(
                 resolve_native_refs(value, native_by_source)?
                     .into_iter()
-                    .map(ProfileRef::Native)
+                    .map(|native| LoftSection::Profile(ProfileRef::Native(native)))
                     .collect::<Vec<_>>(),
             )
         },
@@ -1780,7 +1784,7 @@ fn project_loft(
         |value| resolve_native_refs(value, native_by_source),
     )?;
     Some(FeatureDefinition::Loft {
-        profiles,
+        sections,
         guides: guides.into_iter().map(PathRef::Native).collect(),
         centerline: None,
         op: feature
@@ -6337,7 +6341,7 @@ pub fn sync_neutral_features(
                 )
             }
             FeatureDefinition::Loft {
-                profiles,
+                sections,
                 guides,
                 centerline,
                 op,
@@ -6349,7 +6353,7 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                if existing.is_none() && (profiles.len() < 2 || *op == BooleanOp::Unresolved) {
+                if existing.is_none() && (sections.len() < 2 || *op == BooleanOp::Unresolved) {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} has unresolved loft construction semantics",
                         feature.id
@@ -6361,9 +6365,23 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let profile_sources = profiles
+                if sections
                     .iter()
-                    .map(|profile| profile_source(profile, &record_sources, &sketch_sources))
+                    .any(|section| matches!(section, LoftSection::Point(_)))
+                {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unsupported loft point-section semantics",
+                        feature.id
+                    )));
+                }
+                let profile_sources = sections
+                    .iter()
+                    .map(|section| match section {
+                        LoftSection::Profile(profile) => {
+                            profile_source(profile, &record_sources, &sketch_sources)
+                        }
+                        LoftSection::Point(_) => unreachable!("point sections rejected above"),
+                    })
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(|| {
                         CodecError::Malformed(format!(

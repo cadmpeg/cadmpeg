@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use crate::ids::{
     BodyId, CurveId, EdgeId, FaceId, FeatureInputTopologyId, HistoricalBodyId, HistoricalEdgeId,
-    HistoricalFaceId,
+    HistoricalFaceId, VertexId,
 };
 use crate::math::{Point3, Vector3};
 use schemars::JsonSchema;
@@ -490,10 +490,11 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         scale: Option<f64>,
     },
-    /// Loft through an ordered sequence of section profiles.
+    /// Loft through an ordered sequence of profile or point sections.
     Loft {
-        /// Ordered section profiles.
-        profiles: Vec<ProfileRef>,
+        /// Ordered cross-sections from the loft start to end.
+        #[serde(alias = "profiles")]
+        sections: Vec<LoftSection>,
         /// Optional ordered guide trajectories.
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         guides: Vec<PathRef>,
@@ -1499,6 +1500,29 @@ pub enum ProfileRef {
     },
     /// Profile given directly as a set of solved B-rep faces.
     Faces(Vec<FaceId>),
+}
+
+/// One ordered cross-section consumed by a loft operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum LoftSection {
+    /// Planar or face-backed section profile.
+    Profile(ProfileRef),
+    /// Point-like terminal section.
+    Point(LoftPointSection),
+}
+
+/// Point-like cross-section consumed by a loft operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum LoftPointSection {
+    /// Source-native point-selection record whose position is not resolved.
+    #[serde(rename = "native_point")]
+    Native(String),
+    /// Solved model-space point section.
+    Point(Point3),
+    /// Solved B-rep vertex section.
+    Vertex(VertexId),
 }
 
 /// Trajectory consumed by a sweep or path-driven operation.

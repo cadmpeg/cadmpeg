@@ -1734,7 +1734,10 @@ fn encoder_writes_source_less_line_sketches() {
             scale: Some(1.5),
         },
         FeatureDefinition::Loft {
-            profiles: vec![profile.clone(), profile.clone()],
+            sections: vec![
+                cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+                cadmpeg_ir::features::LoftSection::Profile(profile.clone()),
+            ],
             guides: vec![path],
             centerline: None,
             op: BooleanOp::NewBody,
@@ -11651,7 +11654,7 @@ fn semantic_writer_retains_unresolved_native_sweep_mode() {
 
 #[test]
 fn semantic_writer_round_trips_typed_loft() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, PathRef, ProfileRef};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, LoftSection, PathRef, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -11676,20 +11679,20 @@ fn semantic_writer_round_trips_typed_loft() {
     assert!(matches!(
         &decoded.ir.model.features[5].definition,
         FeatureDefinition::Loft {
-            profiles,
+            sections,
             guides,
             centerline: None,
             op: BooleanOp::NewBody,
             closed: false,
-        } if profiles == &vec![
-            ProfileRef::Native(refs[0].clone()),
-            ProfileRef::Native(refs[1].clone()),
-            ProfileRef::Native(refs[2].clone()),
+        } if sections == &vec![
+            LoftSection::Profile(ProfileRef::Native(refs[0].clone())),
+            LoftSection::Profile(ProfileRef::Native(refs[1].clone())),
+            LoftSection::Profile(ProfileRef::Native(refs[2].clone())),
         ] && guides == &vec![PathRef::Native(refs[3].clone())]
     ));
 
     let FeatureDefinition::Loft {
-        profiles,
+        sections,
         guides,
         centerline,
         op,
@@ -11699,7 +11702,7 @@ fn semantic_writer_round_trips_typed_loft() {
         panic!("typed loft");
     };
     assert!(centerline.is_none());
-    profiles.swap(0, 2);
+    sections.swap(0, 2);
     *guides = vec![PathRef::Native(refs[4].clone())];
     *op = BooleanOp::Join;
     *closed = true;
@@ -11735,12 +11738,12 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
     assert!(matches!(
         decoded.ir.model.features[0].definition,
         FeatureDefinition::Loft {
-            ref profiles,
+            ref sections,
             ref guides,
             centerline: None,
             op: BooleanOp::Unresolved,
             closed: false,
-        } if profiles.is_empty() && guides.is_empty()
+        } if sections.is_empty() && guides.is_empty()
     ));
     decoded.ir.model.features[0].name = Some("Renamed loft".into());
 
@@ -11766,7 +11769,7 @@ fn semantic_writer_retains_unresolved_native_loft_construction() {
 
 #[test]
 fn semantic_writer_round_trips_boundary_boss_as_loft() {
-    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, ProfileRef};
+    use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, LoftSection, ProfileRef};
 
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -11789,14 +11792,14 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
     assert!(matches!(
         &decoded.ir.model.features[2].definition,
         FeatureDefinition::Loft {
-            profiles,
+            sections,
             guides,
             centerline: None,
             op: BooleanOp::Join,
             closed: false,
-        } if profiles == &vec![
-            ProfileRef::Native(refs[0].clone()),
-            ProfileRef::Native(refs[1].clone()),
+        } if sections == &vec![
+            LoftSection::Profile(ProfileRef::Native(refs[0].clone())),
+            LoftSection::Profile(ProfileRef::Native(refs[1].clone())),
         ] && guides.is_empty()
     ));
     assert!(matches!(
@@ -11809,12 +11812,12 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
     ));
 
     let FeatureDefinition::Loft {
-        profiles, closed, ..
+        sections, closed, ..
     } = &mut decoded.ir.model.features[2].definition
     else {
         panic!("typed boundary loft");
     };
-    profiles.reverse();
+    sections.reverse();
     *closed = true;
 
     let mut encoded = Vec::new();
