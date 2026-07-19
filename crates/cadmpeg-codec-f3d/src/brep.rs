@@ -701,7 +701,7 @@ fn record_reversed(rec: &Record) -> bool {
 
 /// Reparameterize a cached B-spline to its record's reversed sense,
 /// `C'(t) = C(-t)`, by reversing poles and weights and negating reversed knots.
-fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
+pub(crate) fn reverse_nurbs_curve(curve: &mut NurbsCurve) {
     curve.control_points.reverse();
     if let Some(weights) = curve.weights.as_mut() {
         weights.reverse();
@@ -4837,14 +4837,19 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             };
             let use_curve = tolerant.as_ref().and_then(|(range, extension)| {
                 let TolerantCoedgeExtension::EmbeddedCurve {
-                    parameter_range, ..
+                    curve_reversed,
+                    parameter_range,
+                    ..
                 } = extension
                 else {
                     return None;
                 };
                 let record_bytes = bytes.get(r.offset..r.offset.checked_add(r.len)?)?;
-                let curve =
+                let mut curve =
                     nurbs::decode_curve_cache_resolving_refs(record_bytes, bytes, &subtype_tables)?;
+                if *curve_reversed {
+                    reverse_nurbs_curve(&mut curve);
+                }
                 let curve_id = CurveId(format!("f3d:brep:tolerant-coedge-curve#{i}"));
                 out.curves.push(Curve {
                     id: curve_id.clone(),

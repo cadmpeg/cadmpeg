@@ -1266,11 +1266,15 @@ fn native_tolerant_coedge_extension(
                     "source-less F3D tolerant coedge {coedge} requires a NURBS use curve"
                 )));
             };
+            let mut native_curve = curve.clone();
+            if curve_reversed {
+                crate::brep::reverse_nurbs_curve(&mut native_curve);
+            }
             native_ref(records, -1);
             native_i64(records, 1);
             records.push(native_bool(curve_reversed));
             records.push(0x0f);
-            native_nurbs_curve(records, curve)?;
+            native_nurbs_curve(records, &native_curve)?;
             records.push(0x10);
             if let Some([start, end]) = parameter_range {
                 records.push(0x0a);
@@ -16641,7 +16645,21 @@ fn patch_framed_geometry(
                     "F3D tolerant use-curve carrier {tolerant_curve_id} is not a tcoedge record"
                 )));
             }
-            patch_nurbs_curve_record(bytes, record, edit, false)?;
+            if matches!(record.chunk(15), Some(sab::Token::True)) {
+                let mut native_curve = edit.curve.clone();
+                crate::brep::reverse_nurbs_curve(&mut native_curve);
+                patch_nurbs_curve_record(
+                    bytes,
+                    record,
+                    &NurbsCurveEdit {
+                        curve: native_curve,
+                        periodic: edit.periodic,
+                    },
+                    false,
+                )?;
+            } else {
+                patch_nurbs_curve_record(bytes, record, edit, false)?;
+            }
         }
         let procedural_curve_id = format!("f3d:brep:procedural_curve#{}", record.index);
         if let Some(edit) = procedural_curve_edits.get(&procedural_curve_id) {

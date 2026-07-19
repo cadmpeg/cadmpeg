@@ -559,7 +559,7 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
     t_dbl(&mut tail, 1.0);
     t_ref(&mut tail, -1);
     t_long(&mut tail, 1);
-    tail.extend_from_slice(&[0x0b, 0x0f]);
+    tail.extend_from_slice(&[0x0a, 0x0f]);
     tail.extend_from_slice(&generated_curve_block());
     tail.extend_from_slice(&[0x10, 0x0a]);
     t_dbl(&mut tail, -2.0);
@@ -594,6 +594,24 @@ fn decode_transfers_embedded_tolerant_coedge_use_curves() {
                 })
             })
     }));
+    let first_use_curve = decoded.ir.model.coedges[0]
+        .use_curve
+        .as_ref()
+        .and_then(|id| decoded.ir.model.curves.iter().find(|curve| curve.id == *id))
+        .expect("first embedded use curve");
+    let cadmpeg_ir::geometry::CurveGeometry::Nurbs(first_use_curve) = &first_use_curve.geometry
+    else {
+        panic!("embedded use curve must be NURBS")
+    };
+    assert_eq!(
+        first_use_curve.control_points[0],
+        cadmpeg_ir::math::Point3::new(20.0, 0.0, 0.0)
+    );
+    assert_eq!(
+        first_use_curve.control_points[2],
+        cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0)
+    );
+    assert_eq!(first_use_curve.knots, [-1.0, -1.0, -1.0, -0.0, -0.0, -0.0]);
 
     let mut edited = decoded.ir.clone();
     let use_curve = edited.model.coedges[0]
