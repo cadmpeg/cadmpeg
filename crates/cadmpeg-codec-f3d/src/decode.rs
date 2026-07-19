@@ -1574,35 +1574,24 @@ fn populate_annotations(
         }
         for entity in &native.sketch_points {
             note(&entity.id, "sketch_point");
-            if ir
+            if let Some(projected) = ir
                 .model
                 .sketch_entities
                 .iter()
-                .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
             {
-                note(
-                    &crate::design::neutral_sketch_point_id(&entity.id, entity.persistent_id).0,
-                    "sketch_entity",
-                );
+                note(&projected.id.0, "sketch_entity");
             }
         }
         for entity in &native.sketch_curve_identities {
             note(&entity.id, "sketch_curve");
-            if ir
+            if let Some(projected) = ir
                 .model
                 .sketch_entities
                 .iter()
-                .any(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
+                .find(|projected| projected.native_ref.as_deref() == Some(entity.id.as_str()))
             {
-                note(
-                    &crate::design::neutral_sketch_curve_id(
-                        &entity.id,
-                        entity.primary_id,
-                        entity.secondary_id,
-                    )
-                    .0,
-                    "sketch_entity",
-                );
+                note(&projected.id.0, "sketch_entity");
             }
         }
         for entity in &native.sketch_surfaces {

@@ -3963,39 +3963,39 @@ pub(crate) fn neutral_sketch_id(
 }
 
 pub(crate) fn neutral_sketch_point_id(
-    native_ref: &str,
+    sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    let sketch = identity_key_component(&sketch.0);
     cadmpeg_ir::sketches::SketchEntityId(format!(
         "f3d:model:sketch-entity#{}:{}p{persistent_id}",
-        stream.len(),
-        stream,
+        sketch.len(),
+        sketch,
     ))
 }
 
 pub(crate) fn neutral_sketch_curve_id(
-    native_ref: &str,
+    sketch: &cadmpeg_ir::sketches::SketchId,
     primary_id: u64,
     secondary_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    let sketch = identity_key_component(&sketch.0);
     cadmpeg_ir::sketches::SketchEntityId(format!(
         "f3d:model:sketch-entity#{}:{}c{primary_id}:{secondary_id}",
-        stream.len(),
-        stream,
+        sketch.len(),
+        sketch,
     ))
 }
 
 fn neutral_sketch_text_id(
-    native_ref: &str,
+    sketch: &cadmpeg_ir::sketches::SketchId,
     persistent_id: u64,
 ) -> cadmpeg_ir::sketches::SketchEntityId {
-    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    let sketch = identity_key_component(&sketch.0);
     cadmpeg_ir::sketches::SketchEntityId(format!(
         "f3d:model:sketch-entity#{}:{}t{persistent_id}",
-        stream.len(),
-        stream,
+        sketch.len(),
+        sketch,
     ))
 }
 
@@ -4207,9 +4207,10 @@ pub fn project_sketch_design(
                 return None;
             }
             let placement = placements_by_suffix.get(&(scope, owner))?;
+            let sketch = neutral_sketch_id(placement);
             Some(SketchEntity {
-                id: neutral_sketch_point_id(&point.id, point.persistent_id),
-                sketch: neutral_sketch_id(placement),
+                id: neutral_sketch_point_id(&sketch, point.persistent_id),
+                sketch,
                 construction: false,
                 native_ref: Some(point.id.clone()),
                 geometry_ref: None,
@@ -4289,9 +4290,10 @@ pub fn project_sketch_design(
             }
             _ => return None,
         };
+        let sketch = neutral_sketch_id(placement);
         Some(SketchEntity {
-            id: neutral_sketch_curve_id(&curve.id, curve.primary_id, curve.secondary_id),
-            sketch: neutral_sketch_id(placement),
+            id: neutral_sketch_curve_id(&sketch, curve.primary_id, curve.secondary_id),
+            sketch,
             construction: false,
             native_ref: Some(curve.id.clone()),
             geometry_ref: None,
@@ -4302,9 +4304,10 @@ pub fn project_sketch_design(
     entities.extend(texts.iter().filter_map(|text| {
         let scope = native_stream(&text.id)?;
         let placement = placements_by_suffix.get(&(scope, text.owner_reference))?;
+        let sketch = neutral_sketch_id(placement);
         Some(SketchEntity {
-            id: neutral_sketch_text_id(&text.id, text.persistent_id),
-            sketch: neutral_sketch_id(placement),
+            id: neutral_sketch_text_id(&sketch, text.persistent_id),
+            sketch,
             construction: false,
             native_ref: Some(text.id.clone()),
             geometry_ref: None,
@@ -5225,7 +5228,7 @@ fn resolved_extrude_profile_selection(
             else {
                 return None;
             };
-            let entity = neutral_sketch_curve_id(&member.id, *primary_id, *secondary_id);
+            let entity = neutral_sketch_curve_id(sketch_id, *primary_id, *secondary_id);
             let matches = sketch
                 .profiles
                 .iter()
@@ -5566,7 +5569,7 @@ fn resolved_selection_member_profiles(
     else {
         return None;
     };
-    let entity = neutral_sketch_curve_id(&member.id, *primary_id, *secondary_id);
+    let entity = neutral_sketch_curve_id(&sketch.id, *primary_id, *secondary_id);
     sketch
         .profiles
         .iter()
@@ -5587,7 +5590,7 @@ fn resolved_selection_member_points(
     else {
         return None;
     };
-    let entity_id = neutral_sketch_point_id(&member.id, *persistent_id);
+    let entity_id = neutral_sketch_point_id(&sketch.id, *persistent_id);
     let SketchGeometry::Point { position } = &entities
         .iter()
         .find(|entity| entity.id == entity_id && entity.sketch == sketch.id)?
@@ -20413,20 +20416,22 @@ mod relation_tests {
     }
 
     #[test]
-    fn sketch_geometry_identity_uses_native_persistent_ids() {
-        let point = neutral_sketch_point_id("f3d:Design/A:point#10", 42);
-        let relocated_point = neutral_sketch_point_id("f3d:Design/A:point#999", 42);
-        let curve = neutral_sketch_curve_id("f3d:Design/A:curve#10", 42, 0);
-        let relocated_curve = neutral_sketch_curve_id("f3d:Design/A:curve#999", 42, 0);
+    fn sketch_geometry_identity_uses_owner_and_native_persistent_ids() {
+        use cadmpeg_ir::sketches::SketchId;
 
-        assert_eq!(point, relocated_point);
-        assert_eq!(curve, relocated_curve);
+        let sketch = SketchId("f3d:model:sketch#Design/A@10".into());
+        let other_sketch = SketchId("f3d:model:sketch#Design/A@11".into());
+        let point = neutral_sketch_point_id(&sketch, 42);
+        let same_point = neutral_sketch_point_id(&sketch, 42);
+        let curve = neutral_sketch_curve_id(&sketch, 42, 0);
+        let same_curve = neutral_sketch_curve_id(&sketch, 42, 0);
+
+        assert_eq!(point, same_point);
+        assert_eq!(curve, same_curve);
         assert_ne!(point, curve);
-        assert_ne!(
-            curve,
-            neutral_sketch_curve_id("f3d:Design/A:curve#10", 42, 1)
-        );
-        assert_ne!(point, neutral_sketch_point_id("f3d:Design", 42));
+        assert_ne!(curve, neutral_sketch_curve_id(&sketch, 42, 1));
+        assert_ne!(point, neutral_sketch_point_id(&other_sketch, 42));
+        assert_ne!(curve, neutral_sketch_curve_id(&other_sketch, 42, 0));
     }
 
     #[test]
@@ -23890,7 +23895,7 @@ mod relation_tests {
             normal: Vector3::new(0.0, 0.0, 1.0),
             u_axis: Vector3::new(1.0, 0.0, 0.0),
             profiles: vec![vec![SketchEntityUse {
-                entity: neutral_sketch_curve_id(&member.id, 586, 0),
+                entity: neutral_sketch_curve_id(&sketch_id, 586, 0),
                 reversed: false,
             }]],
             native_ref: None,
@@ -23931,7 +23936,7 @@ mod relation_tests {
             reversed: false,
         }]);
         let point_entity = SketchEntity {
-            id: neutral_sketch_point_id(&point_member.id, 587),
+            id: neutral_sketch_point_id(&sketch_id, 587),
             sketch: sketch_id.clone(),
             construction: false,
             native_ref: None,
@@ -23942,7 +23947,7 @@ mod relation_tests {
             },
         };
         let line_entity = SketchEntity {
-            id: neutral_sketch_curve_id(&member.id, 586, 0),
+            id: neutral_sketch_curve_id(&sketch_id, 586, 0),
             sketch: sketch_id.clone(),
             construction: false,
             native_ref: None,
