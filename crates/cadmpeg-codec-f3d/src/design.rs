@@ -46,6 +46,7 @@ pub(crate) enum DesignFeatureFamily {
     Mirror,
     Move,
     OffsetFaces,
+    Shell,
     Thicken,
     Coil,
     Loft,
@@ -67,6 +68,7 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
         "Move" => Some(DesignFeatureFamily::Move),
         "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),
+        "Shell" => Some(DesignFeatureFamily::Shell),
         "Thicken" => Some(DesignFeatureFamily::Thicken),
         "SpirePrimitive" => Some(DesignFeatureFamily::Coil),
         "Loft" => Some(DesignFeatureFamily::Loft),
@@ -962,6 +964,19 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     }
                 })
+            } else if family == Some(DesignFeatureFamily::Shell) {
+                project_shell(scope, face_operands, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else if family == Some(DesignFeatureFamily::Thicken) {
                 project_thicken(scope, face_operands, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -1433,6 +1448,41 @@ fn project_thicken(
         } else {
             ThickenSide::Reverse
         }),
+    })
+}
+
+fn project_shell(
+    scope: &DesignParameterScope,
+    operands: &[DesignFaceOperand],
+    groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+
+    let DesignDirectFaceOperation::Shell {
+        thickness, outward, ..
+    } = scope.direct_face_operation.as_ref()?
+    else {
+        return None;
+    };
+    let removed_faces = direct_face_selection(scope, operands).or_else(|| {
+        let matching = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+                    && group.role == 0x0000_0010_0000_0000
+                    && !group.members.is_empty()
+            })
+            .collect::<Vec<_>>();
+        let [group] = matching.as_slice() else {
+            return None;
+        };
+        Some(FaceSelection::Native(group.id.clone()))
+    })?;
+    Some(FeatureDefinition::Shell {
+        removed_faces,
+        thickness: Some(Length(*thickness * 10.0)),
+        outward: Some(*outward),
     })
 }
 
@@ -14216,6 +14266,33 @@ fn exact_direct_face_operation(
                 thickness_offset: scalar.value_offset,
             })
         }
+        DesignFeatureFamily::Shell
+            if scope.frame_length == 278
+                && scope.reference_members.len() == 3
+                && matches!(bytes.get(start + 25), Some(0 | 1))
+                && bytes.get(start + 26) == Some(&0)
+                && bytes.get(start + 27) == Some(&1)
+                && u32_at(bytes, start + 51) == Some(1)
+                && bytes.get(start + 55) == Some(&1) =>
+        {
+            let thickness_record_index = u32_at(bytes, start + 28)?;
+            if scope.reference_members.last() != Some(&thickness_record_index)
+                || u32_at(bytes, start + 56) != scope.reference_members.first().copied()
+            {
+                return None;
+            }
+            let scalar = exact_fixed_scalar(bytes, thickness_record_index)?;
+            if scalar.value <= 0.0 {
+                return None;
+            }
+            Some(DesignDirectFaceOperation::Shell {
+                thickness: scalar.value,
+                thickness_record_index,
+                thickness_offset: scalar.value_offset,
+                outward: bytes[start + 25] != 0,
+                outward_offset: u64::try_from(start + 25).ok()?,
+            })
+        }
         _ => None,
     }
 }
@@ -14789,7 +14866,10 @@ pub fn decode_face_operands(
         let is_offset_faces_operand = design_feature_family(&scope.kind)
             == Some(DesignFeatureFamily::OffsetFaces)
             && group.role == 0x0000_0010_0000_0000;
-        if !is_extrude_operand && !is_offset_faces_operand {
+        let is_shell_operand = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::Shell)
+            && group.role == 0x0000_0010_0000_0000;
+        if !is_extrude_operand && !is_offset_faces_operand && !is_shell_operand {
             continue;
         }
         if group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
@@ -14822,7 +14902,7 @@ pub fn decode_face_operands(
                 .copied()
                 .map(|header| header.byte_offset)
                 .or_else(|| {
-                    if !is_offset_faces_operand {
+                    if !is_offset_faces_operand && !is_shell_operand {
                         return None;
                     }
                     scope
@@ -14851,6 +14931,7 @@ pub fn decode_face_operands(
             design_feature_family(&scope.kind),
             Some(
                 DesignFeatureFamily::OffsetFaces
+                    | DesignFeatureFamily::Shell
                     | DesignFeatureFamily::Thicken
                     | DesignFeatureFamily::Split
             )
@@ -15106,6 +15187,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Shell)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Thicken)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
@@ -23072,6 +23154,53 @@ mod relation_tests {
                 thickness: Some(cadmpeg_ir::features::Length(10.0)),
                 side: Some(cadmpeg_ir::features::ThickenSide::Reverse),
             }) if native == "thicken-group"
+        ));
+        let shell_at = bytes.len();
+        let mut shell = vec![0; 278];
+        shell[25] = 1;
+        shell[27] = 1;
+        shell[28..32].copy_from_slice(&1_778u32.to_le_bytes());
+        shell[51..55].copy_from_slice(&1u32.to_le_bytes());
+        shell[55] = 1;
+        shell[56..60].copy_from_slice(&200u32.to_le_bytes());
+        bytes.extend_from_slice(&shell);
+        let mut shell_thickness = vec![0; 105];
+        shell_thickness[0..4].copy_from_slice(&3u32.to_le_bytes());
+        shell_thickness[4..7].copy_from_slice(b"321");
+        shell_thickness[7..11].copy_from_slice(&1_778u32.to_le_bytes());
+        shell_thickness[24] = 1;
+        shell_thickness[25..29].copy_from_slice(&scope.record_index.to_le_bytes());
+        shell_thickness[40..48].copy_from_slice(&0.5f64.to_le_bytes());
+        shell_thickness.extend_from_slice(&3u32.to_le_bytes());
+        shell_thickness.extend_from_slice(b"265");
+        shell_thickness.extend_from_slice(&1_778u32.to_le_bytes());
+        bytes.extend_from_slice(&shell_thickness);
+        let mut shell_scope = scope.clone();
+        shell_scope.byte_offset = shell_at as u64;
+        shell_scope.kind = "Shell".into();
+        shell_scope.frame_length = 278;
+        shell_scope.reference_members = vec![200, 201, 1_778];
+        shell_scope.direct_face_operation = exact_direct_face_operation(&bytes, &shell_scope);
+        assert!(matches!(
+            shell_scope.direct_face_operation,
+            Some(DesignDirectFaceOperation::Shell {
+                thickness: 0.5,
+                thickness_record_index: 1_778,
+                outward: true,
+                ..
+            })
+        ));
+        let mut shell_group = thicken_group.clone();
+        shell_group.id = "shell-group".into();
+        shell_group.scope_record_index = shell_scope.record_index;
+        shell_group.role = 0x0000_0010_0000_0000;
+        assert!(matches!(
+            super::project_shell(&shell_scope, &[], std::slice::from_ref(&shell_group)),
+            Some(cadmpeg_ir::features::FeatureDefinition::Shell {
+                removed_faces: cadmpeg_ir::features::FaceSelection::Native(native),
+                thickness: Some(cadmpeg_ir::features::Length(5.0)),
+                outward: Some(true),
+            }) if native == "shell-group"
         ));
         offset_scope.direct_face_operation = exact_direct_face_operation(&bytes, &offset_scope);
         let mut offset_group = thicken_group.clone();

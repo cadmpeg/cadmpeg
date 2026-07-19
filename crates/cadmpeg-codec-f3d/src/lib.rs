@@ -613,6 +613,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::Shell) => {
+                        group.role == 0x0000_0010_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(design::DesignFeatureFamily::Thicken) => {
                         matches!(group.role, 0x0000_0005_0000_0000 | 0x0000_0012_0000_0000)
                             && group.extrude_role.is_none()
@@ -1693,6 +1698,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     Some(
                         design::DesignFeatureFamily::Extrude
                             | design::DesignFeatureFamily::OffsetFaces
+                            | design::DesignFeatureFamily::Shell
                             | design::DesignFeatureFamily::Thicken
                             | design::DesignFeatureFamily::Split
                     )
@@ -1723,6 +1729,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && match family {
                                 Some(
                                     design::DesignFeatureFamily::OffsetFaces
+                                    | design::DesignFeatureFamily::Shell
                                     | design::DesignFeatureFamily::Thicken,
                                 ) => true,
                                 Some(design::DesignFeatureFamily::Split) => {

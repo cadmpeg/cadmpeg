@@ -828,6 +828,19 @@ pub enum DesignDirectFaceOperation {
         /// Byte offset of the scalar.
         distance_offset: u64,
     },
+    /// Thin-wall shell applied after removing selected faces.
+    Shell {
+        /// Positive wall thickness in source centimetres.
+        thickness: f64,
+        /// Referenced scalar record.
+        thickness_record_index: u32,
+        /// Byte offset of the scalar.
+        thickness_offset: u64,
+        /// Whether the wall grows outward from the original boundary.
+        outward: bool,
+        /// Byte offset of the outward Boolean.
+        outward_offset: u64,
+    },
     /// Signed normal thickness added from selected faces.
     Thicken {
         /// Signed thickness in source centimetres.
