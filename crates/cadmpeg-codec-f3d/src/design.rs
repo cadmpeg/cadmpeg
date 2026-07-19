@@ -938,8 +938,8 @@ pub fn project_parameter_design_with_edge_identities(
                     },
                 }
             } else if family == Some(DesignFeatureFamily::OffsetFaces) {
-                project_offset_faces(scope, &parameters, face_operands).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
+                project_offset_faces(scope, &parameters, face_operands, construction_groups)
+                    .unwrap_or_else(|| FeatureDefinition::Native {
                         kind: scope.kind.clone(),
                         parameters: parameters
                             .iter()
@@ -948,8 +948,7 @@ pub fn project_parameter_design_with_edge_identities(
                             })
                             .collect(),
                         properties: native_scope_properties(scope, native_scope),
-                    }
-                })
+                    })
             } else if family == Some(DesignFeatureFamily::Move) {
                 project_move(scope, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -1354,6 +1353,7 @@ fn project_offset_faces(
     scope: &DesignParameterScope,
     parameters: &[(u32, &DesignParameter)],
     operands: &[DesignFaceOperand],
+    groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FaceMotion, FeatureDefinition, Length};
 
@@ -1374,7 +1374,23 @@ fn project_offset_faces(
         (Some(distance), None) | (None, Some(distance)) => distance,
         _ => return None,
     };
-    let faces = direct_face_selection(scope, operands)?;
+    let faces = direct_face_selection(scope, operands).or_else(|| {
+        let matching = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+                    && group.role == 0x0000_0010_0000_0000
+                    && !group.members.is_empty()
+            })
+            .collect::<Vec<_>>();
+        let [group] = matching.as_slice() else {
+            return None;
+        };
+        Some(cadmpeg_ir::features::FaceSelection::Native(
+            group.id.clone(),
+        ))
+    })?;
     Some(FeatureDefinition::MoveFace {
         faces,
         motion: FaceMotion::Offset { distance },
@@ -23015,12 +23031,31 @@ mod relation_tests {
             paired_byte_offset: 0,
         };
         assert!(matches!(
-            super::project_thicken(&thicken_scope, &[], &[thicken_group]),
+            super::project_thicken(&thicken_scope, &[], std::slice::from_ref(&thicken_group)),
             Some(cadmpeg_ir::features::FeatureDefinition::Thicken {
                 faces: cadmpeg_ir::features::FaceSelection::Native(native),
                 thickness: Some(cadmpeg_ir::features::Length(10.0)),
                 ..
             }) if native == "thicken-group"
+        ));
+        offset_scope.direct_face_operation = exact_direct_face_operation(&bytes, &offset_scope);
+        let mut offset_group = thicken_group.clone();
+        offset_group.id = "offset-group".into();
+        offset_group.scope_record_index = offset_scope.record_index;
+        offset_group.role = 0x0000_0010_0000_0000;
+        assert!(matches!(
+            super::project_offset_faces(
+                &offset_scope,
+                &[],
+                &[],
+                std::slice::from_ref(&offset_group)
+            ),
+            Some(cadmpeg_ir::features::FeatureDefinition::MoveFace {
+                faces: cadmpeg_ir::features::FaceSelection::Native(native),
+                motion: cadmpeg_ir::features::FaceMotion::Offset {
+                    distance: cadmpeg_ir::features::Length(2.54)
+                },
+            }) if native == "offset-group"
         ));
         bytes[thicken_at + 47] = 0;
         assert_eq!(exact_direct_face_operation(&bytes, &thicken_scope), None);
