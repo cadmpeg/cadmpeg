@@ -13087,6 +13087,9 @@ fn schema_feature_definition(
         }
         return IrFeatureDefinition::DatumPlaneUnresolved;
     }
+    if numbered_feature_name_has_family(kind, "Extrude") {
+        return unresolved_extrude_feature_definition();
+    }
     IrFeatureDefinition::Native {
         kind: kind.to_string(),
         parameters: feature_parameters(scan, feature_id),
@@ -13175,6 +13178,9 @@ fn named_feature_definition(
             },
         });
     }
+    if numbered_feature_name_has_family(kind, "Extrude") {
+        return Some(unresolved_extrude_feature_definition());
+    }
     let schema_class = match kind {
         "Datum Plane" | "Bezugsebene" => 923,
         "Hole" => 911,
@@ -13190,6 +13196,25 @@ fn named_feature_definition(
         schema_class,
         kind,
     ))
+}
+
+fn unresolved_extrude_feature_definition() -> IrFeatureDefinition {
+    IrFeatureDefinition::Extrude {
+        profile: ProfileRef::Unresolved,
+        direction: None,
+        extent: Extent::Unresolved,
+        op: BooleanOp::Unresolved,
+        draft: None,
+        reverse_draft: None,
+        direction_source: None,
+        solid: None,
+        face_maker: None,
+        inner_wire_taper: None,
+        first_offset: None,
+        second_offset: None,
+        length_along_profile_normal: None,
+        allow_multi_profile_faces: None,
+    }
 }
 
 fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition> {
@@ -14769,6 +14794,18 @@ mod resolved_sketch_tests {
                 create_solid: None,
                 gap_tolerance: None,
             })
+        ));
+        assert!(reference_named_feature_definition("Extrude 2").is_none());
+        assert!(matches!(
+            unresolved_extrude_feature_definition(),
+            IrFeatureDefinition::Extrude {
+                profile: ProfileRef::Unresolved,
+                direction: None,
+                extent: Extent::Unresolved,
+                op: BooleanOp::Unresolved,
+                solid: None,
+                ..
+            }
         ));
     }
 

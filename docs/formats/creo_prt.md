@@ -1134,6 +1134,7 @@ surface-of-revolution reductions require `ratio = 1`.
 `Surface`. Reference-backed `Thicken <decimal-ordinal>` and
 `Fill <decimal-ordinal>` names identify thicken and filled-surface operations.
 `Merge <decimal-ordinal>` identifies a surface-merge operation.
+`Extrude <decimal-ordinal>` identifies an extrusion operation.
 The German operation-family names `Bezugsebene`, `Rundung`,
 and `Schräge` denote the same datum-plane, round, and draft families as
 `Datum Plane`, `Round`, and `Draft`, respectively. `Annotation Feature` is a
