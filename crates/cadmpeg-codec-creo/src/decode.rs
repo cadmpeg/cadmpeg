@@ -12746,6 +12746,9 @@ fn schema_feature_definition(
     schema_class: u32,
     kind: &str,
 ) -> IrFeatureDefinition {
+    if let Some(definition) = reference_named_feature_definition(kind) {
+        return definition;
+    }
     if schema_class == 926 {
         let transforms = section_definition_for_history_feature(scan, feature_id)
             .into_iter()
@@ -13014,6 +13017,14 @@ fn schema_feature_definition(
     }
 }
 
+fn numbered_feature_name_has_family(name: &str, family: &str) -> bool {
+    name.strip_prefix(family)
+        .and_then(|suffix| suffix.strip_prefix(' '))
+        .is_some_and(|ordinal| {
+            !ordinal.is_empty() && ordinal.bytes().all(|byte| byte.is_ascii_digit())
+        })
+}
+
 fn section_sweep_allows_linear_extrusion(
     schema_class: u32,
     recipe: Option<crate::feature::FeatureRecipeKind>,
@@ -13063,6 +13074,9 @@ fn named_feature_definition(
     feature_id: u32,
     kind: &str,
 ) -> Option<IrFeatureDefinition> {
+    if let Some(definition) = reference_named_feature_definition(kind) {
+        return Some(definition);
+    }
     if let Some(role) = match kind {
         "Annotation Feature" => Some(FeatureTreeNodeRole::Annotations),
         "Cross Section" | "Querschnitt" => Some(FeatureTreeNodeRole::CrossSections),
@@ -13096,6 +13110,14 @@ fn named_feature_definition(
         schema_class,
         kind,
     ))
+}
+
+fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition> {
+    numbered_feature_name_has_family(kind, "Thicken").then_some(IrFeatureDefinition::Thicken {
+        faces: FaceSelection::Unresolved,
+        thickness: None,
+        side: None,
+    })
 }
 
 fn retain_native_feature_parameters(
@@ -14581,6 +14603,23 @@ mod resolved_sketch_tests {
         assert!(section_sweep_allows_linear_extrusion(917, Some(Extrude)));
         assert!(!section_sweep_allows_linear_extrusion(917, Some(Revolve)));
         assert!(!section_sweep_allows_linear_extrusion(923, None));
+    }
+
+    #[test]
+    fn numbered_reference_name_selects_only_its_exact_feature_family() {
+        assert!(numbered_feature_name_has_family("Thicken 1", "Thicken"));
+        assert!(numbered_feature_name_has_family("Thicken 12", "Thicken"));
+        assert!(!numbered_feature_name_has_family("Thicken", "Thicken"));
+        assert!(!numbered_feature_name_has_family("Thicken A", "Thicken"));
+        assert!(!numbered_feature_name_has_family("GThicken 1", "Thicken"));
+        assert!(matches!(
+            reference_named_feature_definition("Thicken 1"),
+            Some(IrFeatureDefinition::Thicken {
+                faces: FaceSelection::Unresolved,
+                thickness: None,
+                side: None,
+            })
+        ));
     }
 
     #[test]
@@ -28903,10 +28942,14 @@ fn build_ir(
         let parameters = feature_parameters(scan, feature_id);
         let mut source_properties = feature_source_properties(scan, feature_id);
         let definition = schema_class.map_or_else(
-            || IrFeatureDefinition::Native {
-                kind: kind.to_string(),
-                parameters: parameters.clone(),
-                properties: BTreeMap::new(),
+            || {
+                named_feature_definition(scan, &ir, feature_id, kind).unwrap_or_else(|| {
+                    IrFeatureDefinition::Native {
+                        kind: kind.to_string(),
+                        parameters: parameters.clone(),
+                        properties: BTreeMap::new(),
+                    }
+                })
             },
             |schema_class| schema_feature_definition(scan, &ir, feature_id, schema_class, kind),
         );
