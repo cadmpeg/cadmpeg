@@ -139,6 +139,7 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
             if node.attribute("readonly") == Some("true")
                 || node.attribute("definitionIteratorData") == Some("true")
                 || node.attribute("metadata") == Some("true")
+                || node.attribute("public") == Some("false")
             {
                 continue;
             }
@@ -151,9 +152,6 @@ fn schemas(protein: &[u8]) -> Result<HashMap<String, Schema>, CodecError> {
             let Some(id) = node.attribute("id") else {
                 continue;
             };
-            if matches!(id, "revision" | "version" | "swatch") {
-                continue;
-            }
             schema.properties.insert(
                 id.to_owned(),
                 Property {
@@ -243,25 +241,18 @@ fn decode_record(
     let properties = property_closure(&schema, schemas, &mut BTreeSet::new())?;
     let mut values = BTreeMap::new();
     for (id, property) in properties {
-        if id == "ExchangeGUID" && !plausible_uuid(record, at) {
+        if !instance_property_serializes(&schema, &id) {
             continue;
         }
-        if id == "interior_model" && schema != "PrismMetalSchema" {
-            continue;
-        }
-        if id == "common_Shared_Asset" && schema != "BumpMapSchema" {
-            continue;
-        }
-        if id == "surface_albedo" && peek_u32(record, at).is_some_and(|value| value <= 2) {
-            at += 4;
-        }
-        if id == "texture_RealWorldOffsetX" {
-            at = at.checked_add(4).ok_or_else(|| {
-                CodecError::Malformed("Protein texture mapping prelude overflows".into())
+        if id == "surface_albedo" && choice_at(record, at).is_some_and(|value| value <= 2) {
+            take::<4>(record, &mut at).ok_or_else(|| {
+                CodecError::Malformed("Protein surface albedo prelude is truncated".into())
             })?;
         }
-        if id.ends_with("_colorspace") && peek_u32(record, at).is_none_or(|value| value > 2) {
-            continue;
+        if id == "texture_RealWorldOffsetX" {
+            take::<4>(record, &mut at).ok_or_else(|| {
+                CodecError::Malformed("Protein texture mapping prelude is truncated".into())
+            })?;
         }
         let property_at = at;
         let value = read_value(record, &mut at, property.carrier, &id).map_err(|error| {
@@ -290,21 +281,18 @@ fn decode_record(
     }))
 }
 
-fn peek_u32(bytes: &[u8], at: usize) -> Option<u32> {
+fn choice_at(bytes: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_le_bytes(bytes.get(at..at + 4)?.try_into().ok()?))
 }
 
-fn plausible_uuid(bytes: &[u8], at: usize) -> bool {
-    let Some(count) = peek_u32(bytes, at).and_then(|value| usize::try_from(value).ok()) else {
-        return false;
-    };
-    if count == 0 {
-        return true;
+fn instance_property_serializes(schema: &str, id: &str) -> bool {
+    match id {
+        "ExchangeGUID" => !matches!(schema, "BumpMapSchema" | "PrismMetalSchema"),
+        "common_Shared_Asset" => schema == "BumpMapSchema",
+        "common_Tint_color_colorspace" => schema != "BumpMapSchema",
+        "interior_model" => schema == "PrismMetalSchema",
+        _ => true,
     }
-    count == 36
-        && bytes
-            .get(at + 4..at + 40)
-            .is_some_and(|value| value.iter().all(u8::is_ascii_graphic))
 }
 
 fn read_value(
@@ -417,6 +405,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn inherited_property_selection_is_schema_defined() {
+        assert!(!instance_property_serializes(
+            "BumpMapSchema",
+            "ExchangeGUID"
+        ));
+        assert!(!instance_property_serializes(
+            "BumpMapSchema",
+            "common_Tint_color_colorspace"
+        ));
+        assert!(instance_property_serializes(
+            "BumpMapSchema",
+            "common_Shared_Asset"
+        ));
+        assert!(!instance_property_serializes(
+            "UnifiedBitmapSchema",
+            "common_Shared_Asset"
+        ));
+        assert!(instance_property_serializes(
+            "PrismMetalSchema",
+            "interior_model"
+        ));
+        assert!(!instance_property_serializes(
+            "PrismOpaqueSchema",
+            "interior_model"
+        ));
+    }
+
+    #[test]
     fn schema_driven_record_uses_inheritance_and_serialized_property_ids() {
         let protein = schema_archive(&[
             (
@@ -425,6 +441,7 @@ mod tests {
                     <UID val="CommonSchema"/>
                     <Color id="A_color" allowconnectedassets="true"/>
                     <Boolean id="ignored_readonly" readonly="true"/>
+                    <Integer id="ignored_non_public" public="false"/>
                 </Schema>"#,
             ),
             (
@@ -495,6 +512,7 @@ mod tests {
         );
         assert!(!properties.contains_key("renamed_color"));
         assert!(!properties.contains_key("ignored_readonly"));
+        assert!(!properties.contains_key("ignored_non_public"));
         assert!(!properties.contains_key("ignored_definition"));
         assert!(!properties.contains_key("ignored_metadata"));
     }

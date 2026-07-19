@@ -54,7 +54,6 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Material assets
 
-- The predicate selecting which non-readonly inherited schema properties serialize in each `InstanceProperties` schema revision is unresolved. Property order and the carrier grammar of each included property are defined.
 - The semantic role of the u32 prelude before `texture_RealWorldOffsetX`, the complete Distance and unit-tag namespaces, and the application-defined meanings of texture map-channel integer values are unresolved.
 - The resolution of preset phrases against the external material library is unresolved.
 - The precedence of `color-adesk-attrib`, `material-adesk-attrib`, and `rh_material` library records relative to direct colors and appearance assignments is unresolved.
