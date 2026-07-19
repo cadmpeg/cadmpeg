@@ -3089,16 +3089,7 @@ fn project_fixed_loft(
                 .filter(|group| group.role == 0x43_0000_0000)
                 .map(|group| ProfileRef::Native(group.id.clone()))
                 .collect::<Vec<_>>();
-            if guided_profiles.is_empty() {
-                (
-                    groups
-                        .iter()
-                        .filter(|group| group.role == 0x5_0000_0000)
-                        .map(|group| ProfileRef::Native(group.id.clone()))
-                        .collect::<Vec<_>>(),
-                    Vec::new(),
-                )
-            } else {
+            if guided_profiles.len() >= 2 {
                 (
                     guided_profiles,
                     groups
@@ -3107,11 +3098,29 @@ fn project_fixed_loft(
                         .map(|group| cadmpeg_ir::features::PathRef::Native(group.id.clone()))
                         .collect::<Vec<_>>(),
                 )
+            } else if guided_profiles.is_empty() {
+                let role = if groups.iter().all(|group| group.role == 0x41_0000_0000) {
+                    0x41_0000_0000
+                } else if groups.iter().all(|group| group.role == 0x5_0000_0000) {
+                    0x5_0000_0000
+                } else {
+                    return None;
+                };
+                (
+                    groups
+                        .iter()
+                        .filter(|group| group.role == role)
+                        .map(|group| ProfileRef::Native(group.id.clone()))
+                        .collect::<Vec<_>>(),
+                    Vec::new(),
+                )
+            } else {
+                return None;
             }
         }
         _ => return None,
     };
-    if profiles.len() != 2 || profiles.len() + guides.len() + body_count != groups.len() {
+    if profiles.len() < 2 || profiles.len() + guides.len() + body_count != groups.len() {
         return None;
     }
     Some(FeatureDefinition::Loft {
@@ -23497,6 +23506,35 @@ mod relation_tests {
                 operation_offset: (loft_start + 29) as u64,
             })
         );
+        loft_scope.id = "stream:loft-scope".into();
+        loft_scope.path_feature_construction = Some(DesignPathFeatureConstruction::Loft {
+            operation: DesignExtrudeOperation::NewBody,
+            operation_offset: (loft_start + 29) as u64,
+        });
+        let loft_group = |ordinal: u32, role: u64| {
+            let mut group = thicken_group.clone();
+            group.id = format!("stream:loft-group-{ordinal}");
+            group.scope_record_index = loft_scope.record_index;
+            group.scope_reference_ordinal = ordinal;
+            group.role = role;
+            group
+        };
+        let role_41 = [loft_group(0, 0x41_0000_0000), loft_group(1, 0x41_0000_0000)];
+        assert!(matches!(
+            super::project_fixed_loft(&loft_scope, &role_41),
+            Some(cadmpeg_ir::features::FeatureDefinition::Loft { profiles, guides, .. })
+                if profiles.len() == 2 && guides.is_empty()
+        ));
+        let role_5 = [
+            loft_group(0, 0x5_0000_0000),
+            loft_group(1, 0x5_0000_0000),
+            loft_group(2, 0x5_0000_0000),
+        ];
+        assert!(matches!(
+            super::project_fixed_loft(&loft_scope, &role_5),
+            Some(cadmpeg_ir::features::FeatureDefinition::Loft { profiles, guides, .. })
+                if profiles.len() == 3 && guides.is_empty()
+        ));
 
         let sweep_start = bytes.len();
         let mut sweep = vec![0; 499];

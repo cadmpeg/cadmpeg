@@ -747,7 +747,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         && role_count(0x0000_0041_0000_0000) == 2
                 }
                 records::DesignExtrudeOperation::NewBody => {
-                    (groups.len() == 2 && role_count(0x0000_0005_0000_0000) == 2)
+                    (groups.len() >= 2
+                        && (role_count(0x0000_0005_0000_0000) == groups.len()
+                            || role_count(0x0000_0041_0000_0000) == groups.len()))
                         || (groups.len() >= 2
                             && role_count(0x0000_0043_0000_0000) == 2
                             && role_count(0x0000_0005_0000_0000) == groups.len() - 2)
