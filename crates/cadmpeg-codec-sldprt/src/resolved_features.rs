@@ -489,9 +489,9 @@ fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<S
 mod marker_tests {
     use super::{
         angled_reference_plane_frame, append_spatial_vertex, arc_angle_relation_kind,
-        compact_arc_start_tangent, compact_body_component_path_at, compact_body_path_at,
-        compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
-        compact_body_state_ids, compact_combine_operation_at, compact_component_plane_frame,
+        compact_body_component_path_at, compact_body_path_at, compact_body_retention_mode,
+        compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
+        compact_bounded_curve_tangent, compact_combine_operation_at, compact_component_plane_frame,
         compact_edge_component_path_at, compact_edge_selection_at,
         compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
@@ -521,7 +521,7 @@ mod marker_tests {
         revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
         roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
         sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, tangent_bounded_arc, unique_dimensioned_rectangle_markers,
+        spatial_vertex_coordinates, tangent_bounded_curve, unique_dimensioned_rectangle_markers,
         unique_locus, unique_marker_candidate, Angle, BooleanOp, CompactPointReferenceKind, Length,
         CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
         LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
@@ -2772,7 +2772,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn compact_arc_detail_tangent_determines_the_bounded_circle() {
+    fn compact_curve_detail_tangent_distinguishes_lines_and_arcs() {
         let detail = 84;
         let mut payload = vec![0; detail + 80];
         payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
@@ -2787,9 +2787,12 @@ mod marker_tests {
         payload[detail + 48..detail + 56].copy_from_slice(&1.0f64.to_le_bytes());
         payload[detail + 64..detail + 72].copy_from_slice(&(-1.0f64).to_le_bytes());
 
-        assert_eq!(compact_arc_start_tangent(&payload, 0), Some([-1.0, 0.0]));
         assert_eq!(
-            tangent_bounded_arc(
+            compact_bounded_curve_tangent(&payload, 0),
+            Some([-1.0, 0.0])
+        );
+        assert_eq!(
+            tangent_bounded_curve(
                 Point2::new(0.0, 2.0),
                 Point2::new(0.0, 0.0),
                 [-1.0, 0.0],
@@ -2800,6 +2803,18 @@ mod marker_tests {
                 radius: Length(1.0),
                 start_angle: Angle(std::f64::consts::FRAC_PI_2),
                 end_angle: Angle(-std::f64::consts::FRAC_PI_2),
+            })
+        );
+        assert_eq!(
+            tangent_bounded_curve(
+                Point2::new(0.0, 2.0),
+                Point2::new(0.0, 0.0),
+                [0.0, -1.0],
+                1.0e-9,
+            ),
+            Some(SketchGeometry::Line {
+                start: Point2::new(0.0, 2.0),
+                end: Point2::new(0.0, 0.0),
             })
         );
     }
@@ -11388,11 +11403,13 @@ pub(crate) fn project_marker_backed_sketches(
                                     };
                                     let (start, end) = (project(start)?, project(end)?);
                                     let offset = usize::try_from(marker.offset).ok()?;
-                                    let [tu, tv] =
-                                        compact_arc_start_tangent(&lane.native_payload, offset)?;
+                                    let [tu, tv] = compact_bounded_curve_tangent(
+                                        &lane.native_payload,
+                                        offset,
+                                    )?;
                                     let (tu, tv) = transform
                                         .apply_axes(quantize(Point2::new(tu, tv), QUANTUM))?;
-                                    tangent_bounded_arc(
+                                    tangent_bounded_curve(
                                         start,
                                         end,
                                         [tu as f64 * QUANTUM, tv as f64 * QUANTUM],
@@ -11461,7 +11478,7 @@ pub(crate) fn project_marker_backed_sketches(
     }
 }
 
-fn compact_arc_start_tangent(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
+fn compact_bounded_curve_tangent(payload: &[u8], offset: usize) -> Option<[f64; 2]> {
     let detail = offset.checked_add(84)?;
     if !sketch_marker_prefix_at(payload, detail)
         || payload.get(detail + 5..detail + 13)
@@ -11480,7 +11497,7 @@ fn compact_arc_start_tangent(payload: &[u8], offset: usize) -> Option<[f64; 2]> 
     (u.is_finite() && v.is_finite() && (u.hypot(v) - 1.0).abs() <= 1.0e-9).then_some([u, v])
 }
 
-fn tangent_bounded_arc(
+fn tangent_bounded_curve(
     start: Point2,
     end: Point2,
     tangent: [f64; 2],
@@ -11491,8 +11508,16 @@ fn tangent_bounded_arc(
         return None;
     }
     let tangent = [tangent[0] / tangent_length, tangent[1] / tangent_length];
-    let normal = [-tangent[1], tangent[0]];
     let chord = [end.u - start.u, end.v - start.v];
+    let chord_length = chord[0].hypot(chord[1]);
+    if !chord_length.is_finite() || chord_length <= tolerance {
+        return None;
+    }
+    let cross = tangent[0] * chord[1] - tangent[1] * chord[0];
+    if cross.abs() <= tolerance * chord_length {
+        return Some(SketchGeometry::Line { start, end });
+    }
+    let normal = [-tangent[1], tangent[0]];
     let denominator = 2.0 * (chord[0] * normal[0] + chord[1] * normal[1]);
     if !denominator.is_finite() || denominator.abs() <= tolerance {
         return None;
