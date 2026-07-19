@@ -13763,18 +13763,23 @@ pub fn decode_face_operands(
         .collect::<HashMap<_, _>>();
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    for group in groups.iter().filter(|group| {
-        matches!(
-            group.extrude_role,
-            Some(DesignExtrudeOperandRole::Profile | DesignExtrudeOperandRole::Faces)
-        )
-    }) {
+    for group in groups {
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
         let Some(scope) = scopes.get(&(stream, group.scope_record_index)) else {
             continue;
         };
+        let is_extrude_operand = matches!(
+            group.extrude_role,
+            Some(DesignExtrudeOperandRole::Profile | DesignExtrudeOperandRole::Faces)
+        );
+        let is_offset_faces_operand = design_feature_family(&scope.kind)
+            == Some(DesignFeatureFamily::OffsetFaces)
+            && group.role == 0x0000_0010_0000_0000;
+        if !is_extrude_operand && !is_offset_faces_operand {
+            continue;
+        }
         if group.extrude_role == Some(DesignExtrudeOperandRole::Profile)
             && scope.extrude_profile.is_some()
         {
@@ -13803,7 +13808,19 @@ pub fn decode_face_operands(
                 .get(group_member_index + 1)
                 .and_then(|record_index| headers.get(&(stream, *record_index)))
                 .copied()
-                .map(|header| header.byte_offset);
+                .map(|header| header.byte_offset)
+                .or_else(|| {
+                    if !is_offset_faces_operand {
+                        return None;
+                    }
+                    scope
+                        .reference_members
+                        .iter()
+                        .position(|candidate| candidate == record_index)
+                        .and_then(|ordinal| scope.reference_members.get(ordinal + 1))
+                        .and_then(|record_index| headers.get(&(stream, *record_index)))
+                        .map(|header| header.byte_offset)
+                });
             if let Some(operand) = parse_face_operand(
                 bytes,
                 scope,
@@ -14072,6 +14089,8 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Coil)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Loft)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Sweep)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Thicken)
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
         let scope_group_start = out.len();
@@ -14269,11 +14288,16 @@ fn parse_construction_operand_group(
         || bytes.get(position + 70..position + 77)? != [0; 7]
         || bytes.get(position + 77) != Some(&1)
         || u32_at(bytes, position + 78)? != scope.record_index
-        || bytes.get(position + 82..position + 88)? != [0; 6]
     {
         return None;
     }
-    let paired_at = position + 88;
+    let paired_at = if bytes.get(position + 82..position + 88)? == [0; 6] {
+        position + 88
+    } else if bytes.get(position + 82..position + 85)? == [0; 3] {
+        position + 85
+    } else {
+        return None;
+    };
     let (paired_class_tag, after_tag) = lp_ascii(bytes, paired_at)?;
     if u32_at(bytes, after_tag)? != header.record_index {
         return None;
@@ -21888,6 +21912,13 @@ mod relation_tests {
         assert_eq!(group.opaque_scalar, 0.125);
         assert!(group.variant);
         assert_eq!(group.paired_byte_offset, paired_at as u64);
+
+        bytes.drain(paired_at - 3..paired_at);
+        let compact = parse_construction_operand_group(&bytes, &scope, 0, &record)
+            .expect("compact counted operand group");
+        assert_eq!(compact.members, [200, 201]);
+        assert_eq!(compact.role, 0x0000_0008_0000_0000);
+        assert_eq!(compact.paired_byte_offset, (paired_at - 3) as u64);
     }
 
     #[test]
