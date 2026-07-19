@@ -1874,18 +1874,37 @@ fn resolved_edge_group(
                     && operand.record_index == *member
             })
             .collect::<Vec<_>>();
+        matches.len() == 1
+    });
+    let has_concrete_recipe_evidence = group.members.iter().any(|member| {
+        let matches = operands
+            .iter()
+            .filter(|operand| {
+                native_stream(&operand.id) == stream
+                    && operand.scope_record_index == group.scope_record_index
+                    && operand.record_index == *member
+            })
+            .collect::<Vec<_>>();
         match matches.as_slice() {
             [operand] => {
                 operand.recipe_structure.is_some()
-                    || !operand.recipe_references.is_empty()
                     || operand.resolved_edge_slot.is_some()
                     || !operand.changed_boundary_edge_slots.is_empty()
                     || !operand.deleted_boundary_edge_slots.is_empty()
+                    || !operand.treatment_radius_candidates.is_empty()
             }
             _ => false,
         }
     });
-    if let Some(identity_matches) = identity_matches.filter(|_| !has_recipe_operands) {
+    let has_complete_identity_selection = identity_matches.as_ref().is_some_and(|operands| {
+        !operands.is_empty()
+            && operands
+                .iter()
+                .all(|operand| operand.resolved_edge_slot.is_some())
+    });
+    if let Some(identity_matches) = identity_matches.filter(|_| {
+        !has_recipe_operands || (has_complete_identity_selection && !has_concrete_recipe_evidence)
+    }) {
         if identity_matches.is_empty() {
             return unmatched_selection(previous_state_id);
         }
