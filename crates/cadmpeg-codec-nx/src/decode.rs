@@ -20,12 +20,12 @@ use cadmpeg_ir::eval::{
     pcurve_uv, surface_point,
 };
 use cadmpeg_ir::features::{
-    Angle, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec, ConfigurationBodies,
-    ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState, DesignConfiguration,
-    DesignParameter, EdgeSelection, Extent, FaceSelection, Feature, FeatureDefinition, FeatureId,
-    FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RibConstruction,
-    RibDraft, SketchSpace, ThickenSide, TrimRegion,
+    Angle, BodyRetentionMode, BodySelection, BodyTrimSide, BooleanOp, ChamferSpec,
+    ConfigurationBodies, ConfigurationId, CurveProjectionDirection, CurveProjectionDirectionState,
+    DesignConfiguration, DesignParameter, EdgeSelection, Extent, FaceSelection, Feature,
+    FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, HoleForm, HoleKind,
+    Length, ParameterId, ParameterValue, PathRef, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
+    RibConstruction, RibDraft, SketchSpace, ThickenSide, TrimRegion,
 };
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -10204,11 +10204,16 @@ fn attach_feature_operations(
                 dependency.id.clone(),
             );
         }
-        let outputs = body_references
-            .get(label.id.as_str())
-            .map_or_else(Vec::new, |body| {
-                feature_body_outputs(*body, &bodies_by_object_index)
-            });
+        let deletes_body = label.value == "DELETE";
+        let outputs = if deletes_body {
+            Vec::new()
+        } else {
+            body_references
+                .get(label.id.as_str())
+                .map_or_else(Vec::new, |body| {
+                    feature_body_outputs(*body, &bodies_by_object_index)
+                })
+        };
         if let Some(body) = body_references.get(label.id.as_str()) {
             source_properties.insert("primary_body_object_index".to_string(), body.to_string());
         }
@@ -10677,6 +10682,19 @@ fn attach_feature_operations(
                 )
             })
             .flatten();
+        let delete_projection = deletes_body.then(|| FeatureDefinition::DeleteBody {
+            bodies: body_references.get(label.id.as_str()).map_or(
+                BodySelection::Unresolved,
+                |body| {
+                    feature_body_selection(
+                        &[*body],
+                        &bodies_by_object_index,
+                        format!("nx:om-object-index#{body}"),
+                    )
+                },
+            ),
+            mode: BodyRetentionMode::DeleteSelected,
+        });
         let operation_parameter_uses = parameter_uses_by_operation
             .get(label.id.as_str())
             .map_or([].as_slice(), Vec::as_slice);
@@ -10684,6 +10702,7 @@ fn attach_feature_operations(
         let definition = booleans.get(label.id.as_str()).map_or_else(
             || {
                 trim_body_projection
+                    .or(delete_projection)
                     .or(sew_projection)
                     .or(extrude_projection)
                     .or_else(|| blend_projection.map(|(definition, _)| definition))
@@ -10775,8 +10794,10 @@ fn attach_feature_operations(
             definition,
             native_ref: Some(label.id.clone()),
         });
-        if let Some(body) = body_references.get(label.id.as_str()) {
-            last_body_writer.insert(canonical_body(*body), id);
+        if !deletes_body {
+            if let Some(body) = body_references.get(label.id.as_str()) {
+                last_body_writer.insert(canonical_body(*body), id);
+            }
         }
     }
 }

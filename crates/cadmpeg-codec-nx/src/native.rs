@@ -6242,6 +6242,10 @@ pub fn terminal_feature_body_indices(
         .collect::<BTreeMap<_, _>>();
     let aliases = body_alias_roots(bindings)?;
     let canonical = |identity: u32| aliases.get(&identity).copied().unwrap_or(identity);
+    let operation_kinds = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label.value.as_str()))
+        .collect::<BTreeMap<_, _>>();
     let mut last_writers = bindings
         .iter()
         .flat_map(|binding| [binding.body_object_index, binding.body_alias_object_index])
@@ -6249,6 +6253,9 @@ pub fn terminal_feature_body_indices(
         .collect::<BTreeMap<u32, Option<usize>>>();
     for reference in references {
         let position = *positions.get(reference.operation_label.as_str())?;
+        if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
+            continue;
+        }
         last_writers.insert(canonical(reference.body_object_index), Some(position));
     }
     let mut consumed = BTreeSet::new();
@@ -6264,10 +6271,18 @@ pub fn terminal_feature_body_indices(
             }
         }
     }
-    let operation_kinds = labels
-        .iter()
-        .map(|label| (label.id.as_str(), label.value.as_str()))
-        .collect::<BTreeMap<_, _>>();
+    for reference in references {
+        if operation_kinds.get(reference.operation_label.as_str()) == Some(&"DELETE") {
+            let position = *positions.get(reference.operation_label.as_str())?;
+            let body = canonical(reference.body_object_index);
+            if last_writers
+                .get(&body)
+                .is_some_and(|writer| writer.is_none_or(|writer| writer < position))
+            {
+                consumed.insert(body);
+            }
+        }
+    }
     for operand in operands {
         if !matches!(
             operation_kinds.get(operand.operation_label.as_str()),

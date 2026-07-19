@@ -6677,6 +6677,78 @@ fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
 }
 
 #[test]
+fn feature_body_lineage_consumes_delete_body_references() {
+    use crate::native::{FeatureBodyReference, FeatureOperationLabel, SegmentBodyBinding};
+
+    let labels = [FeatureOperationLabel {
+        id: "operation#delete".to_string(),
+        section_link: "history#0".to_string(),
+        ordinal: 0,
+        value: "DELETE".to_string(),
+        object_indices: [None; 4],
+        source_offset: 0,
+    }];
+    let references = [FeatureBodyReference {
+        id: "reference#10".to_string(),
+        operation_label: "operation#delete".to_string(),
+        body_object_index: 10,
+        source_offset: 0,
+    }];
+    let bindings = [SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: "partition".to_string(),
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 19,
+        source_offset: 0,
+    }];
+
+    assert_eq!(
+        crate::native::terminal_feature_body_indices(&labels, &references, &[], &[], &bindings,),
+        Some(std::collections::BTreeSet::new())
+    );
+}
+
+#[test]
+fn feature_body_lineage_allows_a_writer_after_delete() {
+    use crate::native::{FeatureBodyReference, FeatureOperationLabel, SegmentBodyBinding};
+
+    let label = |ordinal: u32, value: &str| FeatureOperationLabel {
+        id: format!("operation#{ordinal}"),
+        section_link: "history#0".to_string(),
+        ordinal,
+        value: value.to_string(),
+        object_indices: [None; 4],
+        source_offset: u64::from(ordinal),
+    };
+    let labels = [label(0, "DELETE"), label(1, "EXTRUDE")];
+    let reference = |ordinal: u32| FeatureBodyReference {
+        id: format!("reference#{ordinal}"),
+        operation_label: format!("operation#{ordinal}"),
+        body_object_index: 10,
+        source_offset: u64::from(ordinal),
+    };
+    let references = [reference(0), reference(1)];
+    let bindings = [SegmentBodyBinding {
+        id: "binding#0".to_string(),
+        stream_link: "stream#0".to_string(),
+        stream_ordinal: 0,
+        stream_kind: "partition".to_string(),
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 19,
+        source_offset: 0,
+    }];
+
+    assert_eq!(
+        crate::native::terminal_feature_body_indices(&labels, &references, &[], &[], &bindings,),
+        Some([10, 11].into_iter().collect())
+    );
+}
+
+#[test]
 fn feature_body_lineage_continues_across_ordered_history_sections() {
     use crate::native::{
         FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,
