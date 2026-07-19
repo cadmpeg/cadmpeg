@@ -4,7 +4,7 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point3, Vector3};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub(crate) struct AsmHistory {
@@ -79,6 +79,9 @@ pub(crate) struct AsmHistoricalTopology {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub surface_radii: Vec<AsmHistoricalSurfaceRadius>,
     pub curves: Vec<i64>,
+    /// Model-space axes of axis-bearing curve carriers in this state.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub curve_axes: Vec<AsmHistoricalCurveAxis>,
     pub pcurves: Vec<i64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub body_regions: Vec<AsmHistoricalRelation>,
@@ -109,6 +112,14 @@ pub(crate) struct AsmHistoricalTopology {
     /// Model-space values of the point carriers in this historical state.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub point_positions: Vec<AsmHistoricalPoint>,
+}
+
+/// Stable axis-bearing curve carrier value in one historical B-rep state.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub(crate) struct AsmHistoricalCurveAxis {
+    pub curve: i64,
+    pub origin: Point3,
+    pub direction: Vector3,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

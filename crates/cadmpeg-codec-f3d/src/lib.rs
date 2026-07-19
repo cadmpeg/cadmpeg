@@ -1473,7 +1473,9 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 matches!(
                     design::design_feature_family(&scope.kind),
                     Some(
-                        design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer
+                        design::DesignFeatureFamily::Fillet
+                            | design::DesignFeatureFamily::Chamfer
+                            | design::DesignFeatureFamily::Revolve
                     )
                 ) && usize::try_from(operand.scope_reference_ordinal)
                     .ok()

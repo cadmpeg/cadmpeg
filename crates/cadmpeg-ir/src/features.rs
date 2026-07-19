@@ -788,7 +788,7 @@ pub struct RevolutionConstruction {
     /// Profile revolved about the axis, when resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub profile: Option<ProfileRef>,
-    /// Placed revolution axis, when resolved as a complete line.
+    /// Placed revolution axis, when resolved from an axis-bearing selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub axis: Option<RevolutionAxis>,
     /// Angular extent, when resolved.

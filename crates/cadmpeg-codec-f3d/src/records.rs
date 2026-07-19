@@ -1481,7 +1481,7 @@ pub struct DesignEdgeIdentityOperand {
     pub resolution_identity_id: Option<String>,
 }
 
-/// Edge-selection operand owned by a Fillet or Chamfer parameter scope.
+/// Edge-selection operand owned by an edge-selecting parameter scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct DesignEdgeOperand {
     /// Globally unique deterministic identifier for this native operand.
@@ -1591,6 +1591,12 @@ pub struct DesignEdgeOperand {
     /// intersection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,
+    /// Origin of the selected historical carrier axis, when exact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_axis_origin: Option<Point3>,
+    /// Unit direction of the selected historical carrier axis, when exact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resolved_axis_direction: Option<Vector3>,
     /// Identity of the indexed record following the operand frame.
     pub next_record_index: u32,
     /// Byte offset of the indexed record following the operand frame.

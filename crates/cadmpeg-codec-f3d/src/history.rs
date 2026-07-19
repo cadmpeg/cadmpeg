@@ -1346,6 +1346,8 @@ pub(crate) fn bind_edge_operand_history_candidates(
         operand.recipe_selectors.clear();
         operand.recipe_state_id = None;
         operand.resolved_edge_slot = None;
+        operand.resolved_axis_origin = None;
+        operand.resolved_axis_direction = None;
         let stream = crate::design::native_stream(&operand.id);
         let mut matching_scopes = scopes.iter().filter(|scope| {
             scope.record_index == operand.scope_record_index
@@ -1361,6 +1363,24 @@ pub(crate) fn bind_edge_operand_history_candidates(
             (scope.history_state_id, scope.previous_history_state_id)
         else {
             bind_active_edge_operand_candidates(operand, &terminal_topologies);
+            if crate::design::design_feature_family(&scope.kind)
+                == Some(crate::design::DesignFeatureFamily::Revolve)
+            {
+                let topology = operand.recipe_state_id.and_then(|state_id| {
+                    terminal_topologies
+                        .iter()
+                        .find(|(candidate, _)| *candidate == state_id)
+                        .map(|(_, topology)| *topology)
+                });
+                if let Some((origin, direction)) = operand
+                    .resolved_edge_slot
+                    .zip(topology)
+                    .and_then(|(edge, topology)| historical_edge_axis(edge, topology))
+                {
+                    operand.resolved_axis_origin = Some(origin);
+                    operand.resolved_axis_direction = Some(direction);
+                }
+            }
             continue;
         };
         let (Some(Some(state)), Some(Some(previous))) =
@@ -1441,6 +1461,41 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 ))
             })
             .collect();
+        if crate::design::design_feature_family(&scope.kind)
+            == Some(crate::design::DesignFeatureFamily::Revolve)
+        {
+            let reference_faces = terminal_edge_recipe_reference_faces(
+                &operand.recipe_references,
+                operand.local_topology_references.as_deref(),
+            );
+            let reference_edge_sets = reference_faces
+                .iter()
+                .map(|faces| face_boundary_edges(&faces_in_topology(faces, topology), topology))
+                .collect::<Vec<_>>();
+            let candidate_edges = reference_edge_sets
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            let contexts = candidate_edges
+                .into_iter()
+                .map(|edge| historical_edge_context(edge, topology))
+                .collect::<Vec<_>>();
+            operand.recipe_selectors =
+                recipe_selector_candidates(operand.recipe_structure.as_ref(), &contexts);
+            operand.resolved_edge_slot = crate::design::resolved_edge_candidate_intersection(
+                &operand.recipe_selectors,
+                reference_edge_sets.iter().map(Vec::as_slice),
+            );
+            if let Some((origin, direction)) = operand
+                .resolved_edge_slot
+                .and_then(|edge| historical_edge_axis(edge, topology))
+            {
+                operand.resolved_axis_origin = Some(origin);
+                operand.resolved_axis_direction = Some(direction);
+            }
+            continue;
+        }
         let changed_edge_contexts = topology
             .edges
             .iter()
@@ -1461,6 +1516,22 @@ pub(crate) fn bind_edge_operand_history_candidates(
             operand.resolved_edge_slot = transition.topology.edges.deleted.first().copied();
         }
     }
+}
+
+fn historical_edge_axis(
+    edge: i64,
+    topology: &AsmHistoricalTopology,
+) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
+    let curve = topology
+        .edge_curves
+        .iter()
+        .find(|binding| binding.entity == edge)?
+        .carrier?;
+    let axis = topology
+        .curve_axes
+        .iter()
+        .find(|axis| axis.curve == curve)?;
+    Some((axis.origin, axis.direction))
 }
 
 fn bind_active_edge_operand_candidates(
@@ -2432,6 +2503,24 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
         surfaces: refs(brep.surfaces.iter().map(|entity| entity.id.0.as_str()))?,
         surface_radii,
         curves: refs(brep.curves.iter().map(|entity| entity.id.0.as_str()))?,
+        curve_axes: brep
+            .curves
+            .iter()
+            .filter_map(|curve| {
+                use cadmpeg_ir::geometry::CurveGeometry;
+                let (origin, direction) = match curve.geometry {
+                    CurveGeometry::Line { origin, direction } => (origin, direction),
+                    CurveGeometry::Circle { center, axis, .. }
+                    | CurveGeometry::Ellipse { center, axis, .. } => (center, axis),
+                    _ => return None,
+                };
+                Some(crate::history_records::AsmHistoricalCurveAxis {
+                    curve: entity_ref(&curve.id.0)?,
+                    origin,
+                    direction,
+                })
+            })
+            .collect(),
         pcurves: refs(brep.pcurves.iter().map(|entity| entity.id.0.as_str()))?,
         body_regions: relations(brep.bodies.iter().map(|body| {
             (
@@ -2798,7 +2887,33 @@ fn take_int(bytes: &[u8], position: &mut usize, tag: u8, width: usize) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::history_records::AsmHistoricalSurfaceRadius;
+    use crate::history_records::{
+        AsmHistoricalCurveAxis, AsmHistoricalOptionalCarrierBinding, AsmHistoricalSurfaceRadius,
+    };
+
+    #[test]
+    fn historical_edge_axis_uses_the_state_specific_curve_carrier() {
+        let topology = AsmHistoricalTopology {
+            edge_curves: vec![AsmHistoricalOptionalCarrierBinding {
+                entity: 7,
+                carrier: Some(27),
+            }],
+            curve_axes: vec![AsmHistoricalCurveAxis {
+                curve: 27,
+                origin: cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                direction: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            }],
+            ..AsmHistoricalTopology::default()
+        };
+        assert_eq!(
+            historical_edge_axis(7, &topology),
+            Some((
+                cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            ))
+        );
+        assert_eq!(historical_edge_axis(8, &topology), None);
+    }
 
     #[test]
     fn historical_identity_edge_requires_unique_incidence() {

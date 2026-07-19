@@ -806,13 +806,13 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     })
             } else if family == Some(DesignFeatureFamily::Revolve) {
-                project_fixed_revolve(scope, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
+                project_fixed_revolve(scope, construction_groups, edge_operands).unwrap_or_else(
+                    || FeatureDefinition::Native {
                         kind: scope.kind.clone(),
                         parameters: BTreeMap::new(),
                         properties: native_scope_properties(scope, native_scope),
-                    }
-                })
+                    },
+                )
             } else if family == Some(DesignFeatureFamily::Loft) {
                 project_fixed_loft(scope, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -3006,9 +3006,10 @@ fn fixed_boolean_operation(operation: DesignExtrudeOperation) -> cadmpeg_ir::fea
 fn project_fixed_revolve(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
-        Angle, Extent, FeatureDefinition, ProfileRef, RevolutionConstruction,
+        Angle, Extent, FeatureDefinition, ProfileRef, RevolutionAxis, RevolutionConstruction,
     };
 
     let DesignPathFeatureConstruction::Revolve {
@@ -3033,16 +3034,37 @@ fn project_fixed_revolve(
         .iter()
         .filter(|group| group.role == 0x21_0000_0000)
         .collect::<Vec<_>>();
-    let ([profile], [_axis]) = (profiles.as_slice(), axes.as_slice()) else {
+    let ([profile], [axis_group]) = (profiles.as_slice(), axes.as_slice()) else {
         return None;
     };
     if groups.len() != 2 {
         return None;
     }
+    let [_profile_member] = profile.members.as_slice() else {
+        return None;
+    };
+    let [axis_member] = axis_group.members.as_slice() else {
+        return None;
+    };
+    let matches = edge_operands
+        .iter()
+        .filter(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+                && operand.record_index == *axis_member
+        })
+        .collect::<Vec<_>>();
+    let [axis_operand] = matches.as_slice() else {
+        return None;
+    };
+    let axis = RevolutionAxis {
+        origin: axis_operand.resolved_axis_origin?,
+        direction: axis_operand.resolved_axis_direction?,
+    };
     Some(FeatureDefinition::Revolve {
         construction: RevolutionConstruction {
             profile: Some(ProfileRef::Native(profile.id.clone())),
-            axis: None,
+            axis: Some(axis),
             extent: Some(Extent::Angle {
                 angle: Angle(*angle),
             }),
@@ -14804,7 +14826,7 @@ fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecordHeader> {
         .collect()
 }
 
-/// Decode the edge-recipe operand frames named by Fillet and Chamfer scopes.
+/// Decode edge-recipe operand frames named by edge-selecting feature scopes.
 pub fn decode_edge_operands(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
@@ -14820,7 +14842,11 @@ pub fn decode_edge_operands(
     for scope in scopes.iter().filter(|scope| {
         matches!(
             design_feature_family(&scope.kind),
-            Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
+            Some(
+                DesignFeatureFamily::Fillet
+                    | DesignFeatureFamily::Chamfer
+                    | DesignFeatureFamily::Revolve
+            )
         )
     }) {
         let member_indices = groups
@@ -16211,6 +16237,8 @@ fn parse_edge_operand(
         recipe_selectors: Vec::new(),
         recipe_state_id: None,
         resolved_edge_slot: None,
+        resolved_axis_origin: None,
+        resolved_axis_direction: None,
         next_record_index: indexed[4].1,
         next_byte_offset,
     })
@@ -16246,7 +16274,7 @@ fn edge_recipe_structure_tail(
     let structures = edge_recipe_side_sequences(remaining, side_count)
         .into_iter()
         .filter_map(|(sides, tail)| {
-            matches!(tail, [] | [-1])
+            matches!(tail, [] | [-1 | 0])
                 .then_some(crate::records::DesignEdgeRecipeStructure { root, sides })
         })
         .collect::<Vec<_>>();
@@ -23477,19 +23505,10 @@ mod relation_tests {
         let mut revolve_axis = revolve_profile.clone();
         revolve_axis.id = "stream:axis".into();
         revolve_axis.role = 0x0000_0021_0000_0000;
-        assert!(matches!(
-            super::project_fixed_revolve(&revolve_scope, &[revolve_profile, revolve_axis]),
-            Some(cadmpeg_ir::features::FeatureDefinition::Revolve {
-                construction: cadmpeg_ir::features::RevolutionConstruction {
-                    profile: Some(cadmpeg_ir::features::ProfileRef::Native(profile)),
-                    axis: None,
-                    extent: Some(cadmpeg_ir::features::Extent::Angle {
-                        angle: cadmpeg_ir::features::Angle(3.5),
-                    }),
-                },
-                op: cadmpeg_ir::features::BooleanOp::NewBody,
-            }) if profile == "stream:profile"
-        ));
+        assert_eq!(
+            super::project_fixed_revolve(&revolve_scope, &[revolve_profile, revolve_axis], &[],),
+            None
+        );
 
         let loft_start = bytes.len();
         let mut loft = vec![0; 376];
@@ -24999,6 +25018,14 @@ mod relation_tests {
         assert_eq!(mixed_delimiters.sides[0].scalars, [1, 0]);
         assert_eq!(mixed_delimiters.sides[1].header_value, 0);
         assert_eq!(mixed_delimiters.sides[1].scalars, [1, 3]);
+        let revolution_axis = super::edge_recipe_structure(&[
+            -1, -1, 2, 0, 0, 1, 0, 2, -1, 3, 0, 0, 2, -1, 1, 0, 0, 1, 1, 7, 1, 1, 1, 4, 4, 4, -1,
+            3, 0, 0, 1, 0, 3, 0, 0, 0, 0,
+        ])
+        .expect("revolution-axis edge recipe structure");
+        assert_eq!(revolution_axis.sides[0].scalars, [2, 1]);
+        assert_eq!(revolution_axis.sides[0].entries.len(), 1);
+        assert!(revolution_axis.sides[1].entries.is_empty());
         let variable_scalars = super::edge_recipe_structure(&[
             -1, -1, 2, 0, -1, 1, -1, 2, -1, 5, 1, -1, 0, -1, 2, -1, 3, -1, 4, -1, 0, 0, -1, 3, 0,
             -1, 1, -1, 2, -1, 0, 0, -1,
