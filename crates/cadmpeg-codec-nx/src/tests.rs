@@ -5671,6 +5671,50 @@ fn datum_csys_fixed_pair_requires_its_exact_branch_discriminator() {
 }
 
 #[test]
+fn datum_csys_payload_extends_only_to_complete_a_known_cross_block_frame() {
+    let leading: [String; 2] = [
+        "nx:om-data-blocks-2:block#10".into(),
+        "nx:om-data-blocks-2:block#11".into(),
+    ];
+    let first = [0x01];
+    let second = [b'P', b'Y', b'f', 0x64, 0x00, 0x30];
+    let continuation = [0x40, 0, 0, 0, 0, 0, 0, 0xaa];
+    let unrelated = [0xbb];
+    let blocks = std::collections::BTreeMap::from([
+        (leading[0].clone(), (first.as_slice(), 100)),
+        (leading[1].clone(), (second.as_slice(), 101)),
+        (
+            "nx:om-data-blocks-2:block#12".into(),
+            (continuation.as_slice(), 107),
+        ),
+        (
+            "nx:om-data-blocks-2:block#13".into(),
+            (unrelated.as_slice(), 115),
+        ),
+    ]);
+    assert_eq!(
+        crate::native::datum_csys_payload_blocks(&leading, &blocks).unwrap(),
+        (
+            vec![
+                leading[0].clone(),
+                leading[1].clone(),
+                "nx:om-data-blocks-2:block#12".into()
+            ],
+            Some(14)
+        )
+    );
+
+    let malformed = std::collections::BTreeMap::from([
+        (leading[0].clone(), (first.as_slice(), 100)),
+        (leading[1].clone(), (second.as_slice(), 101)),
+    ]);
+    assert_eq!(
+        crate::native::datum_csys_payload_blocks(&leading, &malformed).unwrap(),
+        (leading.to_vec(), None)
+    );
+}
+
+#[test]
 fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
     use crate::native::{
         feature_sketch_fixed_points, feature_sketch_payload_named_records,
