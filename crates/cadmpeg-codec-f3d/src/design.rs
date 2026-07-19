@@ -11572,6 +11572,9 @@ pub(crate) fn decode_recipe_references(
     let mut references = Vec::new();
     let mut at = 22usize;
     while prefix.len().saturating_sub(at) > 4 {
+        if recipe_reference_suffix(&prefix[at..]) {
+            return references;
+        }
         let Some(selector) = u32_at(prefix, at).filter(|value| *value != 0) else {
             return Vec::new();
         };
@@ -11594,35 +11597,78 @@ pub(crate) fn decode_recipe_references(
         let Some((token, token_at, marker_at)) = length_prefixed.or(packed) else {
             return Vec::new();
         };
-        if u32_at(prefix, marker_at) != Some(1) {
+        let Some(reference_count) = u32_at(prefix, marker_at).filter(|value| *value != 0) else {
             return Vec::new();
-        }
-        let Some(design_reference) = u32_at(prefix, marker_at + 4).filter(|value| *value != 0)
+        };
+        let Some(reference_bytes) = usize::try_from(reference_count)
+            .ok()
+            .and_then(|count| count.checked_mul(4))
         else {
             return Vec::new();
         };
-        if u32_at(prefix, marker_at + 8) != Some(0) {
+        let references_at = marker_at + 4;
+        let Some(terminator_at) = references_at.checked_add(reference_bytes) else {
+            return Vec::new();
+        };
+        if u32_at(prefix, terminator_at) != Some(0) {
             return Vec::new();
         }
-        references.push(crate::records::DesignRecipeReference {
-            selector: i64::from(selector),
-            selector_offset: prefix_offset.saturating_add(at as u64),
-            token,
-            token_offset: prefix_offset.saturating_add(token_at as u64),
-            design_reference: i64::from(design_reference),
-            design_reference_offset: prefix_offset.saturating_add((marker_at + 4) as u64),
-            candidate_faces: Vec::new(),
-            candidate_edges: Vec::new(),
-            alternate_selector_faces: Vec::new(),
-            alternate_selector_edges: Vec::new(),
-        });
-        at = marker_at + 12;
+        for reference_ordinal in 0..reference_count as usize {
+            let design_reference_at = references_at + 4 * reference_ordinal;
+            let Some(design_reference) =
+                u32_at(prefix, design_reference_at).filter(|value| *value != 0)
+            else {
+                return Vec::new();
+            };
+            references.push(crate::records::DesignRecipeReference {
+                selector: i64::from(selector),
+                selector_offset: prefix_offset.saturating_add(at as u64),
+                token: token.clone(),
+                token_offset: prefix_offset.saturating_add(token_at as u64),
+                design_reference: i64::from(design_reference),
+                design_reference_offset: prefix_offset.saturating_add(design_reference_at as u64),
+                candidate_faces: Vec::new(),
+                candidate_edges: Vec::new(),
+                alternate_selector_faces: Vec::new(),
+                alternate_selector_edges: Vec::new(),
+            });
+        }
+        at = terminator_at + 4;
     }
     if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
         references
     } else {
         Vec::new()
     }
+}
+
+fn recipe_reference_suffix(bytes: &[u8]) -> bool {
+    if bytes == [0; 4] {
+        return true;
+    }
+    if u32_at(bytes, 0) != Some(1)
+        || u32_at(bytes, 4) != Some(1)
+        || u32_at(bytes, 8) != Some(0)
+        || u32_at(bytes, 12) != Some(0)
+    {
+        return false;
+    }
+    let Some(reference_count) = u32_at(bytes, 16).filter(|count| *count != 0) else {
+        return false;
+    };
+    let Some(reference_bytes) = usize::try_from(reference_count)
+        .ok()
+        .and_then(|count| count.checked_mul(4))
+    else {
+        return false;
+    };
+    let Some(terminator_at) = 20usize.checked_add(reference_bytes) else {
+        return false;
+    };
+    matches!(bytes.len().checked_sub(terminator_at), Some(4 | 6))
+        && (0..reference_count as usize)
+            .all(|ordinal| u32_at(bytes, 20 + 4 * ordinal).is_some_and(|reference| reference != 0))
+        && bytes[terminator_at..].iter().all(|byte| *byte == 0)
 }
 
 /// Join dimension-recipe selector/reference pairs to active solved subentities.
@@ -15309,7 +15355,7 @@ fn parse_face_operand(
             )
         })
         .collect::<Vec<_>>();
-    if recipe_program.get(0..2) != Some(&[0, -1]) {
+    if !matches!(recipe_program.get(0..2), Some([0, -1 | 0])) {
         return None;
     }
     let header_value = usize::try_from(*recipe_program.get(2)?).ok()?;
@@ -20460,14 +20506,16 @@ mod relation_tests {
         let second_token_at = prefix.len();
         prefix.extend_from_slice(&[b'9', 0, 0, 0]);
         prefix.push(0);
-        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&2u32.to_le_bytes());
         let second_reference_at = prefix.len();
         prefix.extend_from_slice(&303u32.to_le_bytes());
+        let third_reference_at = prefix.len();
+        prefix.extend_from_slice(&304u32.to_le_bytes());
         prefix.extend_from_slice(&0u32.to_le_bytes());
         prefix.extend_from_slice(&0u32.to_le_bytes());
 
         let references = super::decode_recipe_references(&prefix, 1_000);
-        assert_eq!(references.len(), 2);
+        assert_eq!(references.len(), 3);
         assert_eq!(references[0].selector, 1);
         assert_eq!(references[0].selector_offset, 1_022);
         assert_eq!(references[0].token, "13");
@@ -20486,6 +20534,23 @@ mod relation_tests {
             references[1].design_reference_offset,
             1_000 + second_reference_at as u64
         );
+        assert_eq!(references[2].selector, 2);
+        assert_eq!(references[2].token, "9");
+        assert_eq!(references[2].design_reference, 304);
+        assert_eq!(
+            references[2].design_reference_offset,
+            1_000 + third_reference_at as u64
+        );
+        let suffix_at = prefix.len() - 4;
+        prefix.splice(
+            suffix_at..,
+            [1u32, 1, 0, 0, 2, 401, 402, 0]
+                .into_iter()
+                .flat_map(u32::to_le_bytes),
+        );
+        assert_eq!(super::decode_recipe_references(&prefix, 1_000), references);
+        prefix.extend_from_slice(&[0; 2]);
+        assert_eq!(super::decode_recipe_references(&prefix, 1_000), references);
         assert_eq!(
             super::recipe_reference_candidate_faces(
                 &references[0],
@@ -22876,6 +22941,19 @@ mod relation_tests {
             face_recipe_name_at as u64 + 24
         );
         assert_eq!(operand.recipe_program[0..3], [0, -1, 4]);
+        let face_program_at = face_recipe_name_at + 24;
+        face_bytes[face_program_at + 4..face_program_at + 8].copy_from_slice(&0i32.to_le_bytes());
+        let zero_prelude = parse_face_operand(
+            &face_bytes,
+            &face_scope,
+            0,
+            None,
+            None,
+            &record,
+            std::slice::from_ref(&face_recipe),
+        )
+        .expect("zero-prelude face recipe operand");
+        assert_eq!(zero_prelude.recipe_program[0..3], [0, 0, 4]);
         assert_eq!(
             operand.recipe_node_offsets,
             [
