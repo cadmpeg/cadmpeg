@@ -561,14 +561,17 @@ pub enum FeatureDefinition {
     },
     /// Surface patch spanning a selected edge boundary.
     FilledSurface {
-        /// Closed edge boundary of the generated patch.
-        boundary: EdgeSelection,
+        /// Closed boundary of the generated patch.
+        boundary: SurfaceBoundary,
         /// Adjacent faces supplying tangent or curvature conditions.
         support_faces: FaceSelection,
-        /// Continuity imposed against the support faces.
-        continuity: SurfaceContinuity,
-        /// Whether the generated patch is merged into adjacent surface bodies.
-        merge_result: bool,
+        /// Continuity imposed against the support faces, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        continuity: Option<SurfaceContinuity>,
+        /// Whether the generated patch is merged into adjacent surface bodies,
+        /// when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        merge_result: Option<bool>,
     },
     /// Restricts selected surface faces to one side of a trimming path.
     TrimSurface {
@@ -924,6 +927,16 @@ pub enum SurfaceContinuity {
     Tangent,
     /// Second-derivative continuity.
     Curvature,
+}
+
+/// Boundary input accepted by a filled-surface operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum SurfaceBoundary {
+    /// Boundary selected as topological edges.
+    Edges(EdgeSelection),
+    /// Boundary selected as a sketch, curve, or mixed path collection.
+    Path(PathRef),
 }
 
 /// Region retained by a trim-surface operation.

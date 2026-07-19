@@ -10152,7 +10152,7 @@ fn semantic_writer_round_trips_cut_with_surface() {
 #[test]
 fn semantic_writer_round_trips_filled_surface() {
     use cadmpeg_ir::features::{
-        EdgeSelection, FaceSelection, FeatureDefinition, SurfaceContinuity,
+        EdgeSelection, FaceSelection, FeatureDefinition, SurfaceBoundary, SurfaceContinuity,
     };
 
     let base_bytes = sldprt_with_body(&triangle_body());
@@ -10177,10 +10177,13 @@ fn semantic_writer_round_trips_filled_surface() {
     assert!(matches!(
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::FilledSurface {
-            boundary: EdgeSelection::Resolved { edges, native: edge_native },
+            boundary: SurfaceBoundary::Edges(EdgeSelection::Resolved {
+                edges,
+                native: edge_native,
+            }),
             support_faces: FaceSelection::Resolved { faces, native: face_native },
-            continuity: SurfaceContinuity::Tangent,
-            merge_result: false,
+            continuity: Some(SurfaceContinuity::Tangent),
+            merge_result: Some(false),
         } if edges == &[edge_id.clone()] && edge_native == &edge
             && faces == &[face_id.clone()] && face_native == &face
     ));
@@ -10194,10 +10197,10 @@ fn semantic_writer_round_trips_filled_surface() {
     else {
         panic!("typed filled surface");
     };
-    *boundary = EdgeSelection::Edges(vec![edge_id.clone()]);
+    *boundary = SurfaceBoundary::Edges(EdgeSelection::Edges(vec![edge_id.clone()]));
     *support_faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *continuity = SurfaceContinuity::Curvature;
-    *merge_result = true;
+    *continuity = Some(SurfaceContinuity::Curvature);
+    *merge_result = Some(true);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -10215,8 +10218,8 @@ fn semantic_writer_round_trips_filled_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::FilledSurface {
-            continuity: SurfaceContinuity::Curvature,
-            merge_result: true,
+            continuity: Some(SurfaceContinuity::Curvature),
+            merge_result: Some(true),
             ..
         }
     ));

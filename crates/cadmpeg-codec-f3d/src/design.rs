@@ -828,6 +828,14 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     }
                 })
+            } else if family == Some(DesignFeatureFamily::SurfacePatch) {
+                project_surface_patch(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else if let Some(primitive) = scope.solid_primitive.as_ref() {
                 let operation = |operation| match operation {
                     DesignExtrudeOperation::Join => cadmpeg_ir::features::BooleanOp::Join,
@@ -2945,6 +2953,44 @@ fn project_fixed_sweep(
         },
         twist: (values[4] != 0.0).then_some(Angle(values[4])),
         scale: None,
+    })
+}
+
+fn project_surface_patch(
+    scope: &DesignParameterScope,
+    construction_groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, PathRef, SurfaceBoundary};
+
+    if scope.kind != "SurfacePatch"
+        || scope.frame_length != 354
+        || scope.reference_members.len() != 4
+    {
+        return None;
+    }
+    let stream = native_stream(&scope.id)?;
+    let groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let [boundary] = groups.as_slice() else {
+        return None;
+    };
+    if boundary.scope_reference_ordinal != 0
+        || boundary.record_index != scope.reference_members[0]
+        || boundary.role != 0x0000_0004_0000_0000
+        || boundary.members.as_slice() != &scope.reference_members[1..2]
+    {
+        return None;
+    }
+    Some(FeatureDefinition::FilledSurface {
+        boundary: SurfaceBoundary::Path(PathRef::Native(boundary.id.clone())),
+        support_faces: FaceSelection::Faces(Vec::new()),
+        continuity: None,
+        merge_result: None,
     })
 }
 
@@ -28181,6 +28227,24 @@ mod relation_tests {
                 },
                 tangency_weight: Some(0.75),
             } if selection == &operand_groups[1].id
+        ));
+
+        let mut patch_scope = scope.clone();
+        patch_scope.kind = "SurfacePatch".into();
+        patch_scope.frame_length = 354;
+        patch_scope.reference_members = vec![100, 200, 300, 301];
+        let mut patch_group = group(100, 0, vec![200]);
+        patch_group.role = 0x0000_0004_0000_0000;
+        assert!(matches!(
+            super::project_surface_patch(&patch_scope, std::slice::from_ref(&patch_group)),
+            Some(FeatureDefinition::FilledSurface {
+                boundary: cadmpeg_ir::features::SurfaceBoundary::Path(
+                    cadmpeg_ir::features::PathRef::Native(ref native)
+                ),
+                support_faces: cadmpeg_ir::features::FaceSelection::Faces(ref faces),
+                continuity: None,
+                merge_result: None,
+            }) if native == &patch_group.id && faces.is_empty()
         ));
     }
 

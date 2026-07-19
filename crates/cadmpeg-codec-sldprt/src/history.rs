@@ -14,7 +14,8 @@ use cadmpeg_ir::features::{
     FlexMode, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
     PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction,
     RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace,
-    SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius, WrapMode,
+    SurfaceBoundary, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius,
+    WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::math::{Point3, Vector3};
@@ -843,7 +844,12 @@ pub fn bind_topology_selections(
                 support_faces,
                 ..
             } => {
-                resolve_edge_selection(boundary, &edge_ids);
+                match boundary {
+                    SurfaceBoundary::Edges(edges) => resolve_edge_selection(edges, &edge_ids),
+                    SurfaceBoundary::Path(path) => {
+                        resolve_path_ref(path, &edge_ids, &curve_ids);
+                    }
+                }
                 resolve_face_selection(support_faces, &face_ids);
             }
             FeatureDefinition::TrimSurface { faces, tool, .. } => {
@@ -2216,14 +2222,18 @@ fn project_filled_surface(feature: &Feature) -> Option<FeatureDefinition> {
         _ => return None,
     };
     Some(FeatureDefinition::FilledSurface {
-        boundary: EdgeSelection::Native(feature.properties.get("Boundary")?.clone()),
+        boundary: SurfaceBoundary::Edges(EdgeSelection::Native(
+            feature.properties.get("Boundary")?.clone(),
+        )),
         support_faces: FaceSelection::Native(feature.properties.get("SupportFaces")?.clone()),
-        continuity,
-        merge_result: feature
-            .properties
-            .get("MergeResult")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
+        continuity: Some(continuity),
+        merge_result: Some(
+            feature
+                .properties
+                .get("MergeResult")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(false),
+        ),
     })
 }
 
@@ -5269,9 +5279,31 @@ pub fn sync_neutral_features(
                 continuity,
                 merge_result,
             } => {
-                let boundary = edge_selection_value(boundary).ok_or_else(|| {
-                    CodecError::Malformed(format!(
-                        "SLDPRT feature {} has no filled-surface boundary",
+                let boundary = match boundary {
+                    SurfaceBoundary::Edges(edges) => {
+                        edge_selection_value(edges).ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} has no filled-surface boundary",
+                                feature.id
+                            ))
+                        })?
+                    }
+                    SurfaceBoundary::Path(_) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} uses a path-valued filled-surface boundary",
+                            feature.id
+                        )));
+                    }
+                };
+                let continuity = continuity.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved filled-surface continuity",
+                        feature.id
+                    ))
+                })?;
+                let merge_result = merge_result.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has an unresolved filled-surface merge setting",
                         feature.id
                     ))
                 })?;

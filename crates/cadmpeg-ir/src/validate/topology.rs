@@ -1953,7 +1953,12 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 support_faces,
                 ..
             } => {
-                edge_selections.push(boundary);
+                match boundary {
+                    crate::features::SurfaceBoundary::Edges(edges) => {
+                        edge_selections.push(edges);
+                    }
+                    crate::features::SurfaceBoundary::Path(path) => paths.push(path),
+                }
                 face_selections.push(support_faces);
             }
             FeatureDefinition::TrimSurface { faces, tool, .. } => {
