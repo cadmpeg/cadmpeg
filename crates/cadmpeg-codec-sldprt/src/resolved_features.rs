@@ -2671,7 +2671,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn current_compact_curve_stores_endpoint_local_ids() {
+    fn current_compact_curve_stores_endpoint_object_indices() {
         let mut payload = vec![0; 84 + SKETCH_MARKER.len()];
         payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         payload[5..13].fill(0xff);
@@ -2682,8 +2682,9 @@ mod marker_tests {
         payload[31..35].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[35..39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
         payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-        payload[76..80].copy_from_slice(&7u32.to_le_bytes());
-        payload[80..84].copy_from_slice(&11u32.to_le_bytes());
+        payload[56..58].copy_from_slice(&6u16.to_le_bytes());
+        payload[58..60].copy_from_slice(&10u16.to_le_bytes());
+        payload[80..84].copy_from_slice(&19u32.to_le_bytes());
         payload[84..].copy_from_slice(SKETCH_MARKER);
 
         assert_eq!(
@@ -16618,7 +16619,7 @@ fn roster_curve_endpoint_markers<'a>(
             .filter_map(|index| {
                 let mut candidates = markers.iter().copied().filter(|marker| {
                     marker.feature_ref == curve.feature_ref
-                        && marker.local_id == Some(index)
+                        && marker.object_index == Some(index)
                         && marker.coordinates_m.is_some()
                         && matches!(
                             marker.kind,
@@ -16680,10 +16681,17 @@ fn current_compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
     {
         return None;
     }
-    let first = u32::from_le_bytes(payload.get(offset + 76..offset + 80)?.try_into().ok()?);
-    let second = u32::from_le_bytes(payload.get(offset + 80..offset + 84)?.try_into().ok()?);
-    (first != 0 && second != 0 && first != u32::MAX && second != u32::MAX)
-        .then_some([first, second])
+    let endpoint = |relative: usize| {
+        u16::from_le_bytes(
+            payload
+                .get(offset + relative..offset + relative + 2)?
+                .try_into()
+                .ok()?,
+        )
+        .checked_add(1)
+        .map(u32::from)
+    };
+    Some([endpoint(56)?, endpoint(58)?])
 }
 
 fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option<u16> {
