@@ -29171,9 +29171,15 @@ fn build_ir(
             })
             .map_or("MdlStatus", |section| section.name.as_str());
         let name = current_operation.and_then(|operation| {
-            operation
-                .display_name_stored
-                .then(|| format!("{} id {}", operation.kind, operation.feature_id))
+            operation.display_name_stored.then_some(())?;
+            let stored_name = operation.stored_name.as_deref()?;
+            Some(
+                operation
+                    .stored_name_prefix
+                    .and_then(|prefix| stored_name.strip_prefix(char::from(prefix)))
+                    .unwrap_or(stored_name)
+                    .to_string(),
+            )
         });
         let source_tag = current_feature_recipe(&scan.feature_operations, operation.feature_id)
             .map(|recipe| recipe.name().to_string());

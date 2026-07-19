@@ -5546,6 +5546,29 @@ fn decode_transfers_mdlstatus_feature_operations_in_history_order() {
 }
 
 #[test]
+fn decode_preserves_stored_feature_identifier_keyword() {
+    let data = build_prt("c", &[("MdlStatus", b"ySurface ID 45\0".to_vec())]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#45")
+        .expect("surface feature");
+
+    assert_eq!(feature.name.as_deref(), Some("Surface ID 45"));
+    assert_eq!(
+        feature
+            .source_properties
+            .get("mdl_stored_name_prefix")
+            .map(String::as_str),
+        Some("y")
+    );
+}
+
+#[test]
 fn nd_decoration_selects_nd_layout() {
     let data = build_prt("c", &[("ND:0:VisibGeom:1", visibgeom_payload(3, 4))]);
     let scan = container::scan_bytes(data);
