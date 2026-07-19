@@ -6157,6 +6157,27 @@ fn saved_spline_nurbs(spline: &crate::feature::FeatureSavedSpline) -> Option<Nur
     })
 }
 
+fn saved_spline_sketch_geometry(
+    spline: &crate::feature::FeatureSavedSpline,
+) -> Option<SketchGeometry> {
+    let nurbs = saved_spline_nurbs(spline)?;
+    nurbs
+        .control_points
+        .iter()
+        .all(|point| point.z.abs() <= 1e-12)
+        .then(|| SketchGeometry::Nurbs {
+            degree: nurbs.degree,
+            knots: nurbs.knots,
+            control_points: nurbs
+                .control_points
+                .into_iter()
+                .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
+                .collect(),
+            weights: nurbs.weights,
+            periodic: nurbs.periodic,
+        })
+}
+
 fn interpolation_spline_surface(
     points: &[[f64; 3]],
     u_parameters: &[f64],
@@ -10108,6 +10129,42 @@ fn unique_saved_section_internal_ids(
         .collect()
 }
 
+fn resolved_saved_spline_external_ids(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeSet<u32> {
+    if !definition
+        .segments
+        .as_ref()
+        .is_some_and(crate::feature::FeatureSegmentTable::is_complete)
+    {
+        return BTreeSet::new();
+    }
+    let unique_saved_ids = unique_saved_section_internal_ids(definition);
+    let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
+    definition
+        .saved_section
+        .iter()
+        .flat_map(|saved| &saved.entities)
+        .filter_map(|entity| match entity {
+            crate::feature::FeatureSavedEntity::Spline(spline) => Some(spline),
+            _ => None,
+        })
+        .filter_map(|spline| {
+            saved_spline_sketch_geometry(spline)?;
+            let internal_id = spline.entity_id?;
+            unique_saved_ids.contains(&internal_id).then_some(())?;
+            definition.order_table.as_ref().and_then(|order| {
+                saved_section_external_id(
+                    order,
+                    &unique_saved_ids,
+                    &ambiguous_segment_ids,
+                    internal_id,
+                )
+            })
+        })
+        .collect()
+}
+
 fn saved_section_external_id(
     order: &crate::feature::FeatureOrderTable,
     unique_saved_ids: &BTreeSet<u32>,
@@ -10373,6 +10430,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         let segments = section_segment_rows(definition);
         let unique_segment_ids = unique_section_segment_external_ids(definition);
         let ambiguous_segment_ids = ambiguous_section_segment_external_ids(definition);
+        let unique_saved_ids = unique_saved_section_internal_ids(definition);
         let points = resolved_section_points(definition);
         let solved = definition
             .trim_entities
@@ -10420,6 +10478,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             })
             .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
+        let resolved_saved_spline_external_ids = resolved_saved_spline_external_ids(definition);
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
         let profile_segments = segments
             .iter()
@@ -10531,6 +10590,11 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .flat_map(|table| &table.opaque_rows)
         {
             let unique_external_id = unique_segment_ids.contains(&segment.external_id);
+            if unique_external_id
+                && resolved_saved_spline_external_ids.contains(&segment.external_id)
+            {
+                continue;
+            }
             let suffix = if unique_external_id {
                 segment.external_id.to_string()
             } else {
@@ -10559,7 +10623,6 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         }
         let mut saved_section_geometries = Vec::new();
         let mut generated_saved_geometries = Vec::new();
-        let unique_saved_ids = unique_saved_section_internal_ids(definition);
         for (internal_id, geometry, offset) in definition
             .saved_section
             .iter()
@@ -10602,7 +10665,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 saved_entity_is_generated_profile(
                     definition.owner_feature_id,
                     external_id,
-                    generated_kind,
+                    &[generated_kind],
                     &scan.feature_entity_tables,
                     &scan.surface_rows,
                 )
@@ -10642,7 +10705,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 _ => None,
             })
         {
-            let Some(nurbs) = saved_spline_nurbs(spline) else {
+            let Some(geometry) = saved_spline_sketch_geometry(spline) else {
                 continue;
             };
             let unique_internal_id = spline
@@ -10672,7 +10735,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 saved_entity_is_generated_profile(
                     definition.owner_feature_id,
                     external_id,
-                    crate::surface::SurfaceKind::Spline,
+                    &[
+                        crate::surface::SurfaceKind::Spline,
+                        crate::surface::SurfaceKind::Extrusion,
+                    ],
                     &scan.feature_entity_tables,
                     &scan.surface_rows,
                 )
@@ -10693,24 +10759,6 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             if entities.iter().any(|entity| entity.id == entity_id) {
                 continue;
             }
-            if nurbs
-                .control_points
-                .iter()
-                .any(|point| point.z.abs() > 1e-12)
-            {
-                continue;
-            }
-            let geometry = SketchGeometry::Nurbs {
-                degree: nurbs.degree,
-                knots: nurbs.knots.clone(),
-                control_points: nurbs
-                    .control_points
-                    .iter()
-                    .map(|point| cadmpeg_ir::math::Point2::new(point.x, point.y))
-                    .collect(),
-                weights: None,
-                periodic: false,
-            };
             annotate(
                 annotations,
                 &entity_id.0,
@@ -11074,7 +11122,7 @@ fn generated_surface_id_for_feature(
 fn saved_entity_is_generated_profile(
     feature_id: Option<u32>,
     source_entity_id: u32,
-    expected_kind: crate::surface::SurfaceKind,
+    expected_kinds: &[crate::surface::SurfaceKind],
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
 ) -> bool {
@@ -11083,13 +11131,14 @@ fn saved_entity_is_generated_profile(
     };
     let direct = generated_surface_id_for_feature(tables, feature_id, source_entity_id)
         .is_some_and(|surface_id| {
-            crate::surface::unique_surface_row(rows, surface_id)
-                .is_some_and(|row| row.feature_id == feature_id && row.kind == expected_kind)
+            crate::surface::unique_surface_row(rows, surface_id).is_some_and(|row| {
+                row.feature_id == feature_id && expected_kinds.contains(&row.kind)
+            })
         });
     if direct {
         return true;
     }
-    if expected_kind != crate::surface::SurfaceKind::Cylinder {
+    if !expected_kinds.contains(&crate::surface::SurfaceKind::Cylinder) {
         return false;
     }
     let mut blind_cylinders = tables
@@ -14581,14 +14630,33 @@ mod resolved_sketch_tests {
         assert!(saved_entity_is_generated_profile(
             Some(17),
             8,
-            crate::surface::SurfaceKind::Cylinder,
+            &[crate::surface::SurfaceKind::Cylinder],
             std::slice::from_ref(&table),
             &rows,
+        ));
+        let mut extrusion_rows = rows.clone();
+        extrusion_rows[2] = row(43, crate::surface::SurfaceKind::Extrusion);
+        assert!(saved_entity_is_generated_profile(
+            Some(17),
+            9,
+            &[
+                crate::surface::SurfaceKind::Spline,
+                crate::surface::SurfaceKind::Extrusion,
+            ],
+            std::slice::from_ref(&table),
+            &extrusion_rows,
+        ));
+        assert!(!saved_entity_is_generated_profile(
+            Some(17),
+            9,
+            &[crate::surface::SurfaceKind::Spline],
+            std::slice::from_ref(&table),
+            &extrusion_rows,
         ));
         assert!(!saved_entity_is_generated_profile(
             Some(17),
             10,
-            crate::surface::SurfaceKind::Cylinder,
+            &[crate::surface::SurfaceKind::Cylinder],
             &[table],
             &rows,
         ));
@@ -19787,9 +19855,105 @@ mod resolved_sketch_tests {
             assert!((derivative[0] - 1.0).abs() < 1e-12);
             assert!(derivative[1].abs() < 1e-12 && derivative[2].abs() < 1e-12);
         }
+        assert!(matches!(
+            saved_spline_sketch_geometry(&spline),
+            Some(SketchGeometry::Nurbs { degree: 3, .. })
+        ));
+        let definition = crate::feature::FeatureDefinition {
+            id: 917,
+            owner_feature_id: Some(40),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: None,
+            segments: Some(crate::feature::FeatureSegmentTable {
+                declared_count: 1,
+                entity_ref: None,
+                rows: Vec::new(),
+                opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
+                    kind: 25,
+                    directions: [None; 3],
+                    point_ids: [Some(1), Some(2)],
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id: 42,
+                    offset: 20,
+                }],
+                offset: 20,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: Some(crate::feature::FeatureOrderTable {
+                declared_count: 1,
+                has_prototype: false,
+                entity_ref: None,
+                rows: vec![crate::feature::FeatureOrderRow {
+                    external_id: 42,
+                    internal_id: 7,
+                    bitmask: 0,
+                    offset: 30,
+                }],
+                offset: 30,
+            }),
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: Some(crate::feature::FeatureSavedSection {
+                entities: vec![crate::feature::FeatureSavedEntity::Spline(spline.clone())],
+                offset: 40,
+            }),
+            offset: 1,
+        };
+        assert_eq!(
+            resolved_saved_spline_external_ids(&definition),
+            BTreeSet::from([42])
+        );
+
         let mut incomplete = spline;
         incomplete.declared_point_count = Some(4);
         assert!(saved_spline_nurbs(&incomplete).is_none());
+        assert!(saved_spline_sketch_geometry(&incomplete).is_none());
+
+        let mut duplicate_saved_id = definition.clone();
+        duplicate_saved_id
+            .saved_section
+            .as_mut()
+            .expect("saved section")
+            .entities
+            .push(crate::feature::FeatureSavedEntity::Spline(incomplete));
+        assert!(resolved_saved_spline_external_ids(&duplicate_saved_id).is_empty());
+
+        let mut ambiguous_external_id = definition;
+        let duplicate_opaque = ambiguous_external_id
+            .segments
+            .as_ref()
+            .expect("segments")
+            .opaque_rows[0]
+            .clone();
+        ambiguous_external_id
+            .segments
+            .as_mut()
+            .expect("segments")
+            .opaque_rows
+            .push(duplicate_opaque);
+        ambiguous_external_id
+            .segments
+            .as_mut()
+            .expect("segments")
+            .declared_count = 2;
+        assert!(resolved_saved_spline_external_ids(&ambiguous_external_id).is_empty());
+
+        let mut incomplete_segment_table = ambiguous_external_id;
+        incomplete_segment_table
+            .segments
+            .as_mut()
+            .expect("segments")
+            .opaque_rows
+            .pop();
+        assert!(resolved_saved_spline_external_ids(&incomplete_segment_table).is_empty());
     }
 
     #[test]

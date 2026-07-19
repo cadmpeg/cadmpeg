@@ -1942,7 +1942,12 @@ positive DICT head rule; and `2d <tail7>` reconstructs `40 <tail7>`.
 The neutral curve is the clamped cubic interpolation spline with four endpoint
 knots, one simple knot at each internal stored parameter, `count + 2` poles,
 point interpolation at every stored parameter, and first derivatives equal to
-the two stored endpoint tangent vectors.
+the two stored endpoint tangent vectors. When a complete `segtab` table and a
+unique `order_table` join bind it to an opaque segment-family row, the complete
+saved spline supplies the neutral geometry for that external sketch entity;
+the opaque row retains the entity's solver identity and does not replace the
+complete saved geometry. A same-feature generated spline or extrusion surface
+binding makes that entity profile geometry.
 
 A saved-line family may contain a named `entity(point)` prototype between
 positional line rows. Positional line replay resumes after that prototype's
