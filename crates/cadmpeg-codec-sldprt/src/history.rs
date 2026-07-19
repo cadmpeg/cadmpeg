@@ -11,13 +11,13 @@ use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::features::{
     Angle, AxisAngle, BodyRetentionMode, BodySelection, BooleanOp, ChamferForm, ChamferSpec,
-    ConfigurationId, DesignConfiguration, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
-    FaceMotion, FaceSelection, FeatureDefinition, FeatureId, FeatureSourceContent,
-    FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length, ParameterId,
-    ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec,
-    RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide, RuledSurfaceMode,
-    ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension, SweepMode,
-    TrimRegion, VariableRadius, VertexSelection, WrapMode,
+    ConfigurationId, CosmeticThreadExtent, DesignConfiguration, DesignParameter, DimensionDisplay,
+    EdgeSelection, Extent, FaceMotion, FaceSelection, FeatureDefinition, FeatureId,
+    FeatureSourceContent, FeatureTreeNodeRole, FlexForm, FlexMode, HoleForm, HoleKind, Length,
+    ParameterId, ParameterValue, PathRef, PatternForm, PatternKind, ProfileRef, RadiusForm,
+    RadiusSpec, RevolutionAxis, RevolutionConstruction, RibConstruction, RibDraft, RibSide,
+    RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace, SurfaceContinuity, SurfaceExtension,
+    SweepMode, TrimRegion, VariableRadius, VertexSelection, WrapMode,
 };
 use cadmpeg_ir::geometry::Curve;
 use cadmpeg_ir::ids::AttributeId;
@@ -737,6 +737,7 @@ pub(crate) fn parse_native_parameter_literal(
 }
 
 fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<&str>) -> bool {
+    let cosmetic_thread = classify(feature) == Some(FeatureClass::CosmeticThread);
     match name {
         "D1" => {
             is_extrude(feature)
@@ -747,7 +748,9 @@ fn native_parameter_is_length(feature: &Feature, name: &str, expression: Option<
                 || feature_family(feature, "Thickness")
                 || feature_input_class(feature, NativeClassKind::Thicken)
                 || is_offset_plane(feature)
+                || cosmetic_thread
         }
+        "D2" if cosmetic_thread => true,
         "D2" if is_chamfer(feature) => {
             expression.is_none_or(|value| parse_angle_rad(value).is_none())
         }
@@ -2304,6 +2307,34 @@ mod history_reference_tests {
         assert_eq!(*extent, None);
     }
 
+    #[test]
+    fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
+        let mut thread = feature("thread", Some("42"), 0);
+        thread.input_class = Some("moCosmeticThread_c".into());
+        thread.parameters.insert("D1".into(), "16".into());
+        thread.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![thread],
+        };
+
+        let projected = project_features(&[history]);
+        assert_eq!(
+            projected[0].definition,
+            FeatureDefinition::CosmeticThread {
+                face: None,
+                diameter: Some(Length(8.0)),
+                extent: Some(CosmeticThreadExtent::Blind {
+                    length: Length(16.0),
+                }),
+            }
+        );
+    }
+
     fn design_configuration(
         id: &str,
         ordinal: u32,
@@ -3438,6 +3469,9 @@ fn project_definition(
         return FeatureDefinition::TreeNode { role };
     }
     let class = classify(feature);
+    if class == Some(FeatureClass::CosmeticThread) {
+        return project_cosmetic_thread(feature);
+    }
     if class == Some(FeatureClass::Sketch) {
         return if feature.kind.eq_ignore_ascii_case("3DSketch") {
             FeatureDefinition::SpatialSketch { sketch: None }
@@ -3559,6 +3593,29 @@ fn project_definition(
         project_rib(feature, native_by_source)
     } else {
         native_definition(feature)
+    }
+}
+
+fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
+    FeatureDefinition::CosmeticThread {
+        face: feature
+            .properties
+            .get("Face")
+            .cloned()
+            .map(FaceSelection::Native),
+        diameter: feature
+            .parameters
+            .get("D2")
+            .and_then(|value| parse_dimension_display_length(value))
+            .filter(|value| *value > 0.0)
+            .map(Length),
+        extent: feature
+            .parameters
+            .get("D1")
+            .and_then(|value| parse_positive_dimension_length_mm(value))
+            .map(|length| CosmeticThreadExtent::Blind {
+                length: Length(length),
+            }),
     }
 }
 
@@ -3817,7 +3874,6 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::Annotations => "Annotations",
         FeatureTreeNodeRole::AmbientLight => "Ambient",
         FeatureTreeNodeRole::Comments => "Comments",
-        FeatureTreeNodeRole::CosmeticThread => "Cosmetic Thread",
         FeatureTreeNodeRole::DesignBinder => "Design Binder",
         FeatureTreeNodeRole::Details => "Details",
         FeatureTreeNodeRole::DissectedProfile => "Profile Selection",
@@ -8209,6 +8265,61 @@ pub fn sync_neutral_features(
                     feature.source_properties.clone(),
                 )
             }
+            FeatureDefinition::CosmeticThread {
+                face,
+                diameter,
+                extent,
+            } => {
+                let Some(record) = existing
+                    .as_deref()
+                    .filter(|record| classify(record) == Some(FeatureClass::CosmeticThread))
+                else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} adds a cosmetic thread",
+                        feature.id
+                    )));
+                };
+                let mut parameters = record.parameters.clone();
+                if let Some(diameter) = diameter {
+                    let prefix = record
+                        .parameters
+                        .get("D2")
+                        .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
+                        .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;");
+                    parameters.insert(
+                        "D2".into(),
+                        format!("{prefix}{}", format_f64_literal(diameter.0)),
+                    );
+                }
+                match extent {
+                    Some(CosmeticThreadExtent::Blind { length }) => {
+                        parameters.insert(
+                            "D1".into(),
+                            format_length_like(
+                                length.0,
+                                record.parameters.get("D1").map(String::as_str),
+                            ),
+                        );
+                    }
+                    Some(CosmeticThreadExtent::Through) => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} changes cosmetic-thread termination",
+                            feature.id
+                        )));
+                    }
+                    None => {}
+                }
+                let mut properties = feature.source_properties.clone();
+                if let Some(FaceSelection::Native(value)) = face {
+                    properties.insert("Face".into(), value.clone());
+                } else if face.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes cosmetic-thread face selection",
+                        feature.id
+                    )));
+                }
+                (record.kind.clone(), parameters, properties)
+            }
             FeatureDefinition::SketchBlockDefinition { sketch } => {
                 if sketch.is_some() {
                     return Err(CodecError::NotImplemented(format!(
@@ -11591,6 +11702,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
     }
     let tag = match &feature.definition {
         FeatureDefinition::TreeNode { .. } => "Feature",
+        FeatureDefinition::CosmeticThread { .. } => "Feature",
         FeatureDefinition::DatumPrincipalPlane { .. } => "Feature",
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",

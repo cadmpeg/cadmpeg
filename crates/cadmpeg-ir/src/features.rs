@@ -268,6 +268,18 @@ pub enum FeatureDefinition {
         /// Structural or presentation role of the node.
         role: FeatureTreeNodeRole,
     },
+    /// Non-geometric thread annotation attached to a cylindrical face.
+    CosmeticThread {
+        /// Cylindrical face carrying the annotation, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        face: Option<FaceSelection>,
+        /// Nominal thread diameter, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        diameter: Option<Length>,
+        /// Axial extent of the annotation, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        extent: Option<CosmeticThreadExtent>,
+    },
     /// Built-in world-origin reference plane.
     DatumPrincipalPlane {
         /// Canonical principal-plane role.
@@ -801,8 +813,6 @@ pub enum FeatureTreeNodeRole {
     AmbientLight,
     /// Comment container.
     Comments,
-    /// Non-geometric cosmetic-thread annotation.
-    CosmeticThread,
     /// Design-binder container.
     DesignBinder,
     /// Detail-item container.
@@ -847,6 +857,19 @@ pub enum FeatureTreeNodeRole {
     SurfaceBodies,
     /// Table container.
     Tables,
+}
+
+/// Axial termination of a cosmetic-thread annotation.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CosmeticThreadExtent {
+    /// Fixed thread length along the cylindrical face.
+    Blind {
+        /// Positive axial thread length.
+        length: Length,
+    },
+    /// Thread annotation spans the complete cylindrical face.
+    Through,
 }
 
 /// Canonical role of a built-in reference plane.

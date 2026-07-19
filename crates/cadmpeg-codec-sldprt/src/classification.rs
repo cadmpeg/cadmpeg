@@ -48,6 +48,7 @@ pub(crate) enum FeatureClass {
     Sweep,
     Loft,
     Rib,
+    CosmeticThread,
 }
 
 /// Semantic kind of a serialized native object class.
@@ -73,6 +74,7 @@ pub(crate) enum NativeClassKind {
     MirrorPattern,
     Combine,
     DeleteBody,
+    CosmeticThread,
     TreeNode(FeatureTreeNodeRole),
     Sketch,
     SketchEntity,
@@ -224,9 +226,12 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moDetailCabinet_c" => tree_node_class(FeatureTreeNodeRole::Annotations),
         "moDetailFolder_c" => tree_node_class(FeatureTreeNodeRole::Details),
         "moCommentsFolder_c" => tree_node_class(FeatureTreeNodeRole::Comments),
-        "moCosmeticThread_c" | "moDerivedCosmeticThread_c" => {
-            tree_node_class(FeatureTreeNodeRole::CosmeticThread)
-        }
+        "moCosmeticThread_c" | "moDerivedCosmeticThread_c" => (
+            NativeClassKind::CosmeticThread,
+            Feature,
+            Some(FeatureClass::CosmeticThread),
+            None,
+        ),
         "moDocsFolder_c" => tree_node_class(FeatureTreeNodeRole::DesignBinder),
         "moEnvFolder_c" => tree_node_class(FeatureTreeNodeRole::LightsAndCameras),
         "moEqnFolder_c" => tree_node_class(FeatureTreeNodeRole::Equations),
@@ -572,13 +577,14 @@ mod tests {
 
         for class in ["moCosmeticThread_c", "moDerivedCosmeticThread_c"] {
             let thread = native_object_class(class);
-            assert_eq!(thread.role, FeatureInputClassRole::Auxiliary, "{class}");
-            assert_eq!(thread.feature, None, "{class}");
+            assert_eq!(thread.kind, NativeClassKind::CosmeticThread, "{class}");
+            assert_eq!(thread.role, FeatureInputClassRole::Feature, "{class}");
             assert_eq!(
-                thread.tree_node,
-                Some(FeatureTreeNodeRole::CosmeticThread),
+                thread.feature,
+                Some(FeatureClass::CosmeticThread),
                 "{class}"
             );
+            assert_eq!(thread.tree_node, None, "{class}");
         }
 
         for (class, role) in [

@@ -894,6 +894,15 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::DatumCoordinateSystem { .. }
             | FeatureDefinition::EquationCurve { .. }
             | FeatureDefinition::Helix { .. } => false,
+            FeatureDefinition::CosmeticThread {
+                face,
+                diameter,
+                extent,
+            } => {
+                face.as_ref().is_none_or(incomplete_face_selection)
+                    || diameter.is_none()
+                    || extent.is_none()
+            }
             FeatureDefinition::SketchBlockDefinition { sketch } => sketch.is_none(),
             FeatureDefinition::SketchBlockInstance { block, placement } => {
                 block.is_none() || placement.is_none()

@@ -4,8 +4,8 @@
 
 use super::*;
 use crate::features::{
-    ChamferSpec, DimensionDisplay, FaceMotion, FeatureSourceContent, FlexMode, HoleKind, Length,
-    ParameterValue, PatternKind, RadiusSpec,
+    ChamferSpec, CosmeticThreadExtent, DimensionDisplay, FaceMotion, FeatureSourceContent,
+    FlexMode, HoleKind, Length, ParameterValue, PatternKind, RadiusSpec,
 };
 use crate::sketches::{SketchConstraintDefinition as Definition, SketchLocus};
 
@@ -2200,6 +2200,24 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     && start_angle.0.is_finite();
                 if !valid {
                     feature_geometry_error(findings, feature, "native-axis helix is invalid");
+                }
+            }
+            FeatureDefinition::CosmeticThread {
+                face,
+                diameter,
+                extent,
+            } => {
+                face_selections.extend(face);
+                let extent_valid = extent.is_none_or(|extent| match extent {
+                    CosmeticThreadExtent::Blind { length } => positive_feature_length(length),
+                    CosmeticThreadExtent::Through => true,
+                });
+                if diameter.is_some_and(|value| !positive_feature_length(value)) || !extent_valid {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "cosmetic-thread geometry is invalid",
+                    );
                 }
             }
             FeatureDefinition::Wrap {
