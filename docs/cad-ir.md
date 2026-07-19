@@ -175,7 +175,7 @@ outputs identify any retained exact bodies. `native` is the sole escape hatch fo
 no neutral definition and carries its source kind, parameter map, and non-parameter property map.
 Length wrappers are millimeters and angle wrappers are radians.
 
-Extents are unresolved, blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles are unresolved, reference native profile identity, or resolve to sketches or faces. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
+Datum planes retain their operation family when placement is unresolved and carry a model-space frame when resolved. Extents are unresolved, blind, symmetric, two-sided, through-all, to-face, or angular. Boolean operations are join, cut, intersect, or new-body. Profiles are unresolved, reference native profile identity, or resolve to sketches or faces. Fillets use constant or sampled variable radii. Chamfers use distance, two distances, or distance-angle. Holes are simple, counterbored, or countersunk. Patterns are linear, circular, or mirrored.
 
 `native_ref` identifies the full-fidelity native record corresponding to a neutral projection. It does not change the neutral definition's meaning.
 

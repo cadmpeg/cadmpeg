@@ -5116,6 +5116,24 @@ fn decode_types_schema_less_datum_plane_names() {
 }
 
 #[test]
+fn decode_retains_named_datum_plane_with_unresolved_placement() {
+    let data = build_prt("c", &[("MdlStatus", b"Datum Plane id 4\0".to_vec())]);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("named datum feature");
+
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
+    ));
+}
+
+#[test]
 fn decode_annotations_cover_every_emitted_entity() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);

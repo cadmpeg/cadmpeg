@@ -13076,6 +13076,7 @@ fn schema_feature_definition(
                 u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
             };
         }
+        return IrFeatureDefinition::DatumPlaneUnresolved;
     }
     IrFeatureDefinition::Native {
         kind: kind.to_string(),

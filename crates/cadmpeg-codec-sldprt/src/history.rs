@@ -3877,6 +3877,12 @@ pub fn sync_neutral_features(
                     feature.source_properties.clone(),
                 )
             }
+            FeatureDefinition::DatumPlaneUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved datum-plane construction",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
@@ -7246,6 +7252,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
     let tag = match &feature.definition {
         FeatureDefinition::TreeNode { .. } => "Feature",
         FeatureDefinition::DatumPrincipalPlane { .. } => "Feature",
+        FeatureDefinition::DatumPlaneUnresolved => "ReferencePlane",
         FeatureDefinition::DatumPlane { .. } => "ReferencePlane",
         FeatureDefinition::DatumOffsetPlane { .. } => "Feature",
         FeatureDefinition::DatumAxis { .. } => "ReferenceAxis",

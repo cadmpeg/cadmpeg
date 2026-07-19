@@ -255,6 +255,8 @@ pub enum FeatureDefinition {
         /// Canonical principal-plane role.
         plane: PrincipalPlane,
     },
+    /// Constructed reference plane whose placement is unresolved.
+    DatumPlaneUnresolved,
     /// Constructed reference plane.
     DatumPlane {
         /// Plane origin in model space.
