@@ -12143,6 +12143,8 @@ fn schema_operation_kind(schema_class: u32) -> Option<&'static str> {
         916 | 917 => Some("Protrusion"),
         923 => Some("Datum Plane"),
         926 => Some("Section"),
+        927 => Some("Draft"),
+        946 => Some("Surface Merge"),
         _ => None,
     }
 }
