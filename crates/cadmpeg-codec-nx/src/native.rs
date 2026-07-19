@@ -10702,7 +10702,7 @@ pub struct ExternalReferenceIndexedRecord {
     pub sha256: String,
     /// Specialized handle-set record when that complete grammar resolves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub decoded_record: Option<String>,
+    pub handle_set_record: Option<String>,
     /// Directory entry containing the external-reference stream.
     pub source_entry: String,
     /// Absolute file offset of the indexed record.
@@ -10732,6 +10732,17 @@ pub struct ExternalReferenceRecord {
     pub source_entry: String,
     /// Absolute file offset of the record marker.
     pub source_offset: u64,
+}
+
+/// Empty EXTREFSTREAM indexed-record form.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalReferenceEmptyRecord {
+    /// Globally unique empty-record identity.
+    pub id: String,
+    /// Owning record in the native `external_reference_indexed_records` arena.
+    pub indexed_record: String,
+    /// Whether the six-byte header is followed by a closing `01` marker.
+    pub closing_marker: bool,
 }
 
 /// One external-reference record slot resolved through its same-stream string table.
@@ -11018,12 +11029,33 @@ pub fn external_reference_indexed_records(
                 record_id: record.record_id,
                 byte_len: record.byte_len as u64,
                 sha256: sha256_hex(bytes),
-                decoded_record: decoded_by_key
+                handle_set_record: decoded_by_key
                     .get(&(entry.name.as_str(), record.record_id))
                     .and_then(|record| *record)
                     .map(|record| record.id.clone()),
                 source_entry: entry.name.clone(),
                 source_offset,
+            })
+        })
+        .collect()
+}
+
+/// Decode every exact six- or seven-byte empty indexed record.
+pub fn external_reference_empty_records(
+    container: &Container,
+    indexed: &[ExternalReferenceIndexedRecord],
+) -> Vec<ExternalReferenceEmptyRecord> {
+    indexed
+        .iter()
+        .filter_map(|record| {
+            let start = usize::try_from(record.source_offset).ok()?;
+            let length = usize::try_from(record.byte_len).ok()?;
+            let bytes = container.data.get(start..start.checked_add(length)?)?;
+            let closing_marker = crate::container::parse_extref_empty_record(bytes)?;
+            Some(ExternalReferenceEmptyRecord {
+                id: record.id.replacen("indexed-record", "empty-record", 1),
+                indexed_record: record.id.clone(),
+                closing_marker,
             })
         })
         .collect()

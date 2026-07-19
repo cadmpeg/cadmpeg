@@ -16543,6 +16543,26 @@ fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
 }
 
 #[test]
+fn external_reference_empty_record_parser_requires_the_complete_form() {
+    assert_eq!(
+        crate::container::parse_extref_empty_record(&[1, 0, 0, 0, 0, 1]),
+        Some(false)
+    );
+    assert_eq!(
+        crate::container::parse_extref_empty_record(&[1, 0, 0, 0, 0, 1, 1]),
+        Some(true)
+    );
+    assert_eq!(
+        crate::container::parse_extref_empty_record(&[1, 0, 0, 0, 0, 1, 0]),
+        None
+    );
+    assert_eq!(
+        crate::container::parse_extref_empty_record(&[1, 0, 0, 0, 0]),
+        None
+    );
+}
+
+#[test]
 fn persistent_handle_identity_bridges_om_and_external_records() {
     let reference = crate::native::ObjectReference {
         id: "nx:test:reference#0".into(),

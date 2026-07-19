@@ -423,6 +423,15 @@ pub(crate) fn parse_extref_record_index(payload: &[u8]) -> Option<Vec<ExtrefInde
     Some(records)
 }
 
+/// Decode the two exact empty indexed-record forms.
+pub(crate) fn parse_extref_empty_record(bytes: &[u8]) -> Option<bool> {
+    match bytes {
+        [1, 0, 0, 0, 0, 1] => Some(false),
+        [1, 0, 0, 0, 0, 1, 1] => Some(true),
+        _ => None,
+    }
+}
+
 /// A parsed SPLMSSTR container and its directory entries.
 #[derive(Debug, Clone)]
 pub struct Container {
