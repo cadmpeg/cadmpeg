@@ -2964,13 +2964,47 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             end: Point3::new(1.0, 1.0, 1.0),
         },
     });
+    let point = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#point".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: point.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point {
+            position: Point3::new(0.5, 0.5, 0.5),
+        },
+    });
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
             id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#group".into()),
-            sketch,
+            sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::SplineGroup {
-                entities: vec![line, circle],
+                entities: vec![line.clone(), circle.clone()],
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#midpoint".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::Midpoint {
+                point,
+                entity: line.clone(),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#tangent".into()),
+            sketch,
+            definition: SpatialSketchConstraintDefinition::Tangent {
+                first: line,
+                second: circle,
             },
             native_ref: None,
         });

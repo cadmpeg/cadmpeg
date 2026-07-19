@@ -869,12 +869,14 @@ pub fn decode(
             (ir.model.spatial_sketches, ir.model.spatial_sketch_entities) =
                 crate::design::project_spatial_sketch_design(
                     &native.design_sketch_placements,
+                    &native.sketch_points,
                     &native.sketch_curve_identities,
                     &native.sketch_relations,
                 );
             ir.model.spatial_sketch_constraints = crate::design::project_spatial_sketch_constraints(
                 &native.design_sketch_placements,
                 &native.sketch_relations,
+                &native.sketch_points,
                 &native.sketch_curve_identities,
                 &ir.model.spatial_sketch_entities,
             );
@@ -1160,12 +1162,14 @@ pub fn decode(
     (ir.model.spatial_sketches, ir.model.spatial_sketch_entities) =
         crate::design::project_spatial_sketch_design(
             &native.design_sketch_placements,
+            &native.sketch_points,
             &native.sketch_curve_identities,
             &native.sketch_relations,
         );
     ir.model.spatial_sketch_constraints = crate::design::project_spatial_sketch_constraints(
         &native.design_sketch_placements,
         &native.sketch_relations,
+        &native.sketch_points,
         &native.sketch_curve_identities,
         &ir.model.spatial_sketch_entities,
     );

@@ -227,6 +227,20 @@ pub struct SpatialSketchConstraint {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpatialSketchConstraintDefinition {
+    /// A model-space point lies at the midpoint of a bounded line.
+    Midpoint {
+        /// Point constrained to the midpoint.
+        point: SpatialSketchEntityId,
+        /// Bounded line whose midpoint is used.
+        entity: SpatialSketchEntityId,
+    },
+    /// Two model-space curves are tangent.
+    Tangent {
+        /// First tangent curve.
+        first: SpatialSketchEntityId,
+        /// Second tangent curve.
+        second: SpatialSketchEntityId,
+    },
     /// A spline's defining model-space entities grouped by one native relation.
     SplineGroup {
         /// Ordered spline-group members.
@@ -238,6 +252,11 @@ pub enum SpatialSketchConstraintDefinition {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpatialSketchGeometry {
+    /// Model-space point.
+    Point {
+        /// Point position in model coordinates.
+        position: Point3,
+    },
     /// Bounded model-space line segment.
     Line {
         /// Segment start in model coordinates.

@@ -4,7 +4,8 @@
 
 use super::*;
 use crate::sketches::{
-    SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus, SpatialSketchGeometry,
+    SketchConstraintDefinition as Constraint, SketchGeometry, SketchLocus,
+    SpatialSketchConstraintDefinition as SpatialConstraint, SpatialSketchGeometry,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -264,6 +265,16 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
         match &entity.geometry {
+            SpatialSketchGeometry::Point { position } => {
+                if !finite3(*position) {
+                    finding(
+                        findings,
+                        Check::Bounds,
+                        id,
+                        "non-finite spatial sketch point",
+                    );
+                }
+            }
             SpatialSketchGeometry::Line { start, end } => {
                 let distance = (end.x - start.x)
                     .hypot(end.y - start.y)
@@ -361,6 +372,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|entity| (entity.id.clone(), entity.sketch.clone()))
         .collect::<HashMap<_, _>>();
+    let spatial_geometry = ir
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .map(|entity| (&entity.id, &entity.geometry))
+        .collect::<HashMap<_, _>>();
     for constraint in &ir.model.spatial_sketch_constraints {
         if !spatial_sketches.contains(&constraint.sketch) {
             finding(
@@ -370,18 +387,25 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                 "spatial constraint references a missing spatial sketch",
             );
         }
-        let crate::sketches::SpatialSketchConstraintDefinition::SplineGroup { entities } =
-            &constraint.definition;
+        let entities = match &constraint.definition {
+            SpatialConstraint::SplineGroup { entities } => entities.clone(),
+            SpatialConstraint::Midpoint { point, entity } => {
+                vec![point.clone(), entity.clone()]
+            }
+            SpatialConstraint::Tangent { first, second } => {
+                vec![first.clone(), second.clone()]
+            }
+        };
         let distinct = entities.iter().collect::<HashSet<_>>();
         if entities.len() < 2 || distinct.len() != entities.len() {
             finding(
                 findings,
                 Check::Counts,
                 &constraint.id.0,
-                "invalid spatial spline-group arity",
+                "invalid spatial constraint arity",
             );
         }
-        for entity in entities {
+        for entity in &entities {
             if spatial_entities.get(entity) != Some(&constraint.sketch) {
                 finding(
                     findings,
@@ -390,6 +414,41 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     "spatial constraint member does not belong to its sketch",
                 );
             }
+        }
+        match &constraint.definition {
+            SpatialConstraint::Midpoint { point, entity }
+                if !matches!(
+                    spatial_geometry.get(point),
+                    Some(SpatialSketchGeometry::Point { .. })
+                ) || !matches!(
+                    spatial_geometry.get(entity),
+                    Some(SpatialSketchGeometry::Line { .. })
+                ) =>
+            {
+                finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    &constraint.id.0,
+                    "spatial midpoint requires a point and line",
+                );
+            }
+            SpatialConstraint::Tangent { first, second }
+                if matches!(
+                    spatial_geometry.get(first),
+                    Some(SpatialSketchGeometry::Point { .. }) | None
+                ) || matches!(
+                    spatial_geometry.get(second),
+                    Some(SpatialSketchGeometry::Point { .. }) | None
+                ) =>
+            {
+                finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    &constraint.id.0,
+                    "spatial tangent requires two curves",
+                );
+            }
+            _ => {}
         }
     }
 

@@ -3957,6 +3957,18 @@ fn neutral_spatial_sketch_curve_id(
     ))
 }
 
+fn neutral_spatial_sketch_point_id(
+    native_ref: &str,
+    persistent_id: u64,
+) -> cadmpeg_ir::sketches::SpatialSketchEntityId {
+    let stream = identity_key_component(native_stream(native_ref).unwrap_or("f3d:design"));
+    cadmpeg_ir::sketches::SpatialSketchEntityId(format!(
+        "f3d:model:spatial-sketch-entity#{}:{}p{persistent_id}",
+        stream.len(),
+        stream,
+    ))
+}
+
 pub(crate) fn neutral_sketch_constraint_id(
     native_ref: &str,
     record_index: u32,
@@ -4015,6 +4027,32 @@ fn placement_origin_scale(placement: &DesignSketchPlacement) -> f64 {
     }
 }
 
+fn sketch_curve_is_spatial(curve: &SketchCurveIdentity) -> bool {
+    match curve.geometry.as_ref() {
+        Some(SketchCurveGeometry::Line { start, end, .. }) => {
+            !(planar_point(start) && planar_point(end))
+        }
+        Some(SketchCurveGeometry::Arc {
+            center,
+            normal,
+            reference_direction,
+            ..
+        }) => {
+            !(planar_point(center)
+                && reference_direction.z.abs() <= 1.0e-9
+                && sketch_normal_sign(normal).is_some())
+        }
+        Some(SketchCurveGeometry::Nurbs { control_points, .. }) => {
+            control_points.iter().any(|point| !planar_point(point))
+        }
+        None => false,
+    }
+}
+
+fn sketch_point_depth(point: &SketchPoint) -> Option<f64> {
+    f64_at(&point.raw_bytes, point.coordinate_offset as usize + 16).map(|value| value * 10.0)
+}
+
 /// Project placed Design sketches and their exact planar point/curve records.
 pub fn project_sketch_design(
     placements: &[DesignSketchPlacement],
@@ -4040,8 +4078,23 @@ pub fn project_sketch_design(
             ))
         })
         .collect::<HashMap<_, _>>();
+    let spatial_owners = curves
+        .iter()
+        .filter(|curve| sketch_curve_is_spatial(curve))
+        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
+        .chain(points.iter().filter_map(|point| {
+            (sketch_point_depth(point)?.abs() > 1.0e-9)
+                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
+        }))
+        .collect::<HashSet<_>>();
     let mut sketches = placements
         .iter()
+        .filter(|placement| {
+            !u32::try_from(placement.entity_suffix).is_ok_and(|owner| {
+                native_stream(&placement.id)
+                    .is_some_and(|scope| spatial_owners.contains(&(scope.to_owned(), owner)))
+            })
+        })
         .map(|placement| Sketch {
             id: neutral_sketch_id(placement),
             name: Some(placement.entity_id.clone()),
@@ -4070,8 +4123,12 @@ pub fn project_sketch_design(
     let mut entities = points
         .iter()
         .filter_map(|point| {
-            let placement =
-                placements_by_suffix.get(&(native_stream(&point.id)?, point.owner_reference?))?;
+            let owner = point.owner_reference?;
+            let scope = native_stream(&point.id)?;
+            if spatial_owners.contains(&(scope.to_owned(), owner)) {
+                return None;
+            }
+            let placement = placements_by_suffix.get(&(scope, owner))?;
             Some(SketchEntity {
                 id: neutral_sketch_point_id(&point.id, point.persistent_id),
                 sketch: neutral_sketch_id(placement),
@@ -4086,8 +4143,12 @@ pub fn project_sketch_design(
         })
         .collect::<Vec<_>>();
     entities.extend(curves.iter().filter_map(|curve| {
-        let placement =
-            placements_by_suffix.get(&(native_stream(&curve.id)?, curve.owner_reference?))?;
+        let owner = curve.owner_reference?;
+        let scope = native_stream(&curve.id)?;
+        if spatial_owners.contains(&(scope.to_owned(), owner)) {
+            return None;
+        }
+        let placement = placements_by_suffix.get(&(scope, owner))?;
         let geometry = match curve.geometry.as_ref()? {
             SketchCurveGeometry::Line {
                 start, end, normal, ..
@@ -4170,6 +4231,7 @@ pub fn project_sketch_design(
 /// Project non-planar Design sketch curves into model-space spatial sketches.
 pub fn project_spatial_sketch_design(
     placements: &[DesignSketchPlacement],
+    points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     relations: &[SketchRelation],
 ) -> (
@@ -4191,6 +4253,15 @@ pub fn project_spatial_sketch_design(
             ))
         })
         .collect::<HashMap<_, _>>();
+    let spatial_owners = curves
+        .iter()
+        .filter(|curve| sketch_curve_is_spatial(curve))
+        .filter_map(|curve| Some((native_stream(&curve.id)?.to_owned(), curve.owner_reference?)))
+        .chain(points.iter().filter_map(|point| {
+            (sketch_point_depth(point)?.abs() > 1.0e-9)
+                .then(|| Some((native_stream(&point.id)?.to_owned(), point.owner_reference?)))?
+        }))
+        .collect::<HashSet<_>>();
     let curves_by_record = curves
         .iter()
         .filter_map(|curve| Some(((native_stream(&curve.id)?, curve.record_index), curve)))
@@ -4319,7 +4390,9 @@ pub fn project_spatial_sketch_design(
                         radius,
                         start_angle,
                         end_angle,
-                    } if !(planar_point(center) && reference_direction.z.abs() <= 1.0e-9)
+                    } if !(planar_point(center)
+                        && reference_direction.z.abs() <= 1.0e-9
+                        && sketch_normal_sign(normal).is_some())
                         && *radius > 0.0 =>
                     {
                         let center = transform_point(placement, center);
@@ -4384,6 +4457,30 @@ pub fn project_spatial_sketch_design(
             })
         })
         .collect::<Vec<_>>();
+    entities.extend(points.iter().filter_map(|point| {
+        let scope = native_stream(&point.id)?;
+        let owner = point.owner_reference?;
+        if !spatial_owners.contains(&(scope.to_owned(), owner)) {
+            return None;
+        }
+        let placement = placements_by_suffix.get(&(scope, owner))?;
+        let sketch = neutral_spatial_sketch_id(placement);
+        let depth = sketch_point_depth(point)?;
+        Some(SpatialSketchEntity {
+            id: neutral_spatial_sketch_point_id(&point.id, point.persistent_id),
+            sketch,
+            construction: false,
+            native_ref: Some(point.id.clone()),
+            geometry_ref: None,
+            endpoint_refs: Vec::new(),
+            geometry: SpatialSketchGeometry::Point {
+                position: transform_point(
+                    placement,
+                    &Point3::new(point.coordinates.u, point.coordinates.v, depth),
+                ),
+            },
+        })
+    }));
     entities.sort_by_key(|entity| entity.id.clone());
     let spatial_ids = entities
         .iter()
@@ -4407,11 +4504,13 @@ pub fn project_spatial_sketch_design(
 pub fn project_spatial_sketch_constraints(
     placements: &[DesignSketchPlacement],
     relations: &[SketchRelation],
+    points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
         SpatialSketchConstraint, SpatialSketchConstraintDefinition as Definition,
+        SpatialSketchGeometry,
     };
 
     let spatial_sketches = entities
@@ -4434,6 +4533,11 @@ pub fn project_spatial_sketch_constraints(
     let record_indices = curves
         .iter()
         .map(|curve| (curve.id.as_str(), curve.record_index))
+        .chain(
+            points
+                .iter()
+                .map(|point| (point.id.as_str(), point.record_index)),
+        )
         .collect::<HashMap<_, _>>();
     let projected = entities
         .iter()
@@ -4448,28 +4552,81 @@ pub fn project_spatial_sketch_constraints(
     let mut constraints = relations
         .iter()
         .filter_map(|relation| {
-            if relation.unknown_constraint_bits != 0
-                || relation.constraint_kinds != [SketchConstraintKind::SplineGroup]
-                || relation.members.len() < 2
-            {
+            if relation.unknown_constraint_bits != 0 || relation.constraint_kinds.len() != 1 {
                 return None;
             }
             let scope = native_stream(&relation.id)?;
             let sketch = sketches.get(&(scope, relation.owner_reference))?.clone();
-            let members = relation
+            let member_entities = relation
                 .members
                 .iter()
-                .map(|record_index| {
-                    projected
-                        .get(&(scope, *record_index))
-                        .map(|entity| entity.id.clone())
-                })
+                .map(|record_index| projected.get(&(scope, *record_index)).copied())
                 .collect::<Option<Vec<_>>>()?;
+            let members = member_entities
+                .iter()
+                .map(|entity| entity.id.clone())
+                .collect::<Vec<_>>();
             let distinct = members.iter().collect::<HashSet<_>>();
-            (distinct.len() == members.len()).then_some(SpatialSketchConstraint {
+            if distinct.len() != members.len() {
+                return None;
+            }
+            let definition = match relation.constraint_kinds[0] {
+                SketchConstraintKind::SplineGroup if members.len() >= 2 => {
+                    Definition::SplineGroup { entities: members }
+                }
+                SketchConstraintKind::Tangent => {
+                    let [first, second] = member_entities.as_slice() else {
+                        return None;
+                    };
+                    if matches!(first.geometry, SpatialSketchGeometry::Point { .. })
+                        || matches!(second.geometry, SpatialSketchGeometry::Point { .. })
+                    {
+                        return None;
+                    }
+                    Definition::Tangent {
+                        first: first.id.clone(),
+                        second: second.id.clone(),
+                    }
+                }
+                SketchConstraintKind::Midpoint => {
+                    let [first, second] = member_entities.as_slice() else {
+                        return None;
+                    };
+                    let (point, line, position, start, end) =
+                        match (&first.geometry, &second.geometry) {
+                            (
+                                SpatialSketchGeometry::Point { position },
+                                SpatialSketchGeometry::Line { start, end },
+                            ) => (first, second, position, start, end),
+                            (
+                                SpatialSketchGeometry::Line { start, end },
+                                SpatialSketchGeometry::Point { position },
+                            ) => (second, first, position, start, end),
+                            _ => return None,
+                        };
+                    let midpoint = Point3::new(
+                        (start.x + end.x) * 0.5,
+                        (start.y + end.y) * 0.5,
+                        (start.z + end.z) * 0.5,
+                    );
+                    let scale = 1.0 + midpoint.x.abs().max(midpoint.y.abs()).max(midpoint.z.abs());
+                    if (position.x - midpoint.x).abs() > scale * 1.0e-9
+                        || (position.y - midpoint.y).abs() > scale * 1.0e-9
+                        || (position.z - midpoint.z).abs() > scale * 1.0e-9
+                    {
+                        return None;
+                    }
+                    Definition::Midpoint {
+                        point: point.id.clone(),
+                        entity: line.id.clone(),
+                    }
+                }
+                _ => return None,
+            };
+            Some(SpatialSketchConstraint {
                 id: neutral_sketch_constraint_id(&relation.id, relation.record_index),
                 sketch,
-                definition: Definition::SplineGroup { entities: members },
+                definition,
                 native_ref: Some(relation.id.clone()),
             })
         })
@@ -17419,7 +17576,7 @@ pub fn decode_sketch_points(
         let mut emitted = std::collections::HashSet::new();
         let bytes = scan.entry_bytes(&entry.name)?;
         let mut at = 0usize;
-        while at + 112 <= bytes.len() {
+        while at + 113 <= bytes.len() {
             let Some((class_tag, after_tag)) = lp_ascii(bytes, at) else {
                 at += 1;
                 continue;
@@ -17439,7 +17596,8 @@ pub fn decode_sketch_points(
                 continue;
             };
             let (u, v) = (x * 10.0, y * 10.0);
-            if !u.is_finite() || !v.is_finite() {
+            let depth = f64_at(payload, 105 + shift).map(|value| value * 10.0);
+            if !u.is_finite() || !v.is_finite() || depth.is_none_or(|value| !value.is_finite()) {
                 at += 1;
                 continue;
             }
@@ -17456,7 +17614,7 @@ pub fn decode_sketch_points(
                     persistent_id,
                     paired_reference,
                     coordinates: Point2::new(u, v),
-                    raw_bytes: payload[..112 + shift].to_vec(),
+                    raw_bytes: payload[..113 + shift].to_vec(),
                 });
             }
             at += 112;
@@ -24922,11 +25080,46 @@ mod relation_tests {
             return_member_offsets: Vec::new(),
             raw_bytes: Vec::new(),
         };
+        let mut point_bytes = vec![0; 24];
+        point_bytes[16..24].copy_from_slice(&0.45f64.to_le_bytes());
+        let point = SketchPoint {
+            id: "f3d:Design/BulkStream.dat:point#106".into(),
+            record_index: 106,
+            owner_reference: Some(42),
+            class_tag: "305".into(),
+            byte_offset: 106,
+            coordinate_offset: 0,
+            entity_genesis: None,
+            persistent_id: 5,
+            paired_reference: 0,
+            coordinates: Point2::new(2.5, 3.5),
+            raw_bytes: point_bytes,
+        };
+        let mut midpoint_relation = relation.clone();
+        midpoint_relation.id = "f3d:Design/BulkStream.dat:relation#106".into();
+        midpoint_relation.record_index = 106;
+        midpoint_relation.state = 0x1000;
+        midpoint_relation.constraint_kinds = vec![SketchConstraintKind::Midpoint];
+        midpoint_relation.members = vec![106, 101];
+        midpoint_relation.return_members = vec![101, 106];
 
-        let (sketches, entities) =
-            project_spatial_sketch_design(&[placement.clone()], &curves, &[relation.clone()]);
+        let relations = [relation.clone(), midpoint_relation.clone()];
+        let (planar_sketches, planar_entities) = project_sketch_design(
+            &[placement.clone()],
+            std::slice::from_ref(&point),
+            &curves,
+            1.0e-6,
+        );
+        assert!(planar_sketches.is_empty());
+        assert!(planar_entities.is_empty());
+        let (sketches, entities) = project_spatial_sketch_design(
+            &[placement.clone()],
+            std::slice::from_ref(&point),
+            &curves,
+            &relations,
+        );
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 4);
+        assert_eq!(entities.len(), 5);
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
             SpatialSketchGeometry::Line { start, end }
@@ -24939,14 +25132,26 @@ mod relation_tests {
                 if start == Point3::new(14.0, 22.0, 33.0)
                     && end == Point3::new(17.0, 25.0, 36.0)
         )));
-        let constraints =
-            project_spatial_sketch_constraints(&[placement], &[relation], &curves, &entities);
+        let constraints = project_spatial_sketch_constraints(
+            &[placement],
+            &relations,
+            &[point],
+            &curves,
+            &entities,
+        );
         assert!(matches!(
-            constraints.as_slice(),
-            [cadmpeg_ir::sketches::SpatialSketchConstraint {
+            constraints.first(),
+            Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
                 definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::SplineGroup { entities },
                 ..
-            }] if entities.len() == 2
+            }) if entities.len() == 2
+        ));
+        assert!(matches!(
+            constraints.get(1),
+            Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
+                definition: cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Midpoint { .. },
+                ..
+            })
         ));
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
