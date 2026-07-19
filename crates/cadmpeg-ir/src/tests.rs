@@ -2725,7 +2725,6 @@ fn sketch_feature_ownership_and_order_are_validated() {
             source_content: Vec::new(),
             outputs: Vec::new(),
             definition: FeatureDefinition::Sketch {
-                space: crate::features::SketchSpace::Planar,
                 sketch: Some(sketch_id.clone()),
             },
             native_ref: None,
@@ -2878,20 +2877,16 @@ fn sketch_regions_round_trip_with_explicit_boundary_roles() {
 }
 
 #[test]
-fn spatial_sketch_cannot_own_planar_geometry() {
-    use crate::features::{Feature, FeatureDefinition, FeatureId, SketchSpace};
-    use crate::sketches::{Sketch, SketchId};
+fn spatial_sketch_feature_owns_spatial_geometry() {
+    use crate::features::{Feature, FeatureDefinition, FeatureId};
+    use crate::sketches::{SpatialSketch, SpatialSketchId};
 
     let mut ir = unit_cube();
-    let sketch_id = SketchId("synthetic:test:sketch#planar".into());
-    ir.model.sketches.push(Sketch {
+    let sketch_id = SpatialSketchId("synthetic:test:spatial-sketch#owned".into());
+    ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        normal: Vector3::new(0.0, 0.0, 1.0),
-        u_axis: Vector3::new(1.0, 0.0, 0.0),
-        profiles: Vec::new(),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -2906,17 +2901,21 @@ fn spatial_sketch_cannot_own_planar_geometry() {
         source_text: None,
         source_content: Vec::new(),
         outputs: Vec::new(),
-        definition: FeatureDefinition::Sketch {
-            space: SketchSpace::Spatial,
+        definition: FeatureDefinition::SpatialSketch {
             sketch: Some(sketch_id),
         },
         native_ref: None,
     });
 
+    assert!(validate(&ir, Vec::new()).findings.is_empty());
+    let mut duplicate = ir.model.features.last().expect("spatial owner").clone();
+    duplicate.id = FeatureId("synthetic:test:feature#duplicate-spatial-sketch".into());
+    duplicate.ordinal = 1;
+    ir.model.features.push(duplicate);
     assert!(validate(&ir, Vec::new())
         .findings
         .iter()
-        .any(|finding| { finding.message == "spatial sketch owns planar sketch geometry" }));
+        .any(|finding| finding.message.contains("has multiple owning features")));
 }
 
 #[test]

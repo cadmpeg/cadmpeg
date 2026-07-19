@@ -549,7 +549,7 @@ pub fn project_parameter_design_with_edge_identities(
     use cadmpeg_ir::features::{
         Angle, BodySelection, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection,
         Feature, FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternForm,
-        PatternKind, ProfileRef, RadiusSpec, SketchSpace,
+        PatternKind, RadiusSpec,
     };
     use std::collections::BTreeMap;
 
@@ -559,15 +559,6 @@ pub fn project_parameter_design_with_edge_identities(
             Some((
                 (native_stream(&scope.id)?, scope.record_index),
                 neutral_feature_id(scope),
-            ))
-        })
-        .collect::<HashMap<_, _>>();
-    let sketches_by_scope = placements
-        .iter()
-        .filter_map(|placement| {
-            Some((
-                (native_stream(&placement.id)?, placement.scope_record_index?),
-                neutral_sketch_id(placement),
             ))
         })
         .collect::<HashMap<_, _>>();
@@ -612,12 +603,7 @@ pub fn project_parameter_design_with_edge_identities(
                 .collect::<Vec<_>>();
             let family = design_feature_family(&scope.kind);
             let definition = if family == Some(DesignFeatureFamily::Sketch) {
-                FeatureDefinition::Sketch {
-                    space: SketchSpace::Planar,
-                    sketch: sketches_by_scope
-                        .get(&(native_scope, scope.record_index))
-                        .cloned(),
-                }
+                FeatureDefinition::Sketch { sketch: None }
             } else if family == Some(DesignFeatureFamily::Extrude) {
                 project_extrude(
                     scope,
@@ -1106,29 +1092,6 @@ pub fn project_parameter_design_with_edge_identities(
             }
         }
     }
-    let sketch_features = features
-        .iter()
-        .filter_map(|feature| match &feature.definition {
-            FeatureDefinition::Sketch {
-                sketch: Some(sketch),
-                ..
-            } => Some((sketch.0.clone(), feature.id.clone())),
-            _ => None,
-        })
-        .collect::<HashMap<_, _>>();
-    for feature in &mut features {
-        if let FeatureDefinition::Extrude {
-            profile: ProfileRef::Sketch(sketch),
-            ..
-        } = &feature.definition
-        {
-            if let Some(dependency) = sketch_features.get(&sketch.0) {
-                if dependency != &feature.id && !feature.dependencies.contains(dependency) {
-                    feature.dependencies.push(dependency.clone());
-                }
-            }
-        }
-    }
     features.sort_by_key(|feature| feature.id.clone());
     assign_feature_ordinals(&mut features);
 
@@ -1311,6 +1274,79 @@ pub fn project_parameter_design_with_edge_identities(
     assign_feature_ordinals(&mut features);
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
+}
+
+/// Bind each Sketch history node to geometry in exactly one neutral sketch arena.
+pub fn bind_sketch_feature_geometry(
+    features: &mut [cadmpeg_ir::features::Feature],
+    scopes: &[DesignParameterScope],
+    placements: &[DesignSketchPlacement],
+    sketches: &[cadmpeg_ir::sketches::Sketch],
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+) {
+    use cadmpeg_ir::features::{FeatureDefinition, ProfileRef};
+
+    for feature in features.iter_mut() {
+        if !matches!(
+            feature.definition,
+            FeatureDefinition::Sketch { .. } | FeatureDefinition::SpatialSketch { .. }
+        ) {
+            continue;
+        }
+        let Some(scope) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
+        else {
+            continue;
+        };
+        let stream = native_stream(&scope.id);
+        let matching = placements
+            .iter()
+            .filter(|placement| {
+                native_stream(&placement.id) == stream
+                    && placement.scope_record_index == Some(scope.record_index)
+            })
+            .collect::<Vec<_>>();
+        let [placement] = matching.as_slice() else {
+            continue;
+        };
+        let planar = neutral_sketch_id(placement);
+        let spatial = neutral_spatial_sketch_id(placement);
+        let has_planar = sketches.iter().any(|sketch| sketch.id == planar);
+        let has_spatial = spatial_sketches.iter().any(|sketch| sketch.id == spatial);
+        feature.definition = match (has_planar, has_spatial) {
+            (true, false) => FeatureDefinition::Sketch {
+                sketch: Some(planar),
+            },
+            (false, true) => FeatureDefinition::SpatialSketch {
+                sketch: Some(spatial),
+            },
+            _ => FeatureDefinition::Sketch { sketch: None },
+        };
+    }
+    let sketch_features = features
+        .iter()
+        .filter_map(|feature| match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+            } => Some((sketch.clone(), feature.id.clone())),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    for feature in features.iter_mut() {
+        if let FeatureDefinition::Extrude {
+            profile: ProfileRef::Sketch(sketch),
+            ..
+        } = &feature.definition
+        {
+            if let Some(dependency) = sketch_features.get(sketch) {
+                if dependency != &feature.id && !feature.dependencies.contains(dependency) {
+                    feature.dependencies.push(dependency.clone());
+                }
+            }
+        }
+    }
 }
 
 fn project_offset_faces(
@@ -3965,7 +4001,7 @@ pub(crate) fn neutral_sketch_curve_id(
     ))
 }
 
-fn neutral_spatial_sketch_id(
+pub(crate) fn neutral_spatial_sketch_id(
     placement: &DesignSketchPlacement,
 ) -> cadmpeg_ir::sketches::SpatialSketchId {
     let stream = identity_key_component(native_stream(&placement.id).unwrap_or("f3d:design"));
@@ -27704,15 +27740,33 @@ mod relation_tests {
         sketch_scope.extrude_extent = None;
         sketch_scope.extrude_start = None;
         sketch_scope.extrude_profile = None;
-        let (features, _) = project_parameter_design(
+        let scopes = [sketch_scope, scope.clone()];
+        let (mut features, _) = project_parameter_design(
             &[owned_along],
             &[owner],
-            &[sketch_scope, scope.clone()],
+            &scopes,
             &[],
             &[],
             &[],
             &[],
             std::slice::from_ref(&placement),
+        );
+        let sketches = [cadmpeg_ir::sketches::Sketch {
+            id: neutral_sketch_id(&placement),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            profiles: Vec::new(),
+            native_ref: Some(placement.id.clone()),
+        }];
+        super::bind_sketch_feature_geometry(
+            &mut features,
+            &scopes,
+            std::slice::from_ref(&placement),
+            &sketches,
+            &[],
         );
         let sketch_feature = features
             .iter()

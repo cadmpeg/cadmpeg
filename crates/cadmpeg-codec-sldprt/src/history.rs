@@ -13,7 +13,7 @@ use cadmpeg_ir::features::{
     FeatureDefinition, FeatureId, FeatureSourceContent, FeatureTreeNodeRole, FilletGroup, FlexForm,
     FlexMode, HoleForm, HoleKind, Length, ParameterId, ParameterValue, PathRef, PatternForm,
     PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis, RevolutionConstruction,
-    RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors, SketchSpace,
+    RibConstruction, RibDraft, RibSide, RuledSurfaceMode, ScaleCenter, ScaleFactors,
     SurfaceBoundary, SurfaceContinuity, SurfaceExtension, SweepMode, TrimRegion, VariableRadius,
     WrapMode,
 };
@@ -660,15 +660,7 @@ pub fn bind_unique_sketch_feature(
     let feature_indices = features
         .iter()
         .enumerate()
-        .filter(|(_, feature)| {
-            matches!(
-                feature.definition,
-                FeatureDefinition::Sketch {
-                    space: SketchSpace::Planar,
-                    ..
-                }
-            )
-        })
+        .filter(|(_, feature)| matches!(feature.definition, FeatureDefinition::Sketch { .. }))
         .map(|(index, _)| index)
         .collect::<Vec<_>>();
     let mut bindings = Vec::new();
@@ -714,7 +706,6 @@ pub fn bind_unique_sketch_feature(
     }
     for (index, _, _, sketch) in &bindings {
         features[*index].definition = FeatureDefinition::Sketch {
-            space: SketchSpace::Planar,
             sketch: Some(sketch.clone()),
         };
     }
@@ -1104,13 +1095,10 @@ fn project_definition(
     }
     let class = classify(feature);
     if class == Some(FeatureClass::Sketch) {
-        return FeatureDefinition::Sketch {
-            space: if feature.kind.eq_ignore_ascii_case("3DSketch") {
-                SketchSpace::Spatial
-            } else {
-                SketchSpace::Planar
-            },
-            sketch: None,
+        return if feature.kind.eq_ignore_ascii_case("3DSketch") {
+            FeatureDefinition::SpatialSketch { sketch: None }
+        } else {
+            FeatureDefinition::Sketch { sketch: None }
         };
     }
     if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
@@ -4560,7 +4548,7 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
-            FeatureDefinition::Sketch { space, .. } => {
+            FeatureDefinition::Sketch { .. } | FeatureDefinition::SpatialSketch { .. } => {
                 if existing
                     .as_deref()
                     .is_some_and(|record| !feature_family(record, "Sketch"))
@@ -4572,23 +4560,22 @@ pub fn sync_neutral_features(
                 }
                 (
                     existing.as_deref().map_or_else(
-                        || match space {
-                            SketchSpace::Planar => "Sketch".into(),
-                            SketchSpace::Spatial => "3DSketch".into(),
+                        || match &feature.definition {
+                            FeatureDefinition::Sketch { .. } => "Sketch".into(),
+                            FeatureDefinition::SpatialSketch { .. } => "3DSketch".into(),
+                            _ => unreachable!("matched sketch definition"),
                         },
                         |record| {
-                            let native_space = if record.kind.eq_ignore_ascii_case("3DSketch") {
-                                SketchSpace::Spatial
-                            } else {
-                                SketchSpace::Planar
-                            };
-                            if native_space == *space {
+                            let spatial = matches!(
+                                &feature.definition,
+                                FeatureDefinition::SpatialSketch { .. }
+                            );
+                            if record.kind.eq_ignore_ascii_case("3DSketch") == spatial {
                                 record.kind.clone()
+                            } else if spatial {
+                                "3DSketch".into()
                             } else {
-                                match space {
-                                    SketchSpace::Planar => "Sketch".into(),
-                                    SketchSpace::Spatial => "3DSketch".into(),
-                                }
+                                "Sketch".into()
                             }
                         },
                     ),
@@ -7113,6 +7100,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Helix { .. } | FeatureDefinition::HelixNativeAxis { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } => "Sketch",
+        FeatureDefinition::SpatialSketch { .. } => "3DSketch",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
         FeatureDefinition::Sweep {

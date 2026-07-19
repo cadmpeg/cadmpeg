@@ -69,7 +69,7 @@ pub use features::{
     BodyRetentionMode, BodySelection, CoilConstruction, CoilExtent, CoilPlacement, CoilResult,
     CoilSection, CoilSectionPlacement, ConfigurationId, DesignConfiguration, DesignParameter,
     FaceMotion, Feature, FeatureDefinition, FeatureId, ParameterId, ParameterPmi, ParameterValue,
-    PmiDimensionSubtype, ScaleCenter, ScaleFactors, SketchSpace,
+    PmiDimensionSubtype, ScaleCenter, ScaleFactors,
 };
 pub use native::{LossCount, Native, NativeConvertError, NativeNamespace, NativeRecord};
 /// Source location attached to a [`LossNote`].

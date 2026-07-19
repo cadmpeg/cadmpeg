@@ -873,6 +873,13 @@ pub fn decode(
                     &native.sketch_curve_identities,
                     &native.sketch_relations,
                 );
+            crate::design::bind_sketch_feature_geometry(
+                &mut ir.model.features,
+                &native.design_parameter_scopes,
+                &native.design_sketch_placements,
+                &ir.model.sketches,
+                &ir.model.spatial_sketches,
+            );
             ir.model.spatial_sketch_constraints = crate::design::project_spatial_sketch_constraints(
                 &native.design_sketch_placements,
                 &native.sketch_relations,
@@ -1166,6 +1173,13 @@ pub fn decode(
             &native.sketch_curve_identities,
             &native.sketch_relations,
         );
+    crate::design::bind_sketch_feature_geometry(
+        &mut ir.model.features,
+        &native.design_parameter_scopes,
+        &native.design_sketch_placements,
+        &ir.model.sketches,
+        &ir.model.spatial_sketches,
+    );
     ir.model.spatial_sketch_constraints = crate::design::project_spatial_sketch_constraints(
         &native.design_sketch_placements,
         &native.sketch_relations,
@@ -1476,7 +1490,19 @@ fn populate_annotations(
         }
         for entity in &native.design_sketch_placements {
             note(&entity.id, "design_sketch_placement");
-            note(&crate::design::neutral_sketch_id(entity).0, "sketch");
+            let planar = crate::design::neutral_sketch_id(entity);
+            if ir.model.sketches.iter().any(|sketch| sketch.id == planar) {
+                note(&planar.0, "sketch");
+            }
+            let spatial = crate::design::neutral_spatial_sketch_id(entity);
+            if ir
+                .model
+                .spatial_sketches
+                .iter()
+                .any(|sketch| sketch.id == spatial)
+            {
+                note(&spatial.0, "spatial_sketch");
+            }
         }
         for entity in &native.design_entity_headers {
             note(&entity.id, "design_entity_header");

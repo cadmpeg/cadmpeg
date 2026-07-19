@@ -2268,17 +2268,22 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     feature_geometry_error(findings, feature, "pattern geometry is invalid");
                 }
             }
-            FeatureDefinition::Sketch { space, sketch } => {
-                if matches!(space, crate::features::SketchSpace::Spatial) && sketch.is_some() {
-                    feature_geometry_error(
-                        findings,
-                        feature,
-                        "spatial sketch owns planar sketch geometry",
-                    );
-                }
+            FeatureDefinition::Sketch { sketch } => {
                 if let Some(sketch) = sketch {
                     if !ir.model.sketches.iter().any(|value| value.id == *sketch) {
                         ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
+                    }
+                }
+            }
+            FeatureDefinition::SpatialSketch { sketch } => {
+                if let Some(sketch) = sketch {
+                    if !ir
+                        .model
+                        .spatial_sketches
+                        .iter()
+                        .any(|value| value.id == *sketch)
+                    {
+                        ref_error(findings, &feature.id.0, "owned spatial sketch", &sketch.0);
                     }
                 }
             }
@@ -2956,22 +2961,25 @@ fn check_feature_sketch_references(
 
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
-        if let FeatureDefinition::Sketch {
-            sketch: Some(sketch),
-            ..
-        } = &feature.definition
+        let sketch = match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+            } => sketch.0.as_str(),
+            FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch),
+            } => sketch.0.as_str(),
+            _ => continue,
+        };
+        if owners
+            .insert(sketch, (feature.id.0.as_str(), feature.ordinal))
+            .is_some()
         {
-            if owners
-                .insert(sketch.0.as_str(), (feature.id.0.as_str(), feature.ordinal))
-                .is_some()
-            {
-                findings.push(Finding {
-                    check: Check::ReferentialIntegrity,
-                    severity: Severity::Error,
-                    message: format!("sketch `{}` has multiple owning features", sketch.0),
-                    entity: Some(feature.id.0.clone()),
-                });
-            }
+            findings.push(Finding {
+                check: Check::ReferentialIntegrity,
+                severity: Severity::Error,
+                message: format!("sketch `{sketch}` has multiple owning features"),
+                entity: Some(feature.id.0.clone()),
+            });
         }
     }
 
