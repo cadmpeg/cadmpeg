@@ -301,8 +301,9 @@ pub struct FeatureInputSurfaceSelection {
 /// One typed node in a persistent feature-input component path.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct FeatureInputComponentPathEntry {
-    /// Serialized component instance tag.
-    pub instance: u16,
+    /// Serialized component instance tag; absent on anonymous path nodes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<u16>,
     /// Twelve-byte serialized component type identity.
     pub type_signature: [u8; 12],
     /// Feature-local identifier carried by this path node.

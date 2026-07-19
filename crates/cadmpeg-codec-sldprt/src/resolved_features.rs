@@ -417,18 +417,19 @@ mod marker_tests {
         compact_profile_reference_plane_source, compact_reference_plane_frame,
         compact_reference_plane_source, compact_single_face_reference_path_at,
         compact_surface_selection_at, complete_ordered_compact_line_profile,
-        component_path_features, component_path_terminal_feature, component_profile_source_at,
-        component_reference_curve_path_at, constraint_midplane_frame,
+        component_path_features, component_path_preceding_feature, component_path_terminal_feature,
+        component_profile_source_at, component_reference_curve_path_at, constraint_midplane_frame,
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_cylinder_reference_at, explicit_reference_axis_frame,
         explicit_reference_plane_frame, fixed_reference_plane_frame, legacy_feature_input_section,
         legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
-        minimal_reference_plane_frame, mirror_pattern_component_path_at, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
-        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
-        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        minimal_reference_plane_frame, mirror_pattern_component_path_at,
+        mirror_surface_component_path_at, named_scalars, native_scalar_matches_discrete_parameter,
+        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
+        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
+        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
+        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
@@ -1876,7 +1877,7 @@ mod marker_tests {
         assert_eq!(compact_extrusion_to_face_at(&payload, 0), Some(100));
         let path = compact_single_face_reference_path_at(&payload, 100).unwrap();
         assert_eq!(path.len(), 1);
-        assert_eq!(path[0].instance, 0x8032);
+        assert_eq!(path[0].instance, Some(0x8032));
         assert_eq!(path[0].type_signature, [1; 12]);
         assert_eq!(path[0].local_id, 7);
 
@@ -2298,7 +2299,7 @@ mod marker_tests {
 
         let components = component_reference_curve_path_at(&payload, marker).unwrap();
         assert_eq!(components.len(), 4);
-        assert_eq!(components[0].instance, 0x8c20);
+        assert_eq!(components[0].instance, Some(0x8c20));
         assert!(components.iter().all(|component| component.local_id == 1));
 
         payload[cursor + 8] ^= 1;
@@ -2715,12 +2716,12 @@ mod marker_tests {
             compact_edge_component_path_at(&payload, marker),
             Some(vec![
                 FeatureInputComponentPathEntry {
-                    instance: 0x803d,
+                    instance: Some(0x803d),
                     type_signature: [1; 12],
                     local_id: 2,
                 },
                 FeatureInputComponentPathEntry {
-                    instance: 0x804a,
+                    instance: Some(0x804a),
                     type_signature: [2; 12],
                     local_id: 3,
                 },
@@ -2884,9 +2885,9 @@ mod marker_tests {
                 ))
                 .collect::<Vec<_>>(),
             vec![
-                (0x8c20, signature, 2),
-                (0x8c21, signature, 1),
-                (0x8c22, signature, 11)
+                (Some(0x8c20), signature, 2),
+                (Some(0x8c21), signature, 1),
+                (Some(0x8c22), signature, 11)
             ]
         );
         payload[12 + 18 + 24 + 4] ^= 1;
@@ -2996,6 +2997,31 @@ mod marker_tests {
     }
 
     #[test]
+    fn mirror_surface_path_preserves_tagged_and_anonymous_nodes() {
+        let marker = 12;
+        let mut payload = vec![0; marker];
+        payload[..4].copy_from_slice(&2u32.to_le_bytes());
+        payload[4..8].copy_from_slice(&[0, 2, 0, 0]);
+        payload.extend(COMPACT_EDGE_VECTOR_MARKER);
+        payload.extend([0, 0]);
+        payload.extend(0x803e_u16.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend([0x34, 0x80, 1, 0, 57, 0, 0, 0, 1, 0, 0, 0]);
+        payload.extend(9u32.to_le_bytes());
+        payload.extend([0; 4]);
+        payload.extend([0x34, 0x80, 1, 0, 56, 0, 0, 0, 2, 0, 0, 0]);
+        payload.extend(4u32.to_le_bytes());
+
+        let path = mirror_surface_component_path_at(&payload, marker).unwrap();
+        assert_eq!(path.len(), 2);
+        assert_eq!(path[0].instance, Some(0x803e));
+        assert_eq!(path[0].local_id, 9);
+        assert_eq!(path[1].instance, None);
+        assert_eq!(path[1].local_id, 4);
+        assert_eq!(&path[1].type_signature[4..8], &56u32.to_le_bytes());
+    }
+
+    #[test]
     fn component_path_type_identities_name_ordered_features() {
         let feature = |id: &str, source_id: &str| Feature {
             id: id.into(),
@@ -3019,12 +3045,12 @@ mod marker_tests {
         signature[4..8].copy_from_slice(&42u32.to_le_bytes());
         let components = vec![
             FeatureInputComponentPathEntry {
-                instance: 0x8032,
+                instance: Some(0x8032),
                 type_signature: signature,
                 local_id: 7,
             },
             FeatureInputComponentPathEntry {
-                instance: 0x803b,
+                instance: Some(0x803b),
                 type_signature: signature,
                 local_id: 1,
             },
@@ -3053,6 +3079,24 @@ mod marker_tests {
             ),
             Some("other".into())
         );
+
+        let owner = feature("mirror", "44");
+        mixed.push(FeatureInputComponentPathEntry {
+            instance: None,
+            type_signature: {
+                let mut signature = [0; 12];
+                signature[4..8].copy_from_slice(&44u32.to_le_bytes());
+                signature
+            },
+            local_id: 9,
+        });
+        let producer = feature("producer", "42");
+        let other = feature("other", "43");
+        let history = [&producer, &other, &owner];
+        let (component, feature) =
+            component_path_preceding_feature(&mixed, &history, "mirror").unwrap();
+        assert_eq!(feature.id, "other");
+        assert_eq!(component.local_id, 1);
     }
 }
 
@@ -4789,22 +4833,39 @@ fn compact_surface_selections(
                 })
                 .into_iter()
                 .collect(),
+            NativeClassKind::MirrorPattern => (start.saturating_add(12)
+                ..end.saturating_sub(COMPACT_EDGE_VECTOR_MARKER.len()))
+                .filter(|marker| {
+                    lane.native_payload
+                        .get(*marker..*marker + COMPACT_EDGE_VECTOR_MARKER.len())
+                        == Some(COMPACT_EDGE_VECTOR_MARKER.as_slice())
+                })
+                .filter_map(|marker| {
+                    mirror_surface_component_path_at(&lane.native_payload, marker)
+                        .map(|components| (marker, components))
+                })
+                .collect(),
             _ => continue,
         };
-        let [(offset, components)] = candidates.as_slice() else {
+        if kind != NativeClassKind::MirrorPattern && candidates.len() != 1 {
             continue;
-        };
-        result.push(FeatureInputSurfaceSelection {
-            id: format!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
-            parent: lane.id.clone(),
-            ordinal: result.len() as u32,
-            offset: *offset as u64,
-            object_name_ref: name.id.clone(),
-            feature_ref: feature.id.clone(),
-            producer_feature_refs: component_path_features(components, &history_features),
-            terminal_feature_ref: component_path_terminal_feature(components, &history_features),
-            components: components.clone(),
-        });
+        }
+        for (offset, components) in candidates {
+            result.push(FeatureInputSurfaceSelection {
+                id: format!("sldprt:feature-input:surface-selection#{lane_key}:{offset}"),
+                parent: lane.id.clone(),
+                ordinal: result.len() as u32,
+                offset: offset as u64,
+                object_name_ref: name.id.clone(),
+                feature_ref: feature.id.clone(),
+                producer_feature_refs: component_path_features(&components, &history_features),
+                terminal_feature_ref: component_path_terminal_feature(
+                    &components,
+                    &history_features,
+                ),
+                components,
+            });
+        }
     }
     result
 }
@@ -4848,7 +4909,9 @@ pub(crate) fn compact_surface_selection_at(
     while components.len() < 6 && payload.get(cursor + 4..cursor + 16) == Some(signature.as_slice())
     {
         components.push(FeatureInputComponentPathEntry {
-            instance: u16::from_le_bytes(payload.get(cursor..cursor + 2)?.try_into().ok()?),
+            instance: Some(u16::from_le_bytes(
+                payload.get(cursor..cursor + 2)?.try_into().ok()?,
+            )),
             type_signature: signature.as_slice().try_into().ok()?,
             local_id: u32::from_le_bytes(payload.get(cursor + 16..cursor + 20)?.try_into().ok()?),
         });
@@ -4867,6 +4930,7 @@ pub(crate) fn compact_surface_reference_at(
     marker: usize,
 ) -> Option<Vec<FeatureInputComponentPathEntry>> {
     compact_surface_selection_at(payload, marker)
+        .or_else(|| mirror_surface_component_path_at(payload, marker))
         .or_else(|| compact_termination_reference_path_at(payload, marker))
 }
 
@@ -4928,6 +4992,98 @@ fn mirror_pattern_component_path_at(
     .filter(|count| (2..=65).contains(count))?;
     let (components, _) =
         compact_heterogeneous_component_path(payload, marker + 18, cell_count - 1)?;
+    Some(components)
+}
+
+fn mirror_surface_component_path_at(
+    payload: &[u8],
+    marker: usize,
+) -> Option<Vec<FeatureInputComponentPathEntry>> {
+    let header = marker.checked_sub(12)?;
+    if payload.get(marker..marker + 16)? != COMPACT_EDGE_VECTOR_MARKER
+        || payload.get(marker - 8..marker - 4)? != [0, 2, 0, 0]
+        || payload.get(marker + 16..marker + 18)? != [0, 0]
+    {
+        return None;
+    }
+    let count = usize::try_from(u32::from_le_bytes(
+        payload.get(header..header + 4)?.try_into().ok()?,
+    ))
+    .ok()
+    .filter(|count| (1..=64).contains(count))?;
+    let signature_at = |offset: usize| -> Option<[u8; 12]> {
+        let signature: [u8; 12] = payload.get(offset..offset + 12)?.try_into().ok()?;
+        let type_family = u16::from_le_bytes(signature[0..2].try_into().ok()?);
+        let type_variant = u16::from_le_bytes(signature[2..4].try_into().ok()?);
+        let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
+        let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
+        (type_family & 0x8000 != 0
+            && type_family != u16::MAX
+            && type_variant != 0
+            && source != 0
+            && identity != 0)
+            .then_some(signature)
+    };
+    let node_at = |offset: usize| -> Option<(FeatureInputComponentPathEntry, usize)> {
+        let tagged = payload
+            .get(offset..offset + 4)
+            .is_some_and(|bytes| {
+                let instance = u16::from_le_bytes([bytes[0], bytes[1]]);
+                instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..4] == [0, 0]
+            })
+            .then(|| {
+                Some((
+                    FeatureInputComponentPathEntry {
+                        instance: Some(u16::from_le_bytes(
+                            payload.get(offset..offset + 2)?.try_into().ok()?,
+                        )),
+                        type_signature: signature_at(offset + 4)?,
+                        local_id: u32::from_le_bytes(
+                            payload.get(offset + 16..offset + 20)?.try_into().ok()?,
+                        ),
+                    },
+                    20,
+                ))
+            })
+            .flatten();
+        tagged.or_else(|| {
+            Some((
+                FeatureInputComponentPathEntry {
+                    instance: None,
+                    type_signature: signature_at(offset)?,
+                    local_id: u32::from_le_bytes(
+                        payload.get(offset + 12..offset + 16)?.try_into().ok()?,
+                    ),
+                },
+                16,
+            ))
+        })
+    };
+
+    let mut cursor = marker + 18;
+    let mut components = Vec::with_capacity(count);
+    for index in 0..count {
+        let (component, len) = node_at(cursor)?;
+        components.push(component);
+        cursor += len;
+        if index + 1 == count {
+            continue;
+        }
+        let gaps = [0usize, 4, 8, 12]
+            .into_iter()
+            .filter(|gap| {
+                payload.get(cursor..cursor + gap).is_some_and(|bytes| {
+                    bytes
+                        .chunks_exact(4)
+                        .all(|word| word == [0; 4] || word == [0xff; 4])
+                }) && node_at(cursor + gap).is_some()
+            })
+            .collect::<Vec<_>>();
+        let [gap] = gaps.as_slice() else {
+            return None;
+        };
+        cursor += gap;
+    }
     Some(components)
 }
 
@@ -5114,7 +5270,9 @@ fn compact_heterogeneous_component_path(
     for index in 0..count {
         entry_at(cursor)?;
         entries.push(FeatureInputComponentPathEntry {
-            instance: u16::from_le_bytes(payload.get(cursor..cursor + 2)?.try_into().ok()?),
+            instance: Some(u16::from_le_bytes(
+                payload.get(cursor..cursor + 2)?.try_into().ok()?,
+            )),
             type_signature: payload.get(cursor + 4..cursor + 16)?.try_into().ok()?,
             local_id: u32::from_le_bytes(payload.get(cursor + 16..cursor + 20)?.try_into().ok()?),
         });
@@ -5338,7 +5496,9 @@ fn component_reference_curve_path_at(
                 return None;
             }
             components.push(FeatureInputComponentPathEntry {
-                instance: u16::from_le_bytes(payload.get(cursor..cursor + 2)?.try_into().ok()?),
+                instance: Some(u16::from_le_bytes(
+                    payload.get(cursor..cursor + 2)?.try_into().ok()?,
+                )),
                 type_signature: signature,
                 local_id: u32::from_le_bytes(
                     payload.get(cursor + 16..cursor + 20)?.try_into().ok()?,
@@ -9842,6 +10002,7 @@ pub(crate) fn project_compact_edge_selections(
 
 pub(crate) fn project_compact_surface_selections(
     features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
     lanes: &[FeatureInputLane],
 ) {
     enum SelectionSlot<'a> {
@@ -9852,6 +10013,10 @@ pub(crate) fn project_compact_surface_selections(
         .iter()
         .filter_map(|feature| Some((feature.native_ref.clone()?, feature.id.clone())))
         .collect::<HashMap<_, _>>();
+    let history_features = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
     let selections = lanes.iter().flat_map(|lane| &lane.surface_selections).fold(
         HashMap::<&str, Vec<&FeatureInputSurfaceSelection>>::new(),
         |mut map, selection| {
@@ -9865,7 +10030,44 @@ pub(crate) fn project_compact_surface_selections(
         let Some(native_ref) = feature.native_ref.as_deref() else {
             continue;
         };
-        let Some([selection]) = selections.get(native_ref).map(Vec::as_slice) else {
+        let Some(feature_selections) = selections.get(native_ref).map(Vec::as_slice) else {
+            continue;
+        };
+        if let FeatureDefinition::Pattern { seeds, .. } = &mut feature.definition {
+            for selection in feature_selections {
+                let native = compact_surface_selection_value(&selection.components);
+                let generated = component_path_preceding_feature(
+                    &selection.components,
+                    &history_features,
+                    &selection.feature_ref,
+                )
+                .and_then(|(component, producer)| {
+                    feature_ids_by_native
+                        .get(producer.id.as_str())
+                        .map(|feature| (feature, component))
+                });
+                let seed = match generated {
+                    Some((producer, component)) => {
+                        if !feature.dependencies.contains(producer) {
+                            feature.dependencies.push(producer.clone());
+                        }
+                        PatternSeed::Faces(cadmpeg_ir::features::FaceSelection::Generated {
+                            faces: vec![cadmpeg_ir::features::GeneratedFaceRef {
+                                feature: producer.clone(),
+                                local_id: component.local_id.to_string(),
+                            }],
+                            native,
+                        })
+                    }
+                    None => PatternSeed::Faces(cadmpeg_ir::features::FaceSelection::Native(native)),
+                };
+                if !seeds.contains(&seed) {
+                    seeds.push(seed);
+                }
+            }
+            continue;
+        }
+        let [selection] = feature_selections else {
             continue;
         };
         let first_component =
@@ -11055,7 +11257,7 @@ pub(crate) fn compact_termination_reference_path_at(
             return None;
         }
         Some(FeatureInputComponentPathEntry {
-            instance: u16::from_le_bytes(instance[0..2].try_into().ok()?),
+            instance: Some(u16::from_le_bytes(instance[0..2].try_into().ok()?)),
             type_signature: payload.get(offset + 4..offset + 16)?.try_into().ok()?,
             local_id: u32::from_le_bytes(payload.get(offset + 16..offset + 20)?.try_into().ok()?),
         })
@@ -11177,6 +11379,38 @@ pub(crate) fn component_path_terminal_feature(
     });
     let feature = candidates.next()?;
     candidates.next().is_none().then(|| feature.id.clone())
+}
+
+fn component_path_preceding_feature<'a>(
+    components: &'a [FeatureInputComponentPathEntry],
+    features: &[&'a crate::records::Feature],
+    owner_ref: &str,
+) -> Option<(
+    &'a FeatureInputComponentPathEntry,
+    &'a crate::records::Feature,
+)> {
+    let owner_ordinal = features
+        .iter()
+        .position(|feature| feature.id == owner_ref)?;
+    let mut by_source = HashMap::<u32, Option<(usize, &crate::records::Feature)>>::new();
+    for (ordinal, feature) in features.iter().enumerate() {
+        let Some(source_id) = feature
+            .source_id
+            .as_deref()
+            .and_then(|id| id.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        by_source
+            .entry(source_id)
+            .and_modify(|candidate| *candidate = None)
+            .or_insert(Some((ordinal, *feature)));
+    }
+    components.iter().rev().find_map(|component| {
+        let source_id = u32::from_le_bytes(component.type_signature[4..8].try_into().ok()?);
+        let (ordinal, feature) = by_source.get(&source_id)?.as_ref()?;
+        (*ordinal < owner_ordinal).then_some((component, *feature))
+    })
 }
 
 pub(crate) fn project_adjacent_extrusion_profiles(
