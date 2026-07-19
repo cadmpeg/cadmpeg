@@ -5305,6 +5305,8 @@ pub struct FeatureDraftConstructionIdentityFrame {
     pub ordinal: u32,
     /// Exact bytes from the opening marker through the identity introducer.
     pub prefix: Vec<u8>,
+    /// Typed frame form selected by the exact prefix.
+    pub form: FeatureDraftConstructionIdentityFrameForm,
     /// Nonempty lowercase hexadecimal identity.
     pub identity: String,
     /// Payload-relative offset of the opening marker.
@@ -5315,6 +5317,26 @@ pub struct FeatureDraftConstructionIdentityFrame {
     pub source_offset: u64,
     /// Absolute source offset of the identity.
     pub identity_source_offset: u64,
+}
+
+/// Typed prefix form of a draft construction identity frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FeatureDraftConstructionIdentityFrameForm {
+    /// Two compact indices and a `02` or `03` branch.
+    IndexedBranch {
+        /// Non-null first compact index.
+        first_index: u32,
+        /// Nullable second compact index.
+        second_index: Option<u32>,
+        /// Exact `02` or `03` branch byte.
+        branch: u8,
+    },
+    /// One nullable compact index followed by `ff 02 01`.
+    Tagged {
+        /// Nullable compact index.
+        index: Option<u32>,
+    },
 }
 
 /// End-anchored compact-index lane in a bounded draft construction payload.
@@ -8989,12 +9011,27 @@ pub fn feature_draft_construction_identity_frames(
                 .filter_map(|(ordinal, frame)| {
                     let payload_offset = frame.offset as u64;
                     let identity_payload_offset = frame.identity_offset as u64;
+                    let form = match frame.form {
+                        crate::om::DraftConstructionIdentityFrameForm::IndexedBranch {
+                            first_index,
+                            second_index,
+                            branch,
+                        } => FeatureDraftConstructionIdentityFrameForm::IndexedBranch {
+                            first_index,
+                            second_index,
+                            branch,
+                        },
+                        crate::om::DraftConstructionIdentityFrameForm::Tagged { index } => {
+                            FeatureDraftConstructionIdentityFrameForm::Tagged { index }
+                        }
+                    };
                     Some(FeatureDraftConstructionIdentityFrame {
                         id: format!("{}-identity-frame-{ordinal:010}", payload.id),
                         operation_label: payload.operation_label.clone(),
                         draft_construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         prefix: frame.prefix,
+                        form,
                         identity: frame.identity,
                         payload_offset,
                         identity_payload_offset,

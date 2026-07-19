@@ -988,10 +988,31 @@ pub struct DraftConstructionIdentityFrame {
     pub offset: usize,
     /// Exact bytes from the opening marker through the identity introducer.
     pub prefix: Vec<u8>,
+    /// Typed frame form selected by the exact prefix.
+    pub form: DraftConstructionIdentityFrameForm,
     /// Nonempty lowercase hexadecimal identity.
     pub identity: String,
     /// Payload-relative identity offset.
     pub identity_offset: usize,
+}
+
+/// Typed prefix form of a draft construction identity frame.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DraftConstructionIdentityFrameForm {
+    /// Two compact indices and a `02` or `03` branch.
+    IndexedBranch {
+        /// Non-null first compact index.
+        first_index: u32,
+        /// Nullable second compact index.
+        second_index: Option<u32>,
+        /// Exact `02` or `03` branch byte.
+        branch: u8,
+    },
+    /// One nullable compact index followed by `ff 02 01`.
+    Tagged {
+        /// Nullable compact index.
+        index: Option<u32>,
+    },
 }
 
 /// Compact object frame in a bounded offset-store block.
@@ -3213,7 +3234,7 @@ pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<DraftConstruction
         if bytes[offset] != 0x41 {
             continue;
         }
-        let Some(prefix_len) = draft_identity_prefix(&bytes[offset..]) else {
+        let Some((prefix_len, form)) = draft_identity_prefix(&bytes[offset..]) else {
             continue;
         };
         let identity_start = offset + prefix_len;
@@ -3230,6 +3251,7 @@ pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<DraftConstruction
         frames.push(DraftConstructionIdentityFrame {
             offset,
             prefix: bytes[offset..offset + prefix_len].to_vec(),
+            form,
             identity: String::from_utf8(bytes[identity_start..identity_end].to_vec())
                 .expect("lowercase hexadecimal bytes are UTF-8"),
             identity_offset: identity_start,
@@ -3238,28 +3260,48 @@ pub fn draft_construction_identity_frames(bytes: &[u8]) -> Vec<DraftConstruction
     frames
 }
 
-fn draft_identity_prefix(bytes: &[u8]) -> Option<usize> {
+fn draft_identity_prefix(bytes: &[u8]) -> Option<(usize, DraftConstructionIdentityFrameForm)> {
     if bytes.first() != Some(&0x41) {
         return None;
     }
     if bytes.get(1) == Some(&0xf0) {
-        let (_, schema_width) = compact_index(bytes.get(2..)?)?;
-        let end = 2 + schema_width + 3;
-        (bytes.get(2 + schema_width..end) == Some(&[0xff, 0x02, 0x01])).then_some(end)
+        let (index, index_width) = compact_index(bytes.get(2..)?)?;
+        let end = 2 + index_width + 3;
+        (bytes.get(2 + index_width..end) == Some(&[0xff, 0x02, 0x01])).then_some((
+            end,
+            DraftConstructionIdentityFrameForm::Tagged {
+                index: compact_index_value(index),
+            },
+        ))
     } else {
-        let (CompactIndex::Value(_), owner_width) = compact_index(bytes.get(1..)?)? else {
+        let (CompactIndex::Value(first_index), first_width) = compact_index(bytes.get(1..)?)?
+        else {
             return None;
         };
-        let schema_at = 1 + owner_width + 1;
-        if bytes.get(1 + owner_width) != Some(&0xf0) {
+        let second_at = 1 + first_width + 1;
+        if bytes.get(1 + first_width) != Some(&0xf0) {
             return None;
         }
-        let (_, schema_width) = compact_index(bytes.get(schema_at..)?)?;
-        let branch_at = schema_at + schema_width;
+        let (second_index, second_width) = compact_index(bytes.get(second_at..)?)?;
+        let branch_at = second_at + second_width;
         let end = branch_at + 2;
         (matches!(bytes.get(branch_at), Some(0x02 | 0x03))
             && bytes.get(branch_at + 1) == Some(&0x01))
-        .then_some(end)
+        .then_some((
+            end,
+            DraftConstructionIdentityFrameForm::IndexedBranch {
+                first_index,
+                second_index: compact_index_value(second_index),
+                branch: bytes[branch_at],
+            },
+        ))
+    }
+}
+
+fn compact_index_value(index: CompactIndex) -> Option<u32> {
+    match index {
+        CompactIndex::Null => None,
+        CompactIndex::Value(value) => Some(value),
     }
 }
 
