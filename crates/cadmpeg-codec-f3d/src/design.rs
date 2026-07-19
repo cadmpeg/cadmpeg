@@ -13567,7 +13567,7 @@ fn exact_fixed_fillet_parameters(
                 .then_some((*record_index, scalar))
         })
         .collect::<Vec<_>>();
-    if !(2..=3).contains(&lanes.len())
+    if lanes.len() < 2
         || lanes
             .iter()
             .enumerate()
@@ -21702,7 +21702,13 @@ mod relation_tests {
         assert_eq!(exact_fixed_extrude_parameters(&bytes, &extrude_scope), None);
 
         let fillet_start = bytes.len();
-        for (record_index, ordinal, value) in [(77u32, 0u8, 1.0f64), (78, 1, 0.0), (79, 2, 0.65)] {
+        for (record_index, ordinal, value) in [
+            (77u32, 0u8, 1.0f64),
+            (78, 1, 0.0),
+            (79, 2, 0.65),
+            (87, 3, 0.4),
+            (88, 4, 0.2),
+        ] {
             let mut scalar = vec![0; 104];
             scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
             scalar[4..7].copy_from_slice(b"277");
@@ -21718,18 +21724,20 @@ mod relation_tests {
         }
         let mut fillet_scope = scope.clone();
         fillet_scope.kind = "Fillet".into();
-        fillet_scope.reference_members = vec![77, 50, 78, 79];
+        fillet_scope.reference_members = vec![77, 50, 78, 79, 87, 88];
         assert_eq!(
             exact_fixed_fillet_parameters(&bytes, &fillet_scope),
             Some(DesignFixedFilletParameters {
                 tangency_weight: 1.0,
                 tangency_weight_record_index: 77,
                 tangency_weight_offset: (fillet_start + 40) as u64,
-                radii: vec![0.0, 0.65],
-                radius_record_indexes: vec![78, 79],
+                radii: vec![0.0, 0.65, 0.4, 0.2],
+                radius_record_indexes: vec![78, 79, 87, 88],
                 radius_offsets: vec![
                     (fillet_start + 115 + 40) as u64,
-                    (fillet_start + 230 + 40) as u64
+                    (fillet_start + 230 + 40) as u64,
+                    (fillet_start + 345 + 40) as u64,
+                    (fillet_start + 460 + 40) as u64,
                 ],
             })
         );
