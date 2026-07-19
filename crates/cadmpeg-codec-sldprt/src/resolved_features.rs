@@ -4152,12 +4152,9 @@ pub(crate) fn bind_pattern_inputs(
         .enumerate()
         .filter_map(|(index, feature)| Some((feature.native_ref.as_deref()?, index)))
         .collect::<HashMap<_, _>>();
-    let mut assignments = Vec::<(
-        usize,
-        cadmpeg_ir::features::FeatureId,
-        cadmpeg_ir::features::FeatureId,
-        PathRef,
-    )>::new();
+    let mut curve_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
+    let mut curve_path_assignments =
+        Vec::<(usize, cadmpeg_ir::features::FeatureId, PathRef)>::new();
     let mut linear_seed_assignments = Vec::<(usize, cadmpeg_ir::features::FeatureId)>::new();
     let mut linear_direction_assignments = Vec::<(usize, Vector3)>::new();
     let mut mirror_plane_assignments = Vec::<(usize, Point3, Vector3)>::new();
@@ -4310,23 +4307,28 @@ pub(crate) fn bind_pattern_inputs(
             let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                 continue;
             };
-            if !matches!(
-                model_features[model_index].definition,
+            let (needs_seed, needs_path) = match &model_features[model_index].definition {
                 FeatureDefinition::Pattern {
-                    ref seeds,
-                    pattern: PatternKind::CurveDriven { path: None, .. },
+                    seeds,
+                    pattern: PatternKind::CurveDriven { path, .. },
                     ..
-                } if seeds.is_empty()
-            ) {
+                } => (seeds.is_empty(), path.is_none()),
+                _ => continue,
+            };
+            if needs_seed {
+                if let Some((_, seed)) = start_index
+                    .checked_sub(1)
+                    .and_then(|index| starts.get(index))
+                {
+                    if let Some(&seed_index) = model_by_native.get(seed.id.as_str()) {
+                        curve_seed_assignments
+                            .push((model_index, model_features[seed_index].id.clone()));
+                    }
+                }
+            }
+            if !needs_path {
                 continue;
             }
-            let Some(previous_index) = start_index.checked_sub(1) else {
-                continue;
-            };
-            let (_, seed) = starts[previous_index];
-            let Some(&seed_index) = model_by_native.get(seed.id.as_str()) else {
-                continue;
-            };
             let Some((_, target)) = starts.get(start_index + 1) else {
                 continue;
             };
@@ -4343,45 +4345,14 @@ pub(crate) fn bind_pattern_inputs(
             else {
                 continue;
             };
-            assignments.push((
+            curve_path_assignments.push((
                 model_index,
-                model_features[seed_index].id.clone(),
                 model_features[target_index].id.clone(),
                 PathRef::Sketch(sketch.clone()),
             ));
         }
     }
-    let mut assignments_by_pattern = HashMap::<usize, Vec<_>>::new();
-    for (index, seed, path_dependency, path) in assignments {
-        let candidates = assignments_by_pattern.entry(index).or_default();
-        if !candidates
-            .iter()
-            .any(|candidate| *candidate == (seed.clone(), path_dependency.clone(), path.clone()))
-        {
-            candidates.push((seed, path_dependency, path));
-        }
-    }
-    for (index, candidates) in assignments_by_pattern {
-        let [(seed, path_dependency, path)] = candidates.as_slice() else {
-            continue;
-        };
-        for dependency in [seed, path_dependency] {
-            if !model_features[index].dependencies.contains(dependency) {
-                model_features[index].dependencies.push(dependency.clone());
-            }
-        }
-        if let FeatureDefinition::Pattern {
-            seeds,
-            pattern: PatternKind::CurveDriven { path: slot, .. },
-            ..
-        } = &mut model_features[index].definition
-        {
-            if seeds.is_empty() && slot.is_none() {
-                seeds.push(PatternSeed::Feature(seed.clone()));
-                *slot = Some(path.clone());
-            }
-        }
-    }
+    linear_seed_assignments.extend(curve_seed_assignments);
     let mut linear_seeds_by_pattern = HashMap::<usize, Vec<cadmpeg_ir::features::FeatureId>>::new();
     for (index, seed) in linear_seed_assignments {
         let candidates = linear_seeds_by_pattern.entry(index).or_default();
@@ -4399,6 +4370,30 @@ pub(crate) fn bind_pattern_inputs(
         if let FeatureDefinition::Pattern { seeds, .. } = &mut model_features[index].definition {
             if seeds.is_empty() {
                 seeds.push(PatternSeed::Feature(seed.clone()));
+            }
+        }
+    }
+    let mut paths_by_pattern = HashMap::<usize, Vec<_>>::new();
+    for (index, dependency, path) in curve_path_assignments {
+        let candidates = paths_by_pattern.entry(index).or_default();
+        if !candidates.contains(&(dependency.clone(), path.clone())) {
+            candidates.push((dependency, path));
+        }
+    }
+    for (index, candidates) in paths_by_pattern {
+        let [(dependency, path)] = candidates.as_slice() else {
+            continue;
+        };
+        if !model_features[index].dependencies.contains(dependency) {
+            model_features[index].dependencies.push(dependency.clone());
+        }
+        if let FeatureDefinition::Pattern {
+            pattern: PatternKind::CurveDriven { path: slot, .. },
+            ..
+        } = &mut model_features[index].definition
+        {
+            if slot.is_none() {
+                *slot = Some(path.clone());
             }
         }
     }
@@ -20273,7 +20268,7 @@ mod profile_join_tests {
                 "path-native",
                 FeatureDefinition::Sketch {
                     space: SketchSpace::Planar,
-                    sketch: Some(sketch.clone()),
+                    sketch: None,
                 },
             ),
             model_feature(
@@ -20287,6 +20282,25 @@ mod profile_join_tests {
             ),
         ];
 
+        bind_pattern_inputs(
+            &mut features,
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        );
+
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Pattern {
+                ref seeds,
+                pattern: PatternKind::CurveDriven { path: None, .. },
+                ..
+            } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+        ));
+        assert_eq!(features[0].dependencies, [features[2].id.clone()]);
+        features[1].definition = FeatureDefinition::Sketch {
+            space: SketchSpace::Planar,
+            sketch: Some(sketch.clone()),
+        };
         bind_pattern_inputs(
             &mut features,
             std::slice::from_ref(&history),

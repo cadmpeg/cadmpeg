@@ -6624,6 +6624,7 @@ pub(crate) fn project_configuration_sketch_states(
             &ir.model.sketches,
             histories,
         );
+        crate::resolved_features::bind_pattern_inputs(&mut features, histories, scoped_lanes);
         crate::resolved_features::project_adjacent_extrusion_profiles(
             &mut features,
             histories,
