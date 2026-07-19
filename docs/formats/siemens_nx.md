@@ -1004,6 +1004,8 @@ A compact deltas tombstone is `type:u16 BE, xmt:u16 BE, 00 01`. Outside the auth
 
 An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(record_id, record_offset)` pairs terminated by a single `record_id == 0`. A handle-set record at `record_offset` begins `01 00 00 00`, then `n:u16 BE`, `01`, four `u32 LE` ID slots, `01`, `count:u8`, `count - 1` occurrences of `e0 + handle:u32 BE`, and a closing byte equal to `count`. Handles are strictly ascending except that the final occurrence may repeat the preceding handle; transfer records whether that closing duplicate is present and omits it from the normalized handle list. Other indexed record layouts remain opaque. The trailing string table is `01 + count:u32 LE + count × (len:u16 LE + nonempty control-free UTF-8)`. The final string ends at the stream boundary. The nominal `16 + payload_size` boundary can fall inside a string record. Each string transfers with its table ordinal and absolute byte offset.
 
+Each of the four ID slots indexes the trailing string table in the same `EXTREFSTREAM`. A complete record-to-string relation retains the record, slot, serialized index and byte offset, and target string identity. If any slot is out of range or its `(stream, ordinal)` target is not unique, none of the record's four relations transfer.
+
 ### 9.2 Stream and deltas framing
 
 The `00 ce` stream-root schema declares `index_map`, `node_id_index_map`, and `schema_embedding_map`; each serializes as a null or empty array and supplies no tombstone bridge.

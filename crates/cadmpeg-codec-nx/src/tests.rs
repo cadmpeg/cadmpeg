@@ -16402,6 +16402,56 @@ fn external_reference_string_table_is_end_anchored() {
 }
 
 #[test]
+fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
+    use crate::native::{
+        external_reference_record_string_uses, ExternalReference, ExternalReferenceRecord,
+    };
+
+    let references = (0..4)
+        .map(|ordinal| ExternalReference {
+            id: format!("reference#{ordinal}"),
+            ordinal,
+            path: format!("value-{ordinal}"),
+            source_entry: "stream".into(),
+            source_offset: 100 + u64::from(ordinal),
+        })
+        .collect::<Vec<_>>();
+    let record = ExternalReferenceRecord {
+        id: "record#7".into(),
+        record_id: 7,
+        declared_count: 2,
+        id_slots: [0, 3, 1, 2],
+        handles: vec![10, 20],
+        closing_duplicate: true,
+        prefix_byte_len: 40,
+        tail_byte_len: 5,
+        source_entry: "stream".into(),
+        source_offset: 20,
+    };
+    let uses = external_reference_record_string_uses(&[record.clone()], &references);
+    assert_eq!(uses.len(), 4);
+    assert_eq!(
+        uses.iter().map(|use_| use_.slot).collect::<Vec<_>>(),
+        [0, 1, 2, 3]
+    );
+    assert_eq!(
+        uses.iter()
+            .map(|use_| use_.string_index)
+            .collect::<Vec<_>>(),
+        [0, 3, 1, 2]
+    );
+    assert_eq!(uses[1].external_reference, "reference#3");
+    assert_eq!(uses[1].source_offset, 31);
+
+    let mut out_of_range = record.clone();
+    out_of_range.id_slots[2] = 4;
+    assert!(external_reference_record_string_uses(&[out_of_range], &references).is_empty());
+    let mut duplicate = references.clone();
+    duplicate.push(references[0].clone());
+    assert!(external_reference_record_string_uses(&[record], &duplicate).is_empty());
+}
+
+#[test]
 fn external_reference_record_parser_requires_sorted_doubled_handle_set() {
     let mut payload = b"EXTREFSTREAM".to_vec();
     payload.extend_from_slice(&3u32.to_le_bytes());

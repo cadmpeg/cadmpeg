@@ -7641,6 +7641,11 @@ fn attach_native_object_model(
         crate::native::configuration_attribute_uses(&configurations, &part_attributes);
     let external_references = crate::native::external_references(&scan.container);
     let external_reference_records = crate::native::external_reference_records(&scan.container);
+    let external_reference_record_string_uses =
+        crate::native::external_reference_record_string_uses(
+            &external_reference_records,
+            &external_references,
+        );
     let material_texture_assets = crate::native::material_texture_assets(&scan.container);
     let material_texture_catalog_entries =
         crate::native::material_texture_catalog_entries(&scan.container, &material_texture_assets);
@@ -9193,6 +9198,12 @@ fn attach_native_object_model(
     }
     if !external_reference_records.is_empty() {
         namespace.set_arena("external_reference_records", &external_reference_records)?;
+    }
+    if !external_reference_record_string_uses.is_empty() {
+        namespace.set_arena(
+            "external_reference_record_string_uses",
+            &external_reference_record_string_uses,
+        )?;
     }
     if !material_texture_assets.is_empty() {
         namespace.set_arena("material_texture_assets", &material_texture_assets)?;

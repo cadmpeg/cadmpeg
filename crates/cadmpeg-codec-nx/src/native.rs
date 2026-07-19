@@ -10674,6 +10674,23 @@ pub struct ExternalReferenceRecord {
     pub source_offset: u64,
 }
 
+/// One external-reference record slot resolved through its same-stream string table.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalReferenceRecordStringUse {
+    /// Globally unique slot-use identity.
+    pub id: String,
+    /// Owning record in the native `external_reference_records` arena.
+    pub external_record: String,
+    /// Zero-based slot in the record's four-value lane.
+    pub slot: u8,
+    /// Serialized string-table index.
+    pub string_index: u32,
+    /// Target in the native `external_references` arena.
+    pub external_reference: String,
+    /// Absolute file offset of the serialized `u32 LE` slot value.
+    pub source_offset: u64,
+}
+
 /// Embedded NX material texture stored as a TIFF stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialTextureAsset {
@@ -10894,6 +10911,52 @@ pub fn external_reference_records(container: &Container) -> Vec<ExternalReferenc
                 source_entry: entry.name.clone(),
                 source_offset: entry_offset + record.offset as u64,
             }
+        })
+        .collect()
+}
+
+/// Resolve complete four-slot record lanes through same-stream string tables.
+pub fn external_reference_record_string_uses(
+    records: &[ExternalReferenceRecord],
+    references: &[ExternalReference],
+) -> Vec<ExternalReferenceRecordStringUse> {
+    let mut references_by_key = BTreeMap::<(&str, u32), Option<&ExternalReference>>::new();
+    for reference in references {
+        references_by_key
+            .entry((reference.source_entry.as_str(), reference.ordinal))
+            .and_modify(|value| *value = None)
+            .or_insert(Some(reference));
+    }
+    records
+        .iter()
+        .flat_map(|record| {
+            if record.source_offset.checked_add(19).is_none() {
+                return Vec::new();
+            }
+            let resolved = record
+                .id_slots
+                .iter()
+                .map(|index| {
+                    references_by_key
+                        .get(&(record.source_entry.as_str(), *index))
+                        .and_then(|reference| *reference)
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(resolved) = resolved else {
+                return Vec::new();
+            };
+            resolved
+                .into_iter()
+                .enumerate()
+                .map(|(slot, reference)| ExternalReferenceRecordStringUse {
+                    id: format!("{}:string-slot#{slot}", record.id),
+                    external_record: record.id.clone(),
+                    slot: slot as u8,
+                    string_index: record.id_slots[slot],
+                    external_reference: reference.id.clone(),
+                    source_offset: record.source_offset + 7 + slot as u64 * 4,
+                })
+                .collect()
         })
         .collect()
 }
