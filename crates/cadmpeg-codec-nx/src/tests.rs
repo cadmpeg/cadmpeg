@@ -5216,6 +5216,49 @@ fn feature_input_linked_index_row_uses_preserve_target_and_trailing_slots() {
 }
 
 #[test]
+fn data_block_linked_index_tables_require_descending_target_runs() {
+    use crate::native::{data_block_linked_index_tables, DataBlockLinkedIndexRow};
+
+    let row = |id: &str, section: u32, target: u32, offset: u64| DataBlockLinkedIndexRow {
+        id: id.into(),
+        section_ordinal: section,
+        ordinal: 0,
+        first_index: 20,
+        discriminator: 0x16,
+        target_index: target,
+        indices: [5, 6, 7],
+        data_blocks: [
+            format!("block#{target}"),
+            "block#5".into(),
+            "block#6".into(),
+            "block#7".into(),
+        ],
+        flag: 3,
+        source_entry: format!("entry-{section}"),
+        source_offset: offset,
+        first_index_source_offset: offset + 2,
+        target_index_source_offset: offset + 7,
+        index_source_offsets: [offset + 12, offset + 13, offset + 14],
+    };
+    let rows = [
+        row("row-0", 2, 10, 100),
+        row("row-1", 2, 9, 125),
+        row("gap", 2, 7, 150),
+        row("section-3-0", 3, 20, 200),
+        row("section-3-1", 3, 19, 225),
+    ];
+
+    let tables = data_block_linked_index_tables(&rows);
+    assert_eq!(tables.len(), 2);
+    assert_eq!(tables[0].rows, ["row-0", "row-1"]);
+    assert_eq!(tables[0].first_target_index, 10);
+    assert_eq!(tables[0].last_target_index, 9);
+    assert_eq!(tables[0].source_offset, 100);
+    assert_eq!(tables[1].rows, ["section-3-0", "section-3-1"]);
+    assert_eq!(tables[1].ordinal, 0);
+}
+
+#[test]
 fn om_compact_index_lane_decodes_direct_extended_and_null_entries() {
     use crate::om::CompactIndex::{Null, Value};
 

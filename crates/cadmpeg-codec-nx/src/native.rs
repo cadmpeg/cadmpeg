@@ -10223,6 +10223,27 @@ pub struct DataBlockLinkedIndexRow {
     pub index_source_offsets: [u64; 3],
 }
 
+/// Maximal linked-index-row run with consecutive descending target blocks.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockLinkedIndexTable {
+    /// Globally unique table identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Zero-based table order within the section's column storage.
+    pub ordinal: u32,
+    /// Linked rows in ascending source order.
+    pub rows: Vec<String>,
+    /// First and greatest target block ordinal.
+    pub first_target_index: u32,
+    /// Last and least target block ordinal.
+    pub last_target_index: u32,
+    /// Directory entry containing the store.
+    pub source_entry: String,
+    /// Absolute source offset of the first row.
+    pub source_offset: u64,
+}
+
 /// Product/version header from one indexed NX OM store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoreHeader {
@@ -11636,6 +11657,51 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
                 .collect()
         })
         .collect()
+}
+
+/// Group maximal linked-row runs whose target blocks descend without gaps.
+pub fn data_block_linked_index_tables(
+    rows: &[DataBlockLinkedIndexRow],
+) -> Vec<DataBlockLinkedIndexTable> {
+    let mut tables = Vec::new();
+    let mut start = 0;
+    while start < rows.len() {
+        let mut end = start + 1;
+        while end < rows.len()
+            && rows[end].section_ordinal == rows[start].section_ordinal
+            && rows[end].source_offset > rows[end - 1].source_offset
+            && rows[end - 1].target_index.checked_sub(1) == Some(rows[end].target_index)
+        {
+            end += 1;
+        }
+        if end - start >= 2 {
+            let members = &rows[start..end];
+            let section_ordinal = members[0].section_ordinal;
+            let ordinal = tables
+                .iter()
+                .filter(|table: &&DataBlockLinkedIndexTable| {
+                    table.section_ordinal == section_ordinal
+                })
+                .count() as u32;
+            tables.push(DataBlockLinkedIndexTable {
+                id: format!(
+                    "nx:om-data-block-linked-index-tables-{section_ordinal}:table#{ordinal}"
+                ),
+                section_ordinal,
+                ordinal,
+                rows: members.iter().map(|row| row.id.clone()).collect(),
+                first_target_index: members[0].target_index,
+                last_target_index: members
+                    .last()
+                    .expect("nonempty linked-row run")
+                    .target_index,
+                source_entry: members[0].source_entry.clone(),
+                source_offset: members[0].source_offset,
+            });
+        }
+        start = end;
+    }
+    tables
 }
 
 /// Decode one product/version header from each indexed NX OM store.

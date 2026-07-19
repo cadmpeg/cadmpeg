@@ -751,6 +751,8 @@ A second self-framed row is `02 0b, first:compact_index, 93 8c, discriminator:u8
 
 When an operation-header input and a linked-row slot resolve to the same bounded data block, their exact reuse relation retains the operation, header slot, row, row slot, shared block, and row-token offset. The target is row slot zero and the three post-marker indices are slots one through three. Repeated row slots remain distinct uses. The relation does not assign a semantic operand or class role.
 
+Two or more linked rows in source order whose target block ordinals decrease by exactly one form one maximal linked-index table. A table cannot cross an offset-store section, reverse source order, or contain a target gap. It retains its ordered rows, inclusive greatest-to-least target interval, and first-row source offset without assigning a semantic role to the interval.
+
 An offset-store object frame is `object_id:compact_index, 00 72 01 c0 20 02 01 c0 45 04 00 80 86 02 01 02 80 a4`. The compact index is non-null and uses the same direct and extended forms. Its value is a persistent object ID. The frame and discriminator lie within one bounded data block; non-overlapping frame order and the compact-index byte offset are retained.
 
 A zero-prefixed offset-store control block begins with an ordered class-selection lane. Each word is `00, class_ordinal:u24 LE`; every ordinal indexes the store-local class registry and occurs once. The lane ends at the first out-of-range word, and every remaining control word is out of range. An empty lane, duplicate ordinal, or later in-range word rejects the class-selection lane atomically. Each retained ordinal resolves to its exact registered class definition and name.
