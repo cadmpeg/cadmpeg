@@ -7056,6 +7056,42 @@ fn build_geometry_report(
 }
 
 pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>) {
+    let unresolved_suppression_count = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.suppressed.is_none())
+        .count();
+    if unresolved_suppression_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "Suppression state remains unresolved for {unresolved_suppression_count} NX \
+                 feature history operation(s)."
+            ),
+            provenance: None,
+        });
+    }
+
+    let unresolved_configuration_count = ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| configuration.bodies.is_unresolved())
+        .count();
+    if unresolved_configuration_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Feature,
+            severity: Severity::Warning,
+            message: format!(
+                "Complete body membership remains unresolved for {unresolved_configuration_count} \
+                 NX design configuration(s)."
+            ),
+            provenance: None,
+        });
+    }
+
     let mut native_feature_kinds = BTreeMap::<&str, usize>::new();
     for feature in &ir.model.features {
         if let FeatureDefinition::Native { kind, .. } = &feature.definition {

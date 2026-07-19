@@ -16265,7 +16265,10 @@ fn inspect_enumerates_streams_and_names_schema() {
 #[test]
 fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     use cadmpeg_ir::document::CadIr;
-    use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureId};
+    use cadmpeg_ir::features::{
+        ConfigurationBodies, ConfigurationId, DesignConfiguration, Feature, FeatureDefinition,
+        FeatureId,
+    };
 
     let mut ir = CadIr::empty(cadmpeg_ir::units::Units::default());
     for (ordinal, kind) in ["DELETE", "DELETE", "Container"].into_iter().enumerate() {
@@ -16333,22 +16336,50 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
             native_ref: None,
         });
     }
+    ir.model.configurations.extend([
+        DesignConfiguration {
+            id: ConfigurationId("test:configuration#0".into()),
+            ordinal: 0,
+            active: true,
+            source_index: Some(0),
+            name: "Model".into(),
+            material: None,
+            properties: Default::default(),
+            bodies: ConfigurationBodies::Resolved(Vec::new()),
+            native_ref: None,
+        },
+        DesignConfiguration {
+            id: ConfigurationId("test:configuration#1".into()),
+            ordinal: 1,
+            active: false,
+            source_index: Some(1),
+            name: "Arrangement".into(),
+            material: None,
+            properties: Default::default(),
+            bodies: ConfigurationBodies::Unresolved,
+            native_ref: None,
+        },
+    ]);
 
     let mut losses = Vec::new();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 3);
+    assert_eq!(losses.len(), 5);
     assert_eq!(losses[0].category, LossCategory::Feature);
-    assert!(losses[0].message.contains("Container (1)"));
-    assert!(losses[0].message.contains("DELETE (2)"));
+    assert!(losses[0].message.contains("9 NX feature history operation"));
     assert_eq!(losses[1].category, LossCategory::Feature);
-    assert!(losses[1].message.contains("datum coordinate system (1)"));
-    assert!(losses[1].message.contains("datum plane (1)"));
-    assert!(losses[1].message.contains("freeform surface (1)"));
-    assert!(losses[1].message.contains("loft (2)"));
+    assert!(losses[1].message.contains("1 NX design configuration"));
     assert_eq!(losses[2].category, LossCategory::Feature);
-    assert!(losses[2].message.contains("1 NX sketch history feature"));
-    assert!(losses[2].message.contains("1 have no neutral sketch graph"));
+    assert!(losses[2].message.contains("Container (1)"));
+    assert!(losses[2].message.contains("DELETE (2)"));
+    assert_eq!(losses[3].category, LossCategory::Feature);
+    assert!(losses[3].message.contains("datum coordinate system (1)"));
+    assert!(losses[3].message.contains("datum plane (1)"));
+    assert!(losses[3].message.contains("freeform surface (1)"));
+    assert!(losses[3].message.contains("loft (2)"));
+    assert_eq!(losses[4].category, LossCategory::Feature);
+    assert!(losses[4].message.contains("1 NX sketch history feature"));
+    assert!(losses[4].message.contains("1 have no neutral sketch graph"));
 
     let sketch_id = cadmpeg_ir::sketches::SketchId("test:sketch#0".into());
     ir.model.sketches.push(cadmpeg_ir::sketches::Sketch {
@@ -16368,8 +16399,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     losses.clear();
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
-    assert_eq!(losses.len(), 3);
-    assert!(losses[2].message.contains("no sketch constraints"));
+    assert_eq!(losses.len(), 5);
+    assert!(losses[4].message.contains("no sketch constraints"));
 }
 
 #[test]
