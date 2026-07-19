@@ -5180,6 +5180,24 @@ pub struct FeatureProjectedCurveReference {
     pub source_offset: u64,
 }
 
+/// Ordered construction reference carried by a bounded pattern payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeaturePatternReference {
+    /// Globally unique pattern-reference identity.
+    pub id: String,
+    /// Owning pattern operation label.
+    pub operation_label: String,
+    /// Zero-based non-null slot order in the exact reference field.
+    pub ordinal: u32,
+    /// Serialized object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
 /// Ordered profile reference carried by a bounded extrusion payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureExtrudeProfileReference {
@@ -8404,11 +8422,19 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
     references
 }
 
-/// Decode and resolve the exact ordered construction-reference field in
-/// projected-curve payloads without assigning semantic roles to its slots.
-pub fn feature_projected_curve_references(
+struct ResolvedFeaturePayloadReference {
+    section_key: String,
+    operation_ordinal: usize,
+    ordinal: usize,
+    object_index: u32,
+    data_block: Option<String>,
+    source_offset: u64,
+}
+
+fn resolved_feature_payload_references(
     container: &Container,
-) -> Vec<FeatureProjectedCurveReference> {
+    decode: impl Fn(crate::om::OperationRecord<'_>) -> Option<Vec<crate::om::PayloadObjectReference>>,
+) -> Vec<ResolvedFeaturePayloadReference> {
     let indexed = container.indexed_om_sections();
     let sections = container.om_sections();
     let mut references = Vec::new();
@@ -8426,26 +8452,78 @@ pub fn feature_projected_curve_references(
         let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
         for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
-            let Some(decoded) = crate::om::projected_curve_payload_references(record) else {
+            let Some(decoded) = decode(record) else {
                 continue;
             };
-            let operation_label =
-                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
-            references.extend(decoded.references.into_iter().enumerate().map(
-                |(ordinal, reference)| FeatureProjectedCurveReference {
-                    id: format!(
-                        "nx:feature-history:projected-curve-reference#{section_key}-{operation_ordinal:010}-{ordinal:010}"
-                    ),
-                    operation_label: operation_label.clone(),
-                    ordinal: ordinal as u32,
+            references.extend(decoded.into_iter().enumerate().map(|(ordinal, reference)| {
+                ResolvedFeaturePayloadReference {
+                    section_key: section_key.clone(),
+                    operation_ordinal,
+                    ordinal,
                     object_index: reference.object_index,
                     data_block: unique_offset_data_block(&indexed, reference.object_index),
                     source_offset: entry_offset + reference.offset as u64,
-                },
-            ));
+                }
+            }));
         }
     }
     references
+}
+
+/// Decode and resolve the exact ordered construction-reference field in
+/// projected-curve payloads without assigning semantic roles to its slots.
+pub fn feature_projected_curve_references(
+    container: &Container,
+) -> Vec<FeatureProjectedCurveReference> {
+    resolved_feature_payload_references(container, |record| {
+        crate::om::projected_curve_payload_references(record).map(|field| field.references)
+    })
+    .into_iter()
+    .map(|reference| {
+        let operation_label = format!(
+            "nx:feature-history:operation-label#{}-{:010}",
+            reference.section_key, reference.operation_ordinal
+        );
+        FeatureProjectedCurveReference {
+            id: format!(
+                "nx:feature-history:projected-curve-reference#{}-{:010}-{:010}",
+                reference.section_key, reference.operation_ordinal, reference.ordinal
+            ),
+            operation_label,
+            ordinal: reference.ordinal as u32,
+            object_index: reference.object_index,
+            data_block: reference.data_block,
+            source_offset: reference.source_offset,
+        }
+    })
+    .collect()
+}
+
+/// Decode and resolve exact ordered construction references in pattern
+/// payloads without assigning seed or transform semantics to their slots.
+pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternReference> {
+    resolved_feature_payload_references(container, |record| {
+        crate::om::pattern_payload_references(record).map(|field| field.references)
+    })
+    .into_iter()
+    .map(|reference| {
+        let operation_label = format!(
+            "nx:feature-history:operation-label#{}-{:010}",
+            reference.section_key, reference.operation_ordinal
+        );
+        FeaturePatternReference {
+            id: format!(
+                "nx:feature-history:pattern-reference#{}-{:010}-{:010}",
+                reference.section_key, reference.operation_ordinal, reference.ordinal
+            ),
+            operation_label,
+            ordinal: reference.ordinal as u32,
+            object_index: reference.object_index,
+            data_block: reference.data_block,
+            source_offset: reference.source_offset,
+        }
+    })
+    .collect()
 }
 
 /// Decode and resolve the witnessed ordered profile list in extrusion payloads.

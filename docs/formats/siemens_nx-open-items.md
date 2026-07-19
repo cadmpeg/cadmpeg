@@ -23,6 +23,7 @@ This document records unresolved NX `.prt` byte semantics.
 - Body membership and per-body state for inactive arrangements are unspecified.
 - The semantic roles of the extrusion terminal discriminator lane's type indices, fixed counted values, flags, and trailing indices are unspecified.
 - The source-curve, target-surface, direction, and combination roles of the ordered `CPROJ` and `CPROJ_CMB` construction references are unspecified.
+- The seed, transform, and pattern-control roles of the ordered `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` construction references are unspecified.
 - The relationship between plain cached-body streams and their owning features is unspecified.
 - The associated `RMFastLoad` per-class entity record layout outside its object-id membership table is unspecified.
 

@@ -741,6 +741,13 @@ pub struct ProjectedCurvePayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
+/// Exact non-null construction references in a pattern payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatternPayloadReferenceField {
+    /// Non-null references in serialized slot order.
+    pub references: Vec<PayloadObjectReference>,
+}
+
 /// One object index in an extrusion profile-reference field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExtrudeProfileReference {
@@ -1664,6 +1671,89 @@ pub fn projected_curve_payload_references(
             matches.push(field);
         }
     }
+    let [field] = matches.as_slice() else {
+        return None;
+    };
+    Some(field.clone())
+}
+
+/// Decode the unique exactly framed construction-reference field in a bounded
+/// pattern payload.
+pub fn pattern_payload_references(
+    record: OperationRecord<'_>,
+) -> Option<PatternPayloadReferenceField> {
+    const GRAPH_SEPARATOR: [u8; 4] = [0xff, 0x00, 0xff, 0x01];
+    const GRAPH_TAIL_PREFIX: [u8; 4] = [0xff, 0x00, 0x00, 0x01];
+    const GRAPH_SUFFIX: [u8; 3] = [0xff, 0xff, 0x01];
+    const INSTANCE_PREFIX: [u8; 3] = [0x00, 0xff, 0xff];
+    const INSTANCE_SUFFIX: [u8; 17] = [
+        0x01, 0x02, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00,
+        0x01, 0x02,
+    ];
+    let decode_reference = |at: &mut usize| {
+        let offset = *at;
+        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        *at += width;
+        Some(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+        })
+    };
+    let decode_graph = |start: usize| {
+        let mut at = start + 1;
+        let mut references = Vec::with_capacity(10);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + GRAPH_SEPARATOR.len()) == Some(&GRAPH_SEPARATOR))
+            .then_some(())?;
+        at += GRAPH_SEPARATOR.len();
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at) == Some(&0x61)).then_some(())?;
+        at += 1;
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + GRAPH_SEPARATOR.len()) == Some(&GRAPH_SEPARATOR))
+            .then_some(())?;
+        at += GRAPH_SEPARATOR.len();
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + 2) == Some(&[0xff, 0x62])).then_some(())?;
+        at += 2;
+        references.push(decode_reference(&mut at)?);
+        references.push(decode_reference(&mut at)?);
+        (record.payload.get(at..at + GRAPH_TAIL_PREFIX.len()) == Some(&GRAPH_TAIL_PREFIX))
+            .then_some(())?;
+        at += GRAPH_TAIL_PREFIX.len();
+        references.push(decode_reference(&mut at)?);
+        if record.payload.get(at) == Some(&0xff) {
+            at += 1;
+        } else {
+            references.push(decode_reference(&mut at)?);
+        }
+        (record.payload.get(at..at + GRAPH_SUFFIX.len()) == Some(&GRAPH_SUFFIX)).then_some(())?;
+        Some(PatternPayloadReferenceField { references })
+    };
+    let decode_instance = |start: usize| {
+        let mut at = start + INSTANCE_PREFIX.len();
+        let reference = decode_reference(&mut at)?;
+        (record.payload.get(at..at + INSTANCE_SUFFIX.len()) == Some(&INSTANCE_SUFFIX))
+            .then_some(())?;
+        Some(PatternPayloadReferenceField {
+            references: vec![reference],
+        })
+    };
+    let marker = match record.label.value {
+        "Pattern Feature" | "Pattern Geometry" => &[0x61][..],
+        "Geometry Instance" => &INSTANCE_PREFIX,
+        _ => return None,
+    };
+    let matches = (0..=record.payload.len().saturating_sub(marker.len()))
+        .filter(|&start| record.payload.get(start..start + marker.len()) == Some(marker))
+        .filter_map(|start| match record.label.value {
+            "Pattern Feature" | "Pattern Geometry" => decode_graph(start),
+            "Geometry Instance" => decode_instance(start),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
     let [field] = matches.as_slice() else {
         return None;
     };

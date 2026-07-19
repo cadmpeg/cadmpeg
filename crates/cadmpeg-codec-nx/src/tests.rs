@@ -7553,6 +7553,91 @@ fn om_combined_projected_curve_references_require_the_complete_graph() {
 }
 
 #[test]
+fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "Pattern Geometry",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let nullable = b"\x61\xf1\x1b\x08\xff\x00\xff\x01\xf1\x1b\x09\xf1\x1b\x0a\x61\xf1\x1b\x0b\xff\x00\xff\x01\xf1\x1b\x0c\xf1\x1b\x0d\xff\x62\xf1\x1b\x0e\xf1\x1b\x0f\xff\x00\x00\x01\xf1\x1b\x10\xff\xff\xff\x01";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: nullable,
+        payload_offset: 200,
+        payload: nullable,
+        label,
+    };
+    let field = crate::om::pattern_payload_references(record).expect("complete graph");
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        (6920..=6928).collect::<Vec<_>>()
+    );
+
+    let populated = [&nullable[..nullable.len() - 4], b"\xf1\x1b\x11\xff\xff\x01"].concat();
+    let field = crate::om::pattern_payload_references(crate::om::OperationRecord {
+        label: crate::om::OperationLabel {
+            value: "Pattern Feature",
+            ..label
+        },
+        bytes: &populated,
+        payload: &populated,
+        ..record
+    })
+    .expect("populated terminal slot");
+    assert_eq!(field.references.len(), 10);
+    assert_eq!(field.references[9].object_index, 6929);
+
+    let mut malformed = nullable.to_vec();
+    malformed[18] = 0x60;
+    assert!(
+        crate::om::pattern_payload_references(crate::om::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_geometry_instance_reference_requires_one_complete_field() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "Geometry Instance",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x44\x45\x00\xff\xff\xf1\x03\x21\x01\x02\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x01\x02";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let field = crate::om::pattern_payload_references(record).expect("complete field");
+    assert_eq!(field.references[0].object_index, 801);
+    assert_eq!(field.references[0].offset, 205);
+
+    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(
+        crate::om::pattern_payload_references(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
