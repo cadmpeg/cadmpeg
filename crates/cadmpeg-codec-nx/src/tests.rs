@@ -7754,7 +7754,8 @@ fn om_draft_feature_references_require_one_complete_graph() {
     };
     let prefix = b"\x67\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\xff\xff\xff\xff\xff\xff\xff\xff\x01\x03\x80\x94\x82\x49";
     let graph = b"\x01\x02\xf1\x1b\x7c\x01\x02\xf1\x1b\x7d\x68\x2f\x70\x62\x4d\xd2\xf1\xa9\xfc\x03\x50\x44\x00\x00\x01\x46\x8a\x2a\x01\xa3\x60\x10\x01\x01\x01\x04\x02\x01\x02\x01\x00\x00\x00\x00\x01\xf1\x1b\x7e\xff\x00\x00\x00\xf1\x1b\x7f\xff";
-    let payload = [prefix.as_slice(), graph.as_slice(), b"\xaa"].concat();
+    let terminal = b"\x81\x5e\x80\xb8\x01\x03\x02\x01\x02\x01\x01\x01\x00\x00\x00\x29\x29\x0c\x00";
+    let payload = [prefix.as_slice(), graph.as_slice(), terminal.as_slice()].concat();
     let record = crate::om::OperationRecord {
         offset: 100,
         bytes: &payload,
@@ -7774,6 +7775,12 @@ fn om_draft_feature_references_require_one_complete_graph() {
     let lane = crate::om::draft_feature_leading_index_lane(record).expect("complete index lane");
     assert_eq!(lane.declared_count, 3);
     assert_eq!(lane.indices, vec![(148, 224), (585, 226)]);
+    let terminal_lane =
+        crate::om::draft_feature_terminal_lane(record).expect("complete terminal lane");
+    assert_eq!(terminal_lane.indices, [350, 184]);
+    assert_eq!(terminal_lane.index_offsets, [284, 286]);
+    assert_eq!(terminal_lane.tail, [0x29, 0x29, 0x0c]);
+    assert_eq!(terminal_lane.offset, 284);
 
     let mut malformed = payload.clone();
     malformed[53] = 0x00;
@@ -7806,8 +7813,16 @@ fn om_draft_feature_references_require_one_complete_graph() {
     );
     assert!(
         crate::om::draft_feature_payload_references(crate::om::OperationRecord {
-            bytes: &payload[..payload.len() - 2],
-            payload: &payload[..payload.len() - 2],
+            bytes: &payload[..prefix.len() + graph.len() - 2],
+            payload: &payload[..prefix.len() + graph.len() - 2],
+            ..record
+        })
+        .is_none()
+    );
+    assert!(
+        crate::om::draft_feature_terminal_lane(crate::om::OperationRecord {
+            bytes: &payload[..payload.len() - 1],
+            payload: &payload[..payload.len() - 1],
             ..record
         })
         .is_none()

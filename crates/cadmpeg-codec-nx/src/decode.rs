@@ -7731,6 +7731,8 @@ fn attach_native_object_model(
         crate::native::feature_draft_construction_references(&scan.container);
     let feature_draft_construction_index_lanes =
         crate::native::feature_draft_construction_index_lanes(&scan.container);
+    let feature_draft_construction_terminal_lanes =
+        crate::native::feature_draft_construction_terminal_lanes(&scan.container);
     let feature_surface_construction_references =
         crate::native::feature_surface_construction_references(&scan.container);
     let feature_surface_construction_branches =
@@ -8015,6 +8017,7 @@ fn attach_native_object_model(
         && feature_point_construction_scalar_lanes.is_empty()
         && feature_draft_construction_references.is_empty()
         && feature_draft_construction_index_lanes.is_empty()
+        && feature_draft_construction_terminal_lanes.is_empty()
         && feature_surface_construction_references.is_empty()
         && feature_surface_construction_branches.is_empty()
         && feature_extrude_profile_references.is_empty()
@@ -8808,6 +8811,7 @@ fn attach_native_object_model(
             point_construction_scalar_lanes: &feature_point_construction_scalar_lanes,
             draft_construction_references: &feature_draft_construction_references,
             draft_construction_index_lanes: &feature_draft_construction_index_lanes,
+            draft_construction_terminal_lanes: &feature_draft_construction_terminal_lanes,
             surface_construction_references: &feature_surface_construction_references,
             surface_construction_branches: &feature_surface_construction_branches,
             sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
@@ -9262,6 +9266,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_draft_construction_index_lanes",
             &feature_draft_construction_index_lanes,
+        )?;
+    }
+    if !feature_draft_construction_terminal_lanes.is_empty() {
+        namespace.set_arena(
+            "feature_draft_construction_terminal_lanes",
+            &feature_draft_construction_terminal_lanes,
         )?;
     }
     if !feature_surface_construction_references.is_empty() {
@@ -9953,6 +9963,7 @@ struct FeatureOperationSources<'a> {
     point_construction_scalar_lanes: &'a [crate::native::FeaturePointConstructionScalarLane],
     draft_construction_references: &'a [crate::native::FeatureDraftConstructionReference],
     draft_construction_index_lanes: &'a [crate::native::FeatureDraftConstructionIndexLane],
+    draft_construction_terminal_lanes: &'a [crate::native::FeatureDraftConstructionTerminalLane],
     surface_construction_references: &'a [crate::native::FeatureSurfaceConstructionReference],
     surface_construction_branches: &'a [crate::native::FeatureSurfaceConstructionBranch],
     sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
@@ -10052,6 +10063,7 @@ fn attach_feature_operations(
         point_construction_scalar_lanes,
         draft_construction_references,
         draft_construction_index_lanes,
+        draft_construction_terminal_lanes,
         surface_construction_references,
         surface_construction_branches,
         sketch_named_point_block_uses,
@@ -10228,6 +10240,10 @@ fn attach_feature_operations(
         });
     let draft_construction_index_lanes_by_operation =
         records_by_operation(draft_construction_index_lanes, |lane| &lane.operation_label);
+    let draft_construction_terminal_lanes_by_operation =
+        records_by_operation(draft_construction_terminal_lanes, |lane| {
+            &lane.operation_label
+        });
     let surface_construction_references_by_operation =
         records_by_operation(surface_construction_references, |reference| {
             &reference.operation_label
@@ -11000,6 +11016,16 @@ fn attach_feature_operations(
             .flatten()
         {
             source_properties.insert("draft_construction_index_lane".to_string(), lane.id.clone());
+        }
+        for lane in draft_construction_terminal_lanes_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                "draft_construction_terminal_lane".to_string(),
+                lane.id.clone(),
+            );
         }
         for reference in surface_construction_references_by_operation
             .get(label.id.as_str())

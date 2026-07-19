@@ -782,6 +782,19 @@ pub struct DraftFeatureLeadingIndexLane {
     pub indices: Vec<(u32, usize)>,
 }
 
+/// End-anchored compact-index lane in a draft-feature payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftFeatureTerminalLane {
+    /// Two non-null compact indices in serialized order.
+    pub indices: [u32; 2],
+    /// Absolute offsets of the compact-index tokens.
+    pub index_offsets: [usize; 2],
+    /// Three uninterpreted bytes preceding the terminal zero.
+    pub tail: [u8; 3],
+    /// Absolute offset of the first compact-index token.
+    pub offset: usize,
+}
+
 /// Exact common construction references in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadReferenceField {
@@ -1987,6 +2000,78 @@ pub fn draft_feature_leading_index_lane(
         declared_count,
         indices,
     })
+}
+
+/// Decode the complete end-anchored terminal lane in a bounded `DRAFT` payload.
+pub fn draft_feature_terminal_lane(
+    record: OperationRecord<'_>,
+) -> Option<DraftFeatureTerminalLane> {
+    const FIXED: [u8; 11] = [
+        0x01, 0x03, 0x02, 0x01, 0x02, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00,
+    ];
+    if record.label.value != "DRAFT" {
+        return None;
+    }
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len() {
+        let mut at = start;
+        let first_offset = at;
+        if !record
+            .payload
+            .get(at)
+            .is_some_and(|marker| (0x80..=0xfe).contains(marker))
+        {
+            continue;
+        }
+        let Some((CompactIndex::Value(first), first_width)) =
+            record.payload.get(at..).and_then(compact_index)
+        else {
+            continue;
+        };
+        at += first_width;
+        let second_offset = at;
+        if !record
+            .payload
+            .get(at)
+            .is_some_and(|marker| (0x80..=0xfe).contains(marker))
+        {
+            continue;
+        }
+        let Some((CompactIndex::Value(second), second_width)) =
+            record.payload.get(at..).and_then(compact_index)
+        else {
+            continue;
+        };
+        at += second_width;
+        if record.payload.get(at..at + FIXED.len()) != Some(&FIXED) {
+            continue;
+        }
+        at += FIXED.len();
+        let Some(tail) = record
+            .payload
+            .get(at..at + 3)
+            .and_then(|bytes| bytes.try_into().ok())
+        else {
+            continue;
+        };
+        at += 3;
+        if at + 1 != record.payload.len() || record.payload.get(at) != Some(&0x00) {
+            continue;
+        }
+        matches.push(DraftFeatureTerminalLane {
+            indices: [first, second],
+            index_offsets: [
+                record.payload_offset + first_offset,
+                record.payload_offset + second_offset,
+            ],
+            tail,
+            offset: record.payload_offset + start,
+        });
+    }
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
 }
 
 /// Decode the exact common construction-reference envelope in a bounded

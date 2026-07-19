@@ -5266,6 +5266,23 @@ pub struct FeatureDraftConstructionIndexLane {
     pub source_offsets: Vec<u64>,
 }
 
+/// End-anchored compact-index lane in a bounded draft construction payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDraftConstructionTerminalLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `DRAFT` operation label.
+    pub operation_label: String,
+    /// Two non-null compact indices in serialized order.
+    pub indices: [u32; 2],
+    /// Exact uninterpreted bytes preceding the terminal zero.
+    pub tail: [u8; 3],
+    /// Absolute source offsets of the compact-index tokens.
+    pub index_source_offsets: [u64; 2],
+    /// Absolute source offset of the first compact-index token.
+    pub source_offset: u64,
+}
+
 /// Ordered construction reference carried by a bounded surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceConstructionReference {
@@ -5853,6 +5870,30 @@ fn feature_history_sections(container: &Container) -> Vec<(usize, SegmentOmLink)
         .into_iter()
         .enumerate()
         .collect()
+}
+
+fn visit_feature_history_operation_records(
+    container: &Container,
+    mut visit: impl FnMut(&str, u64, usize, crate::om::OperationRecord<'_>),
+) {
+    let sections = container.om_sections();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            visit(&section_key, entry_offset, operation_ordinal, record);
+        }
+    }
 }
 
 pub(crate) fn canonical_feature_history_links(
@@ -8794,24 +8835,12 @@ pub fn feature_draft_construction_references(
 pub fn feature_draft_construction_index_lanes(
     container: &Container,
 ) -> Vec<FeatureDraftConstructionIndexLane> {
-    let sections = container.om_sections();
     let mut lanes = Vec::new();
-    for (section_ordinal, link) in feature_history_sections(container) {
-        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
-            entry
-                .file_span
-                .map_or(section.offset as u64, |(offset, _)| {
-                    offset + section.offset as u64
-                })
-                == link.section_offset
-        }) else {
-            continue;
-        };
-        let section_key = format!("{section_ordinal:010}");
-        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+    visit_feature_history_operation_records(
+        container,
+        |section_key, entry_offset, operation_ordinal, record| {
             let Some(lane) = crate::om::draft_feature_leading_index_lane(record) else {
-                continue;
+                return;
             };
             lanes.push(FeatureDraftConstructionIndexLane {
                 id: format!(
@@ -8828,8 +8857,38 @@ pub fn feature_draft_construction_index_lanes(
                     .map(|(_, offset)| entry_offset + *offset as u64)
                     .collect(),
             });
-        }
-    }
+        },
+    );
+    lanes
+}
+
+/// Decode complete end-anchored terminal lanes from draft construction payloads.
+pub fn feature_draft_construction_terminal_lanes(
+    container: &Container,
+) -> Vec<FeatureDraftConstructionTerminalLane> {
+    let mut lanes = Vec::new();
+    visit_feature_history_operation_records(
+        container,
+        |section_key, entry_offset, operation_ordinal, record| {
+            let Some(lane) = crate::om::draft_feature_terminal_lane(record) else {
+                return;
+            };
+            lanes.push(FeatureDraftConstructionTerminalLane {
+                id: format!(
+                    "nx:feature-history:draft-construction-terminal-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                indices: lane.indices,
+                tail: lane.tail,
+                index_source_offsets: lane
+                    .index_offsets
+                    .map(|offset| entry_offset + offset as u64),
+                source_offset: entry_offset + lane.offset as u64,
+            });
+        },
+    );
     lanes
 }
 
