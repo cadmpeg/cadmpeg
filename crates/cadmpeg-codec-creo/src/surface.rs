@@ -612,14 +612,14 @@ pub enum PlaneEnvelope {
     Standard {
         /// Two parameter-space bound pairs.
         bounds_2d: [[Option<f64>; 2]; 2],
-        /// Two surface-space corner triples.
+        /// Two model-space corner triples.
         corners_3d: [[Option<f64>; 3]; 2],
     },
     /// `0x0e` variant with three prefix values and two 3D corner triples.
     Compact {
         /// Three envelope-prefix values.
         prefix: [Option<f64>; 3],
-        /// Two surface-space corner triples.
+        /// Two model-space corner triples.
         corners_3d: [[Option<f64>; 3]; 2],
     },
 }

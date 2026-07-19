@@ -12,6 +12,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Per-instance cone half-angle bodies outside the terminal positive-DICT form
   and `geom_type = 26` torus/sphere radius bodies outside the tagged radius
   trailer are unspecified.
+- Positional plane-envelope scalar prefixes outside the defined row lane are
+  unspecified. A complete envelope with one held XYZ coordinate must select
+  the same model axis as its complete cardinal `local_sys` normal.
 - The joins from later positional spline rows to their prototype data and from
   spline surfaces to surface-intersection curves are unspecified.
 - The prototype-adjacent `tab_cyl` instance rows use a construction distinct
