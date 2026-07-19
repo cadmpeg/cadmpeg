@@ -282,7 +282,7 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
 
 pub(crate) fn enrich_scene_classes(
     histories: &mut [FeatureHistory],
-    scene_classes: &HashMap<String, String>,
+    scene_classes: &crate::tessellation::SceneFeatureClasses,
 ) {
     for feature in histories
         .iter_mut()
@@ -292,7 +292,42 @@ pub(crate) fn enrich_scene_classes(
             continue;
         };
         if feature.input_class.is_none() && classless_builtin_node(feature) {
-            feature.input_class = scene_classes.get(source).cloned();
+            feature.input_class = scene_classes.by_source.get(source).cloned();
+        }
+    }
+    for history in histories {
+        let mut groups = HashMap::<&str, Vec<usize>>::new();
+        for (index, feature) in history.features.iter().enumerate() {
+            if classless_builtin_node(feature) {
+                groups.entry(feature.kind.as_str()).or_default().push(index);
+            }
+        }
+        let proposals = scene_classes
+            .anonymous_counts
+            .iter()
+            .filter_map(|(class, count)| {
+                let candidates = groups
+                    .values()
+                    .filter(|indices| indices.len() == *count)
+                    .collect::<Vec<_>>();
+                let [indices] = candidates.as_slice() else {
+                    return None;
+                };
+                Some(((*indices).clone(), class))
+            })
+            .collect::<Vec<_>>();
+        for (indices, class) in &proposals {
+            if proposals
+                .iter()
+                .filter(|(candidate, _)| candidate == indices)
+                .count()
+                != 1
+            {
+                continue;
+            }
+            for &index in indices {
+                history.features[index].input_class = Some((*class).clone());
+            }
         }
     }
 }
@@ -1787,6 +1822,40 @@ mod history_reference_tests {
             references: Vec::new(),
             sketch_entities: Vec::new(),
         }
+    }
+
+    #[test]
+    fn anonymous_scene_class_binds_only_a_unique_matching_kind_group() {
+        let mut first = feature("first", Some("153"), 0);
+        first.kind = "localized light".into();
+        let mut second = feature("second", Some("155"), 1);
+        second.kind = first.kind.clone();
+        let mut singleton = feature("singleton", Some("200"), 2);
+        singleton.kind = "unrelated".into();
+        let mut histories = vec![FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![first, second, singleton],
+        }];
+        let scene = crate::tessellation::SceneFeatureClasses {
+            by_source: HashMap::new(),
+            anonymous_counts: HashMap::from([("moDirectionLight_c".into(), 2)]),
+        };
+
+        enrich_scene_classes(&mut histories, &scene);
+
+        assert_eq!(
+            histories[0].features[0].input_class.as_deref(),
+            Some("moDirectionLight_c")
+        );
+        assert_eq!(
+            histories[0].features[1].input_class.as_deref(),
+            Some("moDirectionLight_c")
+        );
+        assert_eq!(histories[0].features[2].input_class, None);
     }
 
     #[test]

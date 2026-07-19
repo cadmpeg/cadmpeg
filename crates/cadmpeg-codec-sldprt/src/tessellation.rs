@@ -27,7 +27,24 @@ pub struct Mesh {
     pub channels: Vec<TessellationChannel>,
 }
 
-fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SceneFeatureClasses {
+    pub(crate) by_source: HashMap<String, String>,
+    pub(crate) anonymous_counts: HashMap<String, usize>,
+}
+
+fn legacy_scene_object_count(payload: &[u8]) -> usize {
+    payload
+        .windows(25)
+        .filter(|window| {
+            window[..8] == [1, 0, 0, 0, 0xff, 0xfe, 0xff, 7]
+                && window[9..22].iter().step_by(2).all(|byte| *byte == 0)
+                && window[22..25] == [0xff, 0xfe, 0xff]
+        })
+        .count()
+}
+
+fn scene_classes(payload: &[u8]) -> (Vec<(u32, String)>, Vec<(String, usize)>) {
     let declarations = payload
         .windows(CLASS_MARKER.len())
         .enumerate()
@@ -50,7 +67,8 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
             Some((offset, name.to_string()))
         })
         .collect::<Vec<_>>();
-    declarations
+    let mut anonymous = Vec::new();
+    let sourced = declarations
         .iter()
         .enumerate()
         .flat_map(|(index, (offset, class))| {
@@ -70,7 +88,8 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
             let end = declarations
                 .get(index + 1)
                 .map_or(payload.len(), |(offset, _)| *offset);
-            payload[start..end]
+            let records = &payload[start..end];
+            let sourced = records
                 .windows(SCENE_SOURCE_MARKER.len() + 4)
                 .filter_map(|window| {
                     (window.starts_with(SCENE_SOURCE_MARKER))
@@ -79,30 +98,55 @@ fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
                         .filter(|source| *source != 0)
                         .map(|source| (source, class.clone()))
                 })
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            if sourced.is_empty() {
+                let count = legacy_scene_object_count(records);
+                if count > 0 {
+                    anonymous.push((class.clone(), count));
+                }
+            }
+            sourced
         })
-        .collect()
+        .collect();
+    (sourced, anonymous)
 }
 
-pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<String, String> {
+pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> SceneFeatureClasses {
     let mut candidates = HashMap::<u32, Option<String>>::new();
-    for (source, class) in scan
-        .sections()
-        .flat_map(|section| scene_classes(section.payload()))
-    {
-        candidates
-            .entry(source)
-            .and_modify(|existing| {
-                if existing.as_deref() != Some(class.as_str()) {
-                    *existing = None;
-                }
-            })
-            .or_insert_with(|| Some(class));
+    let mut anonymous = HashMap::<String, Option<usize>>::new();
+    for section in scan.sections() {
+        let (sourced, counts) = scene_classes(section.payload());
+        for (source, class) in sourced {
+            candidates
+                .entry(source)
+                .and_modify(|existing| {
+                    if existing.as_deref() != Some(class.as_str()) {
+                        *existing = None;
+                    }
+                })
+                .or_insert_with(|| Some(class));
+        }
+        for (class, count) in counts {
+            anonymous
+                .entry(class)
+                .and_modify(|existing| {
+                    if *existing != Some(count) {
+                        *existing = None;
+                    }
+                })
+                .or_insert(Some(count));
+        }
     }
-    candidates
-        .into_iter()
-        .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
-        .collect()
+    SceneFeatureClasses {
+        by_source: candidates
+            .into_iter()
+            .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
+            .collect(),
+        anonymous_counts: anonymous
+            .into_iter()
+            .filter_map(|(class, count)| count.map(|count| (class, count)))
+            .collect(),
+    }
 }
 
 fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
@@ -274,7 +318,7 @@ mod tests {
         class(&mut payload, "moSpotLight_c", &[20]);
 
         assert_eq!(
-            scene_classes(&payload),
+            scene_classes(&payload).0,
             vec![
                 (12, "moAmbientLight_c".into()),
                 (30, "moDirectionLight_c".into()),
@@ -282,6 +326,28 @@ mod tests {
                 (21, "moPointLight_c".into()),
                 (20, "moSpotLight_c".into()),
             ]
+        );
+    }
+
+    #[test]
+    fn legacy_scene_objects_are_counted_from_record_framing() {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(CLASS_MARKER);
+        let class = b"moDirectionLight_c";
+        payload.extend_from_slice(&(class.len() as u16).to_le_bytes());
+        payload.extend_from_slice(class);
+        for name in ["UnNamed", "Another"] {
+            payload.extend_from_slice(&1_u32.to_le_bytes());
+            payload.extend_from_slice(&[0xff, 0xfe, 0xff, 7]);
+            for byte in name.bytes() {
+                payload.extend_from_slice(&[byte, 0]);
+            }
+            payload.extend_from_slice(&[0xff, 0xfe, 0xff]);
+        }
+
+        assert_eq!(
+            scene_classes(&payload).1,
+            vec![("moDirectionLight_c".into(), 2)]
         );
     }
 }
