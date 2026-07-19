@@ -7030,19 +7030,29 @@ pub(crate) fn bind_history_classes(
         .collect::<HashSet<_>>();
     let mut classes_by_token = HashMap::<(&str, u16), Vec<String>>::new();
     for feature in histories.iter().flat_map(|history| &history.features) {
-        let (Some(class), Some(object_id)) = (
-            &feature.input_class,
-            feature
-                .source_id
-                .as_deref()
-                .and_then(|value| value.parse::<u32>().ok()),
-        ) else {
+        let Some(class) = &feature.input_class else {
             continue;
         };
+        let object_id = feature
+            .source_id
+            .as_deref()
+            .and_then(|value| value.parse::<u32>().ok());
+        let unique_idless_name = object_id.is_none()
+            && history_name_counts.get(&feature.name) == Some(&1)
+            && lanes
+                .iter()
+                .flat_map(|lane| &lane.names)
+                .filter(|name| name.object_id.is_some() && name.value == feature.name)
+                .count()
+                == 1;
+        if object_id.is_none() && !unique_idless_name {
+            continue;
+        }
         for lane in lanes {
             for name in lane.names.iter().filter(|name| {
-                name.object_id == Some(object_id)
-                    && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
+                object_id.map_or(name.value == feature.name, |object_id| {
+                    name.object_id == Some(object_id)
+                }) && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
             }) {
                 let Ok(offset) = usize::try_from(name.offset) else {
                     continue;
@@ -7065,18 +7075,27 @@ pub(crate) fn bind_history_classes(
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_none())
     {
-        let Some(object_id) = feature
+        let object_id = feature
             .source_id
             .as_deref()
-            .and_then(|value| value.parse::<u32>().ok())
-        else {
+            .and_then(|value| value.parse::<u32>().ok());
+        let unique_idless_name = object_id.is_none()
+            && history_name_counts.get(&feature.name) == Some(&1)
+            && lanes
+                .iter()
+                .flat_map(|lane| &lane.names)
+                .filter(|name| name.object_id.is_some() && name.value == feature.name)
+                .count()
+                == 1;
+        if object_id.is_none() && !unique_idless_name {
             continue;
-        };
+        }
         let mut candidates = Vec::new();
         for lane in lanes {
             for name in lane.names.iter().filter(|name| {
-                name.object_id == Some(object_id)
-                    && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
+                object_id.map_or(name.value == feature.name, |object_id| {
+                    name.object_id == Some(object_id)
+                }) && !direct_name_offsets.contains(&(lane.id.as_str(), name.offset))
             }) {
                 let Ok(offset) = usize::try_from(name.offset) else {
                     continue;
@@ -7262,6 +7281,84 @@ mod idless_history_binding_tests {
         );
         assert_eq!(histories[0].features[1].input_class, None);
         assert_eq!(histories[0].features[2].input_class, None);
+    }
+
+    #[test]
+    fn unique_idless_name_inherits_a_proven_repeated_class_token() {
+        let mut direct = feature(0, "localized hole");
+        direct.name = "direct hole".into();
+        let mut repeated = feature(1, "localized hole");
+        repeated.name = "repeated hole".into();
+        let mut target = feature(2, "another localized hole");
+        target.name = "target hole".into();
+        let mut histories = [FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![direct, repeated, target],
+        }];
+        let class = FeatureInputClass {
+            id: "class".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 100,
+            name: "moHoleWzd_c".into(),
+            role: native_object_class("moHoleWzd_c").role,
+        };
+        let direct_offset = class.offset + 6 + class.name.len() as u64;
+        let names = vec![
+            FeatureInputName {
+                id: "direct-name".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: direct_offset,
+                object_id: Some(1),
+                value: "direct hole".into(),
+            },
+            FeatureInputName {
+                id: "repeated-name".into(),
+                parent: "lane".into(),
+                ordinal: 1,
+                offset: 300,
+                object_id: Some(2),
+                value: "repeated hole".into(),
+            },
+            FeatureInputName {
+                id: "target-name".into(),
+                parent: "lane".into(),
+                ordinal: 2,
+                offset: 400,
+                object_id: Some(3),
+                value: "target hole".into(),
+            },
+        ];
+        let mut payload = vec![0; 500];
+        payload[298..300].copy_from_slice(&0x82a4_u16.to_le_bytes());
+        payload[398..400].copy_from_slice(&0x82a4_u16.to_le_bytes());
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: vec![class],
+            names,
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        bind_history_classes(&mut histories, &[lane]);
+
+        assert!(histories[0]
+            .features
+            .iter()
+            .all(|feature| feature.input_class.as_deref() == Some("moHoleWzd_c")));
     }
 }
 
