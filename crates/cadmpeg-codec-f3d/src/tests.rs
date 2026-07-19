@@ -19708,31 +19708,35 @@ fn wrapped_ref_pcurve_resolves_its_subtype_carrier() {
 
 #[test]
 fn unique_bs2_intcurve_role_is_its_ref_pcurve_carrier() {
-    let result = F3dCodec
-        .decode(
-            &mut Cursor::new(f3d_with_smbh(
-                &synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh(),
-            )),
-            &DecodeOptions::default(),
-        )
-        .expect("structurally unique ref pcurve decode");
+    for discriminator in [2, -2] {
+        let smbh = with_pcurve_discriminator(
+            synthetic_geometry_with_ref_pcurve_on_nurbs_surface_smbh(),
+            discriminator,
+        );
+        let result = F3dCodec
+            .decode(
+                &mut Cursor::new(f3d_with_smbh(&smbh)),
+                &DecodeOptions::default(),
+            )
+            .expect("structurally unique ref pcurve decode");
 
-    assert_eq!(result.ir.model.pcurves.len(), 1);
-    assert_eq!(
-        result
-            .ir
-            .model
-            .coedges
+        assert_eq!(result.ir.model.pcurves.len(), 1);
+        assert_eq!(
+            result
+                .ir
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.pcurve.is_some())
+                .count(),
+            1
+        );
+        assert!(result
+            .report
+            .losses
             .iter()
-            .filter(|coedge| coedge.pcurve.is_some())
-            .count(),
-        1
-    );
-    assert!(result
-        .report
-        .losses
-        .iter()
-        .all(|loss| !loss.message.contains("explicit UV pcurve reference")));
+            .all(|loss| !loss.message.contains("explicit UV pcurve reference")));
+    }
 }
 
 #[test]

@@ -1040,19 +1040,20 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                                         Vec::new()
                                     }
                                 }
-                                (Some(Token::Long(1 | 2 | -1)), Some(Token::Ref(reference))) => {
-                                    by_index
-                                        .get(reference)
-                                        .filter(|record| record.head == "intcurve")
-                                        .map(|intcurve| {
-                                            nurbs::decode_pcurve_cache_candidates_resolving_refs(
-                                                record_slice(intcurve, bytes),
-                                                bytes,
-                                                &subtype_tables,
-                                            )
-                                        })
-                                        .unwrap_or_default()
-                                }
+                                (
+                                    Some(Token::Long(1 | 2 | -1 | -2)),
+                                    Some(Token::Ref(reference)),
+                                ) => by_index
+                                    .get(reference)
+                                    .filter(|record| record.head == "intcurve")
+                                    .map(|intcurve| {
+                                        nurbs::decode_pcurve_cache_candidates_resolving_refs(
+                                            record_slice(intcurve, bytes),
+                                            bytes,
+                                            &subtype_tables,
+                                        )
+                                    })
+                                    .unwrap_or_default(),
                                 _ => Vec::new(),
                             };
                             let edge = ce.ref_at(6).and_then(|edge| by_index.get(&edge)).copied();

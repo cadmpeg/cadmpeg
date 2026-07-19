@@ -537,7 +537,7 @@ Embedded analytic supports use the standard `plane`, `cone`, `sphere`, or `torus
 A `pcurve` record has two byte-level forms, discriminated by the `0x04` int at record-relative **+37**:
 
 - **discriminator == 0 → wrapped form**: a `0x0a`/`0x0b` `wrapper_reversed` boolean, then one balanced subtype payload. An `exp_par_cur` payload owns an inline 2D `nubs` or rational `nurbs` block; a `ref N` payload delegates to subtype-table entry `N`. 2D poles are stored as `(u,v)` pairs (8+8 B each, **not** 24); `nurbs` stores one homogeneous weight after each pole.
-- **discriminator != 0 (1, 2, −1) → ref form (72 B)**: a `0x0c` ref to the intcurve carrying the UV curve, then two parameter doubles. No wrapper boolean (its absence is structural).
+- **discriminator != 0 (1, 2, −1, −2) → ref form (72 B)**: a `0x0c` ref to the intcurve carrying the UV curve, then two parameter doubles. No wrapper boolean (its absence is structural).
 
 UV poles are dimensionless surface parameters. `wrapper_reversed` is the inline curve's fit-convention bit, independent of coedge sense and of the parameter-interval sign.
 
