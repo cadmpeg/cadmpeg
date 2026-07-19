@@ -261,7 +261,7 @@ fn xref_class_tag(bytes: &[u8], records: &[IndexedRecord], roles: &[&str]) -> Op
     for record in records {
         for role in roles {
             let tails = role_tails(bytes, record, role);
-            if tails.len() == 1 && occurrence_tail(bytes, tails[0]).is_some() {
+            if tails.len() == 1 && record_occurrence_tail(bytes, record, tails[0]).is_some() {
                 by_tag
                     .entry(record.class_tag.clone())
                     .or_default()
@@ -293,7 +293,7 @@ fn occurrence_transforms(
         let [after_role] = tails.as_slice() else {
             continue;
         };
-        let Some(tail) = occurrence_tail(bytes, *after_role) else {
+        let Some(tail) = record_occurrence_tail(bytes, record, *after_role) else {
             continue;
         };
         let mut matrices = tail.transform.into_iter().collect::<Vec<_>>();
@@ -365,6 +365,17 @@ fn role_tails(bytes: &[u8], record: &IndexedRecord, value: &str) -> Vec<usize> {
 struct OccurrenceTail {
     references: Vec<u64>,
     transform: Option<[[f64; 4]; 4]>,
+}
+
+fn record_occurrence_tail(
+    bytes: &[u8],
+    record: &IndexedRecord,
+    after_role: usize,
+) -> Option<OccurrenceTail> {
+    occurrence_tail(
+        bytes.get(record.offset..record.end)?,
+        after_role.checked_sub(record.offset)?,
+    )
 }
 
 fn occurrence_tail(bytes: &[u8], mut at: usize) -> Option<OccurrenceTail> {
@@ -585,6 +596,36 @@ mod tests {
                 &mut matrices,
             ),
             vec![None, None]
+        );
+    }
+
+    #[test]
+    fn role_adjacent_matrix_cannot_cross_the_indexed_record_boundary() {
+        let transform = [
+            [1.0, 0.0, 0.0, 2.0],
+            [0.0, 1.0, 0.0, 3.0],
+            [0.0, 0.0, 1.0, 4.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        let bytes = occurrence_record("role", 10, &[], Some(transform));
+        let role_tail = 185 + 4 + "role".len() * 2;
+        let matrix_at = role_tail + 7;
+        let record = |end| super::IndexedRecord {
+            offset: 0,
+            end,
+            class_tag: "380".into(),
+            record_index: 10,
+        };
+
+        assert_eq!(
+            super::record_occurrence_tail(&bytes, &record(matrix_at), role_tail)
+                .and_then(|tail| tail.transform),
+            None
+        );
+        assert_eq!(
+            super::record_occurrence_tail(&bytes, &record(bytes.len()), role_tail)
+                .and_then(|tail| tail.transform),
+            Some(transform)
         );
     }
 
