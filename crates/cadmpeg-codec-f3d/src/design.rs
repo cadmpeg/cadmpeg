@@ -2003,12 +2003,12 @@ fn resolved_edge_group(
                 }))
             })
             .or_else(|| {
-                common_deleted_edge_group_candidates(
-                    matched_operands
-                        .iter()
-                        .map(|operand| operand.deleted_boundary_edge_slots.as_slice()),
-                    matched_operands.len(),
-                )
+                common_deleted_edge_group_candidates(matched_operands.iter().map(|operand| {
+                    (
+                        !operand.changed_boundary_edge_slots.is_empty(),
+                        operand.deleted_boundary_edge_slots.as_slice(),
+                    )
+                }))
             })
             .or_else(|| scope_partition_edge_group_candidates(group, groups, operands))
     };
@@ -2462,9 +2462,13 @@ fn partition_unique_incomplete_edge_group(
 }
 
 fn common_deleted_edge_group_candidates<'a>(
-    candidate_sets: impl IntoIterator<Item = &'a [i64]>,
-    member_count: usize,
+    members: impl IntoIterator<Item = (bool, &'a [i64])>,
 ) -> Option<Vec<i64>> {
+    let candidate_sets = members
+        .into_iter()
+        .filter_map(|(edge_bearing, candidates)| edge_bearing.then_some(candidates))
+        .collect::<Vec<_>>();
+    let member_count = candidate_sets.len();
     if member_count == 0 {
         return None;
     }
@@ -28575,25 +28579,38 @@ mod relation_tests {
     #[test]
     fn edge_group_cardinality_resolves_one_common_deleted_candidate_set() {
         assert_eq!(
-            super::common_deleted_edge_group_candidates(
-                [&[19, 17, 18, 17][..], &[18, 19, 17][..], &[17, 18, 19][..]],
-                3,
-            ),
+            super::common_deleted_edge_group_candidates([
+                (true, &[19, 17, 18, 17][..]),
+                (true, &[18, 19, 17][..]),
+                (true, &[17, 18, 19][..]),
+            ],),
             Some(vec![17, 18, 19])
         );
         assert_eq!(
-            super::common_deleted_edge_group_candidates(
-                [&[17, 18, 19][..], &[17, 18][..], &[17, 18, 19][..]],
-                3,
-            ),
+            super::common_deleted_edge_group_candidates([
+                (true, &[17, 18, 19][..]),
+                (true, &[17, 18][..]),
+                (true, &[17, 18, 19][..]),
+            ],),
             None
         );
         assert_eq!(
-            super::common_deleted_edge_group_candidates([&[17, 18, 19][..], &[17, 18, 19][..]], 2,),
+            super::common_deleted_edge_group_candidates([
+                (true, &[17, 18, 19][..]),
+                (true, &[17, 18, 19][..]),
+            ]),
             None
         );
         assert_eq!(
-            super::common_deleted_edge_group_candidates(std::iter::empty::<&[i64]>(), 0),
+            super::common_deleted_edge_group_candidates([
+                (true, &[17, 18][..]),
+                (false, &[][..]),
+                (true, &[18, 17][..]),
+            ]),
+            Some(vec![17, 18])
+        );
+        assert_eq!(
+            super::common_deleted_edge_group_candidates(std::iter::empty::<(bool, &[i64])>()),
             None
         );
         let deleted = vec![17, 18, 19, 20];
