@@ -3374,6 +3374,14 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
     );
     assert_eq!(
+        crate::decode::block_projection(&ir, Some(dimensions), &[]),
+        Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
+    );
+    assert_eq!(
+        crate::decode::block_projection(&ir, Some(dimensions), &[output.clone(), output.clone()],),
+        None
+    );
+    assert_eq!(
         crate::decode::block_projection(
             &ir,
             Some([10.0, 10.0, 30.0]),
@@ -3456,6 +3464,41 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
         None
     );
 
+    let mut missing_surface = ir.clone();
+    let removed = missing_surface.model.surfaces.pop().expect("cube surface");
+    assert!(missing_surface
+        .model
+        .faces
+        .iter()
+        .any(|face| face.surface == removed.id));
+    assert_eq!(
+        crate::decode::block_projection(&missing_surface, Some(dimensions), &[]),
+        None
+    );
+
+    let mut curved_feature = ir.clone();
+    let mut curved_surface = curved_feature.model.surfaces[0].clone();
+    curved_surface.id = cadmpeg_ir::ids::SurfaceId("later-curved-surface".into());
+    curved_surface.geometry = SurfaceGeometry::Sphere {
+        center: cadmpeg_ir::math::Point3::new(5.0, 10.0, 15.0),
+        axis: Vector3::new(0.0, 0.0, 1.0),
+        ref_direction: Vector3::new(1.0, 0.0, 0.0),
+        radius: 1.0,
+    };
+    curved_feature.model.surfaces.push(curved_surface);
+    let mut curved_face = curved_feature.model.faces[0].clone();
+    curved_face.id = cadmpeg_ir::ids::FaceId("later-curved-face".into());
+    curved_face.surface = cadmpeg_ir::ids::SurfaceId("later-curved-surface".into());
+    curved_face.loops.clear();
+    curved_feature.model.shells[0]
+        .faces
+        .push(curved_face.id.clone());
+    curved_feature.model.faces.push(curved_face);
+    assert_eq!(
+        crate::decode::block_projection(&curved_feature, Some(dimensions), &[]),
+        Some((dimensions, cadmpeg_ir::transform::Transform::identity()))
+    );
+
     let mut sheet = ir.clone();
     sheet.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
     assert_eq!(
@@ -3477,11 +3520,6 @@ fn nx_block_projection_uses_native_dimensions_or_canonical_geometry() {
             Some(dimensions),
             std::slice::from_ref(&output)
         ),
-        None
-    );
-
-    assert_eq!(
-        crate::decode::block_projection(&ir, Some(dimensions), &[]),
         None
     );
 }

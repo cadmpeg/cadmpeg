@@ -11417,8 +11417,22 @@ pub(crate) fn block_projection(
     }) {
         return None;
     }
-    let [body] = outputs else {
-        return None;
+    let body = match outputs {
+        [body] => body,
+        [] => {
+            let candidates = ir
+                .model
+                .bodies
+                .iter()
+                .filter(|body| connected_solid_body_faces(ir, &body.id).is_some())
+                .map(|body| &body.id)
+                .collect::<Vec<_>>();
+            let [body] = candidates.as_slice() else {
+                return None;
+            };
+            *body
+        }
+        _ => return None,
     };
     let faces = connected_solid_body_faces(ir, body)?;
     let surface_geometry = ir
@@ -11429,10 +11443,9 @@ pub(crate) fn block_projection(
         .collect::<BTreeMap<_, _>>();
     let mut bands = Vec::<PlaneBand>::new();
     for face in faces {
-        let Some(SurfaceGeometry::Plane { origin, normal, .. }) =
-            surface_geometry.get(&face.surface).copied()
-        else {
-            return None;
+        let geometry = surface_geometry.get(&face.surface).copied()?;
+        let SurfaceGeometry::Plane { origin, normal, .. } = geometry else {
+            continue;
         };
         let normal = canonical_normal(*normal, angular_tolerance)?;
         let offset = normal.x * origin.x + normal.y * origin.y + normal.z * origin.z;
