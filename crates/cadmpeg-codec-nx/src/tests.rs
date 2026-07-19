@@ -7946,6 +7946,27 @@ fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
 }
 
 #[test]
+fn om_offset_store_target_index_rows_require_complete_exact_frames() {
+    let row =
+        b"\x02\x01\x01\x01\x16\x3e\xff\xff\x90\xfe\x1e\x20\x58\x00\x47\x03\x07\x01\xc0\x44\x04\x00";
+    let rows = crate::om::offset_store_target_index_rows(row);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].target_index, (62, 5));
+    assert_eq!(rows[0].indices, [(30, 10), (32, 11), (88, 12)]);
+
+    let mut null = row.to_vec();
+    null[5] = 0xff;
+    assert!(crate::om::offset_store_target_index_rows(&null).is_empty());
+    let mut discriminator = row.to_vec();
+    discriminator[4] = 0x17;
+    assert!(crate::om::offset_store_target_index_rows(&discriminator).is_empty());
+    let mut suffix = row.to_vec();
+    suffix[16] = 0x03;
+    assert!(crate::om::offset_store_target_index_rows(&suffix).is_empty());
+    assert!(crate::om::offset_store_target_index_rows(&row[..row.len() - 1]).is_empty());
+}
+
+#[test]
 fn om_offset_store_control_class_lane_is_a_distinct_in_range_prefix() {
     let encode = |values: &[u32]| {
         values

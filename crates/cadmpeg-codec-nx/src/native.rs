@@ -10231,6 +10231,35 @@ pub struct DataBlockLinkedIndexRow {
     pub index_source_offsets: [u64; 3],
 }
 
+/// Self-framed target-index row in contiguous column storage.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DataBlockTargetIndexRow {
+    /// Globally unique row identity.
+    pub id: String,
+    /// Zero-based indexed-section ordinal within the container.
+    pub section_ordinal: u32,
+    /// Zero-based row order within the section's column storage.
+    pub ordinal: u32,
+    /// Target compact block index.
+    pub target_index: u32,
+    /// Three compact block indices after `ff ff 90 fe`.
+    pub indices: [u32; 3],
+    /// Target block followed by the three post-marker blocks.
+    pub data_blocks: [String; 4],
+    /// Directory entry containing the store.
+    pub source_entry: String,
+    /// Column block containing the row's opening byte.
+    pub opening_data_block: String,
+    /// Byte offset of the row opening within `opening_data_block`.
+    pub opening_block_offset: u32,
+    /// Absolute file offset of the opening discriminator.
+    pub source_offset: u64,
+    /// Absolute file offset of the target compact index.
+    pub target_index_source_offset: u64,
+    /// Absolute file offsets of the three post-marker indices.
+    pub index_source_offsets: [u64; 3],
+}
+
 /// Maximal linked-index-row run with consecutive descending target blocks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlockLinkedIndexTable {
@@ -11690,6 +11719,64 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
                         opening_block_offset: opening.1,
                         source_offset: source_base + row.offset as u64,
                         first_index_source_offset: source_base + row.first_index.1 as u64,
+                        target_index_source_offset: source_base + row.target_index.1 as u64,
+                        index_source_offsets: row
+                            .indices
+                            .map(|(_, offset)| source_base + offset as u64),
+                    },
+                )
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode complete in-range target-index rows from column storage.
+pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTargetIndexRow> {
+    container
+        .indexed_om_sections()
+        .into_iter()
+        .enumerate()
+        .flat_map(|(section_ordinal, (entry, section))| {
+            let Some(storage) = section.column_storage else {
+                return Vec::new();
+            };
+            let Some(storage_offset) = section.records.first().map(|record| record.offset) else {
+                return Vec::new();
+            };
+            let source_base =
+                entry.file_span.map_or(0, |(offset, _)| offset) + storage_offset as u64;
+            let block_count = section.records.len() + 1;
+            crate::om::offset_store_target_index_rows(storage)
+                .into_iter()
+                .filter_map(|row| {
+                    let values = std::iter::once(row.target_index.0)
+                        .chain(row.indices.iter().map(|(index, _)| *index));
+                    let data_blocks = values
+                        .map(|index| control_index_data_block(section_ordinal, block_count, index))
+                        .collect::<Option<Vec<_>>>()
+                        .and_then(|blocks| blocks.try_into().ok())?;
+                    let opening = column_storage_block_at(
+                        section_ordinal,
+                        &section.records,
+                        storage_offset + row.offset,
+                    )?;
+                    Some((row, data_blocks, opening))
+                })
+                .enumerate()
+                .map(
+                    |(ordinal, (row, data_blocks, opening))| DataBlockTargetIndexRow {
+                        id: format!(
+                            "nx:om-data-block-target-index-rows-{section_ordinal}:row#{ordinal}"
+                        ),
+                        section_ordinal: section_ordinal as u32,
+                        ordinal: ordinal as u32,
+                        target_index: row.target_index.0,
+                        indices: row.indices.map(|(index, _)| index),
+                        data_blocks,
+                        source_entry: entry.name.clone(),
+                        opening_data_block: opening.0,
+                        opening_block_offset: opening.1,
+                        source_offset: source_base + row.offset as u64,
                         target_index_source_offset: source_base + row.target_index.1 as u64,
                         index_source_offsets: row
                             .indices

@@ -175,6 +175,17 @@ pub struct OffsetStoreLinkedIndexRow {
     pub flag: u8,
 }
 
+/// One self-framed target-index row in contiguous column storage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OffsetStoreTargetIndexRow {
+    /// Byte offset of the opening `02 01 01 01 16` discriminator.
+    pub offset: usize,
+    /// Compact target index and its byte offset.
+    pub target_index: (u32, usize),
+    /// Three ordered non-null compact indices after `ff ff 90 fe`.
+    pub indices: [(u32, usize); 3],
+}
+
 /// Decode complete self-framed index rows from contiguous column storage.
 pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
     const PREFIX: [u8; 3] = [0x2d, 0x02, 0x0b];
@@ -288,6 +299,52 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             target_index: (target_index, target_offset),
             indices,
             flag,
+        });
+    }
+    rows
+}
+
+/// Decode complete target-index rows from contiguous column storage.
+pub fn offset_store_target_index_rows(bytes: &[u8]) -> Vec<OffsetStoreTargetIndexRow> {
+    const PREFIX: [u8; 5] = [0x02, 0x01, 0x01, 0x01, 0x16];
+    const MIDDLE: [u8; 4] = [0xff, 0xff, 0x90, 0xfe];
+    const SUFFIX: [u8; 9] = [0x00, 0x47, 0x03, 0x07, 0x01, 0xc0, 0x44, 0x04, 0x00];
+    let mut rows = Vec::new();
+    for start in 0..bytes.len().saturating_sub(PREFIX.len()) {
+        if bytes.get(start..start + PREFIX.len()) != Some(&PREFIX) {
+            continue;
+        }
+        let target_offset = start + PREFIX.len();
+        let Some((CompactIndex::Value(target_index), target_width)) =
+            bytes.get(target_offset..).and_then(compact_index)
+        else {
+            continue;
+        };
+        let mut at = target_offset + target_width;
+        if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
+            continue;
+        }
+        at += MIDDLE.len();
+        let mut indices = Vec::new();
+        for _ in 0..3 {
+            let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
+            else {
+                indices.clear();
+                break;
+            };
+            indices.push((index, at));
+            at += width;
+        }
+        let Ok(indices) = indices.try_into() else {
+            continue;
+        };
+        if bytes.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
+            continue;
+        }
+        rows.push(OffsetStoreTargetIndexRow {
+            offset: start,
+            target_index: (target_index, target_offset),
+            indices,
         });
     }
     rows
