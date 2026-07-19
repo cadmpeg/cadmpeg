@@ -1,22 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![deny(clippy::disallowed_methods)]
-//! container accounting: the coarse source-fidelity ledger for a `.f3d`.
-//!
-//! [`build_ledger`] tiles every physical byte of every space the container scan
-//! produced. The root `source` space is tiled completely: each entry's
-//! compressed payload becomes one [`SpanClass::Opaque`] span and every byte
-//! between payloads — local file headers, the central directory, the end-of-
-//! central-directory record, alignment padding — becomes a [`SpanClass::Structural`]
-//! framing span. Each admitted entry then becomes its own space: a
-//! [`SerializedOrigin::Slice`] of the root when stored, a decompression
-//! [`SerializedOrigin::Transform`] when compressed, each tiled by a single
-//! opaque span covering its unrefined payload.
-//!
-//! Every byte is classified and digested, but opaque spans carry no retained bytes. Spans
-//! and spaces are emitted in registration order and the returned sidecar is
-//! canonicalized, so two decodes of the same archive serialize identically.
-//! Callers must run [`SourceFidelity::validate`] before trusting the ledger;
-//! [`build_validated_ledger`] does so and is the accounting-enabled entry point.
+//! Source-fidelity tiling for `.f3d` archives.
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::source_fidelity::{
@@ -31,10 +15,7 @@ const OWNER_FRAMING: &str = "f3d-zip";
 /// Span owner label for an entry payload, in the root and its derived space.
 const OWNER_ENTRY: &str = "f3d-entry";
 
-/// Builds the fidelity sidecar for a scanned `.f3d` archive.
-///
-/// The result is canonicalized but not validated; prefer
-/// [`build_validated_ledger`] unless the caller validates separately.
+/// Builds an unvalidated fidelity sidecar for a `.f3d` archive.
 pub fn build_ledger(scan: &ContainerScan<'_>) -> SourceFidelity {
     let mut spaces = vec![root_space(scan)];
     for entry in dedup_entries(scan) {
@@ -46,9 +27,6 @@ pub fn build_ledger(scan: &ContainerScan<'_>) -> SourceFidelity {
 }
 
 /// Builds and validates the fidelity sidecar.
-///
-/// Validation is mandatory for an accounting-enabled result: a ledger that does
-/// not tile every space exactly is not a level and must not be trusted.
 pub fn build_validated_ledger(scan: &ContainerScan<'_>) -> Result<SourceFidelity, FidelityError> {
     let sidecar = build_ledger(scan);
     sidecar.validate()?;

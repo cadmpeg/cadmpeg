@@ -1,15 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decode policy: caller-owned ceilings and the platform acceptance envelope.
-//!
-//! [`ResourceLimits`] are absolute ceilings the caller owns. The envelope is
-//! a platform-owned default describing what amplification the platform
-//! accepts as plausible; it is not a proven bound on well-formed files. The
-//! effective allowance for a counter dimension is the smaller of the absolute
-//! ceiling and the input-proportional envelope term, so a tight profile
-//! always wins.
-//!
-//! Budgets are active in both [`DecodeMode`] variants; the mode governs
-//! failure handling, not resource limits.
+//! Decode modes, resource ceilings, and input-proportional allowances.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -29,11 +19,7 @@ pub enum DecodeMode {
     Salvage,
 }
 
-/// Caller-owned absolute ceilings.
-///
-/// Physical input is a first-class limit: it is enforced before any
-/// input-proportional allowance can exist, because every other allowance is
-/// derived from the input basis.
+/// Absolute resource ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct ResourceLimits {
     /// Maximum physical input bytes read at the root.
@@ -89,7 +75,7 @@ impl Default for ResourceLimits {
     }
 }
 
-/// Mode plus ceilings: the whole decode policy the caller supplies.
+/// Decode mode and resource ceilings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct DecodePolicy {
     /// How committed failures are handled.
@@ -122,10 +108,7 @@ impl Default for DecodePolicy {
     }
 }
 
-/// Options for container inspection.
-///
-/// `inspect` parses the same hostile containers as `decode`. It gains its own
-/// limits so an inspection cannot be turned into an amplification vector.
+/// Resource options for container inspection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 pub struct InspectOptions {
     /// The absolute ceilings applied during inspection.
@@ -142,8 +125,7 @@ pub(crate) struct DimensionAmounts {
     pub(crate) retained_bytes: u64,
 }
 
-/// The platform acceptance envelope: an input-independent `base` floor plus a
-/// `k` multiplier applied to the input basis.
+/// Input-independent floors and input-size multipliers.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Envelope {
     pub(crate) base: DimensionAmounts,

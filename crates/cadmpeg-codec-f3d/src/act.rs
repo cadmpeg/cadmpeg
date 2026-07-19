@@ -29,9 +29,7 @@ pub struct DecodedAct {
     pub root_components: Vec<ActRootComponent>,
 }
 
-/// Decode the ACT segment-type bulk streams into merged entities, GUIDs, and
-/// root components. Charges work per scanned byte and allocation per reserved
-/// record.
+/// Decodes ACT segment-type streams.
 pub fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
     let mut entities = ctx.grow_vec::<ActEntity>();
     let mut guids = ctx.grow_vec::<ActGuid>();
@@ -111,14 +109,12 @@ pub fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<Decod
     })
 }
 
-/// Length of the readable window, in bytes. Offsets in this module are relative
-/// to this window, matching the entry-relative byte offsets the records report.
+/// Returns the readable window length.
 fn win_len(base: View<'_>) -> usize {
     base.end().saturating_sub(base.start())
 }
 
-/// A copy of `base` positioned at the entry-relative offset `rel`, or `None`
-/// when `rel` falls past the window.
+/// Seeks a copy of `base` to an entry-relative offset.
 fn seek_rel(base: View<'_>, rel: usize) -> Option<View<'_>> {
     let mut view = base;
     let abs = base.start().checked_add(rel)?;
@@ -126,19 +122,17 @@ fn seek_rel(base: View<'_>, rel: usize) -> Option<View<'_>> {
     Some(view)
 }
 
-/// Little-endian u32 at entry-relative offset `rel`, without advancing `base`.
+/// Reads a little-endian u32 at an entry-relative offset.
 fn u32_le_rel(base: View<'_>, rel: usize) -> Option<u32> {
     seek_rel(base, rel)?.u32_le()
 }
 
-/// The single byte at entry-relative offset `rel`, without advancing `base`.
+/// Reads one byte at an entry-relative offset.
 fn byte_rel(base: View<'_>, rel: usize) -> Option<u8> {
     seek_rel(base, rel)?.u8()
 }
 
-/// Whether the `n` bytes at entry-relative offset `rel` are all present and
-/// zero. A short window reads as `false`, matching the original slice-equality
-/// framing check.
+/// Tests whether an entry-relative range contains only zero bytes.
 fn zeros_rel(base: View<'_>, rel: usize, n: usize) -> bool {
     match seek_rel(base, rel).and_then(|mut view| view.take(n)) {
         Some(slice) => slice.iter().all(|byte| *byte == 0),
@@ -146,8 +140,7 @@ fn zeros_rel(base: View<'_>, rel: usize, n: usize) -> bool {
     }
 }
 
-/// Entry-relative offset of the first `needle` occurrence, scanning through the
-/// view. Charges the caller for the scan separately.
+/// Finds the first entry-relative occurrence of `needle`.
 fn find_marker(base: View<'_>, needle: &[u8]) -> Option<usize> {
     let len = win_len(base);
     let n = needle.len();
@@ -157,15 +150,13 @@ fn find_marker(base: View<'_>, needle: &[u8]) -> Option<usize> {
     (0..=len - n).find(|&rel| seek_rel(base, rel).and_then(|mut view| view.take(n)) == Some(needle))
 }
 
-/// A GUID literal recovered after the `ACTTable`, with its entry-relative
-/// offset.
+/// A GUID and its entry-relative offset.
 type StreamGuid = (String, usize);
 
 /// The `ACTTable` record list and the trailing GUID literals.
 type DecodedTable = (Vec<TableEntry>, Vec<StreamGuid>);
 
-/// One `ACTTable` record: an entity id keyed by record index, with both fields'
-/// entry-relative byte offsets.
+/// One `ACTTable` record.
 struct TableEntry {
     record_index: u32,
     record_index_offset: usize,
@@ -250,9 +241,7 @@ struct ChannelGroup {
     guid_offsets: BTreeMap<String, u64>,
 }
 
-/// Scan the whole stream for change-version channel groups. Charges work for
-/// the single-pass byte scan; the per-group channel map is bounded to eight
-/// entries by the format, so it is not additionally alloc-charged.
+/// Decodes change-version channel groups.
 fn decode_channel_groups(
     ctx: &DecodeContext<'_>,
     base: View<'_>,
@@ -333,9 +322,7 @@ fn decode_channel_groups(
     Ok(out.finish())
 }
 
-/// Scan the whole stream for change-version root-component descriptors. Charges
-/// work for the single-pass byte scan and grows the result through the budgeted
-/// accumulator.
+/// Decodes change-version root-component descriptors.
 fn decode_root_components(
     ctx: &DecodeContext<'_>,
     base: View<'_>,
@@ -432,9 +419,7 @@ fn decode_root_components(
     Ok(out.finish())
 }
 
-/// A `0x01`-tagged little-endian u32 reference followed by `zero_count` zero
-/// bytes at entry-relative offset `position`. Returns the value and the offset
-/// just past the trailing zeros.
+/// Decodes a tagged u32 reference and its trailing zero bytes.
 fn marker_ref(base: View<'_>, position: usize, zero_count: usize) -> Option<(u32, usize)> {
     if byte_rel(base, position) != Some(1) {
         return None;
@@ -444,8 +429,7 @@ fn marker_ref(base: View<'_>, position: usize, zero_count: usize) -> Option<(u32
     zeros_rel(base, position + 5, zero_count).then_some((value, end))
 }
 
-/// A `0x01`-tagged little-endian u32 value at entry-relative offset `position`.
-/// Returns the value and the offset just past it.
+/// Decodes a tagged u32 value.
 fn marker_value(base: View<'_>, position: usize) -> Option<(u32, usize)> {
     if byte_rel(base, position) != Some(1) {
         return None;
@@ -453,9 +437,7 @@ fn marker_value(base: View<'_>, position: usize) -> Option<(u32, usize)> {
     Some((u32_le_rel(base, position + 1)?, position + 5))
 }
 
-/// A length-prefixed ASCII string (little-endian u32 length, then bytes) at
-/// entry-relative offset `position`. Returns the string and the offset just
-/// past it. Lengths outside `1..=128` are rejected.
+/// Decodes a length-prefixed ASCII string.
 fn lp_ascii(
     ctx: &DecodeContext<'_>,
     base: View<'_>,
@@ -484,10 +466,7 @@ fn lp_ascii(
     Ok(Some((value.into(), position + 4 + length)))
 }
 
-/// A length-prefixed UTF-16LE string (little-endian u32 unit count, then units)
-/// at entry-relative offset `position`. Returns the string and the offset just
-/// past it. Counts above 1024 units are rejected; the transient decode buffer
-/// is bounded by that domain cap.
+/// Decodes a length-prefixed UTF-16LE string.
 fn lp_utf16(
     ctx: &DecodeContext<'_>,
     base: View<'_>,

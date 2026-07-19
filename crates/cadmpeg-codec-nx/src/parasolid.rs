@@ -64,27 +64,12 @@ pub struct Stream {
 
 /// The minimum inflated length for a candidate to count as a real stream; below
 /// this a `78 01` match is almost certainly a coincidence in packed data.
-///
-/// This threshold rejects coincidental zlib-header matches in packed data; it
-/// is not a resource bound.
-/// The per-expand and cumulative decompressed-bytes ceilings enforced by
-/// [`DecodeContext::begin_expand`] are what bound inflation against a
-/// decompression bomb.
 const MIN_INFLATED: usize = 64;
 
 /// Chunk size for streaming inflated output through the expander.
 const INFLATE_CHUNK: usize = 8192;
 
-/// Locate, inflate, and classify zlib streams in `/Root/UG_PART/UG_PART`.
-///
-/// Registers the canonical part payload as a borrowed address space, then
-/// inflates each embedded zlib stream through
-/// [`DecodeContext::begin_expand`] so every decompressed byte is charged and
-/// bounded by the per-expand and cumulative ceilings. Each stream registers an
-/// address space only on successful finalize. Returns an
-/// empty vector when the canonical part entry is absent, so
-/// an assembly `.prt` with no inline geometry decodes without error.
-///
+/// Locates, inflates, and classifies zlib streams in `/Root/UG_PART/UG_PART`.
 pub fn extract_streams<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -147,17 +132,7 @@ pub fn extract_streams<'a>(
     Ok(streams)
 }
 
-/// Inflate the zlib member at `offset` within the part payload through
-/// [`DecodeContext::begin_expand`], returning the inflated bytes when they clear
-/// [`MIN_INFLATED`].
-///
-/// The compressed source is framed as a nested [`View`] of the part span —
-/// never a raw length — so the expander bounds and attributes the stream to its
-/// own extent. Output streams through the writer in chunks, so no unbounded
-/// intermediate buffer forms; the decoder is truncation-tolerant, accepting a
-/// decoded prefix when trailing input belongs to the next packed stream. A
-/// candidate that inflates below the threshold registers no space: the writer
-/// is dropped without finalizing.
+/// Inflates one zlib member that meets [`MIN_INFLATED`].
 fn inflate_stream<'a>(
     ctx: &DecodeContext<'a>,
     part_view: View<'a>,

@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Interpreted deltas between two source-fidelity sidecars.
-//!
-//! [`diff_source_fidelity`] compares two [`SourceFidelity`] sidecars and reports
-//! what changed in conservation terms — spaces
-//! that appeared or disappeared, and per-space byte movement between the
-//! [`SpanClass`] categories — rather than dumping raw spans. Equality still
-//! covers every serialized field: origins, full span metadata,
-//! annotations, and retained records cannot disappear behind the summary.
 
 use crate::source_fidelity::{AddressSpaceLedger, SourceFidelity, SpanClass};
 
@@ -100,11 +93,7 @@ impl FidelityDiff {
     }
 }
 
-/// Compare two source-fidelity sidecars into an interpreted delta.
-///
-/// Spaces are matched by canonical id. Both sidecars are assumed canonical (as
-/// produced by [`SourceFidelity::new`]); the result's space lists preserve that
-/// canonical order.
+/// Compares two source-fidelity sidecars by canonical space id.
 pub fn diff_source_fidelity(left: &SourceFidelity, right: &SourceFidelity) -> FidelityDiff {
     let version =
         (left.version != right.version).then(|| (left.version.clone(), right.version.clone()));

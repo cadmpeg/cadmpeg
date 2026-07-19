@@ -1,19 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Serialized multi-space source-fidelity ledger.
 //!
-//! Every space carries a stable
-//! [`CanonicalSpaceId`] derived from its origin — `source`, `entry:<path>`,
-//! `stream:<path>#<n>` — so two decodes of the same file produce identical
-//! sidecars regardless of the order in which spaces were registered.
-//!
-//! A sidecar is a set of [`AddressSpaceLedger`]s. Each ledger tiles its space's
-//! byte range `[0, length)` exactly with [`LedgerSpan`]s and records how the
-//! space was derived through a [`SerializedOrigin`]. The origins form a DAG
-//! rooted at the `source` space; [`SourceFidelity::validate`] rejects cycles,
-//! dangling references, and ranges that fall outside the space they index.
-//!
-//! An opaque span may reference retained bytes. Validation proves every such
-//! reference against the retained record's bytes, range, length, and digest.
+//! Each [`AddressSpaceLedger`] tiles one canonical address space and records its
+//! origin. Opaque spans may reference retained bytes.
 
 use std::collections::BTreeMap;
 
@@ -29,11 +18,6 @@ use crate::unknown::UnknownRecord;
 pub const SOURCE_FIDELITY_VERSION: &str = "2";
 
 /// A stable serialized address-space identity.
-///
-/// Never a runtime registration ordinal. Constructed only through
-/// [`CanonicalSpaceId::source`], [`CanonicalSpaceId::entry`], or
-/// [`CanonicalSpaceId::stream`], which fix the canonical spelling. Serialized
-/// as a plain string.
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
@@ -104,10 +88,7 @@ pub struct SpaceExtent {
     pub range: SerializedRange,
 }
 
-/// Stable transform names for derived spaces.
-///
-/// Names are the serialized contract; new transforms extend the enum without
-/// renaming existing variants.
+/// Transform names for derived spaces.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -117,10 +98,7 @@ pub enum SerializedTransformKind {
     Decompress,
 }
 
-/// How a serialized space came to exist, relative to earlier spaces.
-///
-/// Root spaces name themselves; every other origin references only spaces that
-/// exist and that it does not reach through a cycle.
+/// How a serialized space was derived.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SerializedOrigin {
@@ -173,9 +151,7 @@ pub enum SpanClass {
     Opaque,
 }
 
-/// A containment reference from an opaque span into a retained blob.
-///
-/// One blob may back many opaque spans through distinct subranges.
+/// A reference from an opaque span into a retained blob.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RetainedRef {
     /// The retained blob's stable identity.
@@ -429,12 +405,7 @@ impl Default for SourceFidelity {
 }
 
 impl SourceFidelity {
-    /// Builds a sidecar and puts it in canonical order.
-    ///
-    /// Sorts spaces by canonical id and each space's spans by ascending start.
-    /// Ordering is independent of the order spaces were supplied, so repeat
-    /// decodes serialize identically. Call [`SourceFidelity::validate`] to
-    /// enforce the conservation invariant.
+    /// Builds a sidecar in canonical order.
     pub fn new(spaces: Vec<AddressSpaceLedger>) -> Self {
         let mut sidecar = SourceFidelity {
             version: SOURCE_FIDELITY_VERSION.to_string(),
@@ -461,7 +432,7 @@ impl SourceFidelity {
         });
     }
 
-    /// Canonicalize every sidecar collection independently from the product model.
+    /// Canonicalizes every sidecar collection.
     pub fn finalize(&mut self) {
         self.canonicalize();
     }
@@ -484,7 +455,7 @@ impl SourceFidelity {
             }));
     }
 
-    /// Store source records in this sidecar and source-independent refs in the product model.
+    /// Stores bytes in the sidecar and references in the product model.
     pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
@@ -515,7 +486,7 @@ impl SourceFidelity {
         ir.set_native_unknowns(format, &product_records)
     }
 
-    /// Join product links with retained records into a codec-local source view.
+    /// Joins product references with retained source records.
     pub fn native_unknown_records(
         &self,
         ir: &CadIr,
@@ -539,14 +510,7 @@ impl SourceFidelity {
             .collect()
     }
 
-    /// Validates the conservation invariant.
-    ///
-    /// Checks the schema version, unique ids, origin/id consistency, that every
-    /// origin references only present spaces and in-bounds ranges, that every
-    /// non-root space references at least one parent, that the origin graph is
-    /// acyclic, that each space's spans tile `[0, length)` exactly, and — for a
-    /// recoverable ledger — that every opaque span resolves to retained bytes
-    /// whose subrange covers the span exactly.
+    /// Validates origins, tiling, digests, and retained-byte references.
     pub fn validate(&self) -> Result<(), FidelityError> {
         if self.version != SOURCE_FIDELITY_VERSION {
             return Err(FidelityError::Version {
@@ -646,10 +610,6 @@ impl SourceFidelity {
             Self::check_extent(space, lengths, &extent.space, extent.range)?;
         }
 
-        // A non-root space must reference at least one parent. Combined with
-        // acyclicity this forces every space to reach `source` by following
-        // origins; an empty `Concat`/`Transform` would otherwise validate as a
-        // second, un-derived root.
         Ok(())
     }
 
@@ -834,11 +794,7 @@ impl SourceFidelity {
         Ok(())
     }
 
-    /// Serializes to versioned canonical JSON.
-    ///
-    /// Call [`SourceFidelity::new`] or [`SourceFidelity::canonicalize`] first so
-    /// spaces and spans are in canonical order; the output is then byte-stable
-    /// across repeat decodes.
+    /// Serializes to versioned JSON.
     pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }

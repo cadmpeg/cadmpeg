@@ -1,22 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Coarse container accounting for the PSB `.prt` container.
-//!
-//! The Creo container is a single flat address space: the `#UGC:2` ASCII header
-//! and table of contents, then a contiguous run of named binary sections to
-//! end of file. There is no decompression and no reconstructed stream, so the
-//! whole file is the `source` space with a [`SerializedOrigin::Root`] origin;
-//! the serialized identity is `source` regardless of registration order.
-//!
-//! [`coarse_ledger`] tiles that space completely at container granularity:
-//! the leading header/TOC framing is one [`SpanClass::Structural`] span and
-//! every enumerated section is one [`SpanClass::Opaque`] span carrying a
-//! SHA-256 digest but no retained bytes.
-//! Any byte a section walk leaves uncovered — an inter-section gap or a
-//! trailing region — is filled with an explicit opaque padding span, so the
-//! spans tile `[0, length)` with no hole. The builder validates the assembled
-//! [`SourceFidelity`] before returning it: a coarse ledger that fails the
-//! conservation invariant is a construction bug, not a shippable result, and
-//! validation is mandatory for every accounting-enabled decode.
+//! Source-fidelity tiling for the PSB `.prt` container.
 
 use cadmpeg_ir::codec::CodecError;
 use cadmpeg_ir::hash::sha256_hex;
@@ -44,15 +27,7 @@ struct CoarseSpan {
     meaning: String,
 }
 
-/// Build the complete coarse-tiling ledger for a scanned `.prt` file.
-///
-/// Produces one `source` [`AddressSpaceLedger`] whose spans tile
-/// `[0, data.len())` exactly: the header/TOC framing as structural, each
-/// section as an opaque digest span, and explicit opaque spans for any
-/// unattributed gap or trailing region. The returned [`SourceFidelity`] has
-/// already passed [`SourceFidelity::validate`]; a validation failure surfaces as
-/// [`CodecError::Malformed`] because it means the container framing the scan
-/// reported cannot be reconciled into a conserving tiling.
+/// Builds and validates the source-fidelity sidecar for a `.prt` file.
 pub fn coarse_ledger(scan: &ContainerScan<'_>) -> Result<SourceFidelity, CodecError> {
     let data = scan.data;
     let length = data.len() as u64;

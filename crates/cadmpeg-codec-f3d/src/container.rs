@@ -18,26 +18,13 @@ use zip::CompressionMethod;
 
 use crate::asm_header;
 
-/// Maximum `.f3d` archive the container scanner accepts.
-///
-/// `read_root` enforces `max_input_bytes` first. This tighter limit bounds the
-/// offset space indexed by the ZIP directory walk.
+/// Maximum `.f3d` archive accepted by the container scanner.
 const INPUT_CAP: u64 = 256 * 1024 * 1024;
 
-/// Read chunk for streaming a compressed entry's inflated output into the
-/// platform expander. A fixed stack buffer, so no decompressed bytes are
-/// retained outside the `ExpandWriter`.
+/// Read chunk for compressed-entry expansion.
 const EXPAND_CHUNK: usize = 16 * 1024;
 
-/// Allocation charged per admitted archive entry.
-///
-/// A conservative constant covering the fixed heap footprint each entry adds:
-/// the runtime space-graph record, the payload lookup-map node, and the
-/// [`ContainerEntry`](cadmpeg_ir::codec::ContainerEntry) summary row. The
-/// platform graph and map layouts are not visible to the codec, so this rounds
-/// up rather than measuring; its purpose is to make the entry count consume the
-/// input-proportional allocation budget so a directory packed with minimal
-/// records cannot grow the graph without a matching charge.
+/// Allocation charge for one admitted archive entry.
 const PER_ENTRY_GRAPH_BYTES: u64 = 256;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].

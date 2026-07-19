@@ -1,14 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Per-codec boundary providers: each codec names the record and entry
-//! boundaries the truncation sweep truncates around and the header/count
-//! positions the mutation spot-checks flip.
-//!
-//! A boundary provider names structural offsets a codec recognizes without
-//! re-running its parser: the fixed header length and every occurrence of the
-//! format's framing signatures (ZIP local headers, container magics, block and
-//! record markers). This is deliberately a structural over-approximation — a
-//! marker byte pattern can occur inside payload — which is the correct bias for
-//! a sweep: extra truncation points cost time, never coverage.
+//! Per-codec truncation and mutation boundaries.
 
 /// What a boundary marks. Header and count positions additionally seed the
 /// single-byte mutation spot-checks.
@@ -102,8 +93,6 @@ impl BoundaryProvider for CodecBoundarySpec {
     }
 }
 
-/// A total order over kinds so `dedup_by_key` collapses exact duplicates while
-/// keeping distinct kinds at one offset.
 fn kind_rank(kind: BoundaryKind) -> u8 {
     match kind {
         BoundaryKind::Header => 0,
@@ -131,14 +120,7 @@ fn find_all(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
     out
 }
 
-// The ZIP local-header count fields sit 22 and 24 bytes past the signature
-// (filename length and extra-field length); flipping them redirects the entry
-// parse. The container magics carry a following big/little-endian length or
-// count word, flagged at offset 0 past the header edge.
-
-/// f3d: a ZIP archive. Local file headers are entry boundaries, central
-/// directory records are record boundaries, and the end-of-central-directory
-/// marks the trailing header.
+/// F3D ZIP boundaries.
 const F3D: CodecBoundarySpec = CodecBoundarySpec {
     codec_id: "f3d",
     header_len: 4,
@@ -161,9 +143,7 @@ const F3D: CodecBoundarySpec = CodecBoundarySpec {
     ],
 };
 
-/// sldprt: an 8-byte header, then raw-DEFLATE blocks, cache cells, and
-/// directory entries introduced by a shared 6-byte marker. The block header's
-/// type, CRC, and size words follow the marker.
+/// SLDPRT container boundaries.
 const SLDPRT: CodecBoundarySpec = CodecBoundarySpec {
     codec_id: "sldprt",
     header_len: 8,
@@ -174,8 +154,7 @@ const SLDPRT: CodecBoundarySpec = CodecBoundarySpec {
     }],
 };
 
-/// catia: an 8-byte outer magic, a nested stream-directory magic, and FINJPL
-/// named-body markers.
+/// CATIA container boundaries.
 const CATIA: CodecBoundarySpec = CodecBoundarySpec {
     codec_id: "catia",
     header_len: 8,
@@ -198,8 +177,7 @@ const CATIA: CodecBoundarySpec = CodecBoundarySpec {
     ],
 };
 
-/// creo: the `#UGC:2` PSB magic and the ASCII framing lines that delimit the
-/// header and table of contents.
+/// Creo PSB boundaries.
 const CREO: CodecBoundarySpec = CodecBoundarySpec {
     codec_id: "creo",
     header_len: 6,
@@ -227,8 +205,7 @@ const CREO: CodecBoundarySpec = CodecBoundarySpec {
     ],
 };
 
-/// nx: the 8-byte `SPLMSSTR` container magic bounding the header and footer
-/// directory regions.
+/// NX SPLMSSTR boundaries.
 const NX: CodecBoundarySpec = CodecBoundarySpec {
     codec_id: "nx",
     header_len: 8,

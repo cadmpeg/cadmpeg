@@ -104,16 +104,7 @@ use std::io::Write;
 pub struct SldprtCodec;
 
 impl SldprtCodec {
-    /// Build the validated source-fidelity sidecar for a `.sldprt` container.
-    ///
-    /// Scans the outer container and produces the v2 [`SourceFidelity`] at
-    /// Complete source tiling
-    /// of the root `source` space plus one `Transform` child space per block
-    /// (see [`fidelity`]). The ledger is validated before it is returned, so an
-    /// accounting-enabled result never carries an incompletely tiled or
-    /// origin-inconsistent ledger; a [`FidelityError`](cadmpeg_ir::source_fidelity::FidelityError)
-    /// surfaces as [`CodecError::Malformed`]. Serialize the result through
-    /// [`SourceFidelity::to_canonical_json`] for the stable-id sidecar.
+    /// Builds and validates the source-fidelity sidecar for an `.sldprt` file.
     pub fn source_fidelity(&self, reader: &mut dyn ReadSeek) -> Result<SourceFidelity, CodecError> {
         let arena = DecodeArena::new();
         let policy = DecodePolicy::default();

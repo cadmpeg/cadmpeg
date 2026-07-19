@@ -1,21 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Coarse source-fidelity accounting for the NX SPLMSSTR container.
-//!
-//! [`ledger`] builds a complete coarse tiling of every physical space the
-//! decode produces and stores it as the serialized v2 sidecar. Two
-//! space families are tiled:
-//!
-//! - the root `source` space, whose directory framing is [`SpanClass::Structural`]
-//!   and whose catalogued file-entry payloads are one [`SpanClass::Opaque`] span
-//!   each, with every remaining byte covered by a structural framing span; and
-//! - one derived space per inflated stream, named `stream:<part>#<n>`, produced
-//!   by a [`SerializedTransformKind::Decompress`] transform of the compressed
-//!   member's source extent and tiled by a single opaque span.
-//!
-//! Every byte of every space is classified, but opaque spans carry only digests, not
-//! retained bytes. [`ledger`] validates the sidecar before returning it, so
-//! an accounting-enabled result never carries a ledger that violates the
-//! conservation invariant.
+//! Source-fidelity tiling for the NX SPLMSSTR container.
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::source_fidelity::{
@@ -29,13 +13,7 @@ use crate::decode::Scan;
 /// The canonical part payload whose inflated members become derived spaces.
 const PART_PATH: &str = "/Root/UG_PART/UG_PART";
 
-/// Build the validated v2 sidecar for a parsed NX container.
-///
-/// The tiling is complete by construction, so validation is an invariant guard,
-/// not input-dependent control flow; a failure is a decoder bug. The caller
-/// rides the result on [`DecodeReport::source_fidelity`](cadmpeg_ir::report::DecodeReport::source_fidelity),
-/// the platform's designated sidecar surface, rather than a private
-/// native arena, so a consumer reading the standard slot sees the ledger.
+/// Builds and validates the source-fidelity sidecar for an NX container.
 pub(crate) fn ledger(scan: &Scan) -> SourceFidelity {
     let sidecar = build_sidecar(scan);
     sidecar

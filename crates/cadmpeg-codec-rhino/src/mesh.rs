@@ -22,20 +22,7 @@ use crate::chunks::{
 use crate::curves::{error, unsupported, GeometryError};
 use crate::wire::Uuid;
 
-/// Platform decode context and root view threaded to the mesh decoder.
-///
-/// Every compressed mesh buffer inflates through
-/// [`DecodeContext::begin_expand`]: decompressed output is
-/// charged to `decompressed_bytes` incrementally, bounded by the per-expand,
-/// cumulative, and per-entry decompression ceilings, and registered as a
-/// derived address space only on
-/// successful finalize. No mesh decompressor writes bytes outside the returned
-/// `ExpandWriter`, and no incomplete space escapes.
-///
-/// The bundle is `Copy` so it threads through the geometry decode by value. Its
-/// `root` spans the whole session input, identical to the `data` slice each
-/// mesh reader walks, so a compressed chunk body at `[start, end)` in `data` is
-/// the exact source span `root.child(start, end)` decompresses.
+/// Decode context and root view used for mesh expansion.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct MeshExpand<'a> {
     ctx: &'a DecodeContext<'a>,
@@ -60,12 +47,7 @@ impl<'a> MeshExpand<'a> {
     }
 }
 
-/// Maps a platform charge refusal onto the mesh decoder's local error type.
-///
-/// A refusal fuses the platform context, so `ctx.finish` returns the
-/// original `ResourceLimit` verbatim even though this `Malformed` value is
-/// swallowed by the mesh decoder's per-object recovery. Mapping to `Malformed`
-/// here keeps that recovery well-typed without masking the resource outcome.
+/// Maps an expansion refusal to the mesh decoder error type.
 fn expansion_refused(offset: usize, refusal: &CodecError) -> GeometryError {
     error(offset, &format!("mesh buffer expansion refused: {refusal}"))
 }
@@ -82,36 +64,16 @@ pub(crate) const CHANNEL_COLOR: u32 = 0x5248_0002;
 pub(crate) const CHANNEL_SURFACE_PARAMETERS: u32 = 0x5248_0003;
 /// Codec-owned curvature channel kind.
 pub(crate) const CHANNEL_CURVATURE: u32 = 0x5248_0004;
-/// Bounds vertex-count amplification from an attacker-controlled mesh header independently of the
-/// platform allocation budget; kept as defense in depth.
+/// Maximum vertex count declared by one mesh.
 const MAX_MESH_VERTICES: usize = 1 << 24;
-/// Bounds face-count amplification independently of the platform allocation budget; kept as
-/// defense in depth.
+/// Maximum face count declared by one mesh.
 const MAX_MESH_FACES: usize = 1 << 24;
-/// Bounds one decompressed mesh buffer independently of the platform envelope.
+/// Maximum decompressed size of one mesh buffer.
 const MAX_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
-/// Bounds retained decompressed mesh bytes across one document independently
-/// of the platform cumulative decompression ceiling.
+/// Maximum retained mesh-buffer bytes per document.
 const MAX_DOCUMENT_BUFFER_OUTPUT: usize = 256 * 1024 * 1024;
 
-/// Document-wide budget for retained decompressed mesh buffers.
-///
-/// The counter is monotonic: it records a buffer's bytes at the point they are
-/// retained — a compressed buffer once it inflates into the append-only session
-/// arena, a stored buffer once it is copied out — and never refunds them. The
-/// arena cannot free a finalized expansion, so a buffer that later proves
-/// malformed and is dropped still occupies memory for the rest of the session;
-/// refunding its charge would let the retained-byte total understate real
-/// retention and let a hostile document ratchet arena memory far past this cap
-/// while `used` returns to zero. The type is not `Copy` for that reason: the
-/// cheap `let checkpoint = *budget; ...; *budget = checkpoint` refund idiom no
-/// longer compiles. It derives `Clone` only because the enclosing rhino decode
-/// context does; that clone drives transactional instance expansion, which
-/// decodes the definition members' mesh buffers into the shared session arena
-/// and charges the cloned budget for them. Those bytes outlive a discarded
-/// expansion, so the parent context adopts the clone's `used` whether the
-/// expansion commits or is rejected — the count still tracks live arena bytes
-/// and is never refunded.
+/// Monotonic document-wide count of retained mesh-buffer bytes.
 #[derive(Debug, Clone)]
 pub(crate) struct MeshBudget {
     used: usize,
@@ -138,21 +100,14 @@ impl MeshBudget {
         self.used
     }
 
-    /// Returns whether `bytes` more can be retained without exceeding the cap.
-    ///
-    /// A read-only admission check run before a buffer inflates, so a buffer
-    /// that would breach the cap is refused before it allocates.
+    /// Returns whether `bytes` more fit within the cap.
     fn has_room(&self, bytes: usize) -> bool {
         self.used
             .checked_add(bytes)
             .is_some_and(|total| total <= self.limit)
     }
 
-    /// Records `bytes` as permanently retained.
-    ///
-    /// Monotonic and never refunded. Call only after [`MeshBudget::has_room`]
-    /// admitted the same `bytes`, at the point retention becomes permanent, so
-    /// the sum never exceeds the cap and always reflects live arena bytes.
+    /// Records retained bytes after admission.
     fn commit(&mut self, bytes: usize) {
         self.used = self.used.saturating_add(bytes);
     }
@@ -195,13 +150,6 @@ pub(crate) fn supported_class(uuid: Uuid) -> bool {
 }
 
 /// Decodes one bounded `ON_Mesh` class-data payload.
-///
-/// Every decompressed buffer this reads is retained in the append-only session
-/// arena the instant it inflates, so `document_budget` records each buffer at
-/// retention and is never refunded when a channel is dropped or the whole mesh
-/// later fails. A refund would let the retained-byte total
-/// understate memory the arena cannot reclaim, so this decoder holds no budget
-/// checkpoint and neither do its callers.
 pub(crate) fn decode(
     expand: MeshExpand<'_>,
     data: &[u8],
@@ -636,10 +584,6 @@ fn read_counted_raw(
     Ok(Some(data))
 }
 
-// A compressed buffer returns as `Cow::Borrowed` over the arena bytes
-// `finalize` already retained, so a parse-only channel (vertices, normals)
-// reads them in place instead of copying them out again; a channel that lives
-// on in the IR copies once with `into_owned`. A stored buffer is owned.
 #[allow(clippy::too_many_arguments)]
 fn read_buffer<'a>(
     expand: MeshExpand<'a>,
@@ -670,12 +614,7 @@ fn read_buffer<'a>(
                 "mesh cumulative buffer budget exceeded",
             )
         })?;
-    // Admit `declared` against the document budget before inflating, so a buffer
-    // that would breach the cap is refused before it allocates. The paired
-    // `commit` runs only once the bytes are actually retained (below), so a
-    // buffer that fails to inflate leaves the counter untouched, while a buffer
-    // that inflates and is then dropped stays charged for the arena bytes it
-    // can no longer free.
+    // Admit before allocation; commit only after the bytes become resident.
     if !document_budget.has_room(declared) {
         return Err(error(
             reader.position() - 4,
@@ -688,7 +627,6 @@ fn read_buffer<'a>(
         0 => {
             let mut input = reader.unread()?;
             let stored = input.take(declared)?.to_vec();
-            // The stored bytes are retained the moment they are copied out.
             document_budget.commit(declared);
             (Cow::Owned(stored), declared)
         }
@@ -706,9 +644,6 @@ fn read_buffer<'a>(
                     "compressed buffer is not anonymous",
                 ));
             }
-            // The compressed body is a window into the session input; take the
-            // decompression source from the root address space rather than a
-            // detached buffer so errors retain source-relative locations.
             let source = expand
                 .root
                 .child(chunk.body.start, chunk.body.end)
@@ -724,9 +659,6 @@ fn read_buffer<'a>(
                 "expansion source must alias the compressed chunk body"
             );
             let (view, compressed) = inflate(expand, source, declared)?;
-            // `inflate` has finalized the output into the append-only arena;
-            // record the retention now, before any drop below, because the
-            // arena cannot reclaim those bytes even when the channel is dropped.
             document_budget.commit(declared);
             if compressed != chunk.body.len() {
                 return Err(error(
@@ -753,8 +685,6 @@ fn read_buffer<'a>(
         }
     };
     reader.skip(consumed)?;
-    // A dropped channel keeps its charge: the bytes are already retained (in the
-    // arena for method 1) and rolling the budget back would defeat the cap.
     if bytes.len() != expected {
         warnings.push(format!("{name} compressed-buffer size mismatch"));
         return Ok(None);

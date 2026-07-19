@@ -6,12 +6,6 @@
 //! maps names such as `MainDataStream`, `SurfacicReps`, and `Header` to physical
 //! extents. [`brep_stream`] reconstructs the B-rep buffer from the largest
 //! `MainDataStream` and `SurfacicReps` descriptors in logical-offset order.
-//!
-//! [`scan_view`] consumes the session root view, parses available directories,
-//! reconstructs the BREP stream as a `Concat` derived space, registers the
-//! physical extents in the runtime space graph, and records the structural
-//! census used to select a [`crate::variant::Variant`]. [`summarize`] converts
-//! the scan into the container view returned by codec inspection.
 #![deny(clippy::disallowed_methods)]
 
 use std::collections::BTreeMap;
@@ -23,24 +17,10 @@ use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, View};
 
 use crate::variant::Variant;
 
-/// Per-extent runtime space-graph footprint charged against `alloc_bytes`.
-///
-/// Registering one physical extent pushes a `SpaceId`, a parent `SpaceId`, a
-/// `ByteRange`, and a `SpaceOrigin::Slice` into the runtime space graph. A
-/// directory can catalogue many descriptors, each with up to
-/// [`MAX_EXTENTS_PER_DESCRIPTOR`] extents, so the graph grows by a count the
-/// raw input does not bound byte-for-byte. `register_slice` copies nothing and
-/// charges no counter, so this fixed footprint is charged here to keep extent
-/// registration bounded by allocation policy rather than only by
-/// `max_input_bytes`.
+/// Allocation charge for one registered extent.
 const PER_EXTENT_GRAPH_BYTES: u64 = 256;
 
 /// Maximum physical extents per catalogued descriptor.
-///
-/// Classification: format validity. A `CATIA_V5 CB0001` descriptor's extent
-/// count is a small structural fan-out; a candidate count outside `1..=64` is
-/// not a real descriptor header. Kept permanently as a structural gate on the
-/// directory self-consistency scan.
 const MAX_EXTENTS_PER_DESCRIPTOR: usize = 64;
 
 /// The outer and inner container magic.
@@ -127,9 +107,6 @@ pub fn e5_record_stream(data: &[u8]) -> Option<Range<usize>> {
         .position(|bytes| bytes == FINJPL_MARKER)
         .map_or(data.len(), |relative| directory_length + relative);
     let preamble = directory_length..first_finjpl;
-    // Classification: format validity. A coherent E5 record stream carries at
-    // least `MIN_COHERENT_E5_RECORDS` stride-valid records; fewer is noise, not
-    // a stream. Structural gate, kept permanently.
     if count_e5_records(&data[preamble.clone()]) >= MIN_COHERENT_E5_RECORDS {
         return Some(preamble);
     }
@@ -184,8 +161,7 @@ const VERTEX_MARKER: &[u8; 3] = &[0x05, 0x08, 0x01];
 const A9_MARKER: &[u8; 2] = &[0xa9, 0x03];
 const E5_MARKER: &[u8; 3] = &[0xe5, 0x0d, 0x03];
 
-/// Minimum stride-valid E5 records for a byte range to count as a coherent E5
-/// stream. Classification: format validity (structural coherence threshold).
+/// Minimum stride-valid E5 records in a coherent E5 stream.
 const MIN_COHERENT_E5_RECORDS: usize = 10;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
@@ -213,11 +189,7 @@ pub struct Extent {
 }
 
 impl Extent {
-    /// Absolute file range `inner + phys_off .. inner + phys_off + phys_len`,
-    /// or `None` when it is empty or escapes `data_len`. Every extent consumer
-    /// (space registration, BREP range list, logical-stream reconstruction)
-    /// routes through this one arithmetic so their in-range checks cannot
-    /// diverge.
+    /// Returns this extent's absolute non-empty range within the file.
     fn abs_range(&self, inner: usize, data_len: usize) -> Option<Range<usize>> {
         let start = inner.checked_add(self.phys_off as usize)?;
         let end = start.checked_add(self.phys_len as usize)?;
@@ -265,9 +237,6 @@ pub struct Census {
 }
 
 /// Everything read from a `.CATPart`, shared by `inspect` and `decode`.
-///
-/// The scan borrows the root bytes without re-buffering the file. The
-/// reconstructed BREP stream is a `Concat` derived space in the runtime graph.
 pub struct ContainerScan<'a> {
     /// The whole file image, borrowed from the session root view.
     pub data: &'a [u8],
@@ -277,9 +246,7 @@ pub struct ContainerScan<'a> {
     pub outer_dir_length: u32,
     /// Parsed inner directory, when the file is nested and cataloguable.
     pub inner: Option<InnerDir>,
-    /// Reconstructed BREP stream (largest `MainDataStream` + `SurfacicReps`),
-    /// held as a `Concat` derived-space view. Populated by [`scan_view`]; the
-    /// context-free [`scan_bytes`] leaves it `None`.
+    /// Reconstructed BREP stream (largest `MainDataStream` + `SurfacicReps`).
     pub brep: Option<View<'a>>,
     /// Record-family census.
     pub census: Census,
@@ -367,9 +334,6 @@ pub fn parse_stream_directory(data: &[u8]) -> Option<InnerDir> {
             if let Some((extents, cum)) = parse_extents(dirbuf, o, k, inner, file_len) {
                 if cum > 0 && o >= 0x50 {
                     let ds = o - 0x50;
-                    // Reject the descriptor when the logical-length field reads
-                    // out of range rather than substituting 0, so a directory
-                    // truncated at `ds + 0x0c` cannot be admitted as a stream.
                     if let Some(logical_length) = u32_be(dirbuf, ds + 0x0c) {
                         if logical_length as usize == cum {
                             descriptors.push(Descriptor {
@@ -406,9 +370,6 @@ fn parse_extents(
     inner: usize,
     file_len: usize,
 ) -> Option<(Vec<Extent>, usize)> {
-    // `k` is gated to `1..=MAX_EXTENTS_PER_DESCRIPTOR` and `o + 4 + 20 * k <=
-    // dirbuf.len()` by the caller, so the run is capped both by the structural
-    // gate and by the buffer, so no untrusted count drives a reservation.
     let mut extents = Vec::new();
     let mut cum: usize = 0;
     for i in 0..k {
@@ -466,9 +427,6 @@ fn descriptor_name(dirbuf: &[u8], ds: usize) -> String {
 
 /// Concatenate a logical stream's physical extents in `log_off` order.
 pub fn reconstruct_logical_stream(data: &[u8], descriptor: &Descriptor, inner: usize) -> Vec<u8> {
-    // `logical_length` was validated to equal the cumulative in-range extent
-    // length when the descriptor was admitted, so it is bounded by the file.
-    // `extend_from_slice` grows the buffer without a disallowed reservation.
     let mut out = Vec::new();
     for e in &descriptor.extents {
         if let Some(range) = e.abs_range(inner, data.len()) {
@@ -501,8 +459,6 @@ fn brep_descriptors(dir: &InnerDir) -> Option<(&Descriptor, &Descriptor)> {
 /// the reconstructed logical stream.
 pub(crate) fn brep_extent_ranges(data: &[u8], dir: &InnerDir) -> Option<Vec<Range<usize>>> {
     let (main, surf) = brep_descriptors(dir)?;
-    // Both descriptors carry at most `MAX_EXTENTS_PER_DESCRIPTOR` already-admitted
-    // extents, so the range list is capped by the admitted directory structure.
     let mut ranges = Vec::new();
     for descriptor in [main, surf] {
         for e in &descriptor.extents {
@@ -518,10 +474,6 @@ pub(crate) fn brep_extent_ranges(data: &[u8], dir: &InnerDir) -> Option<Vec<Rang
 /// the largest `SurfacicReps` ([spec §3.4](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/catia.md#34-nested-container-stream-directory)). Both are required. A directory that
 /// catalogues the BREP body carries both a substantial `MainDataStream` and a
 /// `SurfacicReps`; the contiguous-body exception has neither and returns `None`.
-///
-/// Context-free reconstruction used for the census and variant identification.
-/// The registered runtime space is the `Concat` derived space built in
-/// [`scan_view`] over the same [`brep_extent_ranges`].
 pub fn brep_stream(data: &[u8], dir: &InnerDir) -> Option<Vec<u8>> {
     let (main, surf) = brep_descriptors(dir)?;
     let mut out = reconstruct_logical_stream(data, main, dir.inner);
@@ -580,14 +532,7 @@ fn identify_variant(
     }
 }
 
-/// The directory self-consistency scan and each census pass are linear in the
-/// input, so their bytes are charged as `work` before scanning. The census is
-/// not a single pass: [`identify`] scans the whole image for the `A9`/`E5`
-/// markers and for the E5 record stream (three image passes), then scans the
-/// reconstructed BREP body for FBB runs, edge delimiters, and vertex markers
-/// (three BREP passes); every one of those examined-byte passes is charged so
-/// the `work` counter reflects the real linear-multiple, not a single
-/// `data.len()`.
+/// Scans a `.CATPart` from a session root view.
 pub fn scan_view<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -602,17 +547,8 @@ pub fn scan_view<'a>(
     let outer_dir_length = u32_be(data, 12).unwrap_or(0);
     let inner = parse_stream_directory(data);
     register_extent_spaces(ctx, root, inner.as_ref())?;
-    // Reconstruct the logical BREP stream once, as the charged `Concat` derived
-    // space, and run the census over its bytes. The context-free `scan_bytes`
-    // reconstructs a transient throwaway `Vec` for the same census; the session
-    // path must not — that copy would be a second, uncharged reconstruction of
-    // the whole BREP body on every decode and inspect.
     let brep = build_brep_space(ctx, root, inner.as_ref())?;
     let brep_window = brep.as_ref().map(|v| v.window());
-    // `identify` examines the whole image three times (A9 count, E5 count, E5
-    // record-stream search) and the reconstructed BREP three times (FBB runs,
-    // edge delimiters, vertex markers). Charge those examined bytes as `work`
-    // before running the census rather than charging only the directory scan.
     ctx.charge_work(
         (data.len() as u64).saturating_mul(3),
         "catia_container_census",
@@ -637,12 +573,7 @@ pub fn scan_view<'a>(
     })
 }
 
-/// Register every catalogued physical extent as a stored `Slice` child of the
-/// root space, making the container framing visible in the runtime space graph
-/// Each extent aliases already-admitted root bytes, so registration copies nothing,
-/// but each pushes a space-graph record whose count the input does not bound
-/// byte-for-byte; charge the fixed per-extent footprint against the allocation
-/// budget up front so registration is bounded by policy.
+/// Registers catalogued extents as slices of the root space.
 fn register_extent_spaces(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -660,12 +591,6 @@ fn register_extent_spaces(
     let len = root.window().len();
     for descriptor in &dir.descriptors {
         for e in &descriptor.extents {
-            // Skip any extent that escapes the file rather than clamping it to
-            // the file end. `brep_extent_ranges` and `reconstruct_logical_stream`
-            // drop an out-of-range extent through the same `Extent::abs_range`
-            // arithmetic, so clamping here would register a byte range the
-            // reconstructed BREP stream does not contain — a guard/read
-            // disagreement. All paths now apply one shared policy.
             let Some(range) = e.abs_range(dir.inner, len) else {
                 continue;
             };
@@ -681,11 +606,7 @@ fn register_extent_spaces(
     Ok(())
 }
 
-/// Reassemble the logical BREP stream as a `Concat` derived space over its
-/// physical extent child views, so the reconstruction is named in the runtime
-/// graph and its segments are the exact bytes assembled. The
-/// per-extent `alloc_bytes` charge inside `begin_derived_space` bounds the
-/// assembled copy. Returns `Ok(None)` when the directory catalogues no BREP body.
+/// Reassembles the BREP stream from its physical extents.
 fn build_brep_space<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
@@ -709,11 +630,7 @@ fn build_brep_space<'a>(
     Ok(Some(view))
 }
 
-/// Identify a whole `.CATPart` byte image over borrowed bytes: outer directory
-/// framing, inner stream directory, record-family census, and storage variant.
-/// The BREP `brep` field is left `None` — the registered `Concat` derived space
-/// is assembled by [`scan_view`], which owns the decode context. Split out so
-/// tests and fuzzers drive the pure identification without a session.
+/// Identifies a `.CATPart` without a decode context.
 pub fn scan_bytes(data: &[u8]) -> ContainerScan<'_> {
     let outer_dir_offset = u32_be(data, 8).unwrap_or(0);
     let outer_dir_length = u32_be(data, 12).unwrap_or(0);
@@ -733,11 +650,7 @@ pub fn scan_bytes(data: &[u8]) -> ContainerScan<'_> {
     }
 }
 
-/// Compute the record-family census and storage variant from the file image and
-/// the reconstructed BREP body. Shared by the context-free [`scan_bytes`], which
-/// reconstructs the BREP into a throwaway `Vec`, and [`scan_view`], which passes
-/// the bytes of the charged `Concat` derived space so the census is computed
-/// once over already-accounted memory.
+/// Computes the record-family census and storage variant.
 fn identify(data: &[u8], inner: Option<&InnerDir>, brep: Option<&[u8]>) -> (Census, Variant) {
     let mut census = Census {
         a9_markers: count_subslice(data, A9_MARKER),

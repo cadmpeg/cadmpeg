@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The parent side: spawn the runner child, enforce a hard timeout, capture
-//! its status and output, and apply the subprocess checks.
-//!
-//! Isolation lives here. The child may abort, overflow its stack, or loop
-//! forever; the parent observes each of those as an exit status or a timeout
-//! kill rather than a crashed or hung test process.
+//! Subprocess execution and timeout enforcement.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -114,11 +109,7 @@ fn drain<R: Read + Send + 'static>(mut reader: Option<R>) -> thread::JoinHandle<
     })
 }
 
-/// Run one job in a child process and apply the resource and repeatability checks.
-///
-/// `runner` is the `harness-runner` executable path (an integration test passes
-/// `env!("CARGO_BIN_EXE_harness-runner")`). `bytes` is the exact — possibly
-/// truncated or mutated — input; it is streamed to the child's stdin.
+/// Runs one job and applies the resource and repeatability checks.
 pub fn run_job(
     runner: &Path,
     key: RunKey,
@@ -142,7 +133,6 @@ pub fn run_job(
     let writer = thread::spawn(move || {
         if let Some(mut stdin) = stdin {
             let _ = stdin.write_all(&input);
-            // Dropping `stdin` closes the pipe, signalling EOF to the child.
         }
     });
 
@@ -184,9 +174,6 @@ pub fn run_job(
         serde_json::from_slice(&stdout).ok()
     };
 
-    // No panic/abort: a normal `Err(CodecError)` still exits 0 with an outcome;
-    // only a panic, an abort, or a signal produces a broken exit. A timeout is
-    // the wall-clock check's business, not this one.
     let exited_cleanly = !timed_out && status.is_some_and(|s| s.success()) && outcome.is_some();
 
     let completed_in_time = !timed_out && elapsed <= limits.wall_clock;

@@ -1,22 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! container accounting for the `.sldprt` outer container.
-//!
-//! [`container_ledger`] turns a completed [`ContainerScan`] into a v2
-//! source-fidelity sidecar ([`SourceFidelity`]) with complete
-//! *coarse* tiling. The root `source` space is tiled so every physical byte is
-//! classified — outer header and every block/cache-cell/directory frame as
-//! `Structural`, each compressed block payload as one `Opaque` span, and any
-//! unclaimed run between frames as an explicit `Opaque` padding span. Each block
-//! also registers its decompressed payload as a child `Transform` space carrying
-//! one `Opaque` span; that is the coarse boundary — sub-payload structure
-//! (Parasolid streams, records) is finer refinement and is not tiled here.
-//!
-//! Canonical ids derive only from the scan, never from runtime registration
-//! order: the root is `source`, and a block's decompressed space is
-//! `stream:<section>#<index>` keyed by the block's file-order index, so two
-//! decodes of the same bytes serialize byte-identical sidecars. The result is
-//! returned in canonical order via [`SourceFidelity::new`]; callers that require
-//! the conservation invariant enforced call [`SourceFidelity::validate`].
+//! Source-fidelity tiling for `.sldprt` containers.
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
@@ -37,12 +20,7 @@ const OWNER: &str = "sldprt";
 /// header plus a 14-byte descriptor.
 const DIRECTORY_HEADER_LEN: usize = BLOCK_HEADER_LEN + 14;
 
-/// Build the source-fidelity sidecar for a scanned `.sldprt` container.
-///
-/// The returned sidecar is in canonical order but not yet validated; call
-/// [`SourceFidelity::validate`] to enforce complete tiling and origin
-/// consistency. Tiling is complete by construction: unclaimed bytes become
-/// explicit `Opaque` padding spans.
+/// Builds an unvalidated source-fidelity sidecar for an `.sldprt` container.
 pub fn container_ledger(scan: &ContainerScan) -> SourceFidelity {
     let source = scan.source_image.as_slice();
     let length = source.len() as u64;

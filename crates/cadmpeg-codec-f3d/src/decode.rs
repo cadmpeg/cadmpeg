@@ -453,9 +453,8 @@ fn untransferred_asset_loss(role_label: &str, name: &str) -> LossNote {
 fn build_source_fidelity(
     scan: &ContainerScan<'_>,
 ) -> Result<cadmpeg_ir::source_fidelity::SourceFidelity, CodecError> {
-    fidelity::build_validated_ledger(scan).map_err(|e| {
-        CodecError::Malformed(format!("f3d source-fidelity ledger is not a level: {e}"))
-    })
+    fidelity::build_validated_ledger(scan)
+        .map_err(|e| CodecError::Malformed(format!("invalid f3d source-fidelity ledger: {e}")))
 }
 
 fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
@@ -471,8 +470,6 @@ fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {
 }
 
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    // Normalize with a field-by-field clone so the retained source image (the
-    // largest single payload) is filtered out instead of copied and dropped.
     let mut normalized = ir.clone();
     normalized.finalize();
     normalized.source = ir.source.as_ref().map(|source| {

@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! In-child execution of one operation, run twice for determinism.
-//!
-//! This module holds no isolation machinery: it is the pure work the
-//! `harness-runner` binary performs after installing its peak-tracking
-//! allocator. Keeping it in the library lets the parent driver share the
-//! [`RunnerOutcome`] wire type and lets the logic be unit-tested in-process.
+//! In-child execution and determinism checks.
 
 use std::io::Cursor;
 
@@ -19,11 +14,6 @@ use crate::model::{Operation, PolicyProfile, ResultClass};
 pub const CODEC_IDS: &[&str] = &["f3d", "sldprt", "catia", "creo", "nx", "rhino"];
 
 /// The machine-readable result the child writes to stdout.
-///
-/// The parent driver applies subprocess checks around this; the child reports
-/// only what it can measure from inside its own process. The determinism
-/// comparison runs entirely in-child (both runs share the process), so only
-/// its verdict crosses the pipe, not the per-run digests it compares.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunnerOutcome {
     /// Classified result label (see [`ResultClass::label`]).
@@ -89,9 +79,7 @@ fn decode_digest(result: &DecodeResult) -> String {
     sha256_hex(buf.as_bytes())
 }
 
-/// The result of one single run: enough to classify and to compare for
-/// determinism. The digest is compared against the sibling run in-process and
-/// is never transmitted.
+/// One classified operation result and its digest.
 struct RunOnce {
     class: ResultClass,
     digest: String,
@@ -148,19 +136,14 @@ fn run_once(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8])
     }
 }
 
-/// Build a [`RunOnce`] from a codec error, digesting the deterministic label
-/// and `Display` so an error path is compared for determinism like any other.
+/// Builds a comparable result from a codec error.
 fn error_run(error: &CodecError) -> RunOnce {
     let class = classify_error(error);
     let digest = sha256_hex(format!("err:{}:{error}", class.label()).as_bytes());
     RunOnce { class, digest }
 }
 
-/// Run `op` twice and report the classified result and a determinism verdict.
-///
-/// Two runs share the process, so the caller's peak-allocation measurement
-/// spans both; the runs are near-identical, so the observed peak matches a
-/// single run's peak.
+/// Runs `op` twice and compares the results.
 pub fn execute(codec_id: &str, op: Operation, profile: PolicyProfile, bytes: &[u8]) -> ExecOutcome {
     let first = run_once(codec_id, op, profile, bytes);
     let second = run_once(codec_id, op, profile, bytes);

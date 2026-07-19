@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Bounded, `Copy` navigation over one address space.
-//!
-//! A [`View`] owns no monotonic state; that lives on the
-//! [`DecodeContext`](crate::decode::DecodeContext). Views carry their space
-//! identity and a stored lower bound, so a location or a refused window is
-//! reported at the request site rather than far from its cause. Probe reads
-//! return `Option` and advance only on success; the committed mirror (`req_*`)
-//! returns [`ParseError`] built from the view's own state.
+//! Bounded navigation over one address space.
 
 use crate::cursor::bounded_len;
 
@@ -14,12 +7,7 @@ use super::error::SourceLocation;
 use super::probe::{ParseError, ParseErrorKind};
 use super::space::SpaceId;
 
-/// A count proven to fit physically in unread input.
-///
-/// Construction is confined to [`View::counted`] and the internal
-/// [`bounded_len`] check, so a value of this type is evidence that
-/// `count * min_element_size` bytes could actually be present. It is not a
-/// permit to allocate: that is a separate, budget-owned proof.
+/// A count proven to fit in the unread input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoundedCount {
     count: usize,
@@ -39,10 +27,6 @@ impl BoundedCount {
 }
 
 /// A bounded window over one address space.
-///
-/// `Copy` is deliberate: a view is pure navigation. `start` fixes the
-/// lower-bound hole that let a raw cursor seek out of its window; `position`
-/// and the bounds are absolute offsets within [`View::space`].
 #[derive(Debug, Clone, Copy)]
 pub struct View<'a> {
     bytes: &'a [u8],
@@ -148,11 +132,7 @@ impl<'a> View<'a> {
         self.array::<1>().map(|[value]| value)
     }
 
-    /// Returns a child window with exact containment, refusing to clamp.
-    ///
-    /// `start` and `end` are absolute space offsets. A child that would exceed
-    /// the parent window is refused at the request site with `None`, not
-    /// silently shrunk to a shorter window that fails far from the cause.
+    /// Returns an exactly contained child window.
     pub fn child(self, start: usize, end: usize) -> Option<View<'a>> {
         if self.start <= start && start <= end && end <= self.end {
             Some(View {

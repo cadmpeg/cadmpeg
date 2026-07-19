@@ -71,41 +71,19 @@ impl fmt::Display for LossCategory {
     }
 }
 
-/// Whether strict mode must refuse a decode or export that produces a loss.
-///
-/// The consequence is a property of the loss *code*, not of a
-/// per-instance [`Severity`]: it states what the stable vocabulary entry means
-/// for a caller who demanded a faithful result. A code whose loss removes
-/// mandatory source semantics that cannot be reconstructed is [`Reject`]; a
-/// code whose loss is an accountable approximation or an
-/// operator-requested truncation is [`Tolerate`].
-///
-/// [`Reject`]: StrictConsequence::Reject
-/// [`Tolerate`]: StrictConsequence::Tolerate
+/// Strict-mode handling for a loss code.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum StrictConsequence {
-    /// Strict mode must refuse: the loss drops mandatory semantics that no
-    /// retained record reconstructs.
+    /// Strict mode must refuse the operation.
     Reject,
-    /// Strict mode may proceed: the loss is an accountable approximation or an
-    /// operator-requested truncation.
+    /// Strict mode may proceed.
     Tolerate,
 }
 
-/// Stable, machine-readable vocabulary of loss kinds.
-///
-/// Every [`LossNote`] carries one code. Gates, tests, and diffs key on the
-/// code, never on the human-readable message, so a reworded message never
-/// silently breaks a check and a code never silently changes meaning. The
-/// code determines the loss's reversibility-through-retained-source
-/// ([`reversible`](LossCode::reversible)) and its strict-mode consequence
-/// ([`strict_consequence`](LossCode::strict_consequence)); severity and source
-/// identity travel on the note. The enum is `#[non_exhaustive]`: a codec that
-/// reaches a new named boundary adds a variant without breaking external
-/// exhaustive matches.
+/// Stable machine-readable loss kinds.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
@@ -254,10 +232,7 @@ impl LossCode {
         }
     }
 
-    /// Whether the lost source content survives in retained/preserved records
-    /// and is reconstructable from them. True for passthrough retention
-    /// and native-record preservation; false for irreversible approximations,
-    /// reductions, and export-time omissions.
+    /// Whether retained source records can reconstruct the lost content.
     pub fn reversible(self) -> bool {
         matches!(
             self,
@@ -271,9 +246,7 @@ impl LossCode {
         )
     }
 
-    /// The strict-mode consequence of a note carrying this code. Codes whose
-    /// loss removes mandatory, unreconstructable semantics reject; accountable
-    /// approximations and operator-requested truncations tolerate.
+    /// Returns the strict-mode consequence of this code.
     pub fn strict_consequence(self) -> StrictConsequence {
         match self {
             Self::MissingGeometryStream
@@ -298,8 +271,7 @@ impl fmt::Display for LossCode {
 /// One attributable instance of incomplete or approximate transfer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct LossNote {
-    /// Stable machine-readable loss kind. Gates and tests key on
-    /// this, never on [`message`](LossNote::message).
+    /// Stable machine-readable loss kind.
     pub code: LossCode,
     /// Affected subsystem.
     pub category: LossCategory,
@@ -325,9 +297,7 @@ pub struct DecodeReport {
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
-    /// Whether opaque retention degraded from recoverable to accounted because
-    /// the retained-byte budget was exhausted in salvage mode. Set by
-    /// the decode session at `finish`; a paired loss note carries the detail.
+    /// Whether opaque retention degraded to digest-only accounting.
     #[serde(default)]
     pub retention_degraded: bool,
 }

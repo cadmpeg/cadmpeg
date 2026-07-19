@@ -65,12 +65,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
     }
 
-    // The entity-decode phase runs several full linear passes the container
-    // census charge does not cover: the variant decoders scan the whole image,
-    // and geometry extraction sweeps the reconstructed BREP body repeatedly
-    // (vertices, analytic surfaces, cylinders, cones, freeform records). Charge
-    // those passes as work up front so decode cost stays proportional to the
-    // bytes actually processed, not only to the one-pass container scan.
     let brep_len = scan.brep_bytes().map_or(0, <[u8]>::len) as u64;
     let entity_work = (scan.data.len() as u64)
         .saturating_mul(u64::from(ENTITY_DECODE_DATA_PASSES))
@@ -132,11 +126,7 @@ fn finish_decode<'a>(
     ))
 }
 
-/// Refuse a strict decode containing a loss whose
-/// [`strict_consequence`](LossCode::strict_consequence) is
-/// [`Reject`](StrictConsequence::Reject). Salvage mode keeps the partial result
-/// and its loss note. The refusal is `Malformed`, never `ResourceLimit`, because
-/// the input cannot produce a faithful result under the selected mode.
+/// Rejects strict decodes that omit mandatory semantics.
 fn reject_unrepresentable_in_strict(
     ctx: &DecodeContext<'_>,
     report: &DecodeReport,

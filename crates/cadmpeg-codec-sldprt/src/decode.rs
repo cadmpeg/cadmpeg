@@ -114,18 +114,7 @@ fn decode_result(
     ))
 }
 
-/// A decode that could only
-/// account mandatory geometry or topology as a loss — a [`LossCode`] whose
-/// [`strict_consequence`](LossCode::strict_consequence) is
-/// [`Reject`](StrictConsequence::Reject) — is not a faithful result, so strict
-/// mode refuses it with a classified error rather than returning a model that
-/// silently omits mandatory semantics. Salvage mode keeps the partial result
-/// and its stable loss code. Operator-requested container-only truncation is
-/// exempt (its caller asked for less) and is filtered before this runs.
-///
-/// The refusal is `Malformed`: the taxonomy carries no dedicated
-/// semantic-rejection variant, and `Malformed` is the platform's general
-/// cannot-produce-a-faithful-result classification, never a `ResourceLimit`.
+/// Rejects strict decodes that omit mandatory semantics.
 fn reject_unrepresentable_in_strict(
     ctx: &DecodeContext<'_>,
     report: &DecodeReport,
@@ -196,16 +185,7 @@ fn commit_record_tickets(
     tickets
 }
 
-/// Resolve every committed record ticket at its decided outcome.
-///
-/// The block whose Parasolid stream was lifted into the B-rep graph
-/// (`typed_offset`) resolves `Typed`, naming the IR entities transferred; every
-/// other retained block resolves `Retained`, naming its preserved payload blob;
-/// framing records (`block_offset == None`) resolve `Structural`. Every content
-/// block is retained on the decode path, so a block that is neither typed nor
-/// retained is an invariant break, not framing: it is surfaced in debug builds
-/// rather than silently reclassified as `Structural` (which would conceal a lost
-/// content record).
+/// Resolves block and framing tickets.
 fn resolve_record_tickets(
     ctx: &DecodeContext<'_>,
     tickets: Vec<PendingTicket>,
@@ -1249,8 +1229,6 @@ fn set_semantic_hash(ir: &mut CadIr) {
 pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
     use cadmpeg_ir::appearance::AppearanceTarget;
 
-    // Normalize with a field-by-field clone so the dropped namespaces (source
-    // image, native records, annotations) are never copied.
     let mut normalized = CadIr {
         ir_version: ir.ir_version.clone(),
         source: None,
@@ -1296,8 +1274,6 @@ pub(crate) fn brep_semantic_hash(ir: &CadIr) -> String {
 }
 
 pub(crate) fn semantic_hash(ir: &CadIr) -> String {
-    // Normalize with a field-by-field clone so the retained source image (the
-    // largest single payload) is filtered out instead of copied and dropped.
     let mut normalized = ir.clone();
     normalized.finalize();
     normalized.source = ir.source.as_ref().map(|source| {

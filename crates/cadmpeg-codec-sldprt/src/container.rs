@@ -1,11 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Outer `.sldprt` container scanning and inspection.
-//!
-//! Files start with an 8-byte `file_id` and big-endian version header. A shared
-//! marker introduces raw-DEFLATE blocks, cache cells, and tail-directory
-//! entries. [`scan_view`] classifies marker occurrences with structure-specific
-//! invariants, validates block CRC-32 values, inflates payloads, decodes stored
-//! section names, and extracts embedded Parasolid streams.
 
 use std::collections::BTreeMap;
 use std::io::Read;
@@ -18,32 +12,17 @@ use cadmpeg_ir::le::u32_at as u32_le;
 /// Marker shared by block, cache-cell, and directory frames.
 pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
 
-/// Read chunk for streaming a block's inflated DEFLATE output into the platform
-/// expander. A fixed stack buffer, so no decompressed bytes are retained outside
-/// the [`cadmpeg_ir::decode::ExpandWriter`] before finalization.
+/// Read chunk used while inflating a block.
 const EXPAND_CHUNK: usize = 16 * 1024;
 
-/// Allocation charged per space-graph record admitted while scanning a block: once for the block's decompressed `Transform` space, and once
-/// for each Parasolid `Slice`/`Transform` stream it carries.
-///
-/// Covers the fixed heap footprint each record adds. This rounds up rather than
-/// measuring the platform-internal layouts, which the codec cannot see; its
-/// purpose is to make the record count — blocks and their embedded streams, both
-/// untrusted counts the input does not bound byte-for-byte — consume the
-/// input-proportional allocation budget, so a payload packed with minimal frames
-/// or minimal stream headers cannot grow the graph without a matching charge.
+/// Allocation charge for each admitted space-graph record.
 const PER_BLOCK_GRAPH_BYTES: u64 = 256;
 
 /// Bytes between a marker and its preamble in a block frame
 /// (`marker[6] + type_id[4] + crc32[4] + comp_sz[4] + uncomp_sz[4] + pre_sz[4]`).
 pub(crate) const BLOCK_HEADER_LEN: usize = 26;
 
-/// Upper bound on a single decompressed block, guarding a corrupt `uncomp_sz`
-/// from driving an unbounded allocation. Real part streams sit far below this.
-///
-/// On the session decode path [`DecodeContext::begin_expand`] bounds decompressed output
-/// against the per-expand and cumulative decompression envelope; this tighter
-/// codec-local cap also bounds the writer-side [`scan_bytes`] path.
+/// Maximum decompressed size of one block.
 const MAX_UNCOMP: usize = 512 * 1024 * 1024;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
@@ -56,10 +35,7 @@ pub mod role {
     pub const CACHE_CELL: &str = "cache-cell";
 }
 
-/// Classify a decompressed block payload by signature.
-///
-/// The returned labels form the `family` values exposed by [`Block`] and
-/// [`summarize`]. Unknown signatures return `"unknown"`.
+/// Classifies a decompressed block payload by signature.
 pub fn payload_family(payload: &[u8]) -> &'static str {
     if payload.starts_with(&[0x89, 0x50, 0x4e, 0x47]) {
         "png-preview"
@@ -150,12 +126,7 @@ pub struct Block {
     pub ps_streams: Vec<Vec<u8>>,
     /// Outer-payload offset of each entry in `ps_streams`.
     pub ps_stream_offsets: Vec<usize>,
-    /// Content-addressed identity of the block payload retained in the platform
-    /// store when the block was admitted on the session decode path.
-    ///
-    /// `Some` names the retained-blob digest a `RecordDisposition::Retained`
-    /// resolution references; `None` on the writer/test [`scan_bytes`] path,
-    /// which runs without a [`DecodeContext`] and issues no tickets.
+    /// Content-addressed identity of the retained block payload.
     pub retained_digest: Option<String>,
     /// Whether `retained_digest` records only a digest because salvage-mode
     /// retained-byte accounting exhausted its allowance.
@@ -215,31 +186,12 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Block candidates must inflate to their declared size and match their stored
-/// CRC-32. Cache cells and directory entries must satisfy their framing
-/// invariants. Unclassified marker occurrences are ignored.
-///
-/// The marker walk visits every input byte once; its bytes are charged as work
-/// before scanning begins. Every block's DEFLATE payload is inflated through the
-/// platform expander ([`DecodeContext::begin_expand`]), and each
-/// decompressed block plus its nested Parasolid streams is registered in the
-/// runtime space graph.
-///
-/// The returned scan owns its block payloads: the retained source image and the
-/// preserved per-block records are IR-level requirements, so the validated
-/// decompressed bytes are copied out of the arena once, at admission.
+/// Scans the outer container without retaining block payloads in the blob store.
 pub fn scan_view(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerScan, CodecError> {
     scan_view_impl(ctx, root, false)
 }
 
-/// Scan the container and additionally retain each admitted block's decompressed
-/// payload as a content-addressed platform blob.
-///
-/// The decode path calls this so every block carries a [`Block::retained_digest`]
-/// a [`RecordDisposition::Retained`](cadmpeg_ir::decode::RecordDisposition)
-/// resolution can name; `inspect` uses the plain [`scan_view`], which does not
-/// charge the retained-byte budget for a container-level enumeration that issues
-/// no tickets.
+/// Scans the outer container and retains admitted block payloads.
 pub fn scan_view_retaining(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -271,11 +223,6 @@ fn scan_view_impl(
             continue;
         }
         if let Some(raw) = admit_block(ctx, root, bytes, i, retain)? {
-            // `admit_block` charges each block's space-graph records (the
-            // decompressed `Transform` space, each Parasolid stream) and its
-            // retained payload copy before registering them, so the per-block
-            // footprint is bounded by the allocation budget as blocks are
-            // admitted.
             i = raw.offset + BLOCK_HEADER_LEN + raw.preamble_len + raw.comp_sz as usize;
             blocks.push(raw.into_block());
             continue;
@@ -288,10 +235,6 @@ fn scan_view_impl(
         i += 1;
     }
 
-    // The scan retains an owned copy of the whole source image for exact
-    // passthrough writing, a duplicate of the arena-resident root the input
-    // charge does not cover. Charge it against the allocation budget before it
-    // is retained so the retained copy is bounded by policy.
     ctx.charge_alloc(
         bytes.len() as u64,
         "sldprt_source_image",
@@ -306,17 +249,7 @@ fn scan_view_impl(
     })
 }
 
-/// Validate a marker hit as a block and, on success, route its DEFLATE payload
-/// through the platform expander, register the decompressed `Transform` space,
-/// and register each nested Parasolid stream.
-///
-/// `ExpandSpec::Exact` bounds the inflated output during the probe, so a corrupt
-/// frame cannot inflate a bomb before validation. The CRC-32 and declared length
-/// are validated from the streamed output before finalize, so a marker hit that
-/// is not a real block registers no space and the writer is dropped. Returns
-/// `Ok(None)` for any marker hit that does not frame or validate as a block — the
-/// probe idiom: the caller tries the cache-cell and directory framings next.
-/// Resource-limit errors always propagate.
+/// Validates and admits a compressed block candidate.
 fn admit_block(
     ctx: &DecodeContext<'_>,
     root: View<'_>,
@@ -336,8 +269,6 @@ fn admit_block(
     let comp = comp_sz as usize;
     let pre = pre_sz as usize;
     let uncomp = uncomp_sz as usize;
-    // `MAX_UNCOMP`: deployment ceiling (see its definition), enforced here as
-    // dual defense behind the expander's decompression envelope.
     if comp == 0 || uncomp == 0 || uncomp > MAX_UNCOMP {
         return Ok(None);
     }
@@ -371,9 +302,6 @@ fn admit_block(
     if writer.written() != uncomp_sz as u64 || hasher.finalize() != crc {
         return Ok(None);
     }
-    // Charge the block's decompressed `Transform` space-graph record before
-    // `finalize` registers it, so the charge that bounds graph growth precedes
-    // the growth (a fuse here leaves the registry unchanged).
     ctx.charge_alloc(
         PER_BLOCK_GRAPH_BYTES,
         "sldprt_container_block",
@@ -385,13 +313,6 @@ fn admit_block(
     };
     let inflated = view.window();
 
-    // Retain the validated decompressed payload so the block's decode-time
-    // `RecordDisposition::Retained` can name a record present in the retained
-    // store. Retention runs only after the
-    // CRC and declared-length gates admit the block. A strict-mode retained-byte
-    // exhaustion fuses the context and propagates as an unswallowable
-    // `ResourceLimit`; salvage degrades recovery to accounting and keeps the
-    // digest, which still satisfies the disposition check.
     let (retained_digest, retention_degraded) = if retain {
         match ctx.retain(inflated)? {
             Retention::Retained(range) => (Some(range.blob().as_str().to_owned()), false),
@@ -412,9 +333,6 @@ fn admit_block(
         .map(|(_, stream)| stream)
         .collect::<Vec<_>>();
     let ps_stream = ps_streams.first().cloned();
-    // `ps_stream` clones the first stream's bytes a second time (retained in
-    // `Block::ps_stream` for the active-B-rep selection path). Charge the clone
-    // so this duplicate is bounded like the `ps_streams` copies it mirrors.
     if let Some(first) = &ps_stream {
         ctx.charge_alloc(
             first.len() as u64,
@@ -422,10 +340,6 @@ fn admit_block(
             Some(root.location()),
         )?;
     }
-    // The scan retains an owned copy of the decompressed payload for the IR and
-    // writer paths (`Block::payload`), a duplicate of the arena-resident space
-    // that the `decompressed_bytes` charge does not cover. Charge it against the
-    // allocation budget before it is retained so the retained half is bounded.
     ctx.charge_alloc(
         inflated.len() as u64,
         "sldprt_block_payload",
@@ -454,9 +368,7 @@ fn admit_block(
     }))
 }
 
-/// Map an expander error hit during a probe: a fused `ResourceLimit` is
-/// unswallowable and propagates; any other error means this marker hit is
-/// not a valid block, so the probe reports `NoMatch`.
+/// Propagates resource refusals and treats other failures as probe misses.
 fn probe_or_propagate<T>(e: CodecError) -> Result<Option<T>, CodecError> {
     match e {
         CodecError::ResourceLimit(_) => Err(e),
@@ -464,16 +376,7 @@ fn probe_or_propagate<T>(e: CodecError) -> Result<Option<T>, CodecError> {
     }
 }
 
-/// Register every Parasolid stream carried by a block and return each with its
-/// block-payload offset.
-///
-/// A stream lying directly in the payload is a zero-copy `Slice` of the block's
-/// decompressed space. When no direct stream is present but the transmit-wrapper
-/// magic is, each candidate zlib member is inflated through the charging
-/// expander ([`inflate_wrapped_stream`]) and registered as a `Transform` derived
-/// space. Every registered record is charged against the
-/// allocation budget before it is registered, so the graph cannot grow past the
-/// budget on a payload packed with minimal stream headers.
+/// Registers Parasolid streams carried by a block and returns their offsets.
 fn collect_parasolid_streams(
     ctx: &DecodeContext<'_>,
     block: View<'_>,
@@ -487,17 +390,11 @@ fn collect_parasolid_streams(
         if inflated.get(*offset..end) != Some(stream.as_slice()) {
             continue;
         }
-        // Charge the per-stream space-graph record before registering it, so
-        // stream count consumes the input-proportional allocation budget.
         ctx.charge_alloc(
             PER_BLOCK_GRAPH_BYTES,
             "sldprt_parasolid_stream",
             Some(block.location()),
         )?;
-        // `direct_streams_with_offsets` returns an owned copy of each stream's
-        // bytes, retained in `Block::ps_streams` alongside the arena-resident
-        // block space the `decompressed_bytes` charge already covers. Charge the
-        // retained copy against the allocation budget so its bytes are bounded.
         ctx.charge_alloc(
             stream.len() as u64,
             "sldprt_parasolid_stream_bytes",

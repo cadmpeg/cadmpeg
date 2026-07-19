@@ -227,27 +227,12 @@ pub trait Codec {
 }
 
 mod sealed {
-    /// Confines [`CodecEntry`](super::CodecEntry) to a blanket implementation
-    /// over every [`Codec`](super::Codec): the bound cannot be named outside
-    /// this crate, so no codec can supply its own entry-point implementation.
+    /// Private bound for the blanket [`CodecEntry`](super::CodecEntry) implementation.
     pub trait Sealed {}
     impl<C: super::Codec + ?Sized> Sealed for C {}
 }
 
-/// The public entry points for inspection and decoding, sealed against
-/// override.
-///
-/// [`Codec::inspect_impl`] and [`Codec::decode_impl`] are what a codec writes;
-/// these wrappers are the only public callers of them, enforcing the
-/// root-input limit and the session invariants once, for every codec. The
-/// trait is blanket-implemented for all `Codec` and sealed with a private
-/// supertrait, so a codec cannot override an entry point and silently drop the
-/// enforcement — the language would otherwise permit overriding a provided
-/// method. Callers reach these methods on any `Codec` (including
-/// `dyn Codec`) by bringing [`CodecEntry`] into scope.
-///
-/// A codec cannot supply its own entry point: a manual `CodecEntry`
-/// implementation collides with the blanket impl and does not compile.
+/// Public inspection and decoding entry points.
 ///
 /// ```compile_fail
 /// use cadmpeg_ir::codec::{
@@ -274,25 +259,14 @@ mod sealed {
 /// }
 /// ```
 pub trait CodecEntry: Codec + sealed::Sealed {
-    /// Inspect the source under its own input limit, enforcing the root-input
-    /// bound so an inspection cannot become an amplification vector.
-    ///
-    /// Acquires the root buffer under `options.limits.max_input_bytes` through
-    /// an internal context, then runs [`Codec::inspect_impl`]. Inspection
-    /// commits no records and produces no [`DecodeResult`], but the wrapper
-    /// still checks the context fuse before returning so a swallowed resource
-    /// refusal cannot become a successful inspection.
+    /// Inspects the source under its input and resource limits.
     fn inspect(
         &self,
         reader: &mut dyn ReadSeek,
         options: &InspectOptions,
     ) -> Result<ContainerSummary, CodecError>;
 
-    /// Decode the source, enforcing root-input limits and session invariants.
-    ///
-    /// Acquires the root buffer under the policy's input limit, records the
-    /// container-only request, runs [`Codec::decode_impl`], and finalizes the
-    /// context so a fused decode cannot return `Ok`.
+    /// Decodes the source under its input and resource limits.
     fn decode(
         &self,
         reader: &mut dyn ReadSeek,

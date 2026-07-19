@@ -1,21 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Turning a fixture and its boundaries into truncation and mutation cases.
-//!
-//! Two case families:
-//!
-//! - **Truncation**: at every recognized boundary offset minus one, at it, and
-//!   plus one; at a fixed set of stratified fractions of the length; and, only
-//!   when the fixture is below a size threshold, at every byte.
-//! - **Mutation spot-checks**: single-byte flips at header and count positions.
-//!
-//! Each case carries a stable label so a sweep failure names the exact
-//! transformation that produced it.
+//! Truncation and mutation case generation.
 
 use crate::boundary::{Boundary, BoundaryKind, BoundaryProvider};
 
-/// Below this length a fixture gets an every-byte truncation sweep; above it,
-/// only boundary and stratified truncations. Keeps the sweep finite on large
-/// inputs while staying exhaustive on small ones.
+/// Maximum fixture length for every-byte truncation.
 pub const EVERY_BYTE_THRESHOLD: usize = 512;
 
 /// Stratified truncation points as fractions of the fixture length.
@@ -51,11 +39,7 @@ pub struct SweepCase {
     pub bytes: Vec<u8>,
 }
 
-/// The single-byte replacements applied at each header/count position.
-///
-/// XOR `0xff`, `+1`, and `0x00` between them flip the high bit, perturb a low
-/// bit, and zero a field — the mutations a length/count parser is most
-/// sensitive to.
+/// The replacements applied at each header or count position.
 fn mutations(original: u8) -> [u8; 3] {
     [original ^ 0xff, original.wrapping_add(1), 0x00]
 }

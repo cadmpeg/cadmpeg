@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Fixture discovery from the checked-in per-codec corpora.
-//!
-//! The whole-file inputs the harness decodes are the `<codec>_container/`
-//! corpora already maintained for the fuzz fleet. Each such directory's prefix
-//! names its codec; every regular file inside is a fixture. Discovery is a
-//! read-only walk, so the harness owns no fixture data of its own.
+//! Fixture discovery from per-codec fuzz corpora.
 
 use std::path::{Path, PathBuf};
 

@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Exhaustive source-byte accounting and identity-preserving record retention.
-//!
-//! [`partition`] walks a completed [`Scan`] once and returns a gap-free ascending
-//! tiling of the whole source image. Two consumers ride that single partition so
-//! the native byte-census and the platform source-fidelity sidecar can never
-//! diverge: [`install`] projects it into the `rhino` native namespace (byte spans
-//! plus retained record bytes for recovery), and [`crate::fidelity::ledger`]
-//! projects it into a source-fidelity sidecar.
+//! Source-byte accounting and record retention.
 
 use std::ops::Range;
 
@@ -17,15 +10,10 @@ use serde::Serialize;
 
 use crate::container::Scan;
 
-/// The object-record typecode; its retained bytes live under the object-record
-/// identity, not the generic source-opaque namespace.
+/// Object-record typecode.
 const TCODE_OBJECT_RECORD: u32 = 0x2000_8070;
 
-/// The retention role of one partition tile.
-///
-/// Framing and the typed header carry no retained identity. Every opaque tile
-/// names how its bytes are recovered so [`install`] can mint a stable id and,
-/// where the codec owns the bytes, retain them for recovery.
+/// Retention role of one partition tile.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum TileRole {
     /// Container framing; structural, not retained.
@@ -68,11 +56,7 @@ pub(crate) struct Tile {
     pub(crate) role: TileRole,
 }
 
-/// Build the complete gap-free partition of the source image in archive order.
-///
-/// The tiles tile `[0, data.len())` exactly: header, comment, then each table's
-/// framing, records, and terminator, and finally any end-of-file chunk. The
-/// caller may assert contiguity; both projections rely on it.
+/// Builds a gap-free source partition in archive order.
 pub(crate) fn partition(scan: &Scan<'_>) -> Vec<Tile> {
     let data = scan.data;
     let mut tiles = Vec::new();

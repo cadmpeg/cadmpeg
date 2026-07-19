@@ -1,29 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! coarse source-fidelity tiling for the `V5_CFV2` container.
-//!
-//! [`container_ledger`] turns a parsed [`ContainerScan`] into a validated v2
-//! [`SourceFidelity`] sidecar: every physical byte of
-//! the root input is covered by one span, container framing classed
-//! [`SpanClass::Structural`], catalogued stream extents and everything else
-//! [`SpanClass::Opaque`]. The reconstructed BREP logical stream is serialized
-//! as a separate [`SerializedOrigin::Concat`] space whose segments name the
-//! source extents it assembles, mirroring the runtime `Concat` derived space
-//! [`crate::container::scan_view`] registers.
-//!
-//! The tiling is *coarse*: it classifies the framing bytes the container parse
-//! confidently identifies and leaves every unclassified interior byte as one
-//! opaque padding span, so `[0, length)` tiles exactly without refining record
-//! structure. Completeness is the invariant, not granularity.
-//!
-//! Only spaces with canonical serialized ids are emitted: the root
-//! `source` space and the reconstructed `stream:brep#0` space. The runtime
-//! per-extent `Slice` spaces have no canonical id spelling; their bytes are
-//! tiled inside `source` as opaque extent spans and referenced from the BREP
-//! stream's `Concat` segments, so no byte is duplicated across spaces.
-//!
-//! Spans carry digests, not retained bytes. [`container_ledger`] validates before returning, so an
-//! accounting-enabled result never escapes with a ledger that fails the
-//! conservation invariant.
+//! Source-fidelity tiling for the `V5_CFV2` container.
 
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::source_fidelity::{
@@ -48,15 +24,7 @@ struct Claim {
     meaning: String,
 }
 
-/// Builds and validates the source-fidelity sidecar for a scanned
-/// `.CATPart`.
-///
-/// The returned [`SourceFidelity`] is canonicalized and has passed
-/// [`SourceFidelity::validate`]; its spaces tile `[0, length)` exactly. The
-/// tiling is total by construction — `source_space` backfills every gap with an
-/// opaque padding span and the BREP `Concat` references only in-bounds source
-/// extents — so validation cannot fail on any input; a failure would be a
-/// builder defect and panics rather than being serialized.
+/// Builds and validates the source-fidelity sidecar for a `.CATPart`.
 pub(crate) fn container_ledger(scan: &ContainerScan<'_>) -> SourceFidelity {
     let mut spaces = vec![source_space(scan)];
     if let Some(stream) = brep_stream_space(scan) {

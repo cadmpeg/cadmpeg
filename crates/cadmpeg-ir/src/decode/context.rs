@@ -1,12 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The decode context: monotonic state, charging, and the session lifecycle.
-//!
-//! One context exists per decode. It is not `Clone`, and every charging method
-//! takes `&self` through interior-mutability cells, so codecs pass
-//! `&DecodeContext` and the depth guard composes with recursion. The context
-//! owns the budget, the space registry, the ticket table, and the fuse; it
-//! never owns bytes (those live in the [`DecodeArena`]) so a `Copy`
-//! [`View`] can outlive any single call.
+//! Monotonic decode state, charging, and session lifecycle.
 
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
@@ -200,21 +193,10 @@ impl<'a> DecodeContext<'a> {
 
     // --- retained blobs -----------------------------------------------------
 
-    /// Retains an opaque payload as a content-addressed blob, returning a
-    /// recoverable [`Retention`].
+    /// Retains an opaque payload by SHA-256 digest.
     ///
-    /// Identity is the bytes' SHA-256 digest, so retaining identical bytes twice
-    /// deduplicates to one blob and charges the [`RetainedBytes`](ResourceDimension::RetainedBytes)
-    /// budget once. The bytes are borrowed for the arena's lifetime, never
-    /// re-copied, so the blob survives the context teardown.
-    ///
-    /// The exhaustion outcome is mode-defined. A fresh blob whose bytes
-    /// do not fit the retained budget fails in strict mode with a
-    /// `ResourceLimit` (fusing the context) and degrades in salvage mode to
-    /// [`Retention::Accounted`]: the digest is kept, the bytes are dropped, a
-    /// loss note and the report's `retention_degraded` flag are set at
-    /// [`finish`](DecodeContext::finish), and the decode is never failed for
-    /// retention alone.
+    /// Strict mode rejects budget exhaustion. Salvage mode returns
+    /// [`Retention::Accounted`] and records the missing bytes at [`finish`](Self::finish).
     pub fn retain(&self, bytes: &'a [u8]) -> Result<Retention, CodecError> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
@@ -239,10 +221,6 @@ impl<'a> DecodeContext<'a> {
                     self.retained.insert(digest.clone(), addr);
                     Ok(Retention::Retained(RetainedRange::whole(digest, len)))
                 } else {
-                    // Salvage degrades R->A: keep the digest, drop the bytes,
-                    // and record the degradation for finish. Keyed by digest so a
-                    // later successful retention of the same blob reconciles it.
-                    // The context is not fused; retention alone never fails a decode.
                     self.retained.mark_degraded(&digest, len);
                     Ok(Retention::Accounted { digest })
                 }
@@ -250,9 +228,7 @@ impl<'a> DecodeContext<'a> {
         }
     }
 
-    /// Applies a retained-byte charge without fusing on refusal, returning
-    /// whether it fit. The salvage-mode retention path uses this so an exhausted
-    /// retained budget degrades to accounting instead of poisoning the decode.
+    /// Attempts a retained-byte charge without fusing on refusal.
     fn try_charge_retained(&self, bytes: u64) -> bool {
         let dim = ResourceDimension::RetainedBytes;
         let allowance = self
@@ -266,13 +242,7 @@ impl<'a> DecodeContext<'a> {
         true
     }
 
-    /// Returns the retained blobs in canonical order, borrowed for the arena's
-    /// lifetime.
-    ///
-    /// The returned borrows outlive the context: they address the arena the
-    /// decode wrapper owns, so a codec collects retained bytes here and they stay
-    /// valid after [`finish`](DecodeContext::finish) consumes the context — the
-    /// egress copies no bytes.
+    /// Returns retained blobs in canonical order.
     pub fn retained_blobs(&self) -> Vec<RetainedBlob<'a>> {
         self.retained
             .addrs()
@@ -299,16 +269,7 @@ impl<'a> DecodeContext<'a> {
         self.retained.is_degraded()
     }
 
-    /// Charges the allocation budget for auxiliary heap growth that does not
-    /// flow through [`DecodeContext::exact_vec`] or [`DecodeContext::begin_expand`].
-    ///
-    /// Charge point: per-element runtime graph and summary metadata whose count
-    /// tracks an untrusted container directory — a ZIP central directory's entry
-    /// count, for one. Each admitted entry pushes a space-graph record, a payload
-    /// lookup-map node, and a summary row; that growth is proportional to a count
-    /// the input does not bound byte-for-byte, so it is charged here against the
-    /// input-proportional allocation allowance rather than left to a codec-local
-    /// size ceiling.
+    /// Charges auxiliary heap growth.
     pub fn charge_alloc(
         &self,
         bytes: u64,
@@ -409,11 +370,7 @@ impl<'a> DecodeContext<'a> {
         self.reserve_exact_charged(count.get(), "exact_vec")
     }
 
-    /// Reserves capacity for a zero-floor stream where no physical proof
-    /// exists, taking a raw count. The only budget-only allocation path:
-    /// charges identically to [`DecodeContext::exact_vec`], and the distinct
-    /// greppable name marks the missing input floor at the call site. Sites
-    /// keep an explicit codec-local limit as defense in depth.
+    /// Reserves a raw count when the format provides no per-element byte floor.
     pub fn alloc_unfloored<T>(&self, count: usize) -> Result<ExactVec<T>, CodecError> {
         self.reserve_exact_charged(count, "alloc_unfloored")
     }
@@ -1092,15 +1049,7 @@ impl<'a> ExpandWriter<'_, 'a> {
     }
 }
 
-/// Assembles a multi-input derived space under incremental charging.
-///
-/// A [`DerivedKind::Concat`] writer holds the extents copied from its inputs at
-/// construction, each charged to `alloc_bytes`; a [`DerivedKind::Transform`]
-/// writer takes streamed output through [`DerivedWriter::write`], charged to
-/// `decompressed_bytes` under the decompression ceilings. [`DerivedWriter::finalize`]
-/// stores the buffer in the arena and registers the space; a Transform
-/// additionally grows the input basis.
-/// Dropping the writer without finalizing registers nothing.
+/// Assembles a charged derived space.
 #[derive(Debug)]
 pub struct DerivedWriter<'ctx, 'a> {
     ctx: &'ctx DecodeContext<'a>,
@@ -1111,9 +1060,7 @@ pub struct DerivedWriter<'ctx, 'a> {
 }
 
 impl<'a> DerivedWriter<'_, 'a> {
-    /// Copies one Concat input extent into the buffer, charging `alloc_bytes`
-    /// before the bytes are retained. Called during construction so the
-    /// bytes are retained.
+    /// Copies one Concat extent after charging its allocation.
     fn append_extent(&mut self, data: &[u8]) -> Result<(), CodecError> {
         let len = data.len() as u64;
         self.ctx.charge(
@@ -1138,13 +1085,7 @@ impl<'a> DerivedWriter<'_, 'a> {
         Ok(())
     }
 
-    /// Appends transform output, charging `decompressed_bytes` under the
-    /// per-expand and cumulative decompression ceilings before it is retained.
-    ///
-    /// Valid only for a [`DerivedKind::Transform`] space, whose output is new
-    /// decompressed content that the decompression-bomb ceilings
-    /// must bound. A [`DerivedKind::Concat`] space assembles from its declared
-    /// inputs at construction and holds no caller-written bytes.
+    /// Appends charged transform output.
     pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
         if !matches!(self.kind, DerivedKind::Transform) {
             return Err(CodecError::Malformed(
@@ -1191,12 +1132,7 @@ impl<'a> DerivedWriter<'_, 'a> {
         Ok(())
     }
 
-    /// Finalizes the assembly: stores the output in the arena and registers the
-    /// derived space.
-    ///
-    /// A Transform's output is new decompressed content, so it grows the input
-    /// basis like [`ExpandWriter::finalize`]; a Concat reassembles
-    /// already-accounted bytes and leaves the basis unchanged.
+    /// Stores and registers the derived space.
     pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
         let length = self.written;
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
@@ -1235,10 +1171,6 @@ impl Drop for DepthGuard<'_> {
 pub struct RecordKind(pub &'static str);
 
 /// A ticket issued at a commit boundary, resolvable exactly once.
-///
-/// Construction is confined to [`DecodeContext::commit_record`], and the type
-/// is `#[must_use]`; together with the `finish`-time unresolved-ticket check,
-/// this makes an accidentally omitted disposition visible in CI.
 #[derive(Debug)]
 #[must_use = "a committed record ticket must be resolved with ctx.resolve"]
 pub struct RecordTicket {
@@ -1268,11 +1200,7 @@ pub enum RecordDisposition {
         /// Why the record was dropped.
         loss: LossNote,
     },
-    /// Preserved verbatim in a native `unknowns` arena, named by
-    /// unknown-record id. Distinct from [`RecordDisposition::Retained`], which
-    /// names records in the decode-session retained store: a `Preserved`
-    /// record's bytes reach the IR through `push_native_unknown`, so its
-    /// accounting resolves against the document's native unknowns.
+    /// Preserved in the document's native unknown-record arena.
     Preserved {
         /// The native unknown-record ids the record was preserved as.
         records: Vec<String>,
@@ -1302,26 +1230,7 @@ impl TicketTable {
             .count()
     }
 
-    /// Validates the resolved disposition table against retained records, model
-    /// output, native unknowns, and report losses.
-    ///
-    /// The checks: a [`RecordDisposition::Typed`] names at least one output
-    /// entity and every named entity resolves in `model`; a
-    /// [`RecordDisposition::Retained`] names at least one record and
-    /// every named record resolves in the retained store; a
-    /// [`RecordDisposition::Preserved`] names at least one unknown record and
-    /// every named record resolves in `unknown_ids` (the document's native
-    /// unknowns); a [`RecordDisposition::Dropped`]'s loss is reflected in
-    /// `losses`. An unresolved ticket is not re-reported here —
-    /// [`finish`](DecodeContext::finish) handles resolution before this runs.
-    /// [`RecordDisposition::Structural`] carries no semantic content and is
-    /// unconstrained by retained records and the model.
-    ///
-    /// Dropped reflection consumes one report loss per disposition: each
-    /// `Dropped` claims a distinct un-consumed `LossNote` matching its key, so
-    /// N records dropped under a shared key require N notes in `report.losses`.
-    /// Existence-only matching would let one note account for many drops,
-    /// reintroducing concealed under-accounting.
+    /// Validates dispositions against their named outputs, records, and losses.
     fn transfer_accounting(
         &self,
         model: &Model,

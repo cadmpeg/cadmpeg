@@ -1,17 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Shared sweep dimensions: operations, decode policies, and the
-//! classified result of one operation.
-//!
-//! The labels are the wire format between the parent driver and child runner.
+//! Sweep operations, policies, and result classes.
 
 use cadmpeg_ir::decode::DecodePolicy;
 use cadmpeg_ir::Confidence;
 
-/// One decode entry point exercised by the sweep.
-///
-/// The four operations exercise distinct surfaces: detection reads only a
-/// prefix, inspection walks the container directory, container-only decode
-/// stops at the container layer, and full decode drives entity decode.
+/// One codec entry point exercised by the sweep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Operation {
     /// [`Codec::detect`](cadmpeg_ir::Codec::detect) over a byte prefix.
@@ -85,10 +78,6 @@ impl PolicyProfile {
 }
 
 /// The classified outcome of one operation.
-///
-/// Detection cannot fail, so it classifies by [`Confidence`]; inspection and
-/// decode classify `Ok` or the [`CodecError`](cadmpeg_ir::CodecError) variant.
-/// This is reported beside the four subprocess safety checks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResultClass {
     /// The operation produced a value.
