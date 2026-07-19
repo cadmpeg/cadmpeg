@@ -415,11 +415,12 @@ mod marker_tests {
         marker_local_id, marker_local_links, marker_object_index, named_scalars,
         native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
         ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
-        plane_intersection_axis_sources, principal_sketch_frame, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers, sketch_plane_frames,
-        solved_tangent, spatial_vertex_coordinates, unique_dimensioned_rectangle_markers,
-        unique_locus, unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
-        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
+        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -652,6 +653,34 @@ mod marker_tests {
         let normal = payload.len() - 24;
         payload[normal..normal + 8].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(constraint_midplane_frame(&payload), None);
+    }
+
+    #[test]
+    fn explicit_plane_basis_precedes_equivalent_constraint_orientation() {
+        let explicit = (
+            Point3::new(12.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        );
+        let equivalent_constraint = (
+            Point3::new(12.0, 4.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        );
+        assert_eq!(
+            reconcile_reference_plane_frame(Some(explicit), Some(equivalent_constraint)),
+            Some(explicit)
+        );
+
+        let conflicting_constraint = (
+            Point3::new(13.0, 0.0, 0.0),
+            equivalent_constraint.1,
+            equivalent_constraint.2,
+        );
+        assert_eq!(
+            reconcile_reference_plane_frame(Some(explicit), Some(conflicting_constraint)),
+            None
+        );
     }
 
     #[test]
@@ -5488,6 +5517,27 @@ pub(crate) fn sync_changed_feature_scalars(
     Ok(())
 }
 
+/// Prefer an explicit basis when a constraint record confirms the same plane equation.
+fn reconcile_reference_plane_frame(
+    explicit: Option<(Point3, Vector3, Vector3)>,
+    constraint: Option<(Point3, Vector3, Vector3)>,
+) -> Option<(Point3, Vector3, Vector3)> {
+    let (Some(explicit), Some(constraint)) = (explicit, constraint) else {
+        return explicit.or(constraint);
+    };
+    let explicit_distance =
+        explicit.1.x * explicit.0.x + explicit.1.y * explicit.0.y + explicit.1.z * explicit.0.z;
+    let alignment = explicit.1.x * constraint.1.x
+        + explicit.1.y * constraint.1.y
+        + explicit.1.z * constraint.1.z;
+    let constraint_distance = constraint.1.x * constraint.0.x
+        + constraint.1.y * constraint.0.y
+        + constraint.1.z * constraint.0.z;
+    ((alignment.abs() - 1.0).abs() <= 1.0e-9
+        && (explicit_distance - alignment.signum() * constraint_distance).abs() <= 1.0e-9)
+        .then_some(explicit)
+}
+
 /// Add exact fixed-reference-plane frames to a projection copy of history.
 pub(crate) fn enrich_history_reference_planes(
     histories: &mut [crate::records::FeatureHistory],
@@ -5552,7 +5602,6 @@ pub(crate) fn enrich_history_reference_planes(
                 .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
                 .filter_map(fixed_reference_plane_frame)
                 .collect::<Vec<_>>();
-            frames.extend(constraint_midplane_frame(bytes));
             frames.extend(angled_reference_plane_frame(bytes));
             frames.extend(compact_reference_plane_frame(bytes));
             frames.sort_by_key(|(origin, normal, u_axis)| {
@@ -5569,13 +5618,20 @@ pub(crate) fn enrich_history_reference_planes(
                 ]
             });
             frames.dedup_by(|left, right| left == right);
-            let [(origin, normal, u_axis)] = frames.as_slice() else {
+            let constraint = constraint_midplane_frame(bytes);
+            let explicit = match frames.as_slice() {
+                [frame] => Some(*frame),
+                [] => None,
+                _ => continue,
+            };
+            let Some(frame) = reconcile_reference_plane_frame(explicit, constraint) else {
                 continue;
             };
+            let (origin, normal, u_axis) = frame;
             candidates
                 .entry((history_index, feature_index))
                 .or_default()
-                .push((*origin, *normal, *u_axis));
+                .push((origin, normal, u_axis));
         }
     }
     for ((history_index, feature_index), mut sources) in reference_candidates {
