@@ -2335,6 +2335,31 @@ mod history_reference_tests {
         );
     }
 
+    #[test]
+    fn cosmetic_thread_without_blind_length_is_through() {
+        let mut thread = feature("thread", Some("42"), 0);
+        thread.input_class = Some("moCosmeticThread_c".into());
+        thread.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![thread],
+        };
+
+        let projected = project_features(&[history]);
+        assert_eq!(
+            projected[0].definition,
+            FeatureDefinition::CosmeticThread {
+                face: FaceSelection::Unresolved,
+                diameter: Some(Length(8.0)),
+                extent: Some(CosmeticThreadExtent::Through),
+            }
+        );
+    }
+
     fn design_configuration(
         id: &str,
         ordinal: u32,
@@ -3609,13 +3634,14 @@ fn project_cosmetic_thread(feature: &Feature) -> FeatureDefinition {
             .and_then(|value| parse_dimension_display_length(value))
             .filter(|value| *value > 0.0)
             .map(Length),
-        extent: feature
-            .parameters
-            .get("D1")
-            .and_then(|value| parse_positive_dimension_length_mm(value))
-            .map(|length| CosmeticThreadExtent::Blind {
-                length: Length(length),
+        extent: match feature.parameters.get("D1") {
+            Some(value) => parse_positive_dimension_length_mm(value).map(|length| {
+                CosmeticThreadExtent::Blind {
+                    length: Length(length),
+                }
             }),
+            None => Some(CosmeticThreadExtent::Through),
+        },
     }
 }
 
@@ -8313,10 +8339,7 @@ pub fn sync_neutral_features(
                         );
                     }
                     Some(CosmeticThreadExtent::Through) => {
-                        return Err(CodecError::NotImplemented(format!(
-                            "SLDPRT feature {} changes cosmetic-thread termination",
-                            feature.id
-                        )));
+                        parameters.remove("D1");
                     }
                     None => {}
                 }
