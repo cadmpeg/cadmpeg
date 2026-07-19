@@ -234,6 +234,13 @@ pub enum SpatialSketchConstraintDefinition {
         /// Second coincident point.
         second: SpatialSketchEntityId,
     },
+    /// A model-space point lies on a model-space surface.
+    PointOnSurface {
+        /// Point constrained to the surface.
+        point: SpatialSketchEntityId,
+        /// Surface containing the point.
+        surface: SpatialSketchEntityId,
+    },
     /// A model-space point lies at the midpoint of a bounded line.
     Midpoint {
         /// Point constrained to the midpoint.

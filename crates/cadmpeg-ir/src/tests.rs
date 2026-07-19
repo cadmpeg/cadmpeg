@@ -3009,8 +3009,9 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             radius: Length(4.0),
         },
     });
+    let surface = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface".into());
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
-        id: SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface".into()),
+        id: surface.clone(),
         sketch: sketch.clone(),
         construction: false,
         native_ref: None,
@@ -3025,6 +3026,19 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
                 vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
                 vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
             ],
+        },
+    });
+    let surface_point =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface-point".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: surface_point.clone(),
+        sketch: sketch.clone(),
+        construction: false,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Point {
+            position: Point3::new(0.5, 0.5, 0.0),
         },
     });
     let line = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#line".into());
@@ -3072,6 +3086,17 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             sketch: sketch.clone(),
             definition: SpatialSketchConstraintDefinition::SplineGroup {
                 entities: vec![line.clone(), circle.clone()],
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#point-surface".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::PointOnSurface {
+                point: surface_point,
+                surface,
             },
             native_ref: None,
         });

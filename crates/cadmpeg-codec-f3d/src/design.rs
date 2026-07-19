@@ -4686,35 +4686,53 @@ pub fn project_spatial_sketch_constraints(
                     let [first, second] = member_entities.as_slice() else {
                         return None;
                     };
-                    let (
-                        SpatialSketchGeometry::Point {
-                            position: first_position,
-                        },
-                        SpatialSketchGeometry::Point {
-                            position: second_position,
-                        },
-                    ) = (&first.geometry, &second.geometry)
-                    else {
-                        return None;
+                    let point_on_surface = match (&first.geometry, &second.geometry) {
+                        (
+                            SpatialSketchGeometry::Point { .. },
+                            SpatialSketchGeometry::NurbsSurface { .. },
+                        ) => Some((first, second)),
+                        (
+                            SpatialSketchGeometry::NurbsSurface { .. },
+                            SpatialSketchGeometry::Point { .. },
+                        ) => Some((second, first)),
+                        _ => None,
                     };
-                    let scale = 1.0
-                        + first_position
-                            .x
-                            .abs()
-                            .max(first_position.y.abs())
-                            .max(first_position.z.abs())
-                            .max(second_position.x.abs())
-                            .max(second_position.y.abs())
-                            .max(second_position.z.abs());
-                    if (first_position.x - second_position.x).abs() > scale * 1.0e-9
-                        || (first_position.y - second_position.y).abs() > scale * 1.0e-9
-                        || (first_position.z - second_position.z).abs() > scale * 1.0e-9
-                    {
-                        return None;
-                    }
-                    Definition::Coincident {
-                        first: first.id.clone(),
-                        second: second.id.clone(),
+                    if let Some((point, surface)) = point_on_surface {
+                        Definition::PointOnSurface {
+                            point: point.id.clone(),
+                            surface: surface.id.clone(),
+                        }
+                    } else {
+                        let (
+                            SpatialSketchGeometry::Point {
+                                position: first_position,
+                            },
+                            SpatialSketchGeometry::Point {
+                                position: second_position,
+                            },
+                        ) = (&first.geometry, &second.geometry)
+                        else {
+                            return None;
+                        };
+                        let scale = 1.0
+                            + first_position
+                                .x
+                                .abs()
+                                .max(first_position.y.abs())
+                                .max(first_position.z.abs())
+                                .max(second_position.x.abs())
+                                .max(second_position.y.abs())
+                                .max(second_position.z.abs());
+                        if (first_position.x - second_position.x).abs() > scale * 1.0e-9
+                            || (first_position.y - second_position.y).abs() > scale * 1.0e-9
+                            || (first_position.z - second_position.z).abs() > scale * 1.0e-9
+                        {
+                            return None;
+                        }
+                        Definition::Coincident {
+                            first: first.id.clone(),
+                            second: second.id.clone(),
+                        }
                     }
                 }
                 SketchConstraintKind::SplineGroup if members.len() >= 2 => {
@@ -19607,7 +19625,7 @@ mod relation_tests {
         DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
         DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference, PersistentSubentityTag,
         SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
-        SketchRelation, SketchRelationOperand,
+        SketchRelation, SketchRelationOperand, SketchSurface,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -25658,6 +25676,30 @@ mod relation_tests {
         horizontal_relation.constraint_kinds = vec![SketchConstraintKind::Horizontal];
         horizontal_relation.members = vec![108];
         horizontal_relation.return_members = vec![108];
+        let surface = SketchSurface {
+            id: "f3d:Design/BulkStream.dat:surface#109".into(),
+            record_index: 109,
+            owner_reference: Some(42),
+            class_tag: "306".into(),
+            byte_offset: 109,
+            entity_genesis: None,
+            persistent_id: 8,
+            u_degree: 1,
+            v_degree: 1,
+            u_knots: vec![0.0, 0.0, 1.0, 1.0],
+            v_knots: vec![0.0, 0.0, 1.0, 1.0],
+            control_points: vec![
+                vec![Point3::new(1.0, 2.0, 0.0), Point3::new(1.0, 5.0, 0.0)],
+                vec![Point3::new(4.0, 2.0, 0.0), Point3::new(4.0, 5.0, 0.0)],
+            ],
+        };
+        let mut point_on_surface_relation = relation.clone();
+        point_on_surface_relation.id = "f3d:Design/BulkStream.dat:relation#109".into();
+        point_on_surface_relation.record_index = 109;
+        point_on_surface_relation.state = 1;
+        point_on_surface_relation.constraint_kinds = vec![SketchConstraintKind::Coincident];
+        point_on_surface_relation.members = vec![106, 109];
+        point_on_surface_relation.return_members = vec![106, 109];
 
         let points = [point, coincident_point];
         let relations = [
@@ -25665,15 +25707,22 @@ mod relation_tests {
             midpoint_relation,
             coincident_relation,
             horizontal_relation,
+            point_on_surface_relation,
         ];
         let (planar_sketches, planar_entities) =
             project_sketch_design(&[placement.clone()], &points, &curves, 1.0e-6);
         assert!(planar_sketches.is_empty());
         assert!(planar_entities.is_empty());
-        let (sketches, entities) =
-            project_spatial_sketch_design(&[placement.clone()], &points, &curves, &[], &relations);
+        let surfaces = [surface];
+        let (sketches, entities) = project_spatial_sketch_design(
+            &[placement.clone()],
+            &points,
+            &curves,
+            &surfaces,
+            &relations,
+        );
         assert_eq!(sketches.len(), 1);
-        assert_eq!(entities.len(), 7);
+        assert_eq!(entities.len(), 8);
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,
             SpatialSketchGeometry::Line { start, end }
@@ -25697,7 +25746,7 @@ mod relation_tests {
             &relations,
             &points,
             &curves,
-            &[],
+            &surfaces,
             &entities,
         );
         assert!(matches!(
@@ -25734,6 +25783,14 @@ mod relation_tests {
                 7,
                 0,
             ) && direction == &Vector3::new(0.0, 1.0, 0.0)
+        ));
+        assert!(matches!(
+            constraints.get(4),
+            Some(cadmpeg_ir::sketches::SpatialSketchConstraint {
+                definition:
+                    cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::PointOnSurface { .. },
+                ..
+            })
         ));
         assert!(entities.iter().any(|entity| matches!(
             entity.geometry,

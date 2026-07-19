@@ -435,6 +435,9 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::Midpoint { point, entity } => {
                 vec![point.clone(), entity.clone()]
             }
+            SpatialConstraint::PointOnSurface { point, surface } => {
+                vec![point.clone(), surface.clone()]
+            }
             SpatialConstraint::ParallelToDirection { entity, .. } => vec![entity.clone()],
         };
         let distinct = entities.iter().collect::<HashSet<_>>();
@@ -491,6 +494,22 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     Check::ReferentialIntegrity,
                     &constraint.id.0,
                     "spatial midpoint requires a point and line",
+                );
+            }
+            SpatialConstraint::PointOnSurface { point, surface }
+                if !matches!(
+                    spatial_geometry.get(point),
+                    Some(SpatialSketchGeometry::Point { .. })
+                ) || !matches!(
+                    spatial_geometry.get(surface),
+                    Some(SpatialSketchGeometry::NurbsSurface { .. })
+                ) =>
+            {
+                finding(
+                    findings,
+                    Check::ReferentialIntegrity,
+                    &constraint.id.0,
+                    "spatial point-on-surface requires a point and surface",
                 );
             }
             SpatialConstraint::Tangent { first, second }
