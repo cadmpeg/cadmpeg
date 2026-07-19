@@ -2754,7 +2754,7 @@ mod marker_tests {
     }
 
     #[test]
-    fn wide_indexed_curve_owns_its_endpoint_trailer_in_both_generations() {
+    fn wide_indexed_curve_owns_its_endpoint_trailer_in_all_generations() {
         let detail = 92;
         let mut payload = vec![0; detail + 80];
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
@@ -2851,6 +2851,12 @@ mod marker_tests {
         bind_indexed_curve_vertices(&mut lane);
         assert_eq!(lane.sketch_entities[1].kind, SketchInputKind::Point);
         assert_eq!(lane.sketch_entities[2].kind, SketchInputKind::Point);
+
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&payload, 0),
+            Some([7, 11])
+        );
 
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -17086,7 +17092,9 @@ fn compact_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Opti
 
 fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     let prefix = payload.get(offset..offset + SKETCH_MARKER.len())?;
-    let supported_prefix = prefix == SKETCH_MARKER || prefix == LEGACY_EXTENDED_SKETCH_MARKER;
+    let supported_prefix = prefix == SKETCH_MARKER
+        || prefix == LEGACY_SKETCH_MARKER
+        || prefix == LEGACY_EXTENDED_SKETCH_MARKER;
     let supported_locus = marker_is_geometry_locus(payload, offset)
         || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]);
     if !supported_prefix
