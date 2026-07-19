@@ -3608,12 +3608,30 @@ fn reserved_feature_tree_node_role(
 }
 
 fn classless_builtin_node(feature: &Feature) -> bool {
-    feature.input_class.is_none()
-        && feature.parameters.is_empty()
+    feature.input_class.is_none() && builtin_node_payload(feature)
+}
+
+fn builtin_node_payload(feature: &Feature) -> bool {
+    feature.parameters.is_empty()
         && feature.dimension_properties.is_empty()
         && feature.properties.is_empty()
         && feature.text.is_none()
         && feature.content.is_empty()
+}
+
+fn classless_or_scene_builtin_node(feature: &Feature) -> bool {
+    builtin_node_payload(feature)
+        && feature.input_class.as_deref().is_none_or(|class| {
+            matches!(
+                native_object_class(class).tree_node,
+                Some(
+                    FeatureTreeNodeRole::AmbientLight
+                        | FeatureTreeNodeRole::DirectionalLight
+                        | FeatureTreeNodeRole::PointLight
+                        | FeatureTreeNodeRole::SpotLight
+                )
+            )
+        })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3635,10 +3653,11 @@ fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> 
             matches.next().is_some() && matches.next().is_none()
         })
     };
-    let matches_classless = |sources: &[&str]| {
+    let matches_builtin_sources = |sources: &[&str]| {
         sources.iter().all(|source| {
             let mut matches = features.iter().filter(|feature| {
-                feature.source_id.as_deref() == Some(*source) && classless_builtin_node(feature)
+                feature.source_id.as_deref() == Some(*source)
+                    && classless_or_scene_builtin_node(feature)
             });
             matches.next().is_some() && matches.next().is_none()
         })
@@ -3669,12 +3688,12 @@ fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> 
         ("4", "moRefPlane_c"),
         ("5", "moRefPlane_c"),
         ("6", "moOriginProfileFeature_c"),
-    ]) && matches_classless(&["2", "7", "8"])
+    ]) && matches_builtin_sources(&["2", "7", "8"])
         && !legacy;
-    let lights_at_six = default_frame && matches_classless(&["6", "7", "8"]);
+    let lights_at_six = default_frame && matches_builtin_sources(&["6", "7", "8"]);
     let folders_at_seven = default_frame
         && matches_roster(&[("7", "moSolidBodyFolder_c"), ("8", "moSurfaceBodyFolder_c")])
-        && matches_classless(&["6", "10", "11", "12"]);
+        && matches_builtin_sources(&["6", "10", "11", "12"]);
     let mut layouts = [
         (origin_at_six, FeatureManagerLayout::OriginAtSix),
         (lights_at_six, FeatureManagerLayout::LightsAtSix),
