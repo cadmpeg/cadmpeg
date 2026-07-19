@@ -2976,6 +2976,17 @@ mod marker_tests {
         assert_eq!(actual_marker, compact_marker);
         assert_eq!(components.last().unwrap().local_id, Some(5));
 
+        let selected_marker = body_offset + 70;
+        let mut selected = vec![0; selected_marker - 12];
+        selected[body_offset + 2..body_offset + 4].copy_from_slice(&0x802b_u16.to_le_bytes());
+        selected[body_offset + 4..body_offset + 8].copy_from_slice(&2u32.to_le_bytes());
+        selected[body_offset + 8] = 0x40;
+        assert_eq!(selection_vector_tail(&mut selected, &[7]), selected_marker);
+        let (actual_marker, components) =
+            cosmetic_thread_cylinder_reference_at(&selected, body_offset).unwrap();
+        assert_eq!(actual_marker, selected_marker);
+        assert_eq!(components.last().unwrap().local_id, Some(7));
+
         assert_eq!(
             cosmetic_thread_cylinder_reference_at(&payload, body_offset + 1),
             None
@@ -4975,7 +4986,7 @@ fn cosmetic_thread_cylinder_reference_at(
     {
         return None;
     }
-    [66, 94].into_iter().find_map(|relative| {
+    [66, 70, 94].into_iter().find_map(|relative| {
         let marker = body_offset.checked_add(relative)?;
         compact_termination_reference_path_at(payload, marker)
             .or_else(|| compact_edge_component_path_at(payload, marker))
