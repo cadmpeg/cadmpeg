@@ -7718,6 +7718,8 @@ fn attach_native_object_model(
     let feature_projected_curve_references =
         crate::native::feature_projected_curve_references(&scan.container);
     let feature_pattern_references = crate::native::feature_pattern_references(&scan.container);
+    let feature_surface_construction_references =
+        crate::native::feature_surface_construction_references(&scan.container);
     let feature_extrude_profile_references =
         crate::native::feature_extrude_profile_references(&scan.container);
     let feature_extrude_payload_headers =
@@ -7994,6 +7996,7 @@ fn attach_native_object_model(
         && feature_sketch_references.is_empty()
         && feature_projected_curve_references.is_empty()
         && feature_pattern_references.is_empty()
+        && feature_surface_construction_references.is_empty()
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
         && feature_extrude_payload_footers.is_empty()
@@ -8781,6 +8784,7 @@ fn attach_native_object_model(
             sketch_references: &feature_sketch_references,
             projected_curve_references: &feature_projected_curve_references,
             pattern_references: &feature_pattern_references,
+            surface_construction_references: &feature_surface_construction_references,
             sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
             sketch_preceding_named_point_uses: &feature_sketch_preceding_named_point_uses,
             sketch_point_uses: &feature_sketch_point_uses,
@@ -9210,6 +9214,12 @@ fn attach_native_object_model(
     }
     if !feature_pattern_references.is_empty() {
         namespace.set_arena("feature_pattern_references", &feature_pattern_references)?;
+    }
+    if !feature_surface_construction_references.is_empty() {
+        namespace.set_arena(
+            "feature_surface_construction_references",
+            &feature_surface_construction_references,
+        )?;
     }
     if !feature_extrude_profile_references.is_empty() {
         namespace.set_arena(
@@ -9884,6 +9894,7 @@ struct FeatureOperationSources<'a> {
     sketch_references: &'a [crate::native::FeatureSketchReference],
     projected_curve_references: &'a [crate::native::FeatureProjectedCurveReference],
     pattern_references: &'a [crate::native::FeaturePatternReference],
+    surface_construction_references: &'a [crate::native::FeatureSurfaceConstructionReference],
     sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
     sketch_preceding_named_point_uses: &'a [crate::native::FeatureSketchPrecedingNamedPointUse],
     sketch_point_uses: &'a [crate::native::FeatureSketchPointUse],
@@ -9977,6 +9988,7 @@ fn attach_feature_operations(
         sketch_references,
         projected_curve_references,
         pattern_references,
+        surface_construction_references,
         sketch_named_point_block_uses,
         sketch_preceding_named_point_uses,
         sketch_point_uses,
@@ -10137,6 +10149,10 @@ fn attach_feature_operations(
         });
     let pattern_references_by_operation =
         records_by_operation(pattern_references, |reference| &reference.operation_label);
+    let surface_construction_references_by_operation =
+        records_by_operation(surface_construction_references, |reference| {
+            &reference.operation_label
+        });
     let mut sketch_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchNamedPointBlockUse>>::new();
     for block_use in sketch_named_point_block_uses {
@@ -10856,6 +10872,19 @@ fn attach_feature_operations(
         {
             source_properties.insert(
                 format!("pattern_reference.{}", reference.ordinal),
+                reference
+                    .data_block
+                    .clone()
+                    .unwrap_or_else(|| reference.object_index.to_string()),
+            );
+        }
+        for reference in surface_construction_references_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("surface_construction_reference.{}", reference.ordinal),
                 reference
                     .data_block
                     .clone()

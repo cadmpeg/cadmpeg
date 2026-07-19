@@ -926,6 +926,8 @@ The `EXTRACT_BODY` operation label identifies a body-extraction construction. Ne
 
 The `SKIN` operation label identifies a loft-family skin construction. Its section identities and result controls remain unresolved until the corresponding parameter fields are assigned.
 
+`SKIN` and `Studio Surface` payloads share one exact common construction-reference envelope. Its header is `discriminator, 00 00 01 00, reference[0..2], 01 09, header[8], 01 09, reference[3..10]`; `SKIN` discriminators are `3e` and `3f`, while the `Studio Surface` discriminator is `14`. The same bounded payload contains exactly one trailing lane framed as `03 03 2f a4 7a e1 47 ae 14 7b, reference[11..13], 01 01 ff ff ff ff ff ff ff ff ff 00 00 00 00 01 02`. All references use the canonical object-index encoding and unique-store resolution rule. An invalid discriminator, malformed header, absent or repeated trailing lane, null or noncanonical reference, or incomplete suffix rejects the common envelope atomically without rejecting the bounded operation record.
+
 The `Studio Surface` operation label identifies a freeform-surface construction. Its control geometry and construction controls remain unresolved until the corresponding parameter fields are assigned.
 
 A `TEXT` operation whose payload contains exactly two ordered nonempty strings projects one semantic text annotation. The first string is the visible text and the second string is the font family. The annotation object and native reference are the owning neutral feature and operation label. Any other payload cardinality remains native-only.

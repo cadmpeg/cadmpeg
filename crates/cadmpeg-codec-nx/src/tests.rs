@@ -7638,6 +7638,68 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
 }
 
 #[test]
+fn om_surface_feature_references_require_the_complete_common_envelope() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SKIN",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x3f\x00\x00\x01\x00\xf1\x02\x46\xf1\x02\x47\xf1\x02\x48\x01\x09\x03\x03\x04\x05\x02\x01\x01\x01\x01\x09\xf1\x02\x49\xf1\x02\x4a\xf1\x02\x4b\xf1\x02\x4c\xf1\x02\x4d\xf1\x02\x4e\xf1\x02\x4f\xf1\x02\x50\x00\x03\x03\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\xf1\x02\x56\xf1\x02\x57\xf1\x02\x58\x01\x01\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x01\x02";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let field = crate::om::surface_feature_payload_references(record).expect("complete envelope");
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.object_index)
+            .collect::<Vec<_>>(),
+        [582, 583, 584, 585, 586, 587, 588, 589, 590, 591, 592, 598, 599, 600,]
+    );
+
+    let studio_payload = [&[0x14], &payload[1..]].concat();
+    let studio = crate::om::OperationRecord {
+        label: crate::om::OperationLabel {
+            value: "Studio Surface",
+            ..label
+        },
+        bytes: &studio_payload,
+        payload: &studio_payload,
+        ..record
+    };
+    assert!(crate::om::surface_feature_payload_references(studio).is_some());
+
+    let mut malformed = payload.to_vec();
+    let last = malformed.len() - 1;
+    malformed[last] = 0x00;
+    assert!(
+        crate::om::surface_feature_payload_references(crate::om::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+
+    let ambiguous = [payload.as_slice(), &payload[51..]].concat();
+    assert!(
+        crate::om::surface_feature_payload_references(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     let label = crate::om::OperationLabel {
         header_offset: 100,

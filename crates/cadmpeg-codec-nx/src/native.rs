@@ -5198,6 +5198,24 @@ pub struct FeaturePatternReference {
     pub source_offset: u64,
 }
 
+/// Ordered construction reference carried by a bounded surface-feature payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSurfaceConstructionReference {
+    /// Globally unique surface-construction-reference identity.
+    pub id: String,
+    /// Owning `SKIN` or `Studio Surface` operation label.
+    pub operation_label: String,
+    /// Zero-based slot order in the exact common envelope.
+    pub ordinal: u32,
+    /// Serialized object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
 /// Ordered profile reference carried by a bounded extrusion payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureExtrudeProfileReference {
@@ -8514,6 +8532,36 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
         FeaturePatternReference {
             id: format!(
                 "nx:feature-history:pattern-reference#{}-{:010}-{:010}",
+                reference.section_key, reference.operation_ordinal, reference.ordinal
+            ),
+            operation_label,
+            ordinal: reference.ordinal as u32,
+            object_index: reference.object_index,
+            data_block: reference.data_block,
+            source_offset: reference.source_offset,
+        }
+    })
+    .collect()
+}
+
+/// Decode and resolve the exact common reference envelope in surface-feature
+/// payloads without assigning section or guide semantics to its slots.
+pub fn feature_surface_construction_references(
+    container: &Container,
+) -> Vec<FeatureSurfaceConstructionReference> {
+    resolved_feature_payload_references(container, |record| {
+        crate::om::surface_feature_payload_references(record)
+            .map(|field| field.references.into_iter().collect())
+    })
+    .into_iter()
+    .map(|reference| {
+        let operation_label = format!(
+            "nx:feature-history:operation-label#{}-{:010}",
+            reference.section_key, reference.operation_ordinal
+        );
+        FeatureSurfaceConstructionReference {
+            id: format!(
+                "nx:feature-history:surface-construction-reference#{}-{:010}-{:010}",
                 reference.section_key, reference.operation_ordinal, reference.ordinal
             ),
             operation_label,

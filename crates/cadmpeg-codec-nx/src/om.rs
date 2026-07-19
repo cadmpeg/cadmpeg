@@ -748,6 +748,13 @@ pub struct PatternPayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
+/// Exact common construction references in a surface-feature payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceFeaturePayloadReferenceField {
+    /// Eleven header references followed by the trailing three references.
+    pub references: [PayloadObjectReference; 14],
+}
+
 /// One object index in an extrusion profile-reference field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExtrudeProfileReference {
@@ -1758,6 +1765,67 @@ pub fn pattern_payload_references(
         return None;
     };
     Some(field.clone())
+}
+
+/// Decode the exact common construction-reference envelope in a bounded
+/// `SKIN` or `Studio Surface` payload.
+pub fn surface_feature_payload_references(
+    record: OperationRecord<'_>,
+) -> Option<SurfaceFeaturePayloadReferenceField> {
+    const HEADER_PREFIX: [u8; 4] = [0x00, 0x00, 0x01, 0x00];
+    const TRAILING_PREFIX: [u8; 10] = [0x03, 0x03, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b];
+    const TRAILING_SUFFIX: [u8; 17] = [
+        0x01, 0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
+        0x01, 0x02,
+    ];
+    let discriminator = *record.payload.first()?;
+    match record.label.value {
+        "SKIN" if matches!(discriminator, 0x3e | 0x3f) => {}
+        "Studio Surface" if discriminator == 0x14 => {}
+        _ => return None,
+    }
+    (record.payload.get(1..5) == Some(&HEADER_PREFIX)).then_some(())?;
+    let decode_reference = |at: &mut usize| {
+        let offset = *at;
+        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        *at += width;
+        Some(PayloadObjectReference {
+            offset: record.payload_offset + offset,
+            object_index,
+        })
+    };
+    let mut at = 5;
+    let mut references = Vec::with_capacity(14);
+    for _ in 0..3 {
+        references.push(decode_reference(&mut at)?);
+    }
+    (record.payload.get(at..at + 2) == Some(&[0x01, 0x09])).then_some(())?;
+    at += 2;
+    record.payload.get(at..at + 8)?;
+    at += 8;
+    (record.payload.get(at..at + 2) == Some(&[0x01, 0x09])).then_some(())?;
+    at += 2;
+    for _ in 0..8 {
+        references.push(decode_reference(&mut at)?);
+    }
+
+    let trailing_starts = record
+        .payload
+        .windows(TRAILING_PREFIX.len())
+        .enumerate()
+        .filter_map(|(start, bytes)| (bytes == TRAILING_PREFIX).then_some(start))
+        .collect::<Vec<_>>();
+    let [trailing_start] = trailing_starts.as_slice() else {
+        return None;
+    };
+    at = trailing_start + TRAILING_PREFIX.len();
+    for _ in 0..3 {
+        references.push(decode_reference(&mut at)?);
+    }
+    (record.payload.get(at..at + TRAILING_SUFFIX.len()) == Some(&TRAILING_SUFFIX)).then_some(())?;
+    Some(SurfaceFeaturePayloadReferenceField {
+        references: references.try_into().ok()?,
+    })
 }
 
 /// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
