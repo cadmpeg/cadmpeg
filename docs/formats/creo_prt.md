@@ -1422,6 +1422,8 @@ A unique orbit point selects the opposite endpoint of every incident
 pcurve-backed edge and propagates through the connected endpoint component.
 A carrier-derived point for the same orbit must agree with that point. An
 empty endpoint domain withholds every dependent point in the component.
+An edge transfers independently when both endpoint vertex orbits are solved;
+face and loop transfer still requires every edge of the complete boundary.
 
 When a native edge has no pcurve candidate on a solved planar face, an exact
 line, circle, ellipse, parabola, hyperbola, or NURBS carrier lying in that plane

@@ -24122,7 +24122,7 @@ fn transfer_native_brep(
     ir: &mut CadIr,
     annotations: &mut AnnotationBuilder,
     derived_intersection_curves: &BTreeSet<CurveId>,
-) -> usize {
+) -> (usize, usize) {
     let planes = placed_planes(scan);
     let carriers = placed_carriers(scan, ir);
     let face_orientations = native_face_orientations(scan, ir);
@@ -24234,9 +24234,6 @@ fn transfer_native_brep(
             Some((face_id, ordered))
         })
         .collect::<BTreeMap<_, _>>();
-    if eligible_faces.is_empty() {
-        return solved_point_count;
-    }
     let eligible_loops = eligible_faces
         .values()
         .flatten()
@@ -24247,11 +24244,11 @@ fn transfer_native_brep(
         .iter()
         .flat_map(|lp| lp.half_edges.iter().copied())
         .collect::<BTreeSet<_>>();
-    let emitted_curves = emitted_half_edges
+    let face_curves = emitted_half_edges
         .iter()
         .map(|half_edge| half_edge.curve_id)
         .collect::<BTreeSet<_>>();
-    let closed_single_edge_curves = emitted_curves
+    let closed_single_edge_curves = face_curves
         .iter()
         .filter(|curve_id| {
             let uses = eligible_loops
@@ -24266,12 +24263,8 @@ fn transfer_native_brep(
         })
         .copied()
         .collect::<BTreeSet<_>>();
-    let used_vertices = emitted_curves
-        .iter()
-        .filter_map(|curve| edge_vertices.get(curve))
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>();
+    let emitted_curves = edge_vertices.keys().copied().collect::<BTreeSet<_>>();
+    let used_vertices = solved_vertices.keys().copied().collect::<BTreeSet<_>>();
     let row_offsets = scan
         .curve_topology_rows
         .iter()
@@ -24737,7 +24730,61 @@ fn transfer_native_brep(
             }
         }
     }
-    solved_point_count
+    let wire_curves = emitted_curves
+        .difference(&face_curves)
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let edge_vertices_used = emitted_curves
+        .iter()
+        .filter_map(|curve| edge_vertices.get(curve))
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>();
+    let free_vertices = solved_vertices
+        .keys()
+        .filter(|vertex| !edge_vertices_used.contains(vertex))
+        .copied()
+        .collect::<BTreeSet<_>>();
+    if !wire_curves.is_empty() || !free_vertices.is_empty() {
+        let body_id = BodyId("creo:visibgeom:body#wire".to_string());
+        let region_id = RegionId("creo:visibgeom:region#wire".to_string());
+        let shell_id = ShellId("creo:visibgeom:shell#wire".to_string());
+        for (id, tag) in [
+            (body_id.to_string(), "native_wire_body"),
+            (region_id.to_string(), "native_wire_region"),
+            (shell_id.to_string(), "native_wire_shell"),
+        ] {
+            annotate(annotations, id, "VisibGeom", 0, tag, Exactness::Derived);
+        }
+        ir.model.bodies.push(Body {
+            id: body_id.clone(),
+            kind: BodyKind::Wire,
+            regions: vec![region_id.clone()],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        });
+        ir.model.regions.push(Region {
+            id: region_id.clone(),
+            body: body_id,
+            shells: vec![shell_id.clone()],
+        });
+        ir.model.shells.push(Shell {
+            id: shell_id,
+            region: region_id,
+            faces: Vec::new(),
+            wire_edges: wire_curves
+                .iter()
+                .map(|curve| EdgeId(format!("creo:visibgeom:edge#{curve}")))
+                .collect(),
+            free_vertices: free_vertices
+                .iter()
+                .map(|vertex| VertexId(format!("creo:visibgeom:vertex#{vertex}")))
+                .collect(),
+        });
+    }
+    (solved_point_count, emitted_curves.len())
 }
 
 fn transfer_cap_pair_cylinders(
@@ -28200,7 +28247,7 @@ fn build_ir(
         transfer_rowless_round_cylinders(scan, &mut ir, &mut annotations);
     let derived_intersection_curves =
         transfer_carrier_intersection_curves(scan, &mut ir, &mut annotations);
-    let topological_point_count = transfer_native_brep(
+    let (topological_point_count, native_topological_edge_count) = transfer_native_brep(
         scan,
         &mut ir,
         &mut annotations,
@@ -28264,6 +28311,10 @@ fn build_ir(
         source.attributes.insert(
             "transferred_topological_point_count".to_string(),
             topological_point_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_native_topological_edge_count".to_string(),
+            native_topological_edge_count.to_string(),
         );
         source.attributes.insert(
             "transferred_feature_revolution_surface_count".to_string(),
@@ -29946,6 +29997,27 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             severity: Severity::Info,
             message: format!(
                 "Transferred {topological_point_count} exact model-space point(s) for native topological vertex orbits from unique placed-carrier intersections or agreeing pcurve endpoint maps."
+            ),
+            provenance: None,
+        });
+    }
+
+    let native_topological_edge_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| {
+            source
+                .attributes
+                .get("transferred_native_topological_edge_count")
+        })
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
+    if !container_only && native_topological_edge_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {native_topological_edge_count} native topological edge(s) whose endpoint vertex orbits have exact model-space points."
             ),
             provenance: None,
         });
