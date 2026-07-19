@@ -7720,6 +7720,8 @@ fn attach_native_object_model(
     let feature_pattern_references = crate::native::feature_pattern_references(&scan.container);
     let feature_surface_construction_references =
         crate::native::feature_surface_construction_references(&scan.container);
+    let feature_surface_construction_branches =
+        crate::native::feature_surface_construction_branches(&scan.container);
     let feature_extrude_profile_references =
         crate::native::feature_extrude_profile_references(&scan.container);
     let feature_extrude_payload_headers =
@@ -7997,6 +7999,7 @@ fn attach_native_object_model(
         && feature_projected_curve_references.is_empty()
         && feature_pattern_references.is_empty()
         && feature_surface_construction_references.is_empty()
+        && feature_surface_construction_branches.is_empty()
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
         && feature_extrude_payload_footers.is_empty()
@@ -8785,6 +8788,7 @@ fn attach_native_object_model(
             projected_curve_references: &feature_projected_curve_references,
             pattern_references: &feature_pattern_references,
             surface_construction_references: &feature_surface_construction_references,
+            surface_construction_branches: &feature_surface_construction_branches,
             sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
             sketch_preceding_named_point_uses: &feature_sketch_preceding_named_point_uses,
             sketch_point_uses: &feature_sketch_point_uses,
@@ -9219,6 +9223,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_surface_construction_references",
             &feature_surface_construction_references,
+        )?;
+    }
+    if !feature_surface_construction_branches.is_empty() {
+        namespace.set_arena(
+            "feature_surface_construction_branches",
+            &feature_surface_construction_branches,
         )?;
     }
     if !feature_extrude_profile_references.is_empty() {
@@ -9895,6 +9905,7 @@ struct FeatureOperationSources<'a> {
     projected_curve_references: &'a [crate::native::FeatureProjectedCurveReference],
     pattern_references: &'a [crate::native::FeaturePatternReference],
     surface_construction_references: &'a [crate::native::FeatureSurfaceConstructionReference],
+    surface_construction_branches: &'a [crate::native::FeatureSurfaceConstructionBranch],
     sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
     sketch_preceding_named_point_uses: &'a [crate::native::FeatureSketchPrecedingNamedPointUse],
     sketch_point_uses: &'a [crate::native::FeatureSketchPointUse],
@@ -9989,6 +10000,7 @@ fn attach_feature_operations(
         projected_curve_references,
         pattern_references,
         surface_construction_references,
+        surface_construction_branches,
         sketch_named_point_block_uses,
         sketch_preceding_named_point_uses,
         sketch_point_uses,
@@ -10152,6 +10164,10 @@ fn attach_feature_operations(
     let surface_construction_references_by_operation =
         records_by_operation(surface_construction_references, |reference| {
             &reference.operation_label
+        });
+    let surface_construction_branches_by_operation =
+        records_by_operation(surface_construction_branches, |branch| {
+            &branch.operation_label
         });
     let mut sketch_named_point_uses_by_operation =
         BTreeMap::<&str, Vec<&crate::native::FeatureSketchNamedPointBlockUse>>::new();
@@ -10889,6 +10905,32 @@ fn attach_feature_operations(
                     .data_block
                     .clone()
                     .unwrap_or_else(|| reference.object_index.to_string()),
+            );
+        }
+        for branch in surface_construction_branches_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            for member in &branch.members {
+                source_properties.insert(
+                    format!(
+                        "surface_construction_branch.{}.member.{}",
+                        branch.ordinal, member.ordinal
+                    ),
+                    member
+                        .data_block
+                        .clone()
+                        .unwrap_or_else(|| member.object_index.to_string()),
+                );
+            }
+            source_properties.insert(
+                format!("surface_construction_branch.{}.result", branch.ordinal),
+                branch
+                    .result
+                    .data_block
+                    .clone()
+                    .unwrap_or_else(|| branch.result.object_index.to_string()),
             );
         }
         for (ordinal, block_use) in sketch_named_point_uses_by_operation

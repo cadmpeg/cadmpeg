@@ -5216,6 +5216,49 @@ pub struct FeatureSurfaceConstructionReference {
     pub source_offset: u64,
 }
 
+/// One resolved reference within a surface-construction branch.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSurfaceBranchReference {
+    /// Zero-based member order, or the declared count minus one for the result.
+    pub ordinal: u32,
+    /// Serialized object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Absolute file offset of the width marker.
+    pub source_offset: u64,
+}
+
+/// One exact counted branch in a bounded surface-feature payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSurfaceConstructionBranch {
+    /// Globally unique branch identity.
+    pub id: String,
+    /// Owning `SKIN` or `Studio Surface` operation label.
+    pub operation_label: String,
+    /// Zero-based branch order.
+    pub ordinal: u32,
+    /// Serialized construction family byte following `a0 5a`.
+    pub family: u8,
+    /// Serialized branch-group header code.
+    pub header_code: u8,
+    /// Serialized `16` or `40` branch mode.
+    pub mode: u8,
+    /// Count including the terminal result reference.
+    pub declared_count: u8,
+    /// Whether the payload repeats the declared count before its zero lane.
+    pub witnessed: bool,
+    /// Ordered input references.
+    pub members: Vec<FeatureSurfaceBranchReference>,
+    /// Terminal result reference.
+    pub result: FeatureSurfaceBranchReference,
+    /// Opaque bytes separating the result from the next branch or terminator.
+    pub suffix: Vec<u8>,
+    /// Absolute file offset of the branch mode byte.
+    pub source_offset: u64,
+}
+
 /// Ordered profile reference carried by a bounded extrusion payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureExtrudeProfileReference {
@@ -8572,6 +8615,71 @@ pub fn feature_surface_construction_references(
         }
     })
     .collect()
+}
+
+/// Decode and resolve exact counted surface-construction branches without
+/// assigning section or guide semantics to their members.
+pub fn feature_surface_construction_branches(
+    container: &Container,
+) -> Vec<FeatureSurfaceConstructionBranch> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut branches = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(group) = crate::om::surface_feature_payload_branches(record) else {
+                continue;
+            };
+            let operation_label =
+                format!("nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}");
+            branches.extend(group.branches.into_iter().enumerate().map(|(ordinal, branch)| {
+                let resolve = |ordinal: usize, reference: crate::om::PayloadObjectReference| {
+                    FeatureSurfaceBranchReference {
+                        ordinal: ordinal as u32,
+                        object_index: reference.object_index,
+                        data_block: unique_offset_data_block(&indexed, reference.object_index),
+                        source_offset: entry_offset + reference.offset as u64,
+                    }
+                };
+                let members = branch
+                    .members
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, reference)| resolve(ordinal, reference))
+                    .collect::<Vec<_>>();
+                let result = resolve(members.len(), branch.result);
+                FeatureSurfaceConstructionBranch {
+                    id: format!(
+                        "nx:feature-history:surface-construction-branch#{section_key}-{operation_ordinal:010}-{ordinal:010}"
+                    ),
+                    operation_label: operation_label.clone(),
+                    ordinal: ordinal as u32,
+                    family: group.family,
+                    header_code: group.header_code,
+                    mode: branch.mode,
+                    declared_count: branch.declared_count,
+                    witnessed: branch.witnessed,
+                    members,
+                    result,
+                    suffix: branch.suffix,
+                    source_offset: entry_offset + branch.offset as u64,
+                }
+            }));
+        }
+    }
+    branches
 }
 
 /// Decode and resolve the witnessed ordered profile list in extrusion payloads.

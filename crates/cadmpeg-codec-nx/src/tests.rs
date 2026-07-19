@@ -7700,6 +7700,77 @@ fn om_surface_feature_references_require_the_complete_common_envelope() {
 }
 
 #[test]
+fn om_surface_feature_branches_require_one_complete_counted_group() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "SKIN",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\xa0\x5a\x14\x13\x01\x02\x40\x01\x04\xf1\x1b\xf4\xf1\x1b\xf5\xf1\x1b\xf6\x01\x04\x00\x00\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xf7\x00\x81\x58\x01\x02\x40\x01\x05\xf1\x1b\xf8\xf1\x1b\xf9\xf1\x1b\xfa\xf1\x1b\xfb\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x1b\xfc\x00\x81\x1c\x00\x00\x00\x01\x03\x00\x00\x00\xff\xff\x01";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let group = crate::om::surface_feature_payload_branches(record).expect("complete group");
+    assert_eq!(group.family, 0x14);
+    assert_eq!(group.header_code, 0x13);
+    assert_eq!(group.branches.len(), 2);
+    assert_eq!(group.branches[0].mode, 0x40);
+    assert_eq!(group.branches[0].declared_count, 4);
+    assert!(group.branches[0].witnessed);
+    assert_eq!(group.branches[0].members.len(), 3);
+    assert_eq!(group.branches[0].result.object_index, 7159);
+    assert_eq!(group.branches[0].suffix, [0x81, 0x58, 0x01, 0x02]);
+    assert_eq!(group.branches[1].declared_count, 5);
+    assert!(!group.branches[1].witnessed);
+    assert_eq!(group.branches[1].members.len(), 4);
+    assert_eq!(group.branches[1].result.object_index, 7164);
+    assert_eq!(group.branches[1].suffix, [0x81, 0x1c]);
+
+    let studio_payload = [
+        &payload[..payload.len() - 11],
+        &[0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01],
+    ]
+    .concat();
+    let studio = crate::om::OperationRecord {
+        label: crate::om::OperationLabel {
+            value: "Studio Surface",
+            ..label
+        },
+        bytes: &studio_payload,
+        payload: &studio_payload,
+        ..record
+    };
+    assert!(crate::om::surface_feature_payload_branches(studio).is_some());
+
+    let mut malformed = payload.to_vec();
+    malformed[19] = 0x03;
+    assert!(
+        crate::om::surface_feature_payload_branches(crate::om::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+
+    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(
+        crate::om::surface_feature_payload_branches(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     let label = crate::om::OperationLabel {
         header_offset: 100,

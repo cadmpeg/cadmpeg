@@ -755,6 +755,36 @@ pub struct SurfaceFeaturePayloadReferenceField {
     pub references: [PayloadObjectReference; 14],
 }
 
+/// One counted construction branch in a surface-feature payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceFeaturePayloadBranch {
+    /// Absolute offset of the branch mode byte.
+    pub offset: usize,
+    /// Serialized `16` or `40` branch mode.
+    pub mode: u8,
+    /// Count including the terminal result reference.
+    pub declared_count: u8,
+    /// Whether the count is repeated before the zero lane.
+    pub witnessed: bool,
+    /// Ordered input references.
+    pub members: Vec<PayloadObjectReference>,
+    /// Terminal result reference.
+    pub result: PayloadObjectReference,
+    /// Opaque bytes separating this result from the next branch or terminator.
+    pub suffix: Vec<u8>,
+}
+
+/// Exact counted branch group in a surface-feature payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceFeaturePayloadBranches {
+    /// Serialized construction family byte following `a0 5a`.
+    pub family: u8,
+    /// Serialized group header code.
+    pub header_code: u8,
+    /// Ordered branches matching the declared group count.
+    pub branches: Vec<SurfaceFeaturePayloadBranch>,
+}
+
 /// One object index in an extrusion profile-reference field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExtrudeProfileReference {
@@ -1826,6 +1856,156 @@ pub fn surface_feature_payload_references(
     Some(SurfaceFeaturePayloadReferenceField {
         references: references.try_into().ok()?,
     })
+}
+
+fn surface_feature_branch_paths(
+    payload: &[u8],
+    payload_offset: usize,
+    at: usize,
+    remaining: u8,
+    terminator: &[u8],
+) -> Vec<Vec<SurfaceFeaturePayloadBranch>> {
+    if remaining == 0 || !matches!(payload.get(at), Some(0x16 | 0x40)) {
+        return Vec::new();
+    }
+    let mode = payload[at];
+    if payload.get(at + 1) != Some(&0x01) {
+        return Vec::new();
+    }
+    let Some(declared_count @ 2..) = payload.get(at + 2).copied() else {
+        return Vec::new();
+    };
+    let mut cursor = at + 3;
+    let mut members = Vec::with_capacity(usize::from(declared_count) - 1);
+    for _ in 1..declared_count {
+        let Some((object_index, width)) = payload.get(cursor..).and_then(payload_object_index)
+        else {
+            return Vec::new();
+        };
+        members.push(PayloadObjectReference {
+            offset: payload_offset + cursor,
+            object_index,
+        });
+        cursor += width;
+    }
+    let witnessed = payload.get(cursor..cursor + 2) == Some(&[0x01, declared_count]);
+    if witnessed {
+        cursor += 2;
+    }
+    let zero_count = if witnessed {
+        usize::from(declared_count) + 3
+    } else {
+        5
+    };
+    let Some(zero_lane) = payload.get(cursor..cursor + zero_count) else {
+        return Vec::new();
+    };
+    if !zero_lane.iter().all(|&byte| byte == 0) {
+        return Vec::new();
+    }
+    cursor += zero_count;
+    if payload.get(cursor..cursor + 3) != Some(&[0xff, 0x01, 0x02]) {
+        return Vec::new();
+    }
+    cursor += 3;
+    let Some((object_index, width)) = payload.get(cursor..).and_then(payload_object_index) else {
+        return Vec::new();
+    };
+    let result = PayloadObjectReference {
+        offset: payload_offset + cursor,
+        object_index,
+    };
+    cursor += width;
+    if payload.get(cursor) != Some(&0x00) {
+        return Vec::new();
+    }
+    cursor += 1;
+
+    let mut paths = Vec::new();
+    for suffix_len in 1..=5 {
+        let Some(suffix) = payload.get(cursor..cursor + suffix_len) else {
+            continue;
+        };
+        let next = cursor + suffix_len;
+        let continuations = if remaining == 1 {
+            (payload.get(next..next + terminator.len()) == Some(terminator))
+                .then_some(Vec::new())
+                .into_iter()
+                .collect::<Vec<_>>()
+        } else {
+            surface_feature_branch_paths(payload, payload_offset, next, remaining - 1, terminator)
+        };
+        for mut continuation in continuations {
+            let branch = SurfaceFeaturePayloadBranch {
+                offset: payload_offset + at,
+                mode,
+                declared_count,
+                witnessed,
+                members: members.clone(),
+                result,
+                suffix: suffix.to_vec(),
+            };
+            continuation.insert(0, branch);
+            paths.push(continuation);
+            if paths.len() == 2 {
+                return paths;
+            }
+        }
+    }
+    paths
+}
+
+/// Decode the unique exactly framed counted branch group in a bounded `SKIN`
+/// or `Studio Surface` payload.
+pub fn surface_feature_payload_branches(
+    record: OperationRecord<'_>,
+) -> Option<SurfaceFeaturePayloadBranches> {
+    const SKIN_TERMINATOR: [u8; 11] = [
+        0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01,
+    ];
+    const STUDIO_TERMINATOR: [u8; 8] = [0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0x01];
+    let terminator = match record.label.value {
+        "SKIN" => &SKIN_TERMINATOR[..],
+        "Studio Surface" => &STUDIO_TERMINATOR[..],
+        _ => return None,
+    };
+    let mut matches = Vec::new();
+    for start in 0..record.payload.len().saturating_sub(6) {
+        if record.payload.get(start..start + 2) != Some(&[0xa0, 0x5a]) {
+            continue;
+        }
+        let Some(family @ (0x14 | 0x50)) = record.payload.get(start + 2).copied() else {
+            continue;
+        };
+        let Some(header_code) = record.payload.get(start + 3).copied() else {
+            continue;
+        };
+        if record.payload.get(start + 4) != Some(&0x01) {
+            continue;
+        }
+        let Some(declared_group_count @ 1..) = record.payload.get(start + 5).copied() else {
+            continue;
+        };
+        let paths = surface_feature_branch_paths(
+            record.payload,
+            record.payload_offset,
+            start + 6,
+            declared_group_count,
+            terminator,
+        );
+        let [branches] = paths.as_slice() else {
+            continue;
+        };
+        matches.push(SurfaceFeaturePayloadBranches {
+            family,
+            header_code,
+            branches: branches.clone(),
+        });
+    }
+    let [group] = matches.as_slice() else {
+        return None;
+    };
+    Some(group.clone())
 }
 
 /// Decode the unique witnessed profile-reference field in an `EXTRUDE` payload.
