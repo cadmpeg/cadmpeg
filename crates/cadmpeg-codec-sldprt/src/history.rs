@@ -1794,6 +1794,13 @@ mod history_reference_tests {
         let ambiguous = feature("node", Some("99"), 0);
         assert_eq!(feature_tree_node_role(&ambiguous), None);
 
+        let mut exploded_views = ambiguous.clone();
+        exploded_views.name.clear();
+        assert_eq!(
+            feature_tree_node_role(&exploded_views),
+            Some(FeatureTreeNodeRole::ExplodedViews)
+        );
+
         let mut reference_plane = feature("node", Some("5"), 0);
         reference_plane.input_class = Some("moRefPlane_c".into());
         assert_eq!(feature_tree_node_role(&reference_plane), None);
@@ -3222,17 +3229,18 @@ fn reserved_feature_tree_node_role(feature: &Feature) -> Option<FeatureTreeNodeR
         (tag, "13" | "14" | "15") if tag.eq_ignore_ascii_case("Feature") => {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
-        (tag, "-1")
-            if tag.eq_ignore_ascii_case("Feature")
-                && feature.name.is_empty()
-                && feature.dimension_properties.is_empty()
-                && feature.text.is_none()
-                && feature.content.is_empty() =>
-        {
-            Some(FeatureTreeNodeRole::SheetMetal)
-        }
+        (_, "-1") if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::SheetMetal),
+        (_, _) if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::ExplodedViews),
         _ => None,
     }
+}
+
+fn empty_feature_tree_node(feature: &Feature) -> bool {
+    feature.xml_tag.eq_ignore_ascii_case("Feature")
+        && feature.name.is_empty()
+        && feature.dimension_properties.is_empty()
+        && feature.text.is_none()
+        && feature.content.is_empty()
 }
 
 fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
