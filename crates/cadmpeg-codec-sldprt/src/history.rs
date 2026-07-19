@@ -280,6 +280,23 @@ pub fn histories(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Fea
         .collect()
 }
 
+pub(crate) fn enrich_scene_classes(
+    histories: &mut [FeatureHistory],
+    scene_classes: &HashMap<String, String>,
+) {
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+    {
+        let Some(source) = feature.source_id.as_deref() else {
+            continue;
+        };
+        if feature.input_class.is_none() && classless_builtin_node(feature) {
+            feature.input_class = scene_classes.get(source).cloned();
+        }
+    }
+}
+
 /// Project native Keywords records into the neutral feature arena.
 pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
     histories
@@ -3725,12 +3742,14 @@ fn feature_tree_node_kind(role: FeatureTreeNodeRole) -> &'static str {
         FeatureTreeNodeRole::LightsAndCameras => "Lights and Cameras",
         FeatureTreeNodeRole::Markups => "Markups",
         FeatureTreeNodeRole::ModelOrigin => "Origin",
+        FeatureTreeNodeRole::PointLight => "Point Light",
         FeatureTreeNodeRole::Materials => "SOLIDWORKS Materials",
         FeatureTreeNodeRole::Notes => "Notes",
         FeatureTreeNodeRole::SelectionSets => "Selection Sets",
         FeatureTreeNodeRole::Sensors => "Sensors",
         FeatureTreeNodeRole::SheetMetal => "Sheet Metal",
         FeatureTreeNodeRole::SolidBodies => "Solid Bodies",
+        FeatureTreeNodeRole::SpotLight => "Spot Light",
         FeatureTreeNodeRole::SurfaceBodies => "Surface Bodies",
         FeatureTreeNodeRole::Tables => "Tables",
     }

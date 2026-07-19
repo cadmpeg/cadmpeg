@@ -243,6 +243,8 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         "moTableFolder_c" => tree_node_class(FeatureTreeNodeRole::Tables),
         "moAmbientLight_c" => tree_node_class(FeatureTreeNodeRole::AmbientLight),
         "moDirectionLight_c" => tree_node_class(FeatureTreeNodeRole::DirectionalLight),
+        "moPointLight_c" => tree_node_class(FeatureTreeNodeRole::PointLight),
+        "moSpotLight_c" => tree_node_class(FeatureTreeNodeRole::SpotLight),
 
         "sgSketch" => (NativeClassKind::Sketch, Sketch, None, None),
         "sgArcHandle" | "sgEntHandle" | "sgLineHandle" | "sgPointHandle" | "sgSplineHandle" => {
@@ -585,6 +587,8 @@ mod tests {
             ("moDirectionLight_c", FeatureTreeNodeRole::DirectionalLight),
             ("moEnvFolder_c", FeatureTreeNodeRole::LightsAndCameras),
             ("moFtrFolder_c", FeatureTreeNodeRole::FeatureFolder),
+            ("moPointLight_c", FeatureTreeNodeRole::PointLight),
+            ("moSpotLight_c", FeatureTreeNodeRole::SpotLight),
             ("moTableFolder_c", FeatureTreeNodeRole::Tables),
         ] {
             let folder = native_object_class(class);

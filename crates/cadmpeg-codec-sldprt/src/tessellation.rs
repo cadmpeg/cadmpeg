@@ -5,6 +5,12 @@ use crate::container::{ContainerScan, Section};
 use cadmpeg_ir::le::u32_at as u32_le;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::tessellation::TessellationChannel;
+use std::collections::HashMap;
+
+const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
+const SCENE_SOURCE_MARKER: &[u8] = &[
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30, 0x40, 0x00, 0x00, 0x00, 0x00,
+];
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Summary {
@@ -19,6 +25,84 @@ pub struct Mesh {
     pub strip_lengths: Vec<u32>,
     pub normals: Vec<Vector3>,
     pub channels: Vec<TessellationChannel>,
+}
+
+fn scene_classes(payload: &[u8]) -> Vec<(u32, String)> {
+    let declarations = payload
+        .windows(CLASS_MARKER.len())
+        .enumerate()
+        .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
+        .filter_map(|offset| {
+            let length = usize::from(u16::from_le_bytes(
+                payload.get(offset + 4..offset + 6)?.try_into().ok()?,
+            ));
+            if !(1..=128).contains(&length) {
+                return None;
+            }
+            let name = payload.get(offset + 6..offset + 6 + length)?;
+            if !name
+                .iter()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            {
+                return None;
+            }
+            let name = std::str::from_utf8(name).ok()?;
+            Some((offset, name.to_string()))
+        })
+        .collect::<Vec<_>>();
+    declarations
+        .iter()
+        .enumerate()
+        .flat_map(|(index, (offset, class))| {
+            let role = crate::classification::native_object_class(class).tree_node;
+            if !matches!(
+                role,
+                Some(
+                    cadmpeg_ir::features::FeatureTreeNodeRole::AmbientLight
+                        | cadmpeg_ir::features::FeatureTreeNodeRole::DirectionalLight
+                        | cadmpeg_ir::features::FeatureTreeNodeRole::PointLight
+                        | cadmpeg_ir::features::FeatureTreeNodeRole::SpotLight
+                )
+            ) {
+                return Vec::new();
+            }
+            let start = offset + CLASS_MARKER.len();
+            let end = declarations
+                .get(index + 1)
+                .map_or(payload.len(), |(offset, _)| *offset);
+            payload[start..end]
+                .windows(SCENE_SOURCE_MARKER.len() + 4)
+                .filter_map(|window| {
+                    (window.starts_with(SCENE_SOURCE_MARKER))
+                        .then(|| u32_le(window, 12))
+                        .flatten()
+                        .filter(|source| *source != 0)
+                        .map(|source| (source, class.clone()))
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+pub(crate) fn scene_feature_classes(scan: &ContainerScan) -> HashMap<String, String> {
+    let mut candidates = HashMap::<u32, Option<String>>::new();
+    for (source, class) in scan
+        .sections()
+        .flat_map(|section| scene_classes(section.payload()))
+    {
+        candidates
+            .entry(source)
+            .and_modify(|existing| {
+                if existing.as_deref() != Some(class.as_str()) {
+                    *existing = None;
+                }
+            })
+            .or_insert_with(|| Some(class));
+    }
+    candidates
+        .into_iter()
+        .filter_map(|(source, class)| class.map(|class| (source.to_string(), class)))
+        .collect()
 }
 
 fn parse_table(bytes: &[u8], mut at: usize) -> Option<(Mesh, usize)> {
@@ -164,4 +248,40 @@ pub fn summary(scan: &ContainerScan) -> Summary {
             total.triangles += next.triangles;
             total
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn class(payload: &mut Vec<u8>, name: &str, sources: &[u32]) {
+        payload.extend_from_slice(CLASS_MARKER);
+        payload.extend_from_slice(&(name.len() as u16).to_le_bytes());
+        payload.extend_from_slice(name.as_bytes());
+        for source in sources {
+            payload.extend_from_slice(SCENE_SOURCE_MARKER);
+            payload.extend_from_slice(&source.to_le_bytes());
+        }
+    }
+
+    #[test]
+    fn scene_objects_carry_history_source_identity() {
+        let mut payload = Vec::new();
+        class(&mut payload, "moAmbientLight_c", &[12]);
+        class(&mut payload, "moDirectionLight_c", &[30, 32]);
+        class(&mut payload, "moVisualProperties_c", &[99]);
+        class(&mut payload, "moPointLight_c", &[21]);
+        class(&mut payload, "moSpotLight_c", &[20]);
+
+        assert_eq!(
+            scene_classes(&payload),
+            vec![
+                (12, "moAmbientLight_c".into()),
+                (30, "moDirectionLight_c".into()),
+                (32, "moDirectionLight_c".into()),
+                (21, "moPointLight_c".into()),
+                (20, "moSpotLight_c".into()),
+            ]
+        );
+    }
 }

@@ -1497,7 +1497,7 @@ fn build_geometry_ir(
     crate::resolved_features::bind_history_classes(&mut histories, &lanes);
     crate::resolved_features::bind_scalar_operands(&histories, &mut lanes);
     let pmi_dimensions = crate::pmi::dimensions(scan, &mut ir.annotations);
-    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions);
+    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::spatial_sketches(&mut ir.model.features, &histories, &lanes);
     ir.model.spatial_sketches = spatial_sketches;
@@ -2148,7 +2148,7 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         format: "sldprt".to_string(),
         attributes,
     });
-    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions);
+    project_design_history(&mut ir, &histories, &lanes, &pmi_dimensions, scan);
     let (spatial_sketches, spatial_sketch_entities) =
         crate::resolved_features::spatial_sketches(&mut ir.model.features, &histories, &lanes);
     ir.model.spatial_sketches = spatial_sketches;
@@ -2264,8 +2264,13 @@ fn project_design_history(
     histories: &[crate::records::FeatureHistory],
     lanes: &[crate::records::FeatureInputLane],
     pmi_dimensions: &[crate::records::PmiDimension],
+    scan: &ContainerScan,
 ) {
     let mut semantic_projection = histories.to_vec();
+    crate::history::enrich_scene_classes(
+        &mut semantic_projection,
+        &crate::tessellation::scene_feature_classes(scan),
+    );
     crate::resolved_features::enrich_history_extrusion_terminations(
         &mut semantic_projection,
         lanes,

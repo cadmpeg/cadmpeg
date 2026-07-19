@@ -827,6 +827,8 @@ pub enum FeatureTreeNodeRole {
     Markups,
     /// Built-in model origin node.
     ModelOrigin,
+    /// Point scene light.
+    PointLight,
     /// Material container or assignment node.
     Materials,
     /// Note container.
@@ -839,6 +841,8 @@ pub enum FeatureTreeNodeRole {
     SheetMetal,
     /// Solid-body container.
     SolidBodies,
+    /// Spot scene light.
+    SpotLight,
     /// Surface-body container.
     SurfaceBodies,
     /// Table container.
