@@ -894,6 +894,10 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             | FeatureDefinition::DatumCoordinateSystem { .. }
             | FeatureDefinition::EquationCurve { .. }
             | FeatureDefinition::Helix { .. } => false,
+            FeatureDefinition::SketchBlockDefinition { sketch } => sketch.is_none(),
+            FeatureDefinition::SketchBlockInstance { block, placement } => {
+                block.is_none() || placement.is_none()
+            }
             FeatureDefinition::DatumOffsetPlane { reference, .. } => reference.is_none(),
             FeatureDefinition::ProjectedCurve {
                 source,

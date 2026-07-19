@@ -3103,6 +3103,15 @@ fn project_definition(
             }
         };
     }
+    if class == Some(FeatureClass::SketchBlockDefinition) {
+        return FeatureDefinition::SketchBlockDefinition { sketch: None };
+    }
+    if class == Some(FeatureClass::SketchBlockInstance) {
+        return FeatureDefinition::SketchBlockInstance {
+            block: None,
+            placement: None,
+        };
+    }
     if class == Some(FeatureClass::ReferencePlane) && is_offset_plane(feature) {
         return project_offset_plane(feature, by_source)
             .unwrap_or_else(|| native_definition(feature));
@@ -7609,6 +7618,50 @@ pub fn sync_neutral_features(
                     feature.source_properties.clone(),
                 )
             }
+            FeatureDefinition::SketchBlockDefinition { sketch } => {
+                if sketch.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes sketch-block geometry",
+                        feature.id
+                    )));
+                }
+                let record = existing.as_deref().filter(|record| {
+                    feature_input_class(record, NativeClassKind::SketchBlockDefinition)
+                });
+                let Some(record) = record else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained sketch-block definition",
+                        feature.id
+                    )));
+                };
+                (
+                    record.kind.clone(),
+                    record.parameters.clone(),
+                    record.properties.clone(),
+                )
+            }
+            FeatureDefinition::SketchBlockInstance { block, placement } => {
+                if block.is_some() || placement.is_some() {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} changes sketch-block instance semantics",
+                        feature.id
+                    )));
+                }
+                let record = existing.as_deref().filter(|record| {
+                    feature_input_class(record, NativeClassKind::SketchBlockInstance)
+                });
+                let Some(record) = record else {
+                    return Err(CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} requires a retained sketch-block instance",
+                        feature.id
+                    )));
+                };
+                (
+                    record.kind.clone(),
+                    record.parameters.clone(),
+                    record.properties.clone(),
+                )
+            }
             FeatureDefinition::Native {
                 kind,
                 parameters,
@@ -10949,6 +11002,8 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Helix { .. } | FeatureDefinition::HelixNativeAxis { .. } => "Helix",
         FeatureDefinition::Wrap { .. } => "Wrap",
         FeatureDefinition::Sketch { .. } | FeatureDefinition::SpatialSketch { .. } => "Sketch",
+        FeatureDefinition::SketchBlockDefinition { .. } => "Block",
+        FeatureDefinition::SketchBlockInstance { .. } => "Feature",
         FeatureDefinition::Extrude { .. } => "Extrusion",
         FeatureDefinition::Revolve { .. } => "Revolve",
         FeatureDefinition::Sweep {

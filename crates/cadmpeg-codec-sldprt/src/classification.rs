@@ -9,6 +9,8 @@ use cadmpeg_ir::features::{FeatureTreeNodeRole, PrincipalPlane};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FeatureClass {
     Sketch,
+    SketchBlockDefinition,
+    SketchBlockInstance,
     ReferencePlane,
     ReferenceAxis,
     ReferencePoint,
@@ -56,6 +58,8 @@ pub(crate) enum NativeClassKind {
     Chamfer,
     OriginProfileFeature,
     ProfileFeature,
+    SketchBlockDefinition,
+    SketchBlockInstance,
     ReferencePlane,
     ReferenceAxis,
     Thicken,
@@ -124,6 +128,18 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
             NativeClassKind::ProfileFeature,
             Feature,
             Some(FeatureClass::Sketch),
+            None,
+        ),
+        "moSketchBlockDef_c" => (
+            NativeClassKind::SketchBlockDefinition,
+            Feature,
+            Some(FeatureClass::SketchBlockDefinition),
+            None,
+        ),
+        "moSketchBlockInst_c" => (
+            NativeClassKind::SketchBlockInstance,
+            Feature,
+            Some(FeatureClass::SketchBlockInstance),
             None,
         ),
         "moRefPlane_c" => (
@@ -577,6 +593,24 @@ mod tests {
         assert_eq!(origin.feature, None);
         assert_eq!(origin.tree_node, Some(FeatureTreeNodeRole::ModelOrigin));
 
+        for (name, kind, feature) in [
+            (
+                "moSketchBlockDef_c",
+                NativeClassKind::SketchBlockDefinition,
+                FeatureClass::SketchBlockDefinition,
+            ),
+            (
+                "moSketchBlockInst_c",
+                NativeClassKind::SketchBlockInstance,
+                FeatureClass::SketchBlockInstance,
+            ),
+        ] {
+            let block = native_object_class(name);
+            assert_eq!(block.kind, kind, "{name}");
+            assert_eq!(block.role, FeatureInputClassRole::Feature, "{name}");
+            assert_eq!(block.feature, Some(feature), "{name}");
+        }
+
         for name in [
             "moCompReferenceCurve_c",
             "moCompSurfaceBody_c",
@@ -652,6 +686,8 @@ mod tests {
             "moOriginProfileFeature_c",
             "moProfileFeature_c",
             "mo3DProfileFeature_c",
+            "moSketchBlockDef_c",
+            "moSketchBlockInst_c",
             "moRefPlane_c",
             "moThicken_c",
             "moSweep_c",

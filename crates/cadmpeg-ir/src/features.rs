@@ -411,6 +411,21 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         sketch: Option<crate::sketches::SpatialSketchId>,
     },
+    /// Reusable planar sketch geometry.
+    SketchBlockDefinition {
+        /// Neutral sketch geometry owned by the block, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        sketch: Option<crate::sketches::SketchId>,
+    },
+    /// Placement of one reusable sketch-block definition.
+    SketchBlockInstance {
+        /// Referenced block definition, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        block: Option<FeatureId>,
+        /// Affine placement in the owning sketch space, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        placement: Option<crate::transform::Transform>,
+    },
     /// Linear extrusion of a profile.
     Extrude {
         /// Profile swept along `direction` (or the profile's own normal, when

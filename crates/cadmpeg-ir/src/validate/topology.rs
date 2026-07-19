@@ -1410,6 +1410,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         .iter()
         .map(|feature| (feature.id.0.as_str(), feature.ordinal))
         .collect::<HashMap<_, _>>();
+    let sketch_block_definitions = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            matches!(
+                &feature.definition,
+                FeatureDefinition::SketchBlockDefinition { .. }
+            )
+            .then_some(feature.id.0.as_str())
+        })
+        .collect::<HashSet<_>>();
     for configuration in &ir.model.configurations {
         active_configurations += usize::from(configuration.active);
         if configuration.name.is_empty() {
@@ -2213,7 +2225,46 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
             | FeatureDefinition::DatumPlane { .. }
             | FeatureDefinition::DatumAxis { .. }
             | FeatureDefinition::DatumPoint { .. }
+            | FeatureDefinition::SketchBlockDefinition { .. }
             | FeatureDefinition::Native { .. } => {}
+            FeatureDefinition::SketchBlockInstance { block, placement } => {
+                if let Some(block) = block {
+                    match features.get(block.0.as_str()) {
+                        None => ref_error(findings, &feature.id.0, "sketch block", &block.0),
+                        Some(ordinal) if *ordinal >= feature.ordinal => findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "sketch block `{}` does not precede its instance",
+                                block.0
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        }),
+                        Some(_) if !sketch_block_definitions.contains(block.0.as_str()) => {
+                            findings.push(Finding {
+                                check: Check::ReferentialIntegrity,
+                                severity: Severity::Error,
+                                message: format!(
+                                    "sketch block `{}` is not a block definition",
+                                    block.0
+                                ),
+                                entity: Some(feature.id.0.clone()),
+                            });
+                        }
+                        Some(_) => {}
+                    }
+                }
+                if placement.is_some_and(|placement| {
+                    !placement
+                        .rows
+                        .iter()
+                        .flatten()
+                        .all(|value| value.is_finite())
+                        || placement.rows[3] != [0.0, 0.0, 0.0, 1.0]
+                }) {
+                    feature_geometry_error(findings, feature, "sketch-block placement is invalid");
+                }
+            }
             FeatureDefinition::DatumOffsetPlane {
                 reference,
                 distance,
@@ -2577,11 +2628,20 @@ fn check_feature_sketch_references(
     let mut owners = HashMap::new();
     let mut spatial_owners = HashMap::new();
     for feature in &ir.model.features {
-        if let FeatureDefinition::Sketch {
-            sketch: Some(sketch),
-            ..
-        } = &feature.definition
-        {
+        let owned_sketch = match &feature.definition {
+            FeatureDefinition::Sketch {
+                sketch: Some(sketch),
+                ..
+            }
+            | FeatureDefinition::SketchBlockDefinition {
+                sketch: Some(sketch),
+            } => Some(sketch),
+            _ => None,
+        };
+        if let Some(sketch) = owned_sketch {
+            if !sketches.contains(sketch.0.as_str()) {
+                ref_error(findings, &feature.id.0, "owned sketch", &sketch.0);
+            }
             if owners
                 .insert(sketch.0.as_str(), (feature.id.0.as_str(), feature.ordinal))
                 .is_some()
