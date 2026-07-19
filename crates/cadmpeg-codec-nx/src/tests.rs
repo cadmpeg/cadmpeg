@@ -7752,7 +7752,7 @@ fn om_draft_feature_references_require_one_complete_graph() {
         object_indices: [None; 4],
         object_index_offsets: [115, 116, 117, 118],
     };
-    let prefix = b"\x67\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\xff\xff";
+    let prefix = b"\x67\x00\x00\x01\x00\x2f\xa4\x7a\xe1\x47\xae\x14\x7b\x03\xff\xff\xff\xff\xff\xff\xff\xff\x01\x03\x80\x94\x82\x49";
     let graph = b"\x01\x02\xf1\x1b\x7c\x01\x02\xf1\x1b\x7d\x68\x2f\x70\x62\x4d\xd2\xf1\xa9\xfc\x03\x50\x44\x00\x00\x01\x46\x8a\x2a\x01\xa3\x60\x10\x01\x01\x01\x04\x02\x01\x02\x01\x00\x00\x00\x00\x01\xf1\x1b\x7e\xff\x00\x00\x00\xf1\x1b\x7f\xff";
     let payload = [prefix.as_slice(), graph.as_slice(), b"\xaa"].concat();
     let record = crate::om::OperationRecord {
@@ -7769,15 +7769,28 @@ fn om_draft_feature_references_require_one_complete_graph() {
     );
     assert_eq!(
         field.references.map(|reference| reference.offset),
-        [218, 223, 261, 268]
+        [230, 235, 273, 280]
     );
+    let lane = crate::om::draft_feature_leading_index_lane(record).expect("complete index lane");
+    assert_eq!(lane.declared_count, 3);
+    assert_eq!(lane.indices, vec![(148, 224), (585, 226)]);
 
     let mut malformed = payload.clone();
-    malformed[41] = 0x00;
+    malformed[53] = 0x00;
     assert!(
         crate::om::draft_feature_payload_references(crate::om::OperationRecord {
             bytes: &malformed,
             payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+    let mut malformed_lane = payload.clone();
+    malformed_lane[23] = 4;
+    assert!(
+        crate::om::draft_feature_leading_index_lane(crate::om::OperationRecord {
+            bytes: &malformed_lane,
+            payload: &malformed_lane,
             ..record
         })
         .is_none()

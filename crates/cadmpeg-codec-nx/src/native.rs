@@ -5251,6 +5251,21 @@ pub struct FeatureDraftConstructionReference {
     pub source_offset: u64,
 }
 
+/// Counted compact-index lane preceding a bounded draft construction graph.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDraftConstructionIndexLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `DRAFT` operation label.
+    pub operation_label: String,
+    /// Serialized count including the omitted lane owner.
+    pub declared_count: u8,
+    /// Non-null compact indices in serialized order.
+    pub indices: Vec<u32>,
+    /// Absolute source offsets of the compact-index tokens.
+    pub source_offsets: Vec<u64>,
+}
+
 /// Ordered construction reference carried by a bounded surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceConstructionReference {
@@ -8773,6 +8788,49 @@ pub fn feature_draft_construction_references(
         }
     })
     .collect()
+}
+
+/// Decode exact counted compact-index lanes preceding draft construction graphs.
+pub fn feature_draft_construction_index_lanes(
+    container: &Container,
+) -> Vec<FeatureDraftConstructionIndexLane> {
+    let sections = container.om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::draft_feature_leading_index_lane(record) else {
+                continue;
+            };
+            lanes.push(FeatureDraftConstructionIndexLane {
+                id: format!(
+                    "nx:feature-history:draft-construction-index-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                declared_count: lane.declared_count,
+                indices: lane.indices.iter().map(|(value, _)| *value).collect(),
+                source_offsets: lane
+                    .indices
+                    .iter()
+                    .map(|(_, offset)| entry_offset + *offset as u64)
+                    .collect(),
+            });
+        }
+    }
+    lanes
 }
 
 /// Decode and resolve the exact common reference envelope in surface-feature

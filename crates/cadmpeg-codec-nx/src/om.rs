@@ -773,6 +773,15 @@ pub struct DraftFeaturePayloadReferenceField {
     pub references: [PayloadObjectReference; 4],
 }
 
+/// Counted compact-index lane preceding a draft-feature construction graph.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DraftFeatureLeadingIndexLane {
+    /// Serialized count including the omitted lane owner.
+    pub declared_count: u8,
+    /// Non-null compact indices in serialized order with absolute token offsets.
+    pub indices: Vec<(u32, usize)>,
+}
+
 /// Exact common construction references in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadReferenceField {
@@ -1946,6 +1955,38 @@ pub fn draft_feature_payload_references(
         return None;
     };
     Some(field.clone())
+}
+
+/// Decode the exactly positioned counted compact-index lane preceding a `DRAFT` graph.
+pub fn draft_feature_leading_index_lane(
+    record: OperationRecord<'_>,
+) -> Option<DraftFeatureLeadingIndexLane> {
+    const PREFIX: [u8; 22] = [
+        0x67, 0x00, 0x00, 0x01, 0x00, 0x2f, 0xa4, 0x7a, 0xe1, 0x47, 0xae, 0x14, 0x7b, 0x03, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    ];
+    if record.label.value != "DRAFT" || record.payload.get(..PREFIX.len()) != Some(&PREFIX) {
+        return None;
+    }
+    let mut at = PREFIX.len();
+    (record.payload.get(at) == Some(&0x01)).then_some(())?;
+    let declared_count = *record.payload.get(at + 1)?;
+    (declared_count >= 2).then_some(())?;
+    at += 2;
+    let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
+    for _ in 1..declared_count {
+        let offset = at;
+        let (CompactIndex::Value(value), width) = compact_index(record.payload.get(at..)?)? else {
+            return None;
+        };
+        at += width;
+        indices.push((value, record.payload_offset + offset));
+    }
+    (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
+    Some(DraftFeatureLeadingIndexLane {
+        declared_count,
+        indices,
+    })
 }
 
 /// Decode the exact common construction-reference envelope in a bounded
