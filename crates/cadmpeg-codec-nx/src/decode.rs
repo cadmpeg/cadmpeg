@@ -7175,6 +7175,11 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             FeatureDefinition::ExtractBody { source } if body_selection_is_opaque(source) => {
                 "extract body"
             }
+            FeatureDefinition::Sketch { space, sketch }
+                if matches!(space, SketchSpace::Unresolved) || sketch.is_none() =>
+            {
+                "sketch"
+            }
             FeatureDefinition::ProjectedCurve {
                 source,
                 target_faces,
@@ -7311,6 +7316,12 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             {
                 "body combine"
             }
+            FeatureDefinition::DeleteBody { bodies, mode }
+                if body_selection_is_opaque(bodies)
+                    || matches!(mode, BodyRetentionMode::Unresolved) =>
+            {
+                "delete body"
+            }
             _ => continue,
         };
         *incomplete_feature_families.entry(family).or_default() += 1;
@@ -7325,7 +7336,7 @@ pub(crate) fn append_design_intent_losses(ir: &CadIr, losses: &mut Vec<LossNote>
             category: LossCategory::Feature,
             severity: Severity::Warning,
             message: format!(
-                "NX feature families were transferred as typed neutral operations, but required \
+                "NX feature families were transferred as typed neutral operations, but \
                  construction fields remain unresolved or native-only: {families}."
             ),
             provenance: None,

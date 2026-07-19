@@ -17223,6 +17223,24 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
         },
         native_ref: None,
     });
+    ir.model.features.push(Feature {
+        id: FeatureId("test:feature#incomplete-delete".into()),
+        ordinal: 10,
+        name: None,
+        suppressed: Some(false),
+        parent: None,
+        dependencies: Vec::new(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Vec::new(),
+        outputs: Vec::new(),
+        definition: FeatureDefinition::DeleteBody {
+            bodies: cadmpeg_ir::features::BodySelection::Unresolved,
+            mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+        },
+        native_ref: None,
+    });
     for (ordinal, definition) in [
         FeatureDefinition::DatumPlaneUnresolved,
         FeatureDefinition::DatumCoordinateSystemUnresolved,
@@ -17312,6 +17330,8 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     assert!(losses[3].message.contains("loft (2)"));
     assert_eq!(losses[4].category, LossCategory::Feature);
     assert!(losses[4].message.contains("block (1)"));
+    assert!(losses[4].message.contains("delete body (1)"));
+    assert!(losses[4].message.contains("sketch (1)"));
     assert_eq!(losses[5].category, LossCategory::Feature);
     assert!(losses[5].message.contains("1 NX sketch history feature"));
     assert!(losses[5].message.contains("1 have no neutral sketch graph"));
@@ -17335,6 +17355,7 @@ fn design_intent_losses_distinguish_native_and_sketch_gaps() {
     crate::decode::append_design_intent_losses(&ir, &mut losses);
 
     assert_eq!(losses.len(), 6);
+    assert!(!losses[4].message.contains("sketch"));
     assert!(losses[5].message.contains("no sketch constraints"));
 }
 
