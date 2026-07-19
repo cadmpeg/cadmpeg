@@ -4166,23 +4166,30 @@ pub(crate) fn bind_pattern_inputs(
                 let Some(&model_index) = model_by_native.get(feature.id.as_str()) else {
                     continue;
                 };
-                if !matches!(
-                    model_features[model_index].definition,
+                let (needs_seed, needs_direction) = match &model_features[model_index].definition {
                     FeatureDefinition::Pattern {
-                        ref seeds,
-                        pattern: PatternKind::Linear { .. },
-                    } if seeds.is_empty()
-                ) {
+                        seeds,
+                        pattern: PatternKind::Linear { direction, .. },
+                    } => (seeds.is_empty(), direction.is_none()),
+                    _ => continue,
+                };
+                if !needs_seed && !needs_direction {
                     continue;
                 }
-                let Some(previous_index) = start_index.checked_sub(1) else {
+                if needs_seed {
+                    if let Some((_, seed)) = start_index
+                        .checked_sub(1)
+                        .and_then(|index| starts.get(index))
+                    {
+                        if let Some(&seed_index) = model_by_native.get(seed.id.as_str()) {
+                            linear_seed_assignments
+                                .push((model_index, model_features[seed_index].id.clone()));
+                        }
+                    }
+                }
+                if !needs_direction {
                     continue;
-                };
-                let (_, seed) = starts[previous_index];
-                let Some(&seed_index) = model_by_native.get(seed.id.as_str()) else {
-                    continue;
-                };
-                linear_seed_assignments.push((model_index, model_features[seed_index].id.clone()));
+                }
                 let end = starts
                     .get(start_index + 1)
                     .map_or(u64::MAX, |(offset, _)| *offset);
@@ -20175,7 +20182,7 @@ mod profile_join_tests {
         };
         bind_pattern_inputs(
             &mut features,
-            &[linear_history],
+            std::slice::from_ref(&linear_history),
             std::slice::from_ref(&lane),
         );
         let FeatureDefinition::Pattern { seeds, .. } = &features[0].definition else {
@@ -20192,6 +20199,31 @@ mod profile_join_tests {
                 },
                 ..
             } if x == -1.0 && y == 0.0 && z == 0.0
+        ));
+
+        let FeatureDefinition::Pattern {
+            pattern: PatternKind::Linear { direction, .. },
+            ..
+        } = &mut features[0].definition
+        else {
+            panic!("expected linear pattern");
+        };
+        *direction = None;
+        bind_pattern_inputs(
+            &mut features,
+            std::slice::from_ref(&linear_history),
+            std::slice::from_ref(&lane),
+        );
+        assert!(matches!(
+            features[0].definition,
+            FeatureDefinition::Pattern {
+                ref seeds,
+                pattern: PatternKind::Linear {
+                    direction: Some(Vector3 { x, y, z }),
+                    ..
+                },
+            } if seeds == &[PatternSeed::Feature(features[2].id.clone())]
+                && x == -1.0 && y == 0.0 && z == 0.0
         ));
 
         let mut mirror_history = history.clone();
