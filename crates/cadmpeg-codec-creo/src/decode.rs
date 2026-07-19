@@ -13218,6 +13218,9 @@ fn unresolved_extrude_feature_definition() -> IrFeatureDefinition {
 }
 
 fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition> {
+    if numbered_feature_name_has_family(kind, "Boundary Blend") {
+        return Some(IrFeatureDefinition::BoundarySurfaceUnresolved);
+    }
     if numbered_feature_name_has_family(kind, "Thicken") {
         return Some(IrFeatureDefinition::Thicken {
             faces: FaceSelection::Unresolved,
@@ -14769,6 +14772,10 @@ mod resolved_sketch_tests {
         assert!(!numbered_feature_name_has_family("Thicken", "Thicken"));
         assert!(!numbered_feature_name_has_family("Thicken A", "Thicken"));
         assert!(!numbered_feature_name_has_family("GThicken 1", "Thicken"));
+        assert!(matches!(
+            reference_named_feature_definition("Boundary Blend 1"),
+            Some(IrFeatureDefinition::BoundarySurfaceUnresolved)
+        ));
         assert!(matches!(
             reference_named_feature_definition("Thicken 1"),
             Some(IrFeatureDefinition::Thicken {

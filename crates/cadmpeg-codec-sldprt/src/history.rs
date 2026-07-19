@@ -3889,6 +3889,12 @@ pub fn sync_neutral_features(
                     feature.id
                 )));
             }
+            FeatureDefinition::BoundarySurfaceUnresolved => {
+                return Err(CodecError::NotImplemented(format!(
+                    "SLDPRT feature {} has unresolved boundary-surface construction",
+                    feature.id
+                )));
+            }
             FeatureDefinition::DatumPlane {
                 origin,
                 normal,
@@ -7326,6 +7332,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::OffsetSurface { .. } => "OffsetSurface",
         FeatureDefinition::KnitSurface { .. } => "KnitSurface",
         FeatureDefinition::FilledSurface { .. } => "FilledSurface",
+        FeatureDefinition::BoundarySurfaceUnresolved => "BoundarySurface",
         FeatureDefinition::TrimSurface { .. } => "TrimSurface",
         FeatureDefinition::ExtendSurface { .. } => "ExtendSurface",
         FeatureDefinition::RuledSurface { .. } => "RuledSurface",

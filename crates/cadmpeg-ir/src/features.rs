@@ -792,6 +792,8 @@ pub enum FeatureDefinition {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         merge_result: Option<bool>,
     },
+    /// Boundary-surface operation whose directional curve networks remain unresolved.
+    BoundarySurfaceUnresolved,
     /// Restricts selected surface faces to one side of a trimming path.
     TrimSurface {
         /// Surface faces modified by the operation.
