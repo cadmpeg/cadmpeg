@@ -40,6 +40,7 @@ use crate::container::ContainerScan;
 
 const SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x03];
 const LEGACY_SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x07, 0x00, 0x01];
+const LEGACY_EXTENDED_SKETCH_MARKER: &[u8] = &[0xff, 0xff, 0x1f, 0x00, 0x01];
 const CLASS_MARKER: &[u8] = &[0xff, 0xff, 0x01, 0x00];
 const NAME_MARKER: &[u8] = &[0x04, 0x80, 0xff, 0xfe, 0xff];
 const SCALAR_HEADER: &[u8] = &[
@@ -253,6 +254,18 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
         .enumerate()
         .map(|(ordinal, (offset, code))| {
             let coordinates_m = marker_coordinates(payload, offset);
+            let kind = if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+                == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+                && coordinates_m.is_none()
+            {
+                match code {
+                    0 => SketchInputKind::Arc,
+                    1 | 2 => SketchInputKind::LineOrCircle,
+                    _ => SketchInputKind::from_native_code_and_layout(code, false),
+                }
+            } else {
+                SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some())
+            };
             SketchInputEntity {
                 id: format!("sldprt:feature-input:sketch-entity#{lane_key}:{offset}"),
                 parent: parent.to_string(),
@@ -261,7 +274,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 offset: offset as u64,
                 object_index: marker_object_index(payload, offset),
                 local_id: marker_local_id(payload, offset),
-                kind: SketchInputKind::from_native_code_and_layout(code, coordinates_m.is_some()),
+                kind,
                 state_value: marker_state_value(payload, offset),
                 coordinates_m,
                 links: Vec::new(),
@@ -279,7 +292,9 @@ pub(crate) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
 
 fn sketch_marker_prefix_at(payload: &[u8], offset: usize) -> bool {
     let marker = payload.get(offset..offset + SKETCH_MARKER.len());
-    marker == Some(SKETCH_MARKER) || marker == Some(LEGACY_SKETCH_MARKER)
+    marker == Some(SKETCH_MARKER)
+        || marker == Some(LEGACY_SKETCH_MARKER)
+        || marker == Some(LEGACY_EXTENDED_SKETCH_MARKER)
 }
 
 pub(crate) fn relation_bindings(
@@ -387,8 +402,10 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     }
     let coordinate_offset = if payload.get(offset + 64..offset + 66)? == [0x1e, 0x00] {
         offset.checked_add(66)?
-    } else if payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())? == LEGACY_SKETCH_MARKER
-        && marker_is_geometry_locus(payload, offset)
+    } else if matches!(
+        payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?,
+        LEGACY_SKETCH_MARKER | LEGACY_EXTENDED_SKETCH_MARKER
+    ) && marker_is_geometry_locus(payload, offset)
         && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
     {
         offset.checked_add(58)?
@@ -441,8 +458,9 @@ mod marker_tests {
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, fixed_reference_plane_frame, inline_surface_reference_at,
-        legacy_feature_input_section, legacy_reference_axis_triads,
+        explicit_reference_plane_frame, fixed_reference_plane_frame,
+        indexed_marker_endpoint_markers, indexed_profile_construction_axis,
+        inline_surface_reference_at, legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, marker_coordinates, marker_is_geometry_locus,
         marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
         minimal_reference_plane_frame, mirror_pattern_component_path_at,
@@ -456,7 +474,8 @@ mod marker_tests {
         sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate, BooleanOp,
         CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
+        NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
@@ -464,7 +483,7 @@ mod marker_tests {
         SketchInputKind, SketchInputLink, SketchRelationKind,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometry, SketchLocus};
+    use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometry, SketchId, SketchLocus};
     use std::collections::{BTreeMap, HashSet};
 
     #[test]
@@ -3472,6 +3491,85 @@ mod marker_tests {
     }
 
     #[test]
+    fn indexed_profile_construction_line_places_a_revolution_axis() {
+        let mut payload = vec![0; 300];
+        for offset in [0, 100, 200] {
+            payload[offset..offset + 5].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        }
+        payload[217..221].copy_from_slice(&2u32.to_le_bytes());
+        payload[256..258].copy_from_slice(&0u16.to_le_bytes());
+        payload[258..260].copy_from_slice(&1u16.to_le_bytes());
+        payload[260..264].copy_from_slice(&[1, 0, 0, 0]);
+        let marker = |id: &str,
+                      offset: u64,
+                      object_index: Option<u32>,
+                      coordinates_m: Option<[f64; 2]>| SketchInputEntity {
+            id: id.into(),
+            parent: "lane".into(),
+            feature_ref: Some("profile-native".into()),
+            ordinal: object_index.unwrap_or(3),
+            offset,
+            object_index,
+            local_id: None,
+            kind: SketchInputKind::Point,
+            state_value: None,
+            coordinates_m,
+            links: Vec::new(),
+            link_selector: None,
+        };
+        let mut lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: vec![
+                marker("first", 0, Some(1), Some([0.0, 0.0195])),
+                marker("second", 100, Some(2), Some([0.008, 0.0195])),
+                marker("axis", 200, None, None),
+            ],
+        };
+        lane.sketch_entities[2].kind = SketchInputKind::LineOrCircle;
+        let sketch = Sketch {
+            id: SketchId("sketch".into()),
+            name: None,
+            configuration: None,
+            origin: Point3::new(0.0, 0.0, 0.0),
+            normal: Vector3::new(0.0, -1.0, 0.0),
+            u_axis: Vector3::new(0.0, 0.0, -1.0),
+            profiles: Vec::new(),
+            native_ref: None,
+        };
+
+        assert_eq!(
+            indexed_profile_construction_axis(&lane, "profile-native", &sketch),
+            Some(cadmpeg_ir::features::RevolutionAxis {
+                origin: Point3::new(0.0, 0.0, 19.5),
+                direction: Vector3::new(1.0, 0.0, 0.0),
+            })
+        );
+        let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+        assert_eq!(
+            indexed_marker_endpoint_markers(
+                &lane.native_payload,
+                &lane.sketch_entities[2],
+                &markers,
+            )
+            .into_iter()
+            .map(|marker| marker.id.as_str())
+            .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
+    }
+
+    #[test]
     fn revolution_form_words_distinguish_new_body_and_join() {
         assert_eq!(
             revolution_operation(Some("moRevolution_c"), 6),
@@ -4135,6 +4233,187 @@ pub(crate) fn enrich_history_revolution_inputs(
             );
         }
     }
+}
+
+/// Bind a revolution axis selected from its profile sketch's indexed construction line.
+pub(crate) fn bind_profile_revolution_axes(
+    model_features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+    sketches: &[Sketch],
+) {
+    let native_by_id = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .map(|feature| (feature.id.as_str(), feature))
+        .collect::<HashMap<_, _>>();
+    let model_by_id = model_features
+        .iter()
+        .enumerate()
+        .map(|(index, feature)| (&feature.id, index))
+        .collect::<HashMap<_, _>>();
+    let sketch_by_id = sketches
+        .iter()
+        .map(|sketch| (&sketch.id, sketch))
+        .collect::<HashMap<_, _>>();
+    let mut assignments = Vec::<(usize, cadmpeg_ir::features::RevolutionAxis)>::new();
+
+    for (feature_index, feature) in model_features.iter().enumerate() {
+        let FeatureDefinition::Revolve { construction, .. } = &feature.definition else {
+            continue;
+        };
+        if construction.axis.is_some() {
+            continue;
+        }
+        let Some(profile) = construction.profile.as_ref() else {
+            continue;
+        };
+        let (profile_native, sketch_id) = match profile {
+            cadmpeg_ir::features::ProfileRef::Feature(profile_id) => {
+                let Some(&profile_index) = model_by_id.get(profile_id) else {
+                    continue;
+                };
+                let profile_feature = &model_features[profile_index];
+                let FeatureDefinition::Sketch {
+                    sketch: Some(sketch),
+                    ..
+                } = &profile_feature.definition
+                else {
+                    continue;
+                };
+                let Some(native) = profile_feature.native_ref.as_deref() else {
+                    continue;
+                };
+                (native, sketch)
+            }
+            cadmpeg_ir::features::ProfileRef::Sketch(sketch_id) => {
+                let mut owners = model_features.iter().filter(|candidate| {
+                    matches!(
+                        &candidate.definition,
+                        FeatureDefinition::Sketch {
+                            sketch: Some(candidate),
+                            ..
+                        } if candidate == sketch_id
+                    )
+                });
+                let Some(owner) = owners.next() else {
+                    continue;
+                };
+                if owners.next().is_some() {
+                    continue;
+                }
+                let Some(native) = owner.native_ref.as_deref() else {
+                    continue;
+                };
+                (native, sketch_id)
+            }
+            cadmpeg_ir::features::ProfileRef::Generated { .. }
+            | cadmpeg_ir::features::ProfileRef::Unresolved(_)
+            | cadmpeg_ir::features::ProfileRef::Native(_)
+            | cadmpeg_ir::features::ProfileRef::Faces(_) => continue,
+        };
+        if !native_by_id
+            .get(profile_native)
+            .is_some_and(|feature| is_profile_feature_object(feature))
+        {
+            continue;
+        }
+        let Some(sketch) = sketch_by_id.get(sketch_id).copied() else {
+            continue;
+        };
+        let mut candidates = lanes
+            .iter()
+            .filter_map(|lane| indexed_profile_construction_axis(lane, profile_native, sketch))
+            .collect::<Vec<_>>();
+        candidates.sort_by_key(|axis| {
+            [
+                axis.origin.x.to_bits(),
+                axis.origin.y.to_bits(),
+                axis.origin.z.to_bits(),
+                axis.direction.x.to_bits(),
+                axis.direction.y.to_bits(),
+                axis.direction.z.to_bits(),
+            ]
+        });
+        candidates.dedup();
+        if let [axis] = candidates.as_slice() {
+            assignments.push((feature_index, *axis));
+        }
+    }
+
+    for (index, axis) in assignments {
+        if let FeatureDefinition::Revolve { construction, .. } =
+            &mut model_features[index].definition
+        {
+            if construction.axis.is_none() {
+                construction.axis = Some(axis);
+            }
+        }
+    }
+}
+
+fn indexed_profile_construction_axis(
+    lane: &FeatureInputLane,
+    profile_native: &str,
+    sketch: &Sketch,
+) -> Option<cadmpeg_ir::features::RevolutionAxis> {
+    const QUANTUM: f64 = 1.0e-8;
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let mut axes = lane
+        .sketch_entities
+        .iter()
+        .filter(|marker| marker.feature_ref.as_deref() == Some(profile_native))
+        .filter_map(|marker| {
+            let offset = usize::try_from(marker.offset).ok()?;
+            (lane
+                .native_payload
+                .get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+                == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+                && lane.native_payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
+                && lane.native_payload.get(offset + 60..offset + 64) == Some(&[1, 0, 0, 0]))
+            .then_some(marker)
+        });
+    let axis = axes.next()?;
+    if axes.next().is_some() {
+        return None;
+    }
+    let markers = lane.sketch_entities.iter().collect::<Vec<_>>();
+    let endpoints = indexed_marker_endpoint_markers(&lane.native_payload, axis, &markers);
+    let [start_marker, end_marker] = endpoints.as_slice() else {
+        return None;
+    };
+    let native_start = start_marker.coordinates_m?;
+    let native_end = end_marker.coordinates_m?;
+    let transform = sketch_frame_marker_transform(sketch, QUANTUM)?;
+    let project = |point: [f64; 2]| {
+        let point = transform.apply(quantize(
+            Point2::new(point[0] * NATIVE_TO_IR, point[1] * NATIVE_TO_IR),
+            QUANTUM,
+        ))?;
+        Some(Point2::new(
+            point.0 as f64 * QUANTUM,
+            point.1 as f64 * QUANTUM,
+        ))
+    };
+    let start = project(native_start)?;
+    let end = project(native_end)?;
+    let v_axis = cross(sketch.normal, sketch.u_axis);
+    let point = |point: Point2| {
+        Point3::new(
+            sketch.origin.x + point.u * sketch.u_axis.x + point.v * v_axis.x,
+            sketch.origin.y + point.u * sketch.u_axis.y + point.v * v_axis.y,
+            sketch.origin.z + point.u * sketch.u_axis.z + point.v * v_axis.z,
+        )
+    };
+    let start = point(start);
+    let end = point(end);
+    let delta = Vector3::new(end.x - start.x, end.y - start.y, end.z - start.z);
+    let length = (delta.x * delta.x + delta.y * delta.y + delta.z * delta.z).sqrt();
+    (length.is_finite() && length > 1.0e-9).then_some(cadmpeg_ir::features::RevolutionAxis {
+        origin: start,
+        direction: Vector3::new(delta.x / length, delta.y / length, delta.z / length),
+    })
 }
 
 /// Bind pattern operands carried by adjacent feature-input objects.
@@ -10072,7 +10351,6 @@ pub(crate) fn project_marker_backed_sketches(
                 .iter()
                 .filter(|marker| {
                     marker.feature_ref.as_deref() == Some(native_feature.id.as_str())
-                        && marker.coordinates_m.is_some()
                         && matches!(
                             marker.kind,
                             SketchInputKind::Point
@@ -10170,14 +10448,9 @@ pub(crate) fn project_marker_backed_sketches(
                 continue;
             };
             let projected = markers
-                .into_iter()
+                .iter()
+                .copied()
                 .filter_map(|marker| {
-                    let [u, v] = marker.coordinates_m?;
-                    let point = transform.apply(quantize(
-                        Point2::new(u * NATIVE_TO_IR, v * NATIVE_TO_IR),
-                        QUANTUM,
-                    ))?;
-                    let point = Point2::new(point.0 as f64 * QUANTUM, point.1 as f64 * QUANTUM);
                     let project = |endpoint: &SketchInputEntity| {
                         let [u, v] = endpoint.coordinates_m?;
                         let point = transform.apply(quantize(
@@ -10191,10 +10464,18 @@ pub(crate) fn project_marker_backed_sketches(
                     };
                     let geometry = match marker.kind {
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint => {
+                            let point = project(marker)?;
                             SketchGeometry::Point { position: point }
                         }
                         SketchInputKind::LineOrCircle => {
-                            let endpoints = line_endpoint_markers(marker, &markers_by_id);
+                            let mut endpoints = line_endpoint_markers(marker, &markers_by_id);
+                            if endpoints.is_empty() {
+                                endpoints = indexed_marker_endpoint_markers(
+                                    &lane.native_payload,
+                                    marker,
+                                    &markers,
+                                );
+                            }
                             if let [start, end] = endpoints.as_slice() {
                                 let (Some(start), Some(end)) = (project(start), project(end))
                                 else {
@@ -10214,8 +10495,18 @@ pub(crate) fn project_marker_backed_sketches(
                             }
                         }
                         SketchInputKind::Arc => {
-                            let endpoints = line_endpoint_markers(marker, &markers_by_id);
-                            if let [start, end] = endpoints.as_slice() {
+                            let mut endpoints = line_endpoint_markers(marker, &markers_by_id);
+                            if endpoints.is_empty() {
+                                endpoints = indexed_marker_endpoint_markers(
+                                    &lane.native_payload,
+                                    marker,
+                                    &markers,
+                                );
+                            }
+                            if let ([start, end], Some(point)) = (
+                                endpoints.as_slice(),
+                                marker.coordinates_m.and_then(|_| project(marker)),
+                            ) {
                                 let (Some(start), Some(end)) = (project(start), project(end))
                                 else {
                                     return None;
@@ -10256,6 +10547,25 @@ pub(crate) fn project_marker_backed_sketches(
                         }
                         SketchInputKind::Relation(_) | SketchInputKind::Native(_) => return None,
                     };
+                    let endpoint_refs = if matches!(
+                        marker.kind,
+                        SketchInputKind::LineOrCircle | SketchInputKind::Arc
+                    ) {
+                        let mut endpoints = line_endpoint_markers(marker, &markers_by_id);
+                        if endpoints.is_empty() {
+                            endpoints = indexed_marker_endpoint_markers(
+                                &lane.native_payload,
+                                marker,
+                                &markers,
+                            );
+                        }
+                        endpoints
+                            .into_iter()
+                            .map(|endpoint| endpoint.id.clone())
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
                     Some(SketchEntity {
                         id: SketchEntityId(format!(
                             "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
@@ -10265,7 +10575,7 @@ pub(crate) fn project_marker_backed_sketches(
                         construction: true,
                         native_ref: Some(marker.id.clone()),
                         geometry_ref: None,
-                        endpoint_refs: Vec::new(),
+                        endpoint_refs,
                         geometry,
                     })
                 })
@@ -15235,6 +15545,48 @@ fn line_endpoint_markers<'a>(
     endpoints.sort_unstable_by_key(|endpoint| endpoint.offset);
     endpoints.dedup_by_key(|endpoint| endpoint.id.as_str());
     endpoints
+}
+
+fn indexed_marker_endpoint_markers<'a>(
+    payload: &[u8],
+    curve: &SketchInputEntity,
+    markers: &[&'a SketchInputEntity],
+) -> Vec<&'a SketchInputEntity> {
+    let Some(offset) = usize::try_from(curve.offset).ok().filter(|offset| {
+        payload.get(*offset..*offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+            == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+            && curve.coordinates_m.is_none()
+            && matches!(
+                curve.kind,
+                SketchInputKind::LineOrCircle | SketchInputKind::Arc
+            )
+            && payload.get(*offset + 60..*offset + 64) == Some(&[1, 0, 0, 0])
+    }) else {
+        return Vec::new();
+    };
+    [56, 58]
+        .into_iter()
+        .filter_map(|relative| {
+            let index = u16::from_le_bytes(
+                payload
+                    .get(offset + relative..offset + relative + 2)?
+                    .try_into()
+                    .ok()?,
+            )
+            .checked_add(1)?;
+            let mut candidates = markers.iter().copied().filter(|marker| {
+                marker.feature_ref == curve.feature_ref
+                    && marker.object_index == Some(u32::from(index))
+                    && marker.coordinates_m.is_some()
+                    && matches!(
+                        marker.kind,
+                        SketchInputKind::Point | SketchInputKind::ConstrainedPoint
+                    )
+            });
+            let candidate = candidates.next()?;
+            candidates.next().is_none().then_some(candidate)
+        })
+        .collect()
 }
 
 fn linked_single_arc_entity(
