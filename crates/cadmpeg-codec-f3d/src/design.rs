@@ -932,15 +932,17 @@ pub fn project_parameter_design_with_edge_identities(
                     }
                 })
             } else if family == Some(DesignFeatureFamily::Thicken) {
-                project_thicken(scope, face_operands).unwrap_or_else(|| FeatureDefinition::Native {
-                    kind: scope.kind.clone(),
-                    parameters: parameters
-                        .iter()
-                        .map(|(_, parameter)| {
-                            (parameter.name.clone(), parameter.expression.clone())
-                        })
-                        .collect(),
-                    properties: native_scope_properties(scope, native_scope),
+                project_thicken(scope, face_operands, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
                 })
             } else if family == Some(DesignFeatureFamily::Coil) {
                 project_coil(scope, &parameters, construction_groups).unwrap_or_else(|| {
@@ -1300,16 +1302,32 @@ fn project_offset_faces(
 fn project_thicken(
     scope: &DesignParameterScope,
     operands: &[DesignFaceOperand],
+    groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
 
     let DesignDirectFaceOperation::Thicken { thickness, .. } =
         scope.direct_face_operation.as_ref()?
     else {
         return None;
     };
+    let faces = direct_face_selection(scope, operands).or_else(|| {
+        let matching = groups
+            .iter()
+            .filter(|group| {
+                native_stream(&group.id) == native_stream(&scope.id)
+                    && group.scope_record_index == scope.record_index
+                    && group.role == 0x0000_0005_0000_0000
+                    && !group.members.is_empty()
+            })
+            .collect::<Vec<_>>();
+        let [group] = matching.as_slice() else {
+            return None;
+        };
+        Some(FaceSelection::Native(group.id.clone()))
+    })?;
     Some(FeatureDefinition::Thicken {
-        faces: direct_face_selection(scope, operands)?,
+        faces,
         thickness: Some(Length(*thickness * 10.0)),
         side: None,
     })
@@ -18183,9 +18201,16 @@ fn decode_stream(bytes: &[u8], stream: &str, out: &mut Vec<ConstructionRecipe>) 
 }
 
 fn recipe_design_id(bytes: &[u8], offset: usize, name: &[u8]) -> Option<(String, usize)> {
-    let pre = offset.checked_sub(27)?;
-    if let Some((id, value_offset)) = ascii_id_at(bytes, pre) {
-        return Some((id, value_offset));
+    let id_end = offset.checked_sub(20)?;
+    for length in 1..=8usize {
+        let Some(length_at) = id_end.checked_sub(4 + length) else {
+            continue;
+        };
+        if let Some((id, value_offset)) = ascii_id_at(bytes, length_at) {
+            if value_offset.checked_add(id.len()) == Some(id_end) {
+                return Some((id, value_offset));
+            }
+        }
     }
     if offset >= 23 {
         let candidate = bytes.get(offset - 23..offset - 20)?;
@@ -21425,6 +21450,40 @@ mod relation_tests {
                 ..
             })
         ));
+        thicken_scope.direct_face_operation = exact_direct_face_operation(&bytes, &thicken_scope);
+        let thicken_group = DesignConstructionOperandGroup {
+            id: "thicken-group".into(),
+            scope_record_index: thicken_scope.record_index,
+            scope_reference_ordinal: 0,
+            record_index: 200,
+            byte_offset: 0,
+            class_tag: "264".into(),
+            member_count_offset: 0,
+            members: vec![201],
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![0],
+            identity_record_index: 202,
+            identity_record_offset: 0,
+            role: 0x0000_0005_0000_0000,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 0,
+            opaque_index: 1,
+            opaque_index_offset: 0,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 0,
+            variant: false,
+            paired_class_tag: "264".into(),
+            paired_byte_offset: 0,
+        };
+        assert!(matches!(
+            super::project_thicken(&thicken_scope, &[], &[thicken_group]),
+            Some(cadmpeg_ir::features::FeatureDefinition::Thicken {
+                faces: cadmpeg_ir::features::FaceSelection::Native(native),
+                thickness: Some(cadmpeg_ir::features::Length(10.0)),
+                ..
+            }) if native == "thicken-group"
+        ));
         bytes[thicken_at + 47] = 0;
         assert_eq!(exact_direct_face_operation(&bytes, &thicken_scope), None);
 
@@ -23167,6 +23226,19 @@ mod relation_tests {
         assert!(recipes.iter().all(|recipe| recipe.design_id.is_none()));
         assert_eq!(recipes[0].recipe_index, 0);
         assert_eq!(recipes[1].recipe_index, 1);
+
+        let mut body = Vec::new();
+        body.extend_from_slice(&4u32.to_le_bytes());
+        body.extend_from_slice(b"2265");
+        body.extend_from_slice(&3u32.to_le_bytes());
+        body.extend_from_slice(&[0; 12]);
+        body.extend_from_slice(&16u32.to_le_bytes());
+        body.extend_from_slice(b"body_recipe_data");
+        let mut recipes = Vec::new();
+        super::decode_stream(&body, "Design/BulkStream.dat", &mut recipes);
+        assert_eq!(recipes.len(), 1);
+        assert_eq!(recipes[0].design_id.as_deref(), Some("2265"));
+        assert_eq!(recipes[0].design_id_offset, Some(4));
     }
 
     #[test]
