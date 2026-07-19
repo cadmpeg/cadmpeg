@@ -1874,6 +1874,47 @@ fn decode_types_named_protrusion_without_section_operands() {
 }
 
 #[test]
+fn decode_types_named_sweeps_without_recipe_or_operands() {
+    let data = build_prt(
+        "c",
+        &[("MdlStatus", b"Extrude id 4\0Revolve id 5\0".to_vec())],
+    );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = |id| {
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == id)
+            .expect("named sweep feature")
+    };
+
+    assert!(matches!(
+        feature("creo:model:feature#4").definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            direction: None,
+            extent: cadmpeg_ir::features::Extent::Unresolved,
+            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            ..
+        }
+    ));
+    assert!(matches!(
+        feature("creo:model:feature#5").definition,
+        cadmpeg_ir::features::FeatureDefinition::Revolve {
+            construction: cadmpeg_ir::features::RevolutionConstruction {
+                profile: None,
+                axis: None,
+                extent: None,
+                ..
+            },
+            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+        }
+    ));
+}
+
+#[test]
 fn decode_types_schema_datum_from_its_unique_plane_carrier() {
     let mut geometry = visibgeom_payload(1, 0);
     push_generated_plane_row(
@@ -3494,9 +3535,17 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
         .expect("model feature");
     assert!(matches!(
         &model_feature.definition,
-        cadmpeg_ir::features::FeatureDefinition::Native { parameters, .. }
-            if parameters.get("dimension_count").map(String::as_str) == Some("2")
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            extent: cadmpeg_ir::features::Extent::Unresolved,
+            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            ..
+        }
     ));
+    assert_eq!(
+        model_feature.source_properties["native_parameter.dimension_count"],
+        "2"
+    );
     let sketch_feature = result
         .ir
         .model

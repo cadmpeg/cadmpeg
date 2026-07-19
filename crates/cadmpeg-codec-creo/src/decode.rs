@@ -13201,8 +13201,23 @@ fn named_feature_definition(
             },
         });
     }
-    if numbered_feature_name_has_family(kind, "Extrude") {
+    if kind == "Extrude" || numbered_feature_name_has_family(kind, "Extrude") {
         return Some(unresolved_extrude_feature_definition());
+    }
+    if kind == "Revolve" {
+        return Some(IrFeatureDefinition::Revolve {
+            construction: RevolutionConstruction {
+                profile: None,
+                axis: None,
+                extent: None,
+                axis_reference: None,
+                solid: None,
+                face_maker_class: None,
+                fuse_order: None,
+                allow_multi_profile_faces: None,
+            },
+            op: BooleanOp::Unresolved,
+        });
     }
     let schema_class = match kind {
         "Datum Plane" | "Bezugsebene" => 923,
