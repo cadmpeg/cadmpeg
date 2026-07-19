@@ -2088,6 +2088,19 @@ mod marker_tests {
         assert_eq!(feature_inline_operation(&lane, &name), None);
         lane.native_payload[trailer + 6] = 3;
         assert_eq!(feature_inline_operation_fields(&lane, &name), None);
+
+        lane.native_payload[trailer + 6] = 0;
+        lane.native_payload[trailer + 16..trailer + 19].fill(0);
+        lane.native_payload.resize(trailer + 40, 0);
+        lane.native_payload[trailer + 22..trailer + 24].copy_from_slice(&[1, 0]);
+        lane.native_payload[trailer + 24..trailer + 26].copy_from_slice(&0x0185u16.to_le_bytes());
+        lane.native_payload[trailer + 38..trailer + 40].copy_from_slice(&0x019fu16.to_le_bytes());
+        assert_eq!(
+            feature_inline_operation(&lane, &name),
+            Some(BooleanOp::Join)
+        );
+        lane.native_payload[trailer + 38..trailer + 40].fill(0);
+        assert_eq!(feature_inline_operation_fields(&lane, &name), None);
     }
 
     #[test]
@@ -8707,11 +8720,22 @@ fn feature_inline_operation_fields(
     let name_bytes = name.value.encode_utf16().count().checked_mul(2)?;
     let trailer = name_offset.checked_add(6 + name_bytes)?;
     let bytes = lane.native_payload.get(trailer..trailer + 19)?;
+    let terminated = bytes[16..19] == [0xff, 0xfe, 0xff]
+        || lane
+            .native_payload
+            .get(trailer + 16..trailer + 40)
+            .is_some_and(|suffix| {
+                suffix[..6] == [0; 6]
+                    && suffix[6..8] == [1, 0]
+                    && suffix[8..10] != [0, 0]
+                    && suffix[10..22] == [0; 12]
+                    && suffix[22..24] != [0, 0]
+            });
     if bytes[..4] != [0; 4]
         || bytes[5] != 1
         || bytes[8..12] != name.object_id?.to_le_bytes()
         || bytes[12..16] != [0; 4]
-        || bytes[16..19] != [0xff, 0xfe, 0xff]
+        || !terminated
         || !matches!(bytes[6], 0 | 2)
     {
         return None;
