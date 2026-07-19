@@ -412,15 +412,15 @@ mod marker_tests {
         component_reference_curve_path_at, constraint_midplane_frame,
         coordinate_marker_local_links, fixed_reference_plane_frame, legacy_feature_input_section,
         legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, marker_object_index, named_scalars,
-        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
-        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
-        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        CompactPointReferenceKind, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
-        FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
+        marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
+        named_scalars, native_scalar_matches_discrete_parameter, object_names,
+        ordered_compact_line_profile, ordered_rectangle_corners, patch_spatial_vertex,
+        plane_intersection_axis_frame, plane_intersection_axis_sources, principal_sketch_frame,
+        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
+        resolve_scalar_operand_markers, sketch_plane_frames, solved_tangent,
+        spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
+        unique_marker_candidate, CompactPointReferenceKind, CLASS_MARKER,
+        COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, NAME_MARKER, SCALAR_HEADER,
     };
     use crate::records::{
         Feature, FeatureInputComponentPathEntry, FeatureInputOperand, FeatureInputOperandKind,
@@ -741,6 +741,49 @@ mod marker_tests {
         payload[48] = 1;
         assert!(fixed_reference_plane_frame(&payload[..97]).is_some());
         assert_eq!(angled_reference_plane_frame(&payload), None);
+    }
+
+    #[test]
+    fn matrix_reference_plane_uses_basis_columns() {
+        let root = 9;
+        let mut payload = vec![0; root + 121];
+        let sine = 0.39073112848927327_f64;
+        let cosine = 0.9205048534524405_f64;
+        for (relative, value) in [
+            (0, 0.00840071926251938),
+            (8, 0.019790854349227484),
+            (16, 0.0),
+            (24, sine),
+            (32, cosine),
+            (40, 0.0),
+            (49, cosine),
+            (57, 0.0),
+            (65, sine),
+            (73, -sine),
+            (81, 0.0),
+            (89, cosine),
+            (97, 0.0),
+            (105, -1.0),
+            (113, 0.0),
+        ] {
+            payload[root + relative..root + relative + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[root + 48] = 1;
+        assert_eq!(
+            matrix_reference_plane_frame(&payload),
+            Some((
+                Point3::new(
+                    0.00840071926251938 * 1000.0,
+                    0.019790854349227484 * 1000.0,
+                    0.0,
+                ),
+                Vector3::new(sine, cosine, 0.0),
+                Vector3::new(cosine, -sine, 0.0),
+            ))
+        );
+
+        payload[root + 113..root + 121].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(matrix_reference_plane_frame(&payload), None);
     }
 
     #[test]
@@ -5603,6 +5646,7 @@ pub(crate) fn enrich_history_reference_planes(
                 .filter_map(fixed_reference_plane_frame)
                 .collect::<Vec<_>>();
             frames.extend(angled_reference_plane_frame(bytes));
+            frames.extend(matrix_reference_plane_frame(bytes));
             frames.extend(compact_reference_plane_frame(bytes));
             frames.sort_by_key(|(origin, normal, u_axis)| {
                 [
@@ -6099,6 +6143,94 @@ fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vect
         .collect::<Vec<_>>();
     frames.sort_by_key(|(_, normal, u_axis)| {
         [
+            normal.x.to_bits(),
+            normal.y.to_bits(),
+            normal.z.to_bits(),
+            u_axis.x.to_bits(),
+            u_axis.y.to_bits(),
+            u_axis.z.to_bits(),
+        ]
+    });
+    frames.dedup();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const RECORD_LEN: usize = 121;
+    const NATIVE_TO_IR: f64 = 1000.0;
+    let scalar = |bytes: &[u8], relative| {
+        let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
+        value.is_finite().then_some(value)
+    };
+    let norm =
+        |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let cross = |left: Vector3, right: Vector3| {
+        Vector3::new(
+            left.y * right.z - left.z * right.y,
+            left.z * right.x - left.x * right.z,
+            left.x * right.y - left.y * right.x,
+        )
+    };
+    let fixed_ranges = payload
+        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
+            fixed_reference_plane_frame(bytes)
+                .is_some()
+                .then_some(offset..offset + FIXED_REFERENCE_PLANE_FRAME_LEN)
+        })
+        .collect::<Vec<_>>();
+    let mut frames = payload
+        .windows(RECORD_LEN)
+        .enumerate()
+        .filter(|(offset, _)| {
+            let range = *offset..*offset + RECORD_LEN;
+            fixed_ranges
+                .iter()
+                .all(|fixed| range.end <= fixed.start || range.start >= fixed.end)
+        })
+        .filter_map(|(_, bytes)| {
+            if bytes[48] != 1 {
+                return None;
+            }
+            let origin = Point3::new(
+                scalar(bytes, 0)? * NATIVE_TO_IR,
+                scalar(bytes, 8)? * NATIVE_TO_IR,
+                scalar(bytes, 16)? * NATIVE_TO_IR,
+            );
+            let normal = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
+            let rows = [
+                Vector3::new(scalar(bytes, 49)?, scalar(bytes, 57)?, scalar(bytes, 65)?),
+                Vector3::new(scalar(bytes, 73)?, scalar(bytes, 81)?, scalar(bytes, 89)?),
+                Vector3::new(scalar(bytes, 97)?, scalar(bytes, 105)?, scalar(bytes, 113)?),
+            ];
+            let u_axis = Vector3::new(rows[0].x, rows[1].x, rows[2].x);
+            let v_axis = Vector3::new(rows[0].y, rows[1].y, rows[2].y);
+            let matrix_normal = Vector3::new(rows[0].z, rows[1].z, rows[2].z);
+            if [normal, u_axis, v_axis, matrix_normal]
+                .into_iter()
+                .any(|vector| (norm(vector) - 1.0).abs() > 1.0e-9)
+                || dot(u_axis, v_axis).abs() > 1.0e-9
+                || dot(u_axis, matrix_normal).abs() > 1.0e-9
+                || dot(v_axis, matrix_normal).abs() > 1.0e-9
+                || dot(normal, matrix_normal) < 1.0 - 1.0e-9
+                || dot(cross(u_axis, v_axis), matrix_normal) < 1.0 - 1.0e-9
+            {
+                return None;
+            }
+            Some((origin, normal, u_axis))
+        })
+        .collect::<Vec<_>>();
+    frames.sort_by_key(|(origin, normal, u_axis)| {
+        [
+            origin.x.to_bits(),
+            origin.y.to_bits(),
+            origin.z.to_bits(),
             normal.x.to_bits(),
             normal.y.to_bits(),
             normal.z.to_bits(),
