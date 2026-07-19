@@ -459,7 +459,7 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
 fn compact_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
     payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
         && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
-        && [134usize, 138, 146, 150, 154]
+        && [134usize, 138, 146, 150, 154, 161, 162]
             .into_iter()
             .any(|size| sketch_marker_prefix_at(payload, offset.saturating_add(size)))
 }
@@ -2723,6 +2723,12 @@ mod marker_tests {
         payload.resize(154 + LEGACY_SKETCH_MARKER.len(), 0);
         payload[154..].copy_from_slice(LEGACY_SKETCH_MARKER);
         assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+
+        for size in [161, 162] {
+            payload.resize(size + LEGACY_SKETCH_MARKER.len(), 0);
+            payload[size..].copy_from_slice(LEGACY_SKETCH_MARKER);
+            assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+        }
     }
 
     #[test]
