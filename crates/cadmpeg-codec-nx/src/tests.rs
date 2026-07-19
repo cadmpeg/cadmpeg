@@ -158,6 +158,8 @@ fn display_jt_index_requires_every_declared_header() {
     assert_eq!(documents[0].toc_entries[0].attributes, [0, 0, 0, 1]);
     let segments = crate::native::display_jt_segments(&container, &documents);
     assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].id.matches('#').count(), 1);
+    assert!(!segments[0].id.contains(&documents[0].id));
     assert_eq!(segments[0].segment_type, 1);
     assert_eq!(segments[0].segment_byte_len, segment_byte_len);
     let compression = segments[0].compression.as_ref().unwrap();
@@ -5410,6 +5412,7 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
 
     let tables = data_block_column_index_tables(&linked_rows, &target_rows);
     assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].id, "nx:om-data-block-column-index-tables:table#2");
     assert_eq!(tables[0].opening_linked_row, "opening");
     assert_eq!(
         tables[0].target_rows,
@@ -16568,6 +16571,7 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     };
     let uses = external_reference_record_string_uses(&[record.clone()], &references);
     assert_eq!(uses.len(), 4);
+    assert_eq!(uses[0].id, "nx:external-reference:record-string-use#7-0");
     assert_eq!(
         uses.iter().map(|use_| use_.slot).collect::<Vec<_>>(),
         [0, 1, 2, 3]

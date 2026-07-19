@@ -1459,6 +1459,10 @@ pub fn display_jt_segments(
 ) -> Vec<DisplayJtSegment> {
     let mut segments = Vec::new();
     for document in documents {
+        let document_key = document
+            .id
+            .split_once('#')
+            .map_or(document.id.as_str(), |(_, key)| key);
         let (Ok(start), Ok(byte_len)) = (
             usize::try_from(document.source_offset),
             usize::try_from(document.physical_byte_len),
@@ -1551,7 +1555,7 @@ pub fn display_jt_segments(
                 None
             };
             segments.push(DisplayJtSegment {
-                id: format!("nx:display-jt:segment#{}-{}", document.id, entry.ordinal),
+                id: format!("nx:display-jt:segment#{document_key}-{}", entry.ordinal),
                 document: document.id.clone(),
                 toc_entry: entry.id.clone(),
                 segment_id: segment_id.to_vec(),
@@ -11123,8 +11127,14 @@ pub fn external_reference_tail_reference_pairs(
                 .into_iter()
                 .enumerate()
                 .map(|(ordinal, (offset, persistent_handle, tagged_reference))| {
+                    let record_key = record
+                        .id
+                        .split_once('#')
+                        .map_or(record.id.as_str(), |(_, key)| key);
                     ExternalReferenceTailReferencePair {
-                        id: format!("{}-tail-reference-pair#{ordinal}", record.id),
+                        id: format!(
+                            "nx:external-reference:tail-reference-pair#{record_key}-{ordinal}"
+                        ),
                         handle_set_record: record.id.clone(),
                         ordinal: ordinal as u32,
                         persistent_handle,
@@ -11170,13 +11180,19 @@ pub fn external_reference_record_string_uses(
             resolved
                 .into_iter()
                 .enumerate()
-                .map(|(slot, reference)| ExternalReferenceRecordStringUse {
-                    id: format!("{}:string-slot#{slot}", record.id),
-                    external_record: record.id.clone(),
-                    slot: slot as u8,
-                    string_index: record.id_slots[slot],
-                    external_reference: reference.id.clone(),
-                    source_offset: record.source_offset + 7 + slot as u64 * 4,
+                .map(|(slot, reference)| {
+                    let record_key = record
+                        .id
+                        .split_once('#')
+                        .map_or(record.id.as_str(), |(_, key)| key);
+                    ExternalReferenceRecordStringUse {
+                        id: format!("nx:external-reference:record-string-use#{record_key}-{slot}"),
+                        external_record: record.id.clone(),
+                        slot: slot as u8,
+                        string_index: record.id_slots[slot],
+                        external_reference: reference.id.clone(),
+                        source_offset: record.source_offset + 7 + slot as u64 * 4,
+                    }
                 })
                 .collect()
         })
@@ -12355,7 +12371,7 @@ pub fn data_block_column_index_tables(
                 return None;
             }
             Some(DataBlockColumnIndexTable {
-                id: format!("nx:om-data-block-column-index-tables-{section_ordinal}:table"),
+                id: format!("nx:om-data-block-column-index-tables:table#{section_ordinal}"),
                 section_ordinal,
                 opening_linked_row: opening.id.clone(),
                 target_rows: targets.iter().map(|row| row.id.clone()).collect(),
