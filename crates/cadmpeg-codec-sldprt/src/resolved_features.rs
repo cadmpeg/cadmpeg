@@ -4461,6 +4461,10 @@ mod marker_tests {
             Some([-1.0, 0.0])
         );
         assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+
+        lane.native_payload[curve..curve + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        lane.native_payload[detail..detail + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
     }
 
     #[test]
@@ -5661,13 +5665,10 @@ fn profile_roster_implicit_axis_chord<'a>(
             && lane.native_payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
             && (compact_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some()
                 || wide_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some());
-        let extended_detailed_curve = lane
-            .native_payload
-            .get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-            == Some(LEGACY_EXTENDED_SKETCH_MARKER)
-            && lane.native_payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
+        let detailed_code_zero = lane.native_payload.get(offset + 17..offset + 21)
+            == Some(&0u32.to_le_bytes())
             && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some();
-        current_code_two || extended_detailed_curve
+        current_code_two || detailed_code_zero
     });
     let candidate = candidates.next()?;
     if candidates.next().is_some() {
