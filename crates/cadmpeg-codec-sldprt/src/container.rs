@@ -314,8 +314,8 @@ fn admit_block(
 
     let (retained_digest, retention_degraded) = if retain {
         match ctx.retain(inflated)? {
-            Retention::Retained(range) => (Some(range.blob().as_str().to_owned()), false),
-            Retention::Accounted { digest } => (Some(digest), true),
+            Retention::Retained { digest } => (Some(digest), false),
+            Retention::DigestOnly { digest } => (Some(digest), true),
         }
     } else {
         (None, false)

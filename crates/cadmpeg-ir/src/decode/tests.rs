@@ -563,7 +563,7 @@ fn allowance_is_the_smaller_of_ceiling_and_envelope() {
 }
 
 #[test]
-fn retain_charges_dedups_and_yields_a_whole_blob_range() {
+fn retain_charges_once_per_digest() {
     let bytes: &[u8] = &[7u8; 64];
     let arena = DecodeArena::new();
     let policy = desktop();
@@ -571,42 +571,19 @@ fn retain_charges_dedups_and_yields_a_whole_blob_range() {
 
     let payload_a = arena.alloc(vec![1u8, 2, 3, 4, 5, 6, 7, 8].into_boxed_slice());
     let retention = ctx.retain(payload_a).unwrap();
-    let range = retention.range().expect("retained recoverable");
-    assert_eq!(range.start(), 0);
-    assert_eq!(range.end(), 8);
-    assert_eq!(range.len(), 8);
+    let Retention::Retained { digest } = retention else {
+        panic!("expected retention");
+    };
     assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 8);
 
     let payload_b = arena.alloc(vec![1u8, 2, 3, 4, 5, 6, 7, 8].into_boxed_slice());
     let again = ctx.retain(payload_b).unwrap();
-    assert_eq!(again.range().unwrap().blob(), range.blob());
+    assert_eq!(again, Retention::Retained { digest });
     assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 8);
 
     let other = arena.alloc(vec![9u8; 4].into_boxed_slice());
     let _ = ctx.retain(other).unwrap();
     assert_eq!(ctx.charged(ResourceDimension::RetainedBytes), 12);
-    assert_eq!(ctx.retained_blobs().len(), 2);
-}
-
-#[test]
-fn subranges_reference_one_blob_under_containment() {
-    let bytes: &[u8] = &[0u8; 8];
-    let arena = DecodeArena::new();
-    let policy = desktop();
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-
-    let blob = arena.alloc(vec![0u8; 100].into_boxed_slice());
-    let whole = ctx.retain(blob).unwrap().range().unwrap().clone();
-
-    let head = whole.subrange(0, 40).expect("contained");
-    let tail = whole.subrange(40, 100).expect("contained");
-    assert_eq!(head.blob(), tail.blob());
-    assert_eq!(head.blob(), whole.blob());
-    assert_eq!(head.len(), 40);
-    assert_eq!(tail.len(), 60);
-
-    assert!(whole.subrange(0, 101).is_none());
-    assert!(whole.subrange(60, 40).is_none());
 }
 
 #[test]
@@ -630,23 +607,24 @@ fn strict_fails_with_resource_limit_on_retained_exhaustion() {
 }
 
 #[test]
-fn salvage_degrades_retained_exhaustion_to_accounting() {
+fn salvage_degrades_retained_exhaustion_to_digest_only() {
     let bytes: &[u8] = &[0u8; 8];
     let arena = DecodeArena::new();
     let policy = tight(|limits| limits.max_retained_bytes = 8);
     let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
 
     let small = arena.alloc(vec![1u8; 8].into_boxed_slice());
-    assert!(ctx.retain(small).unwrap().is_retained());
+    assert!(matches!(
+        ctx.retain(small).unwrap(),
+        Retention::Retained { .. }
+    ));
 
     let big = arena.alloc(vec![2u8; 16].into_boxed_slice());
     match ctx.retain(big).unwrap() {
-        Retention::Accounted { digest } => assert_eq!(digest.len(), 64),
-        Retention::Retained(_) => panic!("expected degradation to accounting"),
+        Retention::DigestOnly { digest } => assert_eq!(digest.len(), 64),
+        Retention::Retained { .. } => panic!("expected digest-only retention"),
     }
     assert!(!ctx.is_fused(), "retention alone never fuses in salvage");
-    assert!(ctx.retention_degraded());
-
     let report = ctx.finish(Ok(dummy_result())).unwrap().report;
     assert!(report.retention_degraded);
     let notes: Vec<_> = report
@@ -659,24 +637,8 @@ fn salvage_degrades_retained_exhaustion_to_accounting() {
 }
 
 #[test]
-fn retained_blobs_survive_context_teardown_without_recopy() {
-    let bytes: &[u8] = &[0u8; 8];
-    let arena = DecodeArena::new();
-    let policy = desktop();
-    let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
-
-    let payload = arena.alloc(vec![5u8; 12].into_boxed_slice());
-    let _ = ctx.retain(payload).unwrap();
-    let egress = ctx.retained_blobs();
-    let recovered = egress[0].bytes;
-
-    let _ = ctx.finish(Ok(dummy_result())).unwrap();
-    assert_eq!(recovered, &[5u8; 12]);
-}
-
-#[test]
 fn retention_is_deterministic_across_repeat_decodes() {
-    fn run(mode: DecodeMode) -> (String, bool) {
+    fn run(mode: DecodeMode) -> String {
         let bytes: &[u8] = &[0u8; 8];
         let arena = DecodeArena::new();
         let policy = DecodePolicy {
@@ -689,16 +651,11 @@ fn retention_is_deterministic_across_repeat_decodes() {
         };
         let (ctx, _root) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
         let fits = arena.alloc(vec![1u8; 8].into_boxed_slice());
-        let id = ctx
-            .retain(fits)
-            .unwrap()
-            .range()
-            .unwrap()
-            .blob()
-            .as_str()
-            .to_string();
-        (id, ctx.retention_degraded())
+        let Retention::Retained { digest } = ctx.retain(fits).unwrap() else {
+            panic!("expected retention");
+        };
+        digest
     }
     assert_eq!(run(DecodeMode::Salvage), run(DecodeMode::Salvage));
-    assert_eq!(run(DecodeMode::Strict).0, run(DecodeMode::Salvage).0);
+    assert_eq!(run(DecodeMode::Strict), run(DecodeMode::Salvage));
 }

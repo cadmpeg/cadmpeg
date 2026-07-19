@@ -28,6 +28,6 @@ pub use error::{
 };
 pub use policy::{DecodeMode, DecodePolicy, InspectOptions, ResourceLimits};
 pub use probe::{ParseError, ParseErrorKind};
-pub use retained::{RetainedBlob, RetainedBlobId, RetainedRange, Retention};
+pub use retained::Retention;
 pub use space::{ByteRange, SpaceId};
 pub use view::{BoundedCount, View};

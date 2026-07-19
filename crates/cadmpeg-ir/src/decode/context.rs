@@ -12,9 +12,7 @@ use super::error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
 use super::policy::{DecodeMode, DecodePolicy, Envelope};
-use super::retained::{
-    RetainedAddr, RetainedBlob, RetainedBlobId, RetainedRange, RetainedStore, Retention,
-};
+use super::retained::{RetainedStore, Retention};
 use super::space::{ByteRange, SpaceId, SpaceRegistry};
 use super::view::{BoundedCount, View};
 
@@ -187,38 +185,34 @@ impl<'a> DecodeContext<'a> {
         )
     }
 
-    // --- retained blobs -----------------------------------------------------
+    // --- retained bytes -----------------------------------------------------
 
     /// Retains an opaque payload by SHA-256 digest.
     ///
     /// Strict mode rejects budget exhaustion. Salvage mode returns
-    /// [`Retention::Accounted`] and records the missing bytes at [`finish`](Self::finish).
+    /// [`Retention::DigestOnly`] and records the missing bytes at [`finish`](Self::finish).
     pub fn retain(&self, bytes: &'a [u8]) -> Result<Retention, CodecError> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
         let digest = crate::hash::sha256_hex(bytes);
         let len = bytes.len() as u64;
-        let addr = RetainedAddr {
-            ptr: bytes.as_ptr(),
-            len: bytes.len(),
-        };
         if self.retained.contains(&digest) {
-            return Ok(Retention::Retained(RetainedRange::whole(digest, len)));
+            return Ok(Retention::Retained { digest });
         }
         match self.policy.mode {
             DecodeMode::Strict => {
                 self.charge_retained(len, "retain", None)?;
-                self.retained.insert(digest.clone(), addr);
-                Ok(Retention::Retained(RetainedRange::whole(digest, len)))
+                self.retained.insert(digest.clone());
+                Ok(Retention::Retained { digest })
             }
             DecodeMode::Salvage => {
                 if self.try_charge_retained(len) {
-                    self.retained.insert(digest.clone(), addr);
-                    Ok(Retention::Retained(RetainedRange::whole(digest, len)))
+                    self.retained.insert(digest.clone());
+                    Ok(Retention::Retained { digest })
                 } else {
                     self.retained.mark_degraded(&digest, len);
-                    Ok(Retention::Accounted { digest })
+                    Ok(Retention::DigestOnly { digest })
                 }
             }
         }
@@ -236,33 +230,6 @@ impl<'a> DecodeContext<'a> {
         }
         self.budget.set_counter(dim, used.saturating_add(bytes));
         true
-    }
-
-    /// Returns retained blobs in canonical order.
-    pub fn retained_blobs(&self) -> Vec<RetainedBlob<'a>> {
-        self.retained
-            .addrs()
-            .into_iter()
-            .map(|(digest, addr)| {
-                // SAFETY: `addr` was taken from a `&'a [u8]` passed to `retain`.
-                // Those bytes live in the arena (or the caller's root input),
-                // which outlives the context and never moves or mutates a stored
-                // buffer, so a shared `&'a [u8]` rebuilt from the address is valid
-                // for the returned lifetime. This is the same frozen-buffer
-                // aliasing the arena relies on.
-                let bytes = unsafe { std::slice::from_raw_parts(addr.ptr, addr.len) };
-                RetainedBlob {
-                    id: RetainedBlobId::new(digest),
-                    bytes,
-                }
-            })
-            .collect()
-    }
-
-    /// Returns whether any retention degraded from recoverable to accounted
-    /// because the retained-byte budget was exhausted in salvage mode.
-    pub fn retention_degraded(&self) -> bool {
-        self.retained.is_degraded()
     }
 
     /// Charges auxiliary heap growth.
@@ -635,9 +602,6 @@ impl<'a> DecodeContext<'a> {
         }
         let mut result = result?;
         if self.retained.is_degraded() {
-            // Salvage degraded recovery to accounting on retained exhaustion:
-            // surface it as an accountable outcome — a report flag plus one
-            // deterministic loss note, never as a decode failure.
             result.report.retention_degraded = true;
             result.report.losses.push(LossNote {
                 code: LossCode::RetentionDegraded,
@@ -645,7 +609,7 @@ impl<'a> DecodeContext<'a> {
                 severity: Severity::Warning,
                 message: format!(
                     "retained-byte budget exhausted: {} opaque blob(s) totaling {} bytes \
-                     degraded from recoverable to accounted",
+                     degraded to digest-only",
                     self.retained.degraded_count(),
                     self.retained.degraded_bytes()
                 ),
