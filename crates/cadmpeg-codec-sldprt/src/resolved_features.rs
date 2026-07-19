@@ -6119,7 +6119,7 @@ fn idless_legacy_startup_shape(records: &[crate::records::Feature]) -> bool {
     [front, top, right, origin, sketch, extrusion]
         .into_iter()
         .all(plain)
-        && [front, top, right, origin, sketch]
+        && [front, top, right, origin]
             .into_iter()
             .all(|record| record.parameters.is_empty())
         && !extrusion.parameters.is_empty()
@@ -6374,6 +6374,7 @@ mod idless_history_binding_tests {
             feature(14, "localized sketch"),
             feature(15, "localized extrusion"),
         ];
+        features[4].parameters.insert("D1".into(), "88".into());
         features[5].parameters.insert("D1".into(), "20".into());
         let mut histories = [FeatureHistory {
             id: "history".into(),
