@@ -1877,7 +1877,10 @@ fn decode_types_named_protrusion_without_section_operands() {
 fn decode_types_named_sweeps_without_recipe_or_operands() {
     let data = build_prt(
         "c",
-        &[("MdlStatus", b"Extrude id 4\0Revolve id 5\0".to_vec())],
+        &[(
+            "MdlStatus",
+            b"Extrude id 4\0Revolve id 5\0Cut id 6\0".to_vec(),
+        )],
     );
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let feature = |id| {
@@ -1910,6 +1913,16 @@ fn decode_types_named_sweeps_without_recipe_or_operands() {
                 ..
             },
             op: cadmpeg_ir::features::BooleanOp::Unresolved,
+        }
+    ));
+    assert!(matches!(
+        feature("creo:model:feature#6").definition,
+        cadmpeg_ir::features::FeatureDefinition::Extrude {
+            profile: cadmpeg_ir::features::ProfileRef::Unresolved,
+            direction: None,
+            extent: cadmpeg_ir::features::Extent::Unresolved,
+            op: cadmpeg_ir::features::BooleanOp::Cut,
+            ..
         }
     ));
 }

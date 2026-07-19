@@ -13172,7 +13172,7 @@ fn named_feature_definition(
     if let Some(definition) = reference_named_feature_definition(kind) {
         return Some(definition);
     }
-    if kind == "Protrusion" {
+    if matches!(kind, "Protrusion" | "Cut") {
         return Some(unresolved_extrude_feature_definition_with_op(
             section_sweep_boolean_operation(
                 feature_recipe_effect(scan, feature_id),
