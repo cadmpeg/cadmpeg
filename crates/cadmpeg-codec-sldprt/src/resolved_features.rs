@@ -4344,7 +4344,7 @@ mod marker_tests {
     #[test]
     fn bounded_code_two_chord_places_an_implicit_revolution_axis() {
         let curve = 300;
-        let mut payload = vec![0; curve + 84 + SKETCH_MARKER.len()];
+        let mut payload = vec![0; curve + 180];
         payload[curve..curve + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
         payload[curve + 5..curve + 13].fill(0xff);
         payload[curve + 13..curve + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
@@ -4419,6 +4419,30 @@ mod marker_tests {
             profile_roster_construction_axis(&lane, "profile-native", &sketch),
             None
         );
+
+        lane.sketch_entities[2].coordinates_m = Some([-0.01, 0.01]);
+        lane.native_payload[curve..curve + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        lane.native_payload[curve + 17..curve + 21].copy_from_slice(&0u32.to_le_bytes());
+        lane.native_payload[curve + 60..curve + 64].copy_from_slice(&1u32.to_le_bytes());
+        let detail = curve + 84;
+        lane.native_payload[detail..detail + LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        lane.native_payload[detail + 5..detail + 13]
+            .copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
+        lane.native_payload[detail + 13..detail + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        lane.native_payload[detail + 23..detail + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        lane.native_payload[detail + 27..detail + 29].copy_from_slice(&2u16.to_le_bytes());
+        lane.native_payload[detail + 31..detail + 39]
+            .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+        lane.native_payload[detail + 48..detail + 56].copy_from_slice(&1.0f64.to_le_bytes());
+        lane.native_payload[detail + 64..detail + 72].copy_from_slice(&0.0f64.to_le_bytes());
+        lane.native_payload[detail + 72..detail + 80].copy_from_slice(&1.0f64.to_le_bytes());
+        assert_eq!(
+            compact_bounded_curve_tangent(&lane.native_payload, curve),
+            Some([0.0, 1.0])
+        );
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
     }
 
     #[test]
@@ -5609,13 +5633,38 @@ fn profile_roster_implicit_axis_chord<'a>(
         let Ok(offset) = usize::try_from(marker.offset) else {
             return false;
         };
-        marker.feature_ref.as_deref() == Some(profile_native)
-            && lane
-                .native_payload
-                .get(offset..offset + SKETCH_MARKER.len())
-                == Some(SKETCH_MARKER)
+        if marker.feature_ref.as_deref() != Some(profile_native) {
+            return false;
+        }
+        let current_code_two = lane
+            .native_payload
+            .get(offset..offset + SKETCH_MARKER.len())
+            == Some(SKETCH_MARKER)
             && lane.native_payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
-            && compact_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some()
+            && compact_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some();
+        let extended_detailed_line = lane
+            .native_payload
+            .get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+            == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+            && lane.native_payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
+            && compact_bounded_curve_tangent(&lane.native_payload, offset).is_some_and(|tangent| {
+                let endpoints =
+                    roster_curve_endpoint_markers(&lane.native_payload, marker, markers);
+                let [start, end] = endpoints.as_slice() else {
+                    return false;
+                };
+                let (Some([start_u, start_v]), Some([end_u, end_v])) =
+                    (start.coordinates_m, end.coordinates_m)
+                else {
+                    return false;
+                };
+                let delta_u = end_u - start_u;
+                let delta_v = end_v - start_v;
+                let length = delta_u.hypot(delta_v);
+                length > TOLERANCE_M
+                    && (delta_u * tangent[1] - delta_v * tangent[0]).abs() <= length * TOLERANCE_M
+            });
+        current_code_two || extended_detailed_line
     });
     let candidate = candidates.next()?;
     if candidates.next().is_some() {
