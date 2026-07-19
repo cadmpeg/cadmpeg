@@ -748,6 +748,15 @@ pub struct PatternPayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
+/// Exact construction header in a point-feature payload.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PointFeaturePayloadHeader {
+    /// Construction object referenced by the header.
+    pub reference: PayloadObjectReference,
+    /// Serialized header mode.
+    pub mode: u8,
+}
+
 /// Exact common construction references in a surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SurfaceFeaturePayloadReferenceField {
@@ -1795,6 +1804,43 @@ pub fn pattern_payload_references(
         return None;
     };
     Some(field.clone())
+}
+
+/// Decode the exact leading construction header in a bounded `POINT` payload.
+pub fn point_feature_payload_header(
+    record: OperationRecord<'_>,
+) -> Option<PointFeaturePayloadHeader> {
+    const PREFIX: [u8; 7] = [0x72, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00];
+    const REFERENCE_SUFFIX: [u8; 42] = [
+        0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d, 0x01, 0x02, 0x01, 0x00, 0x00, 0x00, 0x89,
+        0x02, 0x01, 0x01, 0x01, 0x00, 0xa5, 0x57, 0x95, 0x01, 0x00, 0x00, 0xff,
+    ];
+    const MODE_SUFFIX: [u8; 20] = [
+        0xc0, 0x1f, 0xff, 0xfd, 0x01, 0x00, 0x00, 0x01, 0x01, 0x01, 0x03, 0x02, 0x01, 0x01, 0x01,
+        0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
+    if record.label.value != "POINT" || record.payload.get(..PREFIX.len()) != Some(&PREFIX) {
+        return None;
+    }
+    let mut at = PREFIX.len();
+    let reference_offset = at;
+    let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    at += width;
+    (record.payload.get(at..at + REFERENCE_SUFFIX.len()) == Some(&REFERENCE_SUFFIX))
+        .then_some(())?;
+    at += REFERENCE_SUFFIX.len();
+    let mode = *record.payload.get(at)?;
+    matches!(mode, 0x02 | 0x03).then_some(())?;
+    at += 1;
+    (record.payload.get(at..at + MODE_SUFFIX.len()) == Some(&MODE_SUFFIX)).then_some(())?;
+    Some(PointFeaturePayloadHeader {
+        reference: PayloadObjectReference {
+            offset: record.payload_offset + reference_offset,
+            object_index,
+        },
+        mode,
+    })
 }
 
 /// Decode the exact common construction-reference envelope in a bounded

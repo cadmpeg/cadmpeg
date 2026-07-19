@@ -7638,6 +7638,73 @@ fn om_geometry_instance_reference_requires_one_complete_field() {
 }
 
 #[test]
+fn om_point_feature_header_requires_the_complete_leading_envelope() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "POINT",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x72\x00\x00\x01\x00\x00\x00\xf1\x1c\x8f\x00\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x0d\x01\x02\x01\x00\x00\x00\x89\x02\x01\x01\x01\x00\xa5\x57\x95\x01\x00\x00\xff\x02\xc0\x1f\xff\xfd\x01\x00\x00\x01\x01\x01\x03\x02\x01\x01\x01\x00\x00\x00\x00\x00\xaa";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let header = crate::om::point_feature_payload_header(record).expect("complete header");
+    assert_eq!(header.reference.object_index, 7311);
+    assert_eq!(header.reference.offset, 207);
+    assert_eq!(header.mode, 0x02);
+
+    let mut alternate_mode = payload.to_vec();
+    alternate_mode[52] = 0x03;
+    assert_eq!(
+        crate::om::point_feature_payload_header(crate::om::OperationRecord {
+            bytes: &alternate_mode,
+            payload: &alternate_mode,
+            ..record
+        })
+        .expect("alternate mode")
+        .mode,
+        0x03
+    );
+
+    for malformed_offset in [0, 10, 51, 72] {
+        let mut malformed = payload.to_vec();
+        malformed[malformed_offset] ^= 0x01;
+        assert!(
+            crate::om::point_feature_payload_header(crate::om::OperationRecord {
+                bytes: &malformed,
+                payload: &malformed,
+                ..record
+            })
+            .is_none()
+        );
+    }
+    let mut unsupported_mode = payload.to_vec();
+    unsupported_mode[52] = 0x04;
+    assert!(
+        crate::om::point_feature_payload_header(crate::om::OperationRecord {
+            bytes: &unsupported_mode,
+            payload: &unsupported_mode,
+            ..record
+        })
+        .is_none()
+    );
+    assert!(
+        crate::om::point_feature_payload_header(crate::om::OperationRecord {
+            bytes: &payload[..72],
+            payload: &payload[..72],
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_surface_feature_references_require_the_complete_common_envelope() {
     let label = crate::om::OperationLabel {
         header_offset: 100,

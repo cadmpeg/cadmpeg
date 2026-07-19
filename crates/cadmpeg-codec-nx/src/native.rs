@@ -5198,6 +5198,24 @@ pub struct FeaturePatternReference {
     pub source_offset: u64,
 }
 
+/// Exact leading construction header carried by a bounded point-feature payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeaturePointConstructionHeader {
+    /// Globally unique point-construction-header identity.
+    pub id: String,
+    /// Owning `POINT` operation label.
+    pub operation_label: String,
+    /// Serialized construction object index.
+    pub object_index: u32,
+    /// Unique target in the native `data_blocks` arena.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data_block: Option<String>,
+    /// Serialized header mode.
+    pub mode: u8,
+    /// Absolute file offset of the reference width marker.
+    pub source_offset: u64,
+}
+
 /// Ordered construction reference carried by a bounded surface-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceConstructionReference {
@@ -8585,6 +8603,47 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
         }
     })
     .collect()
+}
+
+/// Decode exact point-feature construction headers without assigning coordinate semantics.
+pub fn feature_point_construction_headers(
+    container: &Container,
+) -> Vec<FeaturePointConstructionHeader> {
+    let indexed = container.indexed_om_sections();
+    let sections = container.om_sections();
+    let mut headers = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(header) = crate::om::point_feature_payload_header(record) else {
+                continue;
+            };
+            headers.push(FeaturePointConstructionHeader {
+                id: format!(
+                    "nx:feature-history:point-construction-header#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                object_index: header.reference.object_index,
+                data_block: unique_offset_data_block(&indexed, header.reference.object_index),
+                mode: header.mode,
+                source_offset: entry_offset + header.reference.offset as u64,
+            });
+        }
+    }
+    headers
 }
 
 /// Decode and resolve the exact common reference envelope in surface-feature
