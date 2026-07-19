@@ -356,9 +356,7 @@ See [`formats/catia.md`](formats/catia.md) and [`formats/catia-open-items.md`](f
   body when their source history is partial.
   The final stored state for each feature supplies its active recipe, Boolean
   effect, schema parent, and source tag while every preceding state remains an
-  ordered native regeneration record. A display-only DEPDB body context does
-  not replace the same feature's `MdlStatus` operation; a bound DEPDB recipe
-  remains authoritative for its own feature identifier.
+  ordered native regeneration record.
 - **Product structure: None.**
 - **Presentation and metadata: Partial.** Container attributes and geometry censuses transfer as source metadata. Materials and display data remain open.
 

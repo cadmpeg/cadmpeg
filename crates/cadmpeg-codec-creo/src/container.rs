@@ -12,7 +12,7 @@
 //! native loops, units, feature identifiers, and datum planes. [`summarize`]
 //! converts that scan into the codec-neutral container summary.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
 
@@ -1387,38 +1387,29 @@ fn positional_replay_definitions(data: &[u8], sections: &[Section]) -> Vec<Featu
 }
 
 fn feature_operations(data: &[u8], sections: &[Section]) -> Vec<FeatureOperation> {
-    let mut current = BTreeMap::<u32, FeatureOperation>::new();
+    let mut records = Vec::new();
     for section in sections
         .iter()
-        .filter(|section| section.name == "MdlStatus")
+        .filter(|section| section.name == "MdlStatus" || section.name == "DEPDB_DATA")
     {
         let end = (section.offset + section.length).min(data.len());
-        for mut record in feature::operations(&data[section.offset..end]) {
-            record.offset += section.offset;
-            record.state_offset += section.offset;
-            current.insert(record.feature_id, record);
-        }
+        records.extend(
+            feature::operations(&data[section.offset..end])
+                .into_iter()
+                .map(|mut record| {
+                    record.offset += section.offset;
+                    record.state_offset += section.offset;
+                    record
+                }),
+        );
     }
-    let mdlstatus_feature_ids = current.keys().copied().collect::<BTreeSet<_>>();
-    for section in sections
-        .iter()
-        .filter(|section| section.name == "DEPDB_DATA")
-    {
-        let end = (section.offset + section.length).min(data.len());
-        for mut record in feature::operations(&data[section.offset..end]) {
-            record.offset += section.offset;
-            record.state_offset += section.offset;
-            let authoritative = record.recipe.is_some()
-                || !mdlstatus_feature_ids.contains(&record.feature_id)
-                    && current
-                        .get(&record.feature_id)
-                        .is_none_or(|current| current.recipe.is_none());
-            if authoritative {
-                current.insert(record.feature_id, record);
-            }
-        }
-    }
-    let mut current = current.into_values().collect::<Vec<_>>();
+    records.sort_by_key(|record| record.offset);
+    let mut current = records
+        .into_iter()
+        .map(|record| (record.feature_id, record))
+        .collect::<BTreeMap<_, _>>()
+        .into_values()
+        .collect::<Vec<_>>();
     current.sort_by_key(|record| record.offset);
     current
 }
