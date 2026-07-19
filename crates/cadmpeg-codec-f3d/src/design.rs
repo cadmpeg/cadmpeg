@@ -1402,10 +1402,11 @@ fn project_thicken(
     operands: &[DesignFaceOperand],
     groups: &[DesignConstructionOperandGroup],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length, ThickenSide};
 
-    let DesignDirectFaceOperation::Thicken { thickness, .. } =
-        scope.direct_face_operation.as_ref()?
+    let DesignDirectFaceOperation::Thicken {
+        signed_thickness, ..
+    } = scope.direct_face_operation.as_ref()?
     else {
         return None;
     };
@@ -1426,8 +1427,12 @@ fn project_thicken(
     })?;
     Some(FeatureDefinition::Thicken {
         faces,
-        thickness: Some(Length(*thickness * 10.0)),
-        side: None,
+        thickness: Some(Length(signed_thickness.abs() * 10.0)),
+        side: Some(if *signed_thickness > 0.0 {
+            ThickenSide::Forward
+        } else {
+            ThickenSide::Reverse
+        }),
     })
 }
 
@@ -14202,11 +14207,11 @@ fn exact_direct_face_operation(
                 return None;
             }
             let scalar = exact_fixed_scalar(bytes, thickness_record_index)?;
-            if scalar.value <= 0.0 {
+            if scalar.value == 0.0 {
                 return None;
             }
             Some(DesignDirectFaceOperation::Thicken {
-                thickness: scalar.value,
+                signed_thickness: scalar.value,
                 thickness_record_index,
                 thickness_offset: scalar.value_offset,
             })
@@ -23016,7 +23021,7 @@ mod relation_tests {
         thickness[0..4].copy_from_slice(&3u32.to_le_bytes());
         thickness[4..7].copy_from_slice(b"277");
         thickness[7..11].copy_from_slice(&74u32.to_le_bytes());
-        thickness[40..48].copy_from_slice(&1.0f64.to_le_bytes());
+        thickness[40..48].copy_from_slice(&(-1.0f64).to_le_bytes());
         thickness.extend_from_slice(&3u32.to_le_bytes());
         thickness.extend_from_slice(b"261");
         thickness.extend_from_slice(&74u32.to_le_bytes());
@@ -23029,7 +23034,7 @@ mod relation_tests {
         assert!(matches!(
             exact_direct_face_operation(&bytes, &thicken_scope),
             Some(DesignDirectFaceOperation::Thicken {
-                thickness: 1.0,
+                signed_thickness: -1.0,
                 thickness_record_index: 74,
                 ..
             })
@@ -23065,7 +23070,7 @@ mod relation_tests {
             Some(cadmpeg_ir::features::FeatureDefinition::Thicken {
                 faces: cadmpeg_ir::features::FaceSelection::Native(native),
                 thickness: Some(cadmpeg_ir::features::Length(10.0)),
-                ..
+                side: Some(cadmpeg_ir::features::ThickenSide::Reverse),
             }) if native == "thicken-group"
         ));
         offset_scope.direct_face_operation = exact_direct_face_operation(&bytes, &offset_scope);

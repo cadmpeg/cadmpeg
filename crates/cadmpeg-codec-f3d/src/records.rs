@@ -828,10 +828,10 @@ pub enum DesignDirectFaceOperation {
         /// Byte offset of the scalar.
         distance_offset: u64,
     },
-    /// Positive finished thickness added from selected faces.
+    /// Signed normal thickness added from selected faces.
     Thicken {
-        /// Finished thickness in source centimetres.
-        thickness: f64,
+        /// Signed thickness in source centimetres.
+        signed_thickness: f64,
         /// Referenced scalar record.
         thickness_record_index: u32,
         /// Byte offset of the scalar.
