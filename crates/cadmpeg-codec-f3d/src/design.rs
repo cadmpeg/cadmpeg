@@ -49,6 +49,8 @@ pub(crate) enum DesignFeatureFamily {
     Coil,
     Loft,
     Sweep,
+    SurfacePatch,
+    BoundaryFill,
 }
 
 /// Return the canonical operation family while preserving `kind` verbatim on
@@ -67,6 +69,8 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
         "SpirePrimitive" => Some(DesignFeatureFamily::Coil),
         "Loft" => Some(DesignFeatureFamily::Loft),
         "Sweep" => Some(DesignFeatureFamily::Sweep),
+        "SurfacePatch" => Some(DesignFeatureFamily::SurfacePatch),
+        "BoundaryFill" => Some(DesignFeatureFamily::BoundaryFill),
         _ => None,
     }
 }
@@ -14313,6 +14317,8 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::OffsetFaces)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Thicken)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Move)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
+            || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
         let scope_group_start = out.len();
@@ -18767,6 +18773,14 @@ mod relation_tests {
         assert_eq!(
             design_feature_family("SpirePrimitive"),
             Some(DesignFeatureFamily::Coil)
+        );
+        assert_eq!(
+            design_feature_family("SurfacePatch"),
+            Some(DesignFeatureFamily::SurfacePatch)
+        );
+        assert_eq!(
+            design_feature_family("BoundaryFill"),
+            Some(DesignFeatureFamily::BoundaryFill)
         );
         assert_eq!(
             design_feature_family("Loft"),
