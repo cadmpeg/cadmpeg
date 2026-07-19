@@ -4522,6 +4522,17 @@ mod marker_tests {
                 direction: Vector3::new(0.0, 0.0, 1.0),
             })
         );
+
+        lane.native_payload[76..80].copy_from_slice(&1u32.to_le_bytes());
+        lane.native_payload[curve + 56..curve + 58].copy_from_slice(&2u16.to_le_bytes());
+        lane.native_payload[curve + 58..curve + 60].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(
+            profile_roster_construction_axis(&lane, "profile-native", &sketch),
+            Some(cadmpeg_ir::features::RevolutionAxis {
+                origin: Point3::new(0.0, 0.0, 0.0),
+                direction: Vector3::new(0.0, 0.0, 1.0),
+            })
+        );
     }
 
     #[test]
@@ -5758,7 +5769,7 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             return Some(endpoints);
         }
     }
-    let selected_endpoint = unreferenced_points
+    let selected_endpoints = unreferenced_points
         .iter()
         .copied()
         .filter(|marker| {
@@ -5767,7 +5778,13 @@ fn profile_roster_implicit_axis_endpoints<'a>(
             })
         })
         .collect::<Vec<_>>();
-    if let [end] = selected_endpoint.as_slice() {
+    if let [start, end] = selected_endpoints.as_slice() {
+        let endpoints = [*start, *end];
+        if bounded_profile_axis_endpoints(profile_native, markers, &curve_endpoints, endpoints) {
+            return Some(endpoints);
+        }
+    }
+    if let [end] = selected_endpoints.as_slice() {
         let mut owned = markers
             .iter()
             .copied()
