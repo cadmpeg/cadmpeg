@@ -1858,6 +1858,33 @@ mod history_reference_tests {
                 Some(expected)
             );
         }
+        let legacy_lights = feature("legacy lights", Some("2"), 0);
+        let mut complete_legacy_roster = legacy_roster(&legacy_lights);
+        for (source, class) in [
+            ("1", "moDetailCabinet_c"),
+            ("3", "moRefPlane_c"),
+            ("4", "moRefPlane_c"),
+            ("5", "moRefPlane_c"),
+        ] {
+            let mut sentinel = feature(
+                "legacy frame",
+                Some(source),
+                complete_legacy_roster.len() as u32,
+            );
+            sentinel.input_class = Some(class.into());
+            complete_legacy_roster.push(sentinel);
+        }
+        for source in ["7", "8"] {
+            complete_legacy_roster.push(feature(
+                "legacy light",
+                Some(source),
+                complete_legacy_roster.len() as u32,
+            ));
+        }
+        assert_eq!(
+            feature_tree_node_role(&legacy_lights, &complete_legacy_roster),
+            Some(FeatureTreeNodeRole::LightsAndCameras)
+        );
 
         let roster_from = |node: &Feature, classes: &[(&str, &str)], classless_sources: &[&str]| {
             let mut features = vec![node.clone()];
@@ -1931,7 +1958,11 @@ mod history_reference_tests {
             feature_tree_node_role(&sheet_metal, &roster(&sheet_metal)),
             Some(FeatureTreeNodeRole::SheetMetal)
         );
-        sheet_metal.name = "not a reserved root".into();
+        sheet_metal.name = "任意本地化鈑金根節點".into();
+        assert_eq!(
+            feature_tree_node_role(&sheet_metal, &roster(&sheet_metal)),
+            Some(FeatureTreeNodeRole::SheetMetal)
+        );
         assert_eq!(feature_tree_node_role(&sheet_metal, &[]), None);
     }
 
@@ -3551,7 +3582,9 @@ fn reserved_feature_tree_node_role(
         {
             Some(FeatureTreeNodeRole::DirectionalLight)
         }
-        (_, _, "-1") if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::SheetMetal),
+        (_, tag, "-1") if tag.eq_ignore_ascii_case("Feature") => {
+            Some(FeatureTreeNodeRole::SheetMetal)
+        }
         (_, _, _) if empty_feature_tree_node(feature) => Some(FeatureTreeNodeRole::ExplodedViews),
         _ => None,
     }
@@ -3619,7 +3652,8 @@ fn feature_manager_layout(features: &[Feature]) -> Option<FeatureManagerLayout> 
         ("4", "moRefPlane_c"),
         ("5", "moRefPlane_c"),
         ("6", "moOriginProfileFeature_c"),
-    ]) && matches_classless(&["2", "7", "8"]);
+    ]) && matches_classless(&["2", "7", "8"])
+        && !legacy;
     let lights_at_six = default_frame && matches_classless(&["6", "7", "8"]);
     let folders_at_seven = default_frame
         && matches_roster(&[("7", "moSolidBodyFolder_c"), ("8", "moSurfaceBodyFolder_c")])
