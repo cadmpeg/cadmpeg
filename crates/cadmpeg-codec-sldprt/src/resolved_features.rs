@@ -382,6 +382,7 @@ pub(crate) fn marker_local_id(payload: &[u8], offset: usize) -> Option<u32> {
         match next.checked_sub(offset)? {
             142 | 146 => 138,
             152 | 156 => 148,
+            154 => 150,
             162 | 166 | 167 => 158,
             _ => return None,
         }
@@ -409,10 +410,12 @@ pub(crate) fn marker_coordinates(payload: &[u8], offset: usize) -> Option<[f64; 
     }
     let coordinate_offset = if payload.get(offset + 64..offset + 66)? == [0x1e, 0x00] {
         offset.checked_add(66)?
-    } else if matches!(
+    } else if (matches!(
         payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())?,
         LEGACY_SKETCH_MARKER | LEGACY_EXTENDED_SKETCH_MARKER
-    ) && marker_is_geometry_locus(payload, offset)
+    ) || (payload.get(offset..offset + SKETCH_MARKER.len())? == SKETCH_MARKER
+        && payload.get(offset + 17..offset + 21)? == 0u32.to_le_bytes()))
+        && marker_is_geometry_locus(payload, offset)
         && payload.get(offset + 56..offset + 58)? == [0x1e, 0x00]
     {
         offset.checked_add(58)?
@@ -450,7 +453,8 @@ mod marker_tests {
         angled_reference_plane_frame, append_spatial_vertex, arc_angle_relation_kind,
         compact_body_component_path_at, compact_body_path_at, compact_body_retention_mode,
         compact_body_selection_at, compact_body_selection_vector, compact_body_state_ids,
-        compact_combine_operation_at, compact_edge_component_path_at, compact_edge_selection_at,
+        compact_combine_operation_at, compact_component_plane_frame,
+        compact_edge_component_path_at, compact_edge_selection_at,
         compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
         compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
         compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
@@ -481,7 +485,7 @@ mod marker_tests {
         spatial_vertex_coordinates, unique_dimensioned_rectangle_markers, unique_locus,
         unique_marker_candidate, BooleanOp, CompactPointReferenceKind, CLASS_MARKER,
         COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER,
-        LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
+        LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
@@ -2644,6 +2648,12 @@ mod marker_tests {
         let entities = sketch_input_entities(&payload, "lane");
         assert_eq!(entities[0].kind, SketchInputKind::LineOrCircle);
 
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[17..21].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(marker_coordinates(&payload, 0), Some([1.25, -2.5]));
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+
         payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         assert_eq!(marker_coordinates(&payload, 0), None);
         let entities = sketch_input_entities(&payload, "lane");
@@ -3743,6 +3753,33 @@ mod marker_tests {
         assert_eq!(
             revolution_temporary_axis(&payload, 32, payload.len()),
             Some((Point3::new(0.0, 0.0, 30.0), Vector3::new(0.0, 0.0, -1.0)))
+        );
+    }
+
+    #[test]
+    fn compact_component_matrix_places_a_sketch_plane() {
+        let mut payload = vec![0; 138];
+        payload[..4].copy_from_slice(&89u32.to_le_bytes());
+        payload[14] = 1;
+        for (index, value) in [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, -0.031, 1.0,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let offset = 15 + index * 8;
+            payload[offset..offset + 8].copy_from_slice(&f64::to_le_bytes(value));
+        }
+        payload[122..126].copy_from_slice(&4u32.to_le_bytes());
+        payload[126..130].copy_from_slice(&[0xff; 4]);
+
+        assert_eq!(
+            compact_component_plane_frame(&payload),
+            Some((
+                Point3::new(0.0, 0.0, -31.0),
+                Vector3::new(0.0, -1.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0)
+            ))
         );
     }
 
@@ -10691,15 +10728,21 @@ pub(crate) fn project_compact_sketch_profiles(
                 .and_then(|index| objects.get(index))
                 .and_then(|(offset, _)| usize::try_from(*offset).ok())
                 .unwrap_or(0);
-            let Some(source_id) = compact_profile_reference_plane_source(
+            let source_frame = compact_profile_reference_plane_source(
                 &lane.native_payload,
                 context_start,
                 start,
                 end,
-            ) else {
-                continue;
-            };
-            let Some(&(origin, normal, u_axis)) = plane_frames.get(&source_id) else {
+            )
+            .and_then(|source| plane_frames.get(&source).copied());
+            let Some((origin, normal, u_axis)) = source_frame.or_else(|| {
+                compact_profile_component_plane_frame(
+                    &lane.native_payload,
+                    context_start,
+                    start,
+                    end,
+                )
+            }) else {
                 continue;
             };
             let lane_key = lane
@@ -11037,6 +11080,14 @@ pub(crate) fn project_marker_backed_sketches(
                 end,
             )
             .and_then(|source| plane_frames.get(&source).copied())
+            .or_else(|| {
+                compact_profile_component_plane_frame(
+                    &lane.native_payload,
+                    context_start,
+                    start,
+                    end,
+                )
+            })
             .or_else(|| {
                 lane.native_payload
                     .get(start..end)
@@ -11894,6 +11945,77 @@ fn compact_profile_reference_plane_source(
         })
         .or_else(|| compact_declared_reference_plane_source(payload))
         .or_else(|| compact_reference_plane_source(payload))
+}
+
+fn compact_component_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
+    const RECORD_LEN: usize = 138;
+    const NATIVE_TO_IR: f64 = 1000.0;
+
+    let dot =
+        |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let cross = |left: Vector3, right: Vector3| {
+        Vector3::new(
+            left.y * right.z - left.z * right.y,
+            left.z * right.x - left.x * right.z,
+            left.x * right.y - left.y * right.x,
+        )
+    };
+    let mut frames = payload
+        .windows(RECORD_LEN)
+        .filter_map(|bytes| {
+            let source = u32::from_le_bytes(bytes.get(..4)?.try_into().ok()?);
+            let scalar = |index: usize| {
+                let offset = 15 + index * 8;
+                let value = f64::from_le_bytes(bytes.get(offset..offset + 8)?.try_into().ok()?);
+                value.is_finite().then_some(value)
+            };
+            let u_axis = Vector3::new(scalar(0)?, scalar(1)?, scalar(2)?);
+            let v_axis = Vector3::new(scalar(3)?, scalar(4)?, scalar(5)?);
+            let normal = Vector3::new(scalar(6)?, scalar(7)?, scalar(8)?);
+            let expected_normal = cross(u_axis, v_axis);
+            if source == 0
+                || bytes.get(8..14) != Some(&[0; 6])
+                || bytes.get(14) != Some(&1)
+                || (dot(u_axis, u_axis) - 1.0).abs() > 1.0e-9
+                || (dot(v_axis, v_axis) - 1.0).abs() > 1.0e-9
+                || (dot(normal, normal) - 1.0).abs() > 1.0e-9
+                || (expected_normal.x - normal.x).abs() > 1.0e-9
+                || (expected_normal.y - normal.y).abs() > 1.0e-9
+                || (expected_normal.z - normal.z).abs() > 1.0e-9
+                || scalar(12)? != 1.0
+                || bytes.get(119..122) != Some(&[0; 3])
+                || bytes.get(122..126) != Some(&4u32.to_le_bytes())
+                || bytes.get(126..130) != Some(&[0xff; 4])
+            {
+                return None;
+            }
+            Some((
+                Point3::new(
+                    scalar(9)? * NATIVE_TO_IR,
+                    scalar(10)? * NATIVE_TO_IR,
+                    scalar(11)? * NATIVE_TO_IR,
+                ),
+                normal,
+                u_axis,
+            ))
+        })
+        .collect::<Vec<_>>();
+    frames.sort_by_key(reference_plane_frame_key);
+    frames.dedup();
+    let [frame] = frames.as_slice() else {
+        return None;
+    };
+    Some(*frame)
+}
+
+fn compact_profile_component_plane_frame(
+    payload: &[u8],
+    context_start: usize,
+    profile_start: usize,
+    profile_end: usize,
+) -> Option<(Point3, Vector3, Vector3)> {
+    compact_component_plane_frame(payload.get(profile_start..profile_end)?)
+        .or_else(|| compact_component_plane_frame(payload.get(context_start..profile_end)?))
 }
 
 fn principal_sketch_frame(
