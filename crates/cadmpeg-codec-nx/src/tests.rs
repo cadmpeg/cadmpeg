@@ -2951,7 +2951,6 @@ fn strict_rejects_carriers_without_topology_salvage_reports_the_loss() {
     let err = strict.expect_err("strict rejects carriers with no transferred topology");
     match err {
         CodecError::Malformed(message) => {
-            assert!(message.starts_with("strict:"), "message: {message}");
             assert!(
                 message.contains("topology_not_transferred"),
                 "message: {message}"

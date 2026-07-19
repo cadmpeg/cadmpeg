@@ -13,7 +13,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, DecodeMode, View};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     BlendCrossSection, BlendRadiusLaw, BlendSupport, Curve, CurveGeometry, IntcurveSupportContext,
@@ -26,9 +26,7 @@ use cadmpeg_ir::ids::{
     ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::Point2;
-use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
-};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -69,16 +67,6 @@ impl Scan {
 /// Parse the SPLMSSTR container and inflate streams in its canonical part entry.
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Scan, CodecError> {
     let image = root.window();
-    ctx.charge_work(
-        image.len() as u64,
-        "nx_container_scan",
-        Some(root.location()),
-    )?;
-    ctx.charge_alloc(
-        image.len() as u64,
-        "nx_container_image",
-        Some(root.location()),
-    )?;
     let container = container::scan_bytes(image.to_vec())?;
     let streams = parasolid::extract_streams(ctx, root, &container)?;
     Ok(Scan { container, streams })
@@ -102,14 +90,12 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     }
 
     if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
-        enforce_strict(ctx.mode(), &report)?;
         return decode_result(ir, report, annotations, &unknowns);
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
-    enforce_strict(ctx.mode(), &report)?;
     decode_result(ir, report, annotations, &unknowns)
 }
 
@@ -132,30 +118,6 @@ fn decode_result(
 }
 
 /// Reject strict decodes that omit mandatory, unreconstructable semantics.
-fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecError> {
-    if mode != DecodeMode::Strict {
-        return Ok(());
-    }
-    let mut codes: Vec<&'static str> = report
-        .losses
-        .iter()
-        .filter(|loss| {
-            loss.severity == Severity::Blocking
-                && loss.code.strict_consequence() == StrictConsequence::Reject
-        })
-        .map(|loss| loss.code.as_str())
-        .collect();
-    if codes.is_empty() {
-        return Ok(());
-    }
-    codes.sort_unstable();
-    codes.dedup();
-    Err(CodecError::Malformed(format!(
-        "strict: mandatory semantics could not be represented (loss codes: {})",
-        codes.join(", ")
-    )))
-}
-
 /// Reports classified streams that produced no transferable representation.
 fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
     for (index, stream) in scan.streams.iter().enumerate() {
@@ -198,6 +160,7 @@ struct Counts {
     ellipses: usize,
     nurbs_curves: usize,
     intersection_curves: usize,
+    unresolved_intersections: usize,
 }
 
 impl Counts {
@@ -485,6 +448,9 @@ fn try_decode_geometry(
             let procedural_id = ProceduralCurveId(format!("nx:s{si}:intersection#{ci}"));
             let unknown_id = UnknownId(format!("nx:container:parasolid#{si}"));
             let charted = charted_intersections.get(&construction.xmt);
+            if charted.is_none() {
+                counts.unresolved_intersections += 1;
+            }
             annotations
                 .note(&curve_id, source_stream, construction.pos as u64)
                 .tag("INTERSECTION");
@@ -1412,18 +1378,19 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
         });
     }
 
-    losses.push(LossNote {
-        code: LossCode::GeometryNotTransferred,
-        category: LossCategory::Geometry,
-        severity: Severity::Warning,
-        message:
-            "Surface-intersection records without a complete validated CHART_s, term-endpoint, \
-                  and support-UV witness remain opaque constructions. Each Parasolid stream is \
-                  preserved verbatim as an unknown passthrough record so their source bytes remain \
-                  available."
-                .to_string(),
-        provenance: None,
-    });
+    if counts.unresolved_intersections != 0 {
+        losses.push(LossNote {
+            code: LossCode::GeometryNotTransferred,
+            category: LossCategory::Geometry,
+            severity: Severity::Warning,
+            message: format!(
+                "{} surface-intersection record(s) lacked a complete validated CHART_s, \
+                 term-endpoint, and support-UV witness and remain opaque constructions.",
+                counts.unresolved_intersections
+            ),
+            provenance: None,
+        });
+    }
 
     if scan.count(StreamKind::Deltas) > 0 {
         losses.push(LossNote {
@@ -1469,7 +1436,6 @@ fn build_geometry_report(scan: &Scan, counts: &Counts, has_topology: bool) -> De
     });
 
     DecodeReport {
-        retention_degraded: false,
         format: "nx".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1573,7 +1539,6 @@ fn build_container_report(scan: &Scan, container_only: bool) -> DecodeReport {
     }
 
     DecodeReport {
-        retention_degraded: false,
         format: "nx".to_string(),
         container_only,
         geometry_transferred: false,

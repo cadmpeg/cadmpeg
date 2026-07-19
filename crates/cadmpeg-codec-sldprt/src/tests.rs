@@ -4145,7 +4145,7 @@ fn strict_rejects_unrepresentable_geometry_while_salvage_records_loss_codes() {
     match strict {
         Err(cadmpeg_ir::CodecError::Malformed(message)) => {
             assert!(
-                message.contains("unrepresentable mandatory semantics"),
+                message.contains("strict mode rejects geometry_not_transferred"),
                 "unexpected message: {message}"
             );
         }
@@ -14567,7 +14567,7 @@ fn strict_rejects_topology_decode_resting_on_untyped_surface() {
         .expect_err("strict refuses the untyped-surface census");
     assert!(error
         .to_string()
-        .contains("strict mode rejects unrepresentable mandatory semantics"));
+        .contains("strict mode rejects geometry_not_transferred"));
 }
 
 #[test]

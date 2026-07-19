@@ -1012,10 +1012,6 @@ fn decode_body_map(bytes: &[u8]) -> std::collections::HashMap<u64, (u64, usize, 
 /// Admit the first nested `.protein` archive entry whose name ends with
 /// `suffix`, returning its payload view.
 ///
-/// The nested archive is framed by a view of its own `.protein` entry — never a
-/// root-length argument — and each entry is admitted through the shared
-/// container path, so a stored nested entry aliases the `.protein` space as a
-/// `Slice` and a compressed one is charged and bounded by the platform expander
 /// Malformed nested framing yields `Ok(None)`; a budget refusal during expansion
 /// propagates.
 fn nested_entry_view<'a>(

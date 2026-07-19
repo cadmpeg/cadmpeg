@@ -12,7 +12,7 @@
 //! [`UnknownRecord`]. Their report identifies unresolved model layers.
 
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, DecodeMode, View};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, Pcurve, PcurveGeometry, Surface, SurfaceGeometry,
@@ -23,9 +23,7 @@ use cadmpeg_ir::ids::{
     SurfaceId, UnknownId, VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
-};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop, Point, Region, Sense, Shell, Vertex,
 };
@@ -41,17 +39,6 @@ use crate::native::CatiaNative;
 use crate::topology;
 use crate::variant::Variant;
 
-/// Number of whole-image linear passes the entity-decode phase makes over the
-/// file (variant discrimination, E5 record stream, native record decode,
-/// freeform surface scan). A charge multiplier, not a proven bound; work
-/// accounting relies on keeping this synchronized with the passes below.
-const ENTITY_DECODE_DATA_PASSES: u32 = 4;
-
-/// Number of linear passes the entity-decode phase makes over the reconstructed
-/// BREP body (vertices, `a8`/`a5` surfaces, `b2` cylinders/cones, `b5` records).
-/// A charge multiplier, not a proven bound; see [`ENTITY_DECODE_DATA_PASSES`].
-const ENTITY_DECODE_BREP_PASSES: u32 = 6;
-
 /// Decodes a `.CATPart` session root view into an IR document and decode report.
 ///
 /// Container-only mode returns source metadata and container diagnostics
@@ -64,12 +51,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let report = build_container_report(&scan, true);
         return finish_decode(ctx, root, ir, report, annotations, &unknowns);
     }
-
-    let brep_len = scan.brep_bytes().map_or(0, <[u8]>::len) as u64;
-    let entity_work = (scan.data.len() as u64)
-        .saturating_mul(u64::from(ENTITY_DECODE_DATA_PASSES))
-        .saturating_add(brep_len.saturating_mul(u64::from(ENTITY_DECODE_BREP_PASSES)));
-    ctx.charge_work(entity_work, "catia_entity_decode", Some(root.location()))?;
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
         if let Some((ir, report, annotations, unknowns)) = try_decode_standard(&scan) {
@@ -112,9 +93,6 @@ fn finish_decode<'a>(
     unknowns: &[UnknownRecord],
 ) -> Result<DecodeResult, CodecError> {
     CatiaNative::decode(ctx, root)?.store(ir.native.namespace_mut("catia"))?;
-    if !report.container_only {
-        reject_unrepresentable_in_strict(ctx, &report)?;
-    }
     let mut source_fidelity = cadmpeg_ir::SourceFidelity {
         annotations,
         ..Default::default()
@@ -128,26 +106,6 @@ fn finish_decode<'a>(
 }
 
 /// Rejects strict decodes that omit mandatory semantics.
-fn reject_unrepresentable_in_strict(
-    ctx: &DecodeContext<'_>,
-    report: &DecodeReport,
-) -> Result<(), CodecError> {
-    if ctx.mode() != DecodeMode::Strict {
-        return Ok(());
-    }
-    if let Some(note) = report
-        .losses
-        .iter()
-        .find(|note| note.code.strict_consequence() == StrictConsequence::Reject)
-    {
-        return Err(CodecError::Malformed(format!(
-            "strict mode rejects unrepresentable mandatory semantics ({}): {}",
-            note.code, note.message
-        )));
-    }
-    Ok(())
-}
-
 fn annotate(
     annotations: &mut AnnotationBuilder,
     id: impl std::fmt::Display,
@@ -236,7 +194,6 @@ fn try_decode_zero_entity(scan: &ContainerScan<'_>) -> Option<Decoded> {
     let annotations = annotations.build();
     let summary = container::summarize(scan);
     let report = DecodeReport {
-        retention_degraded: false,
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -362,7 +319,6 @@ fn try_decode_e5(scan: &ContainerScan<'_>) -> Option<Decoded> {
     Some((
         ir,
         DecodeReport {
-            retention_degraded: false,
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
@@ -912,7 +868,6 @@ fn try_decode_freeform_surfaces(scan: &ContainerScan<'_>) -> Option<Decoded> {
     Some((
         ir,
         DecodeReport {
-            retention_degraded: false,
             format: "catia".to_string(),
             container_only: false,
             geometry_transferred: true,
@@ -1844,7 +1799,6 @@ fn build_geometry_report(
     });
 
     DecodeReport {
-        retention_degraded: false,
         format: "catia".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1979,7 +1933,6 @@ fn build_container_report(scan: &ContainerScan<'_>, container_only: bool) -> Dec
     });
 
     DecodeReport {
-        retention_degraded: false,
         format: "catia".to_string(),
         container_only,
         geometry_transferred: false,

@@ -90,9 +90,6 @@ pub enum StrictConsequence {
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
 pub enum LossCode {
-    /// Opaque retention degraded from recoverable to accounted because the
-    /// retained-byte budget was exhausted in salvage mode.
-    RetentionDegraded,
     /// Container-only decode was requested; entity decode was not attempted.
     ContainerOnly,
     /// No geometry stream was located in the container, so no B-rep could be
@@ -185,7 +182,6 @@ impl LossCode {
     /// The stable `snake_case` identifier, matching the serialized form.
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::RetentionDegraded => "retention_degraded",
             Self::ContainerOnly => "container_only",
             Self::MissingGeometryStream => "missing_geometry_stream",
             Self::TopologyNotTransferred => "topology_not_transferred",
@@ -222,20 +218,6 @@ impl LossCode {
             Self::ParametricRecordOmitted => "parametric_record_omitted",
             Self::AppearanceReduced => "appearance_reduced",
         }
-    }
-
-    /// Whether retained source records can reconstruct the lost content.
-    pub fn reversible(self) -> bool {
-        matches!(
-            self,
-            Self::ContainerOnly
-                | Self::CarrierSummary
-                | Self::FeatureHistoryRetained
-                | Self::AssemblyComponentsExternal
-                | Self::PassthroughRecordOmitted
-                | Self::ParametricRecordOmitted
-                | Self::SourceAssociationOmitted
-        )
     }
 
     /// Returns the strict-mode consequence of this code.
@@ -289,9 +271,6 @@ pub struct DecodeReport {
     pub losses: Vec<LossNote>,
     /// Free-form informational notes (e.g. container findings).
     pub notes: Vec<String>,
-    /// Whether opaque retention degraded to digest-only accounting.
-    #[serde(default)]
-    pub retention_degraded: bool,
 }
 
 impl DecodeReport {
@@ -484,12 +463,9 @@ mod tests {
             LossCode::TopologyNotTransferred.strict_consequence(),
             StrictConsequence::Reject
         );
-        assert!(!LossCode::TopologyNotTransferred.reversible());
         assert_eq!(
             LossCode::PassthroughRecordOmitted.strict_consequence(),
             StrictConsequence::Tolerate
         );
-        assert!(LossCode::PassthroughRecordOmitted.reversible());
-        assert!(!LossCode::RetentionDegraded.reversible());
     }
 }

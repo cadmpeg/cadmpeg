@@ -97,11 +97,6 @@ pub fn extract_streams<'a>(
         },
     )?;
     let part = part_view.window();
-    ctx.charge_work(
-        part.len() as u64,
-        "nx_parasolid_scan",
-        Some(part_view.location()),
-    )?;
 
     let mut streams = Vec::new();
     let mut i = 0usize;

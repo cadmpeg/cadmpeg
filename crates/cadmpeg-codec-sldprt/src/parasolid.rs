@@ -71,13 +71,6 @@ pub fn extract_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
 }
 
 /// Direct (uncompressed) Parasolid streams with their block-payload offsets.
-///
-/// Every stream returned aliases the block bytes at its offset, so the session
-/// path can register it as a zero-copy `Slice` without decompression. Wrapped
-/// (nested zlib member) streams are excluded: their inflation must run through
-/// the charging expander, which only the caller holding the decode context can
-/// drive. This is the [`extract_streams_with_offsets`] direct-stream prefix,
-/// split out so no unbounded inflation happens off the budget.
 pub fn direct_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
     let mut out = Vec::new();
     let signatures: Vec<_> = payload
@@ -102,11 +95,6 @@ pub fn direct_streams_with_offsets(payload: &[u8]) -> Vec<(usize, Vec<u8>)> {
 }
 
 /// Offsets of candidate wrapped zlib members in a block payload.
-///
-/// Returns nothing unless the transmit-wrapper magic is present. Detection only:
-/// the caller inflates each member through the charging expander so a crafted
-/// deflate bomb fuses on the decompression budget rather than growing an
-/// unbounded intermediate `Vec`. zlib headers are `78 01` / `78 9c` / `78 da`.
 pub fn wrapped_member_offsets(payload: &[u8]) -> Vec<usize> {
     if !contains(payload, &WRAPPED_MAGIC_PREFIX) {
         return Vec::new();
@@ -123,7 +111,7 @@ pub fn wrapped_member_offsets(payload: &[u8]) -> Vec<usize> {
 }
 
 /// Whether inflated bytes frame a valid Parasolid stream (`PS\0\0` plus a
-/// parsable header). Gates a wrapped-member candidate after charged inflation.
+/// parsable header).
 pub fn is_parasolid_stream(bytes: &[u8]) -> bool {
     bytes.starts_with(&[b'P', b'S', 0x00, 0x00]) && stream_header(bytes).is_some()
 }

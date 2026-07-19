@@ -5,7 +5,7 @@
 use std::ops::Range;
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::View;
 
 use crate::mesh::MeshExpand;
 
@@ -133,7 +133,6 @@ fn interval(view: &mut View<'_>) -> Result<[f64; 2], FramingError> {
 
 fn segment(
     root: View<'_>,
-    ctx: &DecodeContext<'_>,
     data: &[u8],
     range: Range<usize>,
     archive: ArchiveVersion,
@@ -145,8 +144,6 @@ fn segment(
     let mut body = root
         .child(chunk.body.start, chunk.body.end)
         .ok_or_else(|| malformed(chunk.body.start, "polyedge segment body out of range"))?;
-    ctx.charge_work(13, "polyedge_segment", Some(body.location()))
-        .map_err(|error| refused(chunk.body.start, &error))?;
     if req_i32(&mut body)? != 1 || req_i32(&mut body)? != 0 {
         return Err(malformed(
             chunk.body.start,
@@ -209,12 +206,6 @@ pub(crate) fn decode(
         ));
     }
 
-    ctx.charge_work(
-        parameter_count as u64,
-        "polyedge_parameters",
-        Some(body.location()),
-    )
-    .map_err(|error| refused(body.position(), &error))?;
     let mut reserved = ctx
         .exact_vec::<f64>(parameter_bound)
         .map_err(|error| refused(body.position(), &error))?;
@@ -251,7 +242,6 @@ pub(crate) fn decode(
         segments
             .push(segment(
                 expand.root(),
-                ctx,
                 data,
                 class.class_data_range,
                 archive,

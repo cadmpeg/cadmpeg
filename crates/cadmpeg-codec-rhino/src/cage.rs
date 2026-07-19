@@ -165,8 +165,6 @@ pub(crate) fn decode_at(
         let bound = body
             .counted(knot_count as u64, 8)
             .ok_or_else(|| malformed(body.position(), "NURBS cage knot vector truncated"))?;
-        ctx.charge_work(knot_count as u64, "cage_knots", Some(body.location()))
-            .map_err(|error| refused(body.position(), &error))?;
         let mut reserved = ctx
             .exact_vec::<f64>(bound)
             .map_err(|error| refused(body.position(), &error))?;
@@ -187,12 +185,10 @@ pub(crate) fn decode_at(
     }
 
     let stored_dimension = dimension + usize::from(rational);
-    let total_scalars = control_count
+    let _total_scalars = control_count
         .checked_mul(stored_dimension)
         .filter(|count| *count <= MAX_SCALARS && *count <= body.remaining() / 8)
         .ok_or_else(|| malformed(body.position(), "NURBS cage control data exceeds bound"))?;
-    ctx.charge_work(total_scalars as u64, "cage_control", Some(body.location()))
-        .map_err(|error| refused(body.position(), &error))?;
 
     // Count-framed control net: the outer point list and each point's stored
     // coordinate tuple are reserved through `exact_vec`.

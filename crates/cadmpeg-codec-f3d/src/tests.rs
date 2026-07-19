@@ -16943,13 +16943,8 @@ fn strict_mode_rejects_metadata_fallback_geometry() {
         panic!("strict refusal must be a classified Malformed error, got {error:?}");
     };
     assert!(
-        message.starts_with("strict:"),
-        "unexpected message: {message}"
-    );
-    assert!(
-        message.contains(LossCode::GeometryNotTransferred.as_str())
-            && message.contains(LossCode::TopologyNotTransferred.as_str()),
-        "strict refusal must name the geometry and topology loss codes: {message}"
+        message.contains(LossCode::GeometryNotTransferred.as_str()),
+        "strict refusal must name the first mandatory loss: {message}"
     );
 
     let salvage_codes: std::collections::BTreeSet<LossCode> = F3dCodec

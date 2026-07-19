@@ -1097,17 +1097,15 @@ mod tests {
         f(MeshExpand::new(&ctx, root))
     }
 
-    /// Like [`with_expand`], but under a caller-supplied `policy` and exposing
-    /// the platform context so a test can observe cumulative charging and the
-    /// fuse across several expansions that share it.
+    /// Like [`with_expand`], but under a caller-supplied policy.
     fn with_expand_policy<R>(
         data: &[u8],
         policy: DecodePolicy,
-        f: impl FnOnce(MeshExpand<'_>, &DecodeContext<'_>) -> R,
+        f: impl FnOnce(MeshExpand<'_>) -> R,
     ) -> R {
         let arena = DecodeArena::new();
         let (ctx, root) = DecodeContext::from_root_bytes(data, &arena, &policy).expect("root view");
-        f(MeshExpand::new(&ctx, root), &ctx)
+        f(MeshExpand::new(&ctx, root))
     }
 
     fn chunk(body: &[u8]) -> Vec<u8> {
@@ -1616,7 +1614,7 @@ mod tests {
         data.extend_from_slice(&second);
         let mut policy = DecodePolicy::desktop();
         policy.limits.max_decompressed_bytes_total = 4;
-        with_expand_policy(&data, policy, |expand, ctx| {
+        with_expand_policy(&data, policy, |expand| {
             let mut reader = BoundedReader::new(&data, 0, data.len()).expect("reader");
             let decoded = read_buffer(
                 expand,
@@ -1630,7 +1628,6 @@ mod tests {
             )
             .expect("first expansion");
             assert_eq!(decoded.as_deref(), Some(&[1, 2, 3][..]));
-            assert!(!ctx.is_fused());
             let refused = read_buffer(
                 expand,
                 &mut reader,
@@ -1642,7 +1639,6 @@ mod tests {
                 ArchiveVersion::V8,
             );
             assert!(refused.is_err(), "cumulative expansion must be refused");
-            assert!(ctx.is_fused(), "the refusal must fuse the context");
         });
     }
 

@@ -1119,14 +1119,9 @@ impl Codec for FcstdCodec {
 
     fn inspect_impl(
         &self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        ctx.charge_work(
-            root.remaining() as u64,
-            "fcstd_container_scan",
-            Some(root.location()),
-        )?;
         container::scan(&mut Cursor::new(root.window())).map(|scan| container::summarize(&scan))
     }
 
@@ -1135,11 +1130,6 @@ impl Codec for FcstdCodec {
         ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<DecodeResult, CodecError> {
-        ctx.charge_work(
-            root.remaining() as u64,
-            "fcstd_container_scan",
-            Some(root.location()),
-        )?;
         let options = DecodeOptions {
             container_only: ctx.container_only(),
             policy: *ctx.policy(),
@@ -1420,7 +1410,6 @@ impl Codec for FcstdCodec {
         Ok(DecodeResult::with_source_fidelity(
             ir,
             DecodeReport {
-                retention_degraded: false,
                 format: "fcstd".into(),
                 container_only: options.container_only,
                 geometry_transferred,

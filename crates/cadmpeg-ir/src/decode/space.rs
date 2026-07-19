@@ -7,7 +7,7 @@
 //! and error attribution fall out of the type. Coordinates are absolute
 //! within a space: offset zero is that space's first byte.
 
-use std::cell::RefCell;
+use std::cell::Cell;
 
 /// Names one address space within a single decode.
 ///
@@ -38,11 +38,10 @@ pub struct ByteRange {
 
 /// Append-only registry of the spaces a decode has produced.
 ///
-/// Interior-mutable so registration composes with `&self` charging. Ids are
-/// handed out in registration order and never reused.
+/// Ids are handed out in registration order and never reused.
 #[derive(Debug, Default)]
 pub(crate) struct SpaceRegistry {
-    count: RefCell<u32>,
+    count: Cell<u32>,
 }
 
 impl SpaceRegistry {
@@ -53,15 +52,9 @@ impl SpaceRegistry {
 
     /// Registers a derived space and returns its fresh id.
     pub(crate) fn register(&self) -> SpaceId {
-        let mut count = self.count.borrow_mut();
-        let id = SpaceId(*count);
-        *count = count.saturating_add(1);
+        let count = self.count.get();
+        let id = SpaceId(count);
+        self.count.set(count.saturating_add(1));
         id
-    }
-
-    /// Returns how many spaces are registered.
-    #[cfg(test)]
-    pub(crate) fn len(&self) -> usize {
-        *self.count.borrow() as usize
     }
 }

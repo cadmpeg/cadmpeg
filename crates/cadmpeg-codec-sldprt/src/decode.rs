@@ -19,15 +19,13 @@ use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
 use cadmpeg_ir::be::u32_at as be_u32;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, DecodeMode, View};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::geometry::SurfaceGeometry;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{AppearanceId, UnknownId};
 use cadmpeg_ir::le::{i32_at as le_i32, u16_at as le_u16, u32_at as le_u32};
-use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
-};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::Exactness;
@@ -52,7 +50,7 @@ struct DecodedBrep {
 
 /// Decode a `.sldprt` session view into IR and diagnostics.
 pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, CodecError> {
-    let scan = container::scan_view_retaining(ctx, root)?;
+    let scan = container::scan_view(ctx, root)?;
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
@@ -62,7 +60,6 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let streams = active_body_streams(&scan);
     if !streams.is_empty() {
         if let Some((decoded, report)) = try_decode_brep(&scan, &streams) {
-            reject_unrepresentable_in_strict(ctx, &report)?;
             let (ir, annotations, unknowns) = build_geometry_ir(
                 &scan,
                 streams[decoded.selected].block,
@@ -76,7 +73,6 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
-    reject_unrepresentable_in_strict(ctx, &report)?;
     decode_result(ir, report, annotations, unknowns)
 }
 
@@ -107,26 +103,6 @@ fn decode_result(
 }
 
 /// Rejects strict decodes that omit mandatory semantics.
-fn reject_unrepresentable_in_strict(
-    ctx: &DecodeContext<'_>,
-    report: &DecodeReport,
-) -> Result<(), CodecError> {
-    if ctx.mode() != DecodeMode::Strict {
-        return Ok(());
-    }
-    if let Some(note) = report
-        .losses
-        .iter()
-        .find(|note| note.code.strict_consequence() == StrictConsequence::Reject)
-    {
-        return Err(CodecError::Malformed(format!(
-            "strict mode rejects unrepresentable mandatory semantics ({}): {}",
-            note.code, note.message
-        )));
-    }
-    Ok(())
-}
-
 /// Decode the active Parasolid stream's B-rep. Returns `None` when the stream
 /// frames but yields no geometry, so the caller falls back to metadata.
 fn active_body_streams(scan: &ContainerScan) -> Vec<BodyStream<'_>> {
@@ -812,7 +788,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
         });
     }
     DecodeReport {
-        retention_degraded: false,
         format: "sldprt".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -1248,7 +1223,6 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     }
 
     DecodeReport {
-        retention_degraded: false,
         format: "sldprt".to_string(),
         container_only,
         geometry_transferred: false,

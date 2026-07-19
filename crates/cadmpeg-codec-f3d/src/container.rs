@@ -21,11 +21,7 @@ use crate::asm_header;
 /// Maximum `.f3d` archive accepted by the container scanner.
 const INPUT_CAP: u64 = 256 * 1024 * 1024;
 
-/// Read chunk for compressed-entry expansion.
 const EXPAND_CHUNK: usize = 16 * 1024;
-
-/// Allocation charge for one admitted archive entry.
-const PER_ENTRY_GRAPH_BYTES: u64 = 256;
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
@@ -180,23 +176,13 @@ impl<'a> ContainerScan<'a> {
             .ok_or_else(|| CodecError::Malformed(format!("entry {name} not found")))
     }
 
-    /// Returns an entry's payload view, carrying its address-space identity for
-    /// nested reads that must charge and bound against the entry's own space.
+    /// Returns an entry's payload view.
     pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
         self.inflated_entries.get(name).copied()
     }
 }
 
-/// Admit one archive entry into the runtime space graph, returning a view over
-/// its payload. Stored entries alias the `parent` space as a `Slice`; compressed
-/// entries stream their inflated output through [`DecodeContext::begin_expand`]
-/// under an exact-size contract, so the ZIP central directory's declared
-/// uncompressed length is enforced per write and at finalize.
-///
-/// `parent` is the address space the entry's compressed bytes live in: the root
-/// for a top-level entry, a nested `.protein` entry's own space for a nested
-/// one. The compressed source is always framed as a view of that parent — never
-/// a raw length — so a nested archive charges and bounds against its own extent.
+/// Admit one archive entry and enforce its declared uncompressed size.
 pub(crate) fn admit_entry<'a>(
     ctx: &DecodeContext<'a>,
     parent: View<'a>,
@@ -252,11 +238,8 @@ fn child_range(root: View<'_>, start: u64, end: u64) -> Option<View<'_>> {
 
 /// Read and classify every entry, decoding ASM headers for BREP streams.
 ///
-/// Consumes the session root view directly: no re-read, no `std::io::Cursor`
-/// adapter. The file-wide directory walk both `inspect` and `decode` run is
-/// charged as work up front, and every entry is registered in the runtime space
-/// graph: a `Slice` alias when stored, a decompression `Transform` when
-/// compressed.
+/// Every entry is registered as a slice when stored or a decompressed space
+/// when compressed.
 pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan<'a>, CodecError> {
     let source_image = root.window();
     if source_image.len() as u64 > INPUT_CAP {
@@ -264,21 +247,9 @@ pub fn scan<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<ContainerScan
             "input exceeds f3d size cap of {INPUT_CAP} bytes"
         )));
     }
-    ctx.charge_work(
-        source_image.len() as u64,
-        "f3d_container_scan",
-        Some(root.location()),
-    )?;
 
     let mut archive = zip::ZipArchive::new(Cursor::new(source_image))
         .map_err(|e| CodecError::Malformed(format!("not a readable ZIP: {e}")))?;
-
-    let entry_count = archive.len() as u64;
-    ctx.charge_alloc(
-        entry_count.saturating_mul(PER_ENTRY_GRAPH_BYTES),
-        "f3d_container_entries",
-        Some(root.location()),
-    )?;
 
     let mut entries = Vec::new();
     let mut breps = Vec::new();

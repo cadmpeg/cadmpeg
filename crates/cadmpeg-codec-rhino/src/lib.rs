@@ -100,10 +100,10 @@ impl Codec for RhinoCodec {
 
     fn inspect_impl(
         &self,
-        ctx: &DecodeContext<'_>,
+        _ctx: &DecodeContext<'_>,
         root: View<'_>,
     ) -> Result<ContainerSummary, CodecError> {
-        container::inspect(ctx, root)
+        container::inspect(root)
     }
 
     fn decode_impl(

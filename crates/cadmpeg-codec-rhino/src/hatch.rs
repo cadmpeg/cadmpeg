@@ -177,12 +177,10 @@ pub(crate) fn decode(
     let loop_bound = body
         .counted(count as u64, 5)
         .ok_or_else(|| structural(count_offset, "hatch loop count exceeds remaining window"))?;
-    ctx.charge_work(19 + count as u64, "hatch", Some(body.location()))
-        .map_err(|error| refused(body.position(), &error))?;
     let mut loops = ctx
         .exact_vec::<HatchLoop>(loop_bound)
         .map_err(|error| refused(body.position(), &error))?;
-    let mut warnings = ctx.grow_vec::<String>();
+    let mut warnings = Vec::new();
     for loop_index in 0..count {
         let loop_offset = body.position();
         let loop_version = req_u8(&mut body)?;
@@ -224,9 +222,7 @@ pub(crate) fn decode(
             .push(HatchLoop { kind, curve })
             .map_err(|error| refused(body.position(), &error))?;
         for warning in loop_warnings {
-            warnings
-                .try_push(warning)
-                .map_err(|error| refused(body.position(), &error))?;
+            warnings.push(warning);
         }
     }
     let basepoint = if minor >= 2 {
@@ -253,7 +249,7 @@ pub(crate) fn decode(
         pattern_index,
         loops,
         basepoint,
-        warnings: warnings.finish(),
+        warnings,
     })
 }
 

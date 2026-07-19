@@ -1211,7 +1211,6 @@ fn build_report(scan: &ContainerScan<'_>, container_only: bool) -> DecodeReport 
     });
 
     DecodeReport {
-        retention_degraded: false,
         format: "creo".to_string(),
         container_only,
         geometry_transferred: !scan.datum_planes.is_empty() || placed_plane_count != 0,

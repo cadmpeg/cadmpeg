@@ -42,8 +42,6 @@ pub const MAGIC: &[u8] = b"#UGC:2";
 /// End of the UGC header block.
 const UGC_HEADER_END: &[u8] = b"#-END_OF_UGC_HEADER";
 
-/// Conservative allocation charge for one registered section space.
-const PER_SECTION_GRAPH_BYTES: u64 = 256;
 /// Start of the ASCII table of contents.
 const TOC_START: &[u8] = b"#UGC_TOC";
 /// End of the ASCII table of contents.
@@ -886,19 +884,12 @@ fn geomlists_value(data: &[u8], sections: &[Section], label: &[u8]) -> Option<u3
     (after > value_offset).then_some(count)
 }
 
-/// The framing walk and the file-wide marker searches (`principal_unit`, the
-/// header/TOC finds, section enumeration) are all linear in the input, so their
-/// bytes are charged once before scanning begins.
+/// Scan a root view and register its section ranges.
 pub fn scan_view<'a>(
     ctx: &DecodeContext<'_>,
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = root.window();
-    ctx.charge_work(
-        data.len() as u64,
-        "creo_container_scan",
-        Some(root.location()),
-    )?;
     let scan = scan_bytes(data);
     register_section_spaces(ctx, root, &scan)?;
     Ok(scan)
@@ -918,12 +909,6 @@ fn register_section_spaces(
     root: View<'_>,
     scan: &ContainerScan<'_>,
 ) -> Result<(), CodecError> {
-    let section_count = scan.sections.len() as u64;
-    ctx.charge_alloc(
-        section_count.saturating_mul(PER_SECTION_GRAPH_BYTES),
-        "creo_container_sections",
-        Some(root.location()),
-    )?;
     let len = scan.data.len() as u64;
     for section in &scan.sections {
         let start = section.offset as u64;

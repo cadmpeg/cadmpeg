@@ -27,7 +27,7 @@ pub(crate) const INPUT_CAP: u64 = 256 * 1024 * 1024;
 /// Maximum direct table records retained or described in one document.
 ///
 /// Bounds record-descriptor amplification from an attacker-controlled table body independently of the
-/// global `alloc_bytes` budget; kept as defense in depth.
+/// codec-local input limit; kept as defense in depth.
 pub(crate) const TABLE_RECORD_CAP: usize = 1 << 20;
 
 const TCODE_COMMENT: u32 = 0x0000_0001;
@@ -155,23 +155,14 @@ impl Scan<'_> {
     }
 }
 
-/// Borrow the session root bytes, enforcing the codec-local input ceiling and
-/// charging the file-wide container scan as work.
-///
-/// The chunk walk is linear in the input, so its bytes are charged as work once
-/// before scanning begins.
-fn acquire<'a>(ctx: &DecodeContext<'_>, root: View<'a>) -> Result<&'a [u8], CodecError> {
+/// Borrow the session root bytes, enforcing the codec-local input ceiling.
+fn acquire(root: View<'_>) -> Result<&[u8], CodecError> {
     let data = root.window();
     if data.len() as u64 > INPUT_CAP {
         return Err(CodecError::Malformed(format!(
             "input exceeds Rhino size cap of {INPUT_CAP} bytes"
         )));
     }
-    ctx.charge_work(
-        data.len() as u64,
-        "rhino_container_scan",
-        Some(root.location()),
-    )?;
     Ok(data)
 }
 
@@ -687,7 +678,6 @@ pub(crate) fn container_only_result(scan: &Scan<'_>) -> cadmpeg_ir::codec::Decod
     cadmpeg_ir::codec::DecodeResult::new(
         ir,
         DecodeReport {
-            retention_degraded: false,
             format: "rhino".to_string(),
             container_only: true,
             geometry_transferred: false,
@@ -709,11 +699,8 @@ pub(crate) fn header_only(archive: ArchiveVersion) -> bool {
 }
 
 /// Inspect a Rhino stream, applying the version-specific scan depth.
-pub(crate) fn inspect(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-) -> Result<ContainerSummary, CodecError> {
-    let data = acquire(ctx, root)?;
+pub(crate) fn inspect(root: View<'_>) -> Result<ContainerSummary, CodecError> {
+    let data = acquire(root)?;
     let header = parse_header(data).map_err(|error| malformed(&error))?;
     if header_only(header.archive_version) {
         return Ok(ContainerSummary {
@@ -735,7 +722,7 @@ pub(crate) fn decode(
     root: View<'_>,
     container_only: bool,
 ) -> Result<cadmpeg_ir::codec::DecodeResult, CodecError> {
-    let data = acquire(ctx, root)?;
+    let data = acquire(root)?;
     let header = parse_header(data).map_err(|error| malformed(&error))?;
     if header_only(header.archive_version) {
         return Err(CodecError::NotImplemented(format!(

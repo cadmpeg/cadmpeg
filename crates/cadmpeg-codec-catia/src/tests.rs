@@ -2151,9 +2151,9 @@ fn zero_entity_parser_decodes_face_loop_lanes_and_packed_senses() {
     bytes.extend_from_slice(&incidence);
     bytes.extend_from_slice(&vertex_marker);
 
-    let topology = with_root(&bytes, |ctx, root| {
-        crate::zero_entity::parse(ctx, root)
-            .expect("charged parse")
+    let topology = with_root(&bytes, |_ctx, root| {
+        crate::zero_entity::parse(root)
+            .expect("parse")
             .expect("zero-entity topology records")
     });
     assert_eq!(topology.faces[0].loop_terminals, vec![100]);
@@ -2190,10 +2190,8 @@ fn zero_entity_parser_decodes_face_loop_lanes_and_packed_senses() {
 #[test]
 fn zero_entity_parser_rejects_record_truncated_at_declared_length() {
     let bytes = vec![0xa9, 0x03, 0x5f, 200];
-    let admitted = with_root(&bytes, |ctx, root| {
-        crate::zero_entity::parse(ctx, root)
-            .expect("charged parse")
-            .is_some()
+    let admitted = with_root(&bytes, |_ctx, root| {
+        crate::zero_entity::parse(root).expect("parse").is_some()
     });
     assert!(!admitted);
 }
@@ -2766,8 +2764,8 @@ fn b2_composite_parser_reads_embedded_cylinder_frame() {
 fn outer_object_graph_parser_reads_nested_heads_and_payload_fields() {
     use crate::object_graph::{PayloadField, PayloadSubtype};
 
-    let graph = with_root(&object_graph_stream(), |ctx, root| {
-        crate::object_graph::parse(ctx, root).unwrap()
+    let graph = with_root(&object_graph_stream(), |_ctx, root| {
+        crate::object_graph::parse(root)
     })
     .unwrap();
     assert_eq!(graph.records.len(), 2);
@@ -2845,8 +2843,8 @@ fn value_block_parser_rejects_payload_truncated_before_terminator() {
         "Sketch",
     ]));
     let truncated = &bytes[..value_block_stream(&payload).len() - 1];
-    let blocks = with_root(truncated, |ctx, root| {
-        crate::value_block::parse(ctx, root).unwrap()
+    let blocks = with_root(truncated, |_ctx, root| {
+        crate::value_block::parse(root).unwrap()
     });
     assert!(blocks.is_empty());
 }
@@ -2863,8 +2861,8 @@ fn value_block_parser_reads_length_to_terminator_boundary() {
         "Sketch",
     ]));
 
-    let blocks = with_root(&bytes, |ctx, root| {
-        crate::value_block::parse(ctx, root).unwrap()
+    let blocks = with_root(&bytes, |_ctx, root| {
+        crate::value_block::parse(root).unwrap()
     });
     assert_eq!(blocks.len(), 1);
     assert_eq!(blocks[0].pos, 0);
@@ -2877,8 +2875,8 @@ fn value_block_parser_reads_length_to_terminator_boundary() {
 fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     use crate::object_graph::{HeadToken, ListItem, PayloadField, PayloadSubtype};
 
-    let graph = with_root(&object_graph_vm_stream(), |ctx, root| {
-        crate::object_graph::parse(ctx, root).unwrap()
+    let graph = with_root(&object_graph_vm_stream(), |_ctx, root| {
+        crate::object_graph::parse(root)
     })
     .unwrap();
     assert!(graph.records[0].head.contains(&HeadToken::NullHandle));
@@ -2886,7 +2884,7 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
     assert!(matches!(
         &graph.records[0].payload.fields[0],
         PayloadField::List { items, .. }
-            if items == &vec![ListItem::Reference(5), ListItem::Atom(6), ListItem::Atom(10)]
+            if items.as_slice() == [ListItem::Reference(5), ListItem::Atom(6), ListItem::Atom(10)]
     ));
     assert!(matches!(
         graph.records[0].payload.fields[1],
@@ -2902,17 +2900,14 @@ fn outer_object_graph_vm_reads_lists_paged_atoms_bulk_and_null_handles() {
 fn outer_object_graph_parser_rejects_frame_truncated_at_record_boundary() {
     let full = object_graph_stream();
     assert_eq!(
-        with_root(&full, |ctx, root| crate::object_graph::parse(ctx, root)
-            .unwrap())
-        .unwrap()
-        .records
-        .len(),
+        with_root(&full, |_ctx, root| crate::object_graph::parse(root))
+            .unwrap()
+            .records
+            .len(),
         2
     );
     let truncated = &full[..full.len() - 1];
-    let graph = with_root(truncated, |ctx, root| {
-        crate::object_graph::parse(ctx, root).unwrap()
-    });
+    let graph = with_root(truncated, |_ctx, root| crate::object_graph::parse(root));
     assert!(graph.is_none());
 }
 
@@ -3012,8 +3007,8 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
 fn outer_surface_alias_parser_reads_fixed_core() {
     use crate::object_graph::AliasLead;
 
-    let rows = with_root(&surface_alias_stream(), |ctx, root| {
-        crate::object_graph::surface_aliases(ctx, root).unwrap()
+    let rows = with_root(&surface_alias_stream(), |_ctx, root| {
+        crate::object_graph::surface_aliases(root)
     });
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].lead, AliasLead::SurfaceSupportStorage);
@@ -3025,8 +3020,8 @@ fn outer_surface_alias_parser_reads_fixed_core() {
 
 #[test]
 fn unresolved_7cd9_scanner_preserves_bounded_context_and_spacing() {
-    let markers = with_root(&marker_7cd9_stream(), |ctx, root| {
-        crate::object_graph::markers_7cd9(ctx, root, 5).unwrap()
+    let markers = with_root(&marker_7cd9_stream(), |_ctx, root| {
+        crate::object_graph::markers_7cd9(root, 5)
     });
     assert_eq!(markers.len(), 2);
     assert_eq!(markers[0].pos, 1);
@@ -3428,7 +3423,7 @@ fn topology_not_transferred_rejects_strict_and_reports_code_under_salvage() {
     let error = strict.expect_err("strict mode rejects unrepresentable mandatory topology");
     assert!(error
         .to_string()
-        .contains("strict mode rejects unrepresentable mandatory semantics"));
+        .contains("strict mode rejects topology_not_transferred"));
 }
 
 #[test]

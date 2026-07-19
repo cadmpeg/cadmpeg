@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use std::io::Read;
 
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary};
-use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, ExpandSpec, Retention, View};
+use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, ExpandSpec, View};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::le::u32_at as u32_le;
 
@@ -14,9 +14,6 @@ pub const MARKER: [u8; 6] = [0x14, 0x00, 0x06, 0x00, 0x08, 0x00];
 
 /// Read chunk used while inflating a block.
 const EXPAND_CHUNK: usize = 16 * 1024;
-
-/// Allocation charge for each admitted space-graph record.
-const PER_BLOCK_GRAPH_BYTES: u64 = 256;
 
 /// Bytes between a marker and its preamble in a block frame
 /// (`marker[6] + type_id[4] + crc32[4] + comp_sz[4] + uncomp_sz[4] + pre_sz[4]`).
@@ -126,10 +123,6 @@ pub struct Block {
     pub ps_streams: Vec<Vec<u8>>,
     /// Outer-payload offset of each entry in `ps_streams`.
     pub ps_stream_offsets: Vec<usize>,
-    /// Content-addressed identity of the retained block payload.
-    pub retained_digest: Option<String>,
-    /// Whether only a digest was retained because salvage mode exhausted its byte allowance.
-    pub retention_degraded: bool,
 }
 
 /// One tail-directory entry naming a section.
@@ -185,30 +178,9 @@ pub fn looks_like_sldprt(prefix: &[u8]) -> bool {
         .any(|w| w == MARKER)
 }
 
-/// Scans the outer container without retaining block payloads in the blob store.
+/// Scans the outer container.
 pub fn scan_view(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<ContainerScan, CodecError> {
-    scan_view_impl(ctx, root, false)
-}
-
-/// Scans the outer container and retains admitted block payloads.
-pub fn scan_view_retaining(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-) -> Result<ContainerScan, CodecError> {
-    scan_view_impl(ctx, root, true)
-}
-
-fn scan_view_impl(
-    ctx: &DecodeContext<'_>,
-    root: View<'_>,
-    retain: bool,
-) -> Result<ContainerScan, CodecError> {
     let bytes = root.window();
-    ctx.charge_work(
-        bytes.len() as u64,
-        "sldprt_container_scan",
-        Some(root.location()),
-    )?;
 
     let version = cadmpeg_ir::be::u32_at(bytes, 4).unwrap_or(0);
     let mut blocks = Vec::new();
@@ -221,7 +193,7 @@ fn scan_view_impl(
             i += 1;
             continue;
         }
-        if let Some(raw) = admit_block(ctx, root, bytes, i, retain)? {
+        if let Some(raw) = admit_block(ctx, root, bytes, i)? {
             i = raw.offset + BLOCK_HEADER_LEN + raw.preamble_len + raw.comp_sz as usize;
             blocks.push(raw.into_block());
             continue;
@@ -234,11 +206,6 @@ fn scan_view_impl(
         i += 1;
     }
 
-    ctx.charge_alloc(
-        bytes.len() as u64,
-        "sldprt_source_image",
-        Some(root.location()),
-    )?;
     Ok(ContainerScan {
         source_image: bytes.to_vec(),
         version,
@@ -254,7 +221,6 @@ fn admit_block(
     root: View<'_>,
     bytes: &[u8],
     off: usize,
-    retain: bool,
 ) -> Result<Option<RawBlock>, CodecError> {
     let (Some(type_id), Some(crc), Some(comp_sz), Some(uncomp_sz), Some(pre_sz)) = (
         u32_le(bytes, off + 6),
@@ -301,25 +267,11 @@ fn admit_block(
     if writer.written() != uncomp_sz as u64 || hasher.finalize() != crc {
         return Ok(None);
     }
-    ctx.charge_alloc(
-        PER_BLOCK_GRAPH_BYTES,
-        "sldprt_container_block",
-        Some(root.location()),
-    )?;
     let (_space, view) = match writer.finalize() {
         Ok(pair) => pair,
         Err(e) => return probe_or_propagate(e),
     };
     let inflated = view.window();
-
-    let (retained_digest, retention_degraded) = if retain {
-        match ctx.retain(inflated)? {
-            Retention::Retained { digest } => (Some(digest), false),
-            Retention::DigestOnly { digest } => (Some(digest), true),
-        }
-    } else {
-        (None, false)
-    };
 
     let preamble = bytes
         .get(off + BLOCK_HEADER_LEN..payload_start)
@@ -332,18 +284,6 @@ fn admit_block(
         .map(|(_, stream)| stream)
         .collect::<Vec<_>>();
     let ps_stream = ps_streams.first().cloned();
-    if let Some(first) = &ps_stream {
-        ctx.charge_alloc(
-            first.len() as u64,
-            "sldprt_parasolid_stream_bytes",
-            Some(root.location()),
-        )?;
-    }
-    ctx.charge_alloc(
-        inflated.len() as u64,
-        "sldprt_block_payload",
-        Some(root.location()),
-    )?;
     let family = if ps_streams.is_empty() {
         payload_family(inflated)
     } else {
@@ -362,8 +302,6 @@ fn admit_block(
         ps_stream,
         ps_streams,
         ps_stream_offsets,
-        retained_digest,
-        retention_degraded,
     }))
 }
 
@@ -389,16 +327,6 @@ fn collect_parasolid_streams(
         if inflated.get(*offset..end) != Some(stream.as_slice()) {
             continue;
         }
-        ctx.charge_alloc(
-            PER_BLOCK_GRAPH_BYTES,
-            "sldprt_parasolid_stream",
-            Some(block.location()),
-        )?;
-        ctx.charge_alloc(
-            stream.len() as u64,
-            "sldprt_parasolid_stream_bytes",
-            Some(block.location()),
-        )?;
         ctx.register_slice(
             block,
             ByteRange {
@@ -421,15 +349,7 @@ fn collect_parasolid_streams(
     Ok(located)
 }
 
-/// Inflate a wrapped Parasolid zlib member through the charging expander.
-///
-/// The member is framed as a view of the block space from `offset`, never a raw
-/// length. Output streams through a `Transform` derived-space
-/// writer that charges `decompressed_bytes` per chunk under the per-expand and
-/// cumulative decompression ceilings, so a crafted deflate bomb fuses the
-/// context before the retained buffer grows unbounded. A member that does not
-/// inflate to a valid `PS\0\0` stream registers no space: the writer is dropped
-/// before finalize. Returns the inflated bytes only for a registered stream.
+/// Inflate a wrapped Parasolid zlib member under the decompression limits.
 fn inflate_wrapped_stream(
     ctx: &DecodeContext<'_>,
     block: View<'_>,
@@ -449,8 +369,6 @@ fn inflate_wrapped_stream(
         match decoder.read(&mut chunk) {
             Ok(0) => break,
             Ok(read) => {
-                // Charge before retaining, so a bomb fuses here rather than
-                // growing `inflated`.
                 if let Err(e) = writer.write(&chunk[..read]) {
                     return probe_or_propagate(e);
                 }
@@ -462,24 +380,8 @@ fn inflate_wrapped_stream(
         }
     }
     if !crate::parasolid::is_parasolid_stream(&inflated) {
-        // Not a Parasolid stream; dropping the writer registers no space.
         return Ok(None);
     }
-    // Charge the derived-space record before `finalize` registers it.
-    ctx.charge_alloc(
-        PER_BLOCK_GRAPH_BYTES,
-        "sldprt_parasolid_stream",
-        Some(block.location()),
-    )?;
-    // The `Transform` space charged its bytes as `decompressed_bytes`; the owned
-    // `inflated` Vec returned here is a second copy retained in
-    // `Block::ps_streams`. Charge it against the allocation budget so the
-    // retained copy is bounded, matching the direct-stream path.
-    ctx.charge_alloc(
-        inflated.len() as u64,
-        "sldprt_parasolid_stream_bytes",
-        Some(block.location()),
-    )?;
     if let Err(e) = writer.finalize() {
         return probe_or_propagate(e);
     }
@@ -540,8 +442,6 @@ struct RawBlock {
     ps_stream: Option<Vec<u8>>,
     ps_streams: Vec<Vec<u8>>,
     ps_stream_offsets: Vec<usize>,
-    retained_digest: Option<String>,
-    retention_degraded: bool,
 }
 
 impl RawBlock {
@@ -557,8 +457,6 @@ impl RawBlock {
             ps_stream: self.ps_stream,
             ps_streams: self.ps_streams,
             ps_stream_offsets: self.ps_stream_offsets,
-            retained_digest: self.retained_digest,
-            retention_degraded: self.retention_degraded,
         }
     }
 }
@@ -619,8 +517,6 @@ fn try_block(bytes: &[u8], off: usize) -> Option<RawBlock> {
         ps_stream,
         ps_streams,
         ps_stream_offsets,
-        retained_digest: None,
-        retention_degraded: false,
     })
 }
 

@@ -65,7 +65,6 @@ fn decode_exchange_mode(
     });
 
     let mut report = DecodeReport {
-        retention_degraded: false,
         format: "step".into(),
         container_only: options.container_only,
         geometry_transferred: false,

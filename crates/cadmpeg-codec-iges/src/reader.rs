@@ -123,7 +123,6 @@ pub(crate) fn decode(
     Ok(DecodeResult::with_source_fidelity(
         ir,
         DecodeReport {
-            retention_degraded: false,
             format: "iges".into(),
             container_only: options.container_only,
             geometry_transferred,

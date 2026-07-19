@@ -1456,9 +1456,13 @@ fn generated_model_decodes_in_strict_and_salvage_modes() {
             limits: cadmpeg_ir::decode::ResourceLimits::desktop(),
         },
     };
-    let result = CreoCodec
+    let error = CreoCodec
         .decode(&mut Cursor::new(data.clone()), &strict)
-        .expect("strict decode");
+        .expect_err("strict decode rejects incomplete geometry transfer");
+    assert!(error.to_string().contains("geometry_not_transferred"));
+    let result = CreoCodec
+        .decode(&mut Cursor::new(data.clone()), &DecodeOptions::default())
+        .expect("salvage decode");
     assert_eq!(result.ir.model.surfaces.len(), 5);
     assert_eq!(result.ir.model.bodies.len(), 1);
     assert_eq!(result.ir.model.features.len(), 1);
@@ -1474,7 +1478,7 @@ fn generated_model_decodes_in_strict_and_salvage_modes() {
 
     CreoCodec
         .decode(&mut Cursor::new(data), &DecodeOptions::default())
-        .expect("salvage decode");
+        .expect("second salvage decode");
 }
 
 #[test]
@@ -1811,8 +1815,8 @@ mod phase4b {
             )],
         );
         let result = CreoCodec
-            .decode(&mut Cursor::new(data), &strict())
-            .expect("strict decode of a representable datum plane");
+            .decode(&mut Cursor::new(data), &DecodeOptions::default())
+            .expect("decode of a representable datum plane");
         assert!(result
             .report
             .losses
@@ -1900,9 +1904,10 @@ mod phase4b {
             .iter()
             .any(|loss| loss.code == LossCode::GeometryNotTransferred));
 
-        CreoCodec
+        let error = CreoCodec
             .decode(&mut Cursor::new(data), &strict())
-            .expect("strict decode accounts the same omission cleanly");
+            .expect_err("strict decode rejects omitted geometry");
+        assert!(error.to_string().contains("geometry_not_transferred"));
     }
 
     #[test]
@@ -1923,8 +1928,9 @@ mod phase4b {
             .iter()
             .any(|loss| loss.code == LossCode::PassthroughRecordOmitted));
 
-        CreoCodec
+        let error = CreoCodec
             .decode(&mut Cursor::new(data), &strict())
-            .expect("strict decode accounts the unplaced sketch cleanly");
+            .expect_err("strict decode rejects incomplete geometry transfer");
+        assert!(error.to_string().contains("geometry_not_transferred"));
     }
 }

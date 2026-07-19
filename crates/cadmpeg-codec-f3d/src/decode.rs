@@ -14,13 +14,11 @@
 use crate::native::F3dNative;
 use cadmpeg_ir::annotations::AnnotationBuilder;
 use cadmpeg_ir::codec::{CodecError, DecodeResult};
-use cadmpeg_ir::decode::{DecodeContext, DecodeMode, View};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::UnknownId;
-use cadmpeg_ir::report::{
-    DecodeReport, LossCategory, LossCode, LossNote, Severity, StrictConsequence,
-};
+use cadmpeg_ir::report::{DecodeReport, LossCategory, LossCode, LossNote, Severity};
 use cadmpeg_ir::units::{Tolerances, Units};
 use cadmpeg_ir::unknown::UnknownRecord;
 
@@ -152,7 +150,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 &unknowns,
             );
             report_untransferred_assets(&scan, &mut report);
-            enforce_strict(ctx.mode(), &report)?;
             return decode_result(
                 ir,
                 report,
@@ -204,7 +201,6 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     let annotations = populate_annotations(&ir, &scan, &native, None, &unknowns);
     let mut report = build_container_report(&scan, false);
     report_untransferred_assets(&scan, &mut report);
-    enforce_strict(ctx.mode(), &report)?;
     decode_result(
         ir,
         report,
@@ -239,30 +235,6 @@ fn decode_result(
 }
 
 /// Reject strict decodes that omit mandatory, unreconstructable semantics.
-fn enforce_strict(mode: DecodeMode, report: &DecodeReport) -> Result<(), CodecError> {
-    if mode != DecodeMode::Strict {
-        return Ok(());
-    }
-    let mut codes: Vec<&'static str> = report
-        .losses
-        .iter()
-        .filter(|loss| {
-            loss.severity == Severity::Blocking
-                && loss.code.strict_consequence() == StrictConsequence::Reject
-        })
-        .map(|loss| loss.code.as_str())
-        .collect();
-    if codes.is_empty() {
-        return Ok(());
-    }
-    codes.sort_unstable();
-    codes.dedup();
-    Err(CodecError::Malformed(format!(
-        "strict: mandatory semantics could not be represented (loss codes: {})",
-        codes.join(", ")
-    )))
-}
-
 /// Reports secondary archive assets that are not transferred.
 fn report_untransferred_assets(scan: &ContainerScan, report: &mut DecodeReport) {
     use container::role;
@@ -747,7 +719,6 @@ fn build_geometry_report(scan: &ContainerScan, decoded: &Brep) -> DecodeReport {
     });
 
     DecodeReport {
-        retention_degraded: false,
         format: "f3d".to_string(),
         container_only: false,
         geometry_transferred: true,
@@ -860,7 +831,6 @@ fn build_container_report(scan: &ContainerScan, container_only: bool) -> DecodeR
     }
 
     DecodeReport {
-        retention_degraded: false,
         format: "f3d".to_string(),
         container_only,
         geometry_transferred: false,

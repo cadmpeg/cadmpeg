@@ -1,18 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Monotonic decode state, charging, and session lifecycle.
+//! Decode state, decompression limits, and session lifecycle.
 
 use std::cell::Cell;
 
 use crate::codec::{CodecError, DecodeResult, ReadSeek};
-use crate::report::{LossCategory, LossCode, LossNote, Severity};
+use crate::report::StrictConsequence;
 
 use super::arena::DecodeArena;
-use super::budget::BudgetCells;
 use super::error::{
     ErrorContext, LimitScope, ResourceDimension, ResourceFailure, ResourceLimit, SourceLocation,
 };
-use super::policy::{DecodeMode, DecodePolicy, Envelope};
-use super::retained::{RetainedStore, Retention};
+use super::policy::{
+    DecodeMode, DecodePolicy, DECOMPRESSED_PER_EXPAND_BASE, DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE,
+    DECOMPRESSED_TOTAL_BASE, DECOMPRESSED_TOTAL_PER_INPUT_BYTE,
+};
 use super::space::{ByteRange, SpaceId, SpaceRegistry};
 use super::view::{BoundedCount, View};
 
@@ -20,22 +21,15 @@ use super::view::{BoundedCount, View};
 /// force a large up-front reservation before any output is produced.
 const RESERVE_CLAMP: u64 = 8 * 1024 * 1024;
 
-/// The in-memory charge for one element of type `T`, floored at one byte so a
-/// hostile count of zero-sized elements still pays.
-fn element_charge<T>() -> u64 {
-    std::mem::size_of::<T>().max(1) as u64
-}
-
 /// Shared monotonic decode state.
 #[derive(Debug)]
 pub struct DecodeContext<'a> {
     arena: &'a DecodeArena,
     policy: DecodePolicy,
-    envelope: Envelope,
     container_only: bool,
-    budget: BudgetCells,
+    input_bytes: u64,
+    decompressed_bytes: Cell<u64>,
     spaces: SpaceRegistry,
-    retained: RetainedStore,
     fuse: Cell<Option<ResourceLimit>>,
 }
 
@@ -101,19 +95,15 @@ impl<'a> DecodeContext<'a> {
                 length,
             ));
         }
-        let budget = BudgetCells::default();
-        budget.set_input_basis(length);
-        budget.set_counter(ResourceDimension::InputBytes, length);
         let spaces = SpaceRegistry::default();
         let root_space = spaces.register_root();
         let ctx = DecodeContext {
             arena,
             policy: *policy,
-            envelope: Envelope::PLATFORM_DEFAULT,
             container_only: false,
-            budget,
+            input_bytes: length,
+            decompressed_bytes: Cell::new(0),
             spaces,
-            retained: RetainedStore::default(),
             fuse: Cell::new(None),
         };
         Ok((ctx, View::over_space(bytes, root_space)))
@@ -122,11 +112,6 @@ impl<'a> DecodeContext<'a> {
     /// Returns the decode policy in force.
     pub fn policy(&self) -> &DecodePolicy {
         &self.policy
-    }
-
-    /// Returns the failure-handling mode.
-    pub fn mode(&self) -> DecodeMode {
-        self.policy.mode
     }
 
     /// Returns whether the caller requested container-only decoding.
@@ -139,119 +124,27 @@ impl<'a> DecodeContext<'a> {
         self.container_only = value;
     }
 
-    /// Returns whether the context has fused on a resource failure.
-    pub fn is_fused(&self) -> bool {
-        self.fuse.get().is_some()
+    fn decompression_allowance(&self) -> u64 {
+        let proportional = DECOMPRESSED_TOTAL_BASE
+            .saturating_add(DECOMPRESSED_TOTAL_PER_INPUT_BYTE.saturating_mul(self.input_bytes));
+        self.policy
+            .limits
+            .max_decompressed_bytes_total
+            .min(proportional)
     }
 
-    // --- charging -----------------------------------------------------------
+    fn per_expand_allowance(&self) -> u64 {
+        let proportional = DECOMPRESSED_PER_EXPAND_BASE.saturating_add(
+            DECOMPRESSED_PER_EXPAND_PER_INPUT_BYTE.saturating_mul(self.input_bytes),
+        );
+        self.policy
+            .limits
+            .max_decompressed_bytes_per_expand
+            .min(proportional)
+    }
 
-    /// Charges abstract work units, fusing the context on refusal.
-    ///
-    /// Charge points: commit boundaries (per record), probe scans
-    /// (proportionally to the bytes the probe examined, not one unit per
-    /// miss), and long-loop charge points.
-    pub fn charge_work(
+    fn charge_decompressed(
         &self,
-        units: u64,
-        operation: &'static str,
-        location: Option<SourceLocation>,
-    ) -> Result<(), CodecError> {
-        self.charge(
-            ResourceDimension::Work,
-            LimitScope::Global,
-            units,
-            operation,
-            location,
-        )
-    }
-
-    /// Charges bytes retained opaque in salvage mode, fusing on refusal.
-    ///
-    /// Charge point: salvage-mode opaque retention, before the bytes are
-    /// copied into a retained record.
-    pub fn charge_retained(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-        location: Option<SourceLocation>,
-    ) -> Result<(), CodecError> {
-        self.charge(
-            ResourceDimension::RetainedBytes,
-            LimitScope::Global,
-            bytes,
-            operation,
-            location,
-        )
-    }
-
-    // --- retained bytes -----------------------------------------------------
-
-    /// Retains an opaque payload by SHA-256 digest.
-    ///
-    /// Strict mode rejects budget exhaustion. Salvage mode returns
-    /// [`Retention::DigestOnly`] and records the missing bytes at [`finish`](Self::finish).
-    pub fn retain(&self, bytes: &'a [u8]) -> Result<Retention, CodecError> {
-        if let Some(limit) = self.fuse.get() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
-        let digest = crate::hash::sha256_hex(bytes);
-        let len = bytes.len() as u64;
-        if self.retained.contains(&digest) {
-            return Ok(Retention::Retained { digest });
-        }
-        match self.policy.mode {
-            DecodeMode::Strict => {
-                self.charge_retained(len, "retain", None)?;
-                self.retained.insert(digest.clone());
-                Ok(Retention::Retained { digest })
-            }
-            DecodeMode::Salvage => {
-                if self.try_charge_retained(len) {
-                    self.retained.insert(digest.clone());
-                    Ok(Retention::Retained { digest })
-                } else {
-                    self.retained.mark_degraded(&digest, len);
-                    Ok(Retention::DigestOnly { digest })
-                }
-            }
-        }
-    }
-
-    /// Attempts a retained-byte charge without fusing on refusal.
-    fn try_charge_retained(&self, bytes: u64) -> bool {
-        let dim = ResourceDimension::RetainedBytes;
-        let allowance = self
-            .budget
-            .allowance(dim, &self.policy.limits, &self.envelope);
-        let used = self.budget.counter(dim);
-        if bytes > allowance.saturating_sub(used) {
-            return false;
-        }
-        self.budget.set_counter(dim, used.saturating_add(bytes));
-        true
-    }
-
-    /// Charges auxiliary heap growth.
-    pub fn charge_alloc(
-        &self,
-        bytes: u64,
-        operation: &'static str,
-        location: Option<SourceLocation>,
-    ) -> Result<(), CodecError> {
-        self.charge(
-            ResourceDimension::AllocBytes,
-            LimitScope::Global,
-            bytes,
-            operation,
-            location,
-        )
-    }
-
-    /// Charges a counter dimension, fusing the context on refusal.
-    fn charge(
-        &self,
-        dim: ResourceDimension,
         scope: LimitScope,
         amount: u64,
         operation: &'static str,
@@ -260,13 +153,10 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        let allowance = self
-            .budget
-            .allowance(dim, &self.policy.limits, &self.envelope);
-        let used = self.budget.counter(dim);
+        let allowance = self.decompression_allowance();
+        let used = self.decompressed_bytes.get();
         if amount > allowance.saturating_sub(used) {
             return Err(self.fuse(
-                dim,
                 ResourceFailure::BudgetExceeded,
                 scope,
                 amount,
@@ -274,26 +164,38 @@ impl<'a> DecodeContext<'a> {
                 location,
             ));
         }
-        self.budget.set_counter(dim, used.saturating_add(amount));
+        self.decompressed_bytes.set(used.saturating_add(amount));
         Ok(())
+    }
+
+    /// Allocates a fixed-capacity vector after its count has been proven to fit
+    /// in the unread input.
+    pub fn exact_vec<T>(&self, count: BoundedCount) -> Result<ExactVec<T>, CodecError> {
+        ExactVec::with_capacity(count.get())
+    }
+
+    /// Allocates a fixed-capacity vector for a count bounded by format-local
+    /// validation rather than a fixed encoded element width.
+    pub fn alloc_unfloored<T>(&self, count: usize) -> Result<ExactVec<T>, CodecError> {
+        ExactVec::with_capacity(count)
     }
 
     /// Records a permanent fuse and returns the resource error to propagate.
     fn fuse(
         &self,
-        dim: ResourceDimension,
         reason: ResourceFailure,
         scope: LimitScope,
         amount: u64,
         operation: &'static str,
         location: Option<SourceLocation>,
     ) -> CodecError {
-        let limit = self
-            .budget
-            .allowance(dim, &self.policy.limits, &self.envelope);
-        let used = self.budget.counter(dim);
+        let limit = match scope {
+            LimitScope::Global => self.decompression_allowance(),
+            LimitScope::PerExpand => self.per_expand_allowance(),
+        };
+        let used = self.decompressed_bytes.get();
         let resource = ResourceLimit {
-            dimension: dim,
+            dimension: ResourceDimension::DecompressedBytes,
             reason,
             scope,
             limit,
@@ -306,117 +208,6 @@ impl<'a> DecodeContext<'a> {
         };
         self.fuse.set(Some(resource));
         CodecError::ResourceLimit(resource)
-    }
-
-    // --- allocation ---------------------------------------------------------
-
-    /// Reserves capacity for exactly `count` proven elements, charging first.
-    ///
-    /// The count parameter is [`BoundedCount`], not a raw integer: the caller
-    /// must first prove through [`View::counted`] that the elements could
-    /// physically fit in unread input. A raw decoded count does not compile:
-    ///
-    /// ```compile_fail,E0308
-    /// # use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy};
-    /// # let bytes = [0u8; 8];
-    /// # let arena = DecodeArena::new();
-    /// # let policy = DecodePolicy::default();
-    /// # let (ctx, _root) =
-    /// #     DecodeContext::from_root_bytes(&bytes, &arena, &policy).unwrap();
-    /// let declared_count = 0xFFFF_FFFFusize; // untrusted, unproven
-    /// let _ = ctx.exact_vec::<u32>(declared_count);
-    /// ```
-    ///
-    /// The builder pushes up to `count` and never reallocates; it exposes no
-    /// `DerefMut`, so uncharged growth cannot leak through it.
-    pub fn exact_vec<T>(&self, count: BoundedCount) -> Result<ExactVec<T>, CodecError> {
-        self.reserve_exact_charged(count.get(), "exact_vec")
-    }
-
-    /// Reserves a raw count when the format provides no per-element byte floor.
-    pub fn alloc_unfloored<T>(&self, count: usize) -> Result<ExactVec<T>, CodecError> {
-        self.reserve_exact_charged(count, "alloc_unfloored")
-    }
-
-    fn reserve_exact_charged<T>(
-        &self,
-        count: usize,
-        operation: &'static str,
-    ) -> Result<ExactVec<T>, CodecError> {
-        let bytes = (count as u64).saturating_mul(element_charge::<T>());
-        self.charge(
-            ResourceDimension::AllocBytes,
-            LimitScope::Global,
-            bytes,
-            operation,
-            None,
-        )?;
-        let mut vec = Vec::new();
-        vec.try_reserve_exact(count).map_err(|_| {
-            self.fuse(
-                ResourceDimension::AllocBytes,
-                ResourceFailure::AllocationFailed,
-                LimitScope::Global,
-                bytes,
-                operation,
-                None,
-            )
-        })?;
-        Ok(ExactVec {
-            vec,
-            capacity: count,
-        })
-    }
-
-    /// Returns an accumulator that charges before each reservation.
-    pub fn grow_vec<T>(&self) -> GrowVec<'_, 'a, T> {
-        GrowVec {
-            ctx: self,
-            vec: Vec::new(),
-        }
-    }
-
-    /// Reads exactly `count.get()` elements through a probe closure, charging
-    /// the allocation and refusing a count that could not fit physically.
-    ///
-    /// A closure miss mid-loop is a committed failure: the read has been
-    /// entered, so it is classified, not retried. Classification follows the
-    /// deterministic commit rule: fewer than `count.min_element_size()` bytes
-    /// remaining at the failure point is `Truncated` (the input ran out);
-    /// a miss with at least one more element's bytes still present is an
-    /// inconsistency wholly inside the view, `Malformed`.
-    pub fn read_counted<'v, T>(
-        &self,
-        view: &mut View<'v>,
-        count: BoundedCount,
-        mut read: impl FnMut(&mut View<'v>) -> Option<T>,
-    ) -> Result<Vec<T>, CodecError> {
-        let mut builder = self.reserve_exact_charged::<T>(count.get(), "read_counted")?;
-        for _ in 0..count.get() {
-            match read(view) {
-                Some(value) => builder.push(value)?,
-                None => {
-                    let location = view.location();
-                    return Err(if view.remaining() < count.min_element_size() {
-                        CodecError::Truncated {
-                            location,
-                            context: ErrorContext {
-                                operation: "read_counted",
-                                location: Some(location),
-                            },
-                        }
-                    } else {
-                        CodecError::Malformed(format!(
-                            "read_counted element rejected at space {} offset {} with {} bytes remaining",
-                            location.space.index(),
-                            location.offset,
-                            view.remaining()
-                        ))
-                    });
-                }
-            }
-        }
-        builder.finish_exact()
     }
 
     // --- decompression ------------------------------------------------------
@@ -440,7 +231,6 @@ impl<'a> DecodeContext<'a> {
             let reserve = usize::try_from(reserve).unwrap_or(usize::MAX);
             buffer.try_reserve(reserve).map_err(|_| {
                 self.fuse(
-                    ResourceDimension::DecompressedBytes,
                     ResourceFailure::AllocationFailed,
                     LimitScope::PerExpand,
                     reserve as u64,
@@ -458,31 +248,9 @@ impl<'a> DecodeContext<'a> {
         })
     }
 
-    /// Begins assembling a derived space from several input extents.
-    ///
-    /// The multi-input sibling of [`DecodeContext::begin_expand`]. Each kind
-    /// has distinct charging semantics:
-    ///
-    /// - [`DerivedKind::Concat`] reassembles the input extents into one logical
-    ///   stream (catia extents, iges parameter cards, OLE sectors). The output
-    ///   is copied from the inputs here, at construction. Each extent is
-    ///   charged to `alloc_bytes` — a fresh heap
-    ///   copy of already-accounted bytes, so the input basis does not grow and
-    ///   the source extents are not double-counted. The returned writer only
-    ///   needs [`DerivedWriter::finalize`].
-    /// - [`DerivedKind::Transform`] produces new bytes from the named inputs,
-    ///   such as a dictionary-preset decompression that `begin_expand` cannot
-    ///   express with its single source view. The caller streams the output
-    ///   through [`DerivedWriter::write`], charged to `decompressed_bytes`
-    ///   under the per-expand and cumulative decompression ceilings;
-    ///   [`DerivedWriter::finalize`] grows the input basis like
-    ///   [`ExpandWriter::finalize`], because the output is genuine decompressed
-    ///   content the decompression-bomb ceilings must bound.
-    ///
-    /// The output space registers only on successful
-    /// [`DerivedWriter::finalize`] — an incomplete space never escapes, and a
-    /// Concat assembly that exceeds `alloc_bytes` fuses here before any writer
-    /// escapes.
+    /// Begins assembling a derived space from several input extents. Concatenation
+    /// copies the extents immediately; transforms stream output through the
+    /// decompression limits.
     pub fn begin_derived_space(
         &self,
         inputs: &[View<'_>],
@@ -500,10 +268,6 @@ impl<'a> DecodeContext<'a> {
             written: 0,
         };
         if matches!(kind, DerivedKind::Concat) {
-            // Assemble the output from the input extents now, so the recorded
-            // segments are the very bytes copied here and cannot be
-            // contradicted later. Each extent charges `alloc_bytes` before it
-            // is retained; a refusal fuses the context and no writer escapes.
             for view in inputs {
                 writer.append_extent(view.window())?;
             }
@@ -518,10 +282,7 @@ impl<'a> DecodeContext<'a> {
     /// `range` is expressed in the parent view's own space coordinates and must
     /// lie within the parent window; a range that escapes the parent is refused
     /// here, at the request site, exactly as [`View::child`] refuses. No bytes
-    /// are copied and no counter is charged: a slice is an alias of input that
-    /// was already accounted for when its parent space was admitted, so it
-    /// neither grows the input basis nor consumes the allocation budget. It is
-    /// the archive-entry counterpart of [`DecodeContext::begin_expand`] —
+    /// are copied. It is the archive-entry counterpart of [`DecodeContext::begin_expand`] —
     /// stored ZIP entries take this path, compressed ones take the expander.
     /// Registration still refuses on a fused context so a stored entry cannot be
     /// admitted after a refusal.
@@ -550,33 +311,6 @@ impl<'a> DecodeContext<'a> {
         Ok((space, View::over_space(child.window(), space)))
     }
 
-    // --- depth --------------------------------------------------------------
-
-    /// Enters one recursion level, returning a guard that releases it on drop.
-    ///
-    /// Depth is a gauge: sequential siblings do not exhaust it. Exceeding the
-    /// limit is unswallowable and fuses the context.
-    pub fn descend(&self) -> Result<DepthGuard<'_>, CodecError> {
-        if let Some(limit) = self.fuse.get() {
-            return Err(CodecError::ResourceLimit(limit));
-        }
-        let current = self.budget.depth();
-        if u64::from(current) >= u64::from(self.policy.limits.max_depth) {
-            return Err(self.fuse(
-                ResourceDimension::Depth,
-                ResourceFailure::BudgetExceeded,
-                LimitScope::Global,
-                1,
-                "descend",
-                None,
-            ));
-        }
-        self.budget.set_depth(current.saturating_add(1));
-        Ok(DepthGuard {
-            budget: &self.budget,
-        })
-    }
-
     // --- lifecycle ----------------------------------------------------------
 
     /// Closes an inspection, returning a fused resource error even when codec
@@ -600,56 +334,21 @@ impl<'a> DecodeContext<'a> {
         if let Some(limit) = self.fuse.get() {
             return Err(CodecError::ResourceLimit(limit));
         }
-        let mut result = result?;
-        if self.retained.is_degraded() {
-            result.report.retention_degraded = true;
-            result.report.losses.push(LossNote {
-                code: LossCode::RetentionDegraded,
-                category: LossCategory::Other,
-                severity: Severity::Warning,
-                message: format!(
-                    "retained-byte budget exhausted: {} opaque blob(s) totaling {} bytes \
-                     degraded to digest-only",
-                    self.retained.degraded_count(),
-                    self.retained.degraded_bytes()
-                ),
-                provenance: None,
-            });
+        let result = result?;
+        if self.policy.mode == DecodeMode::Strict && !result.report.container_only {
+            if let Some(loss) = result
+                .report
+                .losses
+                .iter()
+                .find(|loss| loss.code.strict_consequence() == StrictConsequence::Reject)
+            {
+                return Err(CodecError::Malformed(format!(
+                    "strict mode rejects {}: {}",
+                    loss.code, loss.message
+                )));
+            }
         }
         Ok(result)
-    }
-
-    // --- test and instrumentation accessors ---------------------------------
-
-    /// Returns the amount charged against a counter dimension.
-    #[cfg(test)]
-    pub(crate) fn charged(&self, dim: ResourceDimension) -> u64 {
-        self.budget.counter(dim)
-    }
-
-    /// Returns the effective allowance for a counter dimension.
-    #[cfg(test)]
-    pub(crate) fn allowance_of(&self, dim: ResourceDimension) -> u64 {
-        self.budget
-            .allowance(dim, &self.policy.limits, &self.envelope)
-    }
-
-    /// Returns the current input basis.
-    #[cfg(test)]
-    pub(crate) fn input_basis(&self) -> u64 {
-        self.budget.input_basis()
-    }
-
-    /// Returns the current recursion depth.
-    #[cfg(test)]
-    pub(crate) fn current_depth(&self) -> u32 {
-        self.budget.depth()
-    }
-
-    /// Returns how many spaces are registered.
-    #[cfg(test)]
-    pub(crate) fn spaces_len(&self) -> usize {
-        self.spaces.len()
     }
 }
 
@@ -669,10 +368,7 @@ fn root_error(reason: ResourceFailure, limit: u64, used: u64) -> CodecError {
     })
 }
 
-/// A fixed-capacity builder that never reallocates.
-///
-/// `push` refuses past the reserved capacity so growth stays within the
-/// charged budget. `finish_exact` additionally requires full population.
+/// A fixed-capacity vector used after validating an untrusted count.
 #[derive(Debug)]
 pub struct ExactVec<T> {
     vec: Vec<T>,
@@ -680,101 +376,56 @@ pub struct ExactVec<T> {
 }
 
 impl<T> ExactVec<T> {
-    /// Appends one element, refusing once the reserved capacity is full.
-    pub fn push(&mut self, value: T) -> Result<(), CodecError> {
-        if self.vec.len() < self.capacity {
-            self.vec.push(value);
-            Ok(())
-        } else {
-            Err(CodecError::Malformed(format!(
-                "exact_vec push past reserved capacity {}",
-                self.capacity
-            )))
-        }
+    fn with_capacity(capacity: usize) -> Result<Self, CodecError> {
+        let mut vec = Vec::new();
+        vec.try_reserve_exact(capacity)
+            .map_err(|_| CodecError::Io(std::io::Error::other("allocation failed")))?;
+        Ok(Self { vec, capacity })
     }
 
-    /// Returns how many elements have been pushed.
+    /// Appends one value without allowing the vector to grow beyond the
+    /// validated count.
+    pub fn push(&mut self, value: T) -> Result<(), CodecError> {
+        if self.vec.len() == self.capacity {
+            return Err(CodecError::Malformed(
+                "fixed-capacity vector overflow".to_owned(),
+            ));
+        }
+        self.vec.push(value);
+        Ok(())
+    }
+
+    /// Returns the number of stored values.
     pub fn len(&self) -> usize {
         self.vec.len()
     }
 
-    /// Returns whether no elements have been pushed.
+    /// Returns whether the vector is empty.
     pub fn is_empty(&self) -> bool {
         self.vec.is_empty()
     }
 
-    /// Returns the reserved capacity.
+    /// Returns the validated capacity.
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
-    /// Finishes the builder, returning what was pushed.
+    /// Returns the populated values.
     pub fn finish(self) -> Vec<T> {
         self.vec
     }
 
-    /// Finishes the builder, requiring the reserved capacity to be filled.
+    /// Returns the values only when the validated count was filled exactly.
     pub fn finish_exact(self) -> Result<Vec<T>, CodecError> {
         if self.vec.len() == self.capacity {
             Ok(self.vec)
         } else {
             Err(CodecError::Malformed(format!(
-                "exact_vec finished with {} of {} elements",
+                "fixed-capacity vector contains {} of {} values",
                 self.vec.len(),
                 self.capacity
             )))
         }
-    }
-}
-
-/// An accumulator that charges the budget before each reservation.
-///
-/// `try_push` charges one element, then reserves and pushes. It exposes no
-/// `DerefMut`, so uncharged growth cannot leak through it.
-#[derive(Debug)]
-pub struct GrowVec<'ctx, 'a, T> {
-    ctx: &'ctx DecodeContext<'a>,
-    vec: Vec<T>,
-}
-
-impl<T> GrowVec<'_, '_, T> {
-    /// Charges one element, then reserves and pushes it.
-    pub fn try_push(&mut self, value: T) -> Result<(), CodecError> {
-        let charge = element_charge::<T>();
-        self.ctx.charge(
-            ResourceDimension::AllocBytes,
-            LimitScope::Global,
-            charge,
-            "grow_vec",
-            None,
-        )?;
-        self.vec.try_reserve(1).map_err(|_| {
-            self.ctx.fuse(
-                ResourceDimension::AllocBytes,
-                ResourceFailure::AllocationFailed,
-                LimitScope::Global,
-                charge,
-                "grow_vec",
-                None,
-            )
-        })?;
-        self.vec.push(value);
-        Ok(())
-    }
-
-    /// Returns how many elements have been pushed.
-    pub fn len(&self) -> usize {
-        self.vec.len()
-    }
-
-    /// Returns whether no elements have been pushed.
-    pub fn is_empty(&self) -> bool {
-        self.vec.is_empty()
-    }
-
-    /// Finishes the accumulator, returning what was pushed.
-    pub fn finish(self) -> Vec<T> {
-        self.vec
     }
 }
 
@@ -785,13 +436,11 @@ pub enum ExpandSpec {
     Exact(u64),
     /// A declared upper bound only.
     AtMost(u64),
-    /// No trustworthy declared size: only the envelope and ceilings apply.
+    /// No trustworthy declared size: the decompression limits apply.
     Unknown,
 }
 
 /// How a multi-input derived space assembles its output bytes.
-///
-/// Selects the charging and construction behavior for a derived space.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DerivedKind {
     /// The output is the ordered concatenation of the input extents.
@@ -828,13 +477,9 @@ impl<'a> ExpandWriter<'_, 'a> {
             }
             _ => {}
         }
-        let per_expand = self
-            .ctx
-            .budget
-            .per_expand_allowance(&self.ctx.policy.limits, &self.ctx.envelope);
+        let per_expand = self.ctx.per_expand_allowance();
         if new_written > per_expand {
             return Err(self.ctx.fuse(
-                ResourceDimension::DecompressedBytes,
                 ResourceFailure::BudgetExceeded,
                 LimitScope::PerExpand,
                 len,
@@ -842,8 +487,7 @@ impl<'a> ExpandWriter<'_, 'a> {
                 Some(self.location),
             ));
         }
-        self.ctx.charge(
-            ResourceDimension::DecompressedBytes,
+        self.ctx.charge_decompressed(
             LimitScope::Global,
             len,
             "expand_write",
@@ -851,7 +495,6 @@ impl<'a> ExpandWriter<'_, 'a> {
         )?;
         self.buffer.try_reserve(data.len()).map_err(|_| {
             self.ctx.fuse(
-                ResourceDimension::DecompressedBytes,
                 ResourceFailure::AllocationFailed,
                 LimitScope::PerExpand,
                 len,
@@ -864,8 +507,7 @@ impl<'a> ExpandWriter<'_, 'a> {
         Ok(())
     }
 
-    /// Finalizes the expansion: enforces an exact contract, stores the output
-    /// in the arena, registers the derived space, and grows the input basis.
+    /// Finalizes the expansion, stores it in the arena, and registers its space.
     pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
         if let ExpandSpec::Exact(size) = self.spec {
             if self.written != size {
@@ -875,10 +517,8 @@ impl<'a> ExpandWriter<'_, 'a> {
                 )));
             }
         }
-        let length = self.written;
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
         let space = self.ctx.spaces.register();
-        self.ctx.budget.grow_input_basis(length);
         Ok((space, View::over_space(bytes, space)))
     }
 
@@ -888,7 +528,7 @@ impl<'a> ExpandWriter<'_, 'a> {
     }
 }
 
-/// Assembles a charged derived space.
+/// Assembles a derived space.
 #[derive(Debug)]
 pub struct DerivedWriter<'ctx, 'a> {
     ctx: &'ctx DecodeContext<'a>,
@@ -899,32 +539,18 @@ pub struct DerivedWriter<'ctx, 'a> {
 }
 
 impl<'a> DerivedWriter<'_, 'a> {
-    /// Copies one Concat extent after charging its allocation.
+    /// Copies one concatenated extent.
     fn append_extent(&mut self, data: &[u8]) -> Result<(), CodecError> {
         let len = data.len() as u64;
-        self.ctx.charge(
-            ResourceDimension::AllocBytes,
-            LimitScope::Global,
-            len,
-            "derived_concat",
-            self.location,
-        )?;
         self.buffer.try_reserve(data.len()).map_err(|_| {
-            self.ctx.fuse(
-                ResourceDimension::AllocBytes,
-                ResourceFailure::AllocationFailed,
-                LimitScope::Global,
-                len,
-                "derived_concat",
-                self.location,
-            )
+            CodecError::Io(std::io::Error::other("derived-space allocation failed"))
         })?;
         self.buffer.extend_from_slice(data);
         self.written = self.written.saturating_add(len);
         Ok(())
     }
 
-    /// Appends charged transform output.
+    /// Appends transform output under the decompression limits.
     pub fn write(&mut self, data: &[u8]) -> Result<(), CodecError> {
         if !matches!(self.kind, DerivedKind::Transform) {
             return Err(CodecError::Malformed(
@@ -935,13 +561,9 @@ impl<'a> DerivedWriter<'_, 'a> {
         }
         let len = data.len() as u64;
         let new_written = self.written.saturating_add(len);
-        let per_expand = self
-            .ctx
-            .budget
-            .per_expand_allowance(&self.ctx.policy.limits, &self.ctx.envelope);
+        let per_expand = self.ctx.per_expand_allowance();
         if new_written > per_expand {
             return Err(self.ctx.fuse(
-                ResourceDimension::DecompressedBytes,
                 ResourceFailure::BudgetExceeded,
                 LimitScope::PerExpand,
                 len,
@@ -949,16 +571,10 @@ impl<'a> DerivedWriter<'_, 'a> {
                 self.location,
             ));
         }
-        self.ctx.charge(
-            ResourceDimension::DecompressedBytes,
-            LimitScope::Global,
-            len,
-            "derived_write",
-            self.location,
-        )?;
+        self.ctx
+            .charge_decompressed(LimitScope::Global, len, "derived_write", self.location)?;
         self.buffer.try_reserve(data.len()).map_err(|_| {
             self.ctx.fuse(
-                ResourceDimension::DecompressedBytes,
                 ResourceFailure::AllocationFailed,
                 LimitScope::PerExpand,
                 len,
@@ -973,34 +589,13 @@ impl<'a> DerivedWriter<'_, 'a> {
 
     /// Stores and registers the derived space.
     pub fn finalize(self) -> Result<(SpaceId, View<'a>), CodecError> {
-        let length = self.written;
         let bytes = self.ctx.arena.alloc(self.buffer.into_boxed_slice());
-        let grows_basis = match self.kind {
-            DerivedKind::Concat => false,
-            DerivedKind::Transform => true,
-        };
         let space = self.ctx.spaces.register();
-        if grows_basis {
-            self.ctx.budget.grow_input_basis(length);
-        }
         Ok((space, View::over_space(bytes, space)))
     }
 
     /// Returns how many bytes have been written so far.
     pub fn written(&self) -> u64 {
         self.written
-    }
-}
-
-/// A recursion-depth guard that releases its level on drop.
-#[derive(Debug)]
-#[must_use = "binding the guard keeps the depth level held for its scope"]
-pub struct DepthGuard<'g> {
-    budget: &'g BudgetCells,
-}
-
-impl Drop for DepthGuard<'_> {
-    fn drop(&mut self) {
-        self.budget.set_depth(self.budget.depth().saturating_sub(1));
     }
 }

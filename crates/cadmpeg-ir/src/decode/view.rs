@@ -78,7 +78,7 @@ impl<'a> View<'a> {
         self.remaining() == 0
     }
 
-    /// Returns this view's current location for error and ledger attribution.
+    /// Returns this view's current source location.
     pub fn location(self) -> SourceLocation {
         SourceLocation {
             space: self.space,
@@ -153,17 +153,6 @@ impl<'a> View<'a> {
             count,
             min_element_size,
         })
-    }
-
-    /// Runs a multi-field probe, rolling back the position on failure.
-    ///
-    /// Only the position rolls back. Any budget charged through a captured
-    /// context during the trial is permanent, matching the counter contract.
-    pub fn transaction<T>(&mut self, f: impl FnOnce(&mut View<'a>) -> Option<T>) -> Option<T> {
-        let mut trial = *self;
-        let value = f(&mut trial)?;
-        self.position = trial.position;
-        Some(value)
     }
 
     /// Builds an unexpected-eof error from the view's current state.

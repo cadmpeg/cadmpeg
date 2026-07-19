@@ -12,14 +12,6 @@ pub enum ResourceDimension {
     InputBytes,
     /// Bytes produced by decompression.
     DecompressedBytes,
-    /// Cumulative committed heap bytes.
-    AllocBytes,
-    /// Abstract work units charged at commit boundaries and probe scans.
-    Work,
-    /// Recursion depth.
-    Depth,
-    /// Bytes retained opaque in salvage mode.
-    RetainedBytes,
 }
 
 /// Why a resource request failed.
@@ -36,8 +28,6 @@ pub enum ResourceFailure {
 pub enum LimitScope {
     /// The whole decode.
     Global,
-    /// One address space.
-    PerSpace,
     /// One expansion.
     PerExpand,
 }

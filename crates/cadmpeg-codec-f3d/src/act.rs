@@ -16,9 +16,6 @@ const MIN_TABLE_ENTRY_BYTES: usize = 1 + 4 + 6 + 4;
 /// Upper bound on the `ACTTable` record count.
 const MAX_TABLE_ENTRIES: usize = 100_000;
 
-/// Auxiliary allocation charged per merged `ActEntity` graph node.
-const ACT_ENTITY_GRAPH_BYTES: u64 = 128;
-
 /// The decoded ACT records recovered from one archive.
 pub struct DecodedAct {
     /// Entities merged from the `ACTTable` and the channel-group stream.
@@ -31,9 +28,9 @@ pub struct DecodedAct {
 
 /// Decodes ACT segment-type streams.
 pub fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
-    let mut entities = ctx.grow_vec::<ActEntity>();
-    let mut guids = ctx.grow_vec::<ActGuid>();
-    let mut root_components = ctx.grow_vec::<ActRootComponent>();
+    let mut entities = Vec::new();
+    let mut guids = Vec::new();
+    let mut root_components = Vec::new();
     for entry in scan.entries.iter().filter(|entry| {
         entry.role == role::BULKSTREAM && entry.name.contains("FusionACTSegmentType")
     }) {
@@ -41,13 +38,12 @@ pub fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<Decod
             continue;
         };
         let (table, stream_guids) = decode_table(ctx, view)?;
-        let groups = decode_channel_groups(ctx, view)?;
-        for component in decode_root_components(ctx, view, &entry.name)? {
-            root_components.try_push(component)?;
+        let groups = decode_channel_groups(view);
+        for component in decode_root_components(view, &entry.name) {
+            root_components.push(component);
         }
         let mut by_key: BTreeMap<(u32, String), ActEntity> = BTreeMap::new();
         for item in table {
-            ctx.charge_alloc(ACT_ENTITY_GRAPH_BYTES, "act::merge_table", None)?;
             by_key.insert(
                 (item.record_index, item.entity_id.clone()),
                 ActEntity {
@@ -67,9 +63,6 @@ pub fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<Decod
         }
         for group in groups {
             let key = (group.record_index, group.entity_id.clone());
-            if !by_key.contains_key(&key) {
-                ctx.charge_alloc(ACT_ENTITY_GRAPH_BYTES, "act::merge_channel", None)?;
-            }
             let entity = by_key.entry(key).or_insert_with(|| ActEntity {
                 id: format!("f3d:{}:act-entity#{}", entry.name, group.record_index),
                 record_index: group.record_index,
@@ -90,22 +83,22 @@ pub fn decode(ctx: &DecodeContext<'_>, scan: &ContainerScan<'_>) -> Result<Decod
             entity.channel_guid_offsets = group.guid_offsets;
         }
         for entity in by_key.into_values() {
-            entities.try_push(entity)?;
+            entities.push(entity);
         }
         for (ordinal, (guid, offset)) in stream_guids.into_iter().enumerate() {
-            guids.try_push(ActGuid {
+            guids.push(ActGuid {
                 id: format!("f3d:{}:act-guid#{offset}", entry.name),
                 byte_offset: offset as u64,
                 guid_offset: (offset + 4) as u64,
                 ordinal: ordinal as u32,
                 guid,
-            })?;
+            });
         }
     }
     Ok(DecodedAct {
-        entities: entities.finish(),
-        guids: guids.finish(),
-        root_components: root_components.finish(),
+        entities,
+        guids,
+        root_components,
     })
 }
 
@@ -167,11 +160,6 @@ struct TableEntry {
 /// Decode the `ACTTable` record list and the GUID literals that follow it.
 fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable, CodecError> {
     let empty = || (Vec::new(), Vec::new());
-    ctx.charge_work(
-        (win_len(base) as u64).saturating_mul(2),
-        "act::decode_table",
-        Some(base.location()),
-    )?;
     let Some(name_at) = find_marker(base, b"ACTTable") else {
         return Ok(empty());
     };
@@ -204,7 +192,7 @@ fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable,
             return Ok(empty());
         }
         let entity_id_offset = cursor + 15;
-        let Some((entity_id, end)) = lp_utf16(ctx, base, cursor + 11)? else {
+        let Some((entity_id, end)) = lp_utf16(base, cursor + 11) else {
             return Ok(empty());
         };
         indexed.push(TableEntry {
@@ -215,18 +203,17 @@ fn decode_table(ctx: &DecodeContext<'_>, base: View<'_>) -> Result<DecodedTable,
         })?;
         cursor = end;
     }
-    let mut guids = ctx.grow_vec::<StreamGuid>();
+    let mut guids = Vec::new();
     let len = win_len(base);
     while cursor + 4 <= len {
-        if let Some((guid, end)) = lp_utf16(ctx, base, cursor)?.filter(|(value, _)| is_guid(value))
-        {
-            guids.try_push((guid, cursor))?;
+        if let Some((guid, end)) = lp_utf16(base, cursor).filter(|(value, _)| is_guid(value)) {
+            guids.push((guid, cursor));
             cursor = end;
         } else {
             cursor += 1;
         }
     }
-    Ok((indexed.finish(), guids.finish()))
+    Ok((indexed.finish(), guids))
 }
 
 /// One change-version channel group keyed by (record index, entity id), with
@@ -242,20 +229,12 @@ struct ChannelGroup {
 }
 
 /// Decodes change-version channel groups.
-fn decode_channel_groups(
-    ctx: &DecodeContext<'_>,
-    base: View<'_>,
-) -> Result<Vec<ChannelGroup>, CodecError> {
-    ctx.charge_work(
-        win_len(base) as u64,
-        "act::decode_channel_groups",
-        Some(base.location()),
-    )?;
-    let mut out = ctx.grow_vec::<ChannelGroup>();
+fn decode_channel_groups(base: View<'_>) -> Vec<ChannelGroup> {
+    let mut out = Vec::new();
     let len = win_len(base);
     let mut position = 0usize;
     while position + 4 <= len {
-        let Some((class_tag, after_tag)) = lp_ascii(ctx, base, position)? else {
+        let Some((class_tag, after_tag)) = lp_ascii(base, position) else {
             position += 1;
             continue;
         };
@@ -281,12 +260,11 @@ fn decode_channel_groups(
         let mut channels = BTreeMap::new();
         let mut guid_offsets = BTreeMap::new();
         for _ in 0..count {
-            let Some((name, after_name)) = lp_ascii(ctx, base, cursor)? else {
+            let Some((name, after_name)) = lp_ascii(base, cursor) else {
                 channels.clear();
                 break;
             };
-            let Some((guid, after_guid)) =
-                lp_utf16(ctx, base, after_name)?.filter(|(v, _)| is_guid(v))
+            let Some((guid, after_guid)) = lp_utf16(base, after_name).filter(|(v, _)| is_guid(v))
             else {
                 channels.clear();
                 break;
@@ -303,8 +281,8 @@ fn decode_channel_groups(
             cursor = after_guid;
         }
         if !channels.is_empty() {
-            if let Some((entity_id, end)) = lp_utf16(ctx, base, cursor)? {
-                out.try_push(ChannelGroup {
+            if let Some((entity_id, end)) = lp_utf16(base, cursor) {
+                out.push(ChannelGroup {
                     record_index,
                     record_index_offset: after_tag,
                     entity_id,
@@ -312,32 +290,23 @@ fn decode_channel_groups(
                     class_tag,
                     channels,
                     guid_offsets,
-                })?;
+                });
                 position = end;
                 continue;
             }
         }
         position += 1;
     }
-    Ok(out.finish())
+    out
 }
 
 /// Decodes change-version root-component descriptors.
-fn decode_root_components(
-    ctx: &DecodeContext<'_>,
-    base: View<'_>,
-    stream: &str,
-) -> Result<Vec<ActRootComponent>, CodecError> {
-    ctx.charge_work(
-        win_len(base) as u64,
-        "act::decode_root_components",
-        Some(base.location()),
-    )?;
-    let mut out = ctx.grow_vec::<ActRootComponent>();
+fn decode_root_components(base: View<'_>, stream: &str) -> Vec<ActRootComponent> {
+    let mut out = Vec::new();
     let len = win_len(base);
     let mut position = 0usize;
     while position + 4 <= len {
-        let Some((class_tag, after_tag)) = lp_ascii(ctx, base, position)? else {
+        let Some((class_tag, after_tag)) = lp_ascii(base, position) else {
             position += 1;
             continue;
         };
@@ -359,7 +328,7 @@ fn decode_root_components(
             continue;
         };
         let entity_id_offset = cursor + 4;
-        let Some((entity_id, cursor)) = lp_utf16(ctx, base, cursor)? else {
+        let Some((entity_id, cursor)) = lp_utf16(base, cursor) else {
             position += 1;
             continue;
         };
@@ -381,7 +350,7 @@ fn decode_root_components(
             continue;
         }
         let display_name_offset = cursor + 4;
-        let Some((display_name, cursor)) = lp_utf16(ctx, base, cursor)? else {
+        let Some((display_name, cursor)) = lp_utf16(base, cursor) else {
             position += 1;
             continue;
         };
@@ -397,7 +366,7 @@ fn decode_root_components(
             position += 1;
             continue;
         };
-        out.try_push(ActRootComponent {
+        out.push(ActRootComponent {
             id: format!("f3d:{stream}:act-root-component#{position}"),
             byte_offset: position as u64,
             record_index,
@@ -413,10 +382,10 @@ fn decode_root_components(
             entity_id_offset: entity_id_offset as u64,
             display_name,
             display_name_offset: display_name_offset as u64,
-        })?;
+        });
         position = end;
     }
-    Ok(out.finish())
+    out
 }
 
 /// Decodes a tagged u32 reference and its trailing zero bytes.
@@ -438,72 +407,38 @@ fn marker_value(base: View<'_>, position: usize) -> Option<(u32, usize)> {
 }
 
 /// Decodes a length-prefixed ASCII string.
-fn lp_ascii(
-    ctx: &DecodeContext<'_>,
-    base: View<'_>,
-    position: usize,
-) -> Result<Option<(String, usize)>, CodecError> {
-    let Some(length) = u32_le_rel(base, position).and_then(|value| usize::try_from(value).ok())
-    else {
-        return Ok(None);
-    };
+fn lp_ascii(base: View<'_>, position: usize) -> Option<(String, usize)> {
+    let length = u32_le_rel(base, position).and_then(|value| usize::try_from(value).ok())?;
     if !(1..=128).contains(&length) {
-        return Ok(None);
+        return None;
     }
-    ctx.charge_work((4 + length) as u64, "act::lp_ascii", Some(base.location()))?;
-    let Some(mut view) = seek_rel(base, position) else {
-        return Ok(None);
-    };
-    if view.u32_le().is_none() {
-        return Ok(None);
-    }
-    let Some(raw) = view.take(length) else {
-        return Ok(None);
-    };
+    let mut view = seek_rel(base, position)?;
+    view.u32_le()?;
+    let raw = view.take(length)?;
     let Ok(value) = std::str::from_utf8(raw) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some((value.into(), position + 4 + length)))
+    Some((value.into(), position + 4 + length))
 }
 
 /// Decodes a length-prefixed UTF-16LE string.
-fn lp_utf16(
-    ctx: &DecodeContext<'_>,
-    base: View<'_>,
-    position: usize,
-) -> Result<Option<(String, usize)>, CodecError> {
-    let Some(count) = u32_le_rel(base, position).and_then(|value| usize::try_from(value).ok())
-    else {
-        return Ok(None);
-    };
+fn lp_utf16(base: View<'_>, position: usize) -> Option<(String, usize)> {
+    let count = u32_le_rel(base, position).and_then(|value| usize::try_from(value).ok())?;
     if count > 1024 {
-        return Ok(None);
+        return None;
     }
-    let Some(byte_length) = count.checked_mul(2) else {
-        return Ok(None);
-    };
-    ctx.charge_work(
-        (4 + byte_length) as u64,
-        "act::lp_utf16",
-        Some(base.location()),
-    )?;
-    let Some(mut view) = seek_rel(base, position) else {
-        return Ok(None);
-    };
-    if view.u32_le().is_none() {
-        return Ok(None);
-    }
-    let Some(raw) = view.take(byte_length) else {
-        return Ok(None);
-    };
+    let byte_length = count.checked_mul(2)?;
+    let mut view = seek_rel(base, position)?;
+    view.u32_le()?;
+    let raw = view.take(byte_length)?;
     let units = raw
         .chunks_exact(2)
         .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
         .collect::<Vec<_>>();
     let Ok(value) = String::from_utf16(&units) else {
-        return Ok(None);
+        return None;
     };
-    Ok(Some((value, position + 4 + byte_length)))
+    Some((value, position + 4 + byte_length))
 }
 
 /// Whether `value` is a canonical 36-character hyphenated GUID.

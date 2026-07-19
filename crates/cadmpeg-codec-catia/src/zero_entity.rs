@@ -3,7 +3,7 @@
 #![deny(clippy::disallowed_methods)]
 
 use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::View;
 use cadmpeg_ir::le::{f64_at, u32_at};
 
 /// Resolved zero-entity `a9 03` stream: records, faces, loops, carrier runs,
@@ -197,15 +197,9 @@ pub struct ZeroEntityLoop {
 /// Walk native zero-entity records by `YY + 12`, then decode face counted
 /// references and `62xx` alternating loop lanes with packed 3-bit senses.
 ///
-/// The whole-window `a9 03` scan is charged once as `work` and each admitted
-/// record copy is charged against `retained_bytes` before it is taken (see
-/// [`walk_records`]). Downstream lane decoding is a pure probe: any framing
-/// inconsistency returns `Ok(None)`.
-pub fn parse<'a>(
-    ctx: &DecodeContext<'a>,
-    view: View<'a>,
-) -> Result<Option<ZeroEntityTopology>, CodecError> {
-    let records = walk_records(ctx, view)?;
+/// Framing inconsistencies return `Ok(None)`.
+pub fn parse(view: View<'_>) -> Result<Option<ZeroEntityTopology>, CodecError> {
+    let records = walk_records(view);
     if records.is_empty() {
         return Ok(None);
     }
@@ -617,22 +611,9 @@ fn token_u32(bytes: &[u8], offset: usize) -> Option<u32> {
 }
 
 /// Walk the `a9 03` record stream over the admitted window.
-///
-/// The window length is charged once as `work` (bytes examined by the scan);
-/// the record stream is zero-floor production, so it accumulates through a
-/// charged [`DecodeContext::grow_vec`] and each retained record copy is charged
-/// against `retained_bytes` before `to_vec()` takes it.
-fn walk_records<'a>(
-    ctx: &DecodeContext<'a>,
-    view: View<'a>,
-) -> Result<Vec<ZeroEntityRecord>, CodecError> {
+fn walk_records(view: View<'_>) -> Vec<ZeroEntityRecord> {
     let bytes = view.window();
-    ctx.charge_work(
-        bytes.len() as u64,
-        "catia_zero_entity_scan",
-        Some(view.location()),
-    )?;
-    let mut records = ctx.grow_vec::<ZeroEntityRecord>();
+    let mut records = Vec::new();
     let mut position = 0;
     while position + 4 <= bytes.len() {
         if bytes.get(position..position + 2) != Some(&[0xa9, 0x03]) {
@@ -646,20 +627,15 @@ fn walk_records<'a>(
         if end > bytes.len() {
             break;
         }
-        ctx.charge_retained(
-            (end - position) as u64,
-            "catia_zero_entity_record",
-            Some(view.location()),
-        )?;
-        records.try_push(ZeroEntityRecord {
+        records.push(ZeroEntityRecord {
             ordinal: records.len(),
             offset: position,
             tag: [bytes[position + 2], bytes[position + 3]],
             bytes: bytes[position..end].to_vec(),
-        })?;
+        });
         position = end;
     }
-    Ok(records.finish())
+    records
 }
 
 fn parse_face(record: &ZeroEntityRecord) -> Option<ZeroEntityFace> {
@@ -750,8 +726,6 @@ fn parse_loop(record: &ZeroEntityRecord) -> Option<ZeroEntityLoop> {
 fn counted_references(bytes: &[u8], position: usize) -> Option<(Vec<u32>, usize)> {
     let count = usize::from(bytes.get(position)?.checked_sub(0x80)?);
     let mut cursor = position + 1;
-    // `count` is a single header byte (<= 127) over the already-retained,
-    // already-charged record copy, and each entry must consume five bytes.
     let mut references = Vec::new();
     for _ in 0..count {
         if bytes.get(cursor) != Some(&0x10) {

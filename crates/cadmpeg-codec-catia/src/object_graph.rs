@@ -2,8 +2,7 @@
 //! Outer `7C08` feature and object-ownership graph decoder.
 #![deny(clippy::disallowed_methods)]
 
-use cadmpeg_ir::codec::CodecError;
-use cadmpeg_ir::decode::{DecodeContext, View};
+use cadmpeg_ir::decode::View;
 use cadmpeg_ir::le::u32_at as u32_le;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -209,70 +208,42 @@ pub struct Marker7cd9 {
 
 /// Expose literal `7C D9` occurrences without assigning record framing or semantics.
 ///
-/// The whole-image marker scan is charged once as `work`; each retained context
-/// window is charged against `retained_bytes` before it is copied.
-pub fn markers_7cd9<'a>(
-    ctx: &DecodeContext<'a>,
-    view: View<'a>,
-    context_len: usize,
-) -> Result<Vec<Marker7cd9>, CodecError> {
+pub fn markers_7cd9(view: View<'_>, context_len: usize) -> Vec<Marker7cd9> {
     let data = view.window();
-    ctx.charge_work(
-        data.len() as u64,
-        "catia_marker_7cd9_scan",
-        Some(view.location()),
-    )?;
-    let mut positions = ctx.grow_vec::<usize>();
+    let mut positions = Vec::new();
     for (pos, bytes) in data.windows(2).enumerate() {
         if bytes == [0x7c, 0xd9] {
-            positions.try_push(pos)?;
+            positions.push(pos);
         }
     }
-    let positions = positions.finish();
-    let mut markers = ctx.grow_vec::<Marker7cd9>();
+    let positions = positions;
+    let mut markers = Vec::new();
     for (index, &pos) in positions.iter().enumerate() {
         let end = pos.saturating_add(context_len).min(data.len());
-        let context_bytes = end - pos;
-        ctx.charge_retained(
-            context_bytes as u64,
-            "catia_marker_7cd9_context",
-            Some(view.location()),
-        )?;
-        markers.try_push(Marker7cd9 {
+        markers.push(Marker7cd9 {
             pos,
             context: data[pos..end].to_vec(),
             next_delta: positions.get(index + 1).map(|next| next - pos),
-        })?;
+        });
     }
-    Ok(markers.finish())
+    markers
 }
 
 /// Decode fixed surface-alias row cores from an outer body.
 ///
-/// The whole-image marker scan is charged once as `work`; each admitted row is
-/// a fixed-width read into a `grow_vec` accumulator, so no untrusted count sizes
-/// an allocation.
-pub fn surface_aliases<'a>(
-    ctx: &DecodeContext<'a>,
-    view: View<'a>,
-) -> Result<Vec<SurfaceAlias>, CodecError> {
+pub fn surface_aliases(view: View<'_>) -> Vec<SurfaceAlias> {
     const MARKER: [u8; 4] = [0x01, 0x00, 0x04, 0x00];
     let data = view.window();
-    ctx.charge_work(
-        data.len() as u64,
-        "catia_surface_alias_scan",
-        Some(view.location()),
-    )?;
-    let mut rows = ctx.grow_vec::<SurfaceAlias>();
+    let mut rows = Vec::new();
     for pos in 0..data.len().saturating_sub(MARKER.len() - 1) {
         if data[pos..pos + MARKER.len()] != MARKER {
             continue;
         }
         if let Some(row) = alias_at(data, pos) {
-            rows.try_push(row)?;
+            rows.push(row);
         }
     }
-    Ok(rows.finish())
+    rows
 }
 
 fn alias_at(data: &[u8], pos: usize) -> Option<SurfaceAlias> {
@@ -310,26 +281,14 @@ fn alias_at(data: &[u8], pos: usize) -> Option<SurfaceAlias> {
 }
 
 /// Parse the valid `7C08` candidate containing the most `7C09` records.
-///
-/// The whole-image `7C08` marker scan is charged once as `work`; each candidate
-/// charges its framed extent as the bytes its nested record walk examines, and
-/// records/heads/fields grow through charged accumulators.
-pub fn parse<'a>(
-    ctx: &DecodeContext<'a>,
-    view: View<'a>,
-) -> Result<Option<ObjectGraph>, CodecError> {
+pub fn parse(view: View<'_>) -> Option<ObjectGraph> {
     let data = view.window();
-    ctx.charge_work(
-        data.len() as u64,
-        "catia_object_graph_scan",
-        Some(view.location()),
-    )?;
     let mut best: Option<ObjectGraph> = None;
     for pos in 0..data.len().saturating_sub(1) {
         if data[pos..pos + 2] != [0x7c, 0x08] {
             continue;
         }
-        if let Some(candidate) = parse_candidate(ctx, view, data, pos)? {
+        if let Some(candidate) = parse_candidate(data, pos) {
             // Equal record counts select the later candidate.
             if best
                 .as_ref()
@@ -339,60 +298,33 @@ pub fn parse<'a>(
             }
         }
     }
-    Ok(best)
+    best
 }
 
-fn parse_candidate<'a>(
-    ctx: &DecodeContext<'a>,
-    view: View<'a>,
-    data: &[u8],
-    pos: usize,
-) -> Result<Option<ObjectGraph>, CodecError> {
-    let Some(total_len) = u32_le(data, pos + 2).and_then(|len| usize::try_from(len).ok()) else {
-        return Ok(None);
-    };
-    let Some(end) = pos.checked_add(total_len) else {
-        return Ok(None);
-    };
+fn parse_candidate(data: &[u8], pos: usize) -> Option<ObjectGraph> {
+    let total_len = u32_le(data, pos + 2).and_then(|len| usize::try_from(len).ok())?;
+    let end = pos.checked_add(total_len)?;
     if total_len < 15 || end > data.len() {
-        return Ok(None);
+        return None;
     }
-    // The nested `7C09` record walk examines at most this candidate's framed
-    // extent once; charge those bytes as work before entering it.
-    ctx.charge_work(
-        total_len as u64,
-        "catia_object_graph_records",
-        Some(view.location()),
-    )?;
     let mut at = pos + 6;
-    let mut records = ctx.grow_vec::<ObjectRecord>();
+    let mut records = Vec::new();
     while at + 6 <= end && data.get(at..at + 2) == Some(&[0x7c, 0x09]) {
-        let Some(record_len) = u32_le(data, at + 2).and_then(|len| usize::try_from(len).ok())
-        else {
-            return Ok(None);
-        };
-        let Some(record_end) = at.checked_add(record_len) else {
-            return Ok(None);
-        };
+        let record_len = u32_le(data, at + 2).and_then(|len| usize::try_from(len).ok())?;
+        let record_end = at.checked_add(record_len)?;
         if record_len < 6 || record_end > end {
-            return Ok(None);
+            return None;
         }
         let head_start = at + 6;
-        let Some(child) = data[head_start..record_end]
+        let child = data[head_start..record_end]
             .windows(2)
             .position(|bytes| bytes == [0x7c, 0x0a])
-            .map(|relative| head_start + relative)
-        else {
-            return Ok(None);
-        };
-        let Some(child_len) = u32_le(data, child + 2).and_then(|len| usize::try_from(len).ok())
-        else {
-            return Ok(None);
-        };
+            .map(|relative| head_start + relative)?;
+        let child_len = u32_le(data, child + 2).and_then(|len| usize::try_from(len).ok())?;
         if child.checked_add(child_len) != Some(record_end) || child_len < 6 {
-            return Ok(None);
+            return None;
         }
-        let head = decode_head(ctx, &data[head_start..child])?;
+        let head = decode_head(&data[head_start..child]);
         let references: Vec<u32> = head
             .iter()
             .filter_map(|token| match token {
@@ -400,9 +332,9 @@ fn parse_candidate<'a>(
                 _ => None,
             })
             .collect();
-        let payload = decode_payload(ctx, &data[child + 6..record_end])?;
+        let payload = decode_payload(&data[child + 6..record_end]);
         let subtype = classify(&payload.fields);
-        records.try_push(ObjectRecord {
+        records.push(ObjectRecord {
             index: records.len(),
             pos: at,
             total_len: record_len,
@@ -413,46 +345,46 @@ fn parse_candidate<'a>(
             storage_ref: references.get(2).copied(),
             payload,
             subtype,
-        })?;
+        });
         at = record_end;
     }
-    let records = records.finish();
-    Ok((records.len() >= 2).then_some(ObjectGraph {
+    let records = records;
+    (records.len() >= 2).then_some(ObjectGraph {
         pos,
         total_len,
         records,
-    }))
+    })
 }
 
-fn decode_head(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Vec<HeadToken>, CodecError> {
-    let mut tokens = ctx.grow_vec::<HeadToken>();
+fn decode_head(bytes: &[u8]) -> Vec<HeadToken> {
+    let mut tokens = Vec::new();
     let Some(&lead) = bytes.first() else {
-        return Ok(tokens.finish());
+        return tokens;
     };
-    tokens.try_push(HeadToken::Lead(lead))?;
+    tokens.push(HeadToken::Lead(lead));
     let mut at = 1;
     while at < bytes.len() {
         let byte = bytes[at];
         if byte == 0x01 {
-            tokens.try_push(HeadToken::Separator)?;
+            tokens.push(HeadToken::Separator);
             at += 1;
         } else if bytes.get(at..at + 4) == Some(&[0xff; 4]) {
-            tokens.try_push(HeadToken::NullHandle)?;
+            tokens.push(HeadToken::NullHandle);
             at += 4;
         } else if byte == 0x81 && at + 2 < bytes.len() {
-            tokens.try_push(HeadToken::Reference(
+            tokens.push(HeadToken::Reference(
                 u32::from(bytes[at + 1].wrapping_sub(0x80)) * 128 + u32::from(bytes[at + 2]),
-            ))?;
+            ));
             at += 3;
         } else if byte >= 0x80 {
-            tokens.try_push(HeadToken::Reference(u32::from(byte - 0x80)))?;
+            tokens.push(HeadToken::Reference(u32::from(byte - 0x80)));
             at += 1;
         } else {
-            tokens.try_push(HeadToken::Literal(byte))?;
+            tokens.push(HeadToken::Literal(byte));
             at += 1;
         }
     }
-    Ok(tokens.finish())
+    tokens
 }
 
 fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
@@ -468,36 +400,33 @@ fn atom(bytes: &[u8], at: usize) -> Option<(u32, usize)> {
     }
 }
 
-fn decode_payload(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<ObjectPayload, CodecError> {
-    let mut fields = ctx.grow_vec::<PayloadField>();
+fn decode_payload(bytes: &[u8]) -> ObjectPayload {
+    let mut fields = Vec::new();
     let mut at = 0;
     while at < bytes.len() {
         let offset = at;
         match bytes[at] {
             0xfe => {
-                fields.try_push(PayloadField::Terminator)?;
+                fields.push(PayloadField::Terminator);
                 break;
             }
             0xe5 if at + 5 <= bytes.len() => {
                 let declared_len = usize::try_from(u32_le(bytes, at + 1).unwrap_or(0)).unwrap_or(0);
                 let start = at + 5;
                 let end = start.saturating_add(declared_len).min(bytes.len());
-                // Raw-byte egress: the blob payload copy is charged as retained
-                // bytes before it is taken.
-                ctx.charge_retained((end - start) as u64, "catia_object_graph_blob", None)?;
-                fields.try_push(PayloadField::Blob {
+                fields.push(PayloadField::Blob {
                     declared_len,
                     bytes: bytes[start..end].to_vec(),
                     offset,
-                })?;
+                });
                 at = end;
             }
             0x3c => {
                 let Some((count, advance)) = atom(bytes, at + 1) else {
-                    fields.try_push(PayloadField::Atom {
+                    fields.push(PayloadField::Atom {
                         value: 0x3c,
                         offset,
-                    })?;
+                    });
                     at += 1;
                     continue;
                 };
@@ -507,31 +436,31 @@ fn decode_payload(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<ObjectPayload
                     .ok()
                     .is_some_and(|count| count <= bytes.len())
                 {
-                    fields.try_push(PayloadField::BulkTable {
+                    fields.push(PayloadField::BulkTable {
                         count,
                         table_count,
                         offset,
-                    })?;
+                    });
                     at = table_at + 4;
                 } else {
-                    fields.try_push(PayloadField::Atom {
+                    fields.push(PayloadField::Atom {
                         value: 0x3c,
                         offset,
-                    })?;
+                    });
                     at += 1;
                 }
             }
             0x3b => {
                 let Some((declared_count, advance)) = atom(bytes, at + 1) else {
-                    fields.try_push(PayloadField::Atom {
+                    fields.push(PayloadField::Atom {
                         value: 0x3b,
                         offset,
-                    })?;
+                    });
                     at += 1;
                     continue;
                 };
                 at += 1 + advance;
-                let mut items = ctx.grow_vec::<ListItem>();
+                let mut items = Vec::new();
                 for _ in 0..declared_count {
                     if at >= bytes.len() {
                         break;
@@ -542,51 +471,51 @@ fn decode_payload(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<ObjectPayload
                     let Some((value, consumed)) = atom(bytes, value_at) else {
                         break;
                     };
-                    items.try_push(if tagged_reference {
+                    items.push(if tagged_reference {
                         ListItem::Reference(value)
                     } else {
                         ListItem::Atom(value)
-                    })?;
+                    });
                     at = value_at + consumed;
                 }
-                fields.try_push(PayloadField::List {
+                fields.push(PayloadField::List {
                     declared_count,
-                    items: items.finish(),
+                    items,
                     offset,
-                })?;
+                });
             }
             0x81 | 0x80 | 0x3a | 0x32 | 0x39 | 0x7a => {
                 let tag = bytes[at];
                 let Some((value, consumed)) = atom(bytes, at + 1) else {
-                    fields.try_push(PayloadField::Atom {
+                    fields.push(PayloadField::Atom {
                         value: u32::from(tag),
                         offset,
-                    })?;
+                    });
                     at += 1;
                     continue;
                 };
-                fields.try_push(match tag {
+                fields.push(match tag {
                     0x81 => PayloadField::Reference { value, offset },
                     0x80 => PayloadField::Atom { value, offset },
                     _ => PayloadField::Scalar { tag, value, offset },
-                })?;
+                });
                 at += 1 + consumed;
             }
             0x0d => {
-                fields.try_push(PayloadField::Sentinel { offset })?;
+                fields.push(PayloadField::Sentinel { offset });
                 at += 1;
             }
             _ => {
                 let (value, consumed) = atom(bytes, at).unwrap_or((u32::from(bytes[at]), 1));
-                fields.try_push(PayloadField::Atom { value, offset })?;
+                fields.push(PayloadField::Atom { value, offset });
                 at += consumed;
             }
         }
     }
-    Ok(ObjectPayload {
+    ObjectPayload {
         size: bytes.len(),
-        fields: fields.finish(),
-    })
+        fields,
+    }
 }
 
 fn classify(fields: &[PayloadField]) -> PayloadSubtype {

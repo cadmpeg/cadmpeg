@@ -1139,7 +1139,7 @@ pub fn decode_body_members(
     scan: &ContainerScan,
 ) -> Result<Vec<DesignBodyMember>, CodecError> {
     const PREFIX: &[u8] = b"\x0a\x00\x00\x00BodiesRoot\x00\x00\x0a\x00\x00\x00BodiesRoot";
-    let mut out = ctx.grow_vec::<DesignBodyMember>();
+    let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
@@ -1148,11 +1148,6 @@ pub fn decode_body_members(
         let Some(base) = scan.entry_view(&entry.name) else {
             continue;
         };
-        ctx.charge_work(
-            body_members_win_len(base) as u64,
-            "design::decode_body_members::scan",
-            Some(base.location()),
-        )?;
         let Some(start) = find_prefix(base, PREFIX) else {
             continue;
         };
@@ -1176,11 +1171,6 @@ pub fn decode_body_members(
         let mut cursor = cursor_start;
         let mut ok = true;
         for _ in 0..count as usize {
-            ctx.charge_work(
-                11,
-                "design::decode_body_members::record",
-                Some(base.location()),
-            )?;
             if byte_at_rel(base, cursor) != Some(1) {
                 ok = false;
                 break;
@@ -1193,11 +1183,6 @@ pub fn decode_body_members(
                 break;
             };
             let id = format!("f3d:{}:design-body-member#{cursor}", entry.name);
-            ctx.charge_alloc(
-                id.len() as u64,
-                "design::decode_body_members::id",
-                Some(base.location()),
-            )?;
             decoded.push(DesignBodyMember {
                 id,
                 byte_offset: cursor as u64,
@@ -1208,11 +1193,11 @@ pub fn decode_body_members(
         }
         if ok && decoded.len() == count as usize && byte_at_rel(base, cursor) == Some(0) {
             for member in decoded.finish() {
-                out.try_push(member)?;
+                out.push(member);
             }
         }
     }
-    Ok(out.finish())
+    Ok(out)
 }
 
 fn body_members_win_len(base: View<'_>) -> usize {

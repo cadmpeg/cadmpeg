@@ -226,10 +226,7 @@ struct DecodeArgs {
     /// Stop after the native container layer without transferring geometry.
     #[arg(long)]
     container_only: bool,
-    /// Fail fast: abort the decode on the first committed-record failure with
-    /// the classified error, instead of salvaging it into an accountable loss.
-    /// Off by default (salvage mode). Governs failure handling only; resource
-    /// budgets are active in both modes.
+    /// Reject a decode that reports a mandatory transfer loss.
     #[arg(long)]
     strict: bool,
     /// Resource-limit profile: `desktop` (generous, the default) or `service`

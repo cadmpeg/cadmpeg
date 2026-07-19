@@ -1946,7 +1946,6 @@ impl<'a> DecodeContext<'a> {
         DecodeResult::with_source_fidelity(
             self.ir,
             DecodeReport {
-                retention_degraded: false,
                 format: "rhino".to_string(),
                 container_only: false,
                 geometry_transferred: self.geometry_transferred,

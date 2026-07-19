@@ -35,26 +35,18 @@ pub struct CatalogEntry {
 }
 
 /// Parse every exact `7C02` catalog in a complete `CATPart` image.
-///
-/// The whole-image marker scan is charged once as `work`; each catalog's entry
-/// vector is proven against the remaining frame bytes and reserved exactly.
 pub fn parse<'a>(ctx: &DecodeContext<'a>, view: View<'a>) -> Result<Vec<Catalog>, CodecError> {
     let bytes = view.window();
-    ctx.charge_work(
-        bytes.len() as u64,
-        "catia_catalog_scan",
-        Some(view.location()),
-    )?;
-    let mut catalogs = ctx.grow_vec::<Catalog>();
+    let mut catalogs = Vec::new();
     for pos in 0..bytes.len().saturating_sub(1) {
         if bytes[pos..pos + 2] != [0x7c, 0x02] {
             continue;
         }
         if let Some(catalog) = parse_candidate(ctx, view, bytes, pos)? {
-            catalogs.try_push(catalog)?;
+            catalogs.push(catalog);
         }
     }
-    Ok(catalogs.finish())
+    Ok(catalogs)
 }
 
 fn parse_candidate<'a>(
@@ -76,12 +68,6 @@ fn parse_candidate<'a>(
     // input packed with many adjacent `7C02` positions, each with a large valid
     // `total_len`, would run a per-candidate entry walk whose aggregate CPU is
     // quadratic in the image while only the whole-image scan (`n` bytes) was
-    // charged, so the work budget would never fuse.
-    ctx.charge_work(
-        total_len as u64,
-        "catia_catalog_records",
-        Some(view.location()),
-    )?;
     let Some((declared_count, at)) = count_atom(bytes, pos + 6) else {
         return Ok(None);
     };

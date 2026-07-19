@@ -17,9 +17,6 @@ use cadmpeg_ir::decode::{ByteRange, DecodeContext, DerivedKind, View};
 
 use crate::variant::Variant;
 
-/// Allocation charge for one registered extent.
-const PER_EXTENT_GRAPH_BYTES: u64 = 256;
-
 /// Maximum physical extents per catalogued descriptor.
 const MAX_EXTENTS_PER_DESCRIPTOR: usize = 64;
 
@@ -538,29 +535,12 @@ pub fn scan_view<'a>(
     root: View<'a>,
 ) -> Result<ContainerScan<'a>, CodecError> {
     let data = root.window();
-    ctx.charge_work(
-        data.len() as u64,
-        "catia_container_scan",
-        Some(root.location()),
-    )?;
     let outer_dir_offset = u32_be(data, 8).unwrap_or(0);
     let outer_dir_length = u32_be(data, 12).unwrap_or(0);
     let inner = parse_stream_directory(data);
     register_extent_spaces(ctx, root, inner.as_ref())?;
     let brep = build_brep_space(ctx, root, inner.as_ref())?;
     let brep_window = brep.as_ref().map(|v| v.window());
-    ctx.charge_work(
-        (data.len() as u64).saturating_mul(3),
-        "catia_container_census",
-        Some(root.location()),
-    )?;
-    if let Some(b) = brep_window {
-        ctx.charge_work(
-            (b.len() as u64).saturating_mul(3),
-            "catia_brep_census",
-            Some(root.location()),
-        )?;
-    }
     let (census, variant) = identify(data, inner.as_ref(), brep_window);
     Ok(ContainerScan {
         data,
@@ -582,12 +562,6 @@ fn register_extent_spaces(
     let Some(dir) = inner else {
         return Ok(());
     };
-    let extent_count: u64 = dir.descriptors.iter().map(|d| d.extents.len() as u64).sum();
-    ctx.charge_alloc(
-        extent_count.saturating_mul(PER_EXTENT_GRAPH_BYTES),
-        "catia_container_extents",
-        Some(root.location()),
-    )?;
     let len = root.window().len();
     for descriptor in &dir.descriptors {
         for e in &descriptor.extents {

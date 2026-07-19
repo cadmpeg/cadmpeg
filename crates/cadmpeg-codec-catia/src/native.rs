@@ -146,11 +146,11 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
-        let object_graphs = object_graph::parse(ctx, view)?
+        let object_graphs = object_graph::parse(view)
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
-        let value_blocks = value_block::parse(ctx, view)?
+        let value_blocks = value_block::parse(view)?
             .into_iter()
             .map(CatiaValueBlock::from)
             .collect();
