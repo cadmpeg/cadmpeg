@@ -410,15 +410,15 @@ mod marker_tests {
         compact_surface_selection_at, complete_ordered_compact_line_profile,
         component_path_features, component_path_terminal_feature, component_profile_source_at,
         component_reference_curve_path_at, constraint_midplane_frame,
-        coordinate_marker_local_links, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, fixed_reference_plane_frame, legacy_feature_input_section,
-        legacy_reference_axis_triads, marker_coordinates, marker_is_geometry_locus,
-        marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
-        minimal_reference_plane_frame, named_scalars, native_scalar_matches_discrete_parameter,
-        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
-        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
-        principal_sketch_frame, reconcile_reference_plane_frame, resolve_operand_marker,
-        resolve_operand_marker_excluding, resolve_scalar_operand_markers,
+        constraint_reference_plane_frame, coordinate_marker_local_links,
+        explicit_reference_axis_frame, explicit_reference_plane_frame, fixed_reference_plane_frame,
+        legacy_feature_input_section, legacy_reference_axis_triads, marker_coordinates,
+        marker_is_geometry_locus, marker_local_id, marker_local_links, marker_object_index,
+        matrix_reference_plane_frame, minimal_reference_plane_frame, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, reconcile_reference_plane_frame,
+        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
         unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
@@ -720,6 +720,44 @@ mod marker_tests {
         frame[73..81].copy_from_slice(&1.0f64.to_le_bytes());
         assert_eq!(fixed_reference_plane_frame(&frame), None);
         assert_eq!(fixed_reference_plane_frame(&frame[..96]), None);
+    }
+
+    #[test]
+    fn tangent_plane_frame_is_anchored_to_its_constraint_class() {
+        const CLASS: &str = "moConstraintPerpPlnTanOneCylinderRefplaneData_c";
+        let root = 7;
+        let mut payload = vec![0xaa; root];
+        payload.extend(CLASS_MARKER);
+        payload.extend((CLASS.len() as u16).to_le_bytes());
+        payload.extend(CLASS.as_bytes());
+        let body = payload.len();
+        payload.resize(body + FIXED_REFERENCE_PLANE_FRAME_LEN, 0);
+        for (relative, value) in [
+            (0, 0.0125_f64),
+            (24, 1.0),
+            (49, 0.0),
+            (57, 0.0),
+            (65, 1.0),
+            (73, 0.0),
+            (81, 1.0),
+            (89, 0.0),
+        ] {
+            payload[body + relative..body + relative + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[body + 48] = 1;
+
+        assert_eq!(
+            constraint_reference_plane_frame(&payload, root, CLASS),
+            Some((
+                Point3::new(12.5, 0.0, 0.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+            ))
+        );
+        assert_eq!(
+            constraint_reference_plane_frame(&payload, root, "moRefPlane_c"),
+            None
+        );
     }
 
     #[test]
@@ -5827,10 +5865,29 @@ pub(crate) fn enrich_history_reference_planes(
                     .push(source);
             }
             let constraint = constraint_midplane_frame(bytes);
-            let explicit = match explicit_reference_plane_frame(bytes) {
-                Ok(frame) => frame,
-                Err(()) if constraint.is_some() => None,
-                Err(()) => continue,
+            let mut anchored_frames = lane
+                .classes
+                .iter()
+                .filter_map(|class| {
+                    let offset = usize::try_from(class.offset).ok()?;
+                    (start..end).contains(&offset).then(|| {
+                        constraint_reference_plane_frame(&lane.native_payload, offset, &class.name)
+                    })?
+                })
+                .collect::<Vec<_>>();
+            anchored_frames.sort_by_key(reference_plane_frame_key);
+            anchored_frames.dedup_by_key(|frame| reference_plane_frame_key(frame));
+            let explicit = if anchored_frames.is_empty() {
+                match explicit_reference_plane_frame(bytes) {
+                    Ok(frame) => frame,
+                    Err(()) if constraint.is_some() => None,
+                    Err(()) => continue,
+                }
+            } else {
+                let [frame] = anchored_frames.as_slice() else {
+                    continue;
+                };
+                Some(*frame)
             };
             let Some(frame) = reconcile_reference_plane_frame(explicit, constraint) else {
                 continue;
@@ -5853,19 +5910,7 @@ pub(crate) fn enrich_history_reference_planes(
             .insert("Reference".into(), source.to_string());
     }
     for ((history_index, feature_index), mut frames) in candidates {
-        frames.sort_by_key(|(origin, normal, u_axis)| {
-            [
-                origin.x.to_bits(),
-                origin.y.to_bits(),
-                origin.z.to_bits(),
-                normal.x.to_bits(),
-                normal.y.to_bits(),
-                normal.z.to_bits(),
-                u_axis.x.to_bits(),
-                u_axis.y.to_bits(),
-                u_axis.z.to_bits(),
-            ]
-        });
+        frames.sort_by_key(reference_plane_frame_key);
         frames.dedup();
         let [(origin, normal, u_axis)] = frames.as_slice() else {
             continue;
@@ -6566,6 +6611,7 @@ fn compact_offset_plane_source(payload: &[u8]) -> Option<u32> {
 }
 
 const FIXED_REFERENCE_PLANE_FRAME_LEN: usize = 97;
+const MINIMAL_REFERENCE_PLANE_FRAME_LEN: usize = 81;
 
 fn explicit_reference_plane_frame(
     payload: &[u8],
@@ -6585,25 +6631,44 @@ fn explicit_reference_plane_frame(
         frames.extend(minimal_reference_plane_frame(payload));
         frames.extend(compact_reference_plane_frame(payload));
     }
-    frames.sort_by_key(|(origin, normal, u_axis)| {
-        [
-            origin.x.to_bits(),
-            origin.y.to_bits(),
-            origin.z.to_bits(),
-            normal.x.to_bits(),
-            normal.y.to_bits(),
-            normal.z.to_bits(),
-            u_axis.x.to_bits(),
-            u_axis.y.to_bits(),
-            u_axis.z.to_bits(),
-        ]
-    });
+    frames.sort_by_key(reference_plane_frame_key);
     frames.dedup_by(|left, right| left == right);
     match frames.as_slice() {
         [frame] => Ok(Some(*frame)),
         [] => Ok(None),
         _ => Err(()),
     }
+}
+
+fn constraint_reference_plane_frame(
+    payload: &[u8],
+    class_offset: usize,
+    class_name: &str,
+) -> Option<(Point3, Vector3, Vector3)> {
+    let body = class_offset.checked_add(6 + class_name.len())?;
+    match class_name {
+        "moConstraintPerpPlnTanOneCylinderRefplaneData_c" => {
+            fixed_reference_plane_frame(payload.get(body..body + FIXED_REFERENCE_PLANE_FRAME_LEN)?)
+        }
+        "moConstraintPrllPlnTanOneCylinderRefplaneData_c" => minimal_reference_plane_frame(
+            payload.get(body..body + MINIMAL_REFERENCE_PLANE_FRAME_LEN)?,
+        ),
+        _ => None,
+    }
+}
+
+fn reference_plane_frame_key((origin, normal, u_axis): &(Point3, Vector3, Vector3)) -> [u64; 9] {
+    [
+        origin.x.to_bits(),
+        origin.y.to_bits(),
+        origin.z.to_bits(),
+        normal.x.to_bits(),
+        normal.y.to_bits(),
+        normal.z.to_bits(),
+        u_axis.x.to_bits(),
+        u_axis.y.to_bits(),
+        u_axis.z.to_bits(),
+    ]
 }
 
 fn fixed_reference_plane_frame(bytes: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
@@ -6869,14 +6934,13 @@ fn matrix_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vect
 }
 
 fn minimal_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vector3)> {
-    const RECORD_LEN: usize = 81;
     const NATIVE_TO_IR: f64 = 1000.0;
     let scalar = |bytes: &[u8], relative| {
         let value = f64::from_le_bytes(bytes.get(relative..relative + 8)?.try_into().ok()?);
         value.is_finite().then_some(value)
     };
     let mut frames = payload
-        .windows(RECORD_LEN)
+        .windows(MINIMAL_REFERENCE_PLANE_FRAME_LEN)
         .filter_map(|bytes| {
             let origin = Point3::new(scalar(bytes, 0)?, scalar(bytes, 8)?, scalar(bytes, 16)?);
             let normal = Vector3::new(scalar(bytes, 24)?, scalar(bytes, 32)?, scalar(bytes, 40)?);
