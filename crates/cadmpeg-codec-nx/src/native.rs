@@ -10691,6 +10691,19 @@ pub struct ExternalReferenceRecordStringUse {
     pub source_offset: u64,
 }
 
+/// Child-part identity selected by one complete external-reference record lane.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ExternalReferenceRecordChild {
+    /// Globally unique child-binding identity.
+    pub id: String,
+    /// Owning record in the native `external_reference_records` arena.
+    pub external_record: String,
+    /// Slot-zero child filename in the native `external_references` arena.
+    pub name_reference: String,
+    /// Slot-two child directory in the native `external_references` arena.
+    pub directory_reference: String,
+}
+
 /// Embedded NX material texture stored as a TIFF stream.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MaterialTextureAsset {
@@ -10957,6 +10970,63 @@ pub fn external_reference_record_string_uses(
                     source_offset: record.source_offset + 7 + slot as u64 * 4,
                 })
                 .collect()
+        })
+        .collect()
+}
+
+/// Bind complete record lanes to their slot-zero name and slot-two directory.
+pub fn external_reference_record_children(
+    records: &[ExternalReferenceRecord],
+    references: &[ExternalReference],
+    uses: &[ExternalReferenceRecordStringUse],
+) -> Vec<ExternalReferenceRecordChild> {
+    let mut references_by_id = BTreeMap::<&str, Option<&ExternalReference>>::new();
+    for reference in references {
+        references_by_id
+            .entry(reference.id.as_str())
+            .and_modify(|value| *value = None)
+            .or_insert(Some(reference));
+    }
+    records
+        .iter()
+        .filter_map(|record| {
+            let mut record_uses = uses
+                .iter()
+                .filter(|use_| use_.external_record == record.id)
+                .collect::<Vec<_>>();
+            record_uses.sort_by_key(|use_| use_.slot);
+            let [slot0, slot1, slot2, slot3] = record_uses.as_slice() else {
+                return None;
+            };
+            if [slot0.slot, slot1.slot, slot2.slot, slot3.slot] != [0, 1, 2, 3] {
+                return None;
+            }
+            let resolved = record_uses
+                .iter()
+                .enumerate()
+                .map(|(slot, use_)| {
+                    let reference = references_by_id
+                        .get(use_.external_reference.as_str())
+                        .and_then(|reference| *reference)?;
+                    (use_.string_index == record.id_slots[slot]
+                        && reference.source_entry == record.source_entry
+                        && reference.ordinal == use_.string_index)
+                        .then_some(reference)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            let name = resolved[0];
+            let directory = resolved[2];
+            name.path
+                .to_ascii_lowercase()
+                .ends_with(".prt")
+                .then_some(())?;
+            (!directory.path.is_empty()).then_some(())?;
+            Some(ExternalReferenceRecordChild {
+                id: format!("{}:child", record.id),
+                external_record: record.id.clone(),
+                name_reference: name.id.clone(),
+                directory_reference: directory.id.clone(),
+            })
         })
         .collect()
 }

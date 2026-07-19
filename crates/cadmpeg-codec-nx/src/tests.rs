@@ -16404,7 +16404,8 @@ fn external_reference_string_table_is_end_anchored() {
 #[test]
 fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     use crate::native::{
-        external_reference_record_string_uses, ExternalReference, ExternalReferenceRecord,
+        external_reference_record_children, external_reference_record_string_uses,
+        ExternalReference, ExternalReferenceRecord,
     };
 
     let references = (0..4)
@@ -16442,6 +16443,16 @@ fn external_reference_record_slots_resolve_atomically_in_the_same_stream() {
     );
     assert_eq!(uses[1].external_reference, "reference#3");
     assert_eq!(uses[1].source_offset, 31);
+    let mut child_references = references.clone();
+    child_references[0].path = "child.prt".into();
+    let child_uses = external_reference_record_string_uses(&[record.clone()], &child_references);
+    let children =
+        external_reference_record_children(&[record.clone()], &child_references, &child_uses);
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].external_record, record.id);
+    assert_eq!(children[0].name_reference, "reference#0");
+    assert_eq!(children[0].directory_reference, "reference#1");
+    assert!(external_reference_record_children(&[record.clone()], &references, &uses).is_empty());
 
     let mut out_of_range = record.clone();
     out_of_range.id_slots[2] = 4;

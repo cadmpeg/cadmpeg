@@ -1006,6 +1006,8 @@ An `EXTREFSTREAM` record region begins with `0x00`, followed by little-endian `(
 
 Each of the four ID slots indexes the trailing string table in the same `EXTREFSTREAM`. A complete record-to-string relation retains the record, slot, serialized index and byte offset, and target string identity. If any slot is out of range or its `(stream, ordinal)` target is not unique, none of the record's four relations transfer.
 
+Slot zero names the child `.prt`, slot one is the reference code, slot two is the child directory, and slot three is the load-mode token. A record with exactly one complete ordered four-slot relation and a `.prt` child name binds its handle-set record to the slot-zero child name and slot-two directory. The code-token values remain uninterpreted.
+
 ### 9.2 Stream and deltas framing
 
 The `00 ce` stream-root schema declares `index_map`, `node_id_index_map`, and `schema_embedding_map`; each serializes as a null or empty array and supplies no tombstone bridge.
