@@ -4425,10 +4425,24 @@ mod marker_tests {
 
         lane.sketch_entities[2].kind = SketchInputKind::Point;
         lane.sketch_entities[2].coordinates_m = Some([-0.01, 0.01]);
+
+        lane.native_payload[curve + 56..curve + 60].fill(0);
+        lane.native_payload[curve + 64..curve + 66].copy_from_slice(&0u16.to_le_bytes());
+        lane.native_payload[curve + 66..curve + 68].copy_from_slice(&1u16.to_le_bytes());
+        lane.native_payload[curve + 68..curve + 72].copy_from_slice(&[1, 0, 0, 0]);
+        lane.native_payload[curve + 72..curve + 80].copy_from_slice(&(-1.0f64).to_le_bytes());
+        lane.native_payload[curve + 84..curve + 92].fill(0);
+        lane.native_payload[curve + 92..curve + 92 + SKETCH_MARKER.len()]
+            .copy_from_slice(SKETCH_MARKER);
+        assert!(profile_roster_construction_axis(&lane, "profile-native", &sketch).is_some());
+
         lane.native_payload[curve..curve + LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
         lane.native_payload[curve + 17..curve + 21].copy_from_slice(&0u32.to_le_bytes());
+        lane.native_payload[curve + 56..curve + 58].copy_from_slice(&0u16.to_le_bytes());
+        lane.native_payload[curve + 58..curve + 60].copy_from_slice(&1u16.to_le_bytes());
         lane.native_payload[curve + 60..curve + 64].copy_from_slice(&1u32.to_le_bytes());
+        lane.native_payload[curve + 64..curve + 80].fill(0);
         let detail = curve + 84;
         lane.native_payload[detail..detail + LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
@@ -5645,7 +5659,8 @@ fn profile_roster_implicit_axis_chord<'a>(
             .get(offset..offset + SKETCH_MARKER.len())
             == Some(SKETCH_MARKER)
             && lane.native_payload.get(offset + 17..offset + 21) == Some(&2u32.to_le_bytes())
-            && compact_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some();
+            && (compact_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some()
+                || wide_indexed_curve_endpoint_indices(&lane.native_payload, offset).is_some());
         let extended_detailed_curve = lane
             .native_payload
             .get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
