@@ -4482,7 +4482,7 @@ pub struct FeatureDatumCsysConstruction {
     pub source_offsets: [u64; 8],
 }
 
-/// Exact logical payload reconstructed from the leading datum-CSYS blocks.
+/// Exact logical payload reconstructed from the two leading datum-CSYS blocks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDatumCsysPayload {
     /// Globally unique reconstructed-payload identity.
@@ -4491,18 +4491,18 @@ pub struct FeatureDatumCsysPayload {
     pub operation_label: String,
     /// Construction defining the ordered block lane.
     pub construction: String,
-    /// Leading source blocks and exact frame continuations in serialized order.
-    pub data_blocks: Vec<String>,
+    /// Two leading source blocks in serialized order.
+    pub data_blocks: [String; 2],
     /// Exact concatenated payload length.
     pub byte_len: u64,
     /// SHA-256 of the concatenated bytes.
     pub sha256: String,
     /// Payload-relative block starts.
-    pub block_payload_offsets: Vec<u64>,
-    /// Exact byte contribution from each source block.
-    pub block_byte_lengths: Vec<u64>,
+    pub block_payload_offsets: [u64; 2],
+    /// Exact source-block lengths.
+    pub block_byte_lengths: [u64; 2],
     /// Absolute source-block offsets.
-    pub block_source_offsets: Vec<u64>,
+    pub block_source_offsets: [u64; 2],
 }
 
 /// One exactly framed scalar pair in a reconstructed datum-CSYS payload.
@@ -6925,7 +6925,7 @@ pub fn feature_datum_plane_payloads(
         .collect()
 }
 
-/// Reconstruct the leading object blocks and exact cross-block frame continuations.
+/// Reconstruct the two leading object blocks of each datum coordinate system.
 pub fn feature_datum_csys_payloads(
     container: &Container,
     constructions: &[FeatureDatumCsysConstruction],
@@ -6934,19 +6934,11 @@ pub fn feature_datum_csys_payloads(
     constructions
         .iter()
         .filter_map(|construction| {
-            let leading_blocks = [
+            let data_blocks = [
                 construction.data_blocks[0].clone(),
                 construction.data_blocks[1].clone(),
             ];
-            let (data_blocks, payload_byte_len) =
-                datum_csys_payload_blocks(&leading_blocks, &blocks)?;
-            let (mut bytes, starts, mut lengths, sources) =
-                join_data_block_bytes(&data_blocks, &blocks)?;
-            if let Some(payload_byte_len) = payload_byte_len {
-                bytes.truncate(payload_byte_len);
-                let last_start = *starts.last()? as usize;
-                *lengths.last_mut()? = payload_byte_len.checked_sub(last_start)? as u64;
-            }
+            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
             Some(FeatureDatumCsysPayload {
                 id: construction
                     .id
@@ -6956,74 +6948,12 @@ pub fn feature_datum_csys_payloads(
                 data_blocks,
                 byte_len: bytes.len() as u64,
                 sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
-                block_payload_offsets: starts,
-                block_byte_lengths: lengths,
-                block_source_offsets: sources,
+                block_payload_offsets: starts.try_into().ok()?,
+                block_byte_lengths: lengths.try_into().ok()?,
+                block_source_offsets: sources.try_into().ok()?,
             })
         })
         .collect()
-}
-
-pub(crate) fn datum_csys_payload_blocks(
-    leading_blocks: &[String; 2],
-    blocks: &BTreeMap<String, (&[u8], u64)>,
-) -> Option<(Vec<String>, Option<usize>)> {
-    let ids = leading_blocks.to_vec();
-    let (initial, _, _, _) = join_data_block_bytes(&ids, blocks)?;
-    let Some(frame_offset) = crate::om::incomplete_datum_csys_frame_offset(&initial) else {
-        return Some((ids, None));
-    };
-    let (prefix, ordinal) = ids.last()?.rsplit_once('#')?;
-    let ordinal = ordinal.parse::<u32>().ok()?;
-    let mut candidate = ids.clone();
-    let mut next_ordinal = ordinal.checked_add(1)?;
-    loop {
-        let next = format!("{prefix}#{next_ordinal}");
-        if !blocks.contains_key(&next) {
-            return Some((ids, None));
-        }
-        candidate.push(next);
-        let (bytes, _, _, _) = join_data_block_bytes(&candidate, blocks)?;
-        let frame_end = crate::om::construction_payload_scalar_fields(&bytes)
-            .iter()
-            .find(|field| field.offset == frame_offset)
-            .map(|field| field.offset + 13)
-            .or_else(|| {
-                crate::om::datum_csys_payload_fixed_pairs(&bytes)
-                    .iter()
-                    .find(|pair| pair.offset == frame_offset)
-                    .map(|pair| pair.value_offsets[1] + 8)
-            })
-            .or_else(|| {
-                crate::om::object_payload_scalar_pairs(&bytes)
-                    .iter()
-                    .find(|pair| pair.offset == frame_offset)
-                    .map(|pair| pair.value_offsets[1] + 8)
-            });
-        if let Some(frame_end) = frame_end {
-            return Some((candidate, Some(frame_end)));
-        }
-        if crate::om::incomplete_datum_csys_frame_offset(&bytes) != Some(frame_offset) {
-            return Some((ids, None));
-        }
-        let Some(next) = next_ordinal.checked_add(1) else {
-            return Some((ids, None));
-        };
-        next_ordinal = next;
-    }
-}
-
-fn join_datum_csys_payload_bytes(
-    payload: &FeatureDatumCsysPayload,
-    blocks: &BTreeMap<String, (&[u8], u64)>,
-) -> Option<JoinedDataBlockBytes> {
-    let (mut bytes, starts, mut lengths, sources) =
-        join_data_block_bytes(&payload.data_blocks, blocks)?;
-    let byte_len = usize::try_from(payload.byte_len).ok()?;
-    bytes.truncate(byte_len);
-    let last_start = *starts.last()? as usize;
-    *lengths.last_mut()? = byte_len.checked_sub(last_start)? as u64;
-    Some((bytes, starts, lengths, sources))
 }
 
 /// Decode exact scalar-pair frames from reconstructed datum-CSYS payloads.
@@ -7036,7 +6966,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_datum_csys_payload_bytes(payload, &blocks)
+                join_data_block_bytes(&payload.data_blocks, &blocks)
             else {
                 return Vec::new();
             };
@@ -7085,7 +7015,7 @@ pub fn feature_datum_csys_payload_fixed_pairs(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_datum_csys_payload_bytes(payload, &blocks)
+                join_data_block_bytes(&payload.data_blocks, &blocks)
             else {
                 return Vec::new();
             };
@@ -7135,7 +7065,7 @@ pub fn feature_datum_csys_payload_scalars(
         .iter()
         .flat_map(|payload| {
             let Some((bytes, starts, lengths, sources)) =
-                join_datum_csys_payload_bytes(payload, &blocks)
+                join_data_block_bytes(&payload.data_blocks, &blocks)
             else {
                 return Vec::new();
             };

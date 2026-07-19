@@ -478,46 +478,6 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
     fields
 }
 
-/// Return the offset of a known datum-CSYS value frame truncated at payload end.
-pub(crate) fn incomplete_datum_csys_frame_offset(bytes: &[u8]) -> Option<usize> {
-    const FIXED: [u8; 15] = [
-        0x0b, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
-    const PAIR_SHORT: [u8; 15] = [
-        0x08, 0x02, 0x03, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00, 0x03,
-    ];
-    const PAIR_EXTENDED: [u8; 16] = [
-        0x08, 0x02, 0x03, 0x01, 0x81, 0x02, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02, 0x00,
-        0x03,
-    ];
-
-    for start in (0..bytes.len()).rev() {
-        let tail = &bytes[start..];
-        if tail.len() < 13
-            && tail.len() >= 6
-            && tail.get(..3) == Some(b"PYf")
-            && tail.get(4) == Some(&0x00)
-            && matches!(tail.get(5), Some(0x20..=0x3f | 0xa0..=0xbf))
-        {
-            return Some(start);
-        }
-        for (discriminator, complete_len) in [
-            (FIXED.as_slice(), FIXED.len() + 17),
-            (PAIR_SHORT.as_slice(), PAIR_SHORT.len() + 17),
-            (PAIR_EXTENDED.as_slice(), PAIR_EXTENDED.len() + 17),
-        ] {
-            if tail.len() >= complete_len || tail.len() < 8 {
-                continue;
-            }
-            let prefix_len = tail.len().min(discriminator.len());
-            if tail[..prefix_len] == discriminator[..prefix_len] {
-                return Some(start);
-            }
-        }
-    }
-    None
-}
-
 /// One compact-code string field in a reconstructed construction payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConstructionPayloadNamedField<'a> {
