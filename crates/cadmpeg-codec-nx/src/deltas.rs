@@ -385,11 +385,7 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
         let Ok(kind) = u8::try_from(record.kind) else {
             continue;
         };
-        if matches!(kind, 12..=19 | 29..=32 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137)
-            && crate::topology::Graph::parse(&record.canonical_bytes)
-                .get(kind, record.xmt)
-                .is_some()
-        {
+        if mergeable_record(record, kind) {
             replacements.insert((kind, record.xmt), record);
         }
     }
@@ -454,6 +450,75 @@ pub fn merge_full_records(partition: &[u8], deltas: &[u8]) -> Vec<u8> {
     } else {
         merged
     }
+}
+
+/// Count terminal tombstones that have no exact carrier in the current image
+/// and no earlier full-record addition in the same deltas stream.
+///
+/// Events are keyed by Parasolid type and XMT identity. A later full record
+/// supersedes an earlier tombstone, while a full record followed by a
+/// tombstone is a resolved deletion even when the base image lacked the key.
+pub fn unmatched_terminal_tombstones(partition: &[u8], deltas: &[u8]) -> usize {
+    #[derive(Clone, Copy)]
+    enum Event {
+        Full { offset: usize },
+        Tombstone { offset: usize },
+    }
+
+    let census = walk(deltas);
+    let graph = crate::topology::Graph::parse(partition);
+    let mut events = BTreeMap::<(u8, u32), Vec<Event>>::new();
+    for record in census.records {
+        let Ok(kind) = u8::try_from(record.kind) else {
+            continue;
+        };
+        if !mergeable_record(&record, kind) {
+            continue;
+        }
+        events
+            .entry((kind, record.xmt))
+            .or_default()
+            .push(Event::Full {
+                offset: record.offset,
+            });
+    }
+    for tombstone in census.tombstones {
+        let Ok(kind) = u8::try_from(tombstone.kind) else {
+            continue;
+        };
+        events
+            .entry((kind, tombstone.xmt))
+            .or_default()
+            .push(Event::Tombstone {
+                offset: tombstone.offset,
+            });
+    }
+
+    events
+        .into_iter()
+        .filter_map(|((kind, xmt), mut events)| {
+            events.sort_by_key(|event| match event {
+                Event::Full { offset } | Event::Tombstone { offset } => *offset,
+            });
+            let Some(Event::Tombstone { offset }) = events.last().copied() else {
+                return None;
+            };
+            (graph.get(kind, xmt).is_none()
+                && !events.iter().any(|event| {
+                    matches!(event, Event::Full { offset: full_offset } if full_offset < &offset)
+                }))
+            .then_some(())
+        })
+        .count()
+}
+
+fn mergeable_record(record: &Record, kind: u8) -> bool {
+    matches!(
+        kind,
+        12..=19 | 29..=32 | 50..=54 | 56 | 60 | 124 | 133 | 134 | 137
+    ) && crate::topology::Graph::parse(&record.canonical_bytes)
+        .get(kind, record.xmt)
+        .is_some()
 }
 
 /// Return raw deltas bytes with every decoded fixed record and compact

@@ -1524,6 +1524,32 @@ pub(crate) fn topology_streams(scan: &Scan) -> Vec<Vec<u8>> {
     semantic
 }
 
+fn unmatched_delta_tombstone_count(scan: &Scan) -> usize {
+    let pairs = paired_delta_streams(scan);
+    let mut current = pairs
+        .keys()
+        .map(|partition| (*partition, scan.streams[*partition].inflated.clone()))
+        .collect::<BTreeMap<_, _>>();
+    let paired_deltas = pairs.values().flatten().copied().collect::<BTreeSet<_>>();
+    let mut unmatched = 0usize;
+    for (delta, stream) in scan.streams.iter().enumerate() {
+        if stream.kind == StreamKind::Deltas && !paired_deltas.contains(&delta) {
+            unmatched += crate::deltas::unmatched_terminal_tombstones(&[], &stream.inflated);
+        }
+    }
+    for (partition, deltas) in pairs {
+        for delta in deltas {
+            let delta_bytes = &scan.streams[delta].inflated;
+            let partition_bytes = current
+                .get_mut(&partition)
+                .expect("paired partition was initialized");
+            unmatched += crate::deltas::unmatched_terminal_tombstones(partition_bytes, delta_bytes);
+            *partition_bytes = crate::deltas::merge_full_records(partition_bytes, delta_bytes);
+        }
+    }
+    unmatched
+}
+
 fn paired_delta_streams(scan: &Scan) -> BTreeMap<usize, Vec<usize>> {
     let links = crate::native::segment_stream_links(&scan.container, &scan.streams);
     let linked_deltas = links
@@ -7024,19 +7050,34 @@ fn build_geometry_report(
     }
 
     if scan.count(StreamKind::Deltas) > 0 {
+        let unmatched_tombstones = unmatched_delta_tombstone_count(scan);
         losses.push(LossNote {
             category: LossCategory::Topology,
-            severity: Severity::Warning,
-            message: format!(
-                "{} Parasolid deltas stream(s) were paired with the preceding equal-schema partition \
-                 in validated UG_PART segment order. Exact-key \
+            severity: if unmatched_tombstones == 0 {
+                Severity::Info
+            } else {
+                Severity::Warning
+            },
+            message: if unmatched_tombstones == 0 {
+                format!(
+                    "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
+                 Equal-schema deltas were paired with the preceding partition. Exact-key \
                  BODY, SHELL, FACE, LOOP, FIN, EDGE, VERTEX, REGION, POINT, LINE, CIRCLE, ELLIPSE, PLANE, CYLINDER, CONE, SPHERE, TORUS, BLEND_SURF, OFFSET_SURF, B_SURFACE, TRIMMED_CURVE, B_CURVE, and SP_CURVE full records and compact \
                  non-topology replacements and tombstones were applied using the last event for \
                  each key. Validated partition topology remained authoritative, including any \
-                 point, curve, or surface carrier still referenced by surviving topology. \
-                 Tombstones without an exact partition key remain unresolved.",
-                scan.count(StreamKind::Deltas)
-            ),
+                 point, curve, or surface carrier still referenced by surviving topology. Every \
+                 terminal tombstone resolved to an exact current or earlier-added key.",
+                    scan.count(StreamKind::Deltas)
+                )
+            } else {
+                format!(
+                    "{} Parasolid deltas stream(s) were processed in validated UG_PART segment order. \
+                 Equal-schema deltas were paired with the preceding partition. Exact-key revisions were applied using the last \
+                 event for each key, but {unmatched_tombstones} terminal tombstone(s) have no exact \
+                 current or earlier-added key and remain unresolved.",
+                    scan.count(StreamKind::Deltas)
+                )
+            },
             provenance: None,
         });
     }

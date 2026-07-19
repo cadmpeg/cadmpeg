@@ -13956,6 +13956,37 @@ fn merged_deltas_uses_last_full_or_tombstone_event() {
 }
 
 #[test]
+fn unmatched_delta_tombstones_follow_exact_last_event_identity() {
+    let partition = topology_partition_stream();
+    let known = [0, 29, 0, 11, 0, 1];
+    let unknown = [0, 29, 0, 99, 0, 1];
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &known),
+        0
+    );
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &unknown),
+        1
+    );
+
+    let mut full = status_framed_deltas_point_stream();
+    full[2..4].copy_from_slice(&99u16.to_be_bytes());
+    let mut add_then_delete = full.clone();
+    add_then_delete.extend_from_slice(&unknown);
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &add_then_delete),
+        0
+    );
+
+    let mut delete_then_add = unknown.to_vec();
+    delete_then_add.extend_from_slice(&full);
+    assert_eq!(
+        crate::deltas::unmatched_terminal_tombstones(&partition, &delete_then_add),
+        0
+    );
+}
+
+#[test]
 fn decode_emits_point_added_by_deltas_stream() {
     let mut cur = Cursor::new(prt_with_partition(&deltas_point_partition_stream()));
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
