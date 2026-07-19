@@ -112,7 +112,7 @@ pub struct DecodeResult {
     pub ir: CadIr,
     /// What was transferred and what was lost.
     pub report: DecodeReport,
-    /// Decode-time byte accounting and conversion facts.
+    /// Decode-time annotations and retained native records.
     pub source_fidelity: SourceFidelity,
 }
 

@@ -4,7 +4,6 @@
 //! Support level: [L8](https://github.com/cadmpeg/cadmpeg/blob/main/docs/format-support.md#support-ladder)
 //! for the declared Fixed ASCII mechanical/document envelope.
 
-mod byte_ledger;
 mod card;
 mod directory;
 mod entities;

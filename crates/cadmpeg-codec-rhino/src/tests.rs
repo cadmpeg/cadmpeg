@@ -1490,10 +1490,6 @@ fn near_budget_user_table_keeps_count_without_record_descriptors() {
     let user = scan.tables.last().expect("user table");
     assert_eq!(user.record_count, 127);
     assert!(user.records.is_empty());
-
-    // An undissected `TableRecordStream` caps source fidelity at L1.
-    let sidecar = crate::fidelity::ledger(&scan);
-    assert_eq!(sidecar.validate(), Ok(()));
 }
 
 #[test]
@@ -2258,60 +2254,6 @@ fn decode_context_transitions_object_status_once_and_links_unknowns() {
         let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
         assert_eq!(validation.error_count(), 0);
     });
-}
-
-#[test]
-fn full_decode_partitions_every_source_byte_and_retains_non_object_records() {
-    let archive = ArchiveVersion::V5;
-    let object = object_record(archive, 1, [0; 16]);
-    let bytes = minimal_document(
-        "50",
-        &[
-            table(archive, 0x1000_0014, &[]),
-            table(archive, 0x1000_0015, &[]),
-            table(archive, 0x1000_0013, &[object]),
-        ],
-    );
-    let result = RhinoCodec
-        .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
-        .unwrap();
-    let namespace = result.ir.native.namespace("rhino").unwrap();
-    let spans = namespace.arenas.get("byte_spans").unwrap();
-    let mut cursor = 0_u64;
-    for span in spans {
-        let offset = span.fields["offset"].as_u64().unwrap();
-        let byte_len = span.fields["byte_len"].as_u64().unwrap();
-        assert_eq!(offset, cursor);
-        assert!(matches!(
-            span.fields["classification"].as_str(),
-            Some("typed" | "structural" | "opaque")
-        ));
-        cursor += byte_len;
-    }
-    assert_eq!(cursor, bytes.len() as u64);
-    let opaque = namespace.arenas.get("opaque_records").unwrap();
-    assert_eq!(opaque.len(), 1);
-    assert_eq!(opaque[0].id, "rhino:source:opaque#comment");
-
-    let sidecar = &result.source_fidelity;
-    assert_eq!(sidecar.spaces.len(), 1);
-    assert_eq!(
-        sidecar.spaces[0].id,
-        cadmpeg_ir::source_fidelity::CanonicalSpaceId::source()
-    );
-    assert_eq!(sidecar.spaces[0].length, bytes.len() as u64);
-    assert_eq!(sidecar.validate(), Ok(()));
-
-    let again = RhinoCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap()
-        .source_fidelity;
-    assert_eq!(
-        sidecar.to_canonical_json().unwrap(),
-        again.to_canonical_json().unwrap()
-    );
-
-    assert!(cadmpeg_ir::validate(&result.ir, result.report.losses).is_ok());
 }
 
 #[test]

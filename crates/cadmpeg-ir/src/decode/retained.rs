@@ -4,8 +4,6 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
-use crate::source_fidelity::{RetainedRef, SerializedRange};
-
 /// Lowercase-hex SHA-256 identity of a retained blob.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct RetainedBlobId(String);
@@ -77,17 +75,6 @@ impl RetainedRange {
             start,
             end,
         })
-    }
-
-    /// Converts to the serialized sidecar reference.
-    pub fn to_serialized(&self) -> RetainedRef {
-        RetainedRef {
-            blob: self.blob.0.clone(),
-            range: SerializedRange {
-                start: self.start,
-                end: self.end,
-            },
-        }
     }
 }
 

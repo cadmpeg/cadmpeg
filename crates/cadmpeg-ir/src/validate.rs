@@ -123,7 +123,7 @@ pub fn validate_with_source_fidelity(
     let (mut report, mut all_ids) = validate_with_ids(ir, losses);
     if let Err(error) = source_fidelity.validate() {
         report.findings.push(Finding {
-            check: Check::ByteAccounting,
+            check: Check::PayloadIntegrity,
             severity: Severity::Error,
             message: format!("invalid source fidelity: {error}"),
             entity: None,

@@ -56,7 +56,7 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let report = build_container_report(&scan, true);
-        return decode_result(ir, report, annotations, unknowns, &scan);
+        return decode_result(ir, report, annotations, unknowns);
     }
 
     let streams = active_body_streams(&scan);
@@ -70,14 +70,14 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
                 decoded.brep,
                 &decoded.configuration_bodies,
             )?;
-            return decode_result(ir, report, annotations, unknowns, &scan);
+            return decode_result(ir, report, annotations, unknowns);
         }
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let report = build_container_report(&scan, false);
     reject_unrepresentable_in_strict(ctx, &report)?;
-    decode_result(ir, report, annotations, unknowns, &scan)
+    decode_result(ir, report, annotations, unknowns)
 }
 
 fn decode_result(
@@ -85,10 +85,11 @@ fn decode_result(
     report: DecodeReport,
     annotations: Annotations,
     mut unknowns: Vec<UnknownRecord>,
-    scan: &ContainerScan,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = crate::fidelity::container_ledger(scan);
-    source_fidelity.annotations = annotations;
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..Default::default()
+    };
     let source_image = unknowns
         .iter()
         .position(|record| record.id.0 == "sldprt:file:source-image#0")

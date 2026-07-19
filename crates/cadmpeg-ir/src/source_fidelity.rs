@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Serialized multi-space source-fidelity ledger.
-//!
-//! Each [`AddressSpaceLedger`] tiles one canonical address space and records its
-//! origin. Opaque spans may reference retained bytes.
-
-use std::collections::BTreeMap;
+//! Source annotations and retained native records produced during decode.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,359 +9,21 @@ use crate::document::CadIr;
 use crate::native::NativeConvertError;
 use crate::unknown::UnknownRecord;
 
-/// Serialized schema version written into every v2 sidecar.
-pub const SOURCE_FIDELITY_VERSION: &str = "2";
+/// Current serialized sidecar version.
+pub const SOURCE_FIDELITY_VERSION: &str = "3";
 
-/// A stable serialized address-space identity.
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(transparent)]
-pub struct CanonicalSpaceId(String);
-
-impl CanonicalSpaceId {
-    /// The root input space: `source`.
-    pub fn source() -> Self {
-        CanonicalSpaceId("source".to_string())
-    }
-
-    /// A container entry space: `entry:<path>`.
-    pub fn entry(path: &str) -> Self {
-        CanonicalSpaceId(format!("entry:{path}"))
-    }
-
-    /// The `<n>`-th reconstructed stream of a path: `stream:<path>#<n>`.
-    pub fn stream(path: &str, ordinal: u32) -> Self {
-        CanonicalSpaceId(format!("stream:{path}#{ordinal}"))
-    }
-
-    /// Returns the canonical id string.
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-
-    /// Returns whether this id names the root `source` space.
-    pub fn is_source(&self) -> bool {
-        self.0 == "source"
-    }
-}
-
-/// A half-open byte range `[start, end)` within one space.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
-pub struct SerializedRange {
-    /// Inclusive start offset.
-    pub start: u64,
-    /// Exclusive end offset.
-    pub end: u64,
-}
-
-impl SerializedRange {
-    /// Returns the range length, saturating an inverted range at zero.
-    pub fn len(self) -> u64 {
-        self.end.saturating_sub(self.start)
-    }
-
-    /// Returns whether the range is empty or inverted.
-    pub fn is_empty(self) -> bool {
-        self.end <= self.start
-    }
-
-    /// Returns whether `[start, end)` fits within `[0, bound)`.
-    fn within(self, bound: u64) -> bool {
-        self.start <= self.end && self.end <= bound
-    }
-}
-
-/// A byte range qualified by the canonical space it indexes.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct SpaceExtent {
-    /// The space the range indexes.
-    pub space: CanonicalSpaceId,
-    /// The range within that space.
-    pub range: SerializedRange,
-}
-
-/// Transform names for derived spaces.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum SerializedTransformKind {
-    /// The derived bytes are the decompression of the input extents.
-    Decompress,
-}
-
-/// How a serialized space was derived.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum SerializedOrigin {
-    /// The root input space.
-    Root,
-    /// A contiguous borrowed subrange of a parent space.
-    Slice {
-        /// The parent space.
-        parent: CanonicalSpaceId,
-        /// The borrowed range within the parent.
-        range: SerializedRange,
-    },
-    /// An assembly of multiple parent extents.
-    Concat {
-        /// The ordered input extents.
-        segments: Vec<SpaceExtent>,
-    },
-    /// New bytes derived from named input extents by a transform.
-    Transform {
-        /// The input extents consumed by the transform.
-        inputs: Vec<SpaceExtent>,
-        /// The transform applied.
-        transform: SerializedTransformKind,
-    },
-}
-
-impl SerializedOrigin {
-    /// Returns the spaces this origin references, in declaration order.
-    fn referenced(&self) -> Vec<&SpaceExtent> {
-        match self {
-            SerializedOrigin::Root => Vec::new(),
-            SerializedOrigin::Slice { .. } => Vec::new(),
-            SerializedOrigin::Concat { segments } => segments.iter().collect(),
-            SerializedOrigin::Transform { inputs, .. } => inputs.iter().collect(),
-        }
-    }
-}
-
-/// Byte classification for one span.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
-)]
-#[serde(rename_all = "snake_case")]
-pub enum SpanClass {
-    /// Interpreted into the typed model.
-    Typed,
-    /// Container framing with no semantic content.
-    Structural,
-    /// Uninterpreted payload preserved by digest, optionally by bytes.
-    Opaque,
-}
-
-/// A reference from an opaque span into a retained blob.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct RetainedRef {
-    /// The retained blob's stable identity.
-    pub blob: String,
-    /// The subrange of the blob this span occupies.
-    pub range: SerializedRange,
-}
-
-/// One tile of a space's byte range.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct LedgerSpan {
-    /// The span's range within its owning space.
-    pub range: SerializedRange,
-    /// The span's byte classification.
-    pub class: SpanClass,
-    /// The producing subsystem or record family.
-    pub owner: String,
-    /// A human-readable meaning for the span.
-    pub meaning: String,
-    /// Lowercase hexadecimal SHA-256 digest of the span's bytes.
-    pub digest: String,
-    /// Retained-bytes reference, present when the span is recoverable.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub retained: Option<RetainedRef>,
-}
-
-/// One space: its identity, length, derivation, and complete tiling.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-pub struct AddressSpaceLedger {
-    /// The space's stable canonical identity.
-    pub id: CanonicalSpaceId,
-    /// The space's total byte length.
-    pub length: u64,
-    /// How the space was derived.
-    pub origin: SerializedOrigin,
-    /// The spans tiling `[0, length)`, in canonical (ascending-start) order.
-    pub spans: Vec<LedgerSpan>,
-}
-
-/// A validation failure in a serialized sidecar.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum FidelityError {
-    /// The sidecar declares an unsupported schema version.
-    #[error("unsupported source-fidelity version: {found}")]
-    Version {
-        /// The version string found in the sidecar.
-        found: String,
-    },
-    /// Two spaces share a canonical id.
-    #[error("duplicate space id: {id}")]
-    DuplicateSpace {
-        /// The repeated canonical id.
-        id: String,
-    },
-    /// A nonempty ledger has no root source space.
-    #[error("a nonempty ledger requires the source address space")]
-    MissingSourceSpace,
-    /// A space carries the wrong origin for its id class.
-    #[error("space {id} has an origin inconsistent with its id")]
-    OriginIdMismatch {
-        /// The offending space id.
-        id: String,
-    },
-    /// An origin references a space that is not present.
-    #[error("space {id} references unknown space {referenced}")]
-    DanglingReference {
-        /// The referencing space id.
-        id: String,
-        /// The missing referenced id.
-        referenced: String,
-    },
-    /// An origin references a range outside the referenced space's length.
-    #[error(
-        "space {id} references range {start}..{end} outside space {referenced} (length {length})"
-    )]
-    RangeOutOfBounds {
-        /// The referencing space id.
-        id: String,
-        /// The referenced space id.
-        referenced: String,
-        /// The referenced range start.
-        start: u64,
-        /// The referenced range end.
-        end: u64,
-        /// The referenced space's length.
-        length: u64,
-    },
-    /// A slice or concatenation length disagrees with its source extents.
-    #[error("space {id} declares length {declared} but its origin yields {derived}")]
-    OriginLengthMismatch {
-        /// The derived space id.
-        id: String,
-        /// The space's declared length.
-        declared: u64,
-        /// The length implied by the origin.
-        derived: u64,
-    },
-    /// A concatenation's source extents exceed the representable length.
-    #[error("space {id} concatenated origin length overflows u64")]
-    OriginLengthOverflow {
-        /// The derived space id.
-        id: String,
-    },
-    /// The origin graph contains a cycle reaching the named space.
-    #[error("origin cycle reaches space {id}")]
-    OriginCycle {
-        /// A space on the cycle.
-        id: String,
-    },
-    /// A space's spans do not tile `[0, length)` exactly.
-    #[error("space {id} spans do not tile [0, {length}) exactly at offset {offset}")]
-    TilingGap {
-        /// The offending space id.
-        id: String,
-        /// The space length.
-        length: u64,
-        /// The offset where tiling broke.
-        offset: u64,
-    },
-    /// Two retained records share an id, making references ambiguous.
-    #[error("duplicate retained record id: {id}")]
-    DuplicateRetainedRecord {
-        /// The repeated retained-record id.
-        id: String,
-    },
-    /// A retained reference names no retained record.
-    #[error("space {id} opaque span at {offset} references unknown retained record {blob}")]
-    DanglingRetainedReference {
-        /// The offending space id.
-        id: String,
-        /// The opaque span's start offset.
-        offset: u64,
-        /// The missing retained-record id.
-        blob: String,
-    },
-    /// A referenced retained record has no bytes.
-    #[error("retained record {id} has no data")]
-    MissingRetainedData {
-        /// The retained-record id.
-        id: String,
-    },
-    /// Retained metadata disagrees with the actual byte count.
-    #[error("retained record {id} declares {declared} bytes but contains {actual}")]
-    RetainedRecordLengthMismatch {
-        /// The retained-record id.
-        id: String,
-        /// Declared byte count.
-        declared: u64,
-        /// Actual byte count.
-        actual: u64,
-    },
-    /// Retained metadata disagrees with the actual byte digest.
-    #[error("retained record {id} has an invalid digest")]
-    RetainedRecordDigestMismatch {
-        /// The retained-record id.
-        id: String,
-    },
-    /// A retained reference indexes bytes outside its retained record.
-    #[error("space {id} opaque span at {offset} references {start}..{end} outside retained record {blob} (length {length})")]
-    RetainedRangeOutOfBounds {
-        /// The offending space id.
-        id: String,
-        /// The opaque span's start offset.
-        offset: u64,
-        /// The retained-record id.
-        blob: String,
-        /// Referenced start.
-        start: u64,
-        /// Referenced end.
-        end: u64,
-        /// Retained-record length.
-        length: u64,
-    },
-    /// A span digest disagrees with its retained bytes.
-    #[error("space {id} opaque span at {offset} disagrees with retained bytes")]
-    RetainedSpanDigestMismatch {
-        /// The offending space id.
-        id: String,
-        /// The opaque span's start offset.
-        offset: u64,
-    },
-    /// An opaque span's retained subrange does not cover the span.
-    #[error(
-        "space {id} opaque span at {offset} spans {span_len} bytes but retains {retained_len}"
-    )]
-    RetainedLengthMismatch {
-        /// The offending space id.
-        id: String,
-        /// The opaque span's start offset.
-        offset: u64,
-        /// The span's byte length.
-        span_len: u64,
-        /// The retained subrange's byte length.
-        retained_len: u64,
-    },
-    /// A non-root space's origin references no parent, fabricating a second root.
-    #[error("space {id} is not the root yet its origin references no parent space")]
-    OriginWithoutReference {
-        /// The offending space id.
-        id: String,
-    },
-}
-
-/// Source bytes retained to support exact recovery of opaque ledger spans.
+/// Source bytes retained for native recovery or replay.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct RetainedSourceRecord {
-    /// Stable identifier named by opaque byte-ledger spans.
+    /// Stable record identifier.
     pub id: String,
-    /// Source stream containing the retained range.
+    /// Source stream containing the record.
     pub stream: String,
     /// First byte offset in the source stream.
     pub offset: u64,
-    /// Number of retained bytes.
+    /// Number of source bytes.
     pub byte_len: u64,
-    /// Lowercase hexadecimal SHA-256 of `data`.
+    /// Lowercase hexadecimal SHA-256 of the source bytes.
     pub sha256: String,
     /// Retained bytes, when available.
     #[serde(
@@ -378,17 +35,48 @@ pub struct RetainedSourceRecord {
     pub data: Option<Vec<u8>>,
 }
 
-/// A complete serialized source-fidelity sidecar (schema v2).
+/// Validation failure in source metadata.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FidelityError {
+    /// The sidecar declares an unsupported schema version.
+    #[error("unsupported source-fidelity version: {found}")]
+    Version {
+        /// The version found in the sidecar.
+        found: String,
+    },
+    /// Two retained records share an identifier.
+    #[error("duplicate retained source record: {id}")]
+    DuplicateRecord {
+        /// The repeated identifier.
+        id: String,
+    },
+    /// Retained data has the wrong length.
+    #[error("retained source record {id} declares {declared} bytes but contains {actual}")]
+    Length {
+        /// The record identifier.
+        id: String,
+        /// Declared byte length.
+        declared: u64,
+        /// Actual retained byte length.
+        actual: u64,
+    },
+    /// Retained data has the wrong digest.
+    #[error("retained source record {id} does not match its SHA-256 digest")]
+    Digest {
+        /// The record identifier.
+        id: String,
+    },
+}
+
+/// Decode-time source annotations and retained native records.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct SourceFidelity {
-    /// The schema version; always [`SOURCE_FIDELITY_VERSION`] when written.
+    /// Serialized representation version.
     pub version: String,
-    /// The address spaces, in canonical (id-ascending) order.
-    pub spaces: Vec<AddressSpaceLedger>,
     /// Sparse source locations and conversion exactness.
     #[serde(default)]
     pub annotations: Annotations,
-    /// Opaque source ranges retained for exact recovery.
+    /// Native records retained for recovery or replay.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub retained_records: Vec<RetainedSourceRecord>,
 }
@@ -397,7 +85,6 @@ impl Default for SourceFidelity {
     fn default() -> Self {
         Self {
             version: SOURCE_FIDELITY_VERSION.into(),
-            spaces: Vec::new(),
             annotations: Annotations::default(),
             retained_records: Vec::new(),
         }
@@ -405,44 +92,19 @@ impl Default for SourceFidelity {
 }
 
 impl SourceFidelity {
-    /// Builds a sidecar in canonical order.
-    pub fn new(spaces: Vec<AddressSpaceLedger>) -> Self {
-        let mut sidecar = SourceFidelity {
-            version: SOURCE_FIDELITY_VERSION.to_string(),
-            spaces,
-            ..SourceFidelity::default()
-        };
-        sidecar.canonicalize();
-        sidecar
-    }
-
-    /// Sorts spaces and spans into canonical order in place.
-    pub fn canonicalize(&mut self) {
-        for space in &mut self.spaces {
-            space.spans.sort_by(|a, b| {
-                a.range
-                    .start
-                    .cmp(&b.range.start)
-                    .then(a.range.end.cmp(&b.range.end))
-            });
-        }
-        self.spaces.sort_by(|a, b| a.id.cmp(&b.id));
+    /// Sorts retained records into canonical source order.
+    pub fn finalize(&mut self) {
         self.retained_records.sort_by(|left, right| {
             (&left.stream, left.offset, &left.id).cmp(&(&right.stream, right.offset, &right.id))
         });
     }
 
-    /// Canonicalizes every sidecar collection.
-    pub fn finalize(&mut self) {
-        self.canonicalize();
-    }
-
-    /// Find one retained source record by stable identifier.
+    /// Finds a retained source record by identifier.
     pub fn retained_record(&self, id: &str) -> Option<&RetainedSourceRecord> {
         self.retained_records.iter().find(|record| record.id == id)
     }
 
-    /// Retain source records without adding them to the product model.
+    /// Retains source records without adding them to the product model.
     pub fn retain_unknown_records(&mut self, stream: &str, records: &[UnknownRecord]) {
         self.retained_records
             .extend(records.iter().map(|record| RetainedSourceRecord {
@@ -455,7 +117,7 @@ impl SourceFidelity {
             }));
     }
 
-    /// Stores bytes in the sidecar and references in the product model.
+    /// Stores source bytes in the sidecar and references in the product model.
     pub fn attach_native_unknown_records(
         &mut self,
         ir: &mut CadIr,
@@ -510,652 +172,98 @@ impl SourceFidelity {
             .collect()
     }
 
-    /// Validates origins, tiling, digests, and retained-byte references.
+    /// Validates retained record identity and payload integrity.
     pub fn validate(&self) -> Result<(), FidelityError> {
         if self.version != SOURCE_FIDELITY_VERSION {
             return Err(FidelityError::Version {
                 found: self.version.clone(),
             });
         }
-
-        let mut lengths: BTreeMap<CanonicalSpaceId, u64> = BTreeMap::new();
-        for space in &self.spaces {
-            if lengths.insert(space.id.clone(), space.length).is_some() {
-                return Err(FidelityError::DuplicateSpace {
-                    id: space.id.as_str().to_string(),
-                });
-            }
-        }
-        let mut retained = BTreeMap::new();
+        let mut ids = std::collections::BTreeSet::new();
         for record in &self.retained_records {
-            if retained.insert(record.id.as_str(), record).is_some() {
-                return Err(FidelityError::DuplicateRetainedRecord {
+            if !ids.insert(&record.id) {
+                return Err(FidelityError::DuplicateRecord {
                     id: record.id.clone(),
                 });
             }
-            if let Some(data) = record.data.as_deref() {
-                let actual = u64::try_from(data.len()).unwrap_or(u64::MAX);
-                if record.byte_len != actual {
-                    return Err(FidelityError::RetainedRecordLengthMismatch {
+            if let Some(data) = &record.data {
+                let actual = data.len() as u64;
+                if actual != record.byte_len {
+                    return Err(FidelityError::Length {
                         id: record.id.clone(),
                         declared: record.byte_len,
                         actual,
                     });
                 }
                 if crate::hash::sha256_hex(data) != record.sha256 {
-                    return Err(FidelityError::RetainedRecordDigestMismatch {
+                    return Err(FidelityError::Digest {
                         id: record.id.clone(),
                     });
                 }
             }
         }
-
-        for space in &self.spaces {
-            Self::validate_origin(space, &lengths)?;
-            Self::validate_tiling(space)?;
-            self.validate_retention(space)?;
-        }
-
-        if !self.spaces.is_empty() && !lengths.contains_key(&CanonicalSpaceId::source()) {
-            return Err(FidelityError::MissingSourceSpace);
-        }
-
-        self.validate_acyclic()?;
         Ok(())
     }
 
-    fn validate_origin(
-        space: &AddressSpaceLedger,
-        lengths: &BTreeMap<CanonicalSpaceId, u64>,
-    ) -> Result<(), FidelityError> {
-        let is_root = matches!(space.origin, SerializedOrigin::Root);
-        if is_root != space.id.is_source() {
-            return Err(FidelityError::OriginIdMismatch {
-                id: space.id.as_str().to_string(),
-            });
-        }
-
-        let is_slice = matches!(space.origin, SerializedOrigin::Slice { .. });
-        if !is_root && !is_slice && space.origin.referenced().is_empty() {
-            return Err(FidelityError::OriginWithoutReference {
-                id: space.id.as_str().to_string(),
-            });
-        }
-        if let SerializedOrigin::Slice { parent, range } = &space.origin {
-            Self::check_extent(space, lengths, parent, *range)?;
-            if space.length != range.len() {
-                return Err(FidelityError::OriginLengthMismatch {
-                    id: space.id.as_str().to_string(),
-                    declared: space.length,
-                    derived: range.len(),
-                });
-            }
-        }
-        if let SerializedOrigin::Concat { segments } = &space.origin {
-            let derived = segments.iter().try_fold(0_u64, |total, segment| {
-                total.checked_add(segment.range.len())
-            });
-            let derived = derived.ok_or_else(|| FidelityError::OriginLengthOverflow {
-                id: space.id.as_str().to_string(),
-            })?;
-            if space.length != derived {
-                return Err(FidelityError::OriginLengthMismatch {
-                    id: space.id.as_str().to_string(),
-                    declared: space.length,
-                    derived,
-                });
-            }
-        }
-        for extent in space.origin.referenced() {
-            Self::check_extent(space, lengths, &extent.space, extent.range)?;
-        }
-
-        Ok(())
-    }
-
-    fn check_extent(
-        space: &AddressSpaceLedger,
-        lengths: &BTreeMap<CanonicalSpaceId, u64>,
-        referenced: &CanonicalSpaceId,
-        range: SerializedRange,
-    ) -> Result<(), FidelityError> {
-        let Some(&length) = lengths.get(referenced) else {
-            return Err(FidelityError::DanglingReference {
-                id: space.id.as_str().to_string(),
-                referenced: referenced.as_str().to_string(),
-            });
-        };
-        if !range.within(length) {
-            return Err(FidelityError::RangeOutOfBounds {
-                id: space.id.as_str().to_string(),
-                referenced: referenced.as_str().to_string(),
-                start: range.start,
-                end: range.end,
-                length,
-            });
-        }
-        Ok(())
-    }
-
-    fn validate_tiling(space: &AddressSpaceLedger) -> Result<(), FidelityError> {
-        let mut cursor = 0_u64;
-        for span in &space.spans {
-            if span.range.start != cursor || span.range.end < span.range.start {
-                return Err(FidelityError::TilingGap {
-                    id: space.id.as_str().to_string(),
-                    length: space.length,
-                    offset: cursor,
-                });
-            }
-            cursor = span.range.end;
-        }
-        if cursor != space.length {
-            return Err(FidelityError::TilingGap {
-                id: space.id.as_str().to_string(),
-                length: space.length,
-                offset: cursor,
-            });
-        }
-        Ok(())
-    }
-
-    fn validate_retention(&self, space: &AddressSpaceLedger) -> Result<(), FidelityError> {
-        for span in &space.spans {
-            if span.class != SpanClass::Opaque || span.retained.is_none() {
-                continue;
-            }
-            let retained = span.retained.as_ref().expect("checked above");
-            if retained.range.len() != span.range.len() {
-                return Err(FidelityError::RetainedLengthMismatch {
-                    id: space.id.as_str().to_string(),
-                    offset: span.range.start,
-                    span_len: span.range.len(),
-                    retained_len: retained.range.len(),
-                });
-            }
-            let Some(record) = self.retained_record(&retained.blob) else {
-                return Err(FidelityError::DanglingRetainedReference {
-                    id: space.id.as_str().to_string(),
-                    offset: span.range.start,
-                    blob: retained.blob.clone(),
-                });
-            };
-            if !retained.range.within(record.byte_len) {
-                return Err(FidelityError::RetainedRangeOutOfBounds {
-                    id: space.id.as_str().to_string(),
-                    offset: span.range.start,
-                    blob: retained.blob.clone(),
-                    start: retained.range.start,
-                    end: retained.range.end,
-                    length: record.byte_len,
-                });
-            }
-            let data =
-                record
-                    .data
-                    .as_deref()
-                    .ok_or_else(|| FidelityError::MissingRetainedData {
-                        id: record.id.clone(),
-                    })?;
-            let start = usize::try_from(retained.range.start).map_err(|_| {
-                FidelityError::RetainedRangeOutOfBounds {
-                    id: space.id.as_str().to_string(),
-                    offset: span.range.start,
-                    blob: retained.blob.clone(),
-                    start: retained.range.start,
-                    end: retained.range.end,
-                    length: record.byte_len,
-                }
-            })?;
-            let end = usize::try_from(retained.range.end).map_err(|_| {
-                FidelityError::RetainedRangeOutOfBounds {
-                    id: space.id.as_str().to_string(),
-                    offset: span.range.start,
-                    blob: retained.blob.clone(),
-                    start: retained.range.start,
-                    end: retained.range.end,
-                    length: record.byte_len,
-                }
-            })?;
-            if crate::hash::sha256_hex(&data[start..end]) != span.digest {
-                return Err(FidelityError::RetainedSpanDigestMismatch {
-                    id: space.id.as_str().to_string(),
-                    offset: span.range.start,
-                });
-            }
-        }
-        Ok(())
-    }
-
-    /// Detects an origin cycle with an iterative depth-first colouring.
-    fn validate_acyclic(&self) -> Result<(), FidelityError> {
-        #[derive(Clone, Copy, PartialEq)]
-        enum Mark {
-            Unvisited,
-            OnStack,
-            Done,
-        }
-        let mut marks: Vec<Mark> = vec![Mark::Unvisited; self.spaces.len()];
-
-        let index: BTreeMap<&CanonicalSpaceId, usize> = self
-            .spaces
-            .iter()
-            .enumerate()
-            .map(|(i, space)| (&space.id, i))
-            .collect();
-        let targets: Vec<Vec<usize>> = self
-            .spaces
-            .iter()
-            .map(|space| {
-                let mut edges = Vec::new();
-                if let SerializedOrigin::Slice { parent, .. } = &space.origin {
-                    if let Some(&i) = index.get(parent) {
-                        edges.push(i);
-                    }
-                }
-                for extent in space.origin.referenced() {
-                    if let Some(&i) = index.get(&extent.space) {
-                        edges.push(i);
-                    }
-                }
-                edges
-            })
-            .collect();
-
-        for root in 0..self.spaces.len() {
-            if marks[root] != Mark::Unvisited {
-                continue;
-            }
-            let mut stack: Vec<(usize, usize)> = vec![(root, 0)];
-            marks[root] = Mark::OnStack;
-            while let Some(&(node, cursor)) = stack.last() {
-                let node_targets = &targets[node];
-                if cursor < node_targets.len() {
-                    stack.last_mut().expect("stack is non-empty").1 += 1;
-                    let child = node_targets[cursor];
-                    match marks[child] {
-                        Mark::OnStack => {
-                            return Err(FidelityError::OriginCycle {
-                                id: self.spaces[child].id.as_str().to_string(),
-                            });
-                        }
-                        Mark::Done => {}
-                        Mark::Unvisited => {
-                            marks[child] = Mark::OnStack;
-                            stack.push((child, 0));
-                        }
-                    }
-                } else {
-                    marks[node] = Mark::Done;
-                    stack.pop();
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Serializes to versioned JSON.
+    /// Serializes the canonical sidecar as compact JSON.
     pub fn to_canonical_json(&self) -> Result<String, serde_json::Error> {
-        serde_json::to_string_pretty(self)
+        let mut canonical = self.clone();
+        canonical.finalize();
+        serde_json::to_string(&canonical)
     }
 
-    /// Parses a v2 sidecar, rejecting any other declared version.
-    pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
-        let value: serde_json::Value = serde_json::from_str(s)?;
-        let version = value.get("version").and_then(serde_json::Value::as_str);
-        if version != Some(SOURCE_FIDELITY_VERSION) {
-            return Err(<serde_json::Error as serde::de::Error>::custom(format!(
-                "expected source-fidelity version {SOURCE_FIDELITY_VERSION}, found {version:?}"
-            )));
-        }
-        serde_json::from_value(value)
+    /// Parses and validates a sidecar.
+    pub fn from_json(text: &str) -> Result<Self, SourceFidelityParseError> {
+        let sidecar: Self = serde_json::from_str(text).map_err(SourceFidelityParseError::Json)?;
+        sidecar
+            .validate()
+            .map_err(SourceFidelityParseError::Fidelity)?;
+        Ok(sidecar)
     }
+}
+
+/// Failure parsing source metadata.
+#[derive(Debug, thiserror::Error)]
+pub enum SourceFidelityParseError {
+    /// Invalid JSON.
+    #[error("invalid source-fidelity JSON: {0}")]
+    Json(serde_json::Error),
+    /// Invalid source metadata.
+    #[error(transparent)]
+    Fidelity(FidelityError),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn span(start: u64, end: u64, class: SpanClass) -> LedgerSpan {
-        LedgerSpan {
-            range: SerializedRange { start, end },
-            class,
-            owner: "owner".to_string(),
-            meaning: "meaning".to_string(),
-            digest: "00".to_string(),
-            retained: None,
-        }
-    }
-
-    fn root_space(length: u64, spans: Vec<LedgerSpan>) -> AddressSpaceLedger {
-        AddressSpaceLedger {
-            id: CanonicalSpaceId::source(),
-            length,
-            origin: SerializedOrigin::Root,
-            spans,
-        }
-    }
-
-    #[test]
-    fn canonical_ids_have_stable_spellings() {
-        assert_eq!(CanonicalSpaceId::source().as_str(), "source");
-        assert_eq!(
-            CanonicalSpaceId::entry("Document.xml").as_str(),
-            "entry:Document.xml"
-        );
-        assert_eq!(
-            CanonicalSpaceId::stream("part", 3).as_str(),
-            "stream:part#3"
-        );
-    }
-
-    #[test]
-    fn canonicalize_orders_spaces_and_spans_independent_of_input_order() {
-        let source = root_space(
-            10,
-            vec![span(5, 10, SpanClass::Opaque), span(0, 5, SpanClass::Typed)],
-        );
-        let entry = AddressSpaceLedger {
-            id: CanonicalSpaceId::entry("a"),
-            length: 4,
-            origin: SerializedOrigin::Slice {
-                parent: CanonicalSpaceId::source(),
-                range: SerializedRange { start: 0, end: 4 },
-            },
-            spans: vec![span(0, 4, SpanClass::Opaque)],
-        };
-        let a = SourceFidelity::new(vec![entry.clone(), source.clone()]);
-        let b = SourceFidelity::new(vec![source, entry]);
-        assert_eq!(a, b);
-        assert_eq!(a.spaces[0].id, CanonicalSpaceId::entry("a"));
-        assert_eq!(a.spaces[1].id, CanonicalSpaceId::source());
-        assert_eq!(a.spaces[1].spans[0].range.start, 0);
-    }
-
-    #[test]
-    fn validate_accepts_a_tiled_dag() {
-        let sidecar = SourceFidelity::new(vec![
-            root_space(8, vec![span(0, 8, SpanClass::Opaque)]),
-            AddressSpaceLedger {
-                id: CanonicalSpaceId::stream("s", 0),
-                length: 3,
-                origin: SerializedOrigin::Transform {
-                    inputs: vec![SpaceExtent {
-                        space: CanonicalSpaceId::source(),
-                        range: SerializedRange { start: 0, end: 8 },
-                    }],
-                    transform: SerializedTransformKind::Decompress,
-                },
-                spans: vec![span(0, 3, SpanClass::Typed)],
-            },
-        ]);
-        assert_eq!(sidecar.validate(), Ok(()));
-    }
-
-    #[test]
-    fn validate_rejects_tiling_gap() {
-        let sidecar =
-            SourceFidelity::new(vec![root_space(10, vec![span(0, 4, SpanClass::Opaque)])]);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::TilingGap { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_dangling_reference() {
-        let sidecar = SourceFidelity {
-            version: SOURCE_FIDELITY_VERSION.to_string(),
-            spaces: vec![AddressSpaceLedger {
-                id: CanonicalSpaceId::entry("a"),
-                length: 2,
-                origin: SerializedOrigin::Slice {
-                    parent: CanonicalSpaceId::source(),
-                    range: SerializedRange { start: 0, end: 2 },
-                },
-                spans: vec![span(0, 2, SpanClass::Opaque)],
-            }],
-            ..SourceFidelity::default()
-        };
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::DanglingReference { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_out_of_bounds_range() {
-        let sidecar = SourceFidelity::new(vec![
-            root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
-            AddressSpaceLedger {
-                id: CanonicalSpaceId::entry("a"),
-                length: 2,
-                origin: SerializedOrigin::Slice {
-                    parent: CanonicalSpaceId::source(),
-                    range: SerializedRange { start: 0, end: 99 },
-                },
-                spans: vec![span(0, 2, SpanClass::Opaque)],
-            },
-        ]);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::RangeOutOfBounds { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_slice_length_that_disagrees_with_parent_range() {
-        let sidecar = SourceFidelity::new(vec![
-            root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
-            AddressSpaceLedger {
-                id: CanonicalSpaceId::entry("a"),
-                length: 3,
-                origin: SerializedOrigin::Slice {
-                    parent: CanonicalSpaceId::source(),
-                    range: SerializedRange { start: 0, end: 2 },
-                },
-                spans: vec![span(0, 3, SpanClass::Opaque)],
-            },
-        ]);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::OriginLengthMismatch {
-                declared: 3,
-                derived: 2,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_concat_length_that_disagrees_with_segments() {
-        let sidecar = SourceFidelity::new(vec![
-            root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
-            AddressSpaceLedger {
-                id: CanonicalSpaceId::stream("a", 0),
-                length: 3,
-                origin: SerializedOrigin::Concat {
-                    segments: vec![SpaceExtent {
-                        space: CanonicalSpaceId::source(),
-                        range: SerializedRange { start: 0, end: 2 },
-                    }],
-                },
-                spans: vec![span(0, 3, SpanClass::Opaque)],
-            },
-        ]);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::OriginLengthMismatch {
-                declared: 3,
-                derived: 2,
-                ..
-            })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_origin_cycle() {
-        let sidecar = SourceFidelity {
-            version: SOURCE_FIDELITY_VERSION.to_string(),
-            spaces: vec![
-                root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
-                AddressSpaceLedger {
-                    id: CanonicalSpaceId::stream("x", 0),
-                    length: 4,
-                    origin: SerializedOrigin::Slice {
-                        parent: CanonicalSpaceId::stream("x", 1),
-                        range: SerializedRange { start: 0, end: 4 },
-                    },
-                    spans: vec![span(0, 4, SpanClass::Opaque)],
-                },
-                AddressSpaceLedger {
-                    id: CanonicalSpaceId::stream("x", 1),
-                    length: 4,
-                    origin: SerializedOrigin::Slice {
-                        parent: CanonicalSpaceId::stream("x", 0),
-                        range: SerializedRange { start: 0, end: 4 },
-                    },
-                    spans: vec![span(0, 4, SpanClass::Opaque)],
-                },
-            ],
-            ..SourceFidelity::default()
-        };
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::OriginCycle { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_origin_id_mismatch() {
-        let sidecar = SourceFidelity {
-            version: SOURCE_FIDELITY_VERSION.to_string(),
-            spaces: vec![AddressSpaceLedger {
-                id: CanonicalSpaceId::entry("a"),
-                length: 4,
-                origin: SerializedOrigin::Root,
-                spans: vec![span(0, 4, SpanClass::Opaque)],
-            }],
-            ..SourceFidelity::default()
-        };
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::OriginIdMismatch { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_short_retained_range() {
-        let sidecar = SourceFidelity::new(vec![root_space(
-            4,
-            vec![LedgerSpan {
-                range: SerializedRange { start: 0, end: 4 },
-                class: SpanClass::Opaque,
-                owner: "owner".to_string(),
-                meaning: "meaning".to_string(),
-                digest: "00".to_string(),
-                retained: Some(RetainedRef {
-                    blob: "b".to_string(),
-                    range: SerializedRange { start: 0, end: 0 },
-                }),
-            }],
-        )]);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::RetainedLengthMismatch {
-                span_len: 4,
-                retained_len: 0,
-                ..
-            })
-        ));
-    }
-
-    fn retained_sidecar(data: Vec<u8>) -> SourceFidelity {
-        let digest = crate::hash::sha256_hex(&data);
-        let mut sidecar = SourceFidelity::new(vec![root_space(
-            4,
-            vec![LedgerSpan {
-                range: SerializedRange { start: 0, end: 4 },
-                class: SpanClass::Opaque,
-                owner: "owner".to_string(),
-                meaning: "meaning".to_string(),
-                digest: digest.clone(),
-                retained: Some(RetainedRef {
-                    blob: "b".to_string(),
-                    range: SerializedRange { start: 0, end: 4 },
-                }),
-            }],
-        )]);
-        sidecar.retained_records.push(RetainedSourceRecord {
-            id: "b".to_string(),
-            stream: "source".to_string(),
+    fn record(id: &str, data: &[u8]) -> RetainedSourceRecord {
+        RetainedSourceRecord {
+            id: id.into(),
+            stream: "source".into(),
             offset: 0,
-            byte_len: 4,
-            sha256: digest,
-            data: Some(data),
-        });
-        sidecar
+            byte_len: data.len() as u64,
+            sha256: crate::hash::sha256_hex(data),
+            data: Some(data.to_vec()),
+        }
     }
 
     #[test]
-    fn validate_recoverable_proves_span_bytes_can_be_recovered() {
-        assert_eq!(retained_sidecar(vec![1, 2, 3, 4]).validate(), Ok(()));
+    fn canonical_json_orders_retained_records() {
+        let mut sidecar = SourceFidelity::default();
+        sidecar.retained_records = vec![record("b", &[2]), record("a", &[1])];
+        let parsed = SourceFidelity::from_json(&sidecar.to_canonical_json().unwrap()).unwrap();
+        assert_eq!(parsed.retained_records[0].id, "a");
     }
 
     #[test]
-    fn validate_rejects_recoverable_record_with_false_digest() {
-        let mut sidecar = retained_sidecar(vec![1, 2, 3, 4]);
-        sidecar.retained_records[0].sha256 = crate::hash::sha256_hex(&[4, 3, 2, 1]);
+    fn validation_rejects_false_payload_metadata() {
+        let mut sidecar = SourceFidelity::default();
+        sidecar.retained_records.push(record("a", &[1, 2]));
+        sidecar.retained_records[0].sha256 = crate::hash::sha256_hex(&[2, 1]);
         assert!(matches!(
             sidecar.validate(),
-            Err(FidelityError::RetainedRecordDigestMismatch { .. })
+            Err(FidelityError::Digest { .. })
         ));
-    }
-
-    #[test]
-    fn validate_rejects_span_that_disagrees_with_retained_subrange() {
-        let mut sidecar = retained_sidecar(vec![1, 2, 3, 4]);
-        sidecar.spaces[0].spans[0].digest = crate::hash::sha256_hex(&[4, 3, 2, 1]);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::RetainedSpanDigestMismatch { .. })
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_non_root_without_reference() {
-        let sidecar = SourceFidelity::new(vec![
-            root_space(4, vec![span(0, 4, SpanClass::Opaque)]),
-            AddressSpaceLedger {
-                id: CanonicalSpaceId::entry("x"),
-                length: 4,
-                origin: SerializedOrigin::Concat { segments: vec![] },
-                spans: vec![span(0, 4, SpanClass::Opaque)],
-            },
-        ]);
-        assert!(matches!(
-            sidecar.validate(),
-            Err(FidelityError::OriginWithoutReference { .. })
-        ));
-    }
-
-    #[test]
-    fn canonical_json_round_trips() {
-        let sidecar = SourceFidelity::new(vec![root_space(4, vec![span(0, 4, SpanClass::Typed)])]);
-        let json = sidecar.to_canonical_json().expect("serialize");
-        let parsed = SourceFidelity::from_json(&json).expect("parse");
-        assert_eq!(sidecar, parsed);
-        assert_eq!(json, parsed.to_canonical_json().expect("reserialize"));
-    }
-
-    #[test]
-    fn from_json_rejects_wrong_version() {
-        let sidecar = SourceFidelity::new(vec![root_space(0, vec![])]);
-        let mut value: serde_json::Value =
-            serde_json::from_str(&sidecar.to_canonical_json().expect("serialize"))
-                .expect("parse value");
-        value["version"] = serde_json::Value::String("9".to_string());
-        let json = serde_json::to_string(&value).expect("reserialize");
-        assert!(SourceFidelity::from_json(&json).is_err());
     }
 }

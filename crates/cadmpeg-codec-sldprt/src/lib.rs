@@ -73,7 +73,6 @@ pub mod brep;
 mod classification;
 pub mod container;
 pub mod decode;
-pub mod fidelity;
 mod history;
 mod metadata;
 mod native;
@@ -89,10 +88,8 @@ mod writer_transform;
 #[cfg(feature = "fuzzing")]
 pub mod fuzzing;
 
-use cadmpeg_ir::codec::{
-    Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder, ReadSeek,
-};
-use cadmpeg_ir::decode::{DecodeArena, DecodeContext, DecodePolicy, View};
+use cadmpeg_ir::codec::{Codec, CodecError, Confidence, ContainerSummary, DecodeResult, Encoder};
+use cadmpeg_ir::decode::{DecodeContext, View};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::report::ExportReport;
@@ -102,21 +99,6 @@ use std::io::Write;
 /// Codec for `SolidWorks` `.sldprt` part documents.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct SldprtCodec;
-
-impl SldprtCodec {
-    /// Builds and validates the source-fidelity sidecar for an `.sldprt` file.
-    pub fn source_fidelity(&self, reader: &mut dyn ReadSeek) -> Result<SourceFidelity, CodecError> {
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy::default();
-        let (ctx, root) = DecodeContext::read_root(reader, &arena, &policy)?;
-        let scan = container::scan_view(&ctx, root)?;
-        let ledger = fidelity::container_ledger(&scan);
-        ledger
-            .validate()
-            .map_err(|error| CodecError::Malformed(error.to_string()))?;
-        Ok(ledger)
-    }
-}
 
 /// Validate `SolidWorks` native feature-input byte references.
 pub fn validate_native(ir: &CadIr) -> Vec<Finding> {

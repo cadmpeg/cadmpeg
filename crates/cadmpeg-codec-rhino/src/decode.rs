@@ -1808,7 +1808,6 @@ impl<'a> DecodeContext<'a> {
         crate::presentation::install(self.scan, &mut self.ir);
         crate::product::install(self.scan, &mut self.ir);
         crate::views::install(self.scan, &mut self.ir);
-        crate::accounting::install(self.scan, &mut self.ir);
         let unknown_refs = self
             .unknowns
             .iter()
@@ -1937,8 +1936,10 @@ impl<'a> DecodeContext<'a> {
             RETAINED_DOCUMENT_CAP,
             RETAINED_RECORD_CAP
         )];
-        let mut source_fidelity = crate::fidelity::ledger(self.scan);
-        source_fidelity.annotations = self.annotations;
+        let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+            annotations: self.annotations,
+            ..Default::default()
+        };
         source_fidelity
             .attach_native_unknown_records(&mut self.ir, "rhino", &self.unknowns)
             .expect("Rhino source records separate from product identities");

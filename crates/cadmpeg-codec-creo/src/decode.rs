@@ -37,7 +37,6 @@ use serde::Serialize;
 
 use crate::builder;
 use crate::container::{self, role, ContainerScan};
-use crate::fidelity;
 use crate::topology::HalfEdgeId;
 
 #[derive(Serialize)]
@@ -567,8 +566,10 @@ pub fn decode(ctx: &DecodeContext<'_>, root: View<'_>) -> Result<DecodeResult, C
     let (mut ir, dropped_losses, annotations, unknowns) = build_ir(&scan)?;
     let mut report = build_report(&scan, ctx.container_only());
     report.losses.extend(dropped_losses);
-    let mut source_fidelity = fidelity::coarse_ledger(&scan)?;
-    source_fidelity.annotations = annotations;
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..Default::default()
+    };
     source_fidelity.attach_native_unknown_records(&mut ir, "creo", &unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
         ir,

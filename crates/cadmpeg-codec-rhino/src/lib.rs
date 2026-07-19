@@ -11,7 +11,6 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::{ExportReport, LossCategory, LossCode, LossNote, Severity};
 use std::io::Write;
 
-pub(crate) mod accounting;
 pub(crate) mod annotations;
 pub(crate) mod brep;
 pub(crate) mod cage;
@@ -24,7 +23,6 @@ pub(crate) mod detail;
 pub(crate) mod dimensions;
 pub(crate) mod document_data;
 pub(crate) mod extrusion;
-pub(crate) mod fidelity;
 pub(crate) mod hatch;
 pub(crate) mod history;
 pub(crate) mod instances;

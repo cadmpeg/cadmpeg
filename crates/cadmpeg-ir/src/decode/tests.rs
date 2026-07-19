@@ -607,11 +607,6 @@ fn subranges_reference_one_blob_under_containment() {
 
     assert!(whole.subrange(0, 101).is_none());
     assert!(whole.subrange(60, 40).is_none());
-
-    let serialized = tail.to_serialized();
-    assert_eq!(serialized.blob, whole.blob().as_str());
-    assert_eq!(serialized.range.start, 40);
-    assert_eq!(serialized.range.end, 100);
 }
 
 #[test]

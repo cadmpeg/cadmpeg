@@ -98,19 +98,19 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
         let mut report = build_container_report(&scan, true);
         report_untransferred_streams(&scan, &mut report);
-        return decode_result(ir, report, annotations, &unknowns, &scan);
+        return decode_result(ir, report, annotations, &unknowns);
     }
 
     if let Some((ir, report, annotations, unknowns)) = try_decode_geometry(&scan) {
         enforce_strict(ctx.mode(), &report)?;
-        return decode_result(ir, report, annotations, &unknowns, &scan);
+        return decode_result(ir, report, annotations, &unknowns);
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan)?;
     let mut report = build_container_report(&scan, false);
     report_untransferred_streams(&scan, &mut report);
     enforce_strict(ctx.mode(), &report)?;
-    decode_result(ir, report, annotations, &unknowns, &scan)
+    decode_result(ir, report, annotations, &unknowns)
 }
 
 fn decode_result(
@@ -118,10 +118,11 @@ fn decode_result(
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
     unknowns: &[UnknownRecord],
-    scan: &Scan,
 ) -> Result<DecodeResult, CodecError> {
-    let mut source_fidelity = crate::accounting::ledger(scan);
-    source_fidelity.annotations = annotations;
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..Default::default()
+    };
     source_fidelity.attach_native_unknown_records(&mut ir, "nx", unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
         ir,
@@ -165,19 +166,15 @@ fn report_untransferred_streams(scan: &Scan, report: &mut DecodeReport) {
 }
 
 /// The accountable loss note for a non-Parasolid stream that produced no
-/// surviving typed entity; it is classified but not transferred, accounted by
-/// digest in the source-fidelity ledger. Parasolid streams never reach here —
-/// their bytes are preserved verbatim as a native unknown passthrough record and
-/// resolve `Structural`, not `Dropped`. The message is stream-scoped, so a
-/// per-record `Dropped` disposition consumes exactly one matching note.
+/// surviving typed entity. Parasolid streams are preserved as native unknown
+/// records and never reach this path.
 fn stream_drop_note(stream_index: usize, stream: &Stream) -> LossNote {
     LossNote {
         code: LossCode::PassthroughRecordOmitted,
         category: LossCategory::Other,
         severity: Severity::Info,
         message: format!(
-            "Non-Parasolid {} stream #{stream_index} was classified but not transferred; it is \
-             accounted by digest in the source-fidelity ledger.",
+            "Non-Parasolid {} stream #{stream_index} was classified but not transferred.",
             stream.kind.label()
         ),
         provenance: None,

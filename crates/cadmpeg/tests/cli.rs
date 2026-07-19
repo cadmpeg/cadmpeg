@@ -520,38 +520,6 @@ fn diff_summarizes_the_source_fidelity_sidecar_for_native_inputs() {
 }
 
 #[test]
-fn diff_renders_the_interpreted_fidelity_delta_when_only_sidecars_differ() {
-    let dir = tempdir().unwrap();
-    // Same-length comment bytes keep every table offset identical, so the IR is
-    // byte-for-byte equal while the comment span's digest differs. This drives
-    // the changed_spaces / content-changed rendering and the fidelity-aware exit
-    // code, which the identical-archive test never reaches.
-    let a = minimal_rhino_archive_with_comment(dir.path(), "a.3dm", "50", b"cadmpeg test");
-    let b = minimal_rhino_archive_with_comment(dir.path(), "b.3dm", "50", b"cadmpeg diff");
-
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args(["diff", a.to_str().unwrap(), b.to_str().unwrap()])
-        .assert()
-        .code(1)
-        .stdout(
-            predicate::str::contains("source fidelity:")
-                .and(predicate::str::contains("content changed"))
-                .and(predicate::str::contains("identical").not()),
-        );
-
-    Command::cargo_bin("cadmpeg")
-        .unwrap()
-        .args(["diff", "--json", a.to_str().unwrap(), b.to_str().unwrap()])
-        .assert()
-        .code(1)
-        .stdout(
-            predicate::str::contains("\"different\": true")
-                .and(predicate::str::contains("\"present\": \"both\"")),
-        );
-}
-
-#[test]
 fn garbage_reports_supported_formats() {
     let dir = tempdir().unwrap();
     let input = dir.path().join("garbage.bin");

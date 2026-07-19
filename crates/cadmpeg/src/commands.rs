@@ -554,40 +554,6 @@ fn print_fidelity_summary(summary: &FidelitySummary) {
     if diff.retained_records_changed {
         println!("    retained records changed");
     }
-    for id in &diff.removed_spaces {
-        println!("    - space {id}");
-    }
-    for id in &diff.added_spaces {
-        println!("    + space {id}");
-    }
-    for space in &diff.changed_spaces {
-        let before = &space.class_bytes_before;
-        let after = &space.class_bytes_after;
-        print!("    ~ {}", space.id);
-        if let Some((lb, la)) = space.length {
-            print!(" {lb}→{la} B");
-        }
-        println!(
-            ": typed {}→{}, structural {}→{}, opaque {}→{}, spans {}→{}{}",
-            before.typed,
-            after.typed,
-            before.structural,
-            after.structural,
-            before.opaque,
-            after.opaque,
-            space.spans.0,
-            space.spans.1,
-            if space.content_changed && space.origin_changed {
-                ", content and origin changed"
-            } else if space.content_changed {
-                ", content changed"
-            } else if space.origin_changed {
-                ", origin changed"
-            } else {
-                ""
-            }
-        );
-    }
 }
 
 fn losses(report: Option<&DecodeReport>) -> Vec<cadmpeg_ir::LossNote> {

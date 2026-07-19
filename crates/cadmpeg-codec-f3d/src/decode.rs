@@ -26,7 +26,7 @@ use cadmpeg_ir::unknown::UnknownRecord;
 
 use crate::brep::{self, Brep};
 use crate::container::{self, BrepFacts, ContainerScan};
-use crate::{asm_header, fidelity, materials, sab};
+use crate::{asm_header, materials, sab};
 
 /// Decode a `.f3d` root view into a document and its loss report.
 pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResult, CodecError> {
@@ -43,7 +43,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
             annotations,
             &unknowns,
             &preserve_source_image(&scan),
-            build_source_fidelity(&scan)?,
+            cadmpeg_ir::SourceFidelity::default(),
         );
     }
 
@@ -159,7 +159,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
                 annotations,
                 &unknowns,
                 &preserve_source_image(&scan),
-                build_source_fidelity(&scan)?,
+                cadmpeg_ir::SourceFidelity::default(),
             );
         }
     }
@@ -211,7 +211,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         annotations,
         &unknowns,
         &preserve_source_image(&scan),
-        build_source_fidelity(&scan)?,
+        cadmpeg_ir::SourceFidelity::default(),
     )
 }
 
@@ -309,14 +309,6 @@ fn untransferred_asset_loss(role_label: &str, name: &str) -> LossNote {
         message,
         provenance: None,
     }
-}
-
-/// Build the validated container-accounting ledger for the scanned archive.
-fn build_source_fidelity(
-    scan: &ContainerScan<'_>,
-) -> Result<cadmpeg_ir::source_fidelity::SourceFidelity, CodecError> {
-    fidelity::build_validated_ledger(scan)
-        .map_err(|e| CodecError::Malformed(format!("invalid f3d source-fidelity ledger: {e}")))
 }
 
 fn preserve_source_image(scan: &ContainerScan) -> UnknownRecord {

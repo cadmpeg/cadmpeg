@@ -3,7 +3,6 @@
 
 use cadmpeg_ir::codec::Confidence;
 use cadmpeg_ir::codec::{CodecError, ContainerEntry, ContainerSummary, ReadSeek};
-use cadmpeg_ir::{ByteLedger, ByteSpan, ByteSpanClass};
 use std::collections::BTreeMap;
 use std::io::Read;
 
@@ -89,7 +88,6 @@ impl PhysicalLine {
 pub(crate) struct CardScan {
     pub(crate) source: Vec<u8>,
     pub(crate) lines: Vec<PhysicalLine>,
-    pub(crate) ledger: ByteLedger,
 }
 
 fn take_line(input: &[u8]) -> Option<(&[u8], &[u8])> {
@@ -283,44 +281,6 @@ fn validate_terminate_counts(lines: &[PhysicalLine]) -> Result<(), CodecError> {
     Ok(())
 }
 
-fn structural_ledger(source_length: u64, lines: &[PhysicalLine]) -> ByteLedger {
-    let mut spans = Vec::new();
-    for (index, line) in lines.iter().enumerate() {
-        let owner = format!("iges:physical:card#{}", index + 1);
-        let payload_length = u64::try_from(line.payload.len()).unwrap_or(u64::MAX);
-        let payload_end = line.offset.saturating_add(payload_length);
-        if payload_length > 0 {
-            spans.push(ByteSpan {
-                start: line.offset,
-                end: payload_end,
-                class: ByteSpanClass::Structural,
-                owner: owner.clone(),
-                meaning: "card_payload".into(),
-                retained_record: None,
-            });
-        }
-        let ending_length = match line.ending {
-            LineEnding::CrLf => 2,
-            LineEnding::Lf | LineEnding::Cr => 1,
-            LineEnding::None => 0,
-        };
-        if ending_length > 0 {
-            spans.push(ByteSpan {
-                start: payload_end,
-                end: payload_end + ending_length,
-                class: ByteSpanClass::Structural,
-                owner,
-                meaning: "line_ending".into(),
-                retained_record: None,
-            });
-        }
-    }
-    ByteLedger {
-        source_length,
-        spans,
-    }
-}
-
 pub(crate) fn scan(reader: &mut dyn ReadSeek) -> Result<CardScan, CodecError> {
     let mut source = Vec::new();
     reader
@@ -337,14 +297,7 @@ pub(crate) fn scan(reader: &mut dyn ReadSeek) -> Result<CardScan, CodecError> {
     let lines = physical_lines(&source)?;
     validate_card_order(&lines)?;
     validate_terminate_counts(&lines)?;
-    let source_length = u64::try_from(source.len())
-        .map_err(|_| CodecError::Malformed("IGES source length exceeds u64".into()))?;
-    let ledger = structural_ledger(source_length, &lines);
-    Ok(CardScan {
-        source,
-        lines,
-        ledger,
-    })
+    Ok(CardScan { source, lines })
 }
 
 pub(crate) fn summarize(scan: &CardScan) -> ContainerSummary {
@@ -449,9 +402,6 @@ pub(crate) fn summarize(scan: &CardScan) -> ContainerSummary {
         format: "iges".into(),
         container_kind: "fixed-ascii".into(),
         entries,
-        notes: vec![
-            format!("source_bytes={}", scan.source.len()),
-            format!("ledger_spans={}", scan.ledger.spans.len()),
-        ],
+        notes: vec![format!("source_bytes={}", scan.source.len())],
     }
 }

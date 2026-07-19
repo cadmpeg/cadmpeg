@@ -735,7 +735,7 @@ fn rewritable_generated_namespace(namespace: &cadmpeg_ir::NativeNamespace) -> bo
                     == Some("AQAAAAcAAAAAAAAAY2FkbXBlZw==")
         })
     });
-    if !generated_comment
+    if (opaque.is_some() && !generated_comment)
         || opaque.is_some_and(|records| {
             records.iter().any(|record| {
                 !matches!(

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Physical graph to CADIR native preservation and loss reporting.
 
-use crate::{byte_ledger, card, directory, entities, global, graph, native, parameter};
+use crate::{card, directory, entities, global, graph, native, parameter};
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::units::Units;
@@ -55,8 +55,7 @@ pub(crate) fn decode(
     let directory = directory::parse(&scan)?;
     let parameters = parameter::assemble(&scan, &directory, &global)?;
     let references = graph::build(&directory);
-    let mut source_fidelity =
-        SourceFidelity::new(vec![byte_ledger::build(&scan, &global, &parameters)]);
+    let mut source_fidelity = SourceFidelity::default();
 
     let mut ir = CadIr::empty(Units::default());
     ir.source = Some(source_meta(&global));
@@ -76,7 +75,6 @@ pub(crate) fn decode(
         &parameters,
         &references,
         &global,
-        &mut source_fidelity,
     )?;
     source_fidelity.finalize();
 

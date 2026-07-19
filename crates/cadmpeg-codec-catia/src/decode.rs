@@ -62,7 +62,7 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
     if ctx.container_only() {
         let (ir, annotations, unknowns) = build_metadata_ir(&scan);
         let report = build_container_report(&scan, true);
-        return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
+        return finish_decode(ctx, root, ir, report, annotations, &unknowns);
     }
 
     let brep_len = scan.brep_bytes().map_or(0, <[u8]>::len) as u64;
@@ -73,19 +73,19 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
 
     if matches!(scan.variant, Variant::StandardNested | Variant::FbbOnly) {
         if let Some((ir, report, annotations, unknowns)) = try_decode_standard(&scan) {
-            return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
+            return finish_decode(ctx, root, ir, report, annotations, &unknowns);
         }
     }
 
     if scan.variant == Variant::ZeroEntity {
         if let Some((ir, report, annotations, unknowns)) = try_decode_zero_entity(&scan) {
-            return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
+            return finish_decode(ctx, root, ir, report, annotations, &unknowns);
         }
     }
 
     if scan.variant == Variant::E5Stream {
         if let Some((ir, report, annotations, unknowns)) = try_decode_e5(&scan) {
-            return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
+            return finish_decode(ctx, root, ir, report, annotations, &unknowns);
         }
     }
 
@@ -94,19 +94,18 @@ pub fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<DecodeResul
         Variant::FloatPackedInnerNoFbb | Variant::FbbOnly | Variant::InnerNoDirectory
     ) {
         if let Some((ir, report, annotations, unknowns)) = try_decode_freeform_surfaces(&scan) {
-            return finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns);
+            return finish_decode(ctx, root, ir, report, annotations, &unknowns);
         }
     }
 
     let (ir, annotations, unknowns) = build_metadata_ir(&scan);
     let report = build_container_report(&scan, false);
-    finish_decode(ctx, root, &scan, ir, report, annotations, &unknowns)
+    finish_decode(ctx, root, ir, report, annotations, &unknowns)
 }
 
 fn finish_decode<'a>(
     ctx: &DecodeContext<'a>,
     root: View<'a>,
-    scan: &ContainerScan<'a>,
     mut ir: CadIr,
     report: DecodeReport,
     annotations: cadmpeg_ir::Annotations,
@@ -116,8 +115,10 @@ fn finish_decode<'a>(
     if !report.container_only {
         reject_unrepresentable_in_strict(ctx, &report)?;
     }
-    let mut source_fidelity = crate::ledger::container_ledger(scan);
-    source_fidelity.annotations = annotations;
+    let mut source_fidelity = cadmpeg_ir::SourceFidelity {
+        annotations,
+        ..Default::default()
+    };
     source_fidelity.attach_native_unknown_records(&mut ir, "catia", unknowns)?;
     Ok(DecodeResult::with_source_fidelity(
         ir,
