@@ -2386,6 +2386,33 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn legacy_revolve_uses_d1_angle_and_cut_class_operation() {
+        let mut revolve = feature("revolve", Some("42"), 0);
+        revolve.input_class = Some("moRevCut_c".into());
+        revolve.parameters.insert("D1".into(), "360°".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![revolve],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::Revolve {
+                construction: RevolutionConstruction {
+                    extent: Some(Extent::Angle { angle: Angle(value) }),
+                    ..
+                },
+                op: BooleanOp::Cut,
+            } if (value - std::f64::consts::TAU).abs() < 1.0e-12
+        ));
+    }
+
+    #[test]
     fn cosmetic_thread_retains_nominal_diameter_and_blind_length() {
         let mut thread = feature("thread", Some("42"), 0);
         thread.input_class = Some("moCosmeticThread_c".into());
@@ -4954,6 +4981,11 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
         feature
             .parameters
             .get(name)
+            .or_else(|| match name {
+                "Angle" => feature.parameters.get("D1"),
+                "Angle2" => feature.parameters.get("D2"),
+                _ => None,
+            })
             .and_then(|value| parse_positive_angle_rad(value))
             .map(Angle)
     };
@@ -4985,6 +5017,9 @@ fn project_revolve(feature: &Feature, native_by_source: &HashMap<&str, &str>) ->
         .properties
         .get("Operation")
         .and_then(|value| parse_boolean_op(value))
+        .or_else(|| {
+            (feature.input_class.as_deref() == Some("moRevCut_c")).then_some(BooleanOp::Cut)
+        })
         .unwrap_or(BooleanOp::Unresolved);
     FeatureDefinition::Revolve {
         construction: RevolutionConstruction {
