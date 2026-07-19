@@ -8123,7 +8123,7 @@ impl MeshSelectionSearch<'_> {
         let mut queued = queue.iter().copied().collect::<HashSet<_>>();
         while let Some(face) = queue.pop_front() {
             if !budget.charge() {
-                return false;
+                return true;
             }
             queued.remove(&face);
             if self.selected[face].is_some() {
@@ -8168,7 +8168,7 @@ impl MeshSelectionSearch<'_> {
                             &self.assignments[face],
                             budget,
                         ) else {
-                            return false;
+                            return budget.exhausted.get();
                         };
                         common.into_iter().collect()
                     } else {
@@ -8190,7 +8190,7 @@ impl MeshSelectionSearch<'_> {
                             }
                         }
                         let Some(common) = common else {
-                            return false;
+                            return budget.exhausted.get();
                         };
                         common.into_iter().collect()
                     };
@@ -8345,9 +8345,14 @@ impl MeshSelectionSearch<'_> {
         quotient: &MeshQuotient,
         changed_edges: &HashSet<usize>,
         budget: &MeshConstraintBudget,
+        propagation_budget: &MeshConstraintBudget,
     ) -> Option<MeshQuotient> {
         let mut measured = quotient.clone();
-        if !self.propagate_forced_face_equations_from(&mut measured, Some(changed_edges), budget) {
+        if !self.propagate_forced_face_equations_from(
+            &mut measured,
+            Some(changed_edges),
+            propagation_budget,
+        ) {
             return None;
         }
         if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
@@ -8376,7 +8381,8 @@ impl MeshSelectionSearch<'_> {
 
     fn search_with_limit(&mut self, quotient: &MeshQuotient, limit: usize) {
         let budget = MeshConstraintBudget::new(limit);
-        self.search_from_state(quotient, false, &budget);
+        let propagation_budget = MeshConstraintBudget::new(limit);
+        self.search_from_state(quotient, false, &budget, &propagation_budget);
     }
 
     fn search_from_state(
@@ -8384,6 +8390,7 @@ impl MeshSelectionSearch<'_> {
         quotient: &MeshQuotient,
         prepared: bool,
         budget: &MeshConstraintBudget,
+        propagation_budget: &MeshConstraintBudget,
     ) {
         const MAX_SELECTION_STATES: usize = 512;
 
@@ -8396,10 +8403,7 @@ impl MeshSelectionSearch<'_> {
         }
         let mut measured = quotient.clone();
         if !prepared {
-            if !self.propagate_forced_face_equations_from(&mut measured, None, budget) {
-                if budget.exhausted.get() {
-                    self.exhausted = true;
-                }
+            if !self.propagate_forced_face_equations_from(&mut measured, None, propagation_budget) {
                 return;
             }
             if !measured.merge_singleton_coordinate_roots(self.edge_candidates) {
@@ -8653,9 +8657,12 @@ impl MeshSelectionSearch<'_> {
             let changed_edges = changed_quotient_edges(&measured, &next_quotient);
             self.selected[face] = Some((assignment_index, directions));
             if self.selected_orientable() {
-                if let Some(next_quotient) =
-                    self.prepare_selected_branch(&next_quotient, &changed_edges, budget)
-                {
+                if let Some(next_quotient) = self.prepare_selected_branch(
+                    &next_quotient,
+                    &changed_edges,
+                    budget,
+                    propagation_budget,
+                ) {
                     if branching {
                         if self.states >= MAX_SELECTION_STATES {
                             self.exhausted = true;
@@ -8666,7 +8673,7 @@ impl MeshSelectionSearch<'_> {
                     }
                     // `prepare_selected_branch` has already applied the recursive
                     // entry preflight to this quotient.
-                    self.search_from_state(&next_quotient, true, budget);
+                    self.search_from_state(&next_quotient, true, budget, propagation_budget);
                 } else if budget.exhausted.get() {
                     self.exhausted = true;
                 }
@@ -11036,8 +11043,23 @@ mod motif_tests {
     }
 
     #[test]
-    fn partial_mesh_selection_defers_ambiguous_coordinate_closure() {
-        let assignments = Vec::new();
+    fn partial_mesh_selection_survives_optional_deduction_exhaustion() {
+        let assignments = vec![vec![MeshFaceBoundaryAssignment {
+            boundaries: vec![vec![
+                MeshBoundaryEdgeCandidate {
+                    edge: 0,
+                    start: 0,
+                    end: 1,
+                    reversed: None,
+                },
+                MeshBoundaryEdgeCandidate {
+                    edge: 1,
+                    start: 1,
+                    end: 0,
+                    reversed: None,
+                },
+            ]],
+        }]];
         let edge_candidates = vec![vec![[0, 1]], vec![[0, 1]]];
         let edge_rows = vec![
             EdgeRow {
@@ -11050,13 +11072,16 @@ mod motif_tests {
         let vertex_points = vec![[0.0; 3], [1.0, 0.0, 0.0]];
         let search = MeshSelectionSearch {
             assignments: &assignments,
-            possible_face_equations: Vec::new(),
-            possible_face_choices: Vec::new(),
-            face_work: Vec::new(),
+            possible_face_equations: possible_face_equations(&assignments),
+            possible_face_choices: possible_face_choices(
+                &assignments,
+                &possible_face_equations(&assignments),
+            ),
+            face_work: vec![Some(1)],
             edge_candidates: &edge_candidates,
             edge_rows: &edge_rows,
             vertex_points: &vertex_points,
-            selected: Vec::new(),
+            selected: vec![None],
             states: 0,
             solution: None,
             stop_after_first_solution: false,
@@ -11068,12 +11093,15 @@ mod motif_tests {
             .expect("initial quotient");
         quotient.merge(1, 2).expect("selected face corner");
         let budget = MeshConstraintBudget::new(100);
+        let propagation_budget = MeshConstraintBudget::new(0);
+        let changed_edges = HashSet::from([0]);
 
         let mut prepared = search
-            .prepare_selected_branch(&quotient, &HashSet::new(), &budget)
+            .prepare_selected_branch(&quotient, &changed_edges, &budget, &propagation_budget)
             .expect("partial quotient remains viable");
 
         assert_eq!(prepared.root_count(), 3);
+        assert!(propagation_budget.exhausted.get());
         assert!(!budget.exhausted.get());
     }
 
