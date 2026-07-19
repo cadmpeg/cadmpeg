@@ -85,6 +85,13 @@ can cross a 12-byte row boundary. The body-image binding is valid only when the
 wrapper word resolves to the exact compressed stream position and both aliases
 are non-zero.
 
+A primary feature body field reuses a segment body image when its object index
+equals either alias of exactly one partition or plain cached-body tuple. The
+relation retains the primary field and segment binding identities; those
+records retain the operation, stream classification and ordinal, object
+indices, and token offsets. No relation transfers when the object index matches
+zero or multiple segment bindings.
+
 A deltas stream applies to the nearest preceding partition stream in segment
 order with the same Parasolid schema token. Non-history compressed streams do
 not break this relation. A later partition begins a distinct body-history unit;

@@ -7258,6 +7258,8 @@ fn attach_native_object_model(
             &feature_simple_hole_repeated_scalar_lane_block_references,
         );
     let feature_body_references = crate::native::feature_body_references(&scan.container);
+    let feature_body_segment_uses =
+        crate::native::feature_body_segment_uses(&feature_body_references, &segment_body_bindings);
     let feature_body_reference_occurrences =
         crate::native::feature_body_reference_occurrences(&scan.container);
     let feature_input_blocks = crate::native::feature_input_blocks(&scan.container);
@@ -8522,6 +8524,9 @@ fn attach_native_object_model(
     }
     if !segment_body_bindings.is_empty() {
         namespace.set_arena("segment_body_bindings", &segment_body_bindings)?;
+    }
+    if !feature_body_segment_uses.is_empty() {
+        namespace.set_arena("feature_body_segment_uses", &feature_body_segment_uses)?;
     }
     if !segment_body_lineage_statuses.is_empty() {
         namespace.set_arena(

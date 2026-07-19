@@ -6781,6 +6781,32 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
 }
 
 #[test]
+fn feature_body_segment_uses_require_one_alias_pair() {
+    use crate::native::{feature_body_segment_uses, FeatureBodyReference, SegmentBodyBinding};
+    let reference = FeatureBodyReference {
+        id: "nx:feature-history:body-reference#0".into(),
+        operation_label: "operation#0".into(),
+        body_object_index: 11,
+        source_offset: 90,
+    };
+    let binding = SegmentBodyBinding {
+        id: "binding#0".into(),
+        stream_link: "stream#3".into(),
+        stream_ordinal: 3,
+        stream_kind: "plain".into(),
+        body_object_index: 10,
+        body_alias_object_index: 11,
+        stream_role: 19,
+        source_offset: 40,
+    };
+    let uses = feature_body_segment_uses(&[reference.clone()], &[binding.clone()]);
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].feature_body_reference, reference.id);
+    assert_eq!(uses[0].segment_body_binding, binding.id);
+    assert!(feature_body_segment_uses(&[reference], &[binding.clone(), binding]).is_empty());
+}
+
+#[test]
 fn feature_body_lineage_treats_segment_tuple_indices_as_one_identity() {
     use crate::native::{
         FeatureBodyReference, FeatureBooleanKind, FeatureBooleanOperation, FeatureOperationLabel,

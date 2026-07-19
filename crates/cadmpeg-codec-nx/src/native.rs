@@ -4271,6 +4271,17 @@ pub struct FeatureBodyReferenceOccurrence {
     pub source_offset: u64,
 }
 
+/// Unambiguous reuse of one segment body image by a primary feature body field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureBodySegmentUse {
+    /// Globally unique use identity.
+    pub id: String,
+    /// Primary field in the native `feature_body_references` arena.
+    pub feature_body_reference: String,
+    /// Segment image in the native `segment_body_bindings` arena.
+    pub segment_body_binding: String,
+}
+
 /// Operation-header input resolved to one bounded offset-only OM data block.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureInputBlock {
@@ -6180,6 +6191,35 @@ pub fn feature_body_reference_occurrences(
         }
     }
     references
+}
+
+/// Join primary feature body fields to exactly one segment body alias pair.
+pub fn feature_body_segment_uses(
+    references: &[FeatureBodyReference],
+    bindings: &[SegmentBodyBinding],
+) -> Vec<FeatureBodySegmentUse> {
+    references
+        .iter()
+        .filter_map(|reference| {
+            let matches = bindings
+                .iter()
+                .filter(|binding| {
+                    binding.body_object_index == reference.body_object_index
+                        || binding.body_alias_object_index == reference.body_object_index
+                })
+                .collect::<Vec<_>>();
+            let [binding] = matches.as_slice() else {
+                return None;
+            };
+            Some(FeatureBodySegmentUse {
+                id: reference
+                    .id
+                    .replacen("body-reference", "body-segment-use", 1),
+                feature_body_reference: reference.id.clone(),
+                segment_body_binding: binding.id.clone(),
+            })
+        })
+        .collect()
 }
 
 /// Return body objects whose latest decoded writer is not consumed by a later
