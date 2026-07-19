@@ -2719,7 +2719,7 @@ fn corroborated_cross_clause_triplet_intersection(
     shared_edge_sets: &[&[i64]],
 ) -> Option<i64> {
     let edge_sets = selector_contexts.iter().flat_map(|selector| {
-        let [Some(left), Some(right)] = &selector.clause_triplet_edge_slots else {
+        let [Some(left), Some(right)] = selector.clause_triplet_edge_slots.as_slice() else {
             return Vec::new();
         };
         left.iter()
@@ -15961,9 +15961,9 @@ pub(crate) fn edge_recipe_local_topology_references(
     reference_count: usize,
 ) -> Option<Vec<std::num::NonZeroU32>> {
     topology_recipe_references(
-        std::iter::once(structure.root).chain(structure.sides.iter().flat_map(|side| {
+        structure.sides.iter().flat_map(|side| {
             std::iter::once(side.header_value).chain(side.scalars.iter().copied())
-        })),
+        }),
         reference_count,
     )
 }
@@ -15972,25 +15972,46 @@ fn edge_recipe_structure_tail(
     program: &[i32],
 ) -> Option<crate::records::DesignEdgeRecipeStructure> {
     let (&root, mut remaining) = program.split_first()?;
-    remaining = recipe_delimiter(remaining)?;
-    let mut structures = Vec::new();
-    for (first, tail) in edge_recipe_counted_side_candidates(remaining) {
-        let Some(remaining) = recipe_delimiter(tail) else {
-            continue;
-        };
-        for (second, tail) in edge_recipe_counted_side_candidates(remaining) {
-            if matches!(tail, [] | [-1]) {
-                structures.push(crate::records::DesignEdgeRecipeStructure {
-                    root,
-                    sides: [first.clone(), second],
-                });
-            }
-        }
+    let side_count = usize::try_from(root).ok()?;
+    if side_count == 0 {
+        return None;
     }
+    remaining = recipe_delimiter(remaining)?;
+    let structures = edge_recipe_side_sequences(remaining, side_count)
+        .into_iter()
+        .filter_map(|(sides, tail)| {
+            matches!(tail, [] | [-1])
+                .then_some(crate::records::DesignEdgeRecipeStructure { root, sides })
+        })
+        .collect::<Vec<_>>();
     let [structure] = structures.as_slice() else {
         return None;
     };
     Some(structure.clone())
+}
+
+fn edge_recipe_side_sequences(
+    words: &[i32],
+    side_count: usize,
+) -> Vec<(Vec<DesignTopologyRecipeSide>, &[i32])> {
+    if side_count == 0 {
+        return vec![(Vec::new(), words)];
+    }
+    let mut out = Vec::new();
+    for (side, tail) in edge_recipe_counted_side_candidates(words) {
+        let remaining = if side_count == 1 {
+            tail
+        } else if let Some(remaining) = recipe_delimiter(tail) {
+            remaining
+        } else {
+            continue;
+        };
+        for (mut following, tail) in edge_recipe_side_sequences(remaining, side_count - 1) {
+            following.insert(0, side.clone());
+            out.push((following, tail));
+        }
+    }
+    out
 }
 
 fn recipe_delimiter(words: &[i32]) -> Option<&[i32]> {
@@ -16176,9 +16197,11 @@ fn edge_recipe_entries(words: &[i32]) -> Option<Vec<DesignTopologyRecipeEntry>> 
                 .then_some(DesignTopologyRecipeEntry {
                     selector,
                     boundary_edge_count,
-                    common_incident_edge_ordinal: (topology_triplets[0].incident_edge_ordinal
-                        == topology_triplets[1].incident_edge_ordinal)
-                        .then_some(topology_triplets[0].incident_edge_ordinal),
+                    common_incident_edge_ordinal: topology_triplets[0]
+                        .incident_edge_ordinal
+                        .filter(|ordinal| {
+                            topology_triplets[1].incident_edge_ordinal == Some(*ordinal)
+                        }),
                     topology_triplets,
                 })
         })
@@ -16202,28 +16225,28 @@ fn edge_recipe_topology_triplet(
     let outer = std::num::NonZeroU32::new(u32::try_from(*outer).ok()?)?;
     let middle = u32::try_from(*middle).ok()?;
     let vertex_ordinal = outer.get().checked_sub(1)?;
-    let (incident_side, incident_edge_ordinal) = if middle == outer.get() {
-        (
+    let incident = if middle == outer.get() {
+        Some((
             crate::records::DesignTopologyIncidentSide::Following,
             vertex_ordinal,
-        )
+        ))
     } else if middle.checked_add(1) == Some(outer.get()) {
-        (
+        Some((
             crate::records::DesignTopologyIncidentSide::Preceding,
             vertex_ordinal
                 .checked_add(boundary_edge_count.get())?
                 .checked_sub(1)?
                 % boundary_edge_count.get(),
-        )
+        ))
     } else {
-        return None;
+        None
     };
     Some(DesignTopologyRecipeTriplet {
         outer,
         middle,
         vertex_ordinal,
-        incident_edge_ordinal,
-        incident_side,
+        incident_edge_ordinal: incident.map(|(_, ordinal)| ordinal),
+        incident_side: incident.map(|(side, _)| side),
     })
 }
 
@@ -24225,8 +24248,8 @@ mod relation_tests {
         terminal_unresolved.recipe_selectors =
             vec![crate::records::DesignEdgeRecipeSelectorContext {
                 selector: 0,
-                clause_entries: [None, None],
-                clause_triplet_edge_slots: [None, None],
+                clause_entries: vec![None, None],
+                clause_triplet_edge_slots: vec![None, None],
                 incidence_matching_edge_slots: vec![18, 19],
                 unique_incidence_edge_slot: None,
                 boundary_count_matching_edge_slots: vec![18, 19],
@@ -24330,11 +24353,11 @@ mod relation_tests {
         );
         assert_eq!(
             structured.sides[0].entries[0].topology_triplets[0].incident_edge_ordinal,
-            3
+            Some(3)
         );
         assert_eq!(
             structured.sides[0].entries[0].topology_triplets[0].incident_side,
-            crate::records::DesignTopologyIncidentSide::Following
+            Some(crate::records::DesignTopologyIncidentSide::Following)
         );
         assert_eq!(
             structured.sides[0].entries[0].topology_triplets[1]
@@ -24348,11 +24371,11 @@ mod relation_tests {
         );
         assert_eq!(
             structured.sides[0].entries[0].topology_triplets[1].incident_edge_ordinal,
-            2
+            Some(2)
         );
         assert_eq!(
             structured.sides[0].entries[0].topology_triplets[1].incident_side,
-            crate::records::DesignTopologyIncidentSide::Preceding
+            Some(crate::records::DesignTopologyIncidentSide::Preceding)
         );
         assert_eq!(structured.sides[1].field_count.get(), 3);
         assert_eq!(structured.sides[1].header_value, 0);
@@ -24383,7 +24406,7 @@ mod relation_tests {
         assert_eq!(
             super::edge_recipe_local_topology_references(&structured, 3),
             Some(
-                [2, 2, 1, 1, 3]
+                [2, 1, 1, 3]
                     .into_iter()
                     .map(|value| std::num::NonZeroU32::new(value).unwrap())
                     .collect()
@@ -24396,7 +24419,7 @@ mod relation_tests {
         assert_eq!(
             super::edge_recipe_local_topology_references(&referenced_headers, 3),
             Some(
-                [2, 2, 2, 1, 3, 1, 3]
+                [2, 2, 1, 3, 1, 3]
                     .into_iter()
                     .map(|value| std::num::NonZeroU32::new(value).unwrap())
                     .collect()
@@ -24404,14 +24427,21 @@ mod relation_tests {
         );
         let wrap = super::edge_recipe_entries(&[1, 5, 1, 0, 1, 1, 1, 1]).unwrap();
         assert_eq!(wrap[0].topology_triplets[0].vertex_ordinal, 0);
-        assert_eq!(wrap[0].topology_triplets[0].incident_edge_ordinal, 4);
+        assert_eq!(wrap[0].topology_triplets[0].incident_edge_ordinal, Some(4));
         assert_eq!(wrap[0].common_incident_edge_ordinal, None);
         assert_eq!(
             wrap[0].topology_triplets[0].incident_side,
-            crate::records::DesignTopologyIncidentSide::Preceding
+            Some(crate::records::DesignTopologyIncidentSide::Preceding)
         );
         let common = super::edge_recipe_entries(&[1, 5, 1, 1, 1, 1, 1, 1]).unwrap();
         assert_eq!(common[0].common_incident_edge_ordinal, Some(0));
+        let underived = super::edge_recipe_entries(&[0, 6, 6, 4, 6, 1, 1, 1]).unwrap();
+        assert_eq!(underived[0].topology_triplets[0].vertex_ordinal, 5);
+        assert_eq!(
+            underived[0].topology_triplets[0].incident_edge_ordinal,
+            None
+        );
+        assert_eq!(underived[0].topology_triplets[0].incident_side, None);
         assert_eq!(
             super::edge_recipe_entries(&[3, 5, 1, 1, 1, 2, 1, 2]).unwrap()[0].selector,
             3
@@ -29268,8 +29298,8 @@ mod relation_tests {
 
         let selector = |selector, edges: &[i64]| DesignEdgeRecipeSelectorContext {
             selector,
-            clause_entries: [None, None],
-            clause_triplet_edge_slots: [None, None],
+            clause_entries: vec![None, None],
+            clause_triplet_edge_slots: vec![None, None],
             incidence_matching_edge_slots: edges.to_vec(),
             unique_incidence_edge_slot: (edges.len() == 1).then(|| edges[0]),
             boundary_count_matching_edge_slots: Vec::new(),
@@ -29422,8 +29452,8 @@ mod relation_tests {
             outer: std::num::NonZeroU32::new(3).unwrap(),
             middle: 2,
             vertex_ordinal: 2,
-            incident_edge_ordinal: 1,
-            incident_side: DesignTopologyIncidentSide::Preceding,
+            incident_edge_ordinal: Some(1),
+            incident_side: Some(DesignTopologyIncidentSide::Preceding),
         };
         let mut common = selector(0, &[]);
         common.clause_entries[0] = Some(DesignTopologyRecipeEntry {
@@ -29515,7 +29545,7 @@ mod relation_tests {
         );
         let mut cross_clause = selector(0, &[]);
         cross_clause.clause_triplet_edge_slots =
-            [Some([vec![18], vec![17, 19]]), Some([vec![20], vec![17]])];
+            vec![Some([vec![18], vec![17, 19]]), Some([vec![20], vec![17]])];
         assert_eq!(
             resolved_edge_candidate_intersection(
                 &[cross_clause.clone()],
@@ -29532,7 +29562,7 @@ mod relation_tests {
             None
         );
         cross_clause.clause_triplet_edge_slots =
-            [Some([vec![18], vec![17]]), Some([vec![18], vec![17]])];
+            vec![Some([vec![18], vec![17]]), Some([vec![18], vec![17]])];
         assert_eq!(
             resolved_edge_candidate_intersection(&[cross_clause], std::iter::empty::<&[i64]>(),),
             None

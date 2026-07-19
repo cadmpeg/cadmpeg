@@ -1688,12 +1688,16 @@ fn recipe_selector_candidates(
     selectors
         .iter()
         .map(|selector| {
-            let clause_entries = structure.sides.each_ref().map(|side| {
-                side.entries
-                    .iter()
-                    .find(|entry| entry.selector == *selector)
-                    .cloned()
-            });
+            let clause_entries = structure
+                .sides
+                .iter()
+                .map(|side| {
+                    side.entries
+                        .iter()
+                        .find(|entry| entry.selector == *selector)
+                        .cloned()
+                })
+                .collect::<Vec<_>>();
             let required = clause_entries
                 .iter()
                 .map(|entry| {
@@ -1714,22 +1718,28 @@ fn recipe_selector_candidates(
                 })
                 .map(|context| context.edge_slot)
                 .collect();
-            let clause_triplet_edge_slots = clause_entries.each_ref().map(|entry| {
-                entry.as_ref().map(|entry| {
-                    entry.topology_triplets.each_ref().map(|triplet| {
-                        contexts
-                            .iter()
-                            .filter(|context| {
-                                context.incident_loops.iter().any(|incident| {
-                                    incident.boundary_edge_count == entry.boundary_edge_count.get()
-                                        && incident.coedge_ordinal == triplet.incident_edge_ordinal
+            let clause_triplet_edge_slots = clause_entries
+                .iter()
+                .map(|entry| {
+                    entry.as_ref().map(|entry| {
+                        entry.topology_triplets.each_ref().map(|triplet| {
+                            contexts
+                                .iter()
+                                .filter(|context| {
+                                    context.incident_loops.iter().any(|incident| {
+                                        incident.boundary_edge_count
+                                            == entry.boundary_edge_count.get()
+                                            && triplet.incident_edge_ordinal.is_some_and(
+                                                |ordinal| incident.coedge_ordinal == ordinal,
+                                            )
+                                    })
                                 })
-                            })
-                            .map(|context| context.edge_slot)
-                            .collect()
+                                .map(|context| context.edge_slot)
+                                .collect()
+                        })
                     })
                 })
-            });
+                .collect::<Vec<_>>();
             let incidence_matching_edge_slots = contexts
                 .iter()
                 .filter(|context| {
@@ -1737,7 +1747,9 @@ fn recipe_selector_candidates(
                         entry.topology_triplets.iter().all(|triplet| {
                             context.incident_loops.iter().any(|incident| {
                                 incident.boundary_edge_count == entry.boundary_edge_count.get()
-                                    && incident.coedge_ordinal == triplet.incident_edge_ordinal
+                                    && triplet
+                                        .incident_edge_ordinal
+                                        .is_some_and(|ordinal| incident.coedge_ordinal == ordinal)
                             })
                         })
                     })
@@ -3313,15 +3325,15 @@ mod tests {
                     outer: std::num::NonZeroU32::new(1).unwrap(),
                     middle: 0,
                     vertex_ordinal: 0,
-                    incident_edge_ordinal: boundary_edge_count - 1,
-                    incident_side: crate::records::DesignTopologyIncidentSide::Preceding,
+                    incident_edge_ordinal: Some(boundary_edge_count - 1),
+                    incident_side: Some(crate::records::DesignTopologyIncidentSide::Preceding),
                 },
                 crate::records::DesignTopologyRecipeTriplet {
                     outer: std::num::NonZeroU32::new(1).unwrap(),
                     middle: 1,
                     vertex_ordinal: 0,
-                    incident_edge_ordinal: 0,
-                    incident_side: crate::records::DesignTopologyIncidentSide::Following,
+                    incident_edge_ordinal: Some(0),
+                    incident_side: Some(crate::records::DesignTopologyIncidentSide::Following),
                 },
             ],
         };
@@ -3337,7 +3349,7 @@ mod tests {
         };
         let structure = crate::records::DesignEdgeRecipeStructure {
             root: 2,
-            sides: [
+            sides: vec![
                 side(vec![entry(1, 1), entry(2, 1)]),
                 side(vec![entry(1, 2)]),
             ],
