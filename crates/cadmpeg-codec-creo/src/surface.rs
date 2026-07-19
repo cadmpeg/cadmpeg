@@ -654,7 +654,8 @@ pub struct OutlinePlane {
     pub origin: [f64; 3],
     /// Positive model-space basis normal of the held coordinate.
     pub normal: [f64; 3],
-    /// Deterministic positive in-plane reference direction.
+    /// Deterministic positive in-plane direction for carrier constructions.
+    /// The outline does not define the surface parameter chart.
     pub u_axis: [f64; 3],
     /// Byte offset of the outline body.
     pub offset: usize,
@@ -786,8 +787,8 @@ pub fn frame_bound_outline_planes(
     result
 }
 
-/// Derive outline planes and use complete support frames as the native surface
-/// chart for every identity they resolve.
+/// Derive outline plane equations and retain complete support-frame directions
+/// for carrier constructions when available.
 #[must_use]
 pub fn placed_outline_planes(
     envelopes: &[PlaneEnvelopeRecord],

@@ -1035,7 +1035,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     payload.extend_from_slice(&[0x46, 0x08, 0, 0, 0, 0, 0, 0, 0x0f, 0xe4]);
     payload.push(0xe3);
     let data = build_prt("c", &[("VisibGeom", payload)]);
-    let expected_offset = container::scan_bytes(data.clone()).outline_planes[0].offset as u64;
+    let expected_offset = container::scan_bytes(data.clone()).plane_local_systems[0].offset as u64;
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let namespace = result.ir.native.namespace("creo").unwrap();
     assert_eq!(
@@ -1061,7 +1061,7 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
     assert_eq!(
         surface.geometry,
         cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
+            origin: cadmpeg_ir::math::Point3::new(3.0, 0.0, 1.0),
             normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
             u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
         }
@@ -1071,14 +1071,14 @@ fn decode_transfers_axis_aligned_plane_from_outline() {
         surface.id.as_str(),
         "creo:VisibGeom",
         expected_offset,
-        "plane_outline_held_coordinate",
+        "plane_local_system",
         Exactness::Derived,
     );
     assert!(result.report.geometry_transferred);
 }
 
 #[test]
-fn decode_transfers_axis_aligned_plane_from_zero_outline() {
+fn decode_withholds_axis_aligned_surface_without_parameter_chart() {
     let mut payload = visibgeom_payload(1, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
     payload.extend_from_slice(&[0x0f; 10]);
@@ -1093,18 +1093,7 @@ fn decode_transfers_axis_aligned_plane_from_zero_outline() {
     )
     .expect("decode");
 
-    let [surface] = result.ir.model.surfaces.as_slice() else {
-        panic!("one plane");
-    };
-    assert_eq!(
-        surface.geometry,
-        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
-            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
-            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0),
-            u_axis: cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        }
-    );
-    assert!(result.report.geometry_transferred);
+    assert!(result.ir.model.surfaces.is_empty());
 }
 
 #[test]

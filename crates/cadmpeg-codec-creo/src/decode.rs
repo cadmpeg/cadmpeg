@@ -12952,30 +12952,22 @@ fn schema_feature_definition(
         }
     }
     if schema_class == 923 {
+        let placed = placed_planes(scan);
         let planes = scan
             .surface_rows
             .iter()
             .filter(|row| {
                 row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Plane
             })
-            .filter_map(|row| {
-                let id = SurfaceId(format!("creo:visibgeom:surface#{}", row.id));
-                ir.model.surfaces.iter().find(|surface| surface.id == id)
-            })
+            .filter_map(|row| placed.get(&row.id))
             .collect::<Vec<_>>();
         if let [plane] = planes.as_slice() {
-            if let SurfaceGeometry::Plane {
-                origin,
+            let normal = Vector3::new(plane.normal[0], plane.normal[1], plane.normal[2]);
+            return IrFeatureDefinition::DatumPlane {
+                origin: Point3::new(plane.origin[0], plane.origin[1], plane.origin[2]),
                 normal,
-                u_axis,
-            } = &plane.geometry
-            {
-                return IrFeatureDefinition::DatumPlane {
-                    origin: *origin,
-                    normal: *normal,
-                    u_axis: *u_axis,
-                };
-            }
+                u_axis: cadmpeg_ir::geometry::derive_reference_direction(normal),
+            };
         }
     }
     IrFeatureDefinition::Native {
@@ -21406,8 +21398,15 @@ fn agreed_plane(candidates: &[PlaneEquation]) -> Option<PlaneEquation> {
 #[derive(Clone, Copy)]
 struct PlaneCandidate {
     equation: PlaneEquation,
-    u_axis: Option<[f64; 3]>,
+    chart: Option<PlaneChart>,
     offset: usize,
+}
+
+#[derive(Clone, Copy)]
+struct PlaneChart {
+    origin: [f64; 3],
+    normal: [f64; 3],
+    u_axis: [f64; 3],
 }
 
 fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation, [f64; 3], usize)> {
@@ -21419,45 +21418,50 @@ fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation,
     )?;
     let charts = candidates
         .iter()
-        .map(|candidate| {
-            let normal = normalized(candidate.equation.normal)?;
-            let u_axis = normalized(candidate.u_axis?)?;
+        .filter_map(|candidate| {
+            let chart = candidate.chart?;
+            let normal = normalized(chart.normal)?;
+            let u_axis = normalized(chart.u_axis)?;
             (dot(normal, u_axis).abs() <= 1e-9).then_some((
+                chart.origin,
                 normal,
                 u_axis,
                 candidate.offset,
-                candidate.equation.origin,
             ))
         })
-        .collect::<Option<Vec<_>>>()?;
-    let representative = charts.iter().min_by_key(|(_, _, offset, _)| *offset)?;
+        .collect::<Vec<_>>();
+    let representative = charts.iter().min_by_key(|(_, _, _, offset)| *offset)?;
     charts
         .iter()
-        .all(|(normal, u_axis, _, _)| {
-            representative
-                .0
+        .all(|(origin, normal, u_axis, _)| {
+            representative.0.iter().zip(origin).all(|(left, right)| {
+                (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0)
+            }) && representative
+                .1
                 .iter()
                 .zip(normal)
                 .all(|(left, right)| (left - right).abs() <= 1e-9)
                 && representative
-                    .1
+                    .2
                     .iter()
                     .zip(u_axis)
                     .all(|(left, right)| (left - right).abs() <= 1e-9)
         })
         .then_some((
             PlaneEquation {
-                origin: representative.3,
-                normal: representative.0,
+                origin: representative.0,
+                normal: representative.1,
             },
-            representative.1,
             representative.2,
+            representative.3,
         ))
 }
 
 #[cfg(test)]
 mod plane_reconciliation_tests {
-    use super::{agreed_plane, agreed_plane_surface, dot, PlaneCandidate, PlaneEquation};
+    use super::{
+        agreed_plane, agreed_plane_surface, dot, PlaneCandidate, PlaneChart, PlaneEquation,
+    };
 
     #[test]
     fn reconciles_equivalent_plane_frames_and_rejects_conflicts() {
@@ -21486,19 +21490,28 @@ mod plane_reconciliation_tests {
             origin: [0.0, 0.0, 3.0],
             normal: [0.0, 0.0, 1.0],
         };
-        let candidate = |u_axis, offset| PlaneCandidate {
+        let candidate = |origin, u_axis, offset| PlaneCandidate {
             equation: plane,
-            u_axis: Some(u_axis),
+            chart: Some(PlaneChart {
+                origin,
+                normal: plane.normal,
+                u_axis,
+            }),
             offset,
         };
         assert!(agreed_plane_surface(&[
-            candidate([1.0, 0.0, 0.0], 20),
-            candidate([2.0, 0.0, 0.0], 10),
+            candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 20),
+            candidate([0.0, 0.0, 3.0], [2.0, 0.0, 0.0], 10),
         ])
         .is_some_and(|(_, u_axis, offset)| u_axis == [1.0, 0.0, 0.0] && offset == 10));
         assert!(agreed_plane_surface(&[
-            candidate([1.0, 0.0, 0.0], 10),
-            candidate([0.0, 1.0, 0.0], 20),
+            candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 10),
+            candidate([0.0, 0.0, 3.0], [0.0, 1.0, 0.0], 20),
+        ])
+        .is_none());
+        assert!(agreed_plane_surface(&[
+            candidate([0.0, 0.0, 3.0], [1.0, 0.0, 0.0], 10),
+            candidate([1.0, 0.0, 3.0], [1.0, 0.0, 0.0], 20),
         ])
         .is_none());
     }
@@ -21510,16 +21523,21 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
         let (Some(origin), Some(normal)) = (frame.origin, frame.normal) else {
             continue;
         };
-        if !is_axis_aligned(normal) {
-            candidates
-                .entry(frame.surface_id)
-                .or_default()
-                .push(PlaneCandidate {
-                    equation: PlaneEquation { origin, normal },
-                    u_axis: frame.u_axis,
-                    offset: frame.offset,
-                });
-        }
+        let Some(u_axis) = frame.u_axis else {
+            continue;
+        };
+        candidates
+            .entry(frame.surface_id)
+            .or_default()
+            .push(PlaneCandidate {
+                equation: PlaneEquation { origin, normal },
+                chart: Some(PlaneChart {
+                    origin,
+                    normal,
+                    u_axis,
+                }),
+                offset: frame.offset,
+            });
     }
     for outline in &scan.outline_planes {
         candidates
@@ -21530,7 +21548,7 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                     origin: outline.origin,
                     normal: outline.normal,
                 },
-                u_axis: Some(outline.u_axis),
+                chart: None,
                 offset: outline.offset,
             });
     }
