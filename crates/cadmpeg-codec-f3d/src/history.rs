@@ -1441,10 +1441,15 @@ pub(crate) fn bind_edge_operand_history_candidates(
                 ))
             })
             .collect();
-        operand.recipe_selectors = recipe_selector_candidates(
-            operand.recipe_structure.as_ref(),
-            &operand.changed_boundary_edge_contexts,
-        );
+        let changed_edge_contexts = topology
+            .edges
+            .iter()
+            .copied()
+            .filter(|edge| changed_edges.contains(edge))
+            .map(|edge| historical_edge_context(edge, topology))
+            .collect::<Vec<_>>();
+        operand.recipe_selectors =
+            recipe_selector_candidates(operand.recipe_structure.as_ref(), &changed_edge_contexts);
         operand.resolved_edge_slot = crate::design::resolve_edge_operand_candidates(operand);
         if operand.resolved_edge_slot.is_none()
             && stream.is_some_and(|stream| {
