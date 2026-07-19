@@ -5588,6 +5588,7 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
         .extend_from_slice(b"topol_ref_data\0\x07\x08\x04\x01\xf6\x0a\x0b\x07\x07\0\0\xe3\xe1\xe3");
     let mut invisible = visibgeom_payload(1, 0);
     invisible.extend_from_slice(&[8, 0x26, 5, 0x01, 0, 0, 0xe4, 0xe3]);
+    invisible.extend_from_slice(b"srf_prim_ptr(cylinder)\0\xe0\x01radius\0\xe4");
     invisible.extend_from_slice(b"crv_array\0crv_id\0\x07type\0\x09feat_id\0\x05");
     invisible
         .extend_from_slice(b"topol_ref_data\0\x07\x09\x05\x01\xf6\x0c\x0d\x07\x07\0\0\xe3\xe1\xe3");
@@ -5625,6 +5626,14 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
         [(8, 5)]
     );
     assert_eq!(scan.curve_prototypes.len(), 1);
+    assert_eq!(scan.nonvisible_surface_parameters.len(), 1);
+    assert_eq!(scan.nonvisible_surface_parameters[0].surface_id, 8);
+    assert_eq!(scan.nonvisible_surface_parameters[0].scalar_values, [1.0]);
+    assert_eq!(scan.nonvisible_surface_prototype_records.len(), 1);
+    assert_eq!(
+        scan.nonvisible_surface_prototype_records[0].declared_family,
+        "cylinder"
+    );
     assert_eq!(scan.nonvisible_curve_prototypes.len(), 1);
     assert_eq!(scan.nonvisible_curve_prototypes[0].feature_id, Some(5));
     assert_eq!(scan.curve_parameters.len(), 1);
@@ -5643,6 +5652,17 @@ fn visible_geometry_namespace_excludes_invisible_and_depdb_rows() {
     assert_eq!(rows[0].id, "creo:novisgeom:surface_row#8");
     assert_eq!(rows[0].fields["source_section"], "NovisGeom");
     let namespace = result.ir.native.namespace("creo").unwrap();
+    let surface_parameters = &namespace.arenas["nonvisible_surface_parameters"];
+    assert_eq!(
+        surface_parameters[0].id,
+        "creo:novisgeom:surface_parameter#8"
+    );
+    assert_eq!(surface_parameters[0].fields["slots"][0]["value"], 1.0);
+    let surface_prototypes = &namespace.arenas["nonvisible_surface_prototypes"];
+    assert!(surface_prototypes[0]
+        .id
+        .starts_with("creo:novisgeom:surface_prototype#"));
+    assert_eq!(surface_prototypes[0].fields["source_section"], "NovisGeom");
     let prototypes = &namespace.arenas["nonvisible_curve_prototypes"];
     assert_eq!(prototypes[0].fields["curve_id"], 7);
     assert_eq!(prototypes[0].fields["source_section"], "NovisGeom");

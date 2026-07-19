@@ -1968,11 +1968,15 @@ fn surface_named_parameter_record(
     }
 }
 
-fn surface_prototype_records(scan: &ContainerScan) -> Vec<CreoSurfacePrototypeRecord> {
-    scan.surface_prototype_records
+fn surface_prototype_records(
+    scan: &ContainerScan,
+    records: &[crate::surface::SurfacePrototypeRecord],
+    id_namespace: &str,
+) -> Vec<CreoSurfacePrototypeRecord> {
+    records
         .iter()
         .map(|record| CreoSurfacePrototypeRecord {
-            id: format!("creo:visibgeom:surface_prototype#{}", record.offset),
+            id: format!("creo:{id_namespace}:surface_prototype#{}", record.offset),
             declared_family: record.declared_family.clone(),
             family: surface_prototype_family_name(&record.family),
             parameters: record
@@ -29398,7 +29402,8 @@ fn build_ir(
         namespace.version = 1;
         namespace.set_arena("cross_section_surface_rows", &cross_section_surface_rows)?;
     }
-    let surface_prototypes = surface_prototype_records(scan);
+    let surface_prototypes =
+        surface_prototype_records(scan, &scan.surface_prototype_records, "visibgeom");
     if !surface_prototypes.is_empty() {
         for record in &surface_prototypes {
             annotate(
@@ -29413,6 +29418,29 @@ fn build_ir(
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("surface_prototypes", &surface_prototypes)?;
+    }
+    let nonvisible_surface_prototypes = surface_prototype_records(
+        scan,
+        &scan.nonvisible_surface_prototype_records,
+        "novisgeom",
+    );
+    if !nonvisible_surface_prototypes.is_empty() {
+        for record in &nonvisible_surface_prototypes {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.offset as u64,
+                "nonvisible_surface_prototype_record",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "nonvisible_surface_prototypes",
+            &nonvisible_surface_prototypes,
+        )?;
     }
     let tabulated_cylinder_curve_replays = tabulated_cylinder_curve_replay_records(scan);
     if !tabulated_cylinder_curve_replays.is_empty() {
@@ -29679,6 +29707,30 @@ fn build_ir(
         let namespace = ir.native.namespace_mut("creo");
         namespace.version = 1;
         namespace.set_arena("surface_parameters", &surface_parameters)?;
+    }
+    let nonvisible_surface_parameters = surface_parameter_records(
+        scan,
+        &scan.nonvisible_surface_rows,
+        &scan.nonvisible_surface_parameters,
+        "novisgeom",
+    );
+    if !nonvisible_surface_parameters.is_empty() {
+        for record in &nonvisible_surface_parameters {
+            annotate(
+                &mut annotations,
+                &record.id,
+                &record.source_section,
+                record.body_offset as u64,
+                "nonvisible_surface_parameter_frame",
+                Exactness::ByteExact,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena(
+            "nonvisible_surface_parameters",
+            &nonvisible_surface_parameters,
+        )?;
     }
     let cross_section_surface_parameters = surface_parameter_records(
         scan,

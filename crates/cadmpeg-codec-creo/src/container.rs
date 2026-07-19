@@ -225,6 +225,9 @@ pub struct ContainerScan {
     pub cross_section_surface_rows: Vec<SurfaceRow>,
     /// Bounded scalar parameter bodies from positional surface rows.
     pub surface_parameters: Vec<SurfaceParameterRecord>,
+    /// Bounded scalar parameter bodies from the separate invisible and
+    /// construction surface namespace.
+    pub nonvisible_surface_parameters: Vec<SurfaceParameterRecord>,
     /// Bounded scalar parameter bodies from DEPDB cross-section surface rows.
     pub cross_section_surface_parameters: Vec<SurfaceParameterRecord>,
     /// Cubic curve replay records bound to following tabulated-cylinder rows.
@@ -245,6 +248,9 @@ pub struct ContainerScan {
     pub surface_prototypes: Vec<SurfacePrototype>,
     /// Bounded named `srf_prim_ptr(<kind>)` parameter records.
     pub surface_prototype_records: Vec<SurfacePrototypeRecord>,
+    /// Bounded named surface-prototype records from the separate invisible
+    /// and construction geometry namespace.
+    pub nonvisible_surface_prototype_records: Vec<SurfacePrototypeRecord>,
     /// Labeled curve prototypes from geometry sections. The curve body and
     /// its analytic interpretation are decoded separately.
     pub curve_prototypes: Vec<CurvePrototype>,
@@ -1650,6 +1656,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let nonvisible_surface_rows = surface_rows(&data, &nonvisible_geometry_sections);
     let surface_rows = surface_rows(&data, &model_geometry_sections);
     let cross_section_surface_rows = cross_section_surface_rows(&data, &sections);
+    let nonvisible_surface_parameters = surface_parameters(&data, &nonvisible_geometry_sections);
     let surface_parameters = surface_parameters(&data, &model_geometry_sections);
     let cross_section_surface_parameters = cross_section_surface_parameters(&data, &sections);
     let tabulated_cylinder_curve_replays =
@@ -1664,6 +1671,8 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         &cross_section_plane_local_systems,
     );
     let surface_prototypes = surface_prototypes(&data, &model_geometry_sections);
+    let nonvisible_surface_prototype_records =
+        surface_prototype_records(&data, &nonvisible_geometry_sections);
     let surface_prototype_records = surface_prototype_records(&data, &model_geometry_sections);
     let nonvisible_curve_prototypes = curve_prototypes(&data, &nonvisible_geometry_sections);
     let curve_prototypes = curve_prototypes(&data, &model_geometry_sections);
@@ -1793,6 +1802,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         nonvisible_surface_rows,
         cross_section_surface_rows,
         surface_parameters,
+        nonvisible_surface_parameters,
         cross_section_surface_parameters,
         tabulated_cylinder_curve_replays,
         plane_local_systems,
@@ -1803,6 +1813,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         cross_section_outline_planes,
         surface_prototypes,
         surface_prototype_records,
+        nonvisible_surface_prototype_records,
         curve_prototypes,
         nonvisible_curve_prototypes,
         cross_section_curve_prototypes,
