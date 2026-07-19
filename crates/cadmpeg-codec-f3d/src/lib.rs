@@ -994,9 +994,12 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             })
             .is_some_and(|(scope, fixed)| {
                 let radius_count = fixed.radii.len();
+                let intermediate_count = fixed.intermediate_parameters.len();
+                let valid_law_shape = (radius_count == 1 && intermediate_count == 0)
+                    || (radius_count >= 2 && radius_count == intermediate_count.saturating_add(2));
                 fixed.tangency_weight.is_finite()
                     && fixed.tangency_weight > 0.0
-                    && (1..=2).contains(&radius_count)
+                    && valid_law_shape
                     && fixed
                         .radii
                         .iter()
@@ -1004,12 +1007,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && fixed.radii.iter().any(|radius| *radius > 0.0)
                     && fixed.radius_record_indexes.len() == radius_count
                     && fixed.radius_offsets.len() == radius_count
+                    && fixed.intermediate_parameter_record_indexes.len() == intermediate_count
+                    && fixed.intermediate_parameter_offsets.len() == intermediate_count
+                    && fixed
+                        .intermediate_parameters
+                        .iter()
+                        .all(|parameter| parameter.is_finite() && (0.0..1.0).contains(parameter))
+                    && fixed
+                        .intermediate_parameters
+                        .windows(2)
+                        .all(|parameters| parameters[0] < parameters[1])
                     && native.design_parameter_owners.iter().all(|owner| {
                         design_stream(&owner.id) != native_stream
                             || owner.scope_record_index != scope.record_index
                     })
                     && std::iter::once(fixed.tangency_weight_record_index)
                         .chain(fixed.radius_record_indexes.iter().copied())
+                        .chain(fixed.intermediate_parameter_record_indexes.iter().copied())
                         .all(|record_index| {
                             scope
                                 .reference_members
@@ -1127,6 +1141,65 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut expected_edge_identity_operands = native.design_edge_identity_operands.clone();
+    history::bind_edge_identity_history(
+        &mut expected_edge_identity_operands,
+        &native.design_construction_operand_identities,
+        &native.design_parameter_scopes,
+        &native.asm_histories,
+    );
+    let expected_edge_identity_operands = expected_edge_identity_operands
+        .iter()
+        .map(|operand| (operand.id.as_str(), operand))
+        .collect::<HashMap<_, _>>();
+    let mut edge_identity_slots = HashSet::new();
+    let mut edge_identity_records = HashSet::new();
+    for operand in &native.design_edge_identity_operands {
+        let native_stream = design_stream(&operand.id);
+        let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
+        let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
+        let header = records_by_index.get(&(native_stream, operand.record_index));
+        let valid = operand.class_tag.len() == 3
+            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && scope.is_some_and(|scope| {
+                matches!(
+                    design::design_feature_family(&scope.kind),
+                    Some(
+                        design::DesignFeatureFamily::Fillet | design::DesignFeatureFamily::Chamfer
+                    )
+                )
+            })
+            && group.is_some_and(|group| {
+                group.scope_record_index == operand.scope_record_index
+                    && usize::try_from(operand.group_member_ordinal)
+                        .ok()
+                        .and_then(|ordinal| group.members.get(ordinal))
+                        == Some(&operand.record_index)
+            })
+            && header.is_some_and(|header| {
+                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+            })
+            && operand.local_id_offset == operand.byte_offset.saturating_add(24)
+            && operand.asset_id_offset == operand.byte_offset.saturating_add(42)
+            && operand.context_id_offset == operand.asset_id_offset.saturating_add(76)
+            && valid_design_guid(&operand.asset_id)
+            && valid_design_guid(&operand.context_id)
+            && expected_edge_identity_operands.get(operand.id.as_str()) == Some(&operand)
+            && edge_identity_slots.insert((
+                native_stream,
+                operand.group_record_index,
+                operand.group_member_ordinal,
+            ))
+            && edge_identity_records.insert((native_stream, operand.record_index));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design edge identity operand has an invalid fixed frame".into(),
+                entity: Some(operand.id.clone()),
+            });
+        }
+    }
     for group in &native.design_construction_operand_groups {
         let native_stream = design_stream(&group.id);
         let mut identity_members = native
@@ -1146,6 +1219,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .all(|(ordinal, operand)| {
                     usize::try_from(operand.group_member_ordinal) == Ok(ordinal)
                         && group.members.get(ordinal) == Some(&operand.record_index)
+                        && edge_identity_records.contains(&(native_stream, operand.record_index))
                 });
         if !operand_identity_groups.contains(&(native_stream, group.record_index))
             && !has_exact_identity_members
@@ -1335,7 +1409,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     }
     let mut edge_operand_slots = HashSet::new();
     let mut edge_operand_records = HashSet::new();
-    let mut edge_operand_scopes = HashSet::new();
     let mut expected_edge_operands = native.design_edge_operands.clone();
     history::bind_edge_operand_history_candidates(
         &mut expected_edge_operands,
@@ -1413,9 +1486,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 operand.scope_reference_ordinal,
             ))
             && edge_operand_records.insert((native_stream, operand.record_index));
-        if valid {
-            edge_operand_scopes.insert((native_stream, operand.scope_record_index));
-        } else {
+        if !valid {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
@@ -1430,11 +1501,32 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Chamfer"))
     {
         let native_stream = design_stream(&scope.id);
-        if !edge_operand_scopes.contains(&(native_stream, scope.record_index)) {
+        let groups = native
+            .design_construction_operand_groups
+            .iter()
+            .filter(|group| {
+                design_stream(&group.id) == native_stream
+                    && group.scope_record_index == scope.record_index
+            })
+            .collect::<Vec<_>>();
+        let complete = !groups.is_empty()
+            && groups.iter().all(|group| {
+                let recipe_backed = group
+                    .members
+                    .iter()
+                    .all(|member| edge_operand_records.contains(&(native_stream, *member)));
+                let identity_backed = group
+                    .members
+                    .iter()
+                    .all(|member| edge_identity_records.contains(&(native_stream, *member)));
+                recipe_backed || identity_backed
+            });
+        if !complete {
             findings.push(Finding {
                 check: Check::NativeLinks,
                 severity: Severity::Error,
-                message: "Fusion Design edge-treatment scope has no edge recipe operand".into(),
+                message: "Fusion Design edge-treatment group has incomplete selection operands"
+                    .into(),
                 entity: Some(scope.id.clone()),
             });
         }
@@ -1464,15 +1556,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
     let face_groups_by_index = native
         .design_construction_operand_groups
         .iter()
-        .filter(|group| {
-            matches!(
-                group.extrude_role,
-                Some(
-                    records::DesignExtrudeOperandRole::Profile
-                        | records::DesignExtrudeOperandRole::Faces
-                )
-            )
-        })
         .map(|group| ((design_stream(&group.id), group.record_index), group))
         .collect::<HashMap<_, _>>();
     let mut expected_face_operands = native.design_face_operands.clone();
@@ -1559,6 +1642,42 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     .chain(std::iter::once(operand.next_byte_offset)),
             )
             .collect::<Vec<_>>();
+        let valid_program = match design::face_recipe_program_kind(&operand.recipe_program) {
+            Some(design::FaceRecipeProgramKind::Terminal) => {
+                operand.recipe_node_offsets.is_empty() && operand.recipe_nodes.is_empty()
+            }
+            Some(design::FaceRecipeProgramKind::Counted { .. }) => {
+                operand.recipe_node_offsets == expected_node_offsets
+                    && operand.recipe_nodes.len() == expected_nodes.len()
+                    && operand.recipe_nodes.iter().zip(expected_nodes).all(
+                        |(node, (start, end))| {
+                            node.byte_offset == start
+                                && node.end_byte_offset == end
+                                && node.program.get(0..3) == Some(&[-1, -1, 2])
+                                && node.recipe_structure
+                                    == node
+                                        .program
+                                        .get(3..)
+                                        .and_then(design::face_recipe_structure)
+                                && u64::try_from(node.program.len()).ok().is_some_and(|words| {
+                                    start.saturating_add(words.saturating_mul(4)) == end
+                                })
+                        },
+                    )
+                    && (if operand.recipe_nodes.is_empty() {
+                        operand.recipe_node_offsets.is_empty()
+                    } else {
+                        operand
+                            .recipe_nodes
+                            .iter()
+                            .flat_map(|node| node.program.iter().copied())
+                            .eq(operand.recipe_program.iter().copied().skip(3))
+                            && operand.recipe_node_offsets.first()
+                                == Some(&operand.recipe_program_offset.saturating_add(12))
+                    })
+            }
+            None => false,
+        };
         let expected_history = expected_face_operands.get(operand.id.as_str());
         let valid = operand.class_tag.len() == 3
             && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
@@ -1574,6 +1693,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         design::DesignFeatureFamily::Extrude
                             | design::DesignFeatureFamily::OffsetFaces
                             | design::DesignFeatureFamily::Thicken
+                            | design::DesignFeatureFamily::Split
                     )
                 ) && match (operand.group_record_index, operand.group_member_ordinal) {
                     (Some(group_record_index), Some(group_member_ordinal)) => {
@@ -1593,16 +1713,22 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         })
                     }
                     (None, None) => {
-                        matches!(
-                            design::design_feature_family(&scope.kind),
-                            Some(
-                                design::DesignFeatureFamily::OffsetFaces
-                                    | design::DesignFeatureFamily::Thicken
-                            )
-                        ) && usize::try_from(operand.scope_reference_ordinal)
+                        let family = design::design_feature_family(&scope.kind);
+                        let direct_member = usize::try_from(operand.scope_reference_ordinal)
                             .ok()
                             .and_then(|ordinal| scope.reference_members.get(ordinal))
-                            == Some(&operand.record_index)
+                            == Some(&operand.record_index);
+                        direct_member
+                            && match family {
+                                Some(
+                                    design::DesignFeatureFamily::OffsetFaces
+                                    | design::DesignFeatureFamily::Thicken,
+                                ) => true,
+                                Some(design::DesignFeatureFamily::Split) => {
+                                    operand.scope_reference_ordinal == 1
+                                }
+                                _ => false,
+                            }
                     }
                     _ => false,
                 }
@@ -1625,41 +1751,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 records::ConstructionRecipeKind::Face
                     | records::ConstructionRecipeKind::BoundedFace
             )
-            && operand.recipe_program.len() >= 3
-            && operand.recipe_program.get(0..2) == Some(&[0, -1])
-            && usize::try_from(operand.recipe_program[2])
-                .ok()
-                .is_some_and(|count| count > 0 && count <= 100_000)
-            && operand.recipe_node_offsets == expected_node_offsets
-            && operand.recipe_nodes.len() == expected_nodes.len()
-            && operand
-                .recipe_nodes
-                .iter()
-                .zip(expected_nodes)
-                .all(|(node, (start, end))| {
-                    node.byte_offset == start
-                        && node.end_byte_offset == end
-                        && node.program.get(0..3) == Some(&[-1, -1, 2])
-                        && node.recipe_structure
-                            == node
-                                .program
-                                .get(3..)
-                                .and_then(design::face_recipe_structure)
-                        && u64::try_from(node.program.len()).ok().is_some_and(|words| {
-                            start.saturating_add(words.saturating_mul(4)) == end
-                        })
-                })
-            && (if operand.recipe_nodes.is_empty() {
-                operand.recipe_node_offsets.is_empty()
-            } else {
-                operand
-                    .recipe_nodes
-                    .iter()
-                    .flat_map(|node| node.program.iter().copied())
-                    .eq(operand.recipe_program.iter().copied().skip(3))
-                    && operand.recipe_node_offsets.first()
-                        == Some(&operand.recipe_program_offset.saturating_add(12))
-            })
+            && valid_program
             && operand.recipe_program_offset
                 == recipe.map_or(u64::MAX, |recipe| {
                     recipe

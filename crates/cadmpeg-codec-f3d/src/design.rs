@@ -15813,6 +15813,24 @@ pub(crate) fn face_recipe_structure(
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FaceRecipeProgramKind {
+    Terminal,
+    Counted { header_value: usize },
+}
+
+pub(crate) fn face_recipe_program_kind(program: &[i32]) -> Option<FaceRecipeProgramKind> {
+    if program == [0, -1] {
+        return Some(FaceRecipeProgramKind::Terminal);
+    }
+    if !matches!(program.get(0..2), Some([0, -1 | 0])) {
+        return None;
+    }
+    let header_value = usize::try_from(*program.get(2)?).ok()?;
+    (header_value > 0 && header_value <= 100_000)
+        .then_some(FaceRecipeProgramKind::Counted { header_value })
+}
+
 fn topology_recipe_references(
     words: impl IntoIterator<Item = i32>,
     reference_count: usize,
@@ -16014,17 +16032,7 @@ fn parse_face_operand(
             )
         })
         .collect::<Vec<_>>();
-    if !matches!(recipe_program.get(0..2), Some([0, -1 | 0])) {
-        return None;
-    }
-    let terminal_program = recipe_program.as_slice() == [0, -1];
-    if !terminal_program
-        && usize::try_from(*recipe_program.get(2)?)
-            .ok()
-            .is_none_or(|header_value| header_value == 0 || header_value > 100_000)
-    {
-        return None;
-    }
+    let program_kind = face_recipe_program_kind(&recipe_program)?;
     let recipe_program_offset = u64::try_from(recipe_program_at).ok()?;
     let recipe_node_indices = recipe_program
         .windows(3)
@@ -16035,7 +16043,7 @@ fn parse_face_operand(
     if !recipe_node_indices.is_empty() && recipe_node_indices.first() != Some(&3) {
         return None;
     }
-    if terminal_program && !recipe_node_indices.is_empty() {
+    if program_kind == FaceRecipeProgramKind::Terminal && !recipe_node_indices.is_empty() {
         return None;
     }
     let recipe_node_offsets = recipe_node_indices
@@ -19276,8 +19284,8 @@ mod relation_tests {
         exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
         exact_fixed_fillet_parameters, exact_offset_constraint, exact_path_feature_construction,
         exact_solid_primitive, exact_work_plane_frame, exact_work_point_position,
-        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
-        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        expression_identifiers, face_recipe_program_kind, feature_input_topology_id,
+        find_dimension_locus_groups, find_dimension_locus_pair, find_dimension_null_locus_pair,
         historical_profile_face_candidates, identity_matrix, indexed_record_containing,
         indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
         neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
@@ -19300,7 +19308,7 @@ mod relation_tests {
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
         unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
         unresolved_parameter_expression_dependency_count, untyped_parameter_unit_count,
-        validate_configuration_payload, DesignFeatureFamily,
+        validate_configuration_payload, DesignFeatureFamily, FaceRecipeProgramKind,
     };
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSection,
@@ -23867,6 +23875,10 @@ mod relation_tests {
         .expect("zero-prelude face recipe operand");
         assert_eq!(zero_prelude.recipe_program[0..3], [0, 0, 4]);
         assert_eq!(
+            face_recipe_program_kind(&zero_prelude.recipe_program),
+            Some(FaceRecipeProgramKind::Counted { header_value: 4 })
+        );
+        assert_eq!(
             operand.recipe_node_offsets,
             [
                 face_recipe_name_at as u64 + 36,
@@ -23934,6 +23946,12 @@ mod relation_tests {
         .expect("terminal face recipe operand");
         assert_eq!(terminal.recipe_program, [0, -1]);
         assert!(terminal.recipe_nodes.is_empty());
+        assert_eq!(
+            face_recipe_program_kind(&terminal.recipe_program),
+            Some(FaceRecipeProgramKind::Terminal)
+        );
+        assert_eq!(face_recipe_program_kind(&[0, 1, 4]), None);
+        assert_eq!(face_recipe_program_kind(&[0, -1, 0]), None);
         operand.recipe_references.push(DesignRecipeReference {
             selector: 1,
             selector_offset: 1_101,
