@@ -13200,6 +13200,14 @@ fn reference_named_feature_definition(kind: &str) -> Option<IrFeatureDefinition>
             side: None,
         });
     }
+    if numbered_feature_name_has_family(kind, "Merge") {
+        return Some(IrFeatureDefinition::KnitSurface {
+            faces: FaceSelection::Unresolved,
+            merge_entities: None,
+            create_solid: None,
+            gap_tolerance: None,
+        });
+    }
     numbered_feature_name_has_family(kind, "Fill").then_some(IrFeatureDefinition::FilledSurface {
         boundary: EdgeSelection::Unresolved,
         support_faces: FaceSelection::Unresolved,
@@ -14751,6 +14759,15 @@ mod resolved_sketch_tests {
                 support_faces: FaceSelection::Unresolved,
                 continuity: None,
                 merge_result: None,
+            })
+        ));
+        assert!(matches!(
+            reference_named_feature_definition("Merge 2"),
+            Some(IrFeatureDefinition::KnitSurface {
+                faces: FaceSelection::Unresolved,
+                merge_entities: None,
+                create_solid: None,
+                gap_tolerance: None,
             })
         ));
     }

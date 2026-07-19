@@ -2210,16 +2210,20 @@ fn project_knit_surface(feature: &Feature) -> Option<FeatureDefinition> {
     };
     Some(FeatureDefinition::KnitSurface {
         faces: FaceSelection::Native(feature.properties.get("Faces")?.clone()),
-        merge_entities: feature
-            .properties
-            .get("MergeEntities")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(true),
-        create_solid: feature
-            .properties
-            .get("CreateSolid")
-            .and_then(|value| parse_bool(value))
-            .unwrap_or(false),
+        merge_entities: Some(
+            feature
+                .properties
+                .get("MergeEntities")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(true),
+        ),
+        create_solid: Some(
+            feature
+                .properties
+                .get("CreateSolid")
+                .and_then(|value| parse_bool(value))
+                .unwrap_or(false),
+        ),
         gap_tolerance: gap_tolerance.map(Length),
     })
 }
@@ -5331,6 +5335,18 @@ pub fn sync_neutral_features(
                 let selection = face_selection_value(faces).ok_or_else(|| {
                     CodecError::Malformed(format!(
                         "SLDPRT feature {} has no knit-surface input faces",
+                        feature.id
+                    ))
+                })?;
+                let merge_entities = merge_entities.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved knit merge state",
+                        feature.id
+                    ))
+                })?;
+                let create_solid = create_solid.ok_or_else(|| {
+                    CodecError::NotImplemented(format!(
+                        "SLDPRT feature {} has unresolved knit solid state",
                         feature.id
                     ))
                 })?;

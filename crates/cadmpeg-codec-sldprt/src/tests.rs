@@ -10197,8 +10197,8 @@ fn semantic_writer_round_trips_knit_surface() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Resolved { faces, native },
-            merge_entities: false,
-            create_solid: false,
+            merge_entities: Some(false),
+            create_solid: Some(false),
             gap_tolerance: Some(Length(0.01)),
         } if faces == &[face_id.clone()] && native == &face
     ));
@@ -10213,8 +10213,8 @@ fn semantic_writer_round_trips_knit_surface() {
         panic!("typed knit surface");
     };
     *faces = FaceSelection::Faces(vec![face_id.clone()]);
-    *merge_entities = true;
-    *create_solid = true;
+    *merge_entities = Some(true);
+    *create_solid = Some(true);
     *gap_tolerance = None;
 
     let mut encoded = Vec::new();
@@ -10233,8 +10233,8 @@ fn semantic_writer_round_trips_knit_surface() {
     assert!(matches!(
         regenerated.ir.model.features[0].definition,
         FeatureDefinition::KnitSurface {
-            merge_entities: true,
-            create_solid: true,
+            merge_entities: Some(true),
+            create_solid: Some(true),
             gap_tolerance: None,
             ..
         }

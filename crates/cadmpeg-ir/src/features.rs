@@ -769,10 +769,12 @@ pub enum FeatureDefinition {
     KnitSurface {
         /// Faces participating in the knit operation.
         faces: FaceSelection,
-        /// Whether coincident face and edge entities are merged.
-        merge_entities: bool,
-        /// Whether a closed result is converted to a solid body.
-        create_solid: bool,
+        /// Whether coincident face and edge entities are merged, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        merge_entities: Option<bool>,
+        /// Whether a closed result is converted to a solid body, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        create_solid: Option<bool>,
         /// Maximum boundary gap accepted by the operation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         gap_tolerance: Option<Length>,

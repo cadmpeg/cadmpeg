@@ -2581,8 +2581,8 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::KnitSurface {
             faces: FaceSelection::Unresolved,
-            merge_entities: true,
-            create_solid: false,
+            merge_entities: Some(true),
+            create_solid: Some(false),
             gap_tolerance: Some(Length(-1.0)),
         },
         FeatureDefinition::ExtendSurface {
