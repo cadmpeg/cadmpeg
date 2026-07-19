@@ -5167,9 +5167,9 @@ pub struct FeatureSketchReference {
 pub struct FeatureProjectedCurveReference {
     /// Globally unique projected-curve reference identity.
     pub id: String,
-    /// Owning `CPROJ` operation label.
+    /// Owning `CPROJ` or `CPROJ_CMB` operation label.
     pub operation_label: String,
-    /// Zero-based order in the exact three-reference field.
+    /// Zero-based order among the field's non-repeated references.
     pub ordinal: u32,
     /// Serialized object index.
     pub object_index: u32,

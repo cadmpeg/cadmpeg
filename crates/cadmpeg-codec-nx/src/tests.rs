@@ -7455,12 +7455,83 @@ fn om_projected_curve_references_require_one_complete_field() {
     assert_eq!(
         field
             .references
-            .map(|reference| (reference.object_index, reference.offset)),
+            .iter()
+            .map(|reference| (reference.object_index, reference.offset))
+            .collect::<Vec<_>>(),
         [(712, 203), (713, 206), (714, 214)]
     );
 
     let mut malformed = payload.to_vec();
     malformed[17] = 0x00;
+    assert!(
+        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
+            bytes: &malformed,
+            payload: &malformed,
+            ..record
+        })
+        .is_none()
+    );
+
+    let ambiguous = [payload.as_slice(), payload.as_slice()].concat();
+    assert!(
+        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
+            bytes: &ambiguous,
+            payload: &ambiguous,
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
+fn om_combined_projected_curve_references_require_the_complete_graph() {
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "CPROJ_CMB",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let payload = b"\x3c\x32\x01\x02\x32\x01\x04\x36\x01\x33\xf1\x03\x18\x33\xf1\x03\x19\x00\xf1\x03\x1a\x00\x00\x00\x00\x00\x00\xf1\x03\x1b\x16\x01\x02\xf1\x03\x18\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1c\x00\x81\x5c\x16\x01\x02\xf1\x03\x19\x01\x02\x00\x00\x00\x00\x00\xff\x01\x02\xf1\x03\x1d\x00\x81\x5c\xff\x01\xff\x01\xf1\x03\x1e\xf1\x03\x1f\x04\x02";
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: payload,
+        payload_offset: 200,
+        payload,
+        label,
+    };
+    let field = crate::om::projected_curve_payload_references(record).expect("complete graph");
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| (reference.object_index, reference.offset))
+            .collect::<Vec<_>>(),
+        [
+            (792, 210),
+            (793, 214),
+            (794, 218),
+            (795, 227),
+            (796, 246),
+            (797, 268),
+            (798, 278),
+            (799, 281),
+        ]
+    );
+
+    let mut inconsistent = payload.to_vec();
+    inconsistent[35] = 0x19;
+    assert!(
+        crate::om::projected_curve_payload_references(crate::om::OperationRecord {
+            bytes: &inconsistent,
+            payload: &inconsistent,
+            ..record
+        })
+        .is_none()
+    );
+
+    let mut malformed = payload.to_vec();
+    malformed[84] = 0x00;
     assert!(
         crate::om::projected_curve_payload_references(crate::om::OperationRecord {
             bytes: &malformed,

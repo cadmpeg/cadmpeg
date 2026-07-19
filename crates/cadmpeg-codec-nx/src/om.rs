@@ -734,11 +734,11 @@ pub struct SketchPayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
-/// Exact three-reference construction field in a `CPROJ` payload.
+/// Exact construction-reference field in a projected-curve payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectedCurvePayloadReferenceField {
-    /// Two leading construction references followed by the terminal reference.
-    pub references: [PayloadObjectReference; 3],
+    /// Ordered non-repeated construction references.
+    pub references: Vec<PayloadObjectReference>,
 }
 
 /// One object index in an extrusion profile-reference field.
@@ -1574,43 +1574,90 @@ fn payload_object_index(bytes: &[u8]) -> Option<(u32, usize)> {
     }
 }
 
-/// Decode the unique exactly framed three-reference construction field in a
-/// bounded `CPROJ` payload.
+/// Decode the unique exactly framed construction-reference field in a bounded
+/// projected-curve payload.
 pub fn projected_curve_payload_references(
     record: OperationRecord<'_>,
 ) -> Option<ProjectedCurvePayloadReferenceField> {
-    const MIDDLE: [u8; 5] = [0x80, 0x57, 0x00, 0x02, 0x01];
-    const SUFFIX: [u8; 5] = [0xff, 0x01, 0x02, 0x02, 0x7d];
-    if record.label.value != "CPROJ" {
-        return None;
-    }
-    let decode_field = |start: usize| {
-        let mut at = start + 2;
-        let mut references = Vec::with_capacity(3);
-        for _ in 0..2 {
-            let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-            references.push(PayloadObjectReference {
-                offset: record.payload_offset + at,
-                object_index,
-            });
-            at += width;
-        }
-        (record.payload.get(at..at + MIDDLE.len()) == Some(&MIDDLE)).then_some(())?;
-        at += MIDDLE.len();
-        let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-        references.push(PayloadObjectReference {
-            offset: record.payload_offset + at,
+    const CPROJ_MIDDLE: [u8; 5] = [0x80, 0x57, 0x00, 0x02, 0x01];
+    const CPROJ_SUFFIX: [u8; 5] = [0xff, 0x01, 0x02, 0x02, 0x7d];
+    const CMB_PREFIX: [u8; 10] = [0x3c, 0x32, 0x01, 0x02, 0x32, 0x01, 0x04, 0x36, 0x01, 0x33];
+    const CMB_BRANCH_PREFIX: [u8; 3] = [0x16, 0x01, 0x02];
+    const CMB_BRANCH_MIDDLE: [u8; 7] = [0x01, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00];
+    const CMB_BRANCH_SUFFIX: [u8; 3] = [0x00, 0x81, 0x5c];
+    const CMB_TAIL_PREFIX: [u8; 4] = [0xff, 0x01, 0xff, 0x01];
+    const CMB_TAIL_SUFFIX: [u8; 2] = [0x04, 0x02];
+    let decode_reference = |at: &mut usize| {
+        let offset = *at;
+        let (object_index, width) = payload_object_index(record.payload.get(offset..)?)?;
+        *at += width;
+        Some(PayloadObjectReference {
+            offset: record.payload_offset + offset,
             object_index,
-        });
-        at += width;
-        (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
-        Some(ProjectedCurvePayloadReferenceField {
-            references: references.try_into().ok()?,
         })
     };
+    let decode_field = |start: usize| match record.label.value {
+        "CPROJ" => {
+            let mut at = start + 2;
+            let mut references = Vec::with_capacity(3);
+            references.push(decode_reference(&mut at)?);
+            references.push(decode_reference(&mut at)?);
+            (record.payload.get(at..at + CPROJ_MIDDLE.len()) == Some(&CPROJ_MIDDLE))
+                .then_some(())?;
+            at += CPROJ_MIDDLE.len();
+            references.push(decode_reference(&mut at)?);
+            (record.payload.get(at..at + CPROJ_SUFFIX.len()) == Some(&CPROJ_SUFFIX))
+                .then_some(())?;
+            Some(ProjectedCurvePayloadReferenceField { references })
+        }
+        "CPROJ_CMB" => {
+            let mut at = start + CMB_PREFIX.len();
+            let mut references = Vec::with_capacity(8);
+            references.push(decode_reference(&mut at)?);
+            (record.payload.get(at) == Some(&0x33)).then_some(())?;
+            at += 1;
+            references.push(decode_reference(&mut at)?);
+            (record.payload.get(at) == Some(&0x00)).then_some(())?;
+            at += 1;
+            references.push(decode_reference(&mut at)?);
+            (record.payload.get(at..at + 6) == Some(&[0; 6])).then_some(())?;
+            at += 6;
+            references.push(decode_reference(&mut at)?);
+            for anchor in 0..2 {
+                (record.payload.get(at..at + CMB_BRANCH_PREFIX.len()) == Some(&CMB_BRANCH_PREFIX))
+                    .then_some(())?;
+                at += CMB_BRANCH_PREFIX.len();
+                let repeated = decode_reference(&mut at)?;
+                (repeated.object_index == references[anchor].object_index).then_some(())?;
+                (record.payload.get(at..at + CMB_BRANCH_MIDDLE.len()) == Some(&CMB_BRANCH_MIDDLE))
+                    .then_some(())?;
+                at += CMB_BRANCH_MIDDLE.len();
+                (record.payload.get(at..at + 3) == Some(&[0xff, 0x01, 0x02])).then_some(())?;
+                at += 3;
+                references.push(decode_reference(&mut at)?);
+                (record.payload.get(at..at + CMB_BRANCH_SUFFIX.len()) == Some(&CMB_BRANCH_SUFFIX))
+                    .then_some(())?;
+                at += CMB_BRANCH_SUFFIX.len();
+            }
+            (record.payload.get(at..at + CMB_TAIL_PREFIX.len()) == Some(&CMB_TAIL_PREFIX))
+                .then_some(())?;
+            at += CMB_TAIL_PREFIX.len();
+            references.push(decode_reference(&mut at)?);
+            references.push(decode_reference(&mut at)?);
+            (record.payload.get(at..at + CMB_TAIL_SUFFIX.len()) == Some(&CMB_TAIL_SUFFIX))
+                .then_some(())?;
+            Some(ProjectedCurvePayloadReferenceField { references })
+        }
+        _ => None,
+    };
+    let marker = match record.label.value {
+        "CPROJ" => &[0x01, 0x02][..],
+        "CPROJ_CMB" => &CMB_PREFIX[..],
+        _ => return None,
+    };
     let mut matches = Vec::new();
-    for start in 0..record.payload.len().saturating_sub(2) {
-        if record.payload.get(start..start + 2) != Some(&[0x01, 0x02]) {
+    for start in 0..=record.payload.len().saturating_sub(marker.len()) {
+        if record.payload.get(start..start + marker.len()) != Some(marker) {
             continue;
         }
         if let Some(field) = decode_field(start) {
