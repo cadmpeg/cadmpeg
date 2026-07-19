@@ -1035,6 +1035,12 @@ pub struct DesignParameterScope {
     /// Byte offset of the `WorkPlane` construction reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub work_plane_reference_offset: Option<u64>,
+    /// Explicit model-space position carried by a `WorkPoint` construction record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_point_position: Option<[f64; 3]>,
+    /// Byte offset of the `WorkPoint` position's first f64 coordinate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub work_point_position_offset: Option<u64>,
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extrude_profile: Option<DesignExtrudeProfileOperand>,

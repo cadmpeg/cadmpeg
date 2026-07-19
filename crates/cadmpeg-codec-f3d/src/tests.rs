@@ -9207,6 +9207,8 @@ fn validation_requires_one_exact_extrude_profile_group() {
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_point_position: None,
+        work_point_position_offset: None,
         extrude_profile: Some(profile),
         entity_id: None,
         entity_suffix: None,

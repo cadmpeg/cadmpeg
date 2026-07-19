@@ -884,6 +884,26 @@ pub fn project_parameter_design_with_edge_identities(
                         u_axis: Vector3::new(transform[0][0], transform[1][0], transform[2][0]),
                     },
                 )
+            } else if scope.kind == "WorkPoint" {
+                scope.work_point_position.map_or_else(
+                    || FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: parameters
+                            .iter()
+                            .map(|(_, parameter)| {
+                                (parameter.name.clone(), parameter.expression.clone())
+                            })
+                            .collect(),
+                        properties: native_scope_properties(scope, native_scope),
+                    },
+                    |position| FeatureDefinition::DatumPoint {
+                        position: Point3::new(
+                            position[0] * 10.0,
+                            position[1] * 10.0,
+                            position[2] * 10.0,
+                        ),
+                    },
+                )
             } else if matches!(
                 family,
                 Some(DesignFeatureFamily::CircularPattern | DesignFeatureFamily::Mirror)
@@ -12962,6 +12982,10 @@ pub fn decode_parameter_scopes(
                     }
                 }
             }
+            if let Some((position, offset)) = exact_work_point_position(bytes, &scope) {
+                scope.work_point_position = Some(position);
+                scope.work_point_position_offset = Some(offset);
+            }
             scope.solid_primitive = exact_solid_primitive(bytes, &scope);
             scope.direct_face_operation = exact_direct_face_operation(bytes, &scope);
             scope.fixed_extrude_parameters = exact_fixed_extrude_parameters(bytes, &scope);
@@ -13454,17 +13478,7 @@ struct WorkPlaneFrame {
 fn exact_work_plane_frame(bytes: &[u8], scope: &DesignParameterScope) -> Option<WorkPlaneFrame> {
     let mut candidates = Vec::new();
     for record_index in &scope.reference_members {
-        let mut headers = Vec::new();
-        let mut position = 0;
-        while let Some(at) = next_indexed_record_offset(bytes, position) {
-            if u32_at(bytes, at + 7) == Some(*record_index) {
-                headers.push(at);
-            }
-            position = at + 1;
-        }
-        for pair in headers.windows(2) {
-            let start = pair[0];
-            let paired = pair[1];
+        for (start, paired) in indexed_record_pairs(bytes, *record_index) {
             let frame_length = paired.checked_sub(start)?;
             let (matrix_at, reference) = match frame_length {
                 352 if bytes.get(start + 55) == Some(&1)
@@ -13501,6 +13515,68 @@ fn exact_work_plane_frame(bytes: &[u8], scope: &DesignParameterScope) -> Option<
         return None;
     };
     Some(*candidate)
+}
+
+fn exact_work_point_position(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<([f64; 3], u64)> {
+    if scope.kind != "WorkPoint" {
+        return None;
+    }
+    let references = scope
+        .reference_members
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>();
+    let mut candidates = Vec::new();
+    for record_index in &scope.reference_members {
+        for (start, paired) in indexed_record_pairs(bytes, *record_index) {
+            let (class_tag, after_tag) = lp_ascii(bytes, start)?;
+            if class_tag != "282" || u32_at(bytes, after_tag) != Some(*record_index) {
+                continue;
+            }
+            let frame_length = paired.checked_sub(start)?;
+            let position_at = match frame_length {
+                208 if bytes.get(start + 15..start + 42) == Some(&[0; 27])
+                    && u32_at(bytes, start + 66) == Some(7)
+                    && f64s_at(bytes, start + 70, 3) == Some(vec![-1.0; 3])
+                    && u32_at(bytes, start + 94) == Some(2) =>
+                {
+                    start + 42
+                }
+                207 if bytes.get(start + 15..start + 41) == Some(&[0; 26])
+                    && bytes.get(start + 41) == Some(&1)
+                    && references.contains(&u32_at(bytes, start + 42)?)
+                    && bytes.get(start + 46..start + 52) == Some(&[0; 6])
+                    && u32_at(bytes, start + 76) == Some(20)
+                    && f64s_at(bytes, start + 80, 3) == Some(vec![-1.0; 3])
+                    && u32_at(bytes, start + 104) == Some(1) =>
+                {
+                    start + 52
+                }
+                _ => continue,
+            };
+            let position: [f64; 3] = f64s_at(bytes, position_at, 3)?.try_into().ok()?;
+            if position.iter().all(|value| value.is_finite()) {
+                candidates.push((position, position_at as u64));
+            }
+        }
+    }
+    let [candidate] = candidates.as_slice() else {
+        return None;
+    };
+    Some(*candidate)
+}
+
+fn indexed_record_pairs(bytes: &[u8], record_index: u32) -> Vec<(usize, usize)> {
+    let mut headers = Vec::new();
+    let mut position = 0;
+    while let Some(at) = next_indexed_record_offset_with_index(bytes, position, record_index) {
+        headers.push(at);
+        position = at + 1;
+    }
+    headers.windows(2).map(|pair| (pair[0], pair[1])).collect()
 }
 
 fn parameter_scope_candidate_headers(bytes: &[u8]) -> Vec<DesignRecordHeader> {
@@ -15545,6 +15621,8 @@ fn parse_parameter_scope(
         work_plane_transform_offset: None,
         work_plane_reference: None,
         work_plane_reference_offset: None,
+        work_point_position: None,
+        work_point_position_offset: None,
         extrude_profile: None,
         entity_id: None,
         entity_suffix: None,
@@ -18346,14 +18424,14 @@ mod relation_tests {
         exact_counted_dimension_relation, exact_counted_offset, exact_direct_face_operation,
         exact_fixed_chamfer_parameters, exact_fixed_extrude_parameters,
         exact_fixed_fillet_parameters, exact_offset_constraint, exact_path_feature_construction,
-        exact_solid_primitive, exact_work_plane_frame, expression_identifiers,
-        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
-        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        next_indexed_record_offset_with_index, null_locus_dimension_definition,
-        offset_parameter_factor, parse_construction_operand_group,
+        exact_solid_primitive, exact_work_plane_frame, exact_work_point_position,
+        expression_identifiers, feature_input_topology_id, find_dimension_locus_groups,
+        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        historical_profile_face_candidates, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, next_indexed_record_offset_with_index,
+        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_profile,
@@ -20900,6 +20978,61 @@ mod relation_tests {
     }
 
     #[test]
+    fn work_point_direct_record_carries_model_space_position() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"427");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(1);
+        bytes.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        lp_utf16(&mut bytes, "WorkPoint");
+        let mut tail = [0; 78];
+        tail[0..4].copy_from_slice(&1u32.to_le_bytes());
+        tail[31..35].copy_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&tail);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"259");
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 11]);
+
+        let point_at = bytes.len();
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"282");
+        bytes.extend_from_slice(&55u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 27]);
+        let position_at = bytes.len();
+        for value in [1.25, -2.5, 3.75] {
+            bytes.extend_from_slice(&f64::to_le_bytes(value));
+        }
+        bytes.extend_from_slice(&7u32.to_le_bytes());
+        for _ in 0..3 {
+            bytes.extend_from_slice(&f64::to_le_bytes(-1.0));
+        }
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.resize(point_at + 208, 0);
+        bytes.extend_from_slice(&3u32.to_le_bytes());
+        bytes.extend_from_slice(b"259");
+        bytes.extend_from_slice(&55u32.to_le_bytes());
+
+        let header = DesignRecordHeader {
+            id: "generated:scope-header#0".into(),
+            record_index: 12,
+            class_tag: "427".into(),
+            byte_offset: 0,
+        };
+        let scope = parse_parameter_scope(&bytes, &header).expect("WorkPoint scope");
+        assert_eq!(
+            exact_work_point_position(&bytes, &scope),
+            Some(([1.25, -2.5, 3.75], position_at as u64))
+        );
+    }
+
+    #[test]
     fn parameter_scope_uses_same_index_pair_and_fixed_kind_tail() {
         let mut bytes = Vec::new();
         bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -21673,6 +21806,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -21882,6 +22017,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -22239,6 +22376,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -25978,6 +26117,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -26092,6 +26233,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -26253,6 +26396,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: Some(DesignExtrudeProfileOperand {
                 scope_reference_ordinal: 0,
                 record_index: 100,
@@ -26756,6 +26901,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -27414,6 +27561,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -27617,6 +27766,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
@@ -27722,6 +27873,8 @@ mod relation_tests {
                 work_plane_transform_offset: None,
                 work_plane_reference: None,
                 work_plane_reference_offset: None,
+                work_point_position: None,
+                work_point_position_offset: None,
                 extrude_profile: None,
                 entity_id: None,
                 entity_suffix: None,
@@ -28212,6 +28365,8 @@ mod relation_tests {
             work_plane_transform_offset: None,
             work_plane_reference: None,
             work_plane_reference_offset: None,
+            work_point_position: None,
+            work_point_position_offset: None,
             extrude_profile: None,
             entity_id: None,
             entity_suffix: None,
