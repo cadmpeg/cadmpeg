@@ -1418,7 +1418,10 @@ Mapping endpoint A and endpoint B through every evaluable adjacent face chart
 must produce the same ordered model-space pair. For one topological vertex
 orbit, the common point among the unordered mapped endpoint pairs of at least
 two incident curves is its model-space point when exactly one point remains.
-A carrier-derived point for the same orbit must agree with that point.
+A unique orbit point selects the opposite endpoint of every incident
+pcurve-backed edge and propagates through the connected endpoint component.
+A carrier-derived point for the same orbit must agree with that point. An
+empty endpoint domain withholds every dependent point in the component.
 
 When a native edge has no pcurve candidate on a solved planar face, an exact
 line, circle, ellipse, parabola, hyperbola, or NURBS carrier lying in that plane

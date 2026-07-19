@@ -21934,6 +21934,97 @@ fn pcurve_edge_endpoints(scan: &ContainerScan, ir: &CadIr) -> BTreeMap<u32, [[f6
         .collect()
 }
 
+type PcurveVertexConstraint = ([u32; 2], [[f64; 3]; 2]);
+
+fn solve_pcurve_vertex_domains(
+    constraints: &[PcurveVertexConstraint],
+    carrier_points: &BTreeMap<u32, [f64; 3]>,
+) -> BTreeMap<u32, [f64; 3]> {
+    let mut domains = BTreeMap::<u32, Vec<[f64; 3]>>::new();
+    for (vertices, points) in constraints {
+        if vertices[0] == vertices[1] {
+            match domains.entry(vertices[0]) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(if model_points_agree(points[0], points[1]) {
+                        vec![points[0]]
+                    } else {
+                        Vec::new()
+                    });
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let domain = entry.get_mut();
+                    if model_points_agree(points[0], points[1]) {
+                        domain.retain(|candidate| model_points_agree(*candidate, points[0]));
+                    } else {
+                        domain.clear();
+                    }
+                }
+            }
+            continue;
+        }
+        for vertex in vertices {
+            let domain = domains.entry(*vertex).or_insert_with(|| points.to_vec());
+            domain.retain(|candidate| {
+                points
+                    .iter()
+                    .any(|point| model_points_agree(*candidate, *point))
+            });
+        }
+    }
+    for (vertex, point) in carrier_points {
+        let domain = domains.entry(*vertex).or_insert_with(|| vec![*point]);
+        domain.retain(|candidate| model_points_agree(*candidate, *point));
+    }
+    let compatible = |first: [f64; 3], second: [f64; 3], points: [[f64; 3]; 2]| {
+        (model_points_agree(first, points[0]) && model_points_agree(second, points[1]))
+            || (model_points_agree(first, points[1]) && model_points_agree(second, points[0]))
+    };
+    loop {
+        let mut changed = false;
+        for (vertices, points) in constraints {
+            if vertices[0] == vertices[1] {
+                continue;
+            }
+            let first = domains.get(&vertices[0]).cloned().unwrap_or_default();
+            let second = domains.get(&vertices[1]).cloned().unwrap_or_default();
+            let retained_first = first
+                .iter()
+                .copied()
+                .filter(|first| {
+                    second
+                        .iter()
+                        .any(|second| compatible(*first, *second, *points))
+                })
+                .collect::<Vec<_>>();
+            let retained_second = second
+                .iter()
+                .copied()
+                .filter(|second| {
+                    first
+                        .iter()
+                        .any(|first| compatible(*first, *second, *points))
+                })
+                .collect::<Vec<_>>();
+            changed |= retained_first.len() != first.len() || retained_second.len() != second.len();
+            domains.insert(vertices[0], retained_first);
+            domains.insert(vertices[1], retained_second);
+        }
+        if !changed {
+            break;
+        }
+    }
+    domains
+        .into_iter()
+        .filter_map(|(vertex, mut domain)| {
+            domain.dedup_by(|first, second| model_points_agree(*first, *second));
+            let [point] = domain.as_slice() else {
+                return None;
+            };
+            Some((vertex, *point))
+        })
+        .collect()
+}
+
 fn solved_topological_vertices(
     scan: &ContainerScan,
     ir: &CadIr,
@@ -21959,53 +22050,30 @@ fn solved_topological_vertices(
         })
         .collect::<BTreeMap<_, _>>();
     let edge_endpoints = pcurve_edge_endpoints(scan, ir);
-    scan.topological_vertices
+    let incidence = scan
+        .half_edge_vertex_incidence
         .iter()
-        .filter_map(|vertex| {
-            let incident = vertex
-                .half_edges
-                .iter()
-                .map(|half_edge| half_edge.curve_id)
-                .collect::<BTreeSet<_>>()
-                .into_iter()
-                .filter_map(|curve_id| edge_endpoints.get(&curve_id))
-                .collect::<Vec<_>>();
-            let pcurve_point = incident.first().and_then(|first| {
-                let mut candidates = first.to_vec();
-                for endpoints in incident.iter().skip(1) {
-                    candidates.retain(|candidate| {
-                        endpoints
-                            .iter()
-                            .any(|endpoint| model_points_agree(*candidate, *endpoint))
-                    });
-                }
-                candidates.dedup_by(|first, second| model_points_agree(*first, *second));
-                if incident.len() >= 2 {
-                    candidates
-                        .first()
-                        .copied()
-                        .filter(|_| candidates.len() == 1)
-                } else {
-                    None
-                }
-            });
-            let carrier_point = carrier_points.get(&vertex.id).copied().filter(|carrier| {
-                incident.iter().all(|endpoints| {
-                    endpoints
-                        .iter()
-                        .any(|endpoint| model_points_agree(*carrier, *endpoint))
-                })
-            });
-            match (carrier_point, pcurve_point) {
-                (Some(carrier), Some(pcurve)) if model_points_agree(carrier, pcurve) => {
-                    Some((vertex.id, carrier))
-                }
-                (Some(carrier), None) => Some((vertex.id, carrier)),
-                (None, Some(pcurve)) => Some((vertex.id, pcurve)),
-                _ => None,
-            }
+        .map(|binding| (binding.half_edge, binding))
+        .collect::<BTreeMap<_, _>>();
+    let constraints = crate::topology::uniquely_identified_rows(&scan.curve_topology_rows)
+        .into_iter()
+        .filter_map(|row| {
+            let points = *edge_endpoints.get(&row.id)?;
+            let forward = incidence.get(&HalfEdgeId {
+                curve_id: row.id,
+                side: 0,
+            })?;
+            let reverse = incidence.get(&HalfEdgeId {
+                curve_id: row.id,
+                side: 1,
+            })?;
+            let end = forward.end_vertex_id?;
+            (reverse.start_vertex_id == end
+                && reverse.end_vertex_id == Some(forward.start_vertex_id))
+            .then_some(([forward.start_vertex_id, end], points))
         })
-        .collect()
+        .collect::<Vec<_>>();
+    solve_pcurve_vertex_domains(&constraints, &carrier_points)
 }
 
 fn orient_line_edge_carrier(
@@ -23547,6 +23615,23 @@ mod native_pcurve_tests {
             [[[1.0, 2.0], [3.0, 4.0]], [[2.0, 1.0], [5.0, 3.0]]],
         )
         .is_none());
+    }
+
+    #[test]
+    fn propagates_unique_pcurve_endpoints_through_a_vertex_component() {
+        let a = [1.0, 0.0, 0.0];
+        let b = [2.0, 0.0, 0.0];
+        let c = [3.0, 0.0, 0.0];
+        let constraints = [([1, 2], [a, b]), ([2, 3], [c, b])];
+        assert_eq!(
+            solve_pcurve_vertex_domains(&constraints, &BTreeMap::new()),
+            BTreeMap::from([(1, a), (2, b), (3, c)])
+        );
+        assert!(solve_pcurve_vertex_domains(&constraints[..1], &BTreeMap::new()).is_empty());
+        assert!(
+            solve_pcurve_vertex_domains(&constraints, &BTreeMap::from([(2, [9.0, 0.0, 0.0])]),)
+                .is_empty()
+        );
     }
 
     fn plane() -> SurfaceGeometry {
