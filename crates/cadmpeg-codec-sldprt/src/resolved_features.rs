@@ -690,6 +690,31 @@ mod marker_tests {
     }
 
     #[test]
+    fn angled_reference_plane_does_not_reinterpret_a_complete_fixed_frame() {
+        let mut payload = vec![0; 153];
+        for (offset, value) in [
+            (24, 0.0_f64),
+            (32, -1.0),
+            (40, 0.0),
+            (49, -1.0),
+            (57, 0.0),
+            (65, 0.0),
+            (73, 0.0),
+            (81, 0.0),
+            (89, -1.0),
+            (97, 0.0),
+            (105, -1.0),
+            (113, 0.0),
+            (145, 1.0),
+        ] {
+            payload[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        }
+        payload[48] = 1;
+        assert!(fixed_reference_plane_frame(&payload[..97]).is_some());
+        assert_eq!(angled_reference_plane_frame(&payload), None);
+    }
+
+    #[test]
     fn compact_reference_plane_solves_omitted_basis_components() {
         let root = 7;
         let mut payload = vec![0xaa; root + 82];
@@ -5973,9 +5998,25 @@ fn angled_reference_plane_frame(payload: &[u8]) -> Option<(Point3, Vector3, Vect
         |vector: Vector3| (vector.x * vector.x + vector.y * vector.y + vector.z * vector.z).sqrt();
     let dot =
         |left: Vector3, right: Vector3| left.x * right.x + left.y * right.y + left.z * right.z;
+    let fixed_ranges = payload
+        .windows(FIXED_REFERENCE_PLANE_FRAME_LEN)
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
+            fixed_reference_plane_frame(bytes)
+                .is_some()
+                .then_some(offset..offset + FIXED_REFERENCE_PLANE_FRAME_LEN)
+        })
+        .collect::<Vec<_>>();
     let mut frames = payload
         .windows(RECORD_LEN)
-        .filter_map(|bytes| {
+        .enumerate()
+        .filter(|(offset, _)| {
+            let range = *offset..*offset + RECORD_LEN;
+            fixed_ranges
+                .iter()
+                .all(|fixed| range.end <= fixed.start || range.start >= fixed.end)
+        })
+        .filter_map(|(_, bytes)| {
             if bytes.get(16) != Some(&1)
                 || bytes.get(89..113)?.iter().any(|byte| *byte != 0)
                 || scalar(bytes, 113)? != 1.0
