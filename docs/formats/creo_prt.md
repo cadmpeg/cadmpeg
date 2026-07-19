@@ -1759,8 +1759,13 @@ not fixed at two. The vertex identifier follows those entity identifiers and a
 zero terminates the entry. Collision-chain entries may omit the `ent_ids` array
 opener; in that form, every identifier before the final vertex identifier is an
 incident entity. Geometric intersection coordinates are derived only for rows
-with exactly two distinct incident entities. Repeated vertex identifiers are
-semantically ambiguous even when each stored entry body is complete.
+whose incident identifiers are distinct and whose every carrier pair has one
+intersection at the same section coordinate. This includes junctions with more
+than two incident entities. An unsupported pair, a non-unique pair, or
+disagreeing pairwise coordinates leaves the vertex unresolved. Repeated vertex
+identifiers are semantically ambiguous even when each stored entry body is
+complete. When complete `ent_tab` and `vert_tab` tables are both present, their
+incident entity sets must agree after entity-to-segment identity resolution.
 All stored, saved-section, and propagated coordinates for one trim-vertex
 identifier must agree. Conflicting candidates leave that vertex unresolved.
 When the two incident `segtab` rows have exactly one common endpoint

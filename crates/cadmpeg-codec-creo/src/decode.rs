@@ -5089,6 +5089,42 @@ fn intersect_tangent_section_arcs(
     ])
 }
 
+fn intersect_section_carriers(
+    first: &SectionIntersectionCarrier,
+    second: &SectionIntersectionCarrier,
+) -> Option<[f64; 2]> {
+    let line_arc_is_bounded = match (&first.geometry, &second.geometry) {
+        (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. }) => first.line_is_bounded,
+        (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. }) => second.line_is_bounded,
+        _ => false,
+    };
+    intersect_section_lines(&first.geometry, &second.geometry)
+        .or_else(|| {
+            line_arc_is_bounded
+                .then(|| intersect_section_line_arc(&first.geometry, &second.geometry))
+                .flatten()
+        })
+        .or_else(|| intersect_tangent_section_arcs(&first.geometry, &second.geometry))
+}
+
+fn intersect_incident_section_carriers(
+    carriers: &[SectionIntersectionCarrier],
+) -> Option<[f64; 2]> {
+    (carriers.len() >= 2).then_some(())?;
+    let mut candidates = Vec::new();
+    for first in 0..carriers.len() {
+        for second in first + 1..carriers.len() {
+            candidates.push((
+                0,
+                intersect_section_carriers(&carriers[first], &carriers[second])?,
+            ));
+        }
+    }
+    let (coordinates, ambiguous) = reconciled_section_coordinates(candidates);
+    ambiguous.is_empty().then_some(())?;
+    coordinates.get(&0).copied()
+}
+
 fn resolved_trim_vertex_coordinates(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
@@ -5158,30 +5194,59 @@ fn resolved_trim_vertex_coordinates(
             incident.entry(vertex).or_default().push(external_id);
         }
     }
-    for (vertex, entities) in incident {
-        let [first_id, second_id] = entities.as_slice() else {
+    let explicit_incident = definition
+        .trim_vertices
+        .as_ref()
+        .filter(|table| table.has_complete_bucket_frame())
+        .map(|table| {
+            let mut result = BTreeMap::<u32, Vec<u32>>::new();
+            for vertex in &table.rows {
+                let mut resolved = Vec::new();
+                for entity_id in &vertex.entities {
+                    let matches = definition
+                        .trim_entities
+                        .iter()
+                        .flat_map(|table| &table.rows)
+                        .filter(|entity| entity.external_id == *entity_id)
+                        .collect::<Vec<_>>();
+                    let [entity] = matches.as_slice() else {
+                        continue;
+                    };
+                    if let Some(external_id) = trim_segment_id(definition, entity) {
+                        resolved.push(external_id);
+                    }
+                }
+                resolved.sort_unstable();
+                if resolved.len() == vertex.entities.len() {
+                    result.entry(vertex.vertex_id).or_default().extend(resolved);
+                }
+            }
+            result
+        });
+    for (vertex, mut entities) in incident {
+        entities.sort_unstable();
+        if entities.len() < 2 || entities.windows(2).any(|pair| pair[0] == pair[1]) {
             continue;
-        };
+        }
+        if explicit_incident
+            .as_ref()
+            .is_some_and(|explicit| explicit.get(&vertex) != Some(&entities))
+        {
+            continue;
+        }
         let geometry = |external_id| {
             let segment = segments.segment(external_id)?;
             section_segment_intersection_carrier(definition, &radii, points, segment)
         };
-        let (Some(first), Some(second)) = (geometry(*first_id), geometry(*second_id)) else {
+        let carriers = entities
+            .iter()
+            .copied()
+            .map(geometry)
+            .collect::<Option<Vec<_>>>();
+        let Some(carriers) = carriers else {
             continue;
         };
-        let line_arc_is_bounded = match (&first.geometry, &second.geometry) {
-            (SketchGeometry::Line { .. }, SketchGeometry::Arc { .. }) => first.line_is_bounded,
-            (SketchGeometry::Arc { .. }, SketchGeometry::Line { .. }) => second.line_is_bounded,
-            _ => false,
-        };
-        if let Some(coordinate) = intersect_section_lines(&first.geometry, &second.geometry)
-            .or_else(|| {
-                line_arc_is_bounded
-                    .then(|| intersect_section_line_arc(&first.geometry, &second.geometry))
-                    .flatten()
-            })
-            .or_else(|| intersect_tangent_section_arcs(&first.geometry, &second.geometry))
-        {
+        if let Some(coordinate) = intersect_incident_section_carriers(&carriers) {
             coordinate_candidates.push((vertex, coordinate));
         }
     }
@@ -18428,6 +18493,33 @@ mod resolved_sketch_tests {
         assert_eq!(segment_profile[0].len(), 4);
         assert!(!segment_profile[0][0].reversed);
         assert!(segment_profile[0][1].reversed);
+    }
+
+    #[test]
+    fn multi_incident_trim_vertex_requires_one_agreeing_pairwise_intersection() {
+        let line = |start: [f64; 2], end: [f64; 2]| SectionIntersectionCarrier {
+            geometry: SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(start[0], start[1]),
+                end: cadmpeg_ir::math::Point2::new(end[0], end[1]),
+            },
+            line_is_bounded: false,
+        };
+        let concurrent = [
+            line([-1.0, 0.0], [1.0, 0.0]),
+            line([0.0, -1.0], [0.0, 1.0]),
+            line([-1.0, -1.0], [1.0, 1.0]),
+        ];
+        assert_eq!(
+            intersect_incident_section_carriers(&concurrent),
+            Some([0.0, 0.0])
+        );
+
+        let inconsistent = [
+            line([-1.0, 0.0], [1.0, 0.0]),
+            line([0.0, -1.0], [0.0, 1.0]),
+            line([-1.0, 2.0], [2.0, -1.0]),
+        ];
+        assert_eq!(intersect_incident_section_carriers(&inconsistent), None);
     }
 
     #[test]
