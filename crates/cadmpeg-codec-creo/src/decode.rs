@@ -28798,6 +28798,20 @@ fn annotate(
     annotations.exactness(id, exactness);
 }
 
+fn torus_parameter_coverage(scan: &ContainerScan) -> (usize, usize) {
+    let rows = scan.surface_parameters.iter().filter_map(|record| {
+        crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+            .map(|row| (record, row))
+    });
+    (
+        rows.clone()
+            .filter(|(record, row)| record.torus_radius_overrides(row.type_byte).is_some())
+            .count(),
+        rows.filter(|(record, row)| record.torus_outline_frame(row.type_byte).is_some())
+            .count(),
+    )
+}
+
 fn source_meta(scan: &ContainerScan) -> SourceMeta {
     let mut attributes = BTreeMap::new();
     attributes.insert("version_line".to_string(), scan.version_line.clone());
@@ -28853,6 +28867,15 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
             })
             .count()
             .to_string(),
+    );
+    let (torus_radius_override_count, torus_outline_extent_count) = torus_parameter_coverage(scan);
+    attributes.insert(
+        "decoded_torus_radius_override_count".to_string(),
+        torus_radius_override_count.to_string(),
+    );
+    attributes.insert(
+        "decoded_torus_outline_extent_count".to_string(),
+        torus_outline_extent_count.to_string(),
     );
     attributes.insert(
         "decoded_plane_local_system_count".to_string(),
@@ -29434,14 +29457,30 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         });
     }
 
+    let (torus_radius_override_count, torus_outline_extent_count) = torus_parameter_coverage(scan);
+    if torus_radius_override_count != 0 || torus_outline_extent_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Retained {torus_radius_override_count} tagged type-26 radius override(s) and \
+                 {torus_outline_extent_count} complete type-26 terminal outline extent(s). These \
+                 row-local fields remain native until the same positional body establishes a \
+                 complete model-space placement."
+            ),
+            provenance: None,
+        });
+    }
+
     // The specific undecoded PSB layers that gate per-instance geometry.
     losses.push(LossNote {
         category: LossCategory::Geometry,
         severity: Severity::Blocking,
         message: "Additional model-space carriers are gated by unresolved lane-specific scalar \
-                  prefixes, feature-local transform bindings, the `0x26` per-instance torus/sphere \
-                  override region, and the round/fillet feature evaluator. These gaps prevent \
-                  transfer of the remaining non-plane per-instance surfaces, curves, and vertices."
+                  prefixes, feature-local transform bindings, placement-incomplete or untagged \
+                  `0x26` torus/sphere variants, and the round/fillet feature evaluator. These gaps \
+                  prevent transfer of the remaining non-plane per-instance surfaces, curves, and \
+                  vertices."
             .to_string(),
         provenance: None,
     });

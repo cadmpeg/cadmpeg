@@ -747,6 +747,32 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             native.fields["torus_radius_overrides"]["radius2"],
             expected_radius2
         );
+        assert_eq!(
+            result
+                .ir
+                .source
+                .as_ref()
+                .expect("source metadata")
+                .attributes
+                .get("decoded_torus_radius_override_count")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(
+            result
+                .ir
+                .source
+                .as_ref()
+                .expect("source metadata")
+                .attributes
+                .get("decoded_torus_outline_extent_count")
+                .map(String::as_str),
+            Some("0")
+        );
+        assert!(result.report.losses.iter().any(|loss| {
+            loss.message
+                .contains("Retained 1 tagged type-26 radius override(s)")
+        }));
     }
 }
 
