@@ -845,6 +845,11 @@ zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
 and `f6` is a null operand. Expansion is bounded independently at four slots
 for each of `a`, `b`, and `c`.
 
+Within a positional `dimtab_ptr` row, `53` begins a seven-byte opaque value
+field. The following byte is the `direct` field; the opaque value bytes do not
+alter the alignment of `aux_value` and `ext_id` or terminate the dimension
+table.
+
 For a type-zero linear-distance relation with operand-vector forms
 `a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
 `b = [1, 1, 0, 1]`, and

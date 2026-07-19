@@ -3413,7 +3413,11 @@ fn positional_dimension(
 ) -> Option<FeatureDimension> {
     let (dimension_type, cursor) = segment_int(payload, start);
     let dimension_type = dimension_type?;
-    let (value, cursor, _) = decode_variable_scalar(payload, cursor, end, cache);
+    let (value, cursor, _) = if payload.get(cursor) == Some(&0x53) && cursor + 7 <= end {
+        (None, cursor + 7, true)
+    } else {
+        decode_variable_scalar(payload, cursor, end, cache)
+    };
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
     let auxiliary_start = cursor + 1;
     let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
@@ -7051,6 +7055,26 @@ mod tests {
         assert_eq!(dimensions.rows[0].external_id, 43);
         assert_eq!(dimensions.rows[1].dimension_type, 10);
         assert_eq!(dimensions.rows[1].external_id, 44);
+    }
+
+    #[test]
+    fn positional_dimension_table_retains_opaque_seven_byte_values() {
+        let mut payload = b"prefix\xf8\x03\xf7\x58\xfb\xe2\xf7\x59".to_vec();
+        payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
+        payload.extend_from_slice(b"\xf3\xf7\x58\xe2");
+        payload.extend_from_slice(&[1, 0x53, 0xa1, 0xca, 0xc0, 0x83, 0x12, 0x6f, 0, 0x18, 44]);
+        payload.extend_from_slice(b"\xf3\xf7\x58\xe2");
+        payload.extend_from_slice(&[5, 0x0d, 0, 0x18, 45]);
+        let cache = scalar::ScalarCache::from_section(&payload);
+
+        let dimensions = positional_dimension_table(&payload, 0, payload.len(), 88, &cache)
+            .expect("positional dimtab");
+
+        assert_eq!(dimensions.rows.len(), 3);
+        assert_eq!(dimensions.rows[1].value, None);
+        assert_eq!(dimensions.rows[1].external_id, 44);
+        assert_eq!(dimensions.rows[2].value, Some(-1.0));
+        assert_eq!(dimensions.rows[2].external_id, 45);
     }
 
     #[test]
