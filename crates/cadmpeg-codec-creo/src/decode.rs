@@ -8981,6 +8981,49 @@ fn relation_incidence_loci(
     ])
 }
 
+fn section_angular_entities(
+    definition: &crate::feature::FeatureDefinition,
+    segments: &[crate::feature::FeatureSegment],
+    vectors: [[Option<u32>; 4]; 3],
+    known_entities: &BTreeSet<u32>,
+) -> Option<[SketchEntityId; 2]> {
+    let [Some(first_internal), Some(second_internal), None, Some(1)] = vectors[0] else {
+        return None;
+    };
+    let order_table = definition.order_table.as_ref()?;
+    let external_id = |internal_id| {
+        let matching = order_table
+            .rows
+            .iter()
+            .filter(|row| row.internal_id == internal_id)
+            .collect::<Vec<_>>();
+        let [row] = matching.as_slice() else {
+            return None;
+        };
+        let matching_segments = segments
+            .iter()
+            .filter(|segment| {
+                segment.external_id == row.external_id
+                    && segment.kind == crate::feature::FeatureSegmentKind::Line
+            })
+            .collect::<Vec<_>>();
+        (known_entities.contains(&row.external_id) && matching_segments.len() == 1)
+            .then_some(row.external_id)
+    };
+    let [first, second] = [first_internal, second_internal].map(external_id);
+    let [Some(first), Some(second)] = [first, second] else {
+        return None;
+    };
+    (first != second).then(|| {
+        [first, second].map(|external_id| {
+            SketchEntityId(format!(
+                "creo:featdefs:sketch_entity#{}:{external_id}",
+                definition.id
+            ))
+        })
+    })
+}
+
 fn section_dimension_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -9016,10 +9059,25 @@ fn section_dimension_constraints(
             let typed = (|| {
                 unique_relation_id.then_some(())?;
                 let (dimension, _) = dimension.as_ref()?;
+                let parameter = parameter.clone()?;
+                if relation.relation_type == 1
+                    && dimension.value_unit == crate::feature::DimensionUnit::Radians
+                {
+                    let [first, second] = section_angular_entities(
+                        definition,
+                        segments,
+                        relation.operand_vectors?,
+                        &known_entities,
+                    )?;
+                    return Some(SketchConstraintDefinition::Angle {
+                        first,
+                        second,
+                        parameter,
+                    });
+                }
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }
-                let parameter = parameter.clone()?;
                 if relation.relation_type == 14
                     && relation.sign == 1
                     && relation.operand_vectors?[1] == [Some(0); 4]
@@ -17694,22 +17752,31 @@ mod resolved_sketch_tests {
                 }],
             }
         );
-        let mut unresolved_angle = definition.clone();
-        let angle_dimension = &mut unresolved_angle
+        let mut angular_dimension = definition.clone();
+        let second_angular_line =
+            &mut angular_dimension.segments.as_mut().expect("segments").rows[1];
+        second_angular_line.kind = crate::feature::FeatureSegmentKind::Line;
+        second_angular_line.center_id = None;
+        second_angular_line.radius_ref = None;
+        let angle_dimension = &mut angular_dimension
             .dimensions
             .as_mut()
             .expect("dimensions")
             .rows[0];
         angle_dimension.dimension_type = 10;
         angle_dimension.value_unit = crate::feature::DimensionUnit::Radians;
-        let angle_relation = &mut unresolved_angle.relations.as_mut().expect("relations").rows[0];
+        let angle_relation = &mut angular_dimension
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows[0];
         angle_relation.relation_type = 1;
         angle_relation.operand_vectors = Some([
             [Some(4), Some(5), None, Some(1)],
             [Some(1), None, Some(1), Some(1)],
             [Some(15), Some(16), Some(15), Some(24)],
         ]);
-        unresolved_angle.order_table = Some(crate::feature::FeatureOrderTable {
+        angular_dimension.order_table = Some(crate::feature::FeatureOrderTable {
             declared_count: 2,
             has_prototype: false,
             entity_ref: None,
@@ -17721,7 +17788,7 @@ mod resolved_sketch_tests {
                     offset: 90,
                 },
                 crate::feature::FeatureOrderRow {
-                    external_id: 15,
+                    external_id: 13,
                     internal_id: 5,
                     bitmask: 1,
                     offset: 91,
@@ -17730,20 +17797,33 @@ mod resolved_sketch_tests {
             offset: 89,
         });
         assert_eq!(
-            section_dimension_constraints(&unresolved_angle, &SketchId("sketch".into()))[0]
+            section_dimension_constraints(&angular_dimension, &SketchId("sketch".into()))[0]
                 .0
                 .definition,
-            SketchConstraintDefinition::Native {
-                native_kind: "creo:relation:1".to_string(),
-                entities: Vec::new(),
-                parameter: Some(ParameterId("creo:featdefs:parameter#917:40:42".to_string(),)),
-                operands: vec![SketchNativeOperand {
-                    native_kind: "relat_ptr".to_string(),
-                    object_index: 8,
-                    native_ref: Some("creo:featdefs:sketch#917".to_string()),
-                }],
+            SketchConstraintDefinition::Angle {
+                first: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+                second: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:40:42".to_string()),
             }
         );
+        let mut ambiguous_angle = angular_dimension.clone();
+        ambiguous_angle
+            .order_table
+            .as_mut()
+            .expect("order table")
+            .rows
+            .push(crate::feature::FeatureOrderRow {
+                external_id: 13,
+                internal_id: 5,
+                bitmask: 1,
+                offset: 92,
+            });
+        assert!(matches!(
+            section_dimension_constraints(&ambiguous_angle, &SketchId("sketch".into()))[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
         let relations = section_dimension_constraints(&definition, &SketchId("sketch".into()));
         assert_eq!(
             relations[0].0.definition,

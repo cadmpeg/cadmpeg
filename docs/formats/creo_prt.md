@@ -877,6 +877,13 @@ type-one, type-two, type-five, or type-seven incidences have the same effect;
 conflicting or unresolved orientation does not select an axis-specific neutral
 constraint.
 
+A type-one relation whose selected dimension is angular and whose first
+operand vector is `a=[first_entity,second_entity,null,1]` measures the angle
+between two line entities. The first two values are internal identifiers in
+`order_ptr`; each must map uniquely to a distinct `segtab` line. Their stored
+order supplies the two neutral angle operands. The remaining operand vectors
+and the relation sign retain the native angle-direction selectors.
+
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 `c=[15,0,0,0]`, and sign `1` binds the selected dimension value to the
 type-three `var_arr` radius with that key. An arc's `radius` field selects the
