@@ -10350,16 +10350,16 @@ fn semantic_writer_round_trips_all_extrusion_forms() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let profile_native = decoded.ir.model.features[0].native_ref.clone().unwrap();
+    let profile_feature = decoded.ir.model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
         FeatureDefinition::Extrude {
-            profile: ProfileRef::Native(profile),
+            profile: ProfileRef::Feature(profile),
             direction: None,
             extent: Extent::Blind { length: Length(2.0) },
             op: BooleanOp::Join,
             draft: None,
-        } if profile == &profile_native
+        } if profile == &profile_feature
     ));
     assert!(matches!(
         decoded.ir.model.features[2].definition,
@@ -14249,17 +14249,17 @@ fn semantic_writer_round_trips_all_revolution_extents() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let profile_native = decoded.ir.model.features[0].native_ref.clone().unwrap();
+    let profile_feature = decoded.ir.model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
         FeatureDefinition::Revolve {
             construction: cadmpeg_ir::features::RevolutionConstruction {
-                profile: Some(ProfileRef::Native(profile)),
+                profile: Some(ProfileRef::Feature(profile)),
                 extent: Some(Extent::Angle { angle: Angle(value) }),
                 ..
             },
             op: BooleanOp::Join,
-        } if profile == &profile_native && (*value - 90f64.to_radians()).abs() < 1e-12
+        } if profile == &profile_feature && (*value - 90f64.to_radians()).abs() < 1e-12
     ));
     assert!(matches!(
         decoded.ir.model.features[2].definition,
@@ -14690,13 +14690,13 @@ fn semantic_writer_round_trips_typed_sweep() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let profile_a = decoded.ir.model.features[0].native_ref.clone().unwrap();
+    let profile_a = decoded.ir.model.features[0].id.clone();
     let path = decoded.ir.model.features[1].native_ref.clone().unwrap();
-    let profile_b = decoded.ir.model.features[2].native_ref.clone().unwrap();
+    let profile_b = decoded.ir.model.features[2].id.clone();
     assert!(matches!(
         &decoded.ir.model.features[3].definition,
         FeatureDefinition::Sweep {
-            profile: Some(ProfileRef::Native(profile)),
+            profile: Some(ProfileRef::Feature(profile)),
             path: Some(PathRef::Native(path_ref)),
             mode: cadmpeg_ir::features::SweepMode::Solid {
                 op: BooleanOp::NewBody,
@@ -14718,12 +14718,16 @@ fn semantic_writer_round_trips_typed_sweep() {
     else {
         panic!("typed sweep");
     };
-    *profile = Some(ProfileRef::Native(profile_b));
+    *profile = Some(ProfileRef::Feature(profile_b.clone()));
     *mode = cadmpeg_ir::features::SweepMode::Solid {
         op: BooleanOp::Join,
     };
     *twist = Some(Angle(std::f64::consts::PI));
     *scale = Some(2.0);
+    decoded.ir.model.features[3]
+        .dependencies
+        .retain(|dependency| dependency != &profile_a);
+    decoded.ir.model.features[3].dependencies.push(profile_b);
 
     let mut encoded = Vec::new();
     SldprtCodec
@@ -15210,9 +15214,13 @@ fn semantic_writer_round_trips_typed_loft() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let refs = decoded.ir.model.features[..5]
+    let native_refs = decoded.ir.model.features[..5]
         .iter()
         .map(|feature| feature.native_ref.clone().unwrap())
+        .collect::<Vec<_>>();
+    let feature_refs = decoded.ir.model.features[..5]
+        .iter()
+        .map(|feature| feature.id.clone())
         .collect::<Vec<_>>();
     assert!(matches!(
         &decoded.ir.model.features[5].definition,
@@ -15222,10 +15230,10 @@ fn semantic_writer_round_trips_typed_loft() {
             op: BooleanOp::NewBody,
             closed: false,
         } if profiles == &vec![
-            ProfileRef::Native(refs[0].clone()),
-            ProfileRef::Native(refs[1].clone()),
-            ProfileRef::Native(refs[2].clone()),
-        ] && guides == &vec![PathRef::Native(refs[3].clone())]
+            ProfileRef::Feature(feature_refs[0].clone()),
+            ProfileRef::Feature(feature_refs[1].clone()),
+            ProfileRef::Feature(feature_refs[2].clone()),
+        ] && guides == &vec![PathRef::Native(native_refs[3].clone())]
     ));
 
     let FeatureDefinition::Loft {
@@ -15238,7 +15246,7 @@ fn semantic_writer_round_trips_typed_loft() {
         panic!("typed loft");
     };
     profiles.swap(0, 2);
-    *guides = vec![PathRef::Native(refs[4].clone())];
+    *guides = vec![PathRef::Native(native_refs[4].clone())];
     *op = BooleanOp::Join;
     *closed = true;
 
@@ -15321,7 +15329,7 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
         .unwrap();
     let refs = decoded.ir.model.features[..2]
         .iter()
-        .map(|feature| feature.native_ref.clone().unwrap())
+        .map(|feature| feature.id.clone())
         .collect::<Vec<_>>();
     assert!(matches!(
         &decoded.ir.model.features[2].definition,
@@ -15331,8 +15339,8 @@ fn semantic_writer_round_trips_boundary_boss_as_loft() {
             op: BooleanOp::Join,
             closed: false,
         } if profiles == &vec![
-            ProfileRef::Native(refs[0].clone()),
-            ProfileRef::Native(refs[1].clone()),
+            ProfileRef::Feature(refs[0].clone()),
+            ProfileRef::Feature(refs[1].clone()),
         ] && guides.is_empty()
     ));
     assert!(matches!(
@@ -15448,12 +15456,12 @@ fn semantic_writer_round_trips_typed_rib() {
     let mut decoded = SldprtCodec
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .unwrap();
-    let profile_ref = decoded.ir.model.features[0].native_ref.clone().unwrap();
+    let profile_ref = decoded.ir.model.features[0].id.clone();
     assert!(matches!(
         &decoded.ir.model.features[1].definition,
         FeatureDefinition::Rib {
             construction: cadmpeg_ir::features::RibConstruction {
-                profile: Some(ProfileRef::Native(profile)),
+                profile: Some(ProfileRef::Feature(profile)),
                 direction: Some(Vector3 { x: 0.0, y: 1.0, z: 0.0 }),
                 thickness: Some(Length(2.0)),
                 side: Some(RibSide::OneSided),

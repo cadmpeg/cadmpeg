@@ -334,7 +334,7 @@ pub(crate) fn enrich_scene_classes(
 
 /// Project native Keywords records into the neutral feature arena.
 pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::features::Feature> {
-    histories
+    let mut features = histories
         .iter()
         .flat_map(|history| {
             let source_bindings = unique_source_bindings(history);
@@ -397,7 +397,85 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
                     native_ref: Some(feature.id.clone()),
                 })
         })
-        .collect()
+        .collect::<Vec<_>>();
+    bind_native_profile_features(&mut features, histories);
+    features
+}
+
+fn bind_native_profile_features(
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
+) {
+    let construction_native_refs = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter(|feature| {
+            matches!(
+                classify(feature),
+                Some(
+                    FeatureClass::Sketch
+                        | FeatureClass::SketchBlockInstance
+                        | FeatureClass::EquationCurve
+                        | FeatureClass::ProjectedCurve
+                        | FeatureClass::CompositeCurve
+                )
+            )
+        })
+        .map(|feature| feature.id.as_str())
+        .collect::<HashSet<_>>();
+    let feature_ids_by_native = features
+        .iter()
+        .filter_map(|feature| {
+            let native = feature.native_ref.as_deref()?;
+            construction_native_refs
+                .contains(native)
+                .then_some((native.to_string(), feature.id.clone()))
+        })
+        .collect::<HashMap<_, _>>();
+
+    for feature in features {
+        let mut dependencies = Vec::new();
+        let mut bind = |profile: &mut ProfileRef| {
+            let ProfileRef::Native(native) = profile else {
+                return;
+            };
+            let Some(target) = feature_ids_by_native.get(native.as_str()) else {
+                return;
+            };
+            *profile = ProfileRef::Feature(target.clone());
+            dependencies.push(target.clone());
+        };
+        match &mut feature.definition {
+            FeatureDefinition::Extrude { profile, .. }
+            | FeatureDefinition::Wrap { profile, .. } => bind(profile),
+            FeatureDefinition::Revolve { construction, .. } => {
+                if let Some(profile) = &mut construction.profile {
+                    bind(profile);
+                }
+            }
+            FeatureDefinition::Rib { construction, .. } => {
+                if let Some(profile) = &mut construction.profile {
+                    bind(profile);
+                }
+            }
+            FeatureDefinition::Sweep { profile, .. } => {
+                if let Some(profile) = profile {
+                    bind(profile);
+                }
+            }
+            FeatureDefinition::Loft { profiles, .. } => {
+                for profile in profiles {
+                    bind(profile);
+                }
+            }
+            _ => {}
+        }
+        for dependency in dependencies {
+            if dependency != feature.id && !feature.dependencies.contains(&dependency) {
+                feature.dependencies.push(dependency);
+            }
+        }
+    }
 }
 
 /// Project Keywords custom-property records into document-owned attributes.
@@ -2374,6 +2452,7 @@ mod history_reference_tests {
         assert!(!bind_definition_sketch(
             &mut definition,
             "sketch-native",
+            &FeatureId("sketch-feature".into()),
             &sketch,
             false,
         ));
@@ -2387,6 +2466,7 @@ mod history_reference_tests {
         assert!(bind_definition_sketch(
             &mut definition,
             "sketch-native",
+            &FeatureId("sketch-feature".into()),
             &sketch,
             true,
         ));
@@ -2397,6 +2477,40 @@ mod history_reference_tests {
                 ..
             } if bound == &sketch
         ));
+    }
+
+    #[test]
+    fn exact_native_profile_source_projects_a_feature_dependency() {
+        let mut sketch = feature("sketch", Some("42"), 0);
+        sketch.kind = "Sketch".into();
+        sketch.input_class = Some("moProfileFeature_c".into());
+        let mut extrusion = feature("extrusion", Some("43"), 1);
+        extrusion.kind = "Extrusion".into();
+        extrusion.input_class = Some("moExtrusion_c".into());
+        extrusion.properties.insert("Profile".into(), "42".into());
+        extrusion
+            .properties
+            .insert("Operation".into(), "Join".into());
+        extrusion.parameters.insert("D1".into(), "5".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![sketch, extrusion],
+        };
+
+        let projected = project_features(&[history]);
+        let sketch_id = neutral_feature_id("sketch");
+        assert!(matches!(
+            &projected[1].definition,
+            FeatureDefinition::Extrude {
+                profile: ProfileRef::Feature(feature),
+                ..
+            } if feature == &sketch_id
+        ));
+        assert_eq!(projected[1].dependencies, [sketch_id]);
     }
 
     fn design_configuration(
@@ -3116,8 +3230,13 @@ pub fn bind_unique_sketch_feature(
     bindings.extend(aliases);
     for feature in features {
         for (_, dependency, native_ref, sketch, has_profile) in &bindings {
-            if bind_definition_sketch(&mut feature.definition, native_ref, sketch, *has_profile)
-                && !feature.dependencies.contains(dependency)
+            if bind_definition_sketch(
+                &mut feature.definition,
+                native_ref,
+                dependency,
+                sketch,
+                *has_profile,
+            ) && !feature.dependencies.contains(dependency)
             {
                 feature.dependencies.push(dependency.clone());
             }
@@ -3472,13 +3591,15 @@ fn resolve_body_selection(
 fn bind_definition_sketch(
     definition: &mut FeatureDefinition,
     native_ref: &str,
+    feature_ref: &FeatureId,
     sketch: &cadmpeg_ir::sketches::SketchId,
     has_profile: bool,
 ) -> bool {
     let bind_profile = |profile: &mut ProfileRef| {
         if has_profile
             && (matches!(profile, ProfileRef::Unresolved(owner) if owner == native_ref)
-                || matches!(profile, ProfileRef::Native(value) if value == native_ref))
+                || matches!(profile, ProfileRef::Native(value) if value == native_ref)
+                || matches!(profile, ProfileRef::Feature(value) if value == feature_ref))
         {
             *profile = ProfileRef::Sketch(sketch.clone());
             true
@@ -6839,7 +6960,9 @@ fn validate_surface_sweep_profile_edits(
             else {
                 return None;
             };
-            Some((feature.id, profile))
+            (matches!(profile, ProfileRef::Generated { .. })
+                || !feature.source_properties.contains_key("Profile"))
+            .then_some((feature.id, profile))
         })
         .collect::<HashMap<_, _>>();
     for feature in features {
@@ -9136,13 +9259,14 @@ pub fn sync_neutral_features(
                         feature.id
                     )));
                 }
-                let profile = profile_source(profile, &record_sources, &sketch_sources)
-                    .ok_or_else(|| {
-                        CodecError::Malformed(format!(
-                            "SLDPRT feature {} references a missing wrap profile",
-                            feature.id
-                        ))
-                    })?;
+                let profile =
+                    profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
+                        .ok_or_else(|| {
+                            CodecError::Malformed(format!(
+                                "SLDPRT feature {} references a missing wrap profile",
+                                feature.id
+                            ))
+                        })?;
                 let face = face_selection_value(face).ok_or_else(|| {
                     CodecError::Malformed(format!(
                         "SLDPRT feature {} has no wrap target face",
@@ -9295,14 +9419,13 @@ pub fn sync_neutral_features(
                     None
                 } else {
                     Some(
-                        profile_source(profile, &record_sources, &sketch_sources).ok_or_else(
-                            || {
+                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
+                            .ok_or_else(|| {
                                 CodecError::Malformed(format!(
                                     "SLDPRT feature {} references a missing extrusion profile",
                                     feature.id
                                 ))
-                            },
-                        )?,
+                            })?,
                     )
                 };
                 if let Some(record) = existing.as_deref() {
@@ -10865,13 +10988,14 @@ pub fn sync_neutral_features(
                     );
                 }
                 if let Some(profile) = &construction.profile {
-                    let profile_source = profile_source(profile, &record_sources, &sketch_sources)
-                        .ok_or_else(|| {
-                            CodecError::Malformed(format!(
-                                "SLDPRT feature {} references a missing revolution profile",
-                                feature.id
-                            ))
-                        })?;
+                    let profile_source =
+                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "SLDPRT feature {} references a missing revolution profile",
+                                    feature.id
+                                ))
+                            })?;
                     properties.insert("Profile".into(), profile_source);
                 }
                 (
@@ -10896,20 +11020,22 @@ pub fn sync_neutral_features(
                     )));
                 }
                 let profile_source = match profile {
-                    Some(ProfileRef::Feature(_) | ProfileRef::Generated { .. })
-                        if existing.is_some() =>
+                    Some(ProfileRef::Generated { .. }) if existing.is_some() => None,
+                    Some(ProfileRef::Feature(_))
+                        if existing
+                            .as_deref()
+                            .is_some_and(|record| !record.properties.contains_key("Profile")) =>
                     {
                         None
                     }
                     Some(profile) => Some(
-                        profile_source(profile, &record_sources, &sketch_sources).ok_or_else(
-                            || {
+                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
+                            .ok_or_else(|| {
                                 CodecError::Malformed(format!(
                                     "SLDPRT feature {} references a missing sweep profile",
                                     feature.id
                                 ))
-                            },
-                        )?,
+                            })?,
                     ),
                     None => None,
                 };
@@ -11030,7 +11156,9 @@ pub fn sync_neutral_features(
                 }
                 let profile_sources = profiles
                     .iter()
-                    .map(|profile| profile_source(profile, &record_sources, &sketch_sources))
+                    .map(|profile| {
+                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
+                    })
                     .collect::<Option<Vec<_>>>()
                     .ok_or_else(|| {
                         CodecError::Malformed(format!(
@@ -11118,13 +11246,14 @@ pub fn sync_neutral_features(
                 }
                 let mut properties = feature.source_properties.clone();
                 if let Some(profile) = &construction.profile {
-                    let profile_source = profile_source(profile, &record_sources, &sketch_sources)
-                        .ok_or_else(|| {
-                            CodecError::Malformed(format!(
-                                "SLDPRT feature {} references a missing rib profile",
-                                feature.id
-                            ))
-                        })?;
+                    let profile_source =
+                        profile_source(profile, &record_sources, &feature_sources, &sketch_sources)
+                            .ok_or_else(|| {
+                                CodecError::Malformed(format!(
+                                    "SLDPRT feature {} references a missing rib profile",
+                                    feature.id
+                                ))
+                            })?;
                     properties.insert("Profile".into(), profile_source);
                 }
                 if let Some(direction) = construction.direction {
@@ -11696,13 +11825,15 @@ fn synchronize_feature_content_order(native: &mut crate::native::SldprtNative) {
 fn profile_source(
     profile: &ProfileRef,
     native: &HashMap<String, String>,
+    features: &HashMap<&FeatureId, &str>,
     sketches: &HashMap<cadmpeg_ir::sketches::SketchId, String>,
 ) -> Option<String> {
     match profile {
         ProfileRef::Unresolved(_) => None,
         ProfileRef::Native(id) => Some(native.get(id).cloned().unwrap_or_else(|| id.clone())),
         ProfileRef::Sketch(id) => sketches.get(id).cloned(),
-        ProfileRef::Feature(_) | ProfileRef::Generated { .. } => None,
+        ProfileRef::Feature(id) => features.get(id).map(|source| (*source).to_string()),
+        ProfileRef::Generated { .. } => None,
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(
             faces
                 .iter()
