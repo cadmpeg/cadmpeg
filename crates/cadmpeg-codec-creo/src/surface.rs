@@ -1703,25 +1703,35 @@ fn decode_referenced_planar_envelope_cylinder_frame(
 ) -> Option<PositionalCylinderFrame> {
     body.starts_with(&[0x11, 0x18, 0x13]).then_some(())?;
     let mut cursor = 3;
-    let (length, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    let (length, next) = scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
     cursor = next;
-    let (first_radial, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    let (first_radial, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
     cursor = next;
     let (first_axial, next) =
         if body.get(cursor) == Some(&0x18) && matches!(body.get(cursor + 1), Some(0x19 | 0x32)) {
             (0.0, cursor + 1)
         } else {
-            scalar::decode_in_surface_row_lane(body, cursor, cache)?
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?
         };
     cursor = next;
+    matches!(body.get(cursor), Some(0x19 | 0x32)).then_some(())?;
     let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
     cursor = next;
-    let (second_radial, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    let (second_radial, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
     cursor = next;
-    let (second_axial, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    let (second_axial, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
     cursor = next;
-    let (radius, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
-    (next == body.len()).then_some(())?;
+    let (radius, next) = scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    let reversed = if next == body.len() {
+        false
+    } else if matches!(body.get(next..), Some([0xf7, 0x17 | 0x19])) {
+        true
+    } else {
+        return None;
+    };
 
     let values = [
         length,
@@ -1739,8 +1749,9 @@ fn decode_referenced_planar_envelope_cylinder_frame(
     close((second_radial - first_radial).abs(), 2.0 * radius).then_some(())?;
 
     let radial_midpoint = f64::midpoint(first_radial, second_radial);
-    let axial_sign = (second_axial - first_axial).signum();
-    let radial_sign = (second_radial - first_radial).signum();
+    let orientation = if reversed { -1.0 } else { 1.0 };
+    let axial_sign = orientation * (second_axial - first_axial).signum();
+    let radial_sign = orientation * (second_radial - first_radial).signum();
     Some(PositionalCylinderFrame {
         origin: [radial_midpoint, second_axial, 0.0],
         axis: [0.0, axial_sign, 0.0],
@@ -3429,6 +3440,24 @@ mod tests {
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert!((frame.radius - 4.45).abs() < 1e-12);
         assert_eq!(frame.length, 16.0);
+
+        let reversed_referenced_planar_envelope = [
+            17, 24, 19, 46, 17, 255, 71, 19, 204, 70, 48, 189, 112, 163, 215, 10, 62, 50, 197, 215,
+            53, 172, 2, 203, 123, 46, 19, 204, 70, 40, 122, 225, 71, 174, 20, 125, 46, 19, 204,
+            247, 25,
+        ];
+        let frame = decode_positional_cylinder_frame(
+            &reversed_referenced_planar_envelope,
+            &scalar::ScalarCache::default(),
+        )
+        .expect("complete reversed referenced planar-envelope cylinder");
+        assert!((frame.origin[0]).abs() < 1e-12);
+        assert!((frame.origin[1] + 12.24).abs() < 1e-12);
+        assert_eq!(frame.origin[2], 0.0);
+        assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
+        assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+        assert!((frame.radius - 4.95).abs() < 1e-12);
+        assert!((frame.length - 4.5).abs() < 1e-12);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;
