@@ -635,8 +635,9 @@ mod marker_tests {
         constraint_reference_plane_frame, coordinate_marker_local_links,
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
-        explicit_reference_plane_frame, fixed_reference_plane_frame, indexed_profile_vertex,
-        inline_surface_reference_at, legacy_coordinate_roster_curve_endpoint_markers,
+        explicit_reference_plane_frame, extended_compact_arc_record, fixed_reference_plane_frame,
+        indexed_profile_vertex, inline_surface_reference_at,
+        legacy_coordinate_roster_curve_endpoint_markers,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
         legacy_feature_input_section, legacy_reference_axis_triads,
@@ -652,9 +653,9 @@ mod marker_tests {
         revolution_temporary_axis, roster_curve_endpoint_markers,
         sketch_block_identity_normalization_origin, sketch_block_record_origin,
         sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
-        tangent_bounded_curve, unique_dimensioned_rectangle_markers, unique_locus,
-        unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle, BooleanOp,
-        CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        tangent_bounded_curve, unique_arc_center_marker, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle,
+        BooleanOp, CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
         FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
         NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
@@ -3455,6 +3456,46 @@ mod marker_tests {
                 start: Point2::new(0.0, 2.0),
                 end: Point2::new(0.0, 0.0),
             })
+        );
+    }
+
+    #[test]
+    fn extended_compact_arc_uses_one_equidistant_center_marker() {
+        let mut payload = vec![0; 104 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[60..64].copy_from_slice(&1u32.to_le_bytes());
+        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+        payload[72..76].copy_from_slice(&1i32.to_le_bytes());
+        for offset in (78..94).step_by(4) {
+            payload[offset..offset + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        payload[104..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        assert!(extended_compact_arc_record(&payload, 0));
+
+        let start = Point2::new(1.0, 0.0);
+        let end = Point2::new(0.0, 1.0);
+        assert_eq!(
+            unique_arc_center_marker(
+                start,
+                end,
+                &[Point2::new(0.0, 0.0), Point2::new(4.0, 3.0)],
+                1.0e-8,
+            ),
+            Some(Point2::new(0.0, 0.0))
+        );
+        assert_eq!(
+            unique_arc_center_marker(
+                start,
+                end,
+                &[Point2::new(0.0, 0.0), Point2::new(0.5, 0.5)],
+                1.0e-8,
+            ),
+            None
         );
     }
 
@@ -12523,6 +12564,42 @@ pub(crate) fn project_marker_backed_sketches(
                                     };
                                     let (start, end) = (project(start)?, project(end)?);
                                     let offset = usize::try_from(marker.offset).ok()?;
+                                    if extended_compact_arc_record(&lane.native_payload, offset) {
+                                        let [start_u, start_v] = endpoints[0].coordinates_m?;
+                                        let [end_u, end_v] = endpoints[1].coordinates_m?;
+                                        let candidates = object_markers
+                                            .iter()
+                                            .copied()
+                                            .filter(|candidate| {
+                                                candidate.id != endpoints[0].id
+                                                    && candidate.id != endpoints[1].id
+                                            })
+                                            .filter_map(|candidate| {
+                                                let [u, v] = candidate.coordinates_m?;
+                                                Some(Point2::new(
+                                                    u * NATIVE_TO_IR,
+                                                    v * NATIVE_TO_IR,
+                                                ))
+                                            })
+                                            .collect::<Vec<_>>();
+                                        if let Some(center) = unique_arc_center_marker(
+                                            Point2::new(
+                                                start_u * NATIVE_TO_IR,
+                                                start_v * NATIVE_TO_IR,
+                                            ),
+                                            Point2::new(end_u * NATIVE_TO_IR, end_v * NATIVE_TO_IR),
+                                            &candidates,
+                                            QUANTUM,
+                                        ) {
+                                            let center =
+                                                transform.apply(quantize(center, QUANTUM))?;
+                                            let center = Point2::new(
+                                                center.0 as f64 * QUANTUM,
+                                                center.1 as f64 * QUANTUM,
+                                            );
+                                            return minor_arc_geometry(start, end, center, QUANTUM);
+                                        }
+                                    }
                                     if let Some([tu, tv]) =
                                         compact_bounded_curve_tangent(&lane.native_payload, offset)
                                     {
@@ -18246,6 +18323,102 @@ fn legacy_coordinate_roster_undetailed_line(payload: &[u8], offset: usize) -> bo
         && marker_profile_curve_role(payload, offset) == Some(1)
         && compact_indexed_curve_endpoint_indices(payload, offset).is_some()
         && compact_bounded_curve_tangent(payload, offset).is_none()
+}
+
+fn extended_compact_arc_record(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
+        == Some(LEGACY_EXTENDED_SKETCH_MARKER)
+        && payload.get(offset + 17..offset + 21) == Some(&0u32.to_le_bytes())
+        && matches!(
+            payload.get(offset + 23..offset + 27),
+            Some(locus) if locus == [0x04, 0x00, 0x02, 0x00] || locus == [0x05, 0x00, 0x01, 0x00]
+        )
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
+        && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
+        && payload
+            .get(offset + 72..offset + 76)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(i32::from_le_bytes)
+            .is_some_and(|selector| matches!(selector, -1 | 1))
+        && payload.get(offset + 78..offset + 94)
+            == Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        && payload.get(offset + 94..offset + 96) == Some(&[0; 2])
+        && sketch_marker_prefix_at(payload, offset.saturating_add(104))
+}
+
+fn unique_arc_center_marker(
+    start: Point2,
+    end: Point2,
+    candidates: &[Point2],
+    tolerance: f64,
+) -> Option<Point2> {
+    if start == end {
+        return None;
+    }
+    let mut centers = candidates
+        .iter()
+        .copied()
+        .filter_map(|center| {
+            let radius = (start.u - center.u).hypot(start.v - center.v);
+            let end_radius = (end.u - center.u).hypot(end.v - center.v);
+            if radius <= tolerance
+                || (radius - end_radius).abs()
+                    > tolerance * radius.abs().max(end_radius.abs()).max(1.0)
+            {
+                return None;
+            }
+            let start_angle = (start.v - center.v).atan2(start.u - center.u);
+            let end_angle = (end.v - center.v).atan2(end.u - center.u);
+            let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+            if sweep <= tolerance || (std::f64::consts::TAU - sweep) <= tolerance {
+                return None;
+            }
+            (sweep <= std::f64::consts::PI + tolerance)
+                .then_some((quantize(center, tolerance), center))
+        })
+        .collect::<Vec<_>>();
+    centers.sort_unstable_by_key(|(center, _)| *center);
+    centers.dedup_by_key(|(center, _)| *center);
+    let [(_, center)] = centers.as_slice() else {
+        return None;
+    };
+    Some(*center)
+}
+
+fn minor_arc_geometry(
+    start: Point2,
+    end: Point2,
+    center: Point2,
+    tolerance: f64,
+) -> Option<SketchGeometry> {
+    let radius = (start.u - center.u).hypot(start.v - center.v);
+    let end_radius = (end.u - center.u).hypot(end.v - center.v);
+    if radius <= tolerance
+        || (radius - end_radius).abs() > tolerance * radius.abs().max(end_radius.abs()).max(1.0)
+    {
+        return None;
+    }
+    let start_angle = (start.v - center.v).atan2(start.u - center.u);
+    let end_angle = (end.v - center.v).atan2(end.u - center.u);
+    let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
+    let (start_angle, end_angle) = if sweep <= std::f64::consts::PI + tolerance {
+        (start_angle, end_angle)
+    } else {
+        (end_angle, start_angle)
+    };
+    Some(SketchGeometry::Arc {
+        center,
+        radius: Length(radius),
+        start_angle: Angle(start_angle),
+        end_angle: Angle(end_angle),
+    })
 }
 
 fn legacy_coordinate_roster_selected_axis_endpoint_indices(
