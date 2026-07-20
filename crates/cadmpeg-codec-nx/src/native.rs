@@ -5373,6 +5373,25 @@ pub struct FeatureDraftConstructionBinary32Lane {
     pub value_source_offsets: Vec<u64>,
 }
 
+/// Canonical printable string in a reconstructed draft graph payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureDraftConstructionGraphString {
+    /// Globally unique string identity.
+    pub id: String,
+    /// Owning `DRAFT` operation label.
+    pub operation_label: String,
+    /// Reconstructed graph payload carrying the string.
+    pub graph_payload: String,
+    /// Zero-based string order in the reconstructed payload.
+    pub ordinal: u32,
+    /// Exact printable value.
+    pub value: String,
+    /// Payload-relative offset of the `66 32 03` marker.
+    pub payload_offset: u64,
+    /// Absolute source offset of the marker.
+    pub source_offset: u64,
+}
+
 /// Complete identity frame in a reconstructed draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDraftConstructionIdentityFrame {
@@ -9229,6 +9248,45 @@ pub fn feature_draft_construction_binary32_lanes(
                             &sources,
                         )?,
                         value_source_offsets,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Decode canonical printable strings from reconstructed draft graph payloads.
+pub fn feature_draft_construction_graph_strings(
+    container: &Container,
+    payloads: &[FeatureDraftConstructionGraphPayload],
+) -> Vec<FeatureDraftConstructionGraphString> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::string_values(&bytes, 0)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, value)| {
+                    let payload_offset = value.offset as u64;
+                    Some(FeatureDraftConstructionGraphString {
+                        id: format!("{}-string-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        graph_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        value: value.value.to_string(),
+                        payload_offset,
+                        source_offset: joined_payload_source_offset(
+                            payload_offset,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
                     })
                 })
                 .collect::<Vec<_>>()

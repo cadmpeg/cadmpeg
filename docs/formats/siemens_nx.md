@@ -930,6 +930,8 @@ The draft construction graph payload contains zero or more signed Q1.55 lanes. A
 
 The same graph payload contains zero or more shifted-IEEE binary32 lanes. A lane begins with either `90 18 45 01 04 01 04 01 c0 45 04 04 80 86 02 00 03 00` or `90 18 45 01 04 01 03 01 c0 45 04 00 80 86 02 00 03 00`, followed by one or more shifted-binary32 scalar atoms and a zero terminator. The lane retains its exact `04` or `03` branch and discriminator, ordered finite values and raw encodings, payload-relative offsets, and absolute source offsets. An empty lane, unsupported or nonfinite scalar encoding, truncated scalar, or missing zero terminator rejects that lane atomically.
 
+Canonical `66 32 03, declared_length, printable_text, 00` string frames are decoded over the complete draft construction graph payload. Each string retains its exact value, payload order and offset, graph-payload ownership, and absolute source offset. Physical block boundaries do not delimit the string scan.
+
 The payload ends with one terminal lane: `extended_compact_index[0], extended_compact_index[1], 01 03 02 01 02 01 01 01 00 00 00, tail[3], 00`. Each index uses the two-byte `80..fe, low:u8` form. The ordered indices, their exact offsets, and the three uninterpreted tail bytes are retained. A direct, null, or truncated index, malformed fixed byte, missing terminal zero, trailing byte, or multiple complete end-anchored parses rejects the lane atomically.
 
 The operation labels `CPROJ` and `CPROJ_CMB` identify projected-curve constructions. Neutral projection retains unresolved source-path, target-face, direction, and directionality fields.
