@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 58;
+pub const CATIA_NATIVE_VERSION: u32 = 59;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -372,6 +372,9 @@ pub struct CatiaObjectRecord {
     /// UTF-8 class name resolved through the graph's schema catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub class_name: Option<String>,
+    /// Exact schema-catalog entry selected by `class_ref`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_entry: Option<String>,
     /// Third head reference, selecting class-specific storage.
     pub storage_ref: Option<u32>,
     /// Typed nested payload.
@@ -1123,10 +1126,12 @@ fn validate_native_links(
                     catalog
                         .entries
                         .get(ordinal)
-                        .map(|entry| entry.value.as_str())
+                        .map(|entry| (entry.id.as_str(), entry.value.as_str()))
                 })
             });
-            if record.class_name.as_deref() != expected_class {
+            if record.class_entry.as_deref() != expected_class.map(|(entry, _)| entry)
+                || record.class_name.as_deref() != expected_class.map(|(_, value)| value)
+            {
                 return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                     "object record `{}` has an invalid schema class",
                     record.id
@@ -1218,10 +1223,25 @@ impl CatiaNative {
             .into_iter()
             .map(CatiaCatalog::from)
             .collect();
-        let object_graphs: Vec<CatiaObjectGraph> = parsed_object_graphs
+        let mut object_graphs: Vec<CatiaObjectGraph> = parsed_object_graphs
             .into_iter()
             .map(CatiaObjectGraph::from)
             .collect();
+        for graph in &mut object_graphs {
+            let catalog = graph.catalog_byte_offset.and_then(|offset| {
+                catalogs
+                    .iter()
+                    .find(|catalog| catalog.byte_offset == offset)
+            });
+            for record in &mut graph.records {
+                record.class_entry = record.class_ref.and_then(|ordinal| {
+                    usize::try_from(ordinal)
+                        .ok()
+                        .and_then(|ordinal| catalog?.entries.get(ordinal))
+                        .map(|entry| entry.id.clone())
+                });
+            }
+        }
         alias_rows.retain(|row| {
             let row_start = row.byte_offset.saturating_sub(4);
             !object_graphs
@@ -1725,6 +1745,7 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
                 owner_ref: record.owner_ref,
                 class_ref: record.class_ref,
                 class_name: record.class_name,
+                class_entry: None,
                 storage_ref: record.storage_ref,
                 payload: record.payload,
                 subtype: record.subtype,

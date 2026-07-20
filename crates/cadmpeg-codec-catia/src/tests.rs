@@ -5590,6 +5590,14 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
     assert_eq!(graph.records[1].class_name.as_deref(), Some("Sketch"));
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
+        native.object_graphs[0].records[0].class_entry,
+        Some(native.catalogs[0].entries[3].id.clone())
+    );
+    assert_eq!(
+        native.object_graphs[0].records[1].class_entry,
+        Some(native.catalogs[0].entries[4].id.clone())
+    );
+    assert_eq!(
         native.design_objects[0].field_classes,
         [String::new(), "Sketch".to_string()]
     );
@@ -6136,6 +6144,7 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     let native = crate::native::CatiaNative::decode(&standard_catpart_with_value_block());
     assert!(native.object_graphs[0].catalog_byte_offset.is_some());
     assert!(native.object_graphs[0].records[0].class_name.is_some());
+    assert!(native.object_graphs[0].records[0].class_entry.is_some());
     let assert_rejected = |malformed: crate::native::CatiaNative| {
         let mut namespace = cadmpeg_ir::NativeNamespace::default();
         malformed
@@ -6151,9 +6160,13 @@ fn native_load_rejects_noncanonical_graph_catalog_views() {
     missing_catalog_link.object_graphs[0].catalog_byte_offset = None;
     assert_rejected(missing_catalog_link);
 
-    let mut invalid_class = native;
+    let mut invalid_class = native.clone();
     invalid_class.object_graphs[0].records[0].class_name = Some("WrongClass".to_string());
     assert_rejected(invalid_class);
+
+    let mut invalid_class_entry = native;
+    invalid_class_entry.object_graphs[0].records[0].class_entry = None;
+    assert_rejected(invalid_class_entry);
 }
 
 #[test]
