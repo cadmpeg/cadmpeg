@@ -1136,8 +1136,9 @@ Positional rows may insert the two-byte `c0 80` or `c1 00` wrapper before
 `ext_id` value of zero is an identifier; the `f6` control sentinel represents
 an absent value.
 The `c0 80` wrapper may also precede the named row's scalar `type`. Segment
-families other than types `2`, `3`, and `5` retain the same fields and count
-toward table completeness, but do not define line, arc, or point geometry.
+families other than types `2`, `3`, `5`, and `10` retain the same fields and
+count toward table completeness, but do not define line, arc, point, or circle
+geometry.
 `ext_id` is the neutral section-entity identity when exactly one `segtab` row
 stores that value. Rows sharing an `ext_id` remain independent construction
 entities identified by their row offsets and do not participate in profile,
@@ -2216,6 +2217,10 @@ saved entity supplies the standalone neutral geometry for that external sketch
 entity. The opaque row retains the entity's solver identity and does not replace
 the complete saved geometry. A complete `segtab` table and a compatible
 same-feature generated surface binding make that entity profile geometry.
+A solved type-10 `segtab` circle with a unique external identity is likewise a
+closed one-entity profile when a same-feature generated cylinder binds that
+identity. Without that generated-cylinder binding, it remains construction
+geometry.
 
 A saved line, arc, or circle with complete section-space geometry and an
 `order_table` join defines a neutral sketch entity under that row's `ext_id`.

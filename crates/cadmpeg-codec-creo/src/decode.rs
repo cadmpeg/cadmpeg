@@ -11514,6 +11514,17 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         let segment_geometry = |segment: &crate::feature::FeatureSegment| {
             segment_geometries.get(&segment.offset).cloned().flatten()
         };
+        let opaque_circle_geometries = definition
+            .segments
+            .iter()
+            .flat_map(|table| &table.opaque_rows)
+            .filter_map(|segment| {
+                Some((
+                    segment.offset,
+                    section_opaque_circle_geometry(&points, &radii, segment)?,
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
         let emitted = segments
             .iter()
             .filter(|segment| {
@@ -11530,7 +11541,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(definition);
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
-        let generated_segment_geometries = segments
+        let generated_profile_geometries = segments
             .iter()
             .filter(|segment| {
                 unique_segment_ids.contains(&segment.external_id)
@@ -11538,11 +11549,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             })
             .filter_map(|segment| {
                 let geometry = segment_geometry(segment)?;
-                let expected_kinds = match &geometry {
-                    SketchGeometry::Line { .. } => &[crate::surface::SurfaceKind::Plane][..],
-                    SketchGeometry::Arc { .. } => &[crate::surface::SurfaceKind::Cylinder][..],
-                    _ => return None,
-                };
+                let expected_kinds = section_generated_profile_surface_kinds(&geometry)?;
                 section_entity_is_generated_profile(
                     complete_segment_table,
                     definition.owner_feature_id,
@@ -11553,33 +11560,43 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 )
                 .then_some((segment.external_id, geometry))
             })
+            .chain(
+                definition
+                    .segments
+                    .iter()
+                    .flat_map(|table| &table.opaque_rows)
+                    .filter(|segment| {
+                        segment.kind == 10 && unique_segment_ids.contains(&segment.external_id)
+                    })
+                    .filter_map(|segment| {
+                        let geometry = opaque_circle_geometries.get(&segment.offset)?.clone();
+                        let expected_kinds = section_generated_profile_surface_kinds(&geometry)?;
+                        section_entity_is_generated_profile(
+                            complete_segment_table,
+                            definition.owner_feature_id,
+                            segment.external_id,
+                            expected_kinds,
+                            &scan.feature_entity_tables,
+                            &scan.surface_rows,
+                        )
+                        .then_some((segment.external_id, geometry))
+                    }),
+            )
             .collect::<Vec<_>>();
-        let mut profiled_entities = profiles
+        let mut profile_entities = profiles
             .iter()
             .flatten()
             .map(|entity_use| entity_use.entity.clone())
             .collect::<BTreeSet<_>>();
-        for profile in saved_profile_chains(&sketch_id, &generated_segment_geometries) {
+        for profile in saved_profile_chains(&sketch_id, &generated_profile_geometries) {
             if profile
                 .iter()
-                .all(|entity_use| !profiled_entities.contains(&entity_use.entity))
+                .all(|entity_use| !profile_entities.contains(&entity_use.entity))
             {
-                profiled_entities
-                    .extend(profile.iter().map(|entity_use| entity_use.entity.clone()));
+                profile_entities.extend(profile.iter().map(|entity_use| entity_use.entity.clone()));
                 profiles.push(profile);
             }
         }
-        let profile_segments = segments
-            .iter()
-            .filter(|segment| {
-                let id = sketch_entity_id(&sketch_id, segment.external_id);
-                profiles
-                    .iter()
-                    .flatten()
-                    .any(|entity_use| entity_use.entity == id)
-            })
-            .map(|segment| segment.external_id)
-            .collect::<BTreeSet<_>>();
         let mut entities = segments
             .iter()
             .filter_map(|segment| {
@@ -11598,12 +11615,12 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     },
                     Exactness::Derived,
                 );
+                let construction = !unique_segment_ids.contains(&segment.external_id)
+                    || (!solved.contains(&segment.external_id) && !profile_entities.contains(&id));
                 Some(SketchEntity {
                     id,
                     sketch: sketch_id.clone(),
-                    construction: !unique_segment_ids.contains(&segment.external_id)
-                        || (!solved.contains(&segment.external_id)
-                            && !profile_segments.contains(&segment.external_id)),
+                    construction,
                     native_ref: Some(sketch_native_ref(&sketch_id)),
                     geometry_ref: placed_sketch_curve_ref(transform, &sketch_id, suffix, &geometry),
                     endpoint_refs: match segment.kind {
@@ -11680,17 +11697,19 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             };
             let id = sketch_entity_id(&sketch_id, suffix);
             let geometry = if segment.kind == 10 {
-                section_opaque_circle_geometry(&points, &radii, segment).unwrap_or_else(|| {
-                    SketchGeometry::Native {
+                opaque_circle_geometries
+                    .get(&segment.offset)
+                    .cloned()
+                    .unwrap_or_else(|| SketchGeometry::Native {
                         native_kind: "circle".to_string(),
-                    }
-                })
+                    })
             } else {
                 SketchGeometry::Native {
                     native_kind: format!("segment_type:{}", segment.kind),
                 }
             };
             let solved_circle = matches!(&geometry, SketchGeometry::Circle { .. });
+            let construction = !unique_external_id || !profile_entities.contains(&id);
             annotate(
                 annotations,
                 &id.0,
@@ -11710,7 +11729,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             entities.push(SketchEntity {
                 id,
                 sketch: sketch_id.clone(),
-                construction: true,
+                construction,
                 native_ref: Some(sketch_native_ref(&sketch_id)),
                 geometry_ref: placed_sketch_curve_ref(
                     transform,
@@ -11759,19 +11778,15 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             if entities.iter().any(|entity| entity.id == entity_id) {
                 continue;
             }
-            let generated_kind = match &geometry {
-                SketchGeometry::Line { .. } => crate::surface::SurfaceKind::Plane,
-                SketchGeometry::Arc { .. } | SketchGeometry::Circle { .. } => {
-                    crate::surface::SurfaceKind::Cylinder
-                }
-                _ => continue,
+            let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry) else {
+                continue;
             };
             let generated = external_id.is_some_and(|external_id| {
                 section_entity_is_generated_profile(
                     complete_segment_table,
                     definition.owner_feature_id,
                     external_id,
-                    &[generated_kind],
+                    expected_kinds,
                     &scan.feature_entity_tables,
                     &scan.surface_rows,
                 )
@@ -11838,14 +11853,15 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 None
             };
             let generated = external_id.is_some_and(|external_id| {
+                let Some(expected_kinds) = section_generated_profile_surface_kinds(&geometry)
+                else {
+                    return false;
+                };
                 section_entity_is_generated_profile(
                     complete_segment_table,
                     definition.owner_feature_id,
                     external_id,
-                    &[
-                        crate::surface::SurfaceKind::Spline,
-                        crate::surface::SurfaceKind::Extrusion,
-                    ],
+                    expected_kinds,
                     &scan.feature_entity_tables,
                     &scan.surface_rows,
                 )
@@ -11968,8 +11984,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 .flat_map(|segments| &segments.opaque_rows)
                 .filter(|segment| segment.kind == 10)
             {
-                let Some(section_geometry) =
-                    section_opaque_circle_geometry(&points, &radii, segment)
+                let Some(section_geometry) = opaque_circle_geometries.get(&segment.offset).cloned()
                 else {
                     continue;
                 };
@@ -12373,6 +12388,22 @@ fn section_entity_is_generated_profile(
             .then_some(cylinder.entity_id)
         });
     blind_cylinders.next().is_some() && blind_cylinders.next().is_none()
+}
+
+fn section_generated_profile_surface_kinds(
+    geometry: &SketchGeometry,
+) -> Option<&'static [crate::surface::SurfaceKind]> {
+    match geometry {
+        SketchGeometry::Line { .. } => Some(&[crate::surface::SurfaceKind::Plane]),
+        SketchGeometry::Arc { .. } | SketchGeometry::Circle { .. } => {
+            Some(&[crate::surface::SurfaceKind::Cylinder])
+        }
+        SketchGeometry::Nurbs { .. } => Some(&[
+            crate::surface::SurfaceKind::Spline,
+            crate::surface::SurfaceKind::Extrusion,
+        ]),
+        _ => None,
+    }
 }
 
 fn ordered_analytic_surface_id_for_feature(
@@ -16235,6 +16266,13 @@ mod resolved_sketch_tests {
                 crate::surface::SurfaceKind::TorusOrSphere,
             ),
             BTreeMap::from([(9, 43)])
+        );
+        assert_eq!(
+            section_generated_profile_surface_kinds(&SketchGeometry::Circle {
+                center: Point2::new(1.0, 2.0),
+                radius: Length(3.0),
+            }),
+            Some(&[crate::surface::SurfaceKind::Cylinder][..])
         );
         assert!(section_entity_is_generated_profile(
             true,
