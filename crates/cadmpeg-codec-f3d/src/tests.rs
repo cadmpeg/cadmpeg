@@ -9202,12 +9202,12 @@ fn validation_rejects_invalid_design_parameter_family_and_owner() {
 fn validation_requires_one_exact_extrude_profile_group() {
     use crate::records::{
         DesignConstructionOperandGroup, DesignExtrudeExtent, DesignExtrudeOperandRole,
-        DesignExtrudeOperation, DesignExtrudeProfileOperand, DesignExtrudeStart,
-        DesignParameterScope,
+        DesignExtrudeOperation, DesignExtrudeStart, DesignParameterScope,
+        DesignSketchProfileOperand,
     };
 
     let mut ir = cadmpeg_ir::examples::unit_cube();
-    let profile = DesignExtrudeProfileOperand {
+    let profile = DesignSketchProfileOperand {
         scope_reference_ordinal: 0,
         record_index: 20,
         byte_offset: 200,
@@ -9259,6 +9259,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         direct_face_operation: None,
         move_operation: None,
         surface_stitch_operation: None,
+        base_flange_operation: None,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
@@ -9271,6 +9272,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: Some(profile),
+        base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
         entity_reference_offset: None,

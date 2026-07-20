@@ -358,35 +358,63 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ),
             _ => Some(false),
         };
+        let valid_sketch_profile = |profile: &records::DesignSketchProfileOperand| {
+            let header = records_by_index.get(&(native_stream, profile.record_index));
+            let entity = entities_by_suffix.get(&(native_stream, profile.entity_suffix));
+            usize::try_from(profile.scope_reference_ordinal)
+                .ok()
+                .and_then(|ordinal| scope.reference_members.get(ordinal))
+                == Some(&profile.record_index)
+                && header.is_some_and(|header| {
+                    header.byte_offset == profile.byte_offset
+                        && header.class_tag == profile.class_tag
+                })
+                && entity.is_some_and(|entity| {
+                    entity.object_kind == Some(records::DesignObjectKind::Sketch)
+                        && entity.entity_id == profile.entity_id
+                })
+                && valid_design_guid(&profile.asset_id)
+                && profile.asset_id_offset > profile.byte_offset
+                && profile.entity_reference_offset > profile.asset_id_offset
+                && profile.paired_byte_offset > profile.entity_reference_offset
+                && profile.paired_class_tag.len() == 3
+                && profile
+                    .paired_class_tag
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit())
+        };
         let is_extrude = design::design_feature_family(&scope.kind)
             == Some(design::DesignFeatureFamily::Extrude);
-        let extrude_profile_link = match (&scope.extrude_profile, is_extrude) {
-            (None, _) => true,
-            (Some(_), false) => false,
-            (Some(profile), _) => {
-                let header = records_by_index.get(&(native_stream, profile.record_index));
-                let entity = entities_by_suffix.get(&(native_stream, profile.entity_suffix));
-                usize::try_from(profile.scope_reference_ordinal)
-                    .ok()
-                    .and_then(|ordinal| scope.reference_members.get(ordinal))
-                    == Some(&profile.record_index)
-                    && header.is_some_and(|header| {
-                        header.byte_offset == profile.byte_offset
-                            && header.class_tag == profile.class_tag
+        let extrude_profile_link = scope
+            .extrude_profile
+            .as_ref()
+            .is_none_or(|profile| is_extrude && valid_sketch_profile(profile));
+        let is_base_flange = scope.kind == "BaseFlange";
+        let base_flange_profile_link = scope
+            .base_flange_profile
+            .as_ref()
+            .map_or(!is_base_flange, |profile| {
+                is_base_flange && valid_sketch_profile(profile)
+            });
+        let base_flange_link = match (&scope.base_flange_operation, scope.kind.as_str()) {
+            (None, kind) => kind != "BaseFlange",
+            (Some(_), kind) if kind != "BaseFlange" => false,
+            (Some(operation), _) => {
+                scope.reference_members
+                    == [
+                        operation.profile_group_record_index,
+                        operation.profile_record_index,
+                        operation.thickness_record_index,
+                        operation.settings_record_index,
+                    ]
+                    && scope.base_flange_profile.as_ref().is_some_and(|profile| {
+                        profile.record_index == operation.profile_record_index
+                            && profile.scope_reference_ordinal == 1
                     })
-                    && entity.is_some_and(|entity| {
-                        entity.object_kind == Some(records::DesignObjectKind::Sketch)
-                            && entity.entity_id == profile.entity_id
-                    })
-                    && valid_design_guid(&profile.asset_id)
-                    && profile.asset_id_offset > profile.byte_offset
-                    && profile.entity_reference_offset > profile.asset_id_offset
-                    && profile.paired_byte_offset > profile.entity_reference_offset
-                    && profile.paired_class_tag.len() == 3
-                    && profile
-                        .paired_class_tag
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit())
+                    && operation.thickness.is_finite()
+                    && operation.thickness > 0.0
+                    && operation.thickness_offset == scope.byte_offset.saturating_add(123)
+                    && operation.thickness_offset < scope.paired_byte_offset
             }
         };
         let valid = scope.class_tag.len() == 3
@@ -495,6 +523,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && record_indices.contains(&(native_stream, scope.record_index))
             && entity_link.unwrap_or(scope.kind != "Sketch")
             && extrude_profile_link
+            && base_flange_profile_link
+            && base_flange_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;
@@ -689,10 +719,27 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    None if scope.kind == "BaseFlange" => {
+                        group.role == 0x0000_0041_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                            && scope
+                                .base_flange_profile
+                                .as_ref()
+                                .is_some_and(|profile| group.members == [profile.record_index])
+                    }
+                    None if matches!(scope.kind.as_str(), "EdgeFlange" | "Hem") => {
+                        matches!(group.role, 0x0000_0008_0000_0000 | 0x0000_0043_0000_0000)
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     None => false,
                 };
                 (design::design_feature_family(&scope.kind).is_some()
-                    || matches!(scope.kind.as_str(), "RemoveBody" | "SurfaceStitch"))
+                    || matches!(
+                        scope.kind.as_str(),
+                        "RemoveBody" | "SurfaceStitch" | "BaseFlange" | "EdgeFlange" | "Hem"
+                    ))
                     && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()

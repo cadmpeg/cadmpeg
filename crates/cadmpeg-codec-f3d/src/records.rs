@@ -1069,6 +1069,9 @@ pub struct DesignParameterScope {
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
+    /// Exact profile and thickness records carried by a `BaseFlange` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_flange_operation: Option<DesignBaseFlangeOperation>,
     /// Exact fixed scalar lanes carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
@@ -1104,7 +1107,10 @@ pub struct DesignParameterScope {
     pub work_point_position_offset: Option<u64>,
     /// Profile operand carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extrude_profile: Option<DesignExtrudeProfileOperand>,
+    pub extrude_profile: Option<DesignSketchProfileOperand>,
+    /// Sketch-profile operand carried by a `BaseFlange` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_flange_profile: Option<DesignSketchProfileOperand>,
     /// Full Design entity id of a sketch scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entity_id: Option<String>,
@@ -1130,6 +1136,23 @@ pub struct DesignSurfaceStitchOperation {
     /// Indexed tolerance-record identity.
     pub tolerance_record_index: u32,
     /// Indexed operation-settings record identity.
+    pub settings_record_index: u32,
+}
+
+/// Fixed construction carried by a planar sheet-metal `BaseFlange` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignBaseFlangeOperation {
+    /// Positive sheet thickness in centimetres.
+    pub thickness: f64,
+    /// Byte offset of `thickness`.
+    pub thickness_offset: u64,
+    /// Counted sketch-profile operand group.
+    pub profile_group_record_index: u32,
+    /// Sketch-profile record contained by the profile group.
+    pub profile_record_index: u32,
+    /// Indexed thickness-construction record.
+    pub thickness_record_index: u32,
+    /// Indexed operation-settings record.
     pub settings_record_index: u32,
 }
 
@@ -1166,7 +1189,7 @@ pub struct DesignBaseFeatureConstruction {
 
 /// Sketch-profile selection frame named by an Extrude scope.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
-pub struct DesignExtrudeProfileOperand {
+pub struct DesignSketchProfileOperand {
     /// Zero-based position in the scope's ordered reference table.
     pub scope_reference_ordinal: u32,
     /// Primary indexed-record identity named by the scope table.

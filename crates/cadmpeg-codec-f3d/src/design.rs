@@ -9,25 +9,24 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::records::{
     BodyNativeKey, ConstructionRecipe, ConstructionRecipeKind, DesignBaseFeatureConstruction,
-    DesignBodyBinding, DesignBodyBounds, DesignBodyMember, DesignCoilExtent, DesignCoilSection,
-    DesignCoilSectionPlacement, DesignConfiguration, DesignConfigurationKind,
-    DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
+    DesignBaseFlangeOperation, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
+    DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignConfiguration,
+    DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignConstructionPersistentIdentity, DesignDimensionAnnotationFrame,
     DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
     DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader,
     DesignEntitySelectionOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
-    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
-    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignMoveOperation, DesignObject,
-    DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
-    DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceStitchOperation,
-    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
-    LostEdgeReference, PersistentReference, PersistentReferenceKind, PersistentSubentityTag,
-    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
-    SketchRelationOperand, SketchSurface, SketchText,
+    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeSelectionGroup,
+    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
+    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
+    DesignMoveOperation, DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion,
+    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
+    DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
+    DesignSurfaceStitchOperation, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
+    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference, PersistentReferenceKind,
+    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
+    SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -577,7 +576,11 @@ pub fn project_parameter_design_with_edge_identities(
         for (ordinal, record_index) in scope.reference_members.iter().enumerate() {
             properties.insert(format!("reference:{ordinal}"), record_index.to_string());
         }
-        if let Some(profile) = scope.extrude_profile.as_ref() {
+        if let Some(profile) = scope
+            .extrude_profile
+            .as_ref()
+            .or(scope.base_flange_profile.as_ref())
+        {
             if let Some(placement) = placements.iter().find(|placement| {
                 native_stream(&placement.id) == Some(native_scope)
                     && placement.entity_id == profile.entity_id
@@ -966,6 +969,14 @@ pub fn project_parameter_design_with_edge_identities(
                             .collect(),
                         properties: native_scope_properties(scope, native_scope),
                     })
+            } else if scope.kind == "BaseFlange" {
+                project_base_flange(scope, construction_groups, placements).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else if scope.kind == "RemoveBody" {
                 project_remove_body(scope, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -1569,6 +1580,48 @@ fn project_remove_body(
     Some(FeatureDefinition::DeleteBody {
         bodies: BodySelection::Native(group.id.clone()),
         mode: BodyRetentionMode::DeleteSelected,
+    })
+}
+
+fn project_base_flange(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    placements: &[DesignSketchPlacement],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FeatureDefinition, Length, ProfileRef, SheetMetalThicknessSide};
+
+    let operation = scope.base_flange_operation.as_ref()?;
+    let matching = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let [profile_group] = matching.as_slice() else {
+        return None;
+    };
+    if profile_group.scope_reference_ordinal != 0
+        || profile_group.record_index != operation.profile_group_record_index
+        || profile_group.role != 0x0000_0041_0000_0000
+        || profile_group.members != [operation.profile_record_index]
+    {
+        return None;
+    }
+    let profile = scope.base_flange_profile.as_ref()?;
+    if profile.scope_reference_ordinal != 1
+        || profile.record_index != operation.profile_record_index
+    {
+        return None;
+    }
+    let placement = placements.iter().find(|placement| {
+        native_stream(&placement.id) == native_stream(&scope.id)
+            && placement.entity_id == profile.entity_id
+    })?;
+    Some(FeatureDefinition::SheetMetalBaseFlange {
+        profile: ProfileRef::Sketch(neutral_sketch_id(placement)),
+        thickness: Length(operation.thickness * 10.0),
+        side: SheetMetalThicknessSide::Forward,
     })
 }
 
@@ -15682,8 +15735,8 @@ pub(crate) fn edge_operand_candidate_faces(
     faces
 }
 
-/// Resolve the unique sketch-profile frame named by every Extrude scope.
-pub fn bind_extrude_profiles(
+/// Resolve the unique sketch-profile frame named by profile-based scopes.
+pub fn bind_sketch_profiles(
     scan: &ContainerScan,
     scopes: &mut [DesignParameterScope],
     headers: &[DesignRecordHeader],
@@ -15693,10 +15746,10 @@ pub fn bind_extrude_profiles(
         .iter()
         .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
         .collect::<HashMap<_, _>>();
-    for scope in scopes
-        .iter_mut()
-        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude))
-    {
+    for scope in scopes.iter_mut().filter(|scope| {
+        design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Extrude)
+            || scope.kind == "BaseFlange"
+    }) {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
         };
@@ -15720,7 +15773,11 @@ pub fn bind_extrude_profiles(
             })
             .collect::<Vec<_>>();
         if let [profile] = candidates.as_slice() {
-            scope.extrude_profile = Some(profile.clone());
+            if scope.kind == "BaseFlange" {
+                scope.base_flange_profile = Some(profile.clone());
+            } else {
+                scope.extrude_profile = Some(profile.clone());
+            }
         }
     }
     Ok(())
@@ -16752,7 +16809,7 @@ fn parse_sketch_profile(
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
     entities: &[DesignEntityHeader],
-) -> Option<DesignExtrudeProfileOperand> {
+) -> Option<DesignSketchProfileOperand> {
     let start = usize::try_from(header.byte_offset).ok()?;
     if bytes.get(start + 11..start + 21)? != [0; 10]
         || bytes.get(start + 21) != Some(&1)
@@ -16786,7 +16843,7 @@ fn parse_sketch_profile(
     let [entity] = matches.as_slice() else {
         return None;
     };
-    Some(DesignExtrudeProfileOperand {
+    Some(DesignSketchProfileOperand {
         scope_reference_ordinal,
         record_index: header.record_index,
         byte_offset: header.byte_offset,
@@ -17479,6 +17536,11 @@ fn parse_parameter_scope(
     } else {
         None
     };
+    let base_flange_operation = if kind == "BaseFlange" {
+        exact_base_flange_operation(bytes, start, paired_at, reference_members)
+    } else {
+        None
+    };
     let family = design_feature_family(kind);
     // A `Sketch` scope carries either the single entity-suffix reference form
     // or, when the stream's sketch entity headers use the `EntityGenesis`
@@ -17654,6 +17716,7 @@ fn parse_parameter_scope(
         direct_face_operation: None,
         move_operation: None,
         surface_stitch_operation,
+        base_flange_operation,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
@@ -17666,6 +17729,7 @@ fn parse_parameter_scope(
         work_point_position: None,
         work_point_position_offset: None,
         extrude_profile: None,
+        base_flange_profile: None,
         entity_id: None,
         entity_suffix: None,
         entity_reference_offset: None,
@@ -17697,6 +17761,47 @@ fn exact_surface_stitch_operation(
         gap_tolerance_offset: scalar.value_offset,
         tolerance_record_index,
         settings_record_index,
+    })
+}
+
+fn exact_base_flange_operation(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+) -> Option<DesignBaseFlangeOperation> {
+    let [profile_group_record_index, profile_record_index, thickness_record_index, settings_record_index] =
+        references
+    else {
+        return None;
+    };
+    if paired_at.checked_sub(start)? != 416
+        || u32_at(bytes, start + 73)? != 1
+        || bytes.get(start + 81) != Some(&1)
+        || u32_at(bytes, start + 82)? != *settings_record_index
+        || bytes.get(start + 86..start + 92)? != [0; 6]
+        || u32_at(bytes, start + 92)? != 1
+        || bytes.get(start + 112) != Some(&1)
+        || u32_at(bytes, start + 113)? != *thickness_record_index
+        || bytes.get(start + 117..start + 123)? != [0; 6]
+        || u32_at(bytes, start + 141)? != 1
+        || bytes.get(start + 145) != Some(&1)
+        || u32_at(bytes, start + 146)? != *profile_group_record_index
+        || bytes.get(start + 150..start + 156)? != [0; 6]
+    {
+        return None;
+    }
+    let thickness = f64_at(bytes, start + 123)?;
+    if !thickness.is_finite() || thickness <= 0.0 {
+        return None;
+    }
+    Some(DesignBaseFlangeOperation {
+        thickness,
+        thickness_offset: u64::try_from(start + 123).ok()?,
+        profile_group_record_index: *profile_group_record_index,
+        profile_record_index: *profile_record_index,
+        thickness_record_index: *thickness_record_index,
+        settings_record_index: *settings_record_index,
     })
 }
 
@@ -20958,12 +21063,12 @@ mod relation_tests {
         DesignConstructionPersistentIdentity, DesignDimensionLocus, DesignDimensionLocusGroup,
         DesignDimensionLocusPair, DesignDimensionRecipeRecord, DesignDirectFaceOperation,
         DesignEdgeIdentityOperand, DesignEntityHeader, DesignExtrudeExtent, DesignExtrudeFaceRole,
-        DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
-        DesignExtrudeSelectionGroup, DesignExtrudeStart, DesignFixedChamferParameters,
-        DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind,
-        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignPathFeatureConstruction, DesignRecipeReference,
-        DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
+        DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeSelectionGroup,
+        DesignExtrudeStart, DesignFixedChamferParameters, DesignFixedExtrudeParameters,
+        DesignFixedFilletParameters, DesignObjectKind, DesignParameter, DesignParameterCompanion,
+        DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+        DesignPathFeatureConstruction, DesignRecipeReference, DesignRecordHeader,
+        DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
         DesignSurfaceStitchOperation, LostEdgeReference, PersistentSubentityTag,
         SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
         SketchRelation, SketchRelationOperand, SketchSurface,
@@ -24852,6 +24957,35 @@ mod relation_tests {
     }
 
     #[test]
+    fn base_flange_scope_has_exact_profile_and_thickness_fields() {
+        let mut bytes = vec![0; 416];
+        bytes[73..77].copy_from_slice(&1u32.to_le_bytes());
+        bytes[81] = 1;
+        bytes[82..86].copy_from_slice(&266u32.to_le_bytes());
+        bytes[92..96].copy_from_slice(&1u32.to_le_bytes());
+        bytes[112] = 1;
+        bytes[113..117].copy_from_slice(&263u32.to_le_bytes());
+        bytes[123..131].copy_from_slice(&0.25f64.to_le_bytes());
+        bytes[141..145].copy_from_slice(&1u32.to_le_bytes());
+        bytes[145] = 1;
+        bytes[146..150].copy_from_slice(&256u32.to_le_bytes());
+
+        let operation = super::exact_base_flange_operation(&bytes, 0, 416, &[256, 259, 263, 266])
+            .expect("fixed BaseFlange operation");
+        assert_eq!(operation.thickness, 0.25);
+        assert_eq!(operation.thickness_offset, 123);
+        assert_eq!(operation.profile_group_record_index, 256);
+        assert_eq!(operation.profile_record_index, 259);
+        assert_eq!(operation.thickness_record_index, 263);
+        assert_eq!(operation.settings_record_index, 266);
+
+        bytes[123..131].copy_from_slice(&0.0f64.to_le_bytes());
+        assert!(
+            super::exact_base_flange_operation(&bytes, 0, 416, &[256, 259, 263, 266]).is_none()
+        );
+    }
+
+    #[test]
     fn extrude_operand_group_has_an_exact_counted_frame() {
         fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
             bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -24898,6 +25032,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -24910,6 +25045,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -25257,6 +25393,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -25269,6 +25406,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -25388,7 +25526,7 @@ mod relation_tests {
         );
         assert_eq!(member.operand_identity_ids, [identity.id]);
         let mut owning_scope = scope;
-        owning_scope.extrude_profile = Some(DesignExtrudeProfileOperand {
+        owning_scope.extrude_profile = Some(DesignSketchProfileOperand {
             scope_reference_ordinal: 1,
             record_index: 300,
             byte_offset: 3000,
@@ -25639,6 +25777,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -25651,6 +25790,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -29879,6 +30019,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -29891,6 +30032,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -29997,6 +30139,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -30009,6 +30152,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -30162,6 +30306,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -30173,7 +30318,7 @@ mod relation_tests {
             work_plane_reference_offset: None,
             work_point_position: None,
             work_point_position_offset: None,
-            extrude_profile: Some(DesignExtrudeProfileOperand {
+            extrude_profile: Some(DesignSketchProfileOperand {
                 scope_reference_ordinal: 0,
                 record_index: 100,
                 byte_offset: 300,
@@ -30186,6 +30331,7 @@ mod relation_tests {
                 paired_class_tag: "259".into(),
                 paired_byte_offset: 520,
             }),
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -30739,6 +30885,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -30751,6 +30898,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -31443,6 +31591,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -31455,6 +31604,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -31714,6 +31864,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -31726,6 +31877,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -31823,6 +31975,7 @@ mod relation_tests {
                 direct_face_operation: None,
                 move_operation: None,
                 surface_stitch_operation: None,
+                base_flange_operation: None,
                 fixed_extrude_parameters: None,
                 fixed_fillet_parameters: None,
                 fixed_chamfer_parameters: None,
@@ -31835,6 +31988,7 @@ mod relation_tests {
                 work_point_position: None,
                 work_point_position_offset: None,
                 extrude_profile: None,
+                base_flange_profile: None,
                 entity_id: None,
                 entity_suffix: None,
                 entity_reference_offset: None,
@@ -32462,6 +32616,7 @@ mod relation_tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -32474,6 +32629,7 @@ mod relation_tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,

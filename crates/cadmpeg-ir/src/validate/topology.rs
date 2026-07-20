@@ -1838,6 +1838,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     }
                 }
             }
+            FeatureDefinition::SheetMetalBaseFlange {
+                profile, thickness, ..
+            } => {
+                profiles.push(profile);
+                if !positive_feature_length(*thickness) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "sheet-metal base-flange thickness is invalid",
+                    );
+                }
+            }
             FeatureDefinition::Revolve { construction, .. } => {
                 profiles.extend(&construction.profile);
                 extents.extend(&construction.extent);
@@ -3077,6 +3089,9 @@ fn check_feature_sketch_references(
         let mut paths = Vec::new();
         match &feature.definition {
             FeatureDefinition::Extrude { profile, .. } => {
+                profiles.push(profile);
+            }
+            FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
                 profiles.push(profile);
             }
             FeatureDefinition::Rib { construction, .. } => {

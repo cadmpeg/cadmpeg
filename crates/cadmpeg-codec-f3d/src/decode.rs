@@ -1873,7 +1873,7 @@ fn extend_related_design_records(
     native
         .design_record_headers
         .sort_by_key(|record| record.id.clone());
-    crate::design::bind_extrude_profiles(
+    crate::design::bind_sketch_profiles(
         scan,
         &mut native.design_parameter_scopes,
         &native.design_record_headers,
@@ -2896,6 +2896,7 @@ mod tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -2908,6 +2909,7 @@ mod tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,
@@ -3038,6 +3040,7 @@ mod tests {
             direct_face_operation: None,
             move_operation: None,
             surface_stitch_operation: None,
+            base_flange_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -3050,6 +3053,7 @@ mod tests {
             work_point_position: None,
             work_point_position_offset: None,
             extrude_profile: None,
+            base_flange_profile: None,
             entity_id: None,
             entity_suffix: None,
             entity_reference_offset: None,

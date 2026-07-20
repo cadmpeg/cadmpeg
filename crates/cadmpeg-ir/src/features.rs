@@ -519,6 +519,15 @@ pub enum FeatureDefinition {
         /// Boolean combination with existing bodies.
         op: BooleanOp,
     },
+    /// Planar sheet-metal body created from a closed profile.
+    SheetMetalBaseFlange {
+        /// Closed profile defining the planar sheet boundary.
+        profile: ProfileRef,
+        /// Finished sheet thickness.
+        thickness: Length,
+        /// Distribution of thickness relative to the profile plane.
+        side: SheetMetalThicknessSide,
+    },
     /// Edge fillet.
     Fillet {
         /// Ordered edge groups and their radius laws.
@@ -1050,6 +1059,18 @@ pub enum ThickenSide {
     Reverse,
     /// Split the thickness equally across both sides.
     Both,
+}
+
+/// Distribution of sheet thickness relative to its construction plane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SheetMetalThicknessSide {
+    /// Thickness lies along the profile plane's positive normal.
+    Forward,
+    /// Thickness lies opposite the profile plane's positive normal.
+    Reverse,
+    /// Thickness is split equally across both sides of the profile plane.
+    Symmetric,
 }
 
 /// Edge operands resolved by the decoder or retained in native form.

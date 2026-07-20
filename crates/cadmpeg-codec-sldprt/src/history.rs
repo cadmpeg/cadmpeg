@@ -790,6 +790,9 @@ pub fn bind_topology_selections(
                     resolve_profile_ref(profile, &face_ids);
                 }
             }
+            FeatureDefinition::SheetMetalBaseFlange { profile, .. } => {
+                resolve_profile_ref(profile, &face_ids);
+            }
             FeatureDefinition::Sweep { profile, path, .. } => {
                 if let Some(profile) = profile {
                     resolve_profile_ref(profile, &face_ids);
@@ -1055,9 +1058,9 @@ fn bind_definition_sketch(
         }
     };
     match definition {
-        FeatureDefinition::Extrude { profile, .. } | FeatureDefinition::Wrap { profile, .. } => {
-            bind_profile(profile)
-        }
+        FeatureDefinition::Extrude { profile, .. }
+        | FeatureDefinition::Wrap { profile, .. }
+        | FeatureDefinition::SheetMetalBaseFlange { profile, .. } => bind_profile(profile),
         FeatureDefinition::Rib { construction, .. } => {
             construction.profile.as_mut().is_some_and(bind_profile)
         }
@@ -6500,6 +6503,42 @@ pub fn sync_neutral_features(
                     properties,
                 )
             }
+            FeatureDefinition::SheetMetalBaseFlange {
+                profile,
+                thickness,
+                side,
+            } => {
+                let profile = profile_source(profile, &record_sources, &sketch_sources)
+                    .ok_or_else(|| {
+                        CodecError::Malformed(format!(
+                            "SLDPRT feature {} references a missing base-flange profile",
+                            feature.id
+                        ))
+                    })?;
+                let mut parameters = existing
+                    .as_deref()
+                    .map(|record| record.parameters.clone())
+                    .unwrap_or_default();
+                parameters.insert("Thickness".into(), format_length_mm(thickness.0));
+                let mut properties = feature.source_properties.clone();
+                properties.insert("Profile".into(), profile);
+                properties.insert(
+                    "Side".into(),
+                    match side {
+                        cadmpeg_ir::features::SheetMetalThicknessSide::Forward => "Forward",
+                        cadmpeg_ir::features::SheetMetalThicknessSide::Reverse => "Reverse",
+                        cadmpeg_ir::features::SheetMetalThicknessSide::Symmetric => "Symmetric",
+                    }
+                    .into(),
+                );
+                (
+                    existing
+                        .as_deref()
+                        .map_or_else(|| "BaseFlange".into(), |record| record.kind.clone()),
+                    parameters,
+                    properties,
+                )
+            }
             FeatureDefinition::Pattern { seeds, pattern } => {
                 let expected_form = match pattern {
                     PatternKind::Unresolved { form } => *form,
@@ -6900,7 +6939,8 @@ fn dependency_residual(
         | FeatureDefinition::Revolve { .. }
         | FeatureDefinition::Sweep { .. }
         | FeatureDefinition::Loft { .. }
-        | FeatureDefinition::Rib { .. } => dependencies
+        | FeatureDefinition::Rib { .. }
+        | FeatureDefinition::SheetMetalBaseFlange { .. } => dependencies
             .into_iter()
             .filter(|dependency| !sketch_features.contains(dependency))
             .collect(),
@@ -7137,6 +7177,7 @@ fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
         FeatureDefinition::Sweep { .. } => "Sweep",
         FeatureDefinition::Loft { .. } => "Loft",
         FeatureDefinition::Rib { .. } => "Rib",
+        FeatureDefinition::SheetMetalBaseFlange { .. } => "BaseFlange",
         FeatureDefinition::Fillet { .. } => "Fillet",
         FeatureDefinition::Chamfer { .. } => "Chamfer",
         FeatureDefinition::Shell { .. } => "Shell",
