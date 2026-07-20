@@ -24,7 +24,7 @@ This document records unresolved NX `.prt` byte semantics.
 - The semantic roles of the extrusion terminal discriminator lane's type indices, fixed counted values, flags, and trailing indices are unspecified.
 - The source-curve, target-surface, direction, and combination roles of the ordered `CPROJ` and `CPROJ_CMB` construction references are unspecified.
 - The seed, transform, and pattern-control roles of the ordered `Pattern Feature`, `Pattern Geometry`, and `Geometry Instance` construction references are unspecified. The scalar and compact-selector roles in counted pattern rows are unspecified. Equal canonical line labels in distinct pattern and profile blocks do not establish block identity or a seed relation.
-- The coordinate and construction roles of the `POINT` header reference, its `02|03` mode, and the selected six-scalar lane are unspecified.
+- The coordinate and construction roles of the `POINT` header reference, its `02|03` mode, and the two ordered scalar triples in the selected six-scalar lane are unspecified. A target block shared with the following point lane does not identify either triple as the constructed model-space point.
 - The drafted-face, neutral-plane, pull-direction, and angle roles of the counted leading indices, four ordered references, and terminal indices and tail in `DRAFT` construction payloads are unspecified.
 - The section, guide, continuity, and terminal-control roles of the ordered `SKIN` and `Studio Surface` construction references and their intervening branch groups are unspecified.
 - The relationship between plain cached-body streams and their owning features is unspecified.
