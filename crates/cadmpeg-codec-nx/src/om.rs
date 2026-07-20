@@ -956,20 +956,11 @@ pub struct SurfaceFeaturePayloadBranches {
     pub branches: Vec<SurfaceFeaturePayloadBranch>,
 }
 
-/// One object index in an extrusion profile-reference field.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExtrudeProfileReference {
-    /// Absolute offset of the width marker.
-    pub offset: usize,
-    /// Decoded object index.
-    pub object_index: u32,
-}
-
 /// Ordered extrusion profile-reference field and its redundant witness state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtrudeProfileReferenceField {
     /// Ordered profile object indices.
-    pub references: Vec<ExtrudeProfileReference>,
+    pub references: Vec<PayloadObjectReference>,
     /// Whether a second field repeats the encoded reference list exactly once.
     pub witnessed: bool,
 }
@@ -980,7 +971,7 @@ pub struct DatumCsysReferenceField {
     /// Payload control byte preceding the fixed header suffix.
     pub control: u8,
     /// Eight canonical payload object references in serialized order.
-    pub references: [ExtrudeProfileReference; 8],
+    pub references: [PayloadObjectReference; 8],
 }
 
 /// Common typed header preceding tag-specific datum-plane construction data.
@@ -1005,15 +996,17 @@ pub struct DatumPlaneSingleReferenceBranch {
     pub descriptor_offset: usize,
     /// Canonical payload object index.
     pub object_index: u32,
+    /// Exact serialized payload object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Absolute offset of the canonical width marker.
     pub object_offset: usize,
 }
 
 /// Two canonical references carried by a tag-`29` datum-plane branch.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatumPlaneDoubleReferenceBranch {
     /// Canonical payload object indices in branch order.
-    pub references: [ExtrudeProfileReference; 2],
+    pub references: [PayloadObjectReference; 2],
 }
 
 /// Complete terminal compact-index lane in a reconstructed datum-plane payload.
@@ -1393,7 +1386,7 @@ pub struct BlockConstructionReferenceField {
     /// Payload control byte preceding the field framing.
     pub control: u8,
     /// Eighteen leading references followed by the terminal reference.
-    pub references: Vec<ExtrudeProfileReference>,
+    pub references: Vec<PayloadObjectReference>,
 }
 
 /// Self-framed NX parameter name in one bounded expression declaration record.
@@ -3143,9 +3136,10 @@ pub fn block_construction_references(
     let mut references = Vec::with_capacity(19);
     for _ in 0..18 {
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-        references.push(ExtrudeProfileReference {
+        references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
             object_index,
+            raw_object_index: record.payload[at..at + width].to_vec(),
         });
         at += width;
     }
@@ -3154,9 +3148,10 @@ pub fn block_construction_references(
     }
     at += 1;
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-    references.push(ExtrudeProfileReference {
+    references.push(PayloadObjectReference {
         offset: record.payload_offset + at,
         object_index,
+        raw_object_index: record.payload[at..at + width].to_vec(),
     });
     at += width;
     if record.payload.get(at..at + TRAILER.len()) != Some(&TRAILER) {
@@ -3184,9 +3179,10 @@ pub fn datum_csys_references(record: OperationRecord<'_>) -> Option<DatumCsysRef
     let mut references = Vec::with_capacity(8);
     for _ in 0..8 {
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-        references.push(ExtrudeProfileReference {
+        references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
             object_index,
+            raw_object_index: record.payload[at..at + width].to_vec(),
         });
         at += width;
     }
@@ -3237,6 +3233,7 @@ pub fn datum_plane_single_reference_branch(
     at += 1;
     let object_offset = record.payload_offset + at;
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    let raw_object_index = record.payload[at..at + width].to_vec();
     at += width;
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
@@ -3244,6 +3241,7 @@ pub fn datum_plane_single_reference_branch(
         raw_descriptor_index,
         descriptor_offset,
         object_index,
+        raw_object_index,
         object_offset,
     })
 }
@@ -3277,6 +3275,7 @@ pub fn datum_plane_descriptor_reference_branch(
     at += SEPARATOR.len();
     let object_offset = record.payload_offset + at;
     let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
+    let raw_object_index = record.payload[at..at + width].to_vec();
     at += width;
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
@@ -3284,6 +3283,7 @@ pub fn datum_plane_descriptor_reference_branch(
         raw_descriptor_index,
         descriptor_offset,
         object_index,
+        raw_object_index,
         object_offset,
     })
 }
@@ -3311,9 +3311,10 @@ pub fn datum_plane_double_reference_branch(
     }
     let mut at = 10;
     let (first_index, first_width) = payload_object_index(record.payload.get(at..)?)?;
-    let first = ExtrudeProfileReference {
+    let first = PayloadObjectReference {
         offset: record.payload_offset + at,
         object_index: first_index,
+        raw_object_index: record.payload[at..at + first_width].to_vec(),
     };
     at += first_width;
     let middle = if header.declared_count == 2 {
@@ -3324,9 +3325,10 @@ pub fn datum_plane_double_reference_branch(
     (record.payload.get(at..at + middle.len()) == Some(middle)).then_some(())?;
     at += middle.len();
     let (second_index, second_width) = payload_object_index(record.payload.get(at..)?)?;
-    let second = ExtrudeProfileReference {
+    let second = PayloadObjectReference {
         offset: record.payload_offset + at,
         object_index: second_index,
+        raw_object_index: record.payload[at..at + second_width].to_vec(),
     };
     at += second_width;
     let suffix = if header.declared_count == 2 {
@@ -3903,9 +3905,10 @@ fn extrude_profile_reference_field(
     let mut references = Vec::with_capacity(usize::from(count - 1));
     for _ in 1..count {
         let (object_index, width) = payload_object_index(record.payload.get(at..)?)?;
-        references.push(ExtrudeProfileReference {
+        references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
             object_index,
+            raw_object_index: record.payload[at..at + width].to_vec(),
         });
         at += width;
     }

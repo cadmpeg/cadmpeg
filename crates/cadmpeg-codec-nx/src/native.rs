@@ -4507,6 +4507,8 @@ pub struct FeatureDatumCsysConstruction {
     pub control: u8,
     /// Eight object indices in serialized lane order.
     pub object_indices: [u32; 8],
+    /// Exact serialized object-index tokens in lane order.
+    pub raw_object_indices: [Vec<u8>; 8],
     /// Eight uniquely resolved same-store blocks in lane order.
     pub data_blocks: [String; 8],
     /// Absolute offsets of the eight canonical reference markers.
@@ -4679,6 +4681,9 @@ pub struct FeatureDatumPlaneHeader {
     /// Ordered canonical object indices carried by the selected branch.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub object_indices: Vec<u32>,
+    /// Exact canonical object-index tokens in branch order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_object_indices: Vec<Vec<u8>>,
     /// Atomically resolved same-store descriptor blocks.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub descriptor_data_blocks: Vec<String>,
@@ -5808,6 +5813,8 @@ pub struct FeatureExtrudeProfileReference {
     pub witnessed: bool,
     /// Serialized object index.
     pub object_index: u32,
+    /// Exact serialized payload object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -5928,6 +5935,8 @@ pub struct FeatureOperationBodyOperand {
     pub ordinal: u32,
     /// Serialized operand body object index.
     pub operand_object_index: u32,
+    /// Exact serialized compact-index token.
+    pub raw_operand_object_index: Vec<u8>,
     /// Segment body bindings naming the same body image.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub segment_body_bindings: Vec<String>,
@@ -6100,6 +6109,8 @@ pub struct FeatureBlockConstructionReference {
     pub terminal: bool,
     /// Serialized object index.
     pub object_index: u32,
+    /// Exact serialized payload object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -7508,6 +7519,7 @@ pub fn feature_datum_csys_constructions(
                 unique_offset_data_block(&indexed, reference.object_index).map(|data_block| {
                     (
                         reference.object_index,
+                        reference.raw_object_index,
                         data_block,
                         entry_offset + reference.offset as u64,
                     )
@@ -7516,7 +7528,7 @@ pub fn feature_datum_csys_constructions(
             let Some(resolved) = resolved.into_iter().collect::<Option<Vec<_>>>() else {
                 continue;
             };
-            if resolved.iter().any(|(_, data_block, _)| {
+            if resolved.iter().any(|(_, _, data_block, _)| {
                 data_block
                     .rsplit_once(":block#")
                     .is_none_or(|(prefix, _)| prefix != input_prefix)
@@ -7531,19 +7543,25 @@ pub fn feature_datum_csys_constructions(
                 control: field.control,
                 object_indices: resolved
                     .iter()
-                    .map(|(object_index, _, _)| *object_index)
+                    .map(|(object_index, _, _, _)| *object_index)
+                    .collect::<Vec<_>>()
+                    .try_into()
+                    .expect("eight decoded references"),
+                raw_object_indices: resolved
+                    .iter()
+                    .map(|(_, raw_object_index, _, _)| raw_object_index.clone())
                     .collect::<Vec<_>>()
                     .try_into()
                     .expect("eight decoded references"),
                 data_blocks: resolved
                     .iter()
-                    .map(|(_, data_block, _)| data_block.clone())
+                    .map(|(_, _, data_block, _)| data_block.clone())
                     .collect::<Vec<_>>()
                     .try_into()
                     .expect("eight decoded references"),
                 source_offsets: resolved
                     .iter()
-                    .map(|(_, _, source_offset)| *source_offset)
+                    .map(|(_, _, _, source_offset)| *source_offset)
                     .collect::<Vec<_>>()
                     .try_into()
                     .expect("eight decoded references"),
@@ -7644,6 +7662,16 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
                     .map(|branch| branch.raw_descriptor_index.clone())
                     .collect(),
                 object_indices,
+                raw_object_indices: single
+                    .iter()
+                    .map(|branch| branch.raw_object_index.clone())
+                    .chain(double.iter().flat_map(|branch| {
+                        branch
+                            .references
+                            .iter()
+                            .map(|reference| reference.raw_object_index.clone())
+                    }))
+                    .collect(),
                 descriptor_data_blocks: resolved
                     .as_ref()
                     .map_or_else(Vec::new, |(blocks, _)| blocks.clone()),
@@ -10417,6 +10445,7 @@ pub fn feature_extrude_profile_references(
                     ordinal: ordinal as u32,
                     witnessed,
                     object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
                     data_block: unique_offset_data_block(&indexed, reference.object_index),
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -10644,6 +10673,7 @@ pub fn feature_operation_body_operands(
             body_reference_ordinal: member.body_reference_ordinal,
             ordinal: member.ordinal,
             operand_object_index: member.member_index,
+            raw_operand_object_index: member.raw_member_index.clone(),
             segment_body_bindings: bindings
                 .iter()
                 .filter(|binding| {
@@ -11018,6 +11048,7 @@ pub fn feature_block_construction_references(
                     ordinal: ordinal as u32,
                     terminal: ordinal == terminal_ordinal,
                     object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
                     data_block: unique_offset_data_block(&indexed, reference.object_index),
                     source_offset: entry_offset + reference.offset as u64,
                 },

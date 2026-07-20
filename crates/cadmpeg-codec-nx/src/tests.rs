@@ -2778,7 +2778,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 151);
+    assert_eq!(namespace.version, 152);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -2929,6 +2929,7 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
         body_reference_ordinal: 0,
         ordinal,
         operand_object_index: object_index,
+        raw_operand_object_index: vec![object_index as u8],
         segment_body_bindings: vec![format!("binding#{ordinal}")],
         source_offset: u64::from(ordinal),
     };
@@ -2967,6 +2968,7 @@ fn nx_trim_body_projects_distinct_target_and_ordered_tools() {
         body_reference_ordinal: 0,
         ordinal: 0,
         operand_object_index: 20,
+        raw_operand_object_index: vec![20],
         segment_body_bindings: vec!["binding#0".to_string()],
         source_offset: 0,
     }];
@@ -6353,6 +6355,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         operation_label: "csys".to_string(),
         control: 19,
         object_indices: [0; 8],
+        raw_object_indices: std::array::from_fn(|_| vec![0]),
         data_blocks: blocks,
         source_offsets: [400; 8],
     };
@@ -6609,12 +6612,26 @@ fn om_datum_csys_reference_lane_requires_eight_canonical_indices() {
     let field = crate::om::datum_csys_references(record).unwrap();
     assert_eq!(field.control, 0x13);
     assert_eq!(
-        field.references.map(|reference| reference.object_index),
+        field
+            .references
+            .each_ref()
+            .map(|reference| reference.object_index),
         [42, 43, 44, 45, 46, 47, 48, 49]
     );
     assert_eq!(
-        field.references.map(|reference| reference.offset),
+        field
+            .references
+            .each_ref()
+            .map(|reference| reference.offset),
         [114, 116, 118, 120, 122, 124, 126, 128]
+    );
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.raw_object_index.clone())
+            .collect::<Vec<_>>(),
+        (42..50).map(|value| vec![0xf0, value]).collect::<Vec<_>>()
     );
 
     let mut alternate_control = payload.clone();
@@ -6694,6 +6711,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     assert_eq!(branch.raw_descriptor_index, [0x80, 0x4c]);
     assert_eq!(branch.descriptor_offset, 110);
     assert_eq!(branch.object_index, 699);
+    assert_eq!(branch.raw_object_index, [0xf1, 0x02, 0xbb]);
     assert_eq!(branch.object_offset, 113);
 
     let double_payload = [
@@ -6709,11 +6727,17 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     })
     .unwrap();
     assert_eq!(
-        double.references.map(|reference| reference.object_index),
+        double
+            .references
+            .each_ref()
+            .map(|reference| reference.object_index),
         [631, 632]
     );
     assert_eq!(
-        double.references.map(|reference| reference.offset),
+        double
+            .references
+            .each_ref()
+            .map(|reference| reference.offset),
         [110, 124]
     );
 
@@ -6732,11 +6756,15 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     assert_eq!(
         count_three
             .references
+            .each_ref()
             .map(|reference| reference.object_index),
         [719, 720]
     );
     assert_eq!(
-        count_three.references.map(|reference| reference.offset),
+        count_three
+            .references
+            .each_ref()
+            .map(|reference| reference.offset),
         [110, 118]
     );
 
@@ -7001,6 +7029,7 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
         operation_label: "operation#0".to_string(),
         control: 0x13,
         object_indices: std::array::from_fn(|index| index as u32 + 40),
+        raw_object_indices: std::array::from_fn(|index| vec![index as u8 + 40]),
         data_blocks: std::array::from_fn(|index| format!("block#{}", index + 40)),
         source_offsets: std::array::from_fn(|index| index as u64 + 100),
     };
@@ -7566,6 +7595,7 @@ fn feature_body_lineage_consumes_segment_bound_sew_operands() {
         body_reference_ordinal: 0,
         ordinal: 0,
         operand_object_index: 30,
+        raw_operand_object_index: vec![30],
         segment_body_bindings: vec!["binding#0".to_string()],
         source_offset: 0,
     }];
@@ -8396,8 +8426,10 @@ fn om_extrude_profile_references_require_matching_witness_field() {
     let references = field.references;
     assert_eq!(references.len(), 2);
     assert_eq!(references[0].object_index, 255);
+    assert_eq!(references[0].raw_object_index, [0xf0, 0xff]);
     assert_eq!(references[0].offset, 205);
     assert_eq!(references[1].object_index, 256);
+    assert_eq!(references[1].raw_object_index, [0xf1, 0x01, 0x00]);
     assert_eq!(references[1].offset, 207);
 
     let without_witness = &payload[..14];
@@ -8772,6 +8804,7 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         ordinal: ordinal - 10,
         witnessed: true,
         object_index: ordinal + 90,
+        raw_object_index: vec![(ordinal + 90) as u8],
         data_block: Some(format!("block-{ordinal}")),
         source_offset: u64::from(ordinal),
     });
@@ -8967,6 +9000,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         ordinal: 0,
         witnessed: false,
         object_index: 100,
+        raw_object_index: vec![100],
         data_block: Some("block#100".to_string()),
         source_offset: 10,
     };
@@ -9024,6 +9058,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
             ordinal: 0,
             witnessed: false,
             object_index: 100,
+            raw_object_index: vec![100],
             data_block: Some("block#100".to_string()),
             source_offset: 10,
         }],
@@ -9059,7 +9094,9 @@ fn om_block_construction_field_decodes_ordered_canonical_references() {
     assert_eq!(field.control, 0x26);
     assert_eq!(field.references.len(), 19);
     assert_eq!(field.references[0].object_index, 1);
+    assert_eq!(field.references[0].raw_object_index, [0xf0, 0x01]);
     assert_eq!(field.references[18].object_index, 256);
+    assert_eq!(field.references[18].raw_object_index, [0xf1, 0x01, 0x00]);
     assert_eq!(field.references[0].offset, 206);
 
     let mut invalid = payload.clone();
@@ -9154,6 +9191,7 @@ fn nx_block_construction_requires_complete_resolved_reference_field() {
             ordinal,
             terminal: ordinal == 18,
             object_index: ordinal + 100,
+            raw_object_index: vec![(ordinal + 100) as u8],
             data_block: Some(format!("block#{ordinal}")),
             source_offset: u64::from(ordinal),
         })
@@ -13495,7 +13533,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 151);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 152);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
