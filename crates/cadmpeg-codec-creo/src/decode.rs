@@ -10491,6 +10491,31 @@ fn section_skamp_line_pair(
     Some([first, second].map(|item| sketch_entity_id(sketch, item.entity_id)))
 }
 
+fn section_skamp_oriented_line(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    item: &crate::feature::FeatureSkampItem,
+    geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
+) -> Option<SketchEntityId> {
+    (item.sense == 0).then_some(())?;
+    let entity = sketch_entity_id(sketch, item.entity_id);
+    if section_skamp_is_line(definition, item) {
+        return Some(entity);
+    }
+    let endpoint_bearing = definition
+        .relations
+        .iter()
+        .filter(|relations| feature_skamp_table_complete(relations))
+        .flat_map(|relations| &relations.skamps)
+        .flat_map(|skamp| &skamp.items)
+        .any(|candidate| candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3));
+    (endpoint_bearing
+        && geometry?
+            .get(&entity)
+            .is_some_and(|geometry| matches!(geometry, SketchGeometry::Native { .. })))
+    .then_some(entity)
+}
+
 fn section_skamp_same_coordinate(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -10847,14 +10872,13 @@ fn section_skamp_constraints_for_geometry(
                             }
                         }
                     }
-                    (1, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
-                        SketchConstraintDefinition::Horizontal {
-                            entity: sketch_entity_id(sketch, item.entity_id),
-                        }
-                    }
-                    (2, [item]) if item.sense == 0 && section_skamp_is_line(definition, item) => {
-                        SketchConstraintDefinition::Vertical {
-                            entity: sketch_entity_id(sketch, item.entity_id),
+                    (kind @ (1 | 2), [item]) => {
+                        match section_skamp_oriented_line(definition, sketch, item, geometry) {
+                            Some(entity) if kind == 1 => {
+                                SketchConstraintDefinition::Horizontal { entity }
+                            }
+                            Some(entity) => SketchConstraintDefinition::Vertical { entity },
+                            None => native_constraint()?,
                         }
                     }
                     (4, [first, second])
@@ -20081,7 +20105,7 @@ mod resolved_sketch_tests {
                     SketchLocus::End(SketchEntityId(
                         "creo:featdefs:sketch_entity#917:12".to_string()
                     )),
-                    SketchLocus::Start(native_endpoint),
+                    SketchLocus::Start(native_endpoint.clone()),
                 ],
             }
         );
@@ -20102,6 +20126,42 @@ mod resolved_sketch_tests {
             .definition,
             SketchConstraintDefinition::Native { .. }
         ));
+        let point_coincidence_relations = point_coincidence_definition
+            .relations
+            .as_mut()
+            .expect("relations");
+        point_coincidence_relations.skamps[0].items[1].sense = 2;
+        point_coincidence_relations.skamps.insert(
+            0,
+            crate::feature::FeatureSkamp {
+                id: 1,
+                kind: 1,
+                flags: 0,
+                status: 1,
+                items: vec![crate::feature::FeatureSkampItem {
+                    entity_id: 99,
+                    sense: 0,
+                }],
+                offset: 84,
+            },
+        );
+        point_coincidence_relations
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = 2;
+        assert_eq!(
+            section_skamp_constraints_for_geometry(
+                &point_coincidence_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&incidence_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Horizontal {
+                entity: native_endpoint,
+            }
+        );
         let mut collinear_definition = definition.clone();
         let collinear_relations = collinear_definition.relations.as_mut().expect("relations");
         collinear_relations.skamps = vec![crate::feature::FeatureSkamp {
