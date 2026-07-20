@@ -891,7 +891,17 @@ pub(crate) fn format_native_scalar(
     value: f64,
     expression: Option<&str>,
 ) -> String {
-    if native_parameter_is_length(feature, name, expression) {
+    if let Some(display) = expression.and_then(dimension_display) {
+        let prefix = match display {
+            DimensionDisplay::Diameter => expression
+                .filter(|value| value.trim().starts_with("&lt;MOD-DIAM&gt;"))
+                .map_or("<MOD-DIAM>", |_| "&lt;MOD-DIAM&gt;"),
+            DimensionDisplay::Radius => expression
+                .filter(|value| value.trim().starts_with("&lt;MOD-RHO&gt;"))
+                .map_or("<MOD-RHO>", |_| "&lt;MOD-RHO&gt;"),
+        };
+        format!("{prefix}{}", format_f64_literal(value * 1000.0))
+    } else if native_parameter_is_length(feature, name, expression) {
         format_length_mm(value * 1000.0)
     } else if expression.and_then(parse_angle_rad).is_some() {
         format_angle_rad(value)
@@ -2537,6 +2547,68 @@ mod history_reference_tests {
                 ..
             } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
         ));
+    }
+
+    #[test]
+    fn hole_wizard_drill_point_profile_retains_bore_and_blind_depth() {
+        let mut hole = feature("hole", Some("214"), 0);
+        hole.xml_tag = "HoleWizard".into();
+        hole.properties
+            .insert("DissectableChildren".into(), "212".into());
+        let mut profile = feature("profile", Some("212"), 1);
+        profile.xml_tag = "Sketch".into();
+        profile.kind = "Sketch".into();
+        profile.input_class = Some("moProfileFeature_c".into());
+        profile
+            .parameters
+            .insert("螺纹孔钻头直径".into(), "<MOD-DIAM>4.2".into());
+        profile
+            .parameters
+            .insert("螺纹孔钻头深度".into(), "10".into());
+        profile.parameters.insert("导头角度".into(), "118°".into());
+        profile.content.extend([
+            FeatureContent::Dimension("导头角度".into()),
+            FeatureContent::Dimension("螺纹孔钻头深度".into()),
+            FeatureContent::Dimension("螺纹孔钻头直径".into()),
+        ]);
+        profile
+            .parameters
+            .insert("derived native scalar".into(), "937.25".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![hole, profile],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::Hole {
+                kind: HoleKind::Simple,
+                diameter: Some(Length(4.2)),
+                extent: Some(Extent::Blind {
+                    length: Length(10.0),
+                }),
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn native_scalar_refresh_preserves_radial_dimension_semantics() {
+        let profile = feature("profile", Some("212"), 1);
+
+        assert_eq!(
+            format_native_scalar(&profile, "bore", 0.0042, Some("<MOD-DIAM>4.2")),
+            "<MOD-DIAM>4.2"
+        );
+        assert_eq!(
+            format_native_scalar(&profile, "radius", 0.003, Some("&lt;MOD-RHO&gt;3")),
+            "&lt;MOD-RHO&gt;3"
+        );
     }
 
     #[test]
@@ -5390,7 +5462,23 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
     let mut diameters = Vec::new();
     let mut lengths = Vec::new();
     let mut angles = Vec::new();
-    for expression in profile.parameters.values() {
+    let source_dimensions = profile
+        .content
+        .iter()
+        .filter_map(|content| match content {
+            crate::records::FeatureContent::Dimension(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let expressions = if source_dimensions.is_empty() {
+        profile.parameters.values().collect::<Vec<_>>()
+    } else {
+        source_dimensions
+            .into_iter()
+            .filter_map(|name| profile.parameters.get(name))
+            .collect::<Vec<_>>()
+    };
+    for expression in expressions {
         if strip_diameter_modifier(expression).is_some() {
             if let Some(value) = parse_dimension_display_length(expression)
                 .filter(|value| *value > 0.0)
@@ -5415,6 +5503,11 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
                 [depth] => Some(*depth),
                 _ => None,
             },
+            kind: HoleKind::Simple,
+        }),
+        ([diameter], [depth], [_drill_point_angle]) => Some(HoleProfileConstruction {
+            diameter: *diameter,
+            depth: Some(*depth),
             kind: HoleKind::Simple,
         }),
         ([diameter, entry_diameter], [depth], [angle]) if diameter.0 < entry_diameter.0 => {
