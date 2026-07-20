@@ -6185,6 +6185,46 @@ impl MeshQuotient {
             true
         }
 
+        fn enforce_sparse_endpoint_membership(
+            domains: &mut [Vec<usize>],
+            edges: &[[usize; 2]],
+            edge_ids: &[usize],
+            edge_candidates: &[Vec<[usize; 2]>],
+            budget: Option<&MeshConstraintBudget>,
+        ) -> bool {
+            let mut ordered = (0..edges.len()).collect::<Vec<_>>();
+            ordered.sort_unstable_by_key(|edge| edge_candidates[edge_ids[*edge]].len());
+            for edge in ordered {
+                let candidates = &edge_candidates[edge_ids[edge]];
+                if candidates.is_empty() {
+                    continue;
+                }
+                let [left, right] = edges[edge];
+                let domain_work = domains[left].len()
+                    + usize::from(right != left).saturating_mul(domains[right].len());
+                let support_work = candidates.len().saturating_mul(2);
+                if support_work >= domain_work {
+                    continue;
+                }
+                let work = support_work.saturating_add(domain_work);
+                if budget.is_some_and(|budget| work > budget.remaining.get()) {
+                    continue;
+                }
+                if budget.is_some_and(|budget| !budget.charge_by(work)) {
+                    return false;
+                }
+                let allowed = candidates.iter().flatten().copied().collect::<HashSet<_>>();
+                domains[left].retain(|point| allowed.contains(point));
+                if right != left {
+                    domains[right].retain(|point| allowed.contains(point));
+                }
+                if domains[left].is_empty() || domains[right].is_empty() {
+                    return false;
+                }
+            }
+            true
+        }
+
         #[allow(clippy::too_many_arguments)]
         fn partial_ordered_assignment_viable(
             assignment: &MeshFaceBoundaryAssignment,
@@ -6976,6 +7016,15 @@ impl MeshQuotient {
                 .flatten()
                 .copied()
                 .collect::<HashSet<_>>();
+            if !enforce_sparse_endpoint_membership(
+                &mut local_domains,
+                &local_edges,
+                &edge_ids,
+                edge_candidates,
+                budget,
+            ) {
+                return None;
+            }
             let mut arc_domains = local_domains.clone();
             let arc_budget = budget.map(|budget| MeshConstraintBudget::new(budget.remaining.get()));
             let arc_consistent = enforce_edge_arc_consistency(
@@ -14556,7 +14605,7 @@ mod motif_tests {
     }
 
     #[test]
-    fn quotient_coordinate_closure_enforces_edge_arc_consistency_before_search() {
+    fn quotient_coordinate_closure_enforces_sparse_endpoint_membership_before_search() {
         const EDGE_COUNT: usize = 50;
         let mut quotient = MeshQuotient {
             union: UnionFind::new(EDGE_COUNT * 2),
@@ -14577,6 +14626,27 @@ mod motif_tests {
             assignment.values().copied().collect::<HashSet<_>>(),
             HashSet::from([0, 1])
         );
+        assert!(!budget.exhausted.get());
+    }
+
+    #[test]
+    fn quotient_coordinate_closure_propagates_edge_arc_consistency_to_a_fixpoint() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(6),
+            domains: vec![Arc::new(HashSet::from([0, 1])); 6],
+            members: (0..6).map(|node| vec![node]).collect(),
+        };
+        quotient.merge(1, 2).expect("shared relation root");
+        let candidates = vec![vec![[0, 0], [1, 1]], vec![[0, 0]], vec![[1, 1]]];
+        let budget = MeshConstraintBudget::new(1_000);
+
+        let assignment = quotient
+            .close_coordinate_roots_with_budget(2, &candidates, Some(&budget))
+            .expect("arc-consistent coordinate closure");
+
+        assert_eq!(quotient.root_count(), 2);
+        assert_eq!(assignment[&quotient.union.find(0)], 0);
+        assert_eq!(assignment[&quotient.union.find(4)], 1);
         assert!(!budget.exhausted.get());
     }
 
