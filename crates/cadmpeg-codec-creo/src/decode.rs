@@ -10421,6 +10421,18 @@ fn section_skamp_constraints_for_geometry(
                 counts
             });
     let section_entities = section_entity_external_ids(definition);
+    let available_entities = geometry.map_or_else(
+        || section_entities.clone(),
+        |geometry| {
+            relations
+                .skamps
+                .iter()
+                .flat_map(|skamp| &skamp.items)
+                .map(|item| item.entity_id)
+                .filter(|entity_id| geometry.contains_key(&sketch_entity_id(sketch, *entity_id)))
+                .collect()
+        },
+    );
     relations
         .skamps
         .iter()
@@ -10430,7 +10442,7 @@ fn section_skamp_constraints_for_geometry(
                 let entities = skamp
                     .items
                     .iter()
-                    .filter(|item| section_entities.contains(&item.entity_id))
+                    .filter(|item| available_entities.contains(&item.entity_id))
                     .map(|item| sketch_entity_id(sketch, item.entity_id))
                     .collect::<Vec<_>>();
                 Some(SketchConstraintDefinition::Native {
@@ -11231,6 +11243,43 @@ fn resolved_segment_profile_chains(
     profiles
 }
 
+fn solver_only_section_entities(
+    definition: &crate::feature::FeatureDefinition,
+) -> BTreeMap<u32, usize> {
+    let declared_segment_ids = definition
+        .segments
+        .iter()
+        .flat_map(|table| {
+            table
+                .rows
+                .iter()
+                .map(|segment| segment.external_id)
+                .chain(table.opaque_rows.iter().map(|segment| segment.external_id))
+        })
+        .collect::<BTreeSet<_>>();
+    definition
+        .relations
+        .iter()
+        .flat_map(|relations| &relations.skamps)
+        .flat_map(|skamp| {
+            skamp
+                .items
+                .iter()
+                .map(move |item| (item.entity_id, skamp.offset))
+        })
+        .filter(|(entity_id, _)| !declared_segment_ids.contains(entity_id))
+        .fold(
+            BTreeMap::<u32, usize>::new(),
+            |mut entities, (id, offset)| {
+                entities
+                    .entry(id)
+                    .and_modify(|first_offset| *first_offset = (*first_offset).min(offset))
+                    .or_insert(offset);
+                entities
+            },
+        )
+}
+
 fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut AnnotationBuilder) {
     for definition in scan
         .feature_definitions
@@ -11761,6 +11810,31 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     }),
                 });
             }
+        }
+        for (external_id, offset) in solver_only_section_entities(definition) {
+            let id = sketch_entity_id(&sketch_id, external_id);
+            if entities.iter().any(|entity| entity.id == id) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &id.0,
+                "FeatDefs",
+                offset as u64,
+                "solver_only_section_entity",
+                Exactness::ByteExact,
+            );
+            entities.push(SketchEntity {
+                id,
+                sketch: sketch_id.clone(),
+                construction: true,
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Native {
+                    native_kind: "solver_only_section_entity".to_string(),
+                },
+            });
         }
         let emitted_entity_ids = entities
             .iter()
@@ -19516,6 +19590,29 @@ mod resolved_sketch_tests {
         );
         let constraints =
             section_skamp_constraints(&definition, &SketchId("creo:model:sketch#917".into()));
+        let mut solver_only = definition.clone();
+        solver_only.relations.as_mut().expect("relations").skamps =
+            vec![crate::feature::FeatureSkamp {
+                id: 20,
+                kind: 0,
+                flags: 0,
+                status: 35,
+                items: vec![
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 12,
+                        sense: 2,
+                    },
+                    crate::feature::FeatureSkampItem {
+                        entity_id: 99,
+                        sense: 3,
+                    },
+                ],
+                offset: 95,
+            }];
+        assert_eq!(
+            solver_only_section_entities(&solver_only),
+            BTreeMap::from([(99, 95)])
+        );
         let mut whole_entity_tangent = definition.clone();
         whole_entity_tangent
             .relations

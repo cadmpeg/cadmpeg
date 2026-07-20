@@ -50,6 +50,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
 - The geometric roles and selection order of multiple feature-definition `local_sys` and `transf` twelve-slot frames are unspecified.
 - The entity/locus roles of the three decoded four-slot `relat_ptr` operand vectors are unspecified.
+- The geometry families and external-reference bindings of solver-only
+  `skamp_ptr` entity identifiers are unspecified.
 - The DEPDB sweep-axis relation for parts without `ActDatums` is unspecified,
   including the feature-definition datum defaults or standard-datum convention
   that supplies the `protextrude` axis. The current regeneration snapshot is

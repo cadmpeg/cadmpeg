@@ -1013,6 +1013,10 @@ does not remove the solver relation. `relat_ptr`, `skamp_ptr`, `triples_ptr`,
 `order_table`, and saved-section entities remain valid when `segtab_ptr` is
 absent; segment-dependent refinement is withheld without dropping those design
 records.
+A solver incidence entity identifier with no `segtab_ptr` or ordered
+saved-section definition is a solver-only section entity. It retains one
+construction-entity identity shared by every incidence in the sketch; its
+geometry family remains native.
 `skamp_ptr.id` is the incidence identity. A typed incidence requires exactly
 one row with that identifier. Rows sharing an identifier remain separate native
 constraints identified by their byte offsets.
