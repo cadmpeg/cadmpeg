@@ -182,6 +182,11 @@ fn scan_decodes_length_prefixed_native_model_name() {
     let scan = container::scan_bytes(data.clone());
 
     assert_eq!(scan.model_name.as_deref(), Some("widget.prt "));
+    let model_name_offset = data
+        .windows(b"widget.prt ".len())
+        .position(|window| window == b"widget.prt ")
+        .expect("model name offset");
+    assert_eq!(scan.model_name_offset, Some(model_name_offset));
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     assert_eq!(
         result
@@ -192,6 +197,51 @@ fn scan_decodes_length_prefixed_native_model_name() {
             .map(String::as_str),
         Some("widget.prt ")
     );
+    let [product] = result.ir.model.products.as_slice() else {
+        panic!("one part product");
+    };
+    assert_eq!(product.id.as_str(), "creo:model:product#root");
+    assert_eq!(product.product_id, "widget.prt ");
+    assert_eq!(product.name.as_deref(), Some("widget.prt "));
+    assert!(product.bodies.is_empty());
+    let [occurrence] = result.ir.model.product_occurrences.as_slice() else {
+        panic!("one root occurrence");
+    };
+    assert_eq!(occurrence.product, product.id);
+    assert!(matches!(
+        occurrence.parent,
+        cadmpeg_ir::product::OccurrenceParent::Root
+    ));
+    assert_eq!(
+        occurrence.transform,
+        cadmpeg_ir::transform::Transform::identity()
+    );
+    assert_annotation(
+        &result.source_fidelity.annotations,
+        product.id.as_str(),
+        "creo:archive_header",
+        model_name_offset as u64,
+        "part_product",
+        Exactness::Derived,
+    );
+    assert_annotation(
+        &result.source_fidelity.annotations,
+        occurrence.id.as_str(),
+        "creo:archive_header",
+        model_name_offset as u64,
+        "part_product_occurrence",
+        Exactness::Derived,
+    );
+}
+
+#[test]
+fn scan_withholds_repeated_native_model_names() {
+    let data = b"#UGC:2 PART test \\\n+#- CMNM 00awidget.prt                                      \\\n+#- CMNM 00bwidget2.prt                                     \\\n+#-END_OF_UGC_HEADER\n"
+        .to_vec();
+
+    let scan = container::scan_bytes(data);
+    assert!(scan.model_name.is_none());
+    assert!(scan.model_name_offset.is_none());
 }
 
 #[test]

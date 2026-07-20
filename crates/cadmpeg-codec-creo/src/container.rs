@@ -187,6 +187,8 @@ pub struct ContainerScan {
     pub version_line: String,
     /// Native model filename from the length-prefixed `CMNM` header record.
     pub model_name: Option<String>,
+    /// Byte offset of the native model filename.
+    pub model_name_offset: Option<usize>,
     /// Enumerated sections in file order.
     pub sections: Vec<Section>,
     /// Successfully expanded Unix-compress section payloads.
@@ -674,15 +676,17 @@ fn principal_unit(data: &[u8]) -> Option<String> {
     }
 }
 
-fn model_name(data: &[u8]) -> Option<String> {
+fn model_name(data: &[u8]) -> Option<(String, usize)> {
     const PREFIX: &[u8] = b"#- CMNM ";
-    let start = find(data, PREFIX, 0)? + PREFIX.len();
+    let marker = find(data, PREFIX, 0)?;
+    let start = marker + PREFIX.len();
+    find(data, PREFIX, start).is_none().then_some(())?;
     let length_bytes = data.get(start..start + 3)?;
     let length = usize::from_str_radix(std::str::from_utf8(length_bytes).ok()?, 16).ok()?;
     let name = data.get(start + 3..start + 3 + length)?;
     (!name.is_empty() && !name.iter().any(|byte| matches!(byte, 0 | b'\n' | b'\r')))
         .then_some(())?;
-    Some(std::str::from_utf8(name).ok()?.to_string())
+    Some((std::str::from_utf8(name).ok()?.to_string(), start + 3))
 }
 
 fn family_table(data: &[u8], sections: &[Section]) -> Option<FamilyTableRecord> {
@@ -1548,7 +1552,8 @@ pub fn scan(reader: &mut dyn ReadSeek) -> Result<ContainerScan, CodecError> {
 /// buffer without a reader.
 pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
     let version_line = line_at(&data, 0);
-    let model_name = model_name(&data);
+    let (model_name, model_name_offset) =
+        model_name(&data).map_or((None, None), |(name, offset)| (Some(name), Some(offset)));
 
     // The binary body begins after the ASCII header and TOC. Prefer the TOC end
     // marker; fall back to the header end; fall back to the magic line.
@@ -1786,6 +1791,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
         data,
         version_line,
         model_name,
+        model_name_offset,
         sections,
         expanded_sections,
         double_xar_tables,

@@ -19,7 +19,8 @@ A PSB file begins with an ASCII UGC header and table of contents, followed by na
 
 The header record `#- CMNM <hhh><name>` stores the native model filename.
 `hhh` is a three-digit ASCII hexadecimal byte count for `name`; padding after
-those bytes is not part of the name.
+those bytes is not part of the name. Exactly one record establishes model
+identity; an absent or repeated record leaves model identity undefined.
 
 A body-section header is `#<name>\n`. The first header follows the TOC's
 newline. Later headers follow either the text delimiter `#\n` or the PSB

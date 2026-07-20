@@ -28,10 +28,12 @@ use cadmpeg_ir::geometry::{
 };
 use cadmpeg_ir::hash::sha256_hex;
 use cadmpeg_ir::ids::{
-    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, PcurveId, PointId, ProceduralCurveId,
-    ProceduralSurfaceId, RegionId, ShellId, SurfaceId, UnknownId, VertexId,
+    BodyId, CoedgeId, CurveId, EdgeId, FaceId, LoopId, OccurrenceId, PcurveId, PointId,
+    ProceduralCurveId, ProceduralSurfaceId, ProductId, RegionId, ShellId, SurfaceId, UnknownId,
+    VertexId,
 };
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::product::{OccurrenceParent, Product, ProductOccurrence};
 use cadmpeg_ir::report::{DecodeReport, LossCategory, LossNote, Severity};
 use cadmpeg_ir::sketches::{
     Sketch, SketchConstraint, SketchConstraintDefinition, SketchConstraintId, SketchCoordinateAxis,
@@ -43,6 +45,7 @@ use cadmpeg_ir::topology::{
     Body, BodyKind, Coedge, Edge, Face, Loop as IrLoop, PcurveUse, Point, Region, Sense, Shell,
     Vertex,
 };
+use cadmpeg_ir::transform::Transform;
 use cadmpeg_ir::units::Units;
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::AnnotationBuilder;
@@ -29469,6 +29472,51 @@ fn transfer_tabulated_cylinder_spline_extrusions(
     transferred
 }
 
+fn transfer_part_product(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> bool {
+    let Some(model_name) = scan.model_name.as_ref() else {
+        return false;
+    };
+    let Some(model_name_offset) = scan.model_name_offset else {
+        return false;
+    };
+    let product_id = ProductId("creo:model:product#root".to_string());
+    let occurrence_id = OccurrenceId("creo:model:product_occurrence#root".to_string());
+    annotate(
+        annotations,
+        &product_id,
+        "archive_header",
+        model_name_offset as u64,
+        "part_product",
+        Exactness::Derived,
+    );
+    annotate(
+        annotations,
+        &occurrence_id,
+        "archive_header",
+        model_name_offset as u64,
+        "part_product_occurrence",
+        Exactness::Derived,
+    );
+    ir.model.products.push(Product {
+        id: product_id.clone(),
+        product_id: model_name.clone(),
+        name: Some(model_name.clone()),
+        bodies: ir.model.bodies.iter().map(|body| body.id.clone()).collect(),
+    });
+    ir.model.product_occurrences.push(ProductOccurrence {
+        id: occurrence_id,
+        product: product_id,
+        parent: OccurrenceParent::Root,
+        transform: Transform::identity(),
+        name: Some(model_name.clone()),
+    });
+    true
+}
+
 fn fc05_model_frame(
     axis_index: usize,
     axis_ordinate: f64,
@@ -32394,6 +32442,7 @@ fn build_ir(
         transfer_resolved_circular_extrusion_breps(scan, &mut ir, &mut annotations);
     let feature_extrusion_brep_count =
         transfer_resolved_extrusion_breps(scan, &mut ir, &mut annotations);
+    let transferred_part_product = transfer_part_product(scan, &mut ir, &mut annotations);
     let decoded_feature_skamp_count = scan
         .feature_definitions
         .iter()
@@ -32506,6 +32555,10 @@ fn build_ir(
         source.attributes.insert(
             "transferred_feature_extrusion_brep_count".to_string(),
             feature_extrusion_brep_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_part_product_count".to_string(),
+            usize::from(transferred_part_product).to_string(),
         );
         source.attributes.insert(
             "decoded_feature_skamp_count".to_string(),
