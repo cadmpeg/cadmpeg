@@ -1813,6 +1813,10 @@ fn extend_related_design_records(
     )?;
     native.design_parameter_scopes =
         crate::design::decode_parameter_scopes(scan, &native.design_entity_headers)?;
+    crate::design::disambiguate_fixed_fillet_parameters(
+        &mut native.design_parameter_scopes,
+        &native.design_parameter_owners,
+    );
     let mut existing = native
         .design_record_headers
         .iter()

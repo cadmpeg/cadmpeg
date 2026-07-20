@@ -1951,6 +1951,9 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             && match &group.radius {
                                 RadiusSpec::Unresolved { .. } => true,
                                 RadiusSpec::Constant { radius } => positive_feature_length(*radius),
+                                RadiusSpec::Chordal { chord_length } => {
+                                    positive_feature_length(*chord_length)
+                                }
                                 RadiusSpec::Variable { points } => {
                                     points.len() >= 2
                                         && points.iter().all(|point| {

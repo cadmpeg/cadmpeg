@@ -1471,6 +1471,11 @@ pub enum DesignFilletRadiusLaw {
         /// Radius parameter record.
         radius_parameter_record_index: u32,
     },
+    /// Constant transverse chord length across the fillet surface.
+    Chordal {
+        /// Chord-length parameter record.
+        chord_length_parameter_record_index: u32,
+    },
     /// Explicit endpoint and optional midpoint radius controls.
     Variable {
         /// Radius at normalized parameter zero.

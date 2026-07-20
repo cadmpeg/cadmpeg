@@ -1589,6 +1589,11 @@ pub enum RadiusSpec {
         /// The fillet radius.
         radius: Length,
     },
+    /// Constant transverse chord length across the fillet surface.
+    Chordal {
+        /// Distance between the fillet's two support boundaries.
+        chord_length: Length,
+    },
     /// Radius varying along the edge chain per explicit control points.
     Variable {
         /// Radius samples along the edge chain, in chain-parameter order.
@@ -1623,6 +1628,8 @@ pub struct ChamferGroup {
 pub enum RadiusForm {
     /// One radius applies to the entire edge chain.
     Constant,
+    /// Constant transverse chord length defines the fillet width.
+    Chordal,
     /// Radius varies along the edge chain.
     Variable,
 }

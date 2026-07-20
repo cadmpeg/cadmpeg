@@ -4821,6 +4821,12 @@ pub fn sync_neutral_features(
                         );
                         parameters.insert(key.into(), value);
                     }
+                    RadiusSpec::Chordal { .. } => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has a chord-length fillet law",
+                            feature.id
+                        )));
+                    }
                     RadiusSpec::Variable { points } => {
                         parameters.retain(|name, _| {
                             name != "Radius"

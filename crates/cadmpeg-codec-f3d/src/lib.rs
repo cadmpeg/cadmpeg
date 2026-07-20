@@ -1113,9 +1113,16 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let scope = scopes_by_index.get(&(native_stream, assignment.scope_record_index));
         let group =
             construction_groups_by_index.get(&(native_stream, assignment.group_record_index));
+        let assignment_parameter = |record_index: u32| {
+            let parameter = *parameters_by_index.get(&(native_stream, record_index))?;
+            let owner = *owners_by_index.get(&(native_stream, parameter.owner_record_index?))?;
+            (owner.scope_record_index == assignment.scope_record_index
+                && owner.parameter_record_index == record_index)
+                .then_some(parameter)
+        };
         let tangency_weight = assignment
             .tangency_weight_parameter_record_index
-            .and_then(|record_index| parameters_by_index.get(&(native_stream, record_index)));
+            .and_then(&assignment_parameter);
         let valid = scope.is_some_and(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"))
             && group.is_some_and(|group| {
                 group.scope_record_index == assignment.scope_record_index
@@ -1124,9 +1131,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && match &assignment.law {
                 records::DesignFilletRadiusLaw::Constant {
                     radius_parameter_record_index,
-                } => parameters_by_index
-                    .get(&(native_stream, *radius_parameter_record_index))
-                    .is_some_and(|parameter| {
+                } => {
+                    assignment_parameter(*radius_parameter_record_index).is_some_and(|parameter| {
                         parameter.source_kind == "Radius"
                             && parameter
                                 .unit
@@ -1134,7 +1140,21 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                 .is_some_and(design::design_length_unit)
                             && parameter.evaluated_value > 0.0
                             && parameter.evaluated_value.is_finite()
-                    }),
+                    })
+                }
+                records::DesignFilletRadiusLaw::Chordal {
+                    chord_length_parameter_record_index,
+                } => assignment_parameter(*chord_length_parameter_record_index).is_some_and(
+                    |parameter| {
+                        parameter.source_kind == "ChordLen"
+                            && parameter
+                                .unit
+                                .as_deref()
+                                .is_some_and(design::design_length_unit)
+                            && parameter.evaluated_value > 0.0
+                            && parameter.evaluated_value.is_finite()
+                    },
+                ),
                 records::DesignFilletRadiusLaw::Variable {
                     start_radius_parameter_record_index,
                     end_radius_parameter_record_index,
@@ -1142,8 +1162,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     middle_parameter_record_indices,
                 } => {
                     let radius = |record_index: u32, kind: &str| {
-                        parameters_by_index
-                            .get(&(native_stream, record_index))
+                        assignment_parameter(record_index)
                             .filter(|parameter| {
                                 parameter.source_kind == kind
                                     && parameter
@@ -1164,8 +1183,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     let positions = middle_parameter_record_indices
                         .iter()
                         .map(|record_index| {
-                            parameters_by_index
-                                .get(&(native_stream, *record_index))
+                            assignment_parameter(*record_index)
                                 .filter(|parameter| {
                                     parameter.source_kind == "MidParams"
                                         && parameter.unit.is_none()

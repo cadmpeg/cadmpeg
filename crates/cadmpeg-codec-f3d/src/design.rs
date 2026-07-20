@@ -690,7 +690,7 @@ pub fn project_parameter_design_with_edge_identities(
                             || parameters.iter().any(|(_, parameter)| {
                                 !matches!(
                                     parameter.source_kind.as_str(),
-                                    "Radius" | "TangencyWeight"
+                                    "Radius" | "ChordLen" | "TangencyWeight"
                                 ) || assigned_parameter_records
                                     .iter()
                                     .filter(|record_index| **record_index == parameter.record_index)
@@ -698,7 +698,7 @@ pub fn project_parameter_design_with_edge_identities(
                                     != 1
                             })
                             || parameters.iter().any(|(_, parameter)| {
-                                if parameter.source_kind == "Radius" {
+                                if matches!(parameter.source_kind.as_str(), "Radius" | "ChordLen") {
                                     design_length(parameter).is_none_or(|value| value.0 <= 0.0)
                                 } else {
                                     !parameter.evaluated_value.is_finite()
@@ -720,21 +720,41 @@ pub fn project_parameter_design_with_edge_identities(
                         let groups = assignments
                             .into_iter()
                             .map(|assignment| {
-                                let radius_record_index = match assignment.law {
+                                let (radius, edge_radius) = match assignment.law {
                                     DesignFilletRadiusLaw::Constant {
                                         radius_parameter_record_index,
-                                    } => radius_parameter_record_index,
+                                    } => {
+                                        let radius = parameters
+                                            .iter()
+                                            .find(|(_, parameter)| {
+                                                parameter.record_index
+                                                    == radius_parameter_record_index
+                                            })
+                                            .and_then(|(_, parameter)| design_length(parameter))
+                                            .expect(
+                                                "complete Fillet assignment has a positive radius",
+                                            );
+                                        (RadiusSpec::Constant { radius }, Some(radius.0))
+                                    }
+                                    DesignFilletRadiusLaw::Chordal {
+                                        chord_length_parameter_record_index,
+                                    } => {
+                                        let chord_length = parameters
+                                            .iter()
+                                            .find(|(_, parameter)| {
+                                                parameter.record_index
+                                                    == chord_length_parameter_record_index
+                                            })
+                                            .and_then(|(_, parameter)| design_length(parameter))
+                                            .expect(
+                                                "complete chordal Fillet has a positive chord length",
+                                            );
+                                        (RadiusSpec::Chordal { chord_length }, None)
+                                    }
                                     DesignFilletRadiusLaw::Variable { .. } => {
                                         unreachable!("variable Fillet projected before constants")
                                     }
                                 };
-                                let radius = parameters
-                                    .iter()
-                                    .find(|(_, parameter)| {
-                                        parameter.record_index == radius_record_index
-                                    })
-                                    .and_then(|(_, parameter)| design_length(parameter))
-                                    .expect("complete Fillet assignment has a positive radius");
                                 let tangency_weight = assignment
                                     .tangency_weight_parameter_record_index
                                     .and_then(|record_index| {
@@ -745,7 +765,6 @@ pub fn project_parameter_design_with_edge_identities(
                                     })
                                     .map(|parameter| parameter.evaluated_value)
                                     .filter(|weight| weight.is_finite());
-                                let edge_radius = Some(radius.0);
                                 let edges = construction_groups
                                     .iter()
                                     .find(|group| {
@@ -768,7 +787,7 @@ pub fn project_parameter_design_with_edge_identities(
                                     );
                                 FilletGroup {
                                     edges,
-                                    radius: RadiusSpec::Constant { radius },
+                                    radius,
                                     tangency_weight,
                                 }
                             })
@@ -2139,6 +2158,9 @@ fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> Vec<u32> {
         DesignFilletRadiusLaw::Constant {
             radius_parameter_record_index,
         } => vec![*radius_parameter_record_index],
+        DesignFilletRadiusLaw::Chordal {
+            chord_length_parameter_record_index,
+        } => vec![*chord_length_parameter_record_index],
         DesignFilletRadiusLaw::Variable {
             start_radius_parameter_record_index,
             end_radius_parameter_record_index,
@@ -3404,6 +3426,7 @@ fn project_fixed_fillet(
     };
     let edge_radius = match radius {
         RadiusSpec::Constant { radius } => Some(radius.0),
+        RadiusSpec::Chordal { .. } => None,
         _ => None,
     };
     let edges = resolved_edge_group(
@@ -16183,7 +16206,8 @@ pub fn decode_fillet_radius_groups(
                 (parameter.source_kind == "TangencyWeight").then_some(*parameter)
             })
             .collect::<Vec<_>>();
-        if scope_groups.len() == radii.len()
+        if owned_parameters.len() == radii.len() + weights.len()
+            && scope_groups.len() == radii.len()
             && (weights.is_empty() || weights.len() == scope_groups.len())
         {
             for (ordinal, (group, radius)) in scope_groups.into_iter().zip(radii).enumerate() {
@@ -16209,6 +16233,29 @@ pub fn decode_fillet_radius_groups(
         let [group] = scope_groups.as_slice() else {
             continue;
         };
+        let chord_lengths = owned_parameters
+            .iter()
+            .filter_map(|(_, parameter)| {
+                (parameter.source_kind == "ChordLen").then_some(parameter.record_index)
+            })
+            .collect::<Vec<_>>();
+        if weights.len() == 1 && owned_parameters.len() == 2 {
+            let [chord_length] = chord_lengths.as_slice() else {
+                continue;
+            };
+            out.push(DesignFilletRadiusGroup {
+                id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
+                scope_record_index: scope.record_index,
+                group_ordinal: 0,
+                group_record_index: group.record_index,
+                edge_operand_record_indices: group.members.clone(),
+                law: DesignFilletRadiusLaw::Chordal {
+                    chord_length_parameter_record_index: *chord_length,
+                },
+                tangency_weight_parameter_record_index: Some(weights[0].record_index),
+            });
+            continue;
+        }
         let records = |kind: &str| {
             owned_parameters
                 .iter()
@@ -16250,6 +16297,30 @@ pub fn decode_fillet_radius_groups(
     }
     out.sort_by_key(|group| group.id.clone());
     out
+}
+
+/// Remove fixed Fillet interpretations of frames that are indexed parameter owners.
+pub fn disambiguate_fixed_fillet_parameters(
+    scopes: &mut [DesignParameterScope],
+    owners: &[DesignParameterOwner],
+) {
+    let indexed_scopes = owners
+        .iter()
+        .filter_map(|owner| {
+            Some((
+                native_stream(&owner.id)?.to_owned(),
+                owner.scope_record_index,
+            ))
+        })
+        .collect::<HashSet<_>>();
+    for scope in scopes {
+        let Some(stream) = native_stream(&scope.id) else {
+            continue;
+        };
+        if indexed_scopes.contains(&(stream.to_owned(), scope.record_index)) {
+            scope.fixed_fillet_parameters = None;
+        }
+    }
 }
 
 fn parse_construction_operand_group(
@@ -32150,6 +32221,23 @@ mod relation_tests {
             owner(30, 31, 2),
             owner(40, 41, 3),
         ];
+        let mut indexed_scope = scope.clone();
+        indexed_scope.fixed_fillet_parameters = Some(super::DesignFixedFilletParameters {
+            tangency_weight: 1.0,
+            tangency_weight_record_index: 10,
+            tangency_weight_offset: 100,
+            radii: vec![0.5],
+            radius_record_indexes: vec![20],
+            radius_offsets: vec![200],
+            intermediate_parameters: Vec::new(),
+            intermediate_parameter_record_indexes: Vec::new(),
+            intermediate_parameter_offsets: Vec::new(),
+        });
+        super::disambiguate_fixed_fillet_parameters(
+            std::slice::from_mut(&mut indexed_scope),
+            &owners,
+        );
+        assert_eq!(indexed_scope.fixed_fillet_parameters, None);
 
         let assignments = decode_fillet_radius_groups(
             std::slice::from_ref(&scope),
@@ -32225,6 +32313,48 @@ mod relation_tests {
             &incomplete_parameters,
         )
         .is_empty());
+        let chord_parameters = [
+            parameter(110, 111, "TangencyWeight", None, 1.0),
+            parameter(120, 121, "ChordLen", Some("in"), 0.25),
+        ];
+        let chord_owners = [owner(110, 111, 0), owner(120, 121, 1)];
+        let chord_assignments = decode_fillet_radius_groups(
+            std::slice::from_ref(&scope),
+            &operand_groups[..1],
+            &chord_owners,
+            &chord_parameters,
+        );
+        assert_eq!(chord_assignments.len(), 1);
+        assert_eq!(
+            chord_assignments[0].law,
+            super::DesignFilletRadiusLaw::Chordal {
+                chord_length_parameter_record_index: 121,
+            }
+        );
+        let (chord_features, _) = project_parameter_design(
+            &chord_parameters,
+            &chord_owners,
+            std::slice::from_ref(&scope),
+            &operand_groups[..1],
+            &chord_assignments,
+            &[],
+            &[],
+            &[],
+        );
+        assert!(matches!(
+            &chord_features[0].definition,
+            FeatureDefinition::Fillet { groups }
+                if matches!(
+                    groups.as_slice(),
+                    [cadmpeg_ir::features::FilletGroup {
+                        radius: cadmpeg_ir::features::RadiusSpec::Chordal {
+                            chord_length: cadmpeg_ir::features::Length(2.5),
+                        },
+                        tangency_weight: Some(1.0),
+                        ..
+                    }]
+                )
+        ));
         operand_groups[0]
             .lost_edge_references
             .push("f3d:native:lost-edge-reference#1".into());
