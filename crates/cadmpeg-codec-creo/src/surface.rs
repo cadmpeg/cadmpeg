@@ -1691,6 +1691,7 @@ fn decode_positional_cylinder_frame(
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
     decode_local_system_cylinder_frame(body, cache)
+        .or_else(|| decode_zero_support_cylinder_frame(body, cache))
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
 }
@@ -1774,6 +1775,115 @@ fn decode_local_system_cylinder_frame(
         radius,
         length,
     })
+}
+
+fn decode_zero_support_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    const ZERO_SUPPORT: &[u8] = &[0x0f, 0x18, 0xe6, 0x10, 0x18, 0x0f, 0x18];
+    body.starts_with(&[0x11, 0x18, 0x13]).then_some(())?;
+    let mut cursor = 3;
+    let mut envelope = [0.0; 6];
+    for value in &mut envelope {
+        let (decoded, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    let radius_start = (cursor..body.len()).find(|start| {
+        scalar::decode(body, *start)
+            .is_some_and(|(value, end)| end == body.len() && value.is_finite() && value > 0.0)
+    })?;
+    let (radius, _) = scalar::decode(body, radius_start)?;
+    let origins = (cursor + ZERO_SUPPORT.len()..radius_start)
+        .filter_map(|start| {
+            (body.get(start - ZERO_SUPPORT.len()..start) == Some(ZERO_SUPPORT))
+                .then(|| decode_positional_cylinder_origin(body, start, radius_start, cache))?
+        })
+        .collect::<Vec<_>>();
+    let [origin] = origins.as_slice() else {
+        return None;
+    };
+    let length = envelope[0];
+    (length.is_finite() && length > 0.0).then_some(())?;
+    let scale = envelope
+        .iter()
+        .chain(origin.iter())
+        .chain([radius, length].iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let close = |first: f64, second: f64| (first - second).abs() <= 1e-9 * scale;
+    let axes = (0..2)
+        .filter_map(|axis_index| {
+            let radial_index = 1 - axis_index;
+            (close(
+                (envelope[1 + axis_index] - envelope[4 + axis_index]).abs(),
+                length,
+            ) && close(
+                (envelope[1 + radial_index] - envelope[4 + radial_index]).abs(),
+                2.0 * radius,
+            ) && close(
+                origin[radial_index],
+                f64::midpoint(envelope[1 + radial_index], envelope[4 + radial_index]),
+            ))
+            .then_some((axis_index, radial_index))
+        })
+        .collect::<Vec<_>>();
+    let [(axis_index, radial_index)] = axes.as_slice() else {
+        return None;
+    };
+    let first_axial = envelope[1 + axis_index];
+    let second_axial = envelope[4 + axis_index];
+    let origin_at_first = close(origin[*axis_index], first_axial);
+    let origin_at_second = close(origin[*axis_index], second_axial);
+    (origin_at_first ^ origin_at_second).then_some(())?;
+    let other_axial = if origin_at_first {
+        second_axial
+    } else {
+        first_axial
+    };
+    let mut axis = [0.0; 3];
+    axis[*axis_index] = (other_axial - origin[*axis_index]).signum();
+    let mut ref_direction = [0.0; 3];
+    ref_direction[*radial_index] = (envelope[4 + radial_index] - origin[*radial_index]).signum();
+    Some(PositionalCylinderFrame {
+        origin: *origin,
+        axis,
+        ref_direction,
+        radius,
+        length,
+    })
+}
+
+fn decode_positional_cylinder_origin(
+    body: &[u8],
+    start: usize,
+    end: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<[f64; 3]> {
+    let mut cursor = start;
+    let mut origin = [0.0; 3];
+    for (index, value) in origin.iter_mut().enumerate() {
+        if body.get(cursor) == Some(&0x18) && cursor + 1 == end {
+            *value = 0.0;
+            cursor += 1;
+            continue;
+        }
+        let row = scalar::decode_in_row_lane(body, cursor, cache);
+        let (decoded, next) = match index {
+            0 => row.or_else(|| {
+                scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)
+            })?,
+            _ => row.or_else(|| {
+                scalar::decode_tabulated_cylinder_second_coordinate(body, cursor, cache)
+            })?,
+        };
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    (cursor == end).then_some(origin)
 }
 
 fn decode_compact_axis_aligned_cylinder_frame(
@@ -3236,6 +3346,20 @@ mod tests {
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert_eq!(frame.radius, 3.5);
         assert_eq!(frame.length, 8.5);
+
+        let zero_support = [
+            17, 24, 19, 47, 32, 0, 72, 42, 128, 72, 16, 0, 67, 232, 0, 72, 39, 128, 47, 16, 0, 25,
+            154, 121, 57, 76, 158, 138, 10, 247, 25, 227, 15, 24, 230, 16, 24, 15, 24, 72, 41, 0,
+            47, 16, 0, 24, 42, 232, 0,
+        ];
+        let frame =
+            decode_positional_cylinder_frame(&zero_support, &scalar::ScalarCache::default())
+                .expect("complete zero-support positional cylinder");
+        assert_eq!(frame.origin, [-12.5, 4.0, 0.0]);
+        assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.radius, 0.75);
+        assert_eq!(frame.length, 8.0);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;

@@ -319,6 +319,17 @@ reverses the corner orientation: the first corner supplies the axial endpoint,
 and the axis and reference direction point toward the second corner. The
 radius-span center coordinate remains the second corner in both forms.
 
+A zero-support positional cylinder uses the same six-scalar envelope prefix as
+the complete local-system form. Immediately before its three-scalar origin it
+stores the support suffix `0f 18 e6 10 18 0f 18`; all nine support slots are
+zero. A bare `18` may occupy the bounded final origin slot before the terminal
+positive radius. Exactly one of the two stored corner-coordinate differences
+equals the axial length, and the other equals twice the radius. The origin's
+radial coordinate equals the midpoint of the radial corner pair, and its axial
+coordinate equals exactly one axial corner. The axis points from that endpoint
+toward the other. The reference direction points from the radial midpoint
+toward the second radial corner.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.
