@@ -8120,6 +8120,7 @@ fn propagate_common_boundary_components(
 ) -> Option<()> {
     const MAX_COMPONENT_STATES: usize = 128;
     const MAX_COMPONENT_OPERATIONS: usize = 8_192;
+    const MAX_COMPONENT_ROUNDS: usize = 8;
 
     let active_faces = domains
         .iter()
@@ -8194,34 +8195,40 @@ fn propagate_common_boundary_components(
             selected_edges.extend(mesh_boundary_domain_edges(&domains[face]));
             ordered_faces.push(face);
         }
-        let mut cursor = 0usize;
-        while cursor < ordered_faces.len() {
-            let budget = MeshConstraintBudget::new(MAX_COMPONENT_OPERATIONS);
-            let mut states = vec![(quotient.clone(), HashSet::<usize>::new())];
-            let mut processed = 0usize;
-            while let Some(&face) = ordered_faces.get(cursor + processed) {
-                let Some(next) = advance_boundary_component_states(
-                    &domains[face],
-                    &states,
+        for _ in 0..MAX_COMPONENT_ROUNDS {
+            let before = quotient.signature();
+            let mut cursor = 0usize;
+            while cursor < ordered_faces.len() {
+                let budget = MeshConstraintBudget::new(MAX_COMPONENT_OPERATIONS);
+                let mut states = vec![(quotient.clone(), HashSet::<usize>::new())];
+                let mut processed = 0usize;
+                while let Some(&face) = ordered_faces.get(cursor + processed) {
+                    let Some(next) = advance_boundary_component_states(
+                        &domains[face],
+                        &states,
+                        edge_candidates,
+                        MAX_COMPONENT_STATES,
+                        &budget,
+                    ) else {
+                        break;
+                    };
+                    states = next;
+                    processed += 1;
+                }
+                if processed == 0 {
+                    cursor += 1;
+                    continue;
+                }
+                propagate_common_full_quotients(
+                    states.into_iter().map(|(state, _)| state).collect(),
                     edge_candidates,
-                    MAX_COMPONENT_STATES,
-                    &budget,
-                ) else {
-                    break;
-                };
-                states = next;
-                processed += 1;
+                    quotient,
+                )?;
+                cursor += processed;
             }
-            if processed == 0 {
-                cursor += 1;
-                continue;
+            if quotient.signature() == before {
+                break;
             }
-            propagate_common_full_quotients(
-                states.into_iter().map(|(state, _)| state).collect(),
-                edge_candidates,
-                quotient,
-            )?;
-            cursor += processed;
         }
     }
     Some(())
