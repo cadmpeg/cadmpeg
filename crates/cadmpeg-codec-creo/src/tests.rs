@@ -6393,9 +6393,11 @@ fn scan_distinguishes_null_and_referenced_family_tables() {
         decoded.ir.source.as_ref().unwrap().attributes["configuration_state"],
         "none"
     );
-    assert!(decoded.report.losses.iter().any(|loss| loss
-        .message
-        .contains("the part has no family-table configurations")));
+    assert!(!decoded
+        .report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("configuration")));
 
     let referenced_data = build_prt(
         "c",

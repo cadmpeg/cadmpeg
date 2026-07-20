@@ -34497,20 +34497,6 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         provenance: None,
     });
 
-    if scan
-        .family_table
-        .is_some_and(|record| record.pointer == crate::container::FamilyTablePointer::Null)
-    {
-        losses.push(LossNote {
-            category: LossCategory::Attribute,
-            severity: Severity::Info,
-            message: "FamilyInf declares a null configuration driver-table pointer; the part has \
-                      no family-table configurations."
-                .to_string(),
-            provenance: None,
-        });
-    }
-
     let configuration_gap = match scan.family_table.map(|record| record.pointer) {
         Some(crate::container::FamilyTablePointer::Null) => "",
         Some(crate::container::FamilyTablePointer::Entity(_)) => {
