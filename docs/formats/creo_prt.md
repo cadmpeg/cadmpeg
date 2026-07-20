@@ -355,6 +355,21 @@ toward the second, and half the radial span is the radius. This body defines an
 unbounded analytic carrier and does not define an axial extent. The
 model-reference token does not contribute a geometric coordinate.
 
+An axial/radial positional cylinder begins `11 18 13` and stores positive
+axial length, first axial coordinate, one radial sample, second axial
+coordinate, one complete `19` model-reference token, radial center, and the
+exact trailer `f7 17`. All numeric fields use the first tabulated-cylinder
+directrix-coordinate lane. A literal `10` separator occurs either immediately
+before the radial sample or immediately after it. The axial-coordinate span
+equals the stored length, and the radial sample differs from the radial center.
+The separator before the radial sample selects the first axial endpoint as the
+origin and directs the X axis toward the second endpoint. The separator after
+the sample selects the second endpoint and directs the X axis toward the first.
+The model Y origin coordinate is zero; the radial center is the model Z origin
+coordinate. The radius is the absolute radial sample-to-center distance. The
+reference direction is model Z with the sign opposite the radial offset. The
+model-reference token does not contribute a geometric coordinate.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.

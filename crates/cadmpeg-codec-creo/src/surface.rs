@@ -1694,6 +1694,7 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_zero_support_cylinder_frame(body, cache))
         .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_held_axis_cylinder_frame(body, cache))
+        .or_else(|| decode_axial_radial_cylinder_frame(body, cache))
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
 }
@@ -1808,6 +1809,65 @@ fn decode_held_axis_cylinder_frame(
         ref_direction: [(second_radial - first_radial).signum(), 0.0, 0.0],
         radius,
         length: None,
+    })
+}
+
+fn decode_axial_radial_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    body.starts_with(&[0x11, 0x18, 0x13]).then_some(())?;
+    let decode = |cursor| {
+        let (value, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        value.is_finite().then_some((value, next))
+    };
+    let (length, mut cursor) = decode(3)?;
+    let (first_axial, next) = decode(cursor)?;
+    cursor = next;
+    let origin_at_first = body.get(cursor) == Some(&0x10);
+    if origin_at_first {
+        cursor += 1;
+    }
+    let (radial_sample, next) = decode(cursor)?;
+    cursor = next;
+    if !origin_at_first {
+        (body.get(cursor) == Some(&0x10)).then_some(())?;
+        cursor += 1;
+    }
+    let (second_axial, next) = decode(cursor)?;
+    cursor = next;
+    (body.get(cursor) == Some(&0x19)).then_some(())?;
+    let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (radial_center, next) = decode(cursor)?;
+    (body.get(next..) == Some(&[0xf7, 0x17])).then_some(())?;
+
+    (length > 0.0).then_some(())?;
+    let scale = [
+        length,
+        first_axial,
+        radial_sample,
+        second_axial,
+        radial_center,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0, f64::max);
+    (((second_axial - first_axial).abs() - length).abs() <= 1e-9 * scale).then_some(())?;
+    let radius = (radial_sample - radial_center).abs();
+    (radius > 0.0).then_some(())?;
+    let (origin_x, axis_x) = if origin_at_first {
+        (first_axial, (second_axial - first_axial).signum())
+    } else {
+        (second_axial, (first_axial - second_axial).signum())
+    };
+    Some(PositionalCylinderFrame {
+        origin: [origin_x, 0.0, radial_center],
+        axis: [axis_x, 0.0, 0.0],
+        ref_direction: [0.0, 0.0, -(radial_sample - radial_center).signum()],
+        radius,
+        length: Some(length),
     })
 }
 
@@ -3522,6 +3582,38 @@ mod tests {
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert!((frame.radius - 1.0).abs() < 1e-12);
         assert_eq!(frame.length, None);
+
+        let first_endpoint_axial_radial = [
+            17, 24, 19, 45, 26, 28, 221, 156, 226, 254, 231, 46, 61, 204, 16, 228, 45, 66, 42, 2,
+            26, 2, 198, 67, 25, 161, 166, 38, 51, 20, 92, 7, 15, 247, 23,
+        ];
+        let frame = decode_positional_cylinder_frame(
+            &first_endpoint_axial_radial,
+            &scalar::ScalarCache::default(),
+        )
+        .expect("complete first-endpoint axial/radial cylinder");
+        assert!((frame.origin[0] - 29.8).abs() < 1e-12);
+        assert_eq!(frame.origin[1..], [0.0, 0.0]);
+        assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.ref_direction, [0.0, 0.0, -1.0]);
+        assert!((frame.radius - 1.0).abs() < 1e-12);
+        assert!((frame.length.expect("axial extent") - 6.528189135889739).abs() < 1e-12);
+
+        let second_endpoint_axial_radial = [
+            17, 24, 19, 45, 26, 27, 232, 154, 196, 109, 12, 70, 66, 41, 227, 121, 190, 244, 8, 66,
+            239, 255, 16, 71, 61, 204, 25, 192, 139, 195, 207, 227, 22, 71, 15, 247, 23,
+        ];
+        let frame = decode_positional_cylinder_frame(
+            &second_endpoint_axial_radial,
+            &scalar::ScalarCache::default(),
+        )
+        .expect("complete second-endpoint axial/radial cylinder");
+        assert!((frame.origin[0] + 29.8).abs() < 1e-12);
+        assert_eq!(frame.origin[1..], [0.0, 0.0]);
+        assert_eq!(frame.axis, [-1.0, 0.0, 0.0]);
+        assert_eq!(frame.ref_direction, [0.0, 0.0, 1.0]);
+        assert!((frame.radius - 1.0).abs() < 1e-12);
+        assert!((frame.length.expect("axial extent") - 6.527254503477945).abs() < 1e-12);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;
