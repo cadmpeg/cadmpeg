@@ -7704,6 +7704,7 @@ pub(crate) fn project_hole_position_sketches(
             .filter(|marker| {
                 marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
                     && marker.object_index.is_some()
+                    && marker.coordinates_m.is_some()
                     && matches!(
                         marker.kind,
                         SketchInputKind::Point | SketchInputKind::ConstrainedPoint
@@ -8264,6 +8265,14 @@ mod hole_axis_tests {
             ordinal: 1,
             offset: 90,
             coordinates_m: Some([0.0, 0.0]),
+            ..lane.sketch_entities[0].clone()
+        });
+        lane.sketch_entities.push(SketchInputEntity {
+            id: "point-identity".into(),
+            object_index: Some(2),
+            ordinal: 2,
+            offset: 100,
+            coordinates_m: None,
             ..lane.sketch_entities[0].clone()
         });
         let sketch = Sketch {
