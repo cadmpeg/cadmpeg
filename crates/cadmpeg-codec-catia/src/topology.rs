@@ -6122,7 +6122,7 @@ impl MeshQuotient {
         #[allow(clippy::too_many_arguments)]
         fn partial_ordered_assignment_viable(
             assignment: &MeshFaceBoundaryAssignment,
-            edge_ids: &[usize],
+            local_edge_by_id: &HashMap<usize, usize>,
             edges: &[[usize; 2]],
             domains: &[Vec<usize>],
             assigned: &[Option<usize>],
@@ -6134,7 +6134,7 @@ impl MeshQuotient {
                 None => [Some(false), Some(true)],
             };
             let port_root = |use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool| {
-                let local = edge_ids.iter().position(|edge| *edge == use_.edge)?;
+                let local = *local_edge_by_id.get(&use_.edge)?;
                 Some(edges[local][usize::from(if end { !reversed } else { reversed })])
             };
             let compatible = |left: usize, right: usize| {
@@ -6212,9 +6212,11 @@ impl MeshQuotient {
             domains: &[Vec<usize>],
             edges: &[[usize; 2]],
             edge_ids: &[usize],
+            local_edge_by_id: &HashMap<usize, usize>,
             root_edges: &[Vec<usize>],
             edge_candidates: &[Vec<[usize; 2]>],
             edge_faces: Option<&[[usize; 2]]>,
+            face_edges: Option<&[Vec<usize>]>,
             closed_faces: Option<&[bool]>,
             boundary_domains: Option<&[MeshFaceBoundaryDomain]>,
             component_points: &HashSet<usize>,
@@ -6308,29 +6310,26 @@ impl MeshQuotient {
                                 if degree != 1 || !affected_faces.contains(&face) {
                                     continue;
                                 }
-                                if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
+                                let Some(face_edges) = face_edges else {
+                                    return false;
+                                };
+                                if budget.is_some_and(|budget| {
+                                    !budget.charge_by(face_edges[face].len().max(1))
+                                }) {
                                     return false;
                                 }
-                                let supported = edges.iter().copied().enumerate().any(
-                                    |(edge, [left, right])| {
-                                        let faces = edge_faces[edge];
-                                        if !faces.into_iter().enumerate().any(
-                                            |(rank, candidate)| {
-                                                candidate == face
-                                                    && (rank == 0 || candidate != faces[0])
-                                            },
-                                        ) || (value(left).is_some() && value(right).is_some())
-                                        {
-                                            return false;
-                                        }
-                                        let supports = |endpoint| {
-                                            value(endpoint).is_some_and(|value| value == point)
-                                                || (value(endpoint).is_none()
-                                                    && domains[endpoint].contains(&point))
-                                        };
-                                        supports(left) || supports(right)
-                                    },
-                                );
+                                let supported = face_edges[face].iter().copied().any(|edge| {
+                                    let [left, right] = edges[edge];
+                                    if value(left).is_some() && value(right).is_some() {
+                                        return false;
+                                    }
+                                    let supports = |endpoint| {
+                                        value(endpoint).is_some_and(|value| value == point)
+                                            || (value(endpoint).is_none()
+                                                && domains[endpoint].contains(&point))
+                                    };
+                                    supports(left) || supports(right)
+                                });
                                 if !supported {
                                     return false;
                                 }
@@ -6348,7 +6347,7 @@ impl MeshQuotient {
                                                 assignments.iter().any(|assignment| {
                                                     partial_ordered_assignment_viable(
                                                         assignment,
-                                                        edge_ids,
+                                                        local_edge_by_id,
                                                         edges,
                                                         domains,
                                                         assigned,
@@ -6370,19 +6369,14 @@ impl MeshQuotient {
                 };
 
             let mut propagated = Vec::new();
+            let mut pending_roots = None::<HashSet<usize>>;
             let branch = loop {
-                let scan_work = domains
-                    .iter()
-                    .zip(assigned.iter())
-                    .filter(|(_, point)| point.is_none())
-                    .try_fold(0usize, |total, (domain, _)| {
-                        total.checked_add(domain.len().saturating_add(1))
-                    });
-                if scan_work.is_none_or(|work| budget.is_some_and(|budget| !budget.charge_by(work)))
-                {
-                    *exhausted = true;
-                    break None;
-                }
+                let mut scanned_roots = pending_roots.take().map_or_else(
+                    || (0..domains.len()).collect::<Vec<_>>(),
+                    |roots| roots.into_iter().collect(),
+                );
+                scanned_roots.sort_unstable_by_key(|root| domains[*root].len());
+                let partial_scan = scanned_roots.len() < domains.len();
                 let remaining = assigned.iter().filter(|point| point.is_none()).count();
                 let unused = component_points
                     .iter()
@@ -6416,11 +6410,21 @@ impl MeshQuotient {
                         }
                     }
                 }
-                for root in 0..assigned.len() {
+                for root in scanned_roots {
                     if assigned[root].is_some() {
                         continue;
                     }
+                    if budget.is_some_and(|budget| {
+                        !budget.charge_by(domains[root].len().saturating_add(1))
+                    }) {
+                        *exhausted = true;
+                        break;
+                    }
                     let values = viable_values(root, assigned, &base_degrees);
+                    if budget.is_some_and(|budget| budget.exhausted.get()) {
+                        *exhausted = true;
+                        break;
+                    }
                     if values.is_empty() {
                         dead = true;
                         break;
@@ -6437,6 +6441,27 @@ impl MeshQuotient {
                         propagated.push((root, *point));
                         progress = true;
                         if edge_faces.is_some() {
+                            let mut affected = HashSet::new();
+                            for &edge in &root_edges[root] {
+                                affected.extend(edges[edge]);
+                                let Some(edge_faces) = edge_faces else {
+                                    continue;
+                                };
+                                let Some(face_edges) = face_edges else {
+                                    continue;
+                                };
+                                let faces = edge_faces[edge];
+                                for (rank, face) in faces.into_iter().enumerate() {
+                                    if rank > 0 && face == faces[0] {
+                                        continue;
+                                    }
+                                    for &face_edge in &face_edges[face] {
+                                        affected.extend(edges[face_edge]);
+                                    }
+                                }
+                            }
+                            affected.remove(&root);
+                            pending_roots = Some(affected);
                             break;
                         }
                     } else if best
@@ -6446,10 +6471,17 @@ impl MeshQuotient {
                         best = Some((root, values));
                     }
                 }
+                if *exhausted {
+                    break None;
+                }
                 if dead {
                     break None;
                 }
                 if progress {
+                    continue;
+                }
+                if partial_scan {
+                    pending_roots = None;
                     continue;
                 }
                 if component_points
@@ -6551,9 +6583,11 @@ impl MeshQuotient {
                     domains,
                     edges,
                     edge_ids,
+                    local_edge_by_id,
                     root_edges,
                     edge_candidates,
                     edge_faces,
+                    face_edges,
                     closed_faces,
                     boundary_domains,
                     component_points,
@@ -6664,12 +6698,35 @@ impl MeshQuotient {
                     Some([*local_index.get(&left)?, *local_index.get(&right)?])
                 })
                 .collect::<Option<Vec<_>>>()?;
+            let local_edge_by_id = edge_ids
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(local, edge)| (edge, local))
+                .collect::<HashMap<_, _>>();
             let local_edge_faces = incidence.map(|(edge_faces, _)| {
                 edge_ids
                     .iter()
                     .map(|edge| edge_faces[*edge])
                     .collect::<Vec<_>>()
             });
+            let face_edges = incidence.and_then(|(_, boundary_domains)| {
+                if budget.is_some_and(|budget| !budget.charge_by(edge_ids.len().max(1))) {
+                    return None;
+                }
+                let mut face_edges = vec![Vec::new(); boundary_domains.len()];
+                for (edge, faces) in local_edge_faces.as_ref()?.iter().copied().enumerate() {
+                    for (rank, face) in faces.into_iter().enumerate() {
+                        if rank == 0 || face != faces[0] {
+                            face_edges[face].push(edge);
+                        }
+                    }
+                }
+                Some(face_edges)
+            });
+            if incidence.is_some() && face_edges.is_none() {
+                return None;
+            }
             let closed_faces = incidence.map(|(edge_faces, boundary_domains)| {
                 let face_count = boundary_domains.len();
                 if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
@@ -6712,9 +6769,11 @@ impl MeshQuotient {
                 &local_domains,
                 &local_edges,
                 &edge_ids,
+                &local_edge_by_id,
                 &root_edges,
                 edge_candidates,
                 local_edge_faces.as_deref(),
+                face_edges.as_deref(),
                 closed_faces.as_deref(),
                 incidence.map(|(_, boundary_domains)| boundary_domains),
                 &component_points,
