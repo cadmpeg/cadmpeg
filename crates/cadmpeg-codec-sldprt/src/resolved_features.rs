@@ -278,21 +278,50 @@ pub(crate) fn spatial_sketches(
 
 fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
     const NATIVE_TO_IR: f64 = 1000.0;
-    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(0)
-        || !matches!(
-            payload.get(offset + 23..offset + 27),
-            Some(locus) if locus == [0x04, 0x00, 0x02, 0x00] || locus == [0x05, 0x00, 0x01, 0x00]
-        )
-        || marker_profile_curve_role(payload, offset) != Some(1)
-        || payload.get(offset + 64..offset + 66) != Some(&[0x0e, 0x00])
-    {
+    let locus = payload.get(offset + 23..offset + 27)?;
+    let coordinate_offset = match payload.get(offset..offset + SKETCH_MARKER.len())? {
+        prefix
+            if prefix == SKETCH_MARKER
+                && marker_native_code(payload, offset) == Some(0)
+                && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+                && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+        {
+            offset.checked_add(66)?
+        }
+        prefix
+            if prefix == LEGACY_EXTENDED_SKETCH_MARKER
+                && matches!(
+                    (marker_native_code(payload, offset), locus),
+                    (Some(1), [0x04, 0x00, 0x02, 0x00]) | (Some(0), [0x05, 0x00, 0x01, 0x00])
+                )
+                && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
+        {
+            offset.checked_add(58)?
+        }
+        _ => return None,
+    };
+    if marker_profile_curve_role(payload, offset) != Some(1) {
         return None;
     }
     let point = Point3::new(
-        f64::from_le_bytes(payload.get(offset + 66..offset + 74)?.try_into().ok()?) * NATIVE_TO_IR,
-        f64::from_le_bytes(payload.get(offset + 74..offset + 82)?.try_into().ok()?) * NATIVE_TO_IR,
-        f64::from_le_bytes(payload.get(offset + 82..offset + 90)?.try_into().ok()?) * NATIVE_TO_IR,
+        f64::from_le_bytes(
+            payload
+                .get(coordinate_offset..coordinate_offset + 8)?
+                .try_into()
+                .ok()?,
+        ) * NATIVE_TO_IR,
+        f64::from_le_bytes(
+            payload
+                .get(coordinate_offset + 8..coordinate_offset + 16)?
+                .try_into()
+                .ok()?,
+        ) * NATIVE_TO_IR,
+        f64::from_le_bytes(
+            payload
+                .get(coordinate_offset + 16..coordinate_offset + 24)?
+                .try_into()
+                .ok()?,
+        ) * NATIVE_TO_IR,
     );
     [point.x, point.y, point.z]
         .into_iter()
@@ -811,6 +840,28 @@ mod marker_tests {
         );
         payload[64] = 0x1e;
         assert_eq!(marker_spatial_coordinates(&payload, 0), None);
+    }
+
+    #[test]
+    fn extended_spatial_point_marker_uses_compact_coordinate_offset() {
+        let mut payload = vec![0; 82];
+        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
+            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[17..21].copy_from_slice(&1u32.to_le_bytes());
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[56..58].copy_from_slice(&[0x0e, 0x00]);
+        for (index, value) in [-0.125_f64, 0.25, -0.375].into_iter().enumerate() {
+            let start = 58 + index * 8;
+            payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+
+        assert_eq!(
+            marker_spatial_coordinates(&payload, 0),
+            Some(Point3::new(-125.0, 250.0, -375.0))
+        );
     }
 
     #[test]
