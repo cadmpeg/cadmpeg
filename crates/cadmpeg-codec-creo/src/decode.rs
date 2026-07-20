@@ -7274,7 +7274,10 @@ fn sketch_geometry_endpoints(geometry: &SketchGeometry) -> Option<([f64; 2], [f6
     }
 }
 
-fn closed_sketch_profile_vertices(ir: &CadIr, sketch_id: &SketchId) -> Vec<(usize, Vec<[f64; 2]>)> {
+fn connected_sketch_profile_vertices(
+    ir: &CadIr,
+    sketch_id: &SketchId,
+) -> Vec<(usize, Vec<[f64; 2]>)> {
     let Some(sketch) = ir
         .model
         .sketches
@@ -7295,7 +7298,7 @@ fn closed_sketch_profile_vertices(ir: &CadIr, sketch_id: &SketchId) -> Vec<(usiz
         .iter()
         .enumerate()
         .filter_map(|(profile_index, profile)| {
-            (profile.len() >= 2).then_some(())?;
+            (!profile.is_empty()).then_some(())?;
             let uses = profile
                 .iter()
                 .map(|entity_use| {
@@ -7312,17 +7315,20 @@ fn closed_sketch_profile_vertices(ir: &CadIr, sketch_id: &SketchId) -> Vec<(usiz
                 .flat_map(|(start, end)| start.iter().chain(end))
                 .map(|coordinate| coordinate.abs())
                 .fold(1.0, f64::max);
-            uses.iter()
-                .enumerate()
-                .all(|(index, (_, end))| {
-                    let next = uses[(index + 1) % uses.len()].0;
+            uses.windows(2)
+                .all(|adjacent| {
+                    let end = adjacent[0].1;
+                    let next = adjacent[1].0;
                     (end[0] - next[0]).hypot(end[1] - next[1]) <= 1e-9 * scale
                 })
                 .then(|| {
-                    (
-                        profile_index,
-                        uses.into_iter().map(|(start, _)| start).collect(),
-                    )
+                    let mut vertices = uses.iter().map(|(start, _)| *start).collect::<Vec<_>>();
+                    let first = uses[0].0;
+                    let terminal = uses.last().expect("profile is not empty").1;
+                    if (terminal[0] - first[0]).hypot(terminal[1] - first[1]) > 1e-9 * scale {
+                        vertices.push(terminal);
+                    }
+                    (profile_index, vertices)
                 })
         })
         .collect()
@@ -11910,7 +11916,7 @@ fn transfer_resolved_revolution_vertex_orbit_curves(
             continue;
         };
         let sketch_id = SketchId(format!("creo:model:sketch#{}", definition.id));
-        for (profile_index, vertices) in closed_sketch_profile_vertices(ir, &sketch_id) {
+        for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = revolved_section_circle(transform, *point, axis) else {
                     continue;
@@ -11981,7 +11987,7 @@ fn transfer_resolved_extrusion_vertex_orbit_curves(
             continue;
         }
         let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
-        for (profile_index, vertices) in closed_sketch_profile_vertices(ir, &sketch_id) {
+        for (profile_index, vertices) in connected_sketch_profile_vertices(ir, &sketch_id) {
             for (vertex_index, point) in vertices.iter().enumerate() {
                 let Some(geometry) = extruded_section_line(transform, *point) else {
                     continue;
@@ -16011,6 +16017,79 @@ mod resolved_sketch_tests {
             section_profile_ref(&ir, 918, "creo:featdefs:sketch#918".to_string(),),
             ProfileRef::Native("creo:featdefs:sketch#918".to_string())
         );
+    }
+
+    #[test]
+    fn connected_profile_vertices_include_open_chain_terminals() {
+        let sketch_id = SketchId("creo:model:sketch#917".to_string());
+        let entity_id =
+            |external_id| SketchEntityId(format!("creo:featdefs:sketch_entity#917:{external_id}"));
+        let mut ir = CadIr::empty(Units::default());
+        ir.model.sketches.push(Sketch {
+            id: sketch_id.clone(),
+            name: None,
+            configuration: None,
+            placement: cadmpeg_ir::sketches::SketchPlacement::Unresolved,
+            profiles: vec![vec![
+                SketchEntityUse {
+                    entity: entity_id(1),
+                    reversed: false,
+                },
+                SketchEntityUse {
+                    entity: entity_id(2),
+                    reversed: true,
+                },
+            ]],
+            native_ref: None,
+        });
+        ir.model.sketch_entities.extend([
+            SketchEntity {
+                id: entity_id(1),
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            },
+            SketchEntity {
+                id: entity_id(2),
+                sketch: sketch_id.clone(),
+                construction: false,
+                native_ref: None,
+                geometry_ref: None,
+                endpoint_refs: Vec::new(),
+                geometry: SketchGeometry::Line {
+                    start: Point2::new(1.0, 1.0),
+                    end: Point2::new(1.0, 0.0),
+                },
+            },
+        ]);
+
+        assert_eq!(
+            connected_sketch_profile_vertices(&ir, &sketch_id),
+            vec![(0, vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]])]
+        );
+
+        if let SketchGeometry::Line { start, .. } = &mut ir.model.sketch_entities[1].geometry {
+            *start = Point2::new(0.0, 0.0);
+        } else {
+            unreachable!();
+        }
+        assert_eq!(
+            connected_sketch_profile_vertices(&ir, &sketch_id),
+            vec![(0, vec![[0.0, 0.0], [1.0, 0.0]])]
+        );
+
+        if let SketchGeometry::Line { end, .. } = &mut ir.model.sketch_entities[1].geometry {
+            *end = Point2::new(2.0, 0.0);
+        } else {
+            unreachable!();
+        }
+        assert!(connected_sketch_profile_vertices(&ir, &sketch_id).is_empty());
     }
 
     #[test]
