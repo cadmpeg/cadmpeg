@@ -3286,6 +3286,23 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                     slot_equality(&slots[5], &slots[8]),
                 ],
             )
+        } else if let Some(slots) = complete_plane_compact_scalar_suffix(&body, &cache) {
+            let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
+            scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
+            (
+                PlaneEnvelope::Compact {
+                    prefix: [values[0], values[1], values[2]],
+                    corners_3d: [
+                        [values[3], values[4], values[5]],
+                        [values[6], values[7], values[8]],
+                    ],
+                },
+                [
+                    slot_equality(&slots[3], &slots[6]),
+                    slot_equality(&slots[4], &slots[7]),
+                    slot_equality(&slots[5], &slots[8]),
+                ],
+            )
         } else {
             let slots = scalar_slots_with_tokens(&body, 10, &cache);
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
@@ -3366,6 +3383,28 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
     }
     envelopes.sort_by_key(|envelope| envelope.offset);
     envelopes
+}
+
+fn complete_plane_compact_scalar_suffix(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<Vec<(Option<f64>, Vec<u8>)>> {
+    let standard = scalar_slots_with_tokens(body, 10, cache);
+    if standard
+        .iter()
+        .all(|(value, token)| value.is_some() && !token.is_empty())
+    {
+        return None;
+    }
+    let tokens = scalar_tokens(SurfaceKind::Plane, body, cache);
+    let frames = scalar_frames(&tokens);
+    let frame = terminal_scalar_frame(body, &frames)?;
+    (frame.offset > 0 && frame.slots.len() == 9).then_some(())?;
+    frame
+        .slots
+        .into_iter()
+        .map(|slot| Some((Some(slot.value?), slot.raw)))
+        .collect()
 }
 
 /// Decode fully specified scalar fields in labeled `srf_prim_ptr` prototype
@@ -4424,6 +4463,34 @@ mod tests {
                 u_axis: [0.0, 1.0, 0.0],
                 offset: 20,
             }]
+        );
+    }
+
+    #[test]
+    fn compact_plane_scalar_suffix_requires_one_complete_nine_slot_frame() {
+        let body = [
+            0x32, 0xbe, 0xe4, 0xe4, 0xe4, 0x0d, 0x0f, 0xe4, 0x0d, 0xe4, 0x0f,
+        ];
+        let slots = complete_plane_compact_scalar_suffix(&body, &scalar::ScalarCache::default())
+            .expect("unique compact scalar suffix");
+
+        assert_eq!(
+            slots.iter().map(|slot| slot.0).collect::<Vec<_>>(),
+            vec![
+                Some(1.0),
+                Some(1.0),
+                Some(1.0),
+                Some(-1.0),
+                Some(0.0),
+                Some(1.0),
+                Some(-1.0),
+                Some(1.0),
+                Some(0.0),
+            ]
+        );
+        assert!(
+            complete_plane_compact_scalar_suffix(&body[2..], &scalar::ScalarCache::default())
+                .is_none()
         );
     }
 

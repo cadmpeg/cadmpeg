@@ -173,6 +173,190 @@ fn generated_cylinder_section_transform(
     })
 }
 
+fn generated_planar_section_transform(
+    definition: &FeatureDefinition,
+    sources: &PlacementSources<'_>,
+    entity_tables: &[FeatureEntityTable],
+) -> Option<FeatureSectionTransform> {
+    let feature_id = definition.owner_feature_id?;
+    let segments = definition.segments.as_ref()?;
+    segments.is_complete().then_some(())?;
+    let (points, conflicting_points) = definition.variables.as_ref()?.reconciled_points();
+    conflicting_points.is_empty().then_some(())?;
+    let tables = entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .filter(|table| {
+            table.entries.len() >= 4
+                && table.entries[0].class_id == 204
+                && table.entries[1].class_id == 203
+                && table.entries[2..]
+                    .iter()
+                    .all(|entry| entry.class_id == 200 && entry.source_entity_id.is_some())
+        })
+        .collect::<Vec<_>>();
+    let [table] = tables.as_slice() else {
+        return None;
+    };
+    let generated_plane_equation = |entry: &crate::feature::FeatureEntityTableEntry| {
+        let mut matches = sources
+            .outline_planes
+            .iter()
+            .filter(|plane| plane.surface_id == entry.entity_id);
+        let plane = matches.next()?;
+        matches.next().is_none().then_some(())?;
+        Some((plane.normal, dot(plane.normal, plane.origin)))
+    };
+    let caps = [
+        generated_plane_equation(&table.entries[0])?,
+        generated_plane_equation(&table.entries[1])?,
+    ];
+    let mut sides = Vec::new();
+    for entry in &table.entries[2..] {
+        let segment = segments.segment(entry.source_entity_id?)?;
+        (segment.kind == FeatureSegmentKind::Line).then_some(())?;
+        let point = |point_id| {
+            let point = points.get(&point_id)?;
+            Some([point[0]?, point[1]?])
+        };
+        let start = point(segment.point_ids[0])?;
+        let end = point(segment.point_ids[1])?;
+        let direction = [end[0] - start[0], end[1] - start[1]];
+        let length = direction[0].hypot(direction[1]);
+        (length.is_finite() && length > 1e-12).then_some(())?;
+        let local_normal = [direction[1] / length, -direction[0] / length];
+        let local_offset = local_normal[0].mul_add(start[0], local_normal[1] * start[1]);
+        let (model_normal, model_offset) = generated_plane_equation(entry)?;
+        let magnitude = dot(model_normal, model_normal).sqrt();
+        (magnitude.is_finite() && magnitude > 1e-12).then_some(())?;
+        sides.push((
+            local_normal,
+            local_offset,
+            scale(model_normal, magnitude.recip()),
+            model_offset / magnitude,
+        ));
+    }
+
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0);
+    let vectors_close = |left: [f64; 3], right: [f64; 3]| {
+        left.into_iter()
+            .zip(right)
+            .all(|(left, right)| close(left, right))
+    };
+    let mut candidates = Vec::new();
+    for first_index in 0..sides.len() {
+        for second_index in first_index + 1..sides.len() {
+            let first = sides[first_index];
+            let second = sides[second_index];
+            let determinant = first.0[0].mul_add(second.0[1], -(first.0[1] * second.0[0]));
+            if determinant.abs() <= 1e-9 {
+                continue;
+            }
+            for first_sign in [-1.0, 1.0] {
+                for second_sign in [-1.0, 1.0] {
+                    let first_normal = scale(first.2, first_sign);
+                    let second_normal = scale(second.2, second_sign);
+                    let u_axis = std::array::from_fn(|axis| {
+                        (second.0[1] * first_normal[axis] - first.0[1] * second_normal[axis])
+                            / determinant
+                    });
+                    let v_axis = std::array::from_fn(|axis| {
+                        (-second.0[0] * first_normal[axis] + first.0[0] * second_normal[axis])
+                            / determinant
+                    });
+                    if !close(dot(u_axis, u_axis), 1.0)
+                        || !close(dot(v_axis, v_axis), 1.0)
+                        || !close(dot(u_axis, v_axis), 0.0)
+                    {
+                        continue;
+                    }
+                    let normal = cross(u_axis, v_axis);
+                    let cap_alignment = dot(normal, caps[0].0);
+                    if !close(cap_alignment.abs(), 1.0) {
+                        continue;
+                    }
+                    let cap_offset = if cap_alignment.is_sign_negative() {
+                        -caps[0].1
+                    } else {
+                        caps[0].1
+                    };
+                    let side_coordinate = |side: &([f64; 2], f64, [f64; 3], f64)| {
+                        let predicted = add(scale(u_axis, side.0[0]), scale(v_axis, side.0[1]));
+                        let alignment = dot(predicted, side.2);
+                        close(alignment.abs(), 1.0).then(|| {
+                            let offset = if alignment.is_sign_negative() {
+                                -side.3
+                            } else {
+                                side.3
+                            };
+                            (predicted, offset - side.1)
+                        })
+                    };
+                    let Some((_, first_coordinate)) = side_coordinate(&first) else {
+                        continue;
+                    };
+                    let Some((_, second_coordinate)) = side_coordinate(&second) else {
+                        continue;
+                    };
+                    let origin_u = (second.0[1] * first_coordinate
+                        - first.0[1] * second_coordinate)
+                        / determinant;
+                    let origin_v = (-second.0[0] * first_coordinate
+                        + first.0[0] * second_coordinate)
+                        / determinant;
+                    let origin = add(
+                        add(scale(u_axis, origin_u), scale(v_axis, origin_v)),
+                        scale(normal, cap_offset),
+                    );
+                    if sides.iter().any(|side| {
+                        side_coordinate(side).is_none_or(|(predicted, coordinate)| {
+                            !close(dot(predicted, origin), coordinate)
+                        })
+                    }) {
+                        continue;
+                    }
+                    let second_cap_alignment = dot(normal, caps[1].0);
+                    if !close(second_cap_alignment.abs(), 1.0) {
+                        continue;
+                    }
+                    let second_cap_offset = if second_cap_alignment.is_sign_negative() {
+                        -caps[1].1
+                    } else {
+                        caps[1].1
+                    };
+                    if close(second_cap_offset, cap_offset) {
+                        continue;
+                    }
+                    let candidate = (origin, u_axis, v_axis, normal);
+                    if !candidates.iter().any(
+                        |existing: &([f64; 3], [f64; 3], [f64; 3], [f64; 3])| {
+                            vectors_close(existing.0, candidate.0)
+                                && vectors_close(existing.1, candidate.1)
+                                && vectors_close(existing.2, candidate.2)
+                                && vectors_close(existing.3, candidate.3)
+                        },
+                    ) {
+                        candidates.push(candidate);
+                    }
+                }
+            }
+        }
+    }
+    let [(origin, u_axis, v_axis, normal)] = candidates.as_slice() else {
+        return None;
+    };
+    Some(FeatureSectionTransform {
+        definition_id: definition.id,
+        feature_id: Some(feature_id),
+        origin: *origin,
+        u_axis: *u_axis,
+        v_axis: *v_axis,
+        normal: *normal,
+        offset: table.offset,
+    })
+}
+
 fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
     left[0].mul_add(right[0], left[1].mul_add(right[1], left[2] * right[2]))
 }
@@ -867,6 +1051,7 @@ pub(crate) fn resolve(
         }
         if let Some(transform) =
             generated_cylinder_section_transform(definition, sources, entity_tables)
+                .or_else(|| generated_planar_section_transform(definition, sources, entity_tables))
         {
             result.push(transform);
         }
@@ -1708,6 +1893,143 @@ mod tests {
         assert!(
             generated_cylinder_section_transform(&definition, &divergent_sources, &tables)
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn resolves_section_frame_from_complete_generated_planar_prism() {
+        let line = |external_id, point_ids| FeatureSegment {
+            kind: FeatureSegmentKind::Line,
+            directions: [None; 3],
+            point_ids,
+            center_id: None,
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            offset: external_id as usize,
+        };
+        let definition = FeatureDefinition {
+            id: 917,
+            owner_feature_id: Some(10),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                points: vec![
+                    FeatureSectionPoint {
+                        point_id: 1,
+                        u: Some(-20.0),
+                        v: Some(-6.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 2,
+                        u: Some(20.0),
+                        v: Some(-6.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 3,
+                        u: Some(20.0),
+                        v: Some(6.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 4,
+                        u: Some(-20.0),
+                        v: Some(6.0),
+                    },
+                ],
+                offset: 100,
+            }),
+            segments: Some(FeatureSegmentTable {
+                declared_count: 4,
+                entity_ref: None,
+                rows: vec![
+                    line(4, [1, 2]),
+                    line(5, [2, 3]),
+                    line(6, [3, 4]),
+                    line(7, [4, 1]),
+                ],
+                opaque_rows: Vec::new(),
+                offset: 110,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 90,
+        };
+        let outline = |surface_id, origin, normal| OutlinePlane {
+            surface_id,
+            origin,
+            normal,
+            u_axis: if normal[0] == 1.0 {
+                [0.0, 1.0, 0.0]
+            } else {
+                [1.0, 0.0, 0.0]
+            },
+            offset: surface_id as usize,
+        };
+        let outlines = [
+            outline(13, [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]),
+            outline(18, [0.0, 48.0, 0.0], [0.0, 1.0, 0.0]),
+            outline(23, [0.0, 0.0, 6.0], [0.0, 0.0, 1.0]),
+            outline(25, [20.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+            outline(27, [0.0, 0.0, -6.0], [0.0, 0.0, 1.0]),
+            outline(29, [-20.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
+        ];
+        let entry = |entity_id, class_id, source_entity_id| FeatureEntityTableEntry {
+            entity_id,
+            class_id,
+            source_entity_id,
+            prefixed: false,
+            offset: entity_id as usize,
+            end_offset: entity_id as usize + 1,
+        };
+        let tables = [FeatureEntityTable {
+            feature_id: Some(10),
+            table_class_id: 79,
+            entry_ids: vec![13, 18, 23, 25, 27, 29],
+            entries: vec![
+                entry(13, 204, None),
+                entry(18, 203, None),
+                entry(23, 200, Some(4)),
+                entry(25, 200, Some(5)),
+                entry(27, 200, Some(6)),
+                entry(29, 200, Some(7)),
+            ],
+            surface_ids: vec![13, 18, 23, 25, 27, 29],
+            non_surface_entity_ids: Vec::new(),
+            offset: 200,
+        }];
+        let sources = PlacementSources {
+            datums: &[],
+            surface_rows: &[],
+            model_planes: &[],
+            outline_planes: &outlines,
+            plane_envelopes: &[],
+            surface_parameters: &[],
+            geometry_tables: &[],
+            affected_ids: &[],
+        };
+
+        assert_eq!(
+            generated_planar_section_transform(&definition, &sources, &tables),
+            Some(FeatureSectionTransform {
+                definition_id: 917,
+                feature_id: Some(10),
+                origin: [0.0, 0.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                v_axis: [0.0, 0.0, -1.0],
+                normal: [-0.0, 1.0, 0.0],
+                offset: 200,
+            })
         );
     }
 }

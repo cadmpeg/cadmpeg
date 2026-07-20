@@ -8661,9 +8661,6 @@ fn sketch_profiles_cover_generated_extrusion_sides(
     feature_id: u32,
     sketch: &Sketch,
 ) -> bool {
-    let Some(order) = &definition.order_table else {
-        return false;
-    };
     let expected_entities = scan
         .feature_entity_tables
         .iter()
@@ -8671,7 +8668,6 @@ fn sketch_profiles_cover_generated_extrusion_sides(
         .flat_map(|table| &table.entries)
         .filter_map(|entry| {
             let external_id = entry.source_entity_id?;
-            order.internal_id(external_id)?;
             scan.surface_rows
                 .iter()
                 .any(|row| {
