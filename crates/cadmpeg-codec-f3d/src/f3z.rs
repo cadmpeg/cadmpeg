@@ -85,8 +85,8 @@ pub fn decode(scan: &ContainerScan, options: &DecodeOptions) -> Result<DecodeRes
             category: LossCategory::Metadata,
             severity: Severity::Info,
             message: format!(
-                "{merged} merged component(s) retain model entities only; component native \
-                 records and annotations are available by decoding each member individually"
+                "{merged} merged component(s) retain occurrence-scoped model entities and \
+                 native records; member source streams remain archive-local"
             ),
             provenance: None,
         });
@@ -126,6 +126,7 @@ fn merge_references(
 ) -> Result<usize, CodecError> {
     let mut merged = 0usize;
     let mut model_value = serialize_model(&parent.ir.model)?;
+    let mut native_value = serialize_native(&parent.ir)?;
     for reference in &table.references {
         let occurrence = occurrence_key(reference);
         let label = xref::design_for(table, reference).map_or_else(
@@ -188,6 +189,9 @@ fn merge_references(
         let mut component_value = serialize_model(&component.ir.model)?;
         remap_ids(&mut component_value, &occurrence);
         extend_arenas(&mut model_value, component_value)?;
+        let mut component_native = serialize_native(&component.ir)?;
+        remap_ids(&mut component_native, &occurrence);
+        extend_native_arenas(&mut native_value, component_native)?;
         merged += descendants + 1;
         parent.report.geometry_transferred |= component.report.geometry_transferred;
         for loss in component.report.losses {
@@ -210,12 +214,32 @@ fn merge_references(
     parent.ir.model = model_value.deserialize_into().map_err(|error| {
         CodecError::Malformed(format!("merged model round-trip failed: {error}"))
     })?;
+    let native: F3dNative = native_value.deserialize_into().map_err(|error| {
+        CodecError::Malformed(format!("merged native data round-trip failed: {error}"))
+    })?;
+    native
+        .store(parent.ir.native.namespace_mut("f3d"))
+        .map_err(|error| {
+            CodecError::Malformed(format!("merged native data is invalid: {error}"))
+        })?;
     Ok(merged)
 }
 
 fn serialize_model(model: &Model) -> Result<Value, CodecError> {
     serde_value::to_value(model)
         .map_err(|error| CodecError::Malformed(format!("model serialization failed: {error}")))
+}
+
+fn serialize_native(ir: &cadmpeg_ir::CadIr) -> Result<Value, CodecError> {
+    let native = ir
+        .native
+        .namespace("f3d")
+        .map(F3dNative::load)
+        .transpose()
+        .map_err(|error| CodecError::Malformed(format!("invalid F3D native data: {error}")))?
+        .unwrap_or_default();
+    serde_value::to_value(native)
+        .map_err(|error| CodecError::Malformed(format!("native serialization failed: {error}")))
 }
 
 /// The id-prefix key for one occurrence: its role string, or its ordinal when
@@ -310,8 +334,34 @@ fn extend_arenas(root: &mut Value, component: Value) -> Result<(), CodecError> {
     Ok(())
 }
 
+fn extend_native_arenas(root: &mut Value, component: Value) -> Result<(), CodecError> {
+    let (Value::Map(root_fields), Value::Map(mut component_fields)) = (root, component) else {
+        return Err(CodecError::Malformed(
+            "serialized native data is not a struct map".into(),
+        ));
+    };
+    for name in crate::native::F3D_ARENA_NAMES {
+        let key = Value::String((*name).to_string());
+        let Some(Value::Seq(source)) = component_fields.remove(&key) else {
+            continue;
+        };
+        if source.is_empty() {
+            continue;
+        }
+        let Some(Value::Seq(target)) = root_fields.get_mut(&key) else {
+            return Err(CodecError::Malformed(format!(
+                "serialized native arena {name} is not a sequence"
+            )));
+        };
+        target.extend(source);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::native::F3dNative;
+    use crate::records::DesignSketchPlacement;
     use cadmpeg_ir::document::Model;
     use cadmpeg_ir::ids::{BodyId, RegionId};
     use cadmpeg_ir::topology::{Body, BodyKind, Region};
@@ -382,5 +432,42 @@ mod tests {
             assert_eq!(merged.regions[ordinal].id.0, format!("{prefix}2"));
             assert_eq!(merged.regions[ordinal].body.0, format!("{prefix}1"));
         }
+    }
+
+    #[test]
+    fn occurrence_merge_remaps_and_retains_native_records() {
+        let mut root = serde_value::to_value(F3dNative::default()).expect("serialize root native");
+        let mut component = F3dNative::default();
+        component
+            .design_sketch_placements
+            .push(DesignSketchPlacement {
+                id: "f3d:Design/BulkStream.dat:design-sketch-placement#42".into(),
+                scope_record_index: None,
+                entity_id: "Sketch_1".into(),
+                entity_suffix: 1,
+                byte_offset: 42,
+                class_tag: "001".into(),
+                record_index: 7,
+                frame_length: 34,
+                transform: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+                transform_offset: None,
+                paired_class_tag: "002".into(),
+                paired_byte_offset: 76,
+                member_run_head: true,
+            });
+        let mut occurrence = serde_value::to_value(component).expect("serialize component native");
+        super::remap_ids(&mut occurrence, "role/occurrence-0");
+        super::extend_native_arenas(&mut root, occurrence).expect("merge component native");
+
+        let merged: F3dNative = root.deserialize_into().expect("deserialize merged native");
+        assert_eq!(
+            merged.design_sketch_placements[0].id,
+            "f3d:xref/role/occurrence-0/Design/BulkStream.dat:design-sketch-placement#42"
+        );
     }
 }

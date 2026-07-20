@@ -106,6 +106,13 @@ fn design_stream(id: &str) -> &str {
     design::native_stream(id).unwrap_or("f3d:design")
 }
 
+fn design_stream_contains_entry(stream: &str, entry: &str) -> bool {
+    stream == format!("f3d:{entry}")
+        || stream
+            .strip_prefix("f3d:xref/")
+            .is_some_and(|qualified| qualified.ends_with(&format!("/{entry}")))
+}
+
 fn valid_design_guid(value: &str) -> bool {
     value.len() == 36
         && value.bytes().enumerate().all(|(index, byte)| {
@@ -164,7 +171,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         std::collections::HashMap::<(&str, u64), Vec<&records::DesignBodyBinding>>::new();
     for binding in &native.design_body_bindings {
         let native_stream = design_stream(&binding.id);
-        let valid = native_stream == format!("f3d:{}", binding.stream)
+        let valid = design_stream_contains_entry(native_stream, &binding.stream)
             && binding.pair_count > 0
             && binding.pair_ordinal < binding.pair_count
             && binding.entity_suffix_offset == binding.asm_body_key_offset.saturating_add(8)
@@ -229,7 +236,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             .design_body_bindings
             .iter()
             .filter(|binding| {
-                native_stream == format!("f3d:{}", binding.stream)
+                design_stream_contains_entry(native_stream, &binding.stream)
                     && binding.entity_suffix == bounds.entity_suffix
             })
             .collect::<Vec<_>>();
