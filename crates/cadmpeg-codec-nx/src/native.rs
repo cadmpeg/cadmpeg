@@ -5352,10 +5352,14 @@ pub struct FeaturePatternTransformLane {
     pub raw_values: Vec<Vec<u8>>,
     /// Ordered non-null compact selectors.
     pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
     /// Absolute source offset of the opening `01, count` field.
     pub source_offset: u64,
     /// Absolute source offsets of the scalar encodings.
     pub value_source_offsets: Vec<u64>,
+    /// Absolute source offsets of the selector tokens.
+    pub selector_source_offsets: Vec<u64>,
 }
 
 /// Exact leading construction header carried by a bounded point-feature payload.
@@ -9428,9 +9432,15 @@ pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatt
                 values: lane.values,
                 raw_values: lane.raw_values,
                 selectors: lane.selectors,
+                raw_selectors: lane.raw_selectors,
                 source_offset: entry_offset + lane.offset as u64,
                 value_source_offsets: lane
                     .value_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
+                selector_source_offsets: lane
+                    .selector_offsets
                     .into_iter()
                     .map(|offset| entry_offset + offset as u64)
                     .collect(),

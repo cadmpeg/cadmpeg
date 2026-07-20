@@ -791,6 +791,10 @@ pub struct PatternPayloadTransformLane {
     pub raw_values: Vec<Vec<u8>>,
     /// Ordered non-null compact selectors.
     pub selectors: Vec<u32>,
+    /// Exact compact-index selector tokens in row order.
+    pub raw_selectors: Vec<Vec<u8>>,
+    /// Absolute offsets of the compact-index selector tokens.
+    pub selector_offsets: Vec<usize>,
 }
 
 /// Exact construction header in a point-feature payload.
@@ -2014,6 +2018,8 @@ pub fn pattern_payload_transform_lane(
         let mut value_offsets = Vec::with_capacity(row_count);
         let mut raw_values = Vec::with_capacity(row_count);
         let mut selectors = Vec::with_capacity(row_count);
+        let mut raw_selectors = Vec::with_capacity(row_count);
+        let mut selector_offsets = Vec::with_capacity(row_count);
         for ordinal in 1..declared_count {
             (record.payload.get(at..at + prefix.len()) == Some(prefix)).then_some(())?;
             at += prefix.len();
@@ -2033,11 +2039,14 @@ pub fn pattern_payload_transform_lane(
             (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
                 .then_some(())?;
             at += scalar_suffix.len();
+            let selector_offset = at;
             let (selector, width) = compact_index(record.payload.get(at..)?)?;
             let CompactIndex::Value(selector) = selector else {
                 return None;
             };
             selectors.push(selector);
+            raw_selectors.push(record.payload[at..at + width].to_vec());
+            selector_offsets.push(record.payload_offset + selector_offset);
             at += width;
             (record.payload.get(at) == Some(&0x01)).then_some(())?;
             (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
@@ -2054,6 +2063,8 @@ pub fn pattern_payload_transform_lane(
             value_offsets,
             raw_values,
             selectors,
+            raw_selectors,
+            selector_offsets,
         })
     };
     let matches = (0..record.payload.len().saturating_sub(1))

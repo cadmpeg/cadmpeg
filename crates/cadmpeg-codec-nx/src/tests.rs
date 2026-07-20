@@ -7756,6 +7756,8 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     assert_eq!(lane.values, [3.3125, -3.3125]);
     assert_eq!(lane.value_offsets, [207, 237]);
     assert_eq!(lane.selectors, [2, 8190]);
+    assert_eq!(lane.raw_selectors, [vec![0x02], vec![0x9f, 0xfe]]);
+    assert_eq!(lane.selector_offsets, [225, 255]);
 
     let geometry_payload = b"\x01\x03\x60\x01\x00\x00\x00\x00\x01\x00\x30\x60\x80\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\x00\x00\x01\x00\x30\x70\x80\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
     let geometry_record = crate::om::OperationRecord {
@@ -7771,6 +7773,8 @@ fn om_pattern_transform_lanes_require_counted_family_rows() {
     assert_eq!(lane.encoding, crate::om::PatternTransformEncoding::Binary64);
     assert_eq!(lane.values, [132.0, 264.0]);
     assert_eq!(lane.selectors, [2, 3]);
+    assert_eq!(lane.raw_selectors, [vec![0x02], vec![0x03]]);
+    assert_eq!(lane.selector_offsets, [228, 262]);
 
     let mut wrong_ordinal = feature_payload.to_vec();
     wrong_ordinal[29] = 2;
