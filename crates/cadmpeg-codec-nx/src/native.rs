@@ -5805,12 +5805,20 @@ pub struct FeatureExtrudePayloadFooter {
     pub operation_label: String,
     /// Two compact type indices following the footer prelude.
     pub type_indices: [u32; 2],
+    /// Exact compact-index tokens for the two type indices.
+    pub raw_type_indices: [Vec<u8>; 2],
+    /// Absolute file offsets of the two type-index tokens.
+    pub type_index_source_offsets: [u64; 2],
     /// Two values in the counted footer lane.
     pub mode_indices: [u32; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
     /// Compact values preceding the payload terminator.
     pub trailing_indices: Vec<u32>,
+    /// Exact compact-index tokens in the trailing lane.
+    pub raw_trailing_indices: Vec<Vec<u8>>,
+    /// Absolute file offsets of the trailing compact-index tokens.
+    pub trailing_index_source_offsets: Vec<u64>,
     /// Absolute file offset of the footer prelude.
     pub source_offset: u64,
 }
@@ -10375,9 +10383,19 @@ pub fn feature_extrude_payload_footers(container: &Container) -> Vec<FeatureExtr
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 type_indices: footer.type_indices,
+                raw_type_indices: footer.raw_type_indices,
+                type_index_source_offsets: footer
+                    .type_index_offsets
+                    .map(|offset| entry_offset + offset as u64),
                 mode_indices: footer.mode_indices,
                 flags: footer.flags,
                 trailing_indices: footer.trailing_indices,
+                raw_trailing_indices: footer.raw_trailing_indices,
+                trailing_index_source_offsets: footer
+                    .trailing_index_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
                 source_offset: entry_offset + footer.offset as u64,
             });
         }

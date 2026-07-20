@@ -8377,9 +8377,16 @@ fn om_extrude_footer_requires_one_complete_terminal_lane() {
     let footer = crate::om::extrude_payload_footer(record).unwrap();
     assert_eq!(footer.offset, 200);
     assert_eq!(footer.type_indices, [351, 171]);
+    assert_eq!(
+        footer.raw_type_indices,
+        [vec![0x81, 0x5f], vec![0x80, 0xab]]
+    );
+    assert_eq!(footer.type_index_offsets, [203, 205]);
     assert_eq!(footer.mode_indices, [2, 1]);
     assert_eq!(footer.flags, [1, 2, 1, 1]);
     assert_eq!(footer.trailing_indices, [5, 255]);
+    assert_eq!(footer.raw_trailing_indices, [vec![0x05], vec![0x80, 0xff]]);
+    assert_eq!(footer.trailing_index_offsets, [220, 221]);
 
     let truncated = &payload[..payload.len() - 1];
     assert!(

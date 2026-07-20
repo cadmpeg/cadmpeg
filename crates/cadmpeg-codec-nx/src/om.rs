@@ -1189,12 +1189,20 @@ pub struct ExtrudePayloadFooter {
     pub offset: usize,
     /// Two compact type indices following `01 01 02`.
     pub type_indices: [u32; 2],
+    /// Exact compact-index tokens for the two type indices.
+    pub raw_type_indices: [Vec<u8>; 2],
+    /// Absolute offsets of the two type-index tokens.
+    pub type_index_offsets: [usize; 2],
     /// Two values in the exact `01 03` counted lane.
     pub mode_indices: [u32; 2],
     /// Four serialized one-byte flags.
     pub flags: [u8; 4],
     /// Compact values between `29 29` and the terminal zero.
     pub trailing_indices: Vec<u32>,
+    /// Exact compact-index tokens in the trailing lane.
+    pub raw_trailing_indices: Vec<Vec<u8>>,
+    /// Absolute offsets of the trailing compact-index tokens.
+    pub trailing_index_offsets: Vec<usize>,
 }
 
 /// Nonempty scalar lane serialized twice in a simple-hole payload.
@@ -2663,6 +2671,8 @@ pub fn extrude_payload_footer(record: OperationRecord<'_>) -> Option<ExtrudePayl
         }
         let mut at = start + 3;
         let mut type_indices = [0; 2];
+        let mut raw_type_indices = Vec::with_capacity(2);
+        let mut type_index_offsets = Vec::with_capacity(2);
         let mut valid = true;
         for value in &mut type_indices {
             let Some((CompactIndex::Value(index), width)) =
@@ -2672,8 +2682,16 @@ pub fn extrude_payload_footer(record: OperationRecord<'_>) -> Option<ExtrudePayl
                 break;
             };
             *value = index;
+            raw_type_indices.push(record.payload[at..at + width].to_vec());
+            type_index_offsets.push(record.payload_offset + at);
             at += width;
         }
+        let Ok(raw_type_indices) = raw_type_indices.try_into() else {
+            continue;
+        };
+        let Ok(type_index_offsets) = type_index_offsets.try_into() else {
+            continue;
+        };
         if !valid || record.payload.get(at..at + 4) != Some(&[0x01, 0x03, 0x02, 0x01]) {
             continue;
         }
@@ -2690,26 +2708,35 @@ pub fn extrude_payload_footer(record: OperationRecord<'_>) -> Option<ExtrudePayl
             continue;
         }
         at += 5;
-        let Some(trailing) = record.payload.get(at..record.payload.len() - 1) else {
+        let trailing_end = record.payload.len() - 1;
+        let mut trailing_indices = Vec::new();
+        let mut raw_trailing_indices = Vec::new();
+        let mut trailing_index_offsets = Vec::new();
+        while at < trailing_end {
+            let Some((CompactIndex::Value(value), width)) =
+                record.payload.get(at..trailing_end).and_then(compact_index)
+            else {
+                valid = false;
+                break;
+            };
+            trailing_indices.push(value);
+            raw_trailing_indices.push(record.payload[at..at + width].to_vec());
+            trailing_index_offsets.push(record.payload_offset + at);
+            at += width;
+        }
+        if !valid || at != trailing_end {
             continue;
-        };
-        let Some(trailing_indices) = compact_indices(trailing).and_then(|indices| {
-            indices
-                .into_iter()
-                .map(|index| match index {
-                    CompactIndex::Value(value) => Some(value),
-                    CompactIndex::Null => None,
-                })
-                .collect::<Option<Vec<_>>>()
-        }) else {
-            continue;
-        };
+        }
         matches.push(ExtrudePayloadFooter {
             offset: record.payload_offset + start,
             type_indices,
+            raw_type_indices,
+            type_index_offsets,
             mode_indices: [2, 1],
             flags,
             trailing_indices,
+            raw_trailing_indices,
+            trailing_index_offsets,
         });
     }
     let [footer] = matches.as_slice() else {
