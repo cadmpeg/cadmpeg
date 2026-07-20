@@ -1200,7 +1200,8 @@ value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
 `31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero. Unresolved `00 XX YY` and `01 XX YY ZZ`
 value forms occupy three and four bytes respectively. Compact `0e` is `-0.5`, so
 the following one-byte `direct`, `aux_value`, and compact `ext_id` fields remain
-aligned.
+aligned. Each unresolved form is a bounded token distinct from a scalar value
+or expression.
 Type `0x03` has radius display semantics.
 
 A `segtab` line whose two endpoint identifiers each have complete type-1 and

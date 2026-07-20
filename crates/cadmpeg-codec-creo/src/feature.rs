@@ -1194,6 +1194,8 @@ pub struct FeatureDimension {
     pub dimension_type: u32,
     /// Decoded primary scalar, when its prefix is defined.
     pub value: Option<f64>,
+    /// Exact bounded placeholder token when the primary scalar is unresolved.
+    pub unresolved_value_token: Option<Vec<u8>>,
     /// Unit interpretation selected by the dimension type.
     pub value_unit: DimensionUnit,
     /// Stored direction byte.
@@ -3565,6 +3567,13 @@ fn dimension_unit(dimension_type: u32) -> DimensionUnit {
     }
 }
 
+fn unresolved_dimension_value_token(bytes: &[u8]) -> Option<Vec<u8>> {
+    match bytes {
+        [0x00, _, _] | [0x01, _, _, _] => Some(bytes.to_vec()),
+        _ => None,
+    }
+}
+
 fn labeled_dimension(
     payload: &[u8],
     start: usize,
@@ -3575,8 +3584,13 @@ fn labeled_dimension(
     let (dimension_type, after_type) = segment_int(payload, type_label + b"type\0".len());
     let dimension_type = dimension_type?;
     let value_label = find_bytes(payload, b"value\0", after_type, end)?;
-    let (value, after_value, _) =
-        decode_variable_scalar(payload, value_label + b"value\0".len(), end, cache);
+    let value_start = value_label + b"value\0".len();
+    let (value, after_value, _) = decode_variable_scalar(payload, value_start, end, cache);
+    let unresolved_value_token = value
+        .is_none()
+        .then(|| payload.get(value_start..after_value))
+        .flatten()
+        .and_then(unresolved_dimension_value_token);
     let direction_label = find_bytes(payload, b"direct\0", after_value, end)?;
     let direction_byte = *payload.get(direction_label + b"direct\0".len())?;
     let auxiliary_label = find_bytes(payload, b"aux_value\0", direction_label, end)?;
@@ -3587,6 +3601,7 @@ fn labeled_dimension(
     Some(FeatureDimension {
         dimension_type,
         value,
+        unresolved_value_token,
         value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
@@ -3603,6 +3618,7 @@ fn positional_dimension(
 ) -> Option<FeatureDimension> {
     let (dimension_type, cursor) = segment_int(payload, start);
     let dimension_type = dimension_type?;
+    let value_start = cursor;
     let (value, cursor, _) = match payload.get(cursor) {
         Some(0x00) if cursor + 3 <= end => (None, cursor + 3, true),
         Some(0x01) if cursor + 4 <= end => (None, cursor + 4, true),
@@ -3610,6 +3626,11 @@ fn positional_dimension(
         Some(0x18) => (Some(0.0), cursor + 1, false),
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
+    let unresolved_value_token = value
+        .is_none()
+        .then(|| payload.get(value_start..cursor))
+        .flatten()
+        .and_then(unresolved_dimension_value_token);
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
     let auxiliary_start = cursor + 1;
     let (auxiliary_value, cursor) = if payload.get(auxiliary_start) == Some(&0x18) {
@@ -3622,6 +3643,7 @@ fn positional_dimension(
     Some(FeatureDimension {
         dimension_type,
         value,
+        unresolved_value_token,
         value_unit: dimension_unit(dimension_type),
         direction_byte,
         auxiliary_value,
@@ -7314,6 +7336,10 @@ mod tests {
 
         assert_eq!(dimensions.rows.len(), 3);
         assert_eq!(dimensions.rows[1].value, None);
+        assert_eq!(
+            dimensions.rows[1].unresolved_value_token.as_deref(),
+            Some(&[0x00, 0x04, 0xa6][..])
+        );
         assert_eq!(dimensions.rows[1].external_id, 44);
         assert_eq!(dimensions.rows[2].value, Some(-1.0));
         assert_eq!(dimensions.rows[2].external_id, 45);
@@ -7339,11 +7365,14 @@ mod tests {
         assert_eq!(positive_row.direction_byte, 0);
         assert_eq!(positive_row.auxiliary_value, Some(0.0));
         assert_eq!(positive_row.external_id, 46);
-        assert_eq!(positive_row.external_id, 46);
-        for (body, external_id) in [(&opaque_three[..], 47), (&opaque_four[..], 48)] {
+        for (body, external_id, token) in [
+            (&opaque_three[..], 47, &[0x00, 0x04, 0xa6][..]),
+            (&opaque_four[..], 48, &[0x01, 0x04, 0xfe, 0xf2][..]),
+        ] {
             let row = positional_dimension(body, 0, body.len(), &cache)
                 .expect("bounded opaque dimension");
             assert_eq!(row.value, None);
+            assert_eq!(row.unresolved_value_token.as_deref(), Some(token));
             assert_eq!(row.external_id, external_id);
         }
         let zero_row = positional_dimension(&zero, 0, zero.len(), &cache).expect("zero dimension");

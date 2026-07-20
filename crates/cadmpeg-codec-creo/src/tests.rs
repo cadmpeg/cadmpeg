@@ -3324,6 +3324,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                 crate::feature::FeatureDimension {
                     dimension_type: 2,
                     value: Some(12.0),
+                    unresolved_value_token: None,
                     value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: Some(0.0),
@@ -3333,6 +3334,7 @@ fn resolved_section_points_propagate_orientation_and_signed_dimensions() {
                 crate::feature::FeatureDimension {
                     dimension_type: 3,
                     value: Some(4.0),
+                    unresolved_value_token: None,
                     value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: Some(0.0),
@@ -3780,6 +3782,55 @@ fn decode_transfers_feature_dimensions_as_owned_parameters() {
             cadmpeg_ir::features::FeatureSourceContent::Parameter(repeated.id.clone()),
         ]
     );
+    let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
+    assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn decode_retains_bounded_unresolved_dimension_value_tokens() {
+    let payload = b"feat_defs_917\0\xe0\x01feat_id\0\x28\xe0\x00gsec2d_ptr\0\
+        dimtab_ptr\0\xf8\x03\xf7\x81\x02\xfb\xe2\
+        \xe0\x01type\0\x01\xe0\x01value\0\xe4\
+        \xe0\x01direct\0\x00\xe0\x01aux_value\0\x18\
+        \xe0\x01ext_id\0\x2a\xf3\xf7\x81\x02\xe2\
+        \x01\x00\x04\xa6\x00\x18\x2b\xf3\xf7\x81\x02\xe2\
+        \x01\x01\x04\xfe\xf2\x00\x18\x2c\xe0\x00relat_ptr\0"
+        .to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("FeatDefs", payload),
+            ("MdlStatus", b"Extrude id 40\0".to_vec()),
+        ],
+    );
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .expect("decode dimensions");
+
+    let parameters = &result.ir.model.parameters;
+    assert_eq!(parameters.len(), 3);
+    assert_eq!(parameters[1].properties["value_state"], "unresolved");
+    assert_eq!(
+        parameters[1].properties["value_encoding"],
+        "three_byte_placeholder"
+    );
+    assert_eq!(parameters[1].properties["value_token"], "0004a6");
+    assert_eq!(
+        parameters[2].properties["value_encoding"],
+        "four_byte_placeholder"
+    );
+    assert_eq!(parameters[2].properties["value_token"], "0104fef2");
+
+    let sketches = &result.ir.native.namespace("creo").unwrap().arenas["sketches"];
+    let dimensions = sketches[0].fields["dimensions"]
+        .as_array()
+        .expect("native dimensions");
+    assert_eq!(dimensions[1]["unresolved_value_token"][0], 0);
+    assert_eq!(dimensions[1]["unresolved_value_token"][1], 4);
+    assert_eq!(dimensions[1]["unresolved_value_token"][2], 166);
+    assert_eq!(dimensions[2]["unresolved_value_token"][0], 1);
+    assert_eq!(dimensions[2]["unresolved_value_token"][1], 4);
+    assert_eq!(dimensions[2]["unresolved_value_token"][2], 254);
+    assert_eq!(dimensions[2]["unresolved_value_token"][3], 242);
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
 }

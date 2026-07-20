@@ -11,6 +11,7 @@
 //! geometry and topology losses instead of emitting a partial B-rep.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Write as _;
 
 use cadmpeg_ir::codec::{CodecError, DecodeOptions, DecodeResult, ReadSeek};
 use cadmpeg_ir::document::{CadIr, SourceMeta};
@@ -312,6 +313,8 @@ struct CreoSketchDimension {
     external_id: u32,
     dimension_type: u32,
     value: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    unresolved_value_token: Option<Vec<u8>>,
     unit: &'static str,
     direction_byte: u8,
     auxiliary_value: Option<f64>,
@@ -3086,6 +3089,7 @@ fn sketch_records(scan: &ContainerScan) -> Vec<CreoSketchRecord> {
                     external_id: dimension.external_id,
                     dimension_type: dimension.dimension_type,
                     value: dimension.value,
+                    unresolved_value_token: dimension.unresolved_value_token.clone(),
                     unit: match dimension.value_unit {
                         crate::feature::DimensionUnit::Radians => "radians",
                         crate::feature::DimensionUnit::Millimeters => "millimeters",
@@ -13235,6 +13239,24 @@ fn transfer_feature_dimensions(
         if dimension.value.is_none() {
             properties.insert("value_state".to_string(), "unresolved".to_string());
         }
+        if let Some(token) = &dimension.unresolved_value_token {
+            let encoding = match token.as_slice() {
+                [0x00, _, _] => Some("three_byte_placeholder"),
+                [0x01, _, _, _] => Some("four_byte_placeholder"),
+                _ => None,
+            };
+            if let Some(encoding) = encoding {
+                properties.insert("value_encoding".to_string(), encoding.to_string());
+                let value_token = token.iter().fold(
+                    String::with_capacity(token.len() * 2),
+                    |mut encoded, byte| {
+                        write!(encoded, "{byte:02x}").expect("writing to a string cannot fail");
+                        encoded
+                    },
+                );
+                properties.insert("value_token".to_string(), value_token);
+            }
+        }
         let expression = dimension
             .value
             .map_or_else(String::new, |value| value.to_string());
@@ -19218,6 +19240,7 @@ mod resolved_sketch_tests {
         let dimension = crate::feature::FeatureDimension {
             dimension_type: 2,
             value: Some(5.0),
+            unresolved_value_token: None,
             value_unit: crate::feature::DimensionUnit::Millimeters,
             direction_byte: 0,
             auxiliary_value: None,
@@ -19816,6 +19839,7 @@ mod resolved_sketch_tests {
                 rows: vec![crate::feature::FeatureDimension {
                     dimension_type: 2,
                     value: Some(3.0),
+                    unresolved_value_token: None,
                     value_unit: crate::feature::DimensionUnit::Millimeters,
                     direction_byte: 0,
                     auxiliary_value: None,
