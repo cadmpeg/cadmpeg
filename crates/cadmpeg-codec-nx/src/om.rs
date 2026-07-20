@@ -827,6 +827,8 @@ pub struct DraftFeatureLeadingIndexLane {
     pub declared_count: u8,
     /// Non-null compact indices in serialized order with absolute token offsets.
     pub indices: Vec<(u32, usize)>,
+    /// Exact compact-index tokens in serialized order.
+    pub raw_indices: Vec<Vec<u8>>,
 }
 
 /// End-anchored compact-index lane in a draft-feature payload.
@@ -834,6 +836,8 @@ pub struct DraftFeatureLeadingIndexLane {
 pub struct DraftFeatureTerminalLane {
     /// Two non-null compact indices in serialized order.
     pub indices: [u32; 2],
+    /// Exact two-byte compact-index tokens in serialized order.
+    pub raw_indices: [[u8; 2]; 2],
     /// Absolute offsets of the compact-index tokens.
     pub index_offsets: [usize; 2],
     /// Three uninterpreted bytes preceding the terminal zero.
@@ -2211,6 +2215,7 @@ pub fn draft_feature_leading_index_lane(
     (declared_count >= 2).then_some(())?;
     at += 2;
     let mut indices = Vec::with_capacity(usize::from(declared_count - 1));
+    let mut raw_indices = Vec::with_capacity(usize::from(declared_count - 1));
     for _ in 1..declared_count {
         let offset = at;
         let (CompactIndex::Value(value), width) = compact_index(record.payload.get(at..)?)? else {
@@ -2218,11 +2223,13 @@ pub fn draft_feature_leading_index_lane(
         };
         at += width;
         indices.push((value, record.payload_offset + offset));
+        raw_indices.push(record.payload[offset..offset + width].to_vec());
     }
     (record.payload.get(at..at + 2) == Some(&[0x01, 0x02])).then_some(())?;
     Some(DraftFeatureLeadingIndexLane {
         declared_count,
         indices,
+        raw_indices,
     })
 }
 
@@ -2284,6 +2291,14 @@ pub fn draft_feature_terminal_lane(
         }
         matches.push(DraftFeatureTerminalLane {
             indices: [first, second],
+            raw_indices: [
+                record.payload[first_offset..first_offset + first_width]
+                    .try_into()
+                    .ok()?,
+                record.payload[second_offset..second_offset + second_width]
+                    .try_into()
+                    .ok()?,
+            ],
             index_offsets: [
                 record.payload_offset + first_offset,
                 record.payload_offset + second_offset,

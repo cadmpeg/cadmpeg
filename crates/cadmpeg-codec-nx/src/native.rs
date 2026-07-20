@@ -5424,6 +5424,8 @@ pub struct FeatureDraftConstructionIndexLane {
     pub declared_count: u8,
     /// Non-null compact indices in serialized order.
     pub indices: Vec<u32>,
+    /// Exact compact-index tokens in serialized order.
+    pub raw_indices: Vec<Vec<u8>>,
     /// Same-store native blocks when the complete lane and graph select one store.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_blocks: Option<Vec<String>>,
@@ -5610,6 +5612,8 @@ pub struct FeatureDraftConstructionTerminalLane {
     pub operation_label: String,
     /// Two non-null compact indices in serialized order.
     pub indices: [u32; 2],
+    /// Exact two-byte compact-index tokens in serialized order.
+    pub raw_indices: [[u8; 2]; 2],
     /// Exact uninterpreted bytes preceding the terminal zero.
     pub tail: [u8; 3],
     /// Absolute source offsets of the compact-index tokens.
@@ -9616,6 +9620,7 @@ pub fn feature_draft_construction_index_lanes(
                 ),
                 declared_count: lane.declared_count,
                 indices,
+                raw_indices: lane.raw_indices,
                 data_blocks,
                 source_offsets: lane
                     .indices
@@ -9944,6 +9949,7 @@ pub fn feature_draft_construction_terminal_lanes(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 indices: lane.indices,
+                raw_indices: lane.raw_indices,
                 tail: lane.tail,
                 index_source_offsets: lane
                     .index_offsets

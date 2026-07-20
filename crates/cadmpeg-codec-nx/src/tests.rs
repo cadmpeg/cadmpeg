@@ -7955,9 +7955,11 @@ fn om_draft_feature_references_require_one_complete_graph() {
     let lane = crate::om::draft_feature_leading_index_lane(record).expect("complete index lane");
     assert_eq!(lane.declared_count, 3);
     assert_eq!(lane.indices, vec![(148, 224), (585, 226)]);
+    assert_eq!(lane.raw_indices, vec![vec![0x80, 0x94], vec![0x82, 0x49]]);
     let terminal_lane =
         crate::om::draft_feature_terminal_lane(record).expect("complete terminal lane");
     assert_eq!(terminal_lane.indices, [350, 184]);
+    assert_eq!(terminal_lane.raw_indices, [[0x81, 0x5e], [0x80, 0xb8]]);
     assert_eq!(terminal_lane.index_offsets, [284, 286]);
     assert_eq!(terminal_lane.tail, [0x29, 0x29, 0x0c]);
     assert_eq!(terminal_lane.offset, 284);
