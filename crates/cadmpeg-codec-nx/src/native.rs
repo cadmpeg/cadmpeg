@@ -5180,6 +5180,50 @@ pub struct FeatureProjectedCurveReference {
     pub source_offset: u64,
 }
 
+/// Exact logical payload reconstructed from a projected-curve reference field.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureProjectedCurveConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `CPROJ` or `CPROJ_CMB` operation label.
+    pub operation_label: String,
+    /// Exact operation family selecting the reference grammar.
+    pub operation_kind: String,
+    /// Ordered non-repeated construction-reference records.
+    pub construction_references: Vec<String>,
+    /// Ordered source blocks.
+    pub data_blocks: Vec<String>,
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: Vec<u64>,
+    /// Exact source-block lengths.
+    pub block_byte_lengths: Vec<u64>,
+    /// Absolute source-block offsets.
+    pub block_source_offsets: Vec<u64>,
+}
+
+/// Canonical printable string in a reconstructed projected-curve payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureProjectedCurveConstructionString {
+    /// Globally unique string identity.
+    pub id: String,
+    /// Owning `CPROJ` or `CPROJ_CMB` operation label.
+    pub operation_label: String,
+    /// Reconstructed projected-curve payload carrying the string.
+    pub construction_payload: String,
+    /// Zero-based string order within the payload.
+    pub ordinal: u32,
+    /// Exact printable value.
+    pub value: String,
+    /// Payload-relative offset of the `66 32 03` marker.
+    pub payload_offset: u64,
+    /// Absolute source offset of the marker.
+    pub source_offset: u64,
+}
+
 /// Ordered construction reference carried by a bounded pattern payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePatternReference {
@@ -9011,6 +9055,116 @@ pub fn feature_projected_curve_references(
         }
     })
     .collect()
+}
+
+/// Reconstruct ordered logical payloads from projected-curve reference fields.
+pub fn feature_projected_curve_construction_payloads(
+    container: &Container,
+    labels: &[FeatureOperationLabel],
+    references: &[FeatureProjectedCurveReference],
+) -> Vec<FeatureProjectedCurveConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    let kinds = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label.value.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    references
+        .iter()
+        .map(|reference| reference.operation_label.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|operation_label| {
+            let operation_kind = *kinds.get(operation_label)?;
+            let expected_len = match operation_kind {
+                "CPROJ" => 3,
+                "CPROJ_CMB" => 8,
+                _ => return None,
+            };
+            let mut field = references
+                .iter()
+                .filter(|reference| reference.operation_label == operation_label)
+                .collect::<Vec<_>>();
+            field.sort_by_key(|reference| reference.ordinal);
+            if field.len() != expected_len
+                || field
+                    .iter()
+                    .enumerate()
+                    .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+            {
+                return None;
+            }
+            let data_blocks = field
+                .iter()
+                .map(|reference| reference.data_block.clone())
+                .collect::<Option<Vec<_>>>()?;
+            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+            if data_blocks.iter().any(|block| {
+                block
+                    .rsplit_once(":block#")
+                    .is_none_or(|(prefix, _)| prefix != store)
+            }) {
+                return None;
+            }
+            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, operation_key) = operation_label.rsplit_once('#')?;
+            Some(FeatureProjectedCurveConstructionPayload {
+                id: format!(
+                    "nx:feature-history:projected-curve-construction-payload#{operation_key}"
+                ),
+                operation_label: operation_label.to_string(),
+                operation_kind: operation_kind.to_string(),
+                construction_references: field
+                    .iter()
+                    .map(|reference| reference.id.clone())
+                    .collect(),
+                data_blocks,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets: starts,
+                block_byte_lengths: lengths,
+                block_source_offsets: sources,
+            })
+        })
+        .collect()
+}
+
+/// Decode canonical printable strings from reconstructed projected-curve payloads.
+pub fn feature_projected_curve_construction_strings(
+    container: &Container,
+    payloads: &[FeatureProjectedCurveConstructionPayload],
+) -> Vec<FeatureProjectedCurveConstructionString> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::string_values(&bytes, 0)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, value)| {
+                    let payload_offset = value.offset as u64;
+                    Some(FeatureProjectedCurveConstructionString {
+                        id: format!("{}-string-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        value: value.value.to_string(),
+                        payload_offset,
+                        source_offset: joined_payload_source_offset(
+                            payload_offset,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
+                    })
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Decode and resolve exact ordered construction references in pattern

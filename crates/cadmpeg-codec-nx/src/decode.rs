@@ -7719,6 +7719,17 @@ fn attach_native_object_model(
     let feature_sketch_references = crate::native::feature_sketch_references(&scan.container);
     let feature_projected_curve_references =
         crate::native::feature_projected_curve_references(&scan.container);
+    let feature_projected_curve_construction_payloads =
+        crate::native::feature_projected_curve_construction_payloads(
+            &scan.container,
+            &feature_operation_labels,
+            &feature_projected_curve_references,
+        );
+    let feature_projected_curve_construction_strings =
+        crate::native::feature_projected_curve_construction_strings(
+            &scan.container,
+            &feature_projected_curve_construction_payloads,
+        );
     let feature_pattern_references = crate::native::feature_pattern_references(&scan.container);
     let feature_pattern_construction_payloads =
         crate::native::feature_pattern_construction_payloads(
@@ -8073,6 +8084,8 @@ fn attach_native_object_model(
         && feature_datum_csys_block_uses.is_empty()
         && feature_sketch_references.is_empty()
         && feature_projected_curve_references.is_empty()
+        && feature_projected_curve_construction_payloads.is_empty()
+        && feature_projected_curve_construction_strings.is_empty()
         && feature_pattern_references.is_empty()
         && feature_pattern_construction_payloads.is_empty()
         && feature_pattern_construction_strings.is_empty()
@@ -8880,6 +8893,8 @@ fn attach_native_object_model(
             sketch_datum_csys_dependencies: &feature_sketch_datum_csys_dependencies,
             sketch_references: &feature_sketch_references,
             projected_curve_references: &feature_projected_curve_references,
+            projected_curve_construction_payloads: &feature_projected_curve_construction_payloads,
+            projected_curve_construction_strings: &feature_projected_curve_construction_strings,
             pattern_references: &feature_pattern_references,
             pattern_construction_payloads: &feature_pattern_construction_payloads,
             pattern_construction_strings: &feature_pattern_construction_strings,
@@ -9326,6 +9341,18 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_projected_curve_references",
             &feature_projected_curve_references,
+        )?;
+    }
+    if !feature_projected_curve_construction_payloads.is_empty() {
+        namespace.set_arena(
+            "feature_projected_curve_construction_payloads",
+            &feature_projected_curve_construction_payloads,
+        )?;
+    }
+    if !feature_projected_curve_construction_strings.is_empty() {
+        namespace.set_arena(
+            "feature_projected_curve_construction_strings",
+            &feature_projected_curve_construction_strings,
         )?;
     }
     if !feature_pattern_references.is_empty() {
@@ -10123,6 +10150,10 @@ struct FeatureOperationSources<'a> {
     sketch_datum_csys_dependencies: &'a [crate::native::FeatureSketchDatumCsysDependency],
     sketch_references: &'a [crate::native::FeatureSketchReference],
     projected_curve_references: &'a [crate::native::FeatureProjectedCurveReference],
+    projected_curve_construction_payloads:
+        &'a [crate::native::FeatureProjectedCurveConstructionPayload],
+    projected_curve_construction_strings:
+        &'a [crate::native::FeatureProjectedCurveConstructionString],
     pattern_references: &'a [crate::native::FeaturePatternReference],
     pattern_construction_payloads: &'a [crate::native::FeaturePatternConstructionPayload],
     pattern_construction_strings: &'a [crate::native::FeaturePatternConstructionString],
@@ -10237,6 +10268,8 @@ fn attach_feature_operations(
         sketch_datum_csys_dependencies,
         sketch_references,
         projected_curve_references,
+        projected_curve_construction_payloads,
+        projected_curve_construction_strings,
         pattern_references,
         pattern_construction_payloads,
         pattern_construction_strings,
@@ -10415,6 +10448,14 @@ fn attach_feature_operations(
     let projected_curve_references_by_operation =
         records_by_operation(projected_curve_references, |reference| {
             &reference.operation_label
+        });
+    let projected_curve_construction_payloads_by_operation =
+        records_by_operation(projected_curve_construction_payloads, |payload| {
+            &payload.operation_label
+        });
+    let projected_curve_construction_strings_by_operation =
+        records_by_operation(projected_curve_construction_strings, |value| {
+            &value.operation_label
         });
     let pattern_references_by_operation =
         records_by_operation(pattern_references, |reference| &reference.operation_label);
@@ -11198,6 +11239,26 @@ fn attach_feature_operations(
                     .data_block
                     .clone()
                     .unwrap_or_else(|| reference.object_index.to_string()),
+            );
+        }
+        for payload in projected_curve_construction_payloads_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                "projected_curve_construction_payload".to_string(),
+                payload.id.clone(),
+            );
+        }
+        for value in projected_curve_construction_strings_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("projected_curve_construction_string.{}", value.ordinal),
+                value.id.clone(),
             );
         }
         for reference in pattern_references_by_operation
