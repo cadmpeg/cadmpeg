@@ -5206,6 +5206,8 @@ pub struct FeatureProjectedCurveReference {
     pub ordinal: u32,
     /// Serialized object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -5268,6 +5270,8 @@ pub struct FeaturePatternReference {
     pub ordinal: u32,
     /// Serialized object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -5392,6 +5396,8 @@ pub struct FeaturePointConstructionHeader {
     pub operation_label: String,
     /// Serialized construction object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -5431,6 +5437,8 @@ pub struct FeatureDraftConstructionReference {
     pub ordinal: u32,
     /// Serialized object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -5658,6 +5666,8 @@ pub struct FeatureSurfaceConstructionReference {
     pub ordinal: u32,
     /// Serialized object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -5741,6 +5751,8 @@ pub struct FeatureSurfaceBranchReference {
     pub ordinal: u32,
     /// Serialized object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -9125,6 +9137,7 @@ struct ResolvedFeaturePayloadReference {
     operation_ordinal: usize,
     ordinal: usize,
     object_index: u32,
+    raw_object_index: Vec<u8>,
     data_block: Option<String>,
     source_offset: u64,
 }
@@ -9159,6 +9172,7 @@ fn resolved_feature_payload_references(
                     operation_ordinal,
                     ordinal,
                     object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
                     data_block: unique_offset_data_block(&indexed, reference.object_index),
                     source_offset: entry_offset + reference.offset as u64,
                 }
@@ -9190,6 +9204,7 @@ pub fn feature_projected_curve_references(
             operation_label,
             ordinal: reference.ordinal as u32,
             object_index: reference.object_index,
+            raw_object_index: reference.raw_object_index,
             data_block: reference.data_block,
             source_offset: reference.source_offset,
         }
@@ -9327,6 +9342,7 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
             operation_label,
             ordinal: reference.ordinal as u32,
             object_index: reference.object_index,
+            raw_object_index: reference.raw_object_index,
             data_block: reference.data_block,
             source_offset: reference.source_offset,
         }
@@ -9584,6 +9600,7 @@ pub fn feature_point_construction_headers(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 object_index: header.reference.object_index,
+                raw_object_index: header.reference.raw_object_index,
                 data_block: unique_offset_data_block(&indexed, header.reference.object_index),
                 mode: header.mode,
                 source_offset: entry_offset + header.reference.offset as u64,
@@ -9681,6 +9698,7 @@ pub fn feature_draft_construction_references(
             operation_label,
             ordinal: reference.ordinal as u32,
             object_index: reference.object_index,
+            raw_object_index: reference.raw_object_index,
             data_block: reference.data_block,
             source_offset: reference.source_offset,
         }
@@ -10096,6 +10114,7 @@ pub fn feature_surface_construction_references(
             operation_label,
             ordinal: reference.ordinal as u32,
             object_index: reference.object_index,
+            raw_object_index: reference.raw_object_index,
             data_block: reference.data_block,
             source_offset: reference.source_offset,
         }
@@ -10284,6 +10303,7 @@ pub fn feature_surface_construction_branches(
                     FeatureSurfaceBranchReference {
                         ordinal: ordinal as u32,
                         object_index: reference.object_index,
+                        raw_object_index: reference.raw_object_index,
                         data_block: unique_offset_data_block(&indexed, reference.object_index),
                         source_offset: entry_offset + reference.offset as u64,
                     }
