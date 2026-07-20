@@ -4716,6 +4716,9 @@ pub struct FeatureDatumPlanePayload {
     /// Ordered decoded compact indices.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub index_lane_values: Vec<u32>,
+    /// Exact compact-index tokens in serialized order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub index_lane_raw_indices: Vec<Vec<u8>>,
     /// Payload-relative offsets of decoded compact indices.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub index_lane_value_offsets: Vec<u64>,
@@ -7606,6 +7609,7 @@ pub fn feature_datum_plane_payloads(
                 index_lane_values: lane.map_or_else(Vec::new, |lane| {
                     lane.indices.iter().map(|(value, _)| *value).collect()
                 }),
+                index_lane_raw_indices: lane.map_or_else(Vec::new, |lane| lane.raw_indices.clone()),
                 index_lane_value_offsets: lane.map_or_else(Vec::new, |lane| {
                     lane.indices
                         .iter()

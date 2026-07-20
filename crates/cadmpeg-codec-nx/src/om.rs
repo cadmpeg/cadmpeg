@@ -1008,6 +1008,8 @@ pub struct DatumPlaneObjectIndexLane {
     pub declared_count: u8,
     /// Ordered non-null compact indices and their payload-relative offsets.
     pub indices: Vec<(u32, usize)>,
+    /// Exact compact-index tokens in serialized order.
+    pub raw_indices: Vec<Vec<u8>>,
     /// Big-endian trailer word after the zero separator.
     pub trailer: u32,
 }
@@ -3282,6 +3284,7 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
         }
         let mut at = start + 2;
         let mut indices = Vec::with_capacity(usize::from(declared_count) - 1);
+        let mut raw_indices = Vec::with_capacity(usize::from(declared_count) - 1);
         let mut complete = true;
         for _ in 1..declared_count {
             let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
@@ -3290,6 +3293,7 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
                 break;
             };
             indices.push((value, at));
+            raw_indices.push(bytes[at..at + width].to_vec());
             at += width;
         }
         if !complete || bytes.get(at) != Some(&0x00) || at + 5 != bytes.len() {
@@ -3300,6 +3304,7 @@ pub fn datum_plane_object_index_lanes(bytes: &[u8]) -> Vec<DatumPlaneObjectIndex
             offset: start,
             declared_count,
             indices,
+            raw_indices,
             trailer,
         });
     }
