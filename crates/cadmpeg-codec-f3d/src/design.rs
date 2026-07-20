@@ -5704,7 +5704,7 @@ fn transition_profile_selection(
     let topology = state.topology.as_ref()?;
     let inserted_faces = &state.transition.as_ref()?.topology.faces.inserted;
     let tolerance = linear_tolerance.max(1.0e-7);
-    let inserted = unique_resolved_selection(inserted_faces.iter().map(|face| {
+    let inserted = transition_inserted_profile_selection(inserted_faces.iter().map(|face| {
         let points = historical_face_points(*face, topology)?;
         selection_containing_points(sketch, entities, &points, tolerance)
     }));
@@ -5765,6 +5765,70 @@ fn unique_resolved_selection<T: PartialEq>(
     selections
         .all(|selection| selection == first)
         .then_some(first)
+}
+
+fn transition_inserted_profile_selection(
+    selections: impl IntoIterator<Item = Option<ResolvedProfileSelection>>,
+) -> Option<ResolvedProfileSelection> {
+    use cadmpeg_ir::features::SketchProfileRegion;
+
+    let selections = selections.into_iter().flatten().collect::<Vec<_>>();
+    if let Some(selection) = unique_resolved_selection(selections.iter().cloned().map(Some)) {
+        return Some(selection);
+    }
+    let loop_selections = selections
+        .iter()
+        .filter_map(|selection| match selection {
+            ResolvedProfileSelection::Loops(loops) if !loops.is_empty() => Some(loops.as_slice()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if let Some(first) = loop_selections.first() {
+        if loop_selections.iter().all(|candidate| candidate == first) {
+            return Some(ResolvedProfileSelection::Loops(first.to_vec()));
+        }
+    }
+    let mut regions = selections.iter().filter_map(|selection| match selection {
+        ResolvedProfileSelection::Regions(regions) => match regions.as_slice() {
+            [SketchProfileRegion::Loops { outer, holes }] if !holes.is_empty() => {
+                Some((*outer, holes.as_slice()))
+            }
+            _ => None,
+        },
+        ResolvedProfileSelection::Loops(_) => None,
+    });
+    let (outer, holes) = regions.next()?;
+    if regions.any(|candidate| candidate != (outer, holes)) {
+        return None;
+    }
+    let mut has_boundary_support = false;
+    for selection in &selections {
+        match selection {
+            ResolvedProfileSelection::Regions(regions)
+                if matches!(
+                    regions.as_slice(),
+                    [SketchProfileRegion::Loops {
+                        outer: candidate_outer,
+                        holes: candidate_holes,
+                    }] if *candidate_outer == outer && candidate_holes.as_slice() == holes
+                ) => {}
+            ResolvedProfileSelection::Loops(loops)
+                if !loops.is_empty()
+                    && loops
+                        .iter()
+                        .all(|profile| *profile == outer || holes.contains(profile)) =>
+            {
+                has_boundary_support = true;
+            }
+            _ => return None,
+        }
+    }
+    has_boundary_support.then(|| {
+        ResolvedProfileSelection::Regions(vec![SketchProfileRegion::Loops {
+            outer,
+            holes: holes.to_vec(),
+        }])
+    })
 }
 
 fn historical_face_points(
@@ -22181,7 +22245,9 @@ mod relation_tests {
     }
 
     #[test]
-    fn transition_profile_requires_every_cap_face_to_resolve_identically() {
+    fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries() {
+        use cadmpeg_ir::features::SketchProfileRegion;
+
         assert_eq!(
             super::unique_resolved_selection([Some(3), Some(3), Some(3)]),
             Some(3)
@@ -22196,6 +22262,42 @@ mod relation_tests {
             None
         );
         assert_eq!(super::unique_resolved_selection([None::<u32>, None]), None);
+        let region = super::ResolvedProfileSelection::Regions(vec![SketchProfileRegion::Loops {
+            outer: 0,
+            holes: vec![1],
+        }]);
+        assert_eq!(
+            super::transition_inserted_profile_selection([
+                Some(region.clone()),
+                Some(super::ResolvedProfileSelection::Loops(vec![1])),
+                Some(super::ResolvedProfileSelection::Loops(vec![0, 1])),
+            ]),
+            Some(region.clone())
+        );
+        assert_eq!(
+            super::transition_inserted_profile_selection([
+                Some(region.clone()),
+                Some(super::ResolvedProfileSelection::Loops(vec![2])),
+            ]),
+            Some(super::ResolvedProfileSelection::Loops(vec![2]))
+        );
+        assert_eq!(
+            super::transition_inserted_profile_selection([
+                Some(super::ResolvedProfileSelection::Loops(vec![1])),
+                Some(super::ResolvedProfileSelection::Regions(Vec::new())),
+                Some(super::ResolvedProfileSelection::Loops(vec![1])),
+            ]),
+            Some(super::ResolvedProfileSelection::Loops(vec![1]))
+        );
+        assert_eq!(
+            super::transition_inserted_profile_selection([Some(region)]),
+            Some(super::ResolvedProfileSelection::Regions(vec![
+                SketchProfileRegion::Loops {
+                    outer: 0,
+                    holes: vec![1],
+                },
+            ]))
+        );
     }
 
     #[test]
