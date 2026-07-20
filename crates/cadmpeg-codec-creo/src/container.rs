@@ -1772,6 +1772,7 @@ pub fn scan_bytes(data: Vec<u8>) -> ContainerScan {
             model_planes: &plane_local_systems,
             outline_planes: &outline_planes,
             plane_envelopes: &plane_envelopes,
+            surface_parameters: &surface_parameters,
             geometry_tables: &feature_geometry_tables,
             affected_ids: &feature_affected_ids,
         },

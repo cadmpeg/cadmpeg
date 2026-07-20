@@ -9,7 +9,7 @@ use crate::feature::{
 };
 use crate::surface::{
     unique_surface_row, OutlinePlane, PlaneEnvelope, PlaneEnvelopeRecord, PlaneLocalSystem,
-    SurfaceKind, SurfaceRow,
+    SurfaceKind, SurfaceParameterRecord, SurfaceRow,
 };
 
 /// A feature's right-handed section-to-model rigid frame.
@@ -37,8 +37,140 @@ pub(crate) struct PlacementSources<'a> {
     pub model_planes: &'a [PlaneLocalSystem],
     pub outline_planes: &'a [OutlinePlane],
     pub plane_envelopes: &'a [PlaneEnvelopeRecord],
+    pub surface_parameters: &'a [SurfaceParameterRecord],
     pub geometry_tables: &'a [FeatureGeometryTable],
     pub affected_ids: &'a [FeatureAffectedIds],
+}
+
+fn generated_cylinder_section_transform(
+    definition: &FeatureDefinition,
+    sources: &PlacementSources<'_>,
+    entity_tables: &[FeatureEntityTable],
+) -> Option<FeatureSectionTransform> {
+    let feature_id = definition.owner_feature_id?;
+    definition.segments.as_ref()?.is_complete().then_some(())?;
+    let points = definition.variables.as_ref()?.reconciled_points();
+    points.1.is_empty().then_some(())?;
+    let mut correspondences = Vec::<([f64; 2], [f64; 3], [f64; 3], usize)>::new();
+    for entry in entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .flat_map(|table| &table.entries)
+    {
+        let Some(external_id) = entry.source_entity_id else {
+            continue;
+        };
+        let Some(segment) = definition.segments.as_ref()?.segment(external_id) else {
+            continue;
+        };
+        if segment.kind != FeatureSegmentKind::Arc {
+            continue;
+        }
+        let Some(center_id) = segment.center_id else {
+            continue;
+        };
+        let Some([Some(u), Some(v)]) = points.0.get(&center_id).copied() else {
+            continue;
+        };
+        let Some(row) = unique_surface_row(sources.surface_rows, entry.entity_id)
+            .filter(|row| row.feature_id == feature_id && row.kind == SurfaceKind::Cylinder)
+        else {
+            continue;
+        };
+        let parameters = sources
+            .surface_parameters
+            .iter()
+            .filter(|record| record.surface_id == row.id)
+            .collect::<Vec<_>>();
+        let [parameters] = parameters.as_slice() else {
+            continue;
+        };
+        let Some(frame) = parameters.positional_cylinder_frame else {
+            continue;
+        };
+        correspondences.push(([u, v], frame.origin, frame.axis, parameters.offset));
+    }
+    let first = correspondences.first()?;
+    let normal = normalize(first.2)?;
+    let scale = correspondences
+        .iter()
+        .flat_map(|(local, model, _, _)| local.iter().chain(model))
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0);
+    correspondences
+        .iter()
+        .all(|(_, _, axis, _)| {
+            normalize(*axis).is_some_and(|axis| {
+                axis.iter()
+                    .zip(normal)
+                    .all(|(left, right)| close(*left, right))
+            })
+        })
+        .then_some(())?;
+
+    let mut frames = Vec::new();
+    for second in correspondences.iter().skip(1) {
+        let local = [second.0[0] - first.0[0], second.0[1] - first.0[1]];
+        let model = std::array::from_fn::<_, 3, _>(|index| second.1[index] - first.1[index]);
+        let local_squared = dot([local[0], local[1], 0.0], [local[0], local[1], 0.0]);
+        if local_squared <= 1e-24 * scale * scale
+            || !close(dot(model, model), local_squared)
+            || !close(dot(model, normal), 0.0)
+        {
+            continue;
+        }
+        let normal_cross_model = cross(normal, model);
+        let u_axis = std::array::from_fn(|index| {
+            (local[0] * model[index] - local[1] * normal_cross_model[index]) / local_squared
+        });
+        let Some(u_axis) = normalize(u_axis) else {
+            continue;
+        };
+        let v_axis = cross(normal, u_axis);
+        let origin = std::array::from_fn(|index| {
+            first.1[index] - first.0[0] * u_axis[index] - first.0[1] * v_axis[index]
+        });
+        frames.push((origin, u_axis, v_axis));
+    }
+    let valid = frames
+        .iter()
+        .filter(|candidate| {
+            correspondences.iter().all(|(local, model, _, _)| {
+                (0..3).all(|index| {
+                    close(
+                        candidate.0[index]
+                            + local[0] * candidate.1[index]
+                            + local[1] * candidate.2[index],
+                        model[index],
+                    )
+                })
+            })
+        })
+        .collect::<Vec<_>>();
+    let frame = *valid.first()?;
+    valid
+        .iter()
+        .all(|candidate| {
+            candidate
+                .0
+                .iter()
+                .chain(candidate.1.iter())
+                .chain(candidate.2.iter())
+                .zip(frame.0.iter().chain(frame.1.iter()).chain(frame.2.iter()))
+                .all(|(left, right)| close(*left, *right))
+        })
+        .then_some(())?;
+    Some(FeatureSectionTransform {
+        definition_id: definition.id,
+        feature_id: Some(feature_id),
+        origin: frame.0,
+        u_axis: frame.1,
+        v_axis: frame.2,
+        normal,
+        offset: correspondences.iter().map(|item| item.3).min()?,
+    })
 }
 
 fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
@@ -726,6 +858,19 @@ pub(crate) fn resolve(
             offset: section.offset,
         });
     }
+    for definition in definitions {
+        if result
+            .iter()
+            .any(|transform| transform.definition_id == definition.id)
+        {
+            continue;
+        }
+        if let Some(transform) =
+            generated_cylinder_section_transform(definition, sources, entity_tables)
+        {
+            result.push(transform);
+        }
+    }
     result.sort_by_key(|transform| transform.offset);
     result
 }
@@ -734,9 +879,11 @@ pub(crate) fn resolve(
 mod tests {
     use super::*;
     use crate::feature::{
-        FeatureParameterFrame, FeatureSection3d, FeatureSectionOrientation, FeatureSectionPoint,
-        FeatureSegment, FeatureSegmentTable, FeatureVariableTable,
+        FeatureEntityTableEntry, FeatureParameterFrame, FeatureSection3d,
+        FeatureSectionOrientation, FeatureSectionPoint, FeatureSegment, FeatureSegmentTable,
+        FeatureVariableTable,
     };
+    use crate::surface::{PositionalCylinderFrame, SurfaceBodyBoundary, SurfaceParameterRecord};
 
     #[test]
     fn normalization_rejects_overflowed_feature_frame_vectors() {
@@ -844,6 +991,7 @@ mod tests {
                     model_planes: &[],
                     outline_planes: &[],
                     plane_envelopes: &[],
+                    surface_parameters: &[],
                     geometry_tables: &[],
                     affected_ids: &[],
                 },
@@ -891,6 +1039,7 @@ mod tests {
                     model_planes: &[],
                     outline_planes: &[],
                     plane_envelopes: &[],
+                    surface_parameters: &[],
                     geometry_tables: &[],
                     affected_ids: &[],
                 },
@@ -1019,6 +1168,7 @@ mod tests {
                     model_planes: &[],
                     outline_planes: &outlines,
                     plane_envelopes: &[],
+                    surface_parameters: &[],
                     geometry_tables: &geometry_tables,
                     affected_ids: &[],
                 },
@@ -1145,6 +1295,7 @@ mod tests {
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],
+                surface_parameters: &[],
                 geometry_tables: &[],
                 affected_ids: &[],
             },
@@ -1175,6 +1326,7 @@ mod tests {
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],
+                surface_parameters: &[],
                 geometry_tables: &[],
                 affected_ids: &[],
             },
@@ -1227,6 +1379,7 @@ mod tests {
                 model_planes: &[],
                 outline_planes: &[reference],
                 plane_envelopes: &[],
+                surface_parameters: &[],
                 geometry_tables: &[],
                 affected_ids: &[],
             },
@@ -1295,6 +1448,7 @@ mod tests {
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[],
+                surface_parameters: &[],
                 geometry_tables: &[geometry_table],
                 affected_ids: &[parents],
             },
@@ -1381,6 +1535,7 @@ mod tests {
                 model_planes: &[],
                 outline_planes: &[],
                 plane_envelopes: &[envelope],
+                surface_parameters: &[],
                 geometry_tables: &[geometry_table],
                 affected_ids: &[parents],
             },
@@ -1389,5 +1544,170 @@ mod tests {
         assert_eq!(transforms.len(), 1);
         assert_eq!(transforms[0].origin, [0.0, 0.0, 3.0]);
         assert_eq!(transforms[0].normal, [0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn resolves_section_frame_from_two_generated_arc_cylinders() {
+        let segment = |external_id, center_id| FeatureSegment {
+            kind: FeatureSegmentKind::Arc,
+            directions: [None; 3],
+            point_ids: [0; 2],
+            center_id: Some(center_id),
+            arc_orientation: None,
+            vertical_horizontal: None,
+            radius_ref: None,
+            radius2_ref: None,
+            external_id,
+            offset: external_id as usize,
+        };
+        let definition = FeatureDefinition {
+            id: 917,
+            owner_feature_id: Some(40),
+            body: Vec::new(),
+            parameter_frames: Vec::new(),
+            outlines: Vec::new(),
+            variables: Some(FeatureVariableTable {
+                declared_count: 0,
+                entity_ref: None,
+                rows: Vec::new(),
+                points: vec![
+                    FeatureSectionPoint {
+                        point_id: 1,
+                        u: Some(-12.5),
+                        v: Some(0.0),
+                    },
+                    FeatureSectionPoint {
+                        point_id: 2,
+                        u: Some(12.5),
+                        v: Some(0.0),
+                    },
+                ],
+                offset: 100,
+            }),
+            segments: Some(FeatureSegmentTable {
+                declared_count: 2,
+                entity_ref: None,
+                rows: vec![segment(252, 1), segment(255, 2)],
+                opaque_rows: Vec::new(),
+                offset: 110,
+            }),
+            trim_entities: None,
+            trim_vertices: None,
+            order_table: None,
+            section_3d: None,
+            dimensions: None,
+            relations: None,
+            saved_section: None,
+            offset: 90,
+        };
+        let rows = [
+            SurfaceRow {
+                id: 819,
+                type_byte: 0x24,
+                kind: SurfaceKind::Cylinder,
+                feature_id: 40,
+                reversed: false,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 200,
+            },
+            SurfaceRow {
+                id: 822,
+                type_byte: 0x24,
+                kind: SurfaceKind::Cylinder,
+                feature_id: 40,
+                reversed: false,
+                boundary_type: 0,
+                next_surface: 0,
+                offset: 220,
+            },
+        ];
+        let parameters = |surface_id, origin, offset| SurfaceParameterRecord {
+            surface_id,
+            body: Vec::new(),
+            scalar_values: Vec::new(),
+            scalar_tokens: Vec::new(),
+            opaque_spans: Vec::new(),
+            scalar_frames: Vec::new(),
+            terminal_scalar_frame: None,
+            tabulated_cylinder_frame: None,
+            positional_cylinder_frame: Some(PositionalCylinderFrame {
+                origin,
+                axis: [0.0, 1.0, 0.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius: 0.75,
+                length: Some(34.0),
+            }),
+            positional_cone_frame: None,
+            boundary: SurfaceBodyBoundary::CompoundClose,
+            offset,
+            body_offset: offset + 1,
+        };
+        let parameters = [
+            parameters(819, [-12.5, 4.0, 0.0], 200),
+            parameters(822, [12.5, 4.0, 0.0], 220),
+        ];
+        let entry = |entity_id, source_entity_id, offset| FeatureEntityTableEntry {
+            entity_id,
+            class_id: 200,
+            source_entity_id: Some(source_entity_id),
+            prefixed: false,
+            offset,
+            end_offset: offset + 1,
+        };
+        let tables = [FeatureEntityTable {
+            feature_id: Some(40),
+            table_class_id: 2,
+            entry_ids: vec![819, 822],
+            entries: vec![entry(819, 252, 300), entry(822, 255, 310)],
+            surface_ids: vec![819, 822],
+            non_surface_entity_ids: Vec::new(),
+            offset: 290,
+        }];
+        let sources = PlacementSources {
+            datums: &[],
+            surface_rows: &rows,
+            model_planes: &[],
+            outline_planes: &[],
+            plane_envelopes: &[],
+            surface_parameters: &parameters,
+            geometry_tables: &[],
+            affected_ids: &[],
+        };
+
+        assert_eq!(
+            generated_cylinder_section_transform(&definition, &sources, &tables),
+            Some(FeatureSectionTransform {
+                definition_id: 917,
+                feature_id: Some(40),
+                origin: [0.0, 4.0, 0.0],
+                u_axis: [1.0, 0.0, 0.0],
+                v_axis: [0.0, 0.0, -1.0],
+                normal: [0.0, 1.0, 0.0],
+                offset: 200,
+            })
+        );
+
+        let mut far_divergent = parameters.clone();
+        for record in &mut far_divergent {
+            record
+                .positional_cylinder_frame
+                .as_mut()
+                .expect("cylinder frame")
+                .origin[0] += 1.0e12;
+        }
+        far_divergent[1]
+            .positional_cylinder_frame
+            .as_mut()
+            .expect("second cylinder frame")
+            .axis = [0.1, 0.99_f64.sqrt(), 0.0];
+        let divergent_sources = PlacementSources {
+            surface_parameters: &far_divergent,
+            ..sources
+        };
+        assert!(
+            generated_cylinder_section_transform(&definition, &divergent_sources, &tables)
+                .is_none()
+        );
     }
 }

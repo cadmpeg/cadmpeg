@@ -2006,6 +2006,16 @@ section `u` axis, and the intersection of the two plane equations defines the
 section origin. Parallel support planes and non-plane references do not define
 the section axis.
 
+A linear section frame is also complete when at least two distinct solved arc
+centers bind through same-feature class-200 entries to complete positional
+cylinders. The cylinders have one directed axis, each cylinder origin is the
+model-space image of its source arc center, and every pair preserves the
+section-space center distance. The directed cylinder axis is the section
+normal. The unique right-handed rigid map from all center correspondences
+defines the section origin and axes. Coincident centers, nonparallel or
+oppositely directed cylinder axes, distance disagreement, or more than one
+rigid map leaves the frame unresolved.
+
 `order_table` entries are `ext_id`, `int_id`, and orientation-flag tuples. `ext_id` references a section entity and `int_id` is the section's internal ordering index. The declared count includes one structural prototype followed by exactly `count - 1` stored rows. Named tables encode the prototype as named `ext_id`, `int_id`, and `bitmask` fields; positional tables encode the same three fields positionally. An incomplete table retains its complete row prefix but establishes no semantic joins. A semantic join requires exactly one row for the selected `ext_id` and exactly one row for the selected `int_id`; duplicate keys do not select a first row. A class-200 feature-generated-table entry stores the same `ext_id` as its source identifier and stores the generated surface identifier as its leading entity identifier. This explicit equality joins line, arc, and spline section entities to their generated carriers; table position and family order do not define the join.
 
 A saved entity with a unique internal identifier takes the corresponding unique
