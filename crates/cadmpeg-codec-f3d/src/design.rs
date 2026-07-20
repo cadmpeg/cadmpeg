@@ -16854,6 +16854,8 @@ fn parse_construction_operand_identity(
             asset_id_offset: member.asset_id_offset,
             context_id: member.context_id,
             context_id_offset: member.context_id_offset,
+            tail_slot_present: member.tail_slot_present,
+            tail_slot_offset: member.tail_slot_offset,
             next_record_index: member.next_record_index,
             next_byte_offset: member.next_byte_offset,
         }
@@ -17228,6 +17230,8 @@ fn parse_extrude_selection_member(
         asset_id_offset: member.asset_id_offset,
         context_id: member.context_id,
         context_id_offset: member.context_id_offset,
+        tail_slot_present: member.tail_slot_present,
+        tail_slot_offset: member.tail_slot_offset,
         resolved_geometry: None,
         operand_identity_ids: Vec::new(),
         historical_entity_kind: None,
@@ -17245,6 +17249,8 @@ struct ParsedExtrudeIdentityMember {
     asset_id_offset: u64,
     context_id: String,
     context_id_offset: u64,
+    tail_slot_present: bool,
+    tail_slot_offset: u64,
     next_record_index: u32,
     next_byte_offset: u64,
 }
@@ -17259,10 +17265,16 @@ fn parse_extrude_identity_member(
     let local_id = read_u64(bytes, start + 21)?;
     let (asset_id, after_asset_id) = lp_utf16(bytes, start + 29)?;
     let (context_id, after_context_id) = lp_utf16(bytes, after_asset_id)?;
+    let tail_slot_offset = after_context_id.checked_add(4)?;
+    let tail_slot_present = match bytes.get(tail_slot_offset)? {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
     if !is_guid(&asset_id)
         || !is_guid(&context_id)
         || u32_at(bytes, after_context_id)? != 2
-        || bytes.get(after_context_id + 4..after_context_id + 9)? != [0; 5]
+        || u32_at(bytes, tail_slot_offset + 1)? != 0
         || after_context_id.checked_add(9)? != start.checked_add(190)?
     {
         return None;
@@ -17276,6 +17288,8 @@ fn parse_extrude_identity_member(
         asset_id_offset: u64::try_from(start + 33).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
+        tail_slot_present,
+        tail_slot_offset: u64::try_from(tail_slot_offset).ok()?,
         next_record_index: u32_at(bytes, after_next_tag)?,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })
@@ -26308,6 +26322,15 @@ mod relation_tests {
         assert_eq!(member.local_id, 586);
         assert_eq!(member.next_byte_offset, 190);
         assert_eq!(member.next_record_index, 201);
+        assert!(!member.tail_slot_present);
+        assert_eq!(member.tail_slot_offset, 185);
+
+        member_bytes[185] = 1;
+        let member_with_slot =
+            parse_extrude_selection_member(&member_bytes, &group, 0, &member_record)
+                .expect("Extrude selection member with present tail slot");
+        assert!(member_with_slot.tail_slot_present);
+        assert_eq!(member_with_slot.tail_slot_offset, 185);
 
         let mut edge_identity_bytes = Vec::new();
         header(&mut edge_identity_bytes, *b"278", 5887);
@@ -26349,6 +26372,8 @@ mod relation_tests {
                 asset_id_offset: 33,
                 context_id: "0b2382d1-caaf-4eb9-b40d-a6322a7ed829".into(),
                 context_id_offset: 113,
+                tail_slot_present: false,
+                tail_slot_offset: 185,
                 next_record_index: 201,
                 next_byte_offset: 190,
             }),

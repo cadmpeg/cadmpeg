@@ -1484,6 +1484,12 @@ pub struct DesignConstructionPersistentIdentity {
     pub context_id: String,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
+    /// Whether the fixed tail's optional slot is present.
+    #[serde(default)]
+    pub tail_slot_present: bool,
+    /// Byte offset of the optional-slot marker.
+    #[serde(default)]
+    pub tail_slot_offset: u64,
     /// Identity of the indexed record immediately following this identity.
     pub next_record_index: u32,
     /// Byte offset of the indexed record immediately following this identity.
@@ -1564,6 +1570,12 @@ pub struct DesignExtrudeSelectionMember {
     pub context_id: String,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub context_id_offset: u64,
+    /// Whether the fixed tail's optional slot is present.
+    #[serde(default)]
+    pub tail_slot_present: bool,
+    /// Byte offset of the optional-slot marker.
+    #[serde(default)]
+    pub tail_slot_offset: u64,
     /// Sketch geometry carrying `local_id`, when it resolves uniquely in
     /// the selected Sketch.
     #[serde(default, skip_serializing_if = "Option::is_none")]
