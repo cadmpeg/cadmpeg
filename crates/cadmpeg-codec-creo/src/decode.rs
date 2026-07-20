@@ -13082,7 +13082,7 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 917
-        && feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude)
+        && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
         let definitions = scan
             .feature_definitions
@@ -28865,8 +28865,7 @@ fn transfer_circular_sweep_cylinders(
         .iter()
         .filter(|row| {
             row.root_schema_class == Some(917)
-                && feature_recipe(scan, row.feature_id)
-                    == Some(crate::feature::FeatureRecipeKind::Extrude)
+                && section_sweep_allows_linear_extrusion(917, feature_recipe(scan, row.feature_id))
         })
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
