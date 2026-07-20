@@ -63,16 +63,16 @@ pub(crate) enum DesignFeatureFamily {
 /// the native scope. Fusion serializes this field through its UI localization.
 pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
     match kind {
-        "Sketch" | "Esquisse" => Some(DesignFeatureFamily::Sketch),
-        "Extrude" | "Extrusion" => Some(DesignFeatureFamily::Extrude),
-        "Fillet" | "Congé" => Some(DesignFeatureFamily::Fillet),
+        "Sketch" | "Esquisse" | "Skizze" | "Esboço" => Some(DesignFeatureFamily::Sketch),
+        "Extrude" | "Extrusion" | "Extrusão" => Some(DesignFeatureFamily::Extrude),
+        "Fillet" | "Congé" | "Abrundung" | "Arredondamento" => Some(DesignFeatureFamily::Fillet),
         "Chamfer" | "Chanfrein" => Some(DesignFeatureFamily::Chamfer),
         "Circular Pattern" | "Réseau C" => Some(DesignFeatureFamily::CircularPattern),
         "Mirror" | "Symétrie miroir" => Some(DesignFeatureFamily::Mirror),
         "Move" => Some(DesignFeatureFamily::Move),
         "OffsetFaces" | "DécalerLesFaces" => Some(DesignFeatureFamily::OffsetFaces),
         "Revolve" => Some(DesignFeatureFamily::Revolve),
-        "Shell" => Some(DesignFeatureFamily::Shell),
+        "Shell" | "Schale" => Some(DesignFeatureFamily::Shell),
         "Thicken" => Some(DesignFeatureFamily::Thicken),
         "SpirePrimitive" => Some(DesignFeatureFamily::Coil),
         "Loft" => Some(DesignFeatureFamily::Loft),
@@ -85,7 +85,10 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
 }
 
 fn has_typed_edge_treatment_group(kind: &str) -> bool {
-    matches!(kind, "Fillet" | "Congé" | "Chamfer" | "Chanfrein")
+    matches!(
+        design_feature_family(kind),
+        Some(DesignFeatureFamily::Fillet | DesignFeatureFamily::Chamfer)
+    )
 }
 
 const RECIPES: &[(&[u8], ConstructionRecipeKind)] = &[
@@ -16316,7 +16319,7 @@ pub fn decode_fillet_radius_groups(
     let mut out = Vec::new();
     for scope in scopes
         .iter()
-        .filter(|scope| matches!(scope.kind.as_str(), "Fillet" | "Congé"))
+        .filter(|scope| design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Fillet))
     {
         let Some(stream) = native_stream(&scope.id) else {
             continue;
@@ -21584,7 +21587,7 @@ mod relation_tests {
         exact_path_feature_construction, exact_solid_primitive, exact_surface_stitch_operation,
         exact_work_plane_frame, exact_work_point_position, expression_identifiers,
         face_recipe_program_kind, feature_input_topology_id, find_dimension_locus_groups,
-        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        find_dimension_locus_pair, find_dimension_null_locus_pair, has_typed_edge_treatment_group,
         historical_profile_face_candidates, identity_matrix, indexed_record_containing,
         indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
         neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
@@ -21703,9 +21706,26 @@ mod relation_tests {
             Some(DesignFeatureFamily::Extrude)
         );
         assert_eq!(
+            design_feature_family("Extrusão"),
+            Some(DesignFeatureFamily::Extrude)
+        );
+        for token in ["Skizze", "Esboço"] {
+            assert_eq!(
+                design_feature_family(token),
+                Some(DesignFeatureFamily::Sketch)
+            );
+        }
+        assert_eq!(
             design_feature_family("Congé"),
             Some(DesignFeatureFamily::Fillet)
         );
+        for token in ["Abrundung", "Arredondamento"] {
+            assert_eq!(
+                design_feature_family(token),
+                Some(DesignFeatureFamily::Fillet)
+            );
+            assert!(has_typed_edge_treatment_group(token));
+        }
         assert_eq!(
             design_feature_family("Chanfrein"),
             Some(DesignFeatureFamily::Chamfer)
@@ -21721,6 +21741,10 @@ mod relation_tests {
         assert_eq!(
             design_feature_family("DécalerLesFaces"),
             Some(DesignFeatureFamily::OffsetFaces)
+        );
+        assert_eq!(
+            design_feature_family("Schale"),
+            Some(DesignFeatureFamily::Shell)
         );
         assert_eq!(
             design_feature_family("SpirePrimitive"),
