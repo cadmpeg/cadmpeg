@@ -10260,6 +10260,40 @@ fn section_skamp_is_arc(
         .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Arc(_)))
 }
 
+fn section_skamp_curve_entity(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SketchEntityId> {
+    if item.sense != 0 {
+        return None;
+    }
+    let has_segment = definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .any(|segment| segment.external_id == item.entity_id);
+    let is_curve = if has_segment {
+        unique_decoded_section_segment(definition, item.entity_id).is_some_and(|segment| {
+            matches!(
+                segment.kind,
+                crate::feature::FeatureSegmentKind::Line | crate::feature::FeatureSegmentKind::Arc
+            )
+        })
+    } else {
+        section_saved_entity(definition, item.entity_id).is_some_and(|entity| {
+            matches!(
+                entity,
+                crate::feature::FeatureSavedEntity::Line(_)
+                    | crate::feature::FeatureSavedEntity::Arc(_)
+                    | crate::feature::FeatureSavedEntity::Circle(_)
+                    | crate::feature::FeatureSavedEntity::Spline(_)
+            )
+        })
+    };
+    is_curve.then(|| sketch_entity_id(sketch, item.entity_id))
+}
+
 fn section_skamp_midpoint(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -10482,6 +10516,15 @@ fn section_skamp_constraints_for_geometry(
                         SketchConstraintDefinition::TangentLoci {
                             first: section_skamp_endpoint(definition, sketch, first)?,
                             second: section_skamp_endpoint(definition, sketch, second)?,
+                        }
+                    }
+                    (4, [first, second])
+                        if section_skamp_curve_entity(definition, sketch, first).is_some()
+                            && section_skamp_curve_entity(definition, sketch, second).is_some() =>
+                    {
+                        SketchConstraintDefinition::Tangent {
+                            first: section_skamp_curve_entity(definition, sketch, first)?,
+                            second: section_skamp_curve_entity(definition, sketch, second)?,
                         }
                     }
                     (5, [first, second])
@@ -19459,6 +19502,41 @@ mod resolved_sketch_tests {
         );
         let constraints =
             section_skamp_constraints(&definition, &SketchId("creo:model:sketch#917".into()));
+        let mut whole_entity_tangent = definition.clone();
+        whole_entity_tangent
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps = vec![crate::feature::FeatureSkamp {
+            id: 20,
+            kind: 4,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 13,
+                    sense: 0,
+                },
+            ],
+            offset: 95,
+        }];
+        synchronize_skamp_count(&mut whole_entity_tangent);
+        assert_eq!(
+            section_skamp_constraints(
+                &whole_entity_tangent,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Tangent {
+                first: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+                second: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+            }
+        );
         let mut point_symmetry = definition.clone();
         point_symmetry.relations.as_mut().expect("relations").skamps =
             vec![crate::feature::FeatureSkamp {

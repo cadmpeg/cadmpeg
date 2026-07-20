@@ -946,6 +946,9 @@ A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci map to a neutral
 coincident-loci constraint. The separate sense-zero-line form maps to
 point-on-object as defined above.
+A two-item type-four incidence with sense zero on both curve entities maps to
+an entity-level tangent constraint. Endpoint-selected operands map to the
+explicit tangent-loci form.
 A two-item type-nine incidence with sense zero on two lines makes the lines
 collinear. The line-and-point form maps to point-on-object as defined above.
 A one-item type-one incidence with sense zero makes the referenced line
