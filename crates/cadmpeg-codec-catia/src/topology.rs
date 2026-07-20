@@ -24,11 +24,17 @@ fn domains_have_distinct_matching<'a>(
     distinct_domain_matching_with_budget(domains, point_count, None, None).is_some()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MatchingEdgeConstraint {
+    Exclude(usize, usize),
+    Require(usize, usize),
+}
+
 fn distinct_domain_matching_with_budget<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
     budget: Option<&MeshConstraintBudget>,
-    excluded_edge: Option<(usize, usize)>,
+    edge_constraint: Option<MatchingEdgeConstraint>,
 ) -> Option<Vec<usize>> {
     let domains = domains.into_iter().collect::<Vec<_>>();
     if domains.len() > point_count {
@@ -37,6 +43,16 @@ fn distinct_domain_matching_with_budget<'a>(
     let mut owner = vec![None; point_count];
     let mut matched = vec![false; domains.len()];
     let mut matched_count = 0usize;
+    let mut required_domain = None;
+    if let Some(MatchingEdgeConstraint::Require(domain, point)) = edge_constraint {
+        if domain >= domains.len() || point >= point_count || !domains[domain].contains(&point) {
+            return None;
+        }
+        owner[point] = Some(domain);
+        matched[domain] = true;
+        matched_count = 1;
+        required_domain = Some(domain);
+    }
     while matched_count < domains.len() {
         let mut distance = vec![usize::MAX; domains.len()];
         let mut queue = VecDeque::new();
@@ -55,14 +71,14 @@ fn distinct_domain_matching_with_budget<'a>(
                 if budget.is_some_and(|budget| !budget.charge()) {
                     return None;
                 }
-                if excluded_edge == Some((root, point)) {
+                if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
                     continue;
                 }
                 if point >= point_count {
                     continue;
                 }
                 if let Some(next) = owner[point] {
-                    if distance[next] == usize::MAX {
+                    if Some(next) != required_domain && distance[next] == usize::MAX {
                         distance[next] = distance[root] + 1;
                         queue.push_back(next);
                     }
@@ -91,7 +107,7 @@ fn distinct_domain_matching_with_budget<'a>(
                     if budget.is_some_and(|budget| !budget.charge()) {
                         return None;
                     }
-                    if excluded_edge == Some((root, point)) {
+                    if edge_constraint == Some(MatchingEdgeConstraint::Exclude(root, point)) {
                         continue;
                     }
                     if point >= point_count {
@@ -103,7 +119,10 @@ fn distinct_domain_matching_with_budget<'a>(
                             advanced = true;
                             break;
                         }
-                        Some(next) if distance[next] == distance[root] + 1 => {
+                        Some(next)
+                            if Some(next) != required_domain
+                                && distance[next] == distance[root] + 1 =>
+                        {
                             incoming[next] = Some(point);
                             roots.push(next);
                             advanced = true;
@@ -6691,7 +6710,7 @@ impl MeshQuotient {
                 if remaining < unused {
                     break None;
                 }
-                let mut best = None;
+                let mut viable_domains = Vec::new();
                 let mut dead = false;
                 let mut progress = false;
                 let mut supported_unused = HashSet::new();
@@ -6756,11 +6775,8 @@ impl MeshQuotient {
                             ));
                             break;
                         }
-                    } else if best
-                        .as_ref()
-                        .is_none_or(|(_, stored): &(usize, Vec<usize>)| values.len() < stored.len())
-                    {
-                        best = Some((root, values));
+                    } else {
+                        viable_domains.push((root, values));
                     }
                 }
                 if *exhausted {
@@ -6819,13 +6835,14 @@ impl MeshQuotient {
                     None,
                 );
                 let mut matching_forced = None;
+                let mut unsupported_matches = HashSet::new();
                 if let Some(matching) = &coverage_matching {
                     for (support, &root) in matching.iter().enumerate() {
                         if distinct_domain_matching_with_budget(
                             support_domains.iter().copied(),
                             assigned.len(),
                             matching_budget.as_ref(),
-                            Some((support, root)),
+                            Some(MatchingEdgeConstraint::Exclude(support, root)),
                         )
                         .is_none()
                         {
@@ -6837,6 +6854,31 @@ impl MeshQuotient {
                             }
                             matching_forced = Some((point_supports[support].0, root));
                             break;
+                        }
+                    }
+                    if matching_forced.is_none() {
+                        'supports: for (support, (_, roots)) in point_supports.iter().enumerate() {
+                            for &root in roots {
+                                if matching[support] == root {
+                                    continue;
+                                }
+                                if distinct_domain_matching_with_budget(
+                                    support_domains.iter().copied(),
+                                    assigned.len(),
+                                    matching_budget.as_ref(),
+                                    Some(MatchingEdgeConstraint::Require(support, root)),
+                                )
+                                .is_none()
+                                {
+                                    if matching_budget
+                                        .as_ref()
+                                        .is_some_and(|budget| budget.exhausted.get())
+                                    {
+                                        break 'supports;
+                                    }
+                                    unsupported_matches.insert((root, point_supports[support].0));
+                                }
+                            }
                         }
                     }
                 }
@@ -6865,7 +6907,31 @@ impl MeshQuotient {
                         ));
                         continue;
                     }
+                    for (root, values) in &mut viable_domains {
+                        values.retain(|point| !unsupported_matches.contains(&(*root, *point)));
+                        if values.is_empty() {
+                            break;
+                        }
+                    }
+                    if viable_domains.iter().any(|(_, values)| values.is_empty()) {
+                        break None;
+                    }
+                    if let Some(&(root, ref values)) =
+                        viable_domains.iter().find(|(_, values)| values.len() == 1)
+                    {
+                        let point = values[0];
+                        assigned[root] = Some(point);
+                        point_uses[point] += 1;
+                        propagated.push((root, point));
+                        pending_roots = Some(affected_roots(
+                            root, root_edges, edges, edge_faces, face_edges,
+                        ));
+                        continue;
+                    }
                 }
+                let best = viable_domains
+                    .into_iter()
+                    .min_by_key(|(_, values)| values.len());
                 break Some(best);
             };
             let Some(branch) = branch else {
@@ -14814,7 +14880,7 @@ mod motif_tests {
     }
 
     #[test]
-    fn coordinate_support_matching_exposes_an_essential_hall_edge() {
+    fn coordinate_support_matching_exposes_essential_and_unsupported_hall_edges() {
         let supports = [vec![0, 1], vec![0, 1], vec![0, 1, 2], vec![2, 3]];
         let matching = super::distinct_domain_matching_with_budget(
             supports.iter().map(Vec::as_slice),
@@ -14829,9 +14895,25 @@ mod motif_tests {
             supports.iter().map(Vec::as_slice),
             4,
             None,
-            Some((2, matching[2])),
+            Some(super::MatchingEdgeConstraint::Exclude(2, matching[2])),
         )
         .is_none());
+
+        let partitioned = [vec![0, 1, 2], vec![0, 1], vec![2, 3], vec![2, 3]];
+        assert!(super::distinct_domain_matching_with_budget(
+            partitioned.iter().map(Vec::as_slice),
+            4,
+            None,
+            Some(super::MatchingEdgeConstraint::Require(0, 2)),
+        )
+        .is_none());
+        assert!(super::distinct_domain_matching_with_budget(
+            partitioned.iter().map(Vec::as_slice),
+            4,
+            None,
+            Some(super::MatchingEdgeConstraint::Require(0, 0)),
+        )
+        .is_some());
     }
 
     #[test]
