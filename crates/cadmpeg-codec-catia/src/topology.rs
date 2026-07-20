@@ -6246,7 +6246,9 @@ impl MeshQuotient {
                 return;
             }
             let viable_values =
-                |root: usize, assigned: &[Option<usize>]| {
+                |root: usize,
+                 assigned: &[Option<usize>],
+                 base_degrees: &HashMap<(usize, usize), u8>| {
                     domains[root]
                         .iter()
                         .copied()
@@ -6268,7 +6270,9 @@ impl MeshQuotient {
                             let Some(edge_faces) = edge_faces else {
                                 return true;
                             };
-                            if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
+                            if budget.is_some_and(|budget| {
+                                !budget.charge_by(root_edges[root].len().max(1))
+                            }) {
                                 return false;
                             }
                             let value = |endpoint| {
@@ -6278,8 +6282,10 @@ impl MeshQuotient {
                                     assigned[endpoint]
                                 }
                             };
-                            let mut degrees = HashMap::<(usize, usize), u8>::new();
-                            for (edge, [left, right]) in edges.iter().copied().enumerate() {
+                            let mut degrees = base_degrees.clone();
+                            let mut affected_faces = HashSet::new();
+                            for &edge in &root_edges[root] {
+                                let [left, right] = edges[edge];
                                 let (Some(left), Some(right)) = (value(left), value(right)) else {
                                     continue;
                                 };
@@ -6288,6 +6294,7 @@ impl MeshQuotient {
                                     if rank > 0 && face == faces[0] {
                                         continue;
                                     }
+                                    affected_faces.insert(face);
                                     for endpoint in [left, right] {
                                         let degree = degrees.entry((face, endpoint)).or_default();
                                         *degree = degree.saturating_add(1);
@@ -6298,7 +6305,7 @@ impl MeshQuotient {
                                 }
                             }
                             for (&(face, point), &degree) in &degrees {
-                                if degree != 1 {
+                                if degree != 1 || !affected_faces.contains(&face) {
                                     continue;
                                 }
                                 if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
@@ -6333,7 +6340,7 @@ impl MeshQuotient {
                             {
                                 let boundaries_viable =
                                     boundary_domains.iter().enumerate().all(|(face, domain)| {
-                                        if !closed_faces[face] {
+                                        if !closed_faces[face] || !affected_faces.contains(&face) {
                                             return true;
                                         }
                                         match domain {
@@ -6388,11 +6395,32 @@ impl MeshQuotient {
                 let mut dead = false;
                 let mut progress = false;
                 let mut supported_unused = HashSet::new();
+                let mut base_degrees = HashMap::<(usize, usize), u8>::new();
+                if let Some(edge_faces) = edge_faces {
+                    if budget.is_some_and(|budget| !budget.charge_by(edges.len().max(1))) {
+                        *exhausted = true;
+                        break None;
+                    }
+                    for (edge, [left, right]) in edges.iter().copied().enumerate() {
+                        let [Some(left), Some(right)] = [assigned[left], assigned[right]] else {
+                            continue;
+                        };
+                        let faces = edge_faces[edge];
+                        for (rank, face) in faces.into_iter().enumerate() {
+                            if rank > 0 && face == faces[0] {
+                                continue;
+                            }
+                            for point in [left, right] {
+                                *base_degrees.entry((face, point)).or_default() += 1;
+                            }
+                        }
+                    }
+                }
                 for root in 0..assigned.len() {
                     if assigned[root].is_some() {
                         continue;
                     }
-                    let values = viable_values(root, assigned);
+                    let values = viable_values(root, assigned, &base_degrees);
                     if values.is_empty() {
                         dead = true;
                         break;
@@ -6408,6 +6436,9 @@ impl MeshQuotient {
                         point_uses[*point] += 1;
                         propagated.push((root, *point));
                         progress = true;
+                        if edge_faces.is_some() {
+                            break;
+                        }
                     } else if best
                         .as_ref()
                         .is_none_or(|(_, stored): &(usize, Vec<usize>)| values.len() < stored.len())
