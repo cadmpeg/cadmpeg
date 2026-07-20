@@ -7897,7 +7897,8 @@ fn transfer_resolved_revolution_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Revolve)
+        if current_additive_feature_recipe(&scan.feature_operations, feature_id)
+            != Some(crate::feature::FeatureRecipeKind::Revolve)
             || scan.feature_section_transforms[..transform_index]
                 .iter()
                 .filter_map(|preceding| preceding.feature_id)
@@ -8151,7 +8152,8 @@ fn transfer_resolved_circular_extrusion_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude)
+        if current_additive_feature_recipe(&scan.feature_operations, feature_id)
+            != Some(crate::feature::FeatureRecipeKind::Extrude)
             || scan.feature_section_transforms[..transform_index]
                 .iter()
                 .filter_map(|preceding| preceding.feature_id)
@@ -8442,7 +8444,9 @@ fn transfer_resolved_extrusion_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
+        if current_additive_feature_recipe(&scan.feature_operations, feature_id)
+            != Some(crate::feature::FeatureRecipeKind::Extrude)
+        {
             continue;
         }
         if scan.feature_section_transforms[..transform_index]
@@ -8938,6 +8942,14 @@ fn feature_recipe_effect(
 ) -> Option<crate::feature::FeatureRecipeEffect> {
     current_feature_recipe(&scan.feature_operations, feature_id)
         .map(crate::feature::FeatureRecipe::effect)
+}
+
+fn current_additive_feature_recipe(
+    operations: &[crate::feature::FeatureOperation],
+    feature_id: u32,
+) -> Option<crate::feature::FeatureRecipeKind> {
+    let recipe = current_feature_recipe(operations, feature_id)?;
+    (recipe.effect() == crate::feature::FeatureRecipeEffect::Protrude).then(|| recipe.kind())
 }
 
 fn current_feature_recipe(
@@ -15206,6 +15218,16 @@ mod resolved_sketch_tests {
         assert_eq!(
             current_feature_recipe_parent(std::slice::from_ref(&current), 6),
             Some(5)
+        );
+        assert_eq!(
+            current_additive_feature_recipe(std::slice::from_ref(&current), 6),
+            Some(crate::feature::FeatureRecipeKind::Revolve)
+        );
+        let mut cut = current;
+        cut.recipe = Some(crate::feature::FeatureRecipe::CutRevolve);
+        assert_eq!(
+            current_additive_feature_recipe(std::slice::from_ref(&cut), 6),
+            None
         );
     }
 
