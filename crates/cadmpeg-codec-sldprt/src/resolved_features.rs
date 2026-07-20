@@ -145,7 +145,7 @@ fn legacy_feature_input_section(section: &str) -> bool {
     !configuration.is_empty() && configuration.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-/// Project spatial sketches whose feature object contains one bounded line.
+/// Project spatial sketches from their model-space marker coordinates or one bounded line.
 pub(crate) fn spatial_sketches(
     model_features: &mut [cadmpeg_ir::features::Feature],
     histories: &[crate::records::FeatureHistory],
@@ -168,6 +168,53 @@ pub(crate) fn spatial_sketches(
         let Some(record) = records.get(native_ref).copied() else {
             continue;
         };
+        let mut point_candidates = Vec::new();
+        for lane in lanes {
+            let points = lane
+                .sketch_entities
+                .iter()
+                .filter(|marker| marker.feature_ref.as_deref() == Some(native_ref))
+                .filter_map(|marker| {
+                    let offset = usize::try_from(marker.offset).ok()?;
+                    marker_spatial_coordinates(&lane.native_payload, offset)
+                        .map(|point| (marker.id.clone(), point))
+                })
+                .collect::<Vec<_>>();
+            if !points.is_empty() {
+                point_candidates.push((lane, points));
+            }
+        }
+        if let [(lane, points)] = point_candidates.as_slice() {
+            let sketch_id = SpatialSketchId(feature.id.0.replacen(
+                ":model:feature#",
+                ":model:spatial-sketch#",
+                1,
+            ));
+            let projected = points
+                .iter()
+                .enumerate()
+                .map(|(index, (native_ref, point))| SpatialSketchEntity {
+                    id: SpatialSketchEntityId(format!("{}:entity:{index}", sketch_id.0)),
+                    sketch: sketch_id.clone(),
+                    construction: false,
+                    native_ref: Some(native_ref.clone()),
+                    geometry: SpatialSketchGeometry::Point { position: *point },
+                })
+                .collect::<Vec<_>>();
+            let entity_ids = projected.iter().map(|entity| entity.id.clone()).collect();
+            sketches.push(SpatialSketch {
+                id: sketch_id.clone(),
+                name: feature.name.clone(),
+                configuration: lane.configuration.clone(),
+                entities: entity_ids,
+                native_ref: Some(lane.id.clone()),
+            });
+            entities.extend(projected);
+            feature.definition = FeatureDefinition::SpatialSketch {
+                sketch: Some(sketch_id),
+            };
+            continue;
+        }
         let mut candidates = Vec::new();
         for lane in lanes {
             let Some(name) = feature_object_name(record, lane) else {
@@ -227,6 +274,30 @@ pub(crate) fn spatial_sketches(
         };
     }
     (sketches, entities)
+}
+
+fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
+    const NATIVE_TO_IR: f64 = 1000.0;
+    if payload.get(offset..offset + SKETCH_MARKER.len()) != Some(SKETCH_MARKER)
+        || marker_native_code(payload, offset) != Some(0)
+        || !matches!(
+            payload.get(offset + 23..offset + 27),
+            Some(locus) if locus == [0x04, 0x00, 0x02, 0x00] || locus == [0x05, 0x00, 0x01, 0x00]
+        )
+        || marker_profile_curve_role(payload, offset) != Some(1)
+        || payload.get(offset + 64..offset + 66) != Some(&[0x0e, 0x00])
+    {
+        return None;
+    }
+    let point = Point3::new(
+        f64::from_le_bytes(payload.get(offset + 66..offset + 74)?.try_into().ok()?) * NATIVE_TO_IR,
+        f64::from_le_bytes(payload.get(offset + 74..offset + 82)?.try_into().ok()?) * NATIVE_TO_IR,
+        f64::from_le_bytes(payload.get(offset + 82..offset + 90)?.try_into().ok()?) * NATIVE_TO_IR,
+    );
+    [point.x, point.y, point.z]
+        .into_iter()
+        .all(f64::is_finite)
+        .then_some(point)
 }
 
 pub(crate) fn spatial_vertex_coordinates(payload: &[u8]) -> Vec<Point3> {
@@ -675,22 +746,22 @@ mod marker_tests {
         legacy_feature_input_section, legacy_reference_axis_triads,
         legacy_single_face_reference_path_at, legacy_state_five_curve_endpoint_indices,
         marker_coordinates, marker_is_geometry_locus, marker_is_selected_construction_line,
-        marker_local_id, marker_local_links, marker_object_index, matrix_reference_plane_frame,
-        minimal_reference_plane_frame, mirror_pattern_component_path_at,
-        mirror_surface_component_path_at, named_scalars, native_scalar_matches_discrete_parameter,
-        object_names, ordered_compact_line_profile, ordered_rectangle_corners,
-        patch_spatial_vertex, plane_intersection_axis_frame, plane_intersection_axis_sources,
-        principal_sketch_frame, profile_roster_construction_axis, reconcile_reference_plane_frame,
-        resolve_operand_marker, resolve_operand_marker_excluding, resolve_scalar_operand_markers,
-        revolution_line_reference_inputs, revolution_operation, revolution_temporary_axis,
-        roster_curve_endpoint_markers, sketch_block_identity_normalization_origin,
-        sketch_block_record_origin, sketch_input_entities, sketch_plane_frames, solved_tangent,
-        spatial_vertex_coordinates, tangent_bounded_curve, unique_arc_center_marker,
-        unique_dimensioned_rectangle_markers, unique_locus, unique_marker_candidate,
-        wide_indexed_curve_endpoint_indices, Angle, BooleanOp, CompactPointReferenceKind, Length,
-        CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER, FIXED_REFERENCE_PLANE_FRAME_LEN,
-        LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER, NAME_MARKER, SCALAR_HEADER,
-        SKETCH_MARKER,
+        marker_local_id, marker_local_links, marker_object_index, marker_spatial_coordinates,
+        matrix_reference_plane_frame, minimal_reference_plane_frame,
+        mirror_pattern_component_path_at, mirror_surface_component_path_at, named_scalars,
+        native_scalar_matches_discrete_parameter, object_names, ordered_compact_line_profile,
+        ordered_rectangle_corners, patch_spatial_vertex, plane_intersection_axis_frame,
+        plane_intersection_axis_sources, principal_sketch_frame, profile_roster_construction_axis,
+        reconcile_reference_plane_frame, resolve_operand_marker, resolve_operand_marker_excluding,
+        resolve_scalar_operand_markers, revolution_line_reference_inputs, revolution_operation,
+        revolution_temporary_axis, roster_curve_endpoint_markers,
+        sketch_block_identity_normalization_origin, sketch_block_record_origin,
+        sketch_input_entities, sketch_plane_frames, solved_tangent, spatial_vertex_coordinates,
+        tangent_bounded_curve, unique_arc_center_marker, unique_dimensioned_rectangle_markers,
+        unique_locus, unique_marker_candidate, wide_indexed_curve_endpoint_indices, Angle,
+        BooleanOp, CompactPointReferenceKind, Length, CLASS_MARKER, COMPACT_EDGE_VECTOR_MARKER,
+        FIXED_REFERENCE_PLANE_FRAME_LEN, LEGACY_EXTENDED_SKETCH_MARKER, LEGACY_SKETCH_MARKER,
+        NAME_MARKER, SCALAR_HEADER, SKETCH_MARKER,
     };
     use crate::records::{
         Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
@@ -718,6 +789,28 @@ mod marker_tests {
             vec![replacement, second]
         );
         assert_eq!(payload.len(), 138);
+    }
+
+    #[test]
+    fn current_spatial_point_marker_decodes_model_coordinates() {
+        let mut payload = vec![0; 90];
+        payload[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[64..66].copy_from_slice(&[0x0e, 0x00]);
+        for (index, value) in [0.125_f64, -0.25, 0.375].into_iter().enumerate() {
+            let start = 66 + index * 8;
+            payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+
+        assert_eq!(
+            marker_spatial_coordinates(&payload, 0),
+            Some(Point3::new(125.0, -250.0, 375.0))
+        );
+        payload[64] = 0x1e;
+        assert_eq!(marker_spatial_coordinates(&payload, 0), None);
     }
 
     #[test]

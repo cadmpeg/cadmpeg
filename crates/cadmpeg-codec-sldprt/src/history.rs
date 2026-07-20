@@ -1954,6 +1954,25 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn spatial_profile_class_projects_a_spatial_sketch() {
+        let mut spatial = feature("spatial", Some("7"), 0);
+        spatial.xml_tag = "Sketch".into();
+        spatial.kind = "Sketch".into();
+        spatial.input_class = Some("mo3DProfileFeature_c".into());
+
+        assert_eq!(
+            project_definition(
+                &spatial,
+                &HashMap::new(),
+                &HashMap::new(),
+                &HashMap::new(),
+                std::slice::from_ref(&spatial),
+            ),
+            FeatureDefinition::SpatialSketch { sketch: None }
+        );
+    }
+
+    #[test]
     fn anonymous_scene_class_binds_only_a_unique_matching_kind_group() {
         let mut first = feature("first", Some("153"), 0);
         first.kind = "localized light".into();
@@ -3970,7 +3989,9 @@ fn project_definition(
         return project_cosmetic_thread(feature);
     }
     if class == Some(FeatureClass::Sketch) {
-        return if feature.kind.eq_ignore_ascii_case("3DSketch") {
+        return if feature.kind.eq_ignore_ascii_case("3DSketch")
+            || feature.input_class.as_deref() == Some("mo3DProfileFeature_c")
+        {
             FeatureDefinition::SpatialSketch { sketch: None }
         } else {
             FeatureDefinition::Sketch {
