@@ -3565,6 +3565,34 @@ fn section_opaque_point_geometry(
     })
 }
 
+fn section_opaque_centered_line_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureOpaqueSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == 47
+        && segment.directions == [Some(0); 3]
+        && segment.point_ids == [None, Some(1)]
+        && segment.center_id == Some(2))
+    .then_some(())?;
+    let start = points.get(&0)?;
+    let end = points.get(&1)?;
+    let center = points.get(&2)?;
+    let scale = start
+        .iter()
+        .chain(end)
+        .chain(center)
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    ((end[0] - start[0]).hypot(end[1] - start[1]) > 1e-12 * scale).then_some(())?;
+    ((start[0] + end[0] - 2.0 * center[0]).hypot(start[1] + end[1] - 2.0 * center[1])
+        <= 1e-9 * scale)
+        .then_some(())?;
+    Some(SketchGeometry::Line {
+        start: Point2::new(start[0], start[1]),
+        end: Point2::new(end[0], end[1]),
+    })
+}
+
 fn section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -10253,6 +10281,14 @@ fn section_skamp_locus(
     if unique_opaque_section_segment(definition, item.entity_id, 1).is_some() {
         return (item.sense == 0).then_some(SketchLocus::Entity(entity));
     }
+    if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
+        return match item.sense {
+            0 => Some(SketchLocus::Entity(entity)),
+            2 => Some(SketchLocus::Start(entity)),
+            3 => Some(SketchLocus::End(entity)),
+            _ => None,
+        };
+    }
     if let Some(circle) = unique_opaque_section_segment(definition, item.entity_id, 10) {
         return match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
@@ -10398,6 +10434,9 @@ fn section_skamp_is_line(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
+    if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
+        return true;
+    }
     let has_segment = definition
         .segments
         .iter()
@@ -11539,6 +11578,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 Some((
                     segment.offset,
                     section_opaque_point_geometry(&points, segment)
+                        .or_else(|| section_opaque_centered_line_geometry(&points, segment))
                         .or_else(|| section_opaque_circle_geometry(&points, &radii, segment))?,
                 ))
             })
@@ -11714,12 +11754,18 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 format!("opaque:offset:{}", segment.offset)
             };
             let id = sketch_entity_id(&sketch_id, suffix);
-            let geometry = if matches!(segment.kind, 1 | 10) {
+            let geometry = if matches!(segment.kind, 1 | 10 | 47) {
                 opaque_geometries
                     .get(&segment.offset)
                     .cloned()
                     .unwrap_or_else(|| SketchGeometry::Native {
-                        native_kind: if segment.kind == 1 { "point" } else { "circle" }.to_string(),
+                        native_kind: match segment.kind {
+                            1 => "point",
+                            10 => "circle",
+                            47 => "line",
+                            _ => unreachable!(),
+                        }
+                        .to_string(),
                     })
             } else {
                 SketchGeometry::Native {
@@ -11728,7 +11774,9 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             };
             let solved_geometry = matches!(
                 &geometry,
-                SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
+                SketchGeometry::Point { .. }
+                    | SketchGeometry::Circle { .. }
+                    | SketchGeometry::Line { .. }
             );
             let construction = !unique_external_id || !profile_entities.contains(&id);
             annotate(
@@ -11739,6 +11787,8 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 if solved_geometry {
                     if segment.kind == 1 {
                         "solved_section_point"
+                    } else if segment.kind == 47 {
+                        "solved_section_line"
                     } else {
                         "solved_section_circle"
                     }
@@ -12007,7 +12057,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 .segments
                 .iter()
                 .flat_map(|segments| &segments.opaque_rows)
-                .filter(|segment| segment.kind == 10)
+                .filter(|segment| matches!(segment.kind, 10 | 47))
             {
                 let Some(section_geometry) = opaque_geometries.get(&segment.offset).cloned() else {
                     continue;
@@ -12030,7 +12080,11 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     &id,
                     "FeatDefs",
                     segment.offset as u64,
-                    "placed_section_circle",
+                    if segment.kind == 47 {
+                        "placed_section_line"
+                    } else {
+                        "placed_section_circle"
+                    },
                     Exactness::Derived,
                 );
                 ir.model.curves.push(Curve {
@@ -20257,6 +20311,58 @@ mod resolved_sketch_tests {
             ),
             Some((SketchLocus::Entity(entity), target))
                 if entity.0.ends_with(":99") && target.0.ends_with(":12")
+        ));
+        let centered_line = crate::feature::FeatureOpaqueSegment {
+            kind: 47,
+            directions: [Some(0); 3],
+            point_ids: [None, Some(1)],
+            center_id: Some(2),
+            external_id: 100,
+            offset: 602,
+            ..opaque_point
+                .segments
+                .as_ref()
+                .expect("segments")
+                .opaque_rows[0]
+                .clone()
+        };
+        assert_eq!(
+            section_opaque_centered_line_geometry(
+                &BTreeMap::from([(0, [3.0, -1.0]), (1, [3.0, 5.0]), (2, [3.0, 2.0]),]),
+                &centered_line,
+            ),
+            Some(SketchGeometry::Line {
+                start: Point2::new(3.0, -1.0),
+                end: Point2::new(3.0, 5.0),
+            })
+        );
+        let mut opaque_line = definition.clone();
+        opaque_line
+            .segments
+            .as_mut()
+            .expect("segments")
+            .declared_count += 1;
+        opaque_line
+            .segments
+            .as_mut()
+            .expect("segments")
+            .opaque_rows
+            .push(centered_line);
+        let opaque_line_item = crate::feature::FeatureSkampItem {
+            entity_id: 100,
+            sense: 0,
+        };
+        assert!(section_skamp_is_line(&opaque_line, &opaque_line_item));
+        assert!(matches!(
+            section_skamp_locus(
+                &opaque_line,
+                &SketchId("creo:model:sketch#917".into()),
+                &crate::feature::FeatureSkampItem {
+                    sense: 2,
+                    ..opaque_line_item
+                },
+            ),
+            Some(SketchLocus::Start(entity)) if entity.0.ends_with(":100")
         ));
         let mut opaque_family_collision = opaque_point.clone();
         opaque_family_collision

@@ -885,6 +885,13 @@ its second point slot is the structural value one, and `cntrid` selects the
 point key in `var_arr`. Complete point coordinates define the neutral sketch
 point. Sense zero selects the whole point in solver incidences. Construction
 points do not participate in `ent_tab` profile chains.
+A type-47 `segtab` row is a centered construction line when `dir=[0,0,0]`,
+the point slots are `[null,1]`, and `cntrid=2`. Point keys zero and one are
+the line endpoints; point key two is their midpoint. Complete coordinates
+define the bounded neutral line only when the stored center equals the endpoint
+midpoint and the endpoints are distinct. Sense zero selects the line, and
+senses two and three select its start and end. Other type-47 layouts remain
+opaque.
 The `order_table` header retains its declared count and table-class reference
 when its prototype or positional identity rows do not validate.
 The `relat_ptr` header and its independent `skamp_ptr` and `triples_ptr` tables
@@ -1141,9 +1148,9 @@ Positional rows may insert the two-byte `c0 80` or `c1 00` wrapper before
 `ext_id` value of zero is an identifier; the `f6` control sentinel represents
 an absent value.
 The `c0 80` wrapper may also precede the named row's scalar `type`. Segment
-families other than types `1`, `2`, `3`, `5`, and `10` retain the same fields and
-count toward table completeness, but do not define line, arc, point, or circle
-geometry.
+families other than types `1`, `2`, `3`, `5`, `10`, and the defined type-47
+form retain the same fields and count toward table completeness, but do not
+define line, arc, point, or circle geometry.
 `ext_id` is the neutral section-entity identity when exactly one `segtab` row
 stores that value. Rows sharing an `ext_id` remain independent construction
 entities identified by their row offsets and do not participate in profile,
