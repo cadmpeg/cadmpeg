@@ -268,6 +268,8 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             let coordinates_m = marker_coordinates(payload, offset);
             let kind = if coordinates_m.is_some() && indexed_profile_vertex(payload, offset) {
                 SketchInputKind::Point
+            } else if current_geometry_locus_profile_line(payload, offset, code) {
+                SketchInputKind::LineOrCircle
             } else if coordinates_m.is_none()
                 && payload.get(offset + 60..offset + 64) == Some(&1u32.to_le_bytes())
                 && payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
@@ -289,12 +291,6 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             } else if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
                 match code {
                     0 | 1 => SketchInputKind::LineOrCircle,
-                    2 if payload.get(offset..offset + SKETCH_MARKER.len())
-                        == Some(SKETCH_MARKER)
-                        && marker_is_geometry_locus(payload, offset) =>
-                    {
-                        SketchInputKind::LineOrCircle
-                    }
                     2 => SketchInputKind::Arc,
                     _ => SketchInputKind::from_native_code_and_layout(code, false),
                 }
@@ -329,6 +325,13 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             }
         })
         .collect()
+}
+
+fn current_geometry_locus_profile_line(payload: &[u8], offset: usize, code: u32) -> bool {
+    code == 2
+        && payload.get(offset..offset + SKETCH_MARKER.len()) == Some(SKETCH_MARKER)
+        && marker_is_geometry_locus(payload, offset)
+        && marker_profile_curve_role(payload, offset) == Some(1)
 }
 
 pub(crate) fn sketch_marker_at(payload: &[u8], offset: usize) -> bool {
@@ -3412,6 +3415,23 @@ mod marker_tests {
         assert_eq!(
             sketch_input_entities(&payload, "lane")[0].kind,
             SketchInputKind::Arc
+        );
+
+        let mut coordinate_line = vec![0; 134 + SKETCH_MARKER.len()];
+        coordinate_line[..SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        coordinate_line[5..13].fill(0xff);
+        coordinate_line[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        coordinate_line[17..21].copy_from_slice(&2u32.to_le_bytes());
+        coordinate_line[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        coordinate_line[27..29].copy_from_slice(&1u16.to_le_bytes());
+        coordinate_line[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        coordinate_line[64..66].copy_from_slice(&[0x1e, 0x00]);
+        coordinate_line[66..74].copy_from_slice(&0.015f64.to_le_bytes());
+        coordinate_line[74..82].copy_from_slice(&0.0f64.to_le_bytes());
+        coordinate_line[134..].copy_from_slice(SKETCH_MARKER);
+        assert_eq!(
+            sketch_input_entities(&coordinate_line, "lane")[0].kind,
+            SketchInputKind::LineOrCircle
         );
 
         let mut legacy_112 = vec![0; 112 + LEGACY_SKETCH_MARKER.len()];
