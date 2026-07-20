@@ -13184,6 +13184,8 @@ fn schema_feature_definition(
     if schema_class == 911 {
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
         let solved = simple_hole_geometry(scan, feature_id);
+        let simple_form = solved.is_some()
+            || is_compact_simple_hole(feature_id, &scan.feature_entity_tables, &scan.surface_rows);
         let face_selection = |surface_id| {
             let native = format!("creo:visibgeom:surface#{surface_id}");
             let face = FaceId(format!("creo:visibgeom:face#{surface_id}"));
@@ -13236,7 +13238,7 @@ fn schema_feature_definition(
             face,
             position,
             direction,
-            kind: if diameter.is_some() {
+            kind: if simple_form {
                 HoleKind::Simple
             } else {
                 HoleKind::Unresolved {
@@ -13902,6 +13904,52 @@ fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleH
         extent,
         geometry: hole_cylinder_from_cap_outlines([*first, *second])?,
     })
+}
+
+fn is_compact_simple_hole(
+    feature_id: u32,
+    tables: &[crate::feature::FeatureEntityTable],
+    rows: &[crate::surface::SurfaceRow],
+) -> bool {
+    tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .filter_map(|table| {
+            let [topology_a, topology_b, bottom, side] = table.entries.as_slice() else {
+                return None;
+            };
+            (table.entry_ids
+                == [
+                    topology_a.entity_id,
+                    topology_b.entity_id,
+                    bottom.entity_id,
+                    side.entity_id,
+                ]
+                && [
+                    topology_a.class_id,
+                    topology_b.class_id,
+                    bottom.class_id,
+                    side.class_id,
+                ] == [204, 203, 200, 200]
+                && topology_a.source_entity_id.is_none()
+                && topology_b.source_entity_id.is_none()
+                && bottom.source_entity_id == Some(0)
+                && side.source_entity_id.is_none()
+                && !rows.iter().any(|row| {
+                    row.id == topology_a.entity_id
+                        || row.id == topology_b.entity_id
+                        || row.id == bottom.entity_id
+                })
+                && rows.iter().filter(|row| row.id == side.entity_id).count() == 1
+                && rows.iter().any(|row| {
+                    row.id == side.entity_id
+                        && row.feature_id == feature_id
+                        && row.kind == crate::surface::SurfaceKind::Cylinder
+                }))
+            .then_some(side.entity_id)
+        })
+        .count()
+        == 1
 }
 
 fn circular_sweep_cylinder_from_cap_outlines(
@@ -15698,6 +15746,62 @@ mod resolved_sketch_tests {
                 if origin == Point3::new(0.0, 16.0, 0.0)
                     && axis == Vector3::new(0.0, 1.0, 0.0)
                     && radius == 4.45
+        ));
+    }
+
+    #[test]
+    fn compact_hole_table_establishes_the_simple_form_without_metric_geometry() {
+        let entry =
+            |entity_id, class_id, source_entity_id| crate::feature::FeatureEntityTableEntry {
+                entity_id,
+                class_id,
+                source_entity_id,
+                prefixed: false,
+                offset: 0,
+                end_offset: 0,
+            };
+        let mut table = crate::feature::FeatureEntityTable {
+            feature_id: Some(107),
+            table_class_id: 29,
+            entry_ids: vec![109, 112, 115, 117],
+            entries: vec![
+                entry(109, 204, None),
+                entry(112, 203, None),
+                entry(115, 200, Some(0)),
+                entry(117, 200, None),
+            ],
+            surface_ids: vec![117],
+            non_surface_entity_ids: Vec::new(),
+            offset: 0,
+        };
+        let row = crate::surface::SurfaceRow {
+            id: 117,
+            type_byte: 0x24,
+            kind: crate::surface::SurfaceKind::Cylinder,
+            feature_id: 107,
+            reversed: true,
+            boundary_type: 0,
+            next_surface: 0,
+            offset: 0,
+        };
+
+        assert!(is_compact_simple_hole(
+            107,
+            std::slice::from_ref(&table),
+            &[row.clone()]
+        ));
+        table.entries[2].source_entity_id = None;
+        assert!(!is_compact_simple_hole(
+            107,
+            std::slice::from_ref(&table),
+            &[row.clone()]
+        ));
+        table.entries[2].source_entity_id = Some(0);
+        table.entries[3].class_id = 201;
+        assert!(!is_compact_simple_hole(
+            107,
+            std::slice::from_ref(&table),
+            &[row]
         ));
     }
 
