@@ -10766,48 +10766,75 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
         let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points);
+        let segment_geometry = |segment: &crate::feature::FeatureSegment| {
+            if unique_segment_ids.contains(&segment.external_id)
+                && solved.contains(&segment.external_id)
+            {
+                trimmed_section_segment_geometry(
+                    definition,
+                    &points,
+                    &trim_vertex_coordinates,
+                    segment,
+                )
+            } else {
+                resolved_section_segment_geometry(definition, &points, segment)
+            }
+        };
         let emitted = segments
             .iter()
             .filter(|segment| {
-                if !unique_segment_ids.contains(&segment.external_id) {
-                    return false;
-                }
-                if solved.contains(&segment.external_id) {
-                    trimmed_section_segment_geometry(
-                        definition,
-                        &points,
-                        &trim_vertex_coordinates,
-                        segment,
-                    )
-                    .is_some()
-                } else {
-                    resolved_section_segment_geometry(definition, &points, segment).is_some()
-                }
+                unique_segment_ids.contains(&segment.external_id)
+                    && segment_geometry(segment).is_some()
             })
             .map(|segment| segment.external_id)
             .collect::<BTreeSet<_>>();
         let resolved_segment_offsets = segments
             .iter()
-            .filter(|segment| {
-                if unique_segment_ids.contains(&segment.external_id)
-                    && solved.contains(&segment.external_id)
-                {
-                    trimmed_section_segment_geometry(
-                        definition,
-                        &points,
-                        &trim_vertex_coordinates,
-                        segment,
-                    )
-                    .is_some()
-                } else {
-                    resolved_section_segment_geometry(definition, &points, segment).is_some()
-                }
-            })
+            .filter(|segment| segment_geometry(segment).is_some())
             .map(|segment| segment.offset)
             .collect::<BTreeSet<_>>();
         let materialized_saved_section_external_ids =
             materialized_saved_section_external_ids(definition);
         let mut profiles = resolved_profile_chains(definition, &sketch_id, &emitted);
+        let generated_segment_geometries = segments
+            .iter()
+            .filter(|segment| {
+                unique_segment_ids.contains(&segment.external_id)
+                    && emitted.contains(&segment.external_id)
+            })
+            .filter_map(|segment| {
+                let geometry = segment_geometry(segment)?;
+                let expected_kinds = match &geometry {
+                    SketchGeometry::Line { .. } => &[crate::surface::SurfaceKind::Plane][..],
+                    SketchGeometry::Arc { .. } => &[crate::surface::SurfaceKind::Cylinder][..],
+                    _ => return None,
+                };
+                section_entity_is_generated_profile(
+                    complete_segment_table,
+                    definition.owner_feature_id,
+                    segment.external_id,
+                    expected_kinds,
+                    &scan.feature_entity_tables,
+                    &scan.surface_rows,
+                )
+                .then_some((segment.external_id, geometry))
+            })
+            .collect::<Vec<_>>();
+        let mut profiled_entities = profiles
+            .iter()
+            .flatten()
+            .map(|entity_use| entity_use.entity.clone())
+            .collect::<BTreeSet<_>>();
+        for profile in saved_profile_chains(&sketch_id, &generated_segment_geometries) {
+            if profile
+                .iter()
+                .all(|entity_use| !profiled_entities.contains(&entity_use.entity))
+            {
+                profiled_entities
+                    .extend(profile.iter().map(|entity_use| entity_use.entity.clone()));
+                profiles.push(profile);
+            }
+        }
         let profile_segments = segments
             .iter()
             .filter(|segment| {
@@ -10822,18 +10849,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         let mut entities = segments
             .iter()
             .filter_map(|segment| {
-                let geometry = if unique_segment_ids.contains(&segment.external_id)
-                    && solved.contains(&segment.external_id)
-                {
-                    trimmed_section_segment_geometry(
-                        definition,
-                        &points,
-                        &trim_vertex_coordinates,
-                        segment,
-                    )?
-                } else {
-                    resolved_section_segment_geometry(definition, &points, segment)?
-                };
+                let geometry = segment_geometry(segment)?;
                 let suffix = section_segment_identity_suffix(&unique_segment_ids, segment);
                 let id = sketch_entity_id(&sketch_id, &suffix);
                 annotate(
@@ -10990,7 +11006,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 _ => continue,
             };
             let generated = external_id.is_some_and(|external_id| {
-                saved_entity_is_generated_profile(
+                section_entity_is_generated_profile(
                     complete_segment_table,
                     definition.owner_feature_id,
                     external_id,
@@ -11061,7 +11077,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 None
             };
             let generated = external_id.is_some_and(|external_id| {
-                saved_entity_is_generated_profile(
+                section_entity_is_generated_profile(
                     complete_segment_table,
                     definition.owner_feature_id,
                     external_id,
@@ -11451,7 +11467,7 @@ fn generated_surface_id_for_feature(
     matches.next().is_none().then_some(surface_id)
 }
 
-fn saved_entity_is_generated_profile(
+fn section_entity_is_generated_profile(
     segment_table_complete: bool,
     feature_id: Option<u32>,
     source_entity_id: u32,
@@ -15321,7 +15337,7 @@ mod resolved_sketch_tests {
             ),
             BTreeMap::from([(9, 43)])
         );
-        assert!(saved_entity_is_generated_profile(
+        assert!(section_entity_is_generated_profile(
             true,
             Some(17),
             8,
@@ -15331,7 +15347,7 @@ mod resolved_sketch_tests {
         ));
         let mut extrusion_rows = rows.clone();
         extrusion_rows[2] = row(43, crate::surface::SurfaceKind::Extrusion);
-        assert!(saved_entity_is_generated_profile(
+        assert!(section_entity_is_generated_profile(
             true,
             Some(17),
             9,
@@ -15342,7 +15358,7 @@ mod resolved_sketch_tests {
             std::slice::from_ref(&table),
             &extrusion_rows,
         ));
-        assert!(!saved_entity_is_generated_profile(
+        assert!(!section_entity_is_generated_profile(
             true,
             Some(17),
             9,
@@ -15350,7 +15366,7 @@ mod resolved_sketch_tests {
             std::slice::from_ref(&table),
             &extrusion_rows,
         ));
-        assert!(!saved_entity_is_generated_profile(
+        assert!(!section_entity_is_generated_profile(
             false,
             Some(17),
             9,
@@ -15361,7 +15377,7 @@ mod resolved_sketch_tests {
             std::slice::from_ref(&table),
             &extrusion_rows,
         ));
-        assert!(!saved_entity_is_generated_profile(
+        assert!(!section_entity_is_generated_profile(
             true,
             Some(17),
             10,
