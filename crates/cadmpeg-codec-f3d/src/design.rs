@@ -966,6 +966,14 @@ pub fn project_parameter_design_with_edge_identities(
                             .collect(),
                         properties: native_scope_properties(scope, native_scope),
                     })
+            } else if scope.kind == "RemoveBody" {
+                project_remove_body(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else if family == Some(DesignFeatureFamily::Move) {
                 project_move(scope, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -1529,6 +1537,30 @@ fn project_move(
         ),
         rotation: matrix_axis_angle(&operation.transform),
         copies: 0,
+    })
+}
+
+fn project_remove_body(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{BodyRetentionMode, BodySelection, FeatureDefinition};
+
+    let matching = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+                && group.role == 0x0000_0004_0000_0000
+                && !group.members.is_empty()
+        })
+        .collect::<Vec<_>>();
+    let [group] = matching.as_slice() else {
+        return None;
+    };
+    Some(FeatureDefinition::DeleteBody {
+        bodies: BodySelection::Native(group.id.clone()),
+        mode: BodyRetentionMode::DeleteSelected,
     })
 }
 
@@ -15783,6 +15815,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::SurfacePatch)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
+            || scope.kind == "RemoveBody"
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
         let scope_group_start = out.len();
@@ -24822,6 +24855,19 @@ mod relation_tests {
         assert_eq!(compact.members, [200, 201]);
         assert_eq!(compact.role, 0x0000_0008_0000_0000);
         assert_eq!(compact.paired_byte_offset, (paired_at - 3) as u64);
+
+        let mut remove_scope = scope;
+        remove_scope.kind = "RemoveBody".into();
+        let mut remove_group = group;
+        remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
+        remove_group.role = 0x0000_0004_0000_0000;
+        assert_eq!(
+            super::project_remove_body(&remove_scope, std::slice::from_ref(&remove_group)),
+            Some(cadmpeg_ir::features::FeatureDefinition::DeleteBody {
+                bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id),
+                mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+            })
+        );
     }
 
     #[test]
