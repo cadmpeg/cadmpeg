@@ -137,10 +137,14 @@ pub struct OffsetStoreCountedIndexLane {
     pub declared_count: u8,
     /// Non-null compact index immediately following the count.
     pub anchor: u32,
+    /// Exact serialized anchor token.
+    pub raw_anchor: Vec<u8>,
     /// Byte offset of the anchor compact index.
     pub anchor_offset: usize,
     /// Ordered non-null compact indices preceding the terminator.
     pub members: Vec<(u32, usize)>,
+    /// Exact serialized member tokens in lane order.
+    pub raw_members: Vec<Vec<u8>>,
 }
 
 /// Fixed-width nullable block-index lane terminated by the literal `ABR` tag.
@@ -428,8 +432,10 @@ pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedI
             continue;
         };
         let anchor_offset = at;
+        let raw_anchor = bytes[at..at + width].to_vec();
         at += width;
         let mut members = Vec::with_capacity(usize::from(declared_count) - 2);
+        let mut raw_members = Vec::with_capacity(usize::from(declared_count) - 2);
         let mut complete = true;
         for _ in 0..usize::from(declared_count) - 2 {
             let Some((CompactIndex::Value(value), width)) = bytes.get(at..).and_then(compact_index)
@@ -438,6 +444,7 @@ pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedI
                 break;
             };
             members.push((value, at));
+            raw_members.push(bytes[at..at + width].to_vec());
             at += width;
         }
         if complete && bytes.get(at..at + 2) == Some(&[0x01, 0x11]) {
@@ -445,8 +452,10 @@ pub fn offset_store_counted_index_lanes(bytes: &[u8]) -> Vec<OffsetStoreCountedI
                 offset: start,
                 declared_count,
                 anchor,
+                raw_anchor,
                 anchor_offset,
                 members,
+                raw_members,
             });
         }
     }

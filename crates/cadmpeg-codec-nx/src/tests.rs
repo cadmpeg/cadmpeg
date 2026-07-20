@@ -5806,10 +5806,15 @@ fn om_offset_store_counted_index_lane_requires_complete_non_null_members() {
     assert_eq!(lanes[0].offset, 1);
     assert_eq!(lanes[0].declared_count, 6);
     assert_eq!(lanes[0].anchor, 0x42);
+    assert_eq!(lanes[0].raw_anchor, [0x42]);
     assert_eq!(lanes[0].anchor_offset, 3);
     assert_eq!(
         lanes[0].members,
         vec![(0x62, 4), (0x48, 5), (0x50, 7), (0x7c, 9)]
+    );
+    assert_eq!(
+        lanes[0].raw_members,
+        [vec![0x62], vec![0x80, 0x48], vec![0x80, 0x50], vec![0x7c]]
     );
 
     assert!(

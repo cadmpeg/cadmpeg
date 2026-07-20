@@ -12303,10 +12303,14 @@ pub struct DataBlockCountedIndexLane {
     pub declared_count: u8,
     /// Decoded anchoring block index.
     pub anchor_index: u32,
+    /// Exact serialized anchor token.
+    pub raw_anchor_index: Vec<u8>,
     /// Same-section block addressed by the anchor.
     pub anchor_data_block: String,
     /// Ordered decoded member block indices.
     pub member_indices: Vec<u32>,
+    /// Exact serialized member tokens in lane order.
+    pub raw_member_indices: Vec<Vec<u8>>,
     /// Ordered same-section blocks addressed by the members.
     pub member_data_blocks: Vec<String>,
     /// Absolute file offset of the opening `01` marker.
@@ -14014,12 +14018,14 @@ pub fn data_block_counted_index_lanes(container: &Container) -> Vec<DataBlockCou
                                 ordinal: ordinal as u32,
                                 declared_count: lane.declared_count,
                                 anchor_index: lane.anchor,
+                                raw_anchor_index: lane.raw_anchor,
                                 anchor_data_block,
                                 member_indices: lane
                                     .members
                                     .iter()
                                     .map(|(value, _)| *value)
                                     .collect(),
+                                raw_member_indices: lane.raw_members,
                                 member_data_blocks,
                                 source_offset: source_base + lane.offset as u64,
                                 anchor_source_offset: source_base + lane.anchor_offset as u64,
