@@ -5424,21 +5424,68 @@ fn decode_merges_datum_geometry_and_operation_history_by_feature_id() {
         "c",
         &[
             ("ActDatums", datum),
-            ("MdlStatus", b"Datum Plane id 4\0".to_vec()),
+            ("MdlStatus", b"Round id 3\0Datum Plane id 4\0".to_vec()),
         ],
     );
 
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
-    assert_eq!(result.ir.model.features.len(), 1);
-    let feature = &result.ir.model.features[0];
+    assert_eq!(result.ir.model.features.len(), 2);
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("datum feature");
     assert_eq!(feature.id.as_str(), "creo:model:feature#4");
+    assert_eq!(feature.ordinal, 1);
     assert_eq!(feature.name.as_deref(), Some("Datum Plane id 4"));
     assert!(matches!(
         feature.definition,
         cadmpeg_ir::features::FeatureDefinition::DatumPlane { .. }
     ));
+    assert_eq!(
+        result
+            .ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.id.as_str() == "creo:model:feature#3")
+            .expect("preceding round")
+            .ordinal,
+        0
+    );
     let validation = cadmpeg_ir::validate(&result.ir, result.report.losses.clone());
     assert!(validation.is_ok(), "{validation:#?}");
+}
+
+#[test]
+fn decode_withholds_competing_standalone_datum_planes() {
+    let mut row = vec![4, 0x22, 4, 1, 0, 0];
+    row.extend([0x0f; 4]);
+    for value in [2.0_f64, 0.0, 3.0, -2.0, 0.0, -3.0] {
+        if value == 0.0 {
+            row.push(0x0f);
+        } else {
+            let mut bytes = value.to_be_bytes();
+            bytes[0] = if value.is_sign_negative() { 0x2d } else { 0x46 };
+            row.extend(bytes);
+        }
+    }
+    let mut datum = row.clone();
+    datum.extend(row);
+    let data = build_prt("c", &[("ActDatums", datum)]);
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    assert_eq!(result.ir.model.features.len(), 1);
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::DatumPlaneUnresolved
+    ));
+    assert_eq!(
+        result.ir.native.namespace("creo").unwrap().arenas["datum_planes"].len(),
+        2
+    );
 }
 
 #[test]

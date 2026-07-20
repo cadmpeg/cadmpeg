@@ -82,6 +82,15 @@ fn unique_feature_section_transform(
     Some(transform)
 }
 
+fn unique_feature_datum_plane(
+    datums: &[crate::datum::DatumPlane],
+    feature_id: u32,
+) -> Option<&crate::datum::DatumPlane> {
+    let mut matches = datums.iter().filter(|datum| datum.feature_id == feature_id);
+    let datum = matches.next()?;
+    matches.next().is_none().then_some(datum)
+}
+
 #[derive(Serialize)]
 struct CreoSketchRecord {
     id: String,
@@ -13233,6 +13242,16 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 923 {
+        if let Some(datum) = unique_feature_datum_plane(&scan.datum_planes, feature_id) {
+            return datum_plane_feature_definition(datum);
+        }
+        if scan
+            .datum_planes
+            .iter()
+            .any(|datum| datum.feature_id == feature_id)
+        {
+            return IrFeatureDefinition::DatumPlaneUnresolved;
+        }
         let placed = placed_planes(scan);
         let planes = scan
             .surface_rows
@@ -13262,6 +13281,22 @@ fn schema_feature_definition(
         kind: kind.to_string(),
         parameters: feature_parameters(scan, feature_id),
         properties: BTreeMap::new(),
+    }
+}
+
+fn datum_plane_feature_definition(datum: &crate::datum::DatumPlane) -> IrFeatureDefinition {
+    IrFeatureDefinition::DatumPlane {
+        origin: Point3::new(
+            datum.normal[0] * datum.offset,
+            datum.normal[1] * datum.offset,
+            datum.normal[2] * datum.offset,
+        ),
+        normal: Vector3::new(datum.normal[0], datum.normal[1], datum.normal[2]),
+        u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
+            datum.normal[0],
+            datum.normal[1],
+            datum.normal[2],
+        )),
     }
 }
 
@@ -29733,7 +29768,15 @@ fn build_ir(
             transferred_typed_feature_skamp_constraint_count.to_string(),
         );
     }
+    let operation_feature_ids = scan
+        .feature_operations
+        .iter()
+        .map(|operation| operation.feature_id)
+        .collect::<BTreeSet<_>>();
     for datum in &scan.datum_planes {
+        if operation_feature_ids.contains(&datum.feature_id) {
+            continue;
+        }
         let id = IrFeatureId(format!("creo:model:feature#{}", datum.feature_id));
         if ir.model.features.iter().any(|feature| feature.id == id) {
             continue;
@@ -29758,18 +29801,12 @@ fn build_ir(
             source_text: None,
             source_content: Vec::new(),
             outputs: Vec::new(),
-            definition: IrFeatureDefinition::DatumPlane {
-                origin: Point3::new(
-                    datum.normal[0] * datum.offset,
-                    datum.normal[1] * datum.offset,
-                    datum.normal[2] * datum.offset,
-                ),
-                normal: Vector3::new(datum.normal[0], datum.normal[1], datum.normal[2]),
-                u_axis: cadmpeg_ir::geometry::derive_reference_direction(Vector3::new(
-                    datum.normal[0],
-                    datum.normal[1],
-                    datum.normal[2],
-                )),
+            definition: if unique_feature_datum_plane(&scan.datum_planes, datum.feature_id)
+                .is_some()
+            {
+                datum_plane_feature_definition(datum)
+            } else {
+                IrFeatureDefinition::DatumPlaneUnresolved
             },
             native_ref: None,
         });
