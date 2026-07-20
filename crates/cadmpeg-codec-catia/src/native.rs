@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 60;
+pub const CATIA_NATIVE_VERSION: u32 = 61;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -340,6 +340,9 @@ pub struct CatiaObjectGraph {
     /// Byte offset of the associated schema catalog.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub catalog_byte_offset: Option<u64>,
+    /// Associated schema catalog.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalog: Option<String>,
     /// Consecutive `7C09` records in serialized order.
     #[serde(default)]
     pub records: Vec<CatiaObjectRecord>,
@@ -1133,6 +1136,7 @@ fn validate_native_links(
         let catalog = candidates.next();
         if candidates.next().is_some()
             || graph.catalog_byte_offset != catalog.map(|catalog| catalog.byte_offset)
+            || graph.catalog.as_deref() != catalog.map(|catalog| catalog.id.as_str())
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "object graph `{}` has an invalid schema-catalog link",
@@ -1252,6 +1256,7 @@ impl CatiaNative {
                     .iter()
                     .find(|catalog| catalog.byte_offset == offset)
             });
+            graph.catalog = catalog.map(|catalog| catalog.id.clone());
             for record in &mut graph.records {
                 record.class_entry = record.class_ref.and_then(|ordinal| {
                     usize::try_from(ordinal)
@@ -1793,6 +1798,7 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
             byte_offset: graph.pos as u64,
             byte_len: graph.total_len as u64,
             catalog_byte_offset: graph.catalog_pos.map(|pos| pos as u64),
+            catalog: None,
             records,
         }
     }
