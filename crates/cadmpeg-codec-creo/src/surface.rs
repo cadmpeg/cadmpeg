@@ -3130,22 +3130,38 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
             normal: None,
         };
     };
-    let first_magnitude = first.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let middle_magnitude = middle.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let third_magnitude = third.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let second = match (middle_magnitude > 1e-6, third_magnitude > 1e-6) {
-        (true, false) if third_magnitude <= 1e-9 => middle,
-        (false, true) if middle_magnitude <= 1e-9 => third,
-        _ => {
-            return PlaneFrame {
-                origin,
-                u_axis: None,
-                normal: None,
-            };
-        }
+    let supports = [first, middle, third];
+    let magnitudes = supports.map(|support| {
+        support
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt()
+    });
+    let nonzero = supports
+        .into_iter()
+        .zip(magnitudes)
+        .filter(|(_, magnitude)| *magnitude > 1e-6)
+        .collect::<Vec<_>>();
+    let [(first, first_magnitude), (second, second_magnitude)] = nonzero.as_slice() else {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
     };
-    let second_magnitude = second.iter().map(|value| value * value).sum::<f64>().sqrt();
-    let scale = first_magnitude.max(second_magnitude);
+    if magnitudes
+        .into_iter()
+        .filter(|magnitude| *magnitude <= 1e-6)
+        .any(|magnitude| magnitude > 1e-9)
+    {
+        return PlaneFrame {
+            origin,
+            u_axis: None,
+            normal: None,
+        };
+    }
+    let scale = first_magnitude.max(*second_magnitude);
     let support_dot = first
         .iter()
         .zip(second)
@@ -3160,7 +3176,7 @@ fn plane_frame(slots: &[Option<f64>]) -> PlaneFrame {
             normal: None,
         };
     }
-    let u_axis = (first_magnitude > 1e-6).then(|| {
+    let u_axis = (*first_magnitude > 1e-6).then(|| {
         [
             first[0] / first_magnitude,
             first[1] / first_magnitude,
@@ -4711,6 +4727,12 @@ mod tests {
             .normal,
             Some([0.0, 0.0, 1.0])
         );
+        let first_rank_zero = plane_frame(&options([
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, -3.0, 0.0,
+        ]));
+        assert_eq!(first_rank_zero.origin, Some([0.0, -3.0, 0.0]));
+        assert_eq!(first_rank_zero.u_axis, Some([1.0, 0.0, 0.0]));
+        assert_eq!(first_rank_zero.normal, Some([0.0, -1.0, 0.0]));
         assert_eq!(
             plane_frame(&options([
                 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
