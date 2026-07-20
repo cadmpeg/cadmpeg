@@ -12355,7 +12355,7 @@ pub struct DataBlockIndexRow {
     pub ordinal: u32,
     /// First non-null compact index.
     pub first_index: u32,
-    /// Exact serialized first-index token.
+    /// Exact serialized leading-index token.
     pub raw_first_index: Vec<u8>,
     /// Serialized `03` or `07` row flag.
     pub flag: u8,
@@ -12390,12 +12390,18 @@ pub struct DataBlockLinkedIndexRow {
     pub ordinal: u32,
     /// Unresolved leading compact index.
     pub first_index: u32,
+    /// Exact serialized leading-index token.
+    pub raw_first_index: Vec<u8>,
     /// Serialized `16`, `17`, or `18` discriminator.
     pub discriminator: u8,
     /// Target compact block index.
     pub target_index: u32,
+    /// Exact serialized target-index token.
+    pub raw_target_index: Vec<u8>,
     /// Three compact block indices after `ff ff 90 fe`.
     pub indices: [u32; 3],
+    /// Exact serialized post-marker tokens in row order.
+    pub raw_indices: [Vec<u8>; 3],
     /// Target block followed by the three post-marker blocks.
     pub data_blocks: [String; 4],
     /// Serialized `03` or `07` flag.
@@ -14205,9 +14211,12 @@ pub fn data_block_linked_index_rows(container: &Container) -> Vec<DataBlockLinke
                         section_ordinal: section_ordinal as u32,
                         ordinal: ordinal as u32,
                         first_index: row.first_index.0,
+                        raw_first_index: row.raw_first_index,
                         discriminator: row.discriminator,
                         target_index: row.target_index.0,
+                        raw_target_index: row.raw_target_index,
                         indices: row.indices.map(|(index, _)| index),
+                        raw_indices: row.raw_indices,
                         data_blocks,
                         flag: row.flag,
                         mode: row.mode,

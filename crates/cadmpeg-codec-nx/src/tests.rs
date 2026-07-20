@@ -5530,9 +5530,12 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         section_ordinal: 0,
         ordinal: 3,
         first_index: 20,
+        raw_first_index: vec![20],
         discriminator: 0x16,
         target_index: 4,
+        raw_target_index: vec![4],
         indices: [5, 6, 4],
+        raw_indices: [vec![5], vec![6], vec![4]],
         data_blocks: [
             "block#4".into(),
             "block#5".into(),
@@ -5678,9 +5681,12 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         section_ordinal: 2,
         ordinal: 0,
         first_index: 20,
+        raw_first_index: vec![20],
         discriminator: 0x16,
         target_index: target,
+        raw_target_index: vec![target as u8],
         indices: [5, 6, 7],
+        raw_indices: [vec![5], vec![6], vec![7]],
         data_blocks: [
             format!("block#{target}"),
             "block#5".into(),
@@ -9303,9 +9309,12 @@ fn om_offset_store_linked_index_rows_require_complete_exact_frames() {
     let rows = crate::om::offset_store_linked_index_rows(row);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].first_index, (915, 2));
+    assert_eq!(rows[0].raw_first_index, [0x83, 0x93]);
     assert_eq!(rows[0].discriminator, 0x16);
     assert_eq!(rows[0].target_index, (36, 7));
+    assert_eq!(rows[0].raw_target_index, [0x24]);
     assert_eq!(rows[0].indices, [(32, 12), (32, 13), (65, 14)]);
+    assert_eq!(rows[0].raw_indices, [vec![0x20], vec![0x20], vec![0x41]]);
     assert_eq!(rows[0].flag, 3);
     assert_eq!(rows[0].mode, 4);
 

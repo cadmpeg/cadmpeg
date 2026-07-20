@@ -184,12 +184,18 @@ pub struct OffsetStoreLinkedIndexRow {
     pub offset: usize,
     /// Unresolved leading compact index and its byte offset.
     pub first_index: (u32, usize),
+    /// Exact serialized leading-index token.
+    pub raw_first_index: Vec<u8>,
     /// Serialized `16`, `17`, or `18` row discriminator.
     pub discriminator: u8,
     /// Compact target index and its byte offset.
     pub target_index: (u32, usize),
+    /// Exact serialized target-index token.
+    pub raw_target_index: Vec<u8>,
     /// Three ordered non-null compact indices after `ff ff 90 fe`.
     pub indices: [(u32, usize); 3],
+    /// Exact serialized post-marker tokens in row order.
+    pub raw_indices: [Vec<u8>; 3],
     /// Serialized `03` or `07` row flag.
     pub flag: u8,
     /// Serialized `04` or `07` row mode.
@@ -284,6 +290,7 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             continue;
         };
         let marker = first_offset + first_width;
+        let raw_first_index = bytes[first_offset..marker].to_vec();
         if bytes.get(marker..marker + 2) != Some(&[0x93, 0x8c]) {
             continue;
         }
@@ -297,11 +304,13 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
             continue;
         };
         let mut at = target_offset + target_width;
+        let raw_target_index = bytes[target_offset..at].to_vec();
         if bytes.get(at..at + MIDDLE.len()) != Some(&MIDDLE) {
             continue;
         }
         at += MIDDLE.len();
         let mut indices = Vec::new();
+        let mut raw_indices = Vec::new();
         for _ in 0..3 {
             let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
             else {
@@ -309,9 +318,13 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
                 break;
             };
             indices.push((index, at));
+            raw_indices.push(bytes[at..at + width].to_vec());
             at += width;
         }
         let Ok(indices) = indices.try_into() else {
+            continue;
+        };
+        let Ok(raw_indices) = raw_indices.try_into() else {
             continue;
         };
         if bytes.get(at..at + 2) != Some(&[0x00, 0x47]) {
@@ -329,9 +342,12 @@ pub fn offset_store_linked_index_rows(bytes: &[u8]) -> Vec<OffsetStoreLinkedInde
         rows.push(OffsetStoreLinkedIndexRow {
             offset: start,
             first_index: (first_index, first_offset),
+            raw_first_index,
             discriminator,
             target_index: (target_index, target_offset),
+            raw_target_index,
             indices,
+            raw_indices,
             flag,
             mode,
         });
