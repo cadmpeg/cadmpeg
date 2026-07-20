@@ -5890,6 +5890,30 @@ fn complete_mesh_endpoint_candidates_from_quotient(
 }
 
 impl MeshQuotient {
+    fn signature_work(&mut self) -> usize {
+        let mut work = 0usize;
+        for node in 0..self.union.len() {
+            if self.union.find(node) == node {
+                work = work
+                    .saturating_add(self.members[node].len())
+                    .saturating_add(self.domains[node].len());
+            }
+        }
+        work.max(1)
+    }
+
+    fn monotone_measure(&mut self) -> (usize, usize) {
+        let mut root_count = 0usize;
+        let mut domain_cardinality = 0usize;
+        for node in 0..self.union.len() {
+            if self.union.find(node) == node {
+                root_count += 1;
+                domain_cardinality = domain_cardinality.saturating_add(self.domains[node].len());
+            }
+        }
+        (root_count, domain_cardinality)
+    }
+
     fn signature(&mut self) -> Vec<(Vec<usize>, Vec<usize>)> {
         let mut components = Vec::new();
         for node in 0..self.union.len() {
@@ -8796,7 +8820,7 @@ fn propagate_common_ordered_face_quotients(
         MeshFaceBoundaryDomain::UnorderedFullCycle(_) => (2, 0),
     });
     loop {
-        let before = quotient.signature();
+        let before = quotient.monotone_measure();
         for &face in &face_order {
             let domain = &domains[face];
             let face_budget = MeshConstraintBudget::new(match domain {
@@ -8902,6 +8926,10 @@ fn propagate_common_ordered_face_quotients(
             let mut alternatives = Vec::new();
             let mut truncated = false;
             for assignment in assignments {
+                if !face_budget.charge_by(quotient.signature_work()) {
+                    truncated = true;
+                    break;
+                }
                 let options = quotient.assignment_options_limited(
                     assignment,
                     edge_candidates,
@@ -8934,7 +8962,7 @@ fn propagate_common_ordered_face_quotients(
             }
             propagate_common_full_quotients(alternatives, edge_candidates, quotient)?;
         }
-        if quotient.signature() == before {
+        if quotient.monotone_measure() == before {
             return Some(());
         }
     }
@@ -9260,7 +9288,7 @@ fn propagate_common_boundary_components(
             ordered_faces.push(face);
         }
         for _ in 0..MAX_COMPONENT_ROUNDS {
-            let before = quotient.signature();
+            let before = quotient.monotone_measure();
             let mut cursor = 0usize;
             while cursor < ordered_faces.len() {
                 let budget = MeshConstraintBudget::new(MAX_COMPONENT_OPERATIONS);
@@ -9290,7 +9318,7 @@ fn propagate_common_boundary_components(
                 )?;
                 cursor += processed;
             }
-            if quotient.signature() == before {
+            if quotient.monotone_measure() == before {
                 break;
             }
         }
@@ -12688,6 +12716,43 @@ mod motif_tests {
         .expect("structural quotient");
 
         assert_eq!(quotient.union.find(0), quotient.union.find(2));
+    }
+
+    #[test]
+    fn ordered_face_options_preflight_exact_signature_work() {
+        let use_ = |edge| MeshBoundaryEdgeCandidate {
+            edge,
+            start: 0,
+            end: 0,
+            reversed: Some(false),
+        };
+        let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(0)]],
+            },
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![use_(1)]],
+            },
+        ])];
+        let candidates = vec![Vec::new(), Vec::new()];
+        let broad = Arc::new((0..100).collect::<HashSet<_>>());
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![broad; 4],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let budget = super::MeshConstraintBudget::new(100);
+
+        super::propagate_common_ordered_face_quotients(
+            &domains,
+            &candidates,
+            &mut quotient,
+            &budget,
+        )
+        .expect("bounded common quotient propagation");
+
+        assert_eq!(quotient.root_count(), 4);
+        assert!(!budget.exhausted.get());
     }
 
     #[test]
