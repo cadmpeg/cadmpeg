@@ -3789,9 +3789,6 @@ fn standard_mesh_missing_edge_assignment_domains(
             if let Some(edges) = unordered_full_cycle {
                 return Some(MeshFaceAssignmentDomain::UnorderedFullCycle(edges));
             }
-            if defer_validation && edge_candidates.is_some() {
-                return Some(MeshFaceAssignmentDomain::DeferredValidation(face.clone()));
-            }
             let cycle_assignments = edge_candidates.and_then(|candidates| {
                 endpoint_cycle_assignments(
                     face.face,
@@ -3854,7 +3851,12 @@ fn standard_mesh_missing_edge_assignment_domains(
                         canonicalize_spans,
                     )
                 });
-            assignments.map(MeshFaceAssignmentDomain::Ordered)
+            assignments
+                .map(MeshFaceAssignmentDomain::Ordered)
+                .or_else(|| {
+                    defer_validation
+                        .then(|| MeshFaceAssignmentDomain::DeferredValidation(face.clone()))
+                })
         });
         let domains = assignment_results.collect::<Option<Vec<_>>>()?;
         solutions.push(domains);
@@ -7281,7 +7283,7 @@ fn propagate_common_ordered_face_quotients(
                 continue;
             }
             if alternatives.is_empty() {
-                return None;
+                continue;
             }
 
             let node_count = quotient.union.len();
