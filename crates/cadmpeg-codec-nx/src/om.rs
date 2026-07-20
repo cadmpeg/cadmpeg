@@ -52,6 +52,15 @@ pub struct StringValue<'a> {
     pub value: &'a str,
 }
 
+/// One self-framed printable string in a surface-referenced payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfacePayloadString<'a> {
+    /// Payload-relative offset of the `66 1b 03` marker.
+    pub offset: usize,
+    /// Exact non-empty string value.
+    pub value: &'a str,
+}
+
 /// Self-framed NX product/version marker in an OM store root.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StoreVersion<'a> {
@@ -3880,6 +3889,27 @@ pub fn string_values(bytes: &[u8], base_offset: usize) -> Vec<StringValue<'_>> {
                 offset: base_offset + offset,
                 value: std::str::from_utf8(raw).expect("invariant: printable ASCII is valid UTF-8"),
             })
+        })
+        .collect()
+}
+
+/// Decode `66 1b 03, byte-length, printable UTF-8, 00` values in `bytes`.
+pub fn surface_payload_strings(bytes: &[u8]) -> Vec<SurfacePayloadString<'_>> {
+    const MARKER: &[u8] = &[0x66, 0x1b, 0x03];
+    bytes
+        .windows(MARKER.len())
+        .enumerate()
+        .filter(|(_, window)| *window == MARKER)
+        .filter_map(|(offset, _)| {
+            let text_len = usize::from(*bytes.get(offset + MARKER.len())?);
+            let start = offset.checked_add(MARKER.len() + 1)?;
+            let end = start.checked_add(text_len)?;
+            let raw = bytes.get(start..end)?;
+            let value = std::str::from_utf8(raw).ok()?;
+            (!value.is_empty()
+                && value.chars().all(|character| !character.is_control())
+                && bytes.get(end) == Some(&0))
+            .then_some(SurfacePayloadString { offset, value })
         })
         .collect()
 }

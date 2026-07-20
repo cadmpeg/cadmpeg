@@ -7531,6 +7531,24 @@ fn om_operation_payload_strings_require_complete_utf8_frames() {
 }
 
 #[test]
+fn om_surface_payload_strings_require_exact_length_utf8_and_terminator() {
+    let bytes = b"\x66\x1b\x03\x05Steel\0\xaa\x66\x1b\x03\x02\xc3\x97\0";
+    let strings = crate::om::surface_payload_strings(bytes);
+    assert_eq!(strings.len(), 2);
+    assert_eq!(strings[0].offset, 0);
+    assert_eq!(strings[0].value, "Steel");
+    assert_eq!(strings[1].offset, 11);
+    assert_eq!(strings[1].value, "×");
+
+    let truncated = b"\x66\x1b\x03\x05Steel";
+    assert!(crate::om::surface_payload_strings(truncated).is_empty());
+    let invalid_utf8 = b"\x66\x1b\x03\x01\xff\0";
+    assert!(crate::om::surface_payload_strings(invalid_utf8).is_empty());
+    let control = b"\x66\x1b\x03\x01\n\0";
+    assert!(crate::om::surface_payload_strings(control).is_empty());
+}
+
+#[test]
 fn om_projected_curve_references_require_one_complete_field() {
     let label = crate::om::OperationLabel {
         header_offset: 100,
