@@ -9760,12 +9760,28 @@ fn section_skamp_circular_entity(
     if item.sense != 0 {
         return None;
     }
+    section_skamp_is_circular(definition, item).then(|| sketch_entity_id(sketch, item.entity_id))
+}
+
+fn section_skamp_center_entity(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    item: &crate::feature::FeatureSkampItem,
+) -> Option<SketchEntityId> {
+    (item.sense == 4 && section_skamp_is_circular(definition, item))
+        .then(|| sketch_entity_id(sketch, item.entity_id))
+}
+
+fn section_skamp_is_circular(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> bool {
     let has_segment = definition
         .segments
         .iter()
         .flat_map(|segments| &segments.rows)
         .any(|segment| segment.external_id == item.entity_id);
-    let circular = if has_segment {
+    if has_segment {
         unique_decoded_section_segment(definition, item.entity_id)
             .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc)
     } else {
@@ -9776,8 +9792,7 @@ fn section_skamp_circular_entity(
                     | crate::feature::FeatureSavedEntity::Circle(_)
             )
         })
-    };
-    circular.then(|| sketch_entity_id(sketch, item.entity_id))
+    }
 }
 
 #[cfg(test)]
@@ -9834,6 +9849,16 @@ fn section_skamp_constraints_for_geometry(
             };
             let mut constraint_definition = if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
+                    (0, [first, second])
+                        if section_skamp_center_entity(definition, sketch, first).is_some()
+                            && section_skamp_center_entity(definition, sketch, second)
+                                .is_some() =>
+                    {
+                        SketchConstraintDefinition::Concentric {
+                            first: section_skamp_center_entity(definition, sketch, first)?,
+                            second: section_skamp_center_entity(definition, sketch, second)?,
+                        }
+                    }
                     (0, [first, second])
                         if section_skamp_point_locus(definition, sketch, first).is_some()
                             && section_skamp_point_locus(definition, sketch, second).is_some() =>
@@ -18347,6 +18372,43 @@ mod resolved_sketch_tests {
                         "creo:featdefs:sketch_entity#917:12".to_string()
                     )),
                 ],
+            }
+        );
+        let mut concentric = definition.clone();
+        let mut second_arc = concentric
+            .segments
+            .as_ref()
+            .expect("segments")
+            .rows
+            .iter()
+            .find(|segment| segment.external_id == 13)
+            .expect("arc")
+            .clone();
+        second_arc.external_id = 99;
+        second_arc.offset = 501;
+        concentric
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .push(second_arc);
+        concentric.relations.as_mut().expect("relations").skamps[4].items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 13,
+                sense: 4,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 4,
+            },
+        ];
+        assert_eq!(
+            section_skamp_constraints(&concentric, &SketchId("creo:model:sketch#917".into()))[4]
+                .0
+                .definition,
+            SketchConstraintDefinition::Concentric {
+                first: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                second: SketchEntityId("creo:featdefs:sketch_entity#917:99".to_string()),
             }
         );
         let center_relation = center_coincidence
