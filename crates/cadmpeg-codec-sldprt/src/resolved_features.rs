@@ -3563,6 +3563,31 @@ mod marker_tests {
     }
 
     #[test]
+    fn non_coordinate_legacy_profile_line_carries_counted_endpoint_links() {
+        let mut payload = vec![0; 162];
+        payload[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        payload[31..39].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00]);
+        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+        payload[84..86].copy_from_slice(&2u16.to_le_bytes());
+        for (index, local_id) in [2u16, 5].into_iter().enumerate() {
+            let start = 86 + index * 12;
+            payload[start..start + 2].copy_from_slice(&0x83a9u16.to_le_bytes());
+            payload[start + 2..start + 4].copy_from_slice(&local_id.to_le_bytes());
+            payload[start + 4..start + 8].fill(0xff);
+        }
+        payload[112..116].copy_from_slice(&[0xfe, 0xff, 0xff, 0xff]);
+
+        assert_eq!(
+            coordinate_marker_local_links(&payload, 0),
+            Some((vec![2, 5], 0x83a9))
+        );
+    }
+
+    #[test]
     fn coordinate_namespace_disambiguates_reused_local_id() {
         let candidates = vec![("relation".into(), false), ("geometry".into(), true)];
         assert_eq!(unique_marker_candidate(&candidates), Some("geometry"));
@@ -8935,7 +8960,11 @@ fn marker_local_links(payload: &[u8], offset: usize) -> Option<([u16; 2], u16)> 
 }
 
 fn coordinate_marker_local_links(payload: &[u8], offset: usize) -> Option<(Vec<u16>, u16)> {
-    marker_coordinates(payload, offset)?;
+    if marker_coordinates(payload, offset).is_none()
+        && !counted_legacy_profile_line_layout(payload, offset)
+    {
+        return None;
+    }
     let mut links = Vec::with_capacity(2);
     let mut selector = None;
     for index in 0..=2 {
@@ -8961,6 +8990,19 @@ fn coordinate_marker_local_links(payload: &[u8], offset: usize) -> Option<(Vec<u
         links.push(u16::from_le_bytes([cell[2], cell[3]]));
     }
     None
+}
+
+fn counted_legacy_profile_line_layout(payload: &[u8], offset: usize) -> bool {
+    payload.get(offset..offset + LEGACY_SKETCH_MARKER.len()) == Some(LEGACY_SKETCH_MARKER)
+        && payload.get(offset + 5..offset + 13) == Some(&[0xff; 8])
+        && payload.get(offset + 13..offset + 17) == Some(&[0x00, 0x00, 0x80, 0xbf])
+        && marker_native_code(payload, offset) == Some(0)
+        && payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00])
+        && marker_profile_curve_role(payload, offset) == Some(1)
+        && payload.get(offset + 31..offset + 39)
+            == Some(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x04, 0x00])
+        && payload.get(offset + 48..offset + 56) == Some(&1.0f64.to_le_bytes())
+        && payload.get(offset + 84..offset + 86) == Some(&2u16.to_le_bytes())
 }
 
 fn relation_instances(
