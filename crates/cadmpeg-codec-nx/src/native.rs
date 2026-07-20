@@ -12355,10 +12355,14 @@ pub struct DataBlockIndexRow {
     pub ordinal: u32,
     /// First non-null compact index.
     pub first_index: u32,
+    /// Exact serialized first-index token.
+    pub raw_first_index: Vec<u8>,
     /// Serialized `03` or `07` row flag.
     pub flag: u8,
     /// Four ordered non-null compact indices after the row flag.
     pub indices: [u32; 4],
+    /// Exact serialized four-index tokens in row order.
+    pub raw_indices: [Vec<u8>; 4],
     /// Four same-section blocks addressed by the compact indices.
     pub data_blocks: [String; 4],
     /// Directory entry containing the offset-only store.
@@ -14141,8 +14145,10 @@ pub fn data_block_index_rows(container: &Container) -> Vec<DataBlockIndexRow> {
                     section_ordinal: section_ordinal as u32,
                     ordinal: ordinal as u32,
                     first_index: row.first_index,
+                    raw_first_index: row.raw_first_index,
                     flag: row.flag,
                     indices: row.indices.map(|(index, _)| index),
+                    raw_indices: row.raw_indices,
                     data_blocks,
                     source_entry: entry.name.clone(),
                     opening_data_block: opening.0,

@@ -5479,8 +5479,10 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         section_ordinal: 0,
         ordinal: 3,
         first_index: 20,
+        raw_first_index: vec![20],
         flag: 3,
         indices: [4, 4, 5, 6],
+        raw_indices: [vec![4], vec![4], vec![5], vec![6]],
         data_blocks: [
             "block#4".into(),
             "block#4".into(),
@@ -9267,11 +9269,21 @@ fn om_offset_store_index_rows_require_complete_exact_frames() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].offset, 6);
     assert_eq!(rows[0].first_index, 42);
+    assert_eq!(rows[0].raw_first_index, [0x2a]);
     assert_eq!(rows[0].flag, 3);
     assert_eq!(rows[0].indices, [(24, 13), (32, 15), (32, 16), (65, 17)]);
+    assert_eq!(
+        rows[0].raw_indices,
+        [vec![0x80, 0x18], vec![0x20], vec![0x20], vec![0x41]]
+    );
     assert_eq!(rows[1].first_index, 950);
+    assert_eq!(rows[1].raw_first_index, [0x83, 0xb6]);
     assert_eq!(rows[1].flag, 7);
     assert_eq!(rows[1].indices, [(24, 38), (32, 40), (77, 41), (65, 43)]);
+    assert_eq!(
+        rows[1].raw_indices,
+        [vec![0x80, 0x18], vec![0x20], vec![0x80, 0x4d], vec![0x41]]
+    );
 
     let mut null = first.to_vec();
     null[3] = 0xff;

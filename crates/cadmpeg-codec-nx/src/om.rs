@@ -165,12 +165,16 @@ pub struct OffsetStoreIndexRow {
     pub offset: usize,
     /// First non-null compact index.
     pub first_index: u32,
+    /// Exact serialized first-index token.
+    pub raw_first_index: Vec<u8>,
     /// Byte offset of the first compact index.
     pub first_index_offset: usize,
     /// Serialized row flag.
     pub flag: u8,
     /// Four ordered non-null compact indices after the row flag.
     pub indices: [(u32, usize); 4],
+    /// Exact serialized four-index tokens in row order.
+    pub raw_indices: [Vec<u8>; 4],
 }
 
 /// One self-framed linked index row in contiguous column storage.
@@ -222,6 +226,7 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
             continue;
         };
         let marker = first_index_offset + first_width;
+        let raw_first_index = bytes[first_index_offset..marker].to_vec();
         if bytes.get(marker..marker + 2) != Some(&MIDDLE[..2]) {
             continue;
         }
@@ -230,6 +235,7 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
         };
         let mut at = marker + 3;
         let mut indices = Vec::new();
+        let mut raw_indices = Vec::new();
         for _ in 0..4 {
             let Some((CompactIndex::Value(index), width)) = bytes.get(at..).and_then(compact_index)
             else {
@@ -237,9 +243,13 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
                 break;
             };
             indices.push((index, at));
+            raw_indices.push(bytes[at..at + width].to_vec());
             at += width;
         }
         let Ok(indices) = indices.try_into() else {
+            continue;
+        };
+        let Ok(raw_indices) = raw_indices.try_into() else {
             continue;
         };
         if bytes.get(at..at + SUFFIX.len()) != Some(&SUFFIX) {
@@ -248,9 +258,11 @@ pub fn offset_store_index_rows(bytes: &[u8]) -> Vec<OffsetStoreIndexRow> {
         rows.push(OffsetStoreIndexRow {
             offset: start,
             first_index,
+            raw_first_index,
             first_index_offset,
             flag,
             indices,
+            raw_indices,
         });
     }
     rows
