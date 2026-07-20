@@ -6330,6 +6330,18 @@ fn attach_standard_topology(
         })
         .collect();
     let motif_topology = topology::parse_standard_motif(brep, &edge_faces, &circle_anchors);
+    let circle_constraint_edges = supports
+        .iter()
+        .enumerate()
+        .map(|(edge, support)| {
+            matches!(
+                support.geometry,
+                geometry::StandardCurveGeometry::Circle { .. }
+            ) && constrained_endpoint_options
+                .as_ref()
+                .is_some_and(|options| options[edge].len() > 1)
+        })
+        .collect::<Vec<_>>();
     let (mut topology, point_assignment) = if let Some(bound) = mesh_bound {
         bound
     } else if let Some(topology) = native_endpoint_pairs.as_ref().and_then(|pairs| {
@@ -6343,17 +6355,23 @@ fn attach_standard_topology(
         let point_assignment = (0..ir.model.points.len()).collect();
         (topology, point_assignment)
     } else if let Some(bound) = constrained_endpoint_options.as_ref().and_then(|options| {
-        topology::parse_standard_mesh_incidence_candidates(brep, &edge_faces, options, |pairs| {
-            standard_circle_pair_solution_is_simple(
-                ir,
-                bindings,
-                &surface_indices,
-                brep,
-                &supports,
-                options,
-                pairs,
-            )
-        })
+        topology::parse_standard_mesh_incidence_candidates(
+            brep,
+            &edge_faces,
+            options,
+            &circle_constraint_edges,
+            |pairs| {
+                standard_circle_pair_solution_is_simple(
+                    ir,
+                    bindings,
+                    &surface_indices,
+                    brep,
+                    &supports,
+                    options,
+                    pairs,
+                )
+            },
+        )
         .or_else(|| topology::parse_standard_mesh_endpoint_candidates(brep, &edge_faces, options))
     }) {
         bound
