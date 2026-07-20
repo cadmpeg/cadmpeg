@@ -1244,12 +1244,14 @@ pub enum OperationBodyReferenceLaneEncoding {
 }
 
 /// One value in a bounded operation body-reference lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationBodyReferenceLaneValue {
     /// Zero-based value order.
     pub ordinal: u32,
     /// Decoded index.
     pub object_index: u32,
+    /// Exact encoded index token.
+    pub raw_value: Vec<u8>,
     /// Absolute offset of the encoded index marker.
     pub offset: usize,
 }
@@ -2920,6 +2922,7 @@ fn operation_body_reference_lane_values(
         values.push(OperationBodyReferenceLaneValue {
             ordinal: ordinal as u32,
             object_index,
+            raw_value: record.bytes[value_at..value_at + width].to_vec(),
             offset: record.offset + value_at,
         });
     }

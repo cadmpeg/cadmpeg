@@ -5945,6 +5945,8 @@ pub struct FeatureOperationBodyReferenceLane {
     pub encoding: FeatureOperationBodyReferenceLaneEncoding,
     /// Ordered decoded indices.
     pub object_indices: Vec<u32>,
+    /// Exact encoded index tokens in lane order.
+    pub raw_object_indices: Vec<Vec<u8>>,
     /// Unique offset-only data blocks addressed by the ordered indices.
     pub data_blocks: Vec<Option<String>>,
     /// Absolute file offsets of the encoded index markers.
@@ -10580,6 +10582,11 @@ pub fn feature_operation_body_reference_lanes(
                     branch: lane.branch,
                     encoding,
                     object_indices,
+                    raw_object_indices: lane
+                        .values
+                        .iter()
+                        .map(|value| value.raw_value.clone())
+                        .collect(),
                     data_blocks,
                     source_offsets: lane
                         .values

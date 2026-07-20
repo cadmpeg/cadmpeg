@@ -8535,6 +8535,14 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
             .collect::<Vec<_>>(),
         [(13, 111), (105, 113)]
     );
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|value| value.raw_value.as_slice())
+            .collect::<Vec<_>>(),
+        [b"\x80\x0d".as_slice(), b"\x69".as_slice()]
+    );
 
     let objects =
         b"\x01\x02\x10\x70\xff\x1c\x00\x00\x00\x01\x03\xf1\x02\x9e\xf0\x44\x00\x00\x0b\x00";
@@ -8555,6 +8563,14 @@ fn om_operation_body_decodes_homogeneous_unwrapped_reference_lanes() {
             .map(|value| value.object_index)
             .collect::<Vec<_>>(),
         [670, 68]
+    );
+    assert_eq!(
+        lanes[0]
+            .values
+            .iter()
+            .map(|value| value.raw_value.as_slice())
+            .collect::<Vec<_>>(),
+        [b"\xf1\x02\x9e".as_slice(), b"\xf0\x44".as_slice()]
     );
 
     let truncated = &objects[..objects.len() - 1];
@@ -8610,6 +8626,7 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         branch: 0x11,
         encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
         object_indices: vec![100, 101],
+        raw_object_indices: vec![vec![0xf0, 100], vec![0xf0, 101]],
         data_blocks: vec![Some("block-10".to_string()), Some("block-11".to_string())],
         source_offsets: vec![20, 21],
     };
@@ -8646,6 +8663,7 @@ fn nx_extrude_construction_profile_requires_matching_resolved_encodings() {
         branch: 0x11,
         encoding: FeatureOperationBodyReferenceLaneEncoding::PayloadObjectIndex,
         object_indices: vec![100, 101],
+        raw_object_indices: vec![vec![0xf0, 100], vec![0xf0, 101]],
         data_blocks: vec![Some("block-10".to_string()), Some("block-11".to_string())],
         source_offsets: vec![20, 21],
     };
