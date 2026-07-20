@@ -3667,6 +3667,7 @@ fn nx_simple_hole_feature_owns_its_exact_native_constructions() {
         id: "lane".to_string(),
         operation_label: operation.to_string(),
         values: vec![508.0, 38.1],
+        raw_values: vec![[0x30; 8], [0x31; 8]],
         first_witness_offsets: vec![10, 18],
         second_witness_offsets: vec![30, 38],
     };
@@ -6407,6 +6408,7 @@ fn om_simple_hole_lane_requires_two_identical_nonempty_scalar_runs() {
     let lane = crate::om::simple_hole_repeated_scalar_lane(record).unwrap();
     assert_eq!(lane.values[0], 508.0);
     assert!((lane.values[1] - 38.1).abs() < 2.0e-12);
+    assert_eq!(lane.raw_values, [shifted(508.0), shifted(38.1)]);
     assert_eq!(lane.witness_offsets, [vec![200, 209], vec![218, 227]]);
 
     let mut mismatched = payload.clone();
@@ -6445,6 +6447,7 @@ fn om_simple_hole_lane_accepts_one_repeated_scalar() {
     };
     let lane = crate::om::simple_hole_repeated_scalar_lane(record).unwrap();
     assert_eq!(lane.values, [25.4]);
+    assert_eq!(lane.raw_values, [scalar]);
     assert_eq!(lane.witness_offsets, [vec![200], vec![209]]);
 }
 
@@ -8882,6 +8885,7 @@ fn nx_simple_hole_construction_groups_require_shared_four_block_identity() {
         id: format!("lane-{operation}"),
         operation_label: operation.into(),
         values: vec![25.4],
+        raw_values: vec![[0x30; 8]],
         first_witness_offsets: vec![1],
         second_witness_offsets: vec![2],
     };

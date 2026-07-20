@@ -1138,6 +1138,8 @@ pub struct ExtrudePayloadFooter {
 pub struct SimpleHoleRepeatedScalarLane {
     /// Ordered finite shifted-binary64 values.
     pub values: Vec<f64>,
+    /// Exact scalar encodings shared by both witnesses.
+    pub raw_values: Vec<[u8; 8]>,
     /// Absolute offsets of the first and repeated scalar lanes.
     pub witness_offsets: [Vec<usize>; 2],
 }
@@ -1650,8 +1652,9 @@ pub fn simple_hole_repeated_scalar_lane(
     let mut at = 0usize;
     while at + 8 <= prefix.len() {
         if prefix[at] == 0x30 {
-            if let Some(value) = shifted_ieee_f64(&prefix[at..at + 8]) {
-                scalars.push((value, record.payload_offset + at));
+            let raw_value = <[u8; 8]>::try_from(&prefix[at..at + 8]).ok()?;
+            if let Some(value) = shifted_ieee_f64(&raw_value) {
+                scalars.push((raw_value, value, record.payload_offset + at));
                 at += 8;
                 continue;
             }
@@ -1666,15 +1669,16 @@ pub fn simple_hole_repeated_scalar_lane(
     if first
         .iter()
         .zip(second)
-        .any(|(left, right)| left.0.to_bits() != right.0.to_bits())
+        .any(|(left, right)| left.0 != right.0)
     {
         return None;
     }
     Some(SimpleHoleRepeatedScalarLane {
-        values: first.iter().map(|scalar| scalar.0).collect(),
+        values: first.iter().map(|scalar| scalar.1).collect(),
+        raw_values: first.iter().map(|scalar| scalar.0).collect(),
         witness_offsets: [
-            first.iter().map(|scalar| scalar.1).collect(),
-            second.iter().map(|scalar| scalar.1).collect(),
+            first.iter().map(|scalar| scalar.2).collect(),
+            second.iter().map(|scalar| scalar.2).collect(),
         ],
     })
 }

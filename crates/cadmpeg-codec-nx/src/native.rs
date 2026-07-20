@@ -4192,6 +4192,8 @@ pub struct FeatureSimpleHoleRepeatedScalarLane {
     pub operation_label: String,
     /// Ordered finite shifted-binary64 values.
     pub values: Vec<f64>,
+    /// Exact scalar encodings shared by both witnesses.
+    pub raw_values: Vec<[u8; 8]>,
     /// Absolute offsets of the first scalar lane.
     pub first_witness_offsets: Vec<u64>,
     /// Absolute offsets of the byte-identical repeated scalar lane.
@@ -6572,6 +6574,7 @@ pub fn feature_simple_hole_repeated_scalar_lanes(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 values: pair.values,
+                raw_values: pair.raw_values,
                 first_witness_offsets: pair.witness_offsets[0]
                     .iter()
                     .map(|offset| entry_offset + *offset as u64)
