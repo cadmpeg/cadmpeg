@@ -15868,6 +15868,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || scope.kind == "RemoveBody"
             || scope.kind == "SurfaceStitch"
+            || matches!(scope.kind.as_str(), "BaseFlange" | "EdgeFlange" | "Hem")
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
         let scope_group_start = out.len();
