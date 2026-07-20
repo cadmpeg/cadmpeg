@@ -1794,6 +1794,7 @@ fn decode_compact_axis_aligned_cylinder_frame(
         values[1..4].try_into().ok()?,
         values[4..7].try_into().ok()?,
         Some(values[0]),
+        AxisAlignedCornerOrientation::SecondToFirst,
     )
 }
 
@@ -1811,18 +1812,33 @@ fn decode_directrix_lane_axis_aligned_cylinder_frame(
         *value = decoded;
         cursor = next;
     }
-    (cursor == body.len() && values[0] > 0.0).then_some(())?;
+    let orientation = if cursor == body.len() {
+        AxisAlignedCornerOrientation::SecondToFirst
+    } else if body.get(cursor..) == Some(&[0xf7, 0x17]) {
+        AxisAlignedCornerOrientation::FirstToSecond
+    } else {
+        return None;
+    };
+    (values[0] > 0.0).then_some(())?;
     axis_aligned_cylinder_from_corners(
         values[1..4].try_into().ok()?,
         values[4..7].try_into().ok()?,
         None,
+        orientation,
     )
+}
+
+#[derive(Clone, Copy)]
+enum AxisAlignedCornerOrientation {
+    FirstToSecond,
+    SecondToFirst,
 }
 
 fn axis_aligned_cylinder_from_corners(
     first: [f64; 3],
     second: [f64; 3],
     stored_length: Option<f64>,
+    orientation: AxisAlignedCornerOrientation,
 ) -> Option<PositionalCylinderFrame> {
     let spans = std::array::from_fn::<_, 3, _>(|index| (second[index] - first[index]).abs());
     let scale = first
@@ -1856,10 +1872,17 @@ fn axis_aligned_cylinder_from_corners(
     (radius > 0.0 && length > 0.0).then_some(())?;
     let mut origin = second;
     origin[*diameter_index] = f64::midpoint(first[*diameter_index], second[*diameter_index]);
+    if matches!(orientation, AxisAlignedCornerOrientation::FirstToSecond) {
+        origin[*axis_index] = first[*axis_index];
+    }
+    let (from, to) = match orientation {
+        AxisAlignedCornerOrientation::FirstToSecond => (first, second),
+        AxisAlignedCornerOrientation::SecondToFirst => (second, first),
+    };
     let mut axis = [0.0; 3];
-    axis[*axis_index] = (first[*axis_index] - second[*axis_index]).signum();
+    axis[*axis_index] = (to[*axis_index] - from[*axis_index]).signum();
     let mut ref_direction = [0.0; 3];
-    ref_direction[*diameter_index] = (first[*diameter_index] - second[*diameter_index]).signum();
+    ref_direction[*diameter_index] = (to[*diameter_index] - from[*diameter_index]).signum();
     Some(PositionalCylinderFrame {
         origin,
         axis,
@@ -3181,6 +3204,21 @@ mod tests {
         assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
         assert!((frame.radius - 2.1).abs() < 1e-12);
         assert!((frame.length - 1.68).abs() < 1e-12);
+
+        let forward_trailer = [
+            17, 24, 19, 114, 174, 20, 122, 225, 71, 174, 199, 163, 215, 10, 61, 112, 164, 70, 47,
+            194, 86, 31, 194, 58, 188, 142, 71, 174, 20, 122, 225, 72, 146, 112, 163, 215, 10, 61,
+            112, 70, 43, 138, 4, 52, 61, 28, 4, 46, 9, 51, 247, 23,
+        ];
+        let frame =
+            decode_positional_cylinder_frame(&forward_trailer, &scalar::ScalarCache::default())
+                .expect("complete forward-oriented directrix-lane cylinder");
+        assert!((frame.origin[0] - 0.82).abs() < 1e-12);
+        assert!((frame.origin[1] + 13.769563324412964).abs() < 1e-12);
+        assert!((frame.origin[2] - 2.41).abs() < 1e-12);
+        assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert!((frame.radius - 2.11).abs() < 1e-12);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;

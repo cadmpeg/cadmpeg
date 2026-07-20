@@ -314,7 +314,10 @@ coordinate spans has a unique two-to-one relation; those spans are the
 diameter and radius. The remaining coordinate is axial, and its corner span is
 the bounded axial length. Origin, axis, and reference direction follow the
 same second-corner, midpoint, and first-corner rules as the surface-row compact
-body.
+body when the seventh scalar ends the body. A terminal `f7 17` reverses the
+corner orientation: the first corner supplies the axial endpoint, and the axis
+and reference direction point toward the second corner. The radius-span center
+coordinate remains the second corner in both forms.
 
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
