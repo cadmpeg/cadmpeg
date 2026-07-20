@@ -6811,6 +6811,31 @@ fn om_draft_identity_frames_require_complete_typed_framing() {
 }
 
 #[test]
+fn om_draft_fixed_lanes_require_complete_discriminator_atoms_and_terminator() {
+    let discriminator = [
+        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x00,
+    ];
+    let mut bytes = vec![0xff];
+    bytes.extend_from_slice(&discriminator);
+    bytes.extend_from_slice(&[0x30, 0x40, 0, 0, 0, 0, 0, 0]);
+    bytes.extend_from_slice(&[0xb0, 0xc0, 0, 0, 0, 0, 0, 0]);
+    bytes.push(0);
+    let lanes = crate::om::draft_construction_fixed_lanes(&bytes);
+    assert_eq!(lanes.len(), 1);
+    assert_eq!(lanes[0].offset, 1);
+    assert_eq!(lanes[0].values, [0.5, -0.5]);
+    assert_eq!(lanes[0].markers, [0x30, 0xb0]);
+    assert_eq!(lanes[0].value_offsets, [19, 27]);
+
+    bytes.pop();
+    assert!(crate::om::draft_construction_fixed_lanes(&bytes).is_empty());
+    bytes.truncate(22);
+    assert!(crate::om::draft_construction_fixed_lanes(&bytes).is_empty());
+    assert!(crate::om::draft_construction_fixed_lanes(&discriminator).is_empty());
+}
+
+#[test]
 fn nx_datum_plane_csys_identity_uses_join_only_equal_typed_identities() {
     let plane = crate::native::FeatureDatumPlaneDescriptor {
         id: "plane-descriptor".into(),

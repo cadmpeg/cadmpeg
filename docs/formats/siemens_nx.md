@@ -926,6 +926,8 @@ The same payload contains exactly one four-reference construction graph. The gra
 
 When the counted leading lane and all four graph references select one offset store, bytewise concatenation of the four referenced blocks in graph order is the logical draft construction graph payload. Physical block boundaries do not delimit its fields. The graph payload retains its exact length and hash, ordered construction references and block identities, payload-relative block starts, exact block lengths, and absolute source offsets. An incomplete, out-of-order, or cross-store graph remains unreconstructed.
 
+The draft construction graph payload contains zero or more signed Q1.55 lanes. A lane is `25 25 41 00 04 01 07 01 c0 45 10 00 80 86 02 00 01 00, atom+, 00`; each atom is `marker, raw[7]`, where `marker` is `30` or `b0` and `raw` is a signed two's-complement Q1.55 value. The lane retains ordered decoded values, exact markers and raw values, payload-relative offsets, and absolute source offsets. An empty lane, unsupported marker, truncated atom, or missing zero terminator rejects that lane atomically.
+
 The payload ends with one terminal lane: `extended_compact_index[0], extended_compact_index[1], 01 03 02 01 02 01 01 01 00 00 00, tail[3], 00`. Each index uses the two-byte `80..fe, low:u8` form. The ordered indices, their exact offsets, and the three uninterpreted tail bytes are retained. A direct, null, or truncated index, malformed fixed byte, missing terminal zero, trailing byte, or multiple complete end-anchored parses rejects the lane atomically.
 
 The operation labels `CPROJ` and `CPROJ_CMB` identify projected-curve constructions. Neutral projection retains unresolved source-path, target-face, direction, and directionality fields.

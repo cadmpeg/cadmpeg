@@ -1015,6 +1015,21 @@ pub enum DraftConstructionIdentityFrameForm {
     },
 }
 
+/// Complete signed Q1.55 lane in a reconstructed draft graph payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DraftConstructionFixedLane {
+    /// Payload-relative offset of the fixed discriminator.
+    pub offset: usize,
+    /// Ordered dimensionless Q1.55 values.
+    pub values: Vec<f64>,
+    /// Exact atom markers in value order.
+    pub markers: Vec<u8>,
+    /// Exact seven-byte two's-complement payloads.
+    pub raw_values: Vec<[u8; 7]>,
+    /// Payload-relative offsets of the atom markers.
+    pub value_offsets: Vec<usize>,
+}
+
 /// Compact object frame in a bounded offset-store block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DataBlockObjectFrame {
@@ -3186,6 +3201,43 @@ fn decode_q1_55(raw: [u8; 7]) -> f64 {
         (unsigned as i64) - (1_i64 << 56)
     };
     signed as f64 / (1_u64 << 55) as f64
+}
+
+/// Decode every complete signed Q1.55 lane in a reconstructed draft graph payload.
+pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<DraftConstructionFixedLane> {
+    const DISCRIMINATOR: [u8; 18] = [
+        0x25, 0x25, 0x41, 0x00, 0x04, 0x01, 0x07, 0x01, 0xc0, 0x45, 0x10, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x01, 0x00,
+    ];
+    bytes
+        .windows(DISCRIMINATOR.len())
+        .enumerate()
+        .filter_map(|(offset, window)| {
+            (window == DISCRIMINATOR).then_some(())?;
+            let mut at = offset + DISCRIMINATOR.len();
+            let mut markers = Vec::new();
+            let mut raw_values = Vec::new();
+            let mut value_offsets = Vec::new();
+            while matches!(bytes.get(at), Some(0x30 | 0xb0)) {
+                let raw = bytes.get(at + 1..at + 8)?.try_into().ok()?;
+                markers.push(bytes[at]);
+                raw_values.push(raw);
+                value_offsets.push(at);
+                at += 8;
+            }
+            if raw_values.is_empty() || bytes.get(at) != Some(&0x00) {
+                return None;
+            }
+            let values = raw_values.iter().copied().map(decode_q1_55).collect();
+            Some(DraftConstructionFixedLane {
+                offset,
+                values,
+                markers,
+                raw_values,
+                value_offsets,
+            })
+        })
+        .collect()
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.
