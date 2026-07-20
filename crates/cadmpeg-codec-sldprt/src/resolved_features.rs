@@ -281,6 +281,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             } else if coordinates_m.is_none()
                 && payload.get(offset..offset + LEGACY_SKETCH_MARKER.len())
                     == Some(LEGACY_SKETCH_MARKER)
+                && matches!(code, 0..=2)
                 && matches!(marker_profile_curve_role(payload, offset), Some(1 | 2))
                 && compact_indexed_curve_endpoint_indices(payload, offset).is_none()
             {
@@ -2950,6 +2951,14 @@ mod marker_tests {
         assert_eq!(
             entities[0].kind,
             SketchInputKind::Relation(SketchRelationKind::Distance)
+        );
+
+        payload[17..21].copy_from_slice(&4u32.to_le_bytes());
+        payload[27..29].copy_from_slice(&1u16.to_le_bytes());
+        let entities = sketch_input_entities(&payload, "lane");
+        assert_eq!(
+            entities[0].kind,
+            SketchInputKind::Relation(SketchRelationKind::Horizontal)
         );
 
         payload.resize(154 + LEGACY_SKETCH_MARKER.len(), 0);
