@@ -6034,6 +6034,35 @@ impl MeshQuotient {
         edge_candidates: &[Vec<[usize; 2]>],
         budget: Option<&MeshConstraintBudget>,
     ) -> Option<HashMap<usize, usize>> {
+        self.close_coordinate_roots_with_incidence(point_count, edge_candidates, None, budget)
+    }
+
+    fn close_coordinate_roots_for_incidence_with_budget(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        edge_faces: &[[usize; 2]],
+        face_count: usize,
+        budget: Option<&MeshConstraintBudget>,
+    ) -> Option<HashMap<usize, usize>> {
+        (edge_faces.len() == edge_candidates.len()
+            && edge_faces.iter().flatten().all(|face| *face < face_count))
+        .then_some(())?;
+        self.close_coordinate_roots_with_incidence(
+            point_count,
+            edge_candidates,
+            Some((edge_faces, face_count)),
+            budget,
+        )
+    }
+
+    fn close_coordinate_roots_with_incidence(
+        &mut self,
+        point_count: usize,
+        edge_candidates: &[Vec<[usize; 2]>],
+        incidence: Option<(&[[usize; 2]], usize)>,
+        budget: Option<&MeshConstraintBudget>,
+    ) -> Option<HashMap<usize, usize>> {
         fn pair_supported(candidates: &[[usize; 2]], left: usize, right: usize) -> bool {
             candidates.is_empty()
                 || candidates
@@ -6048,6 +6077,8 @@ impl MeshQuotient {
             edge_ids: &[usize],
             root_edges: &[Vec<usize>],
             edge_candidates: &[Vec<[usize; 2]>],
+            edge_faces: Option<&[[usize; 2]]>,
+            closed_faces: Option<&[bool]>,
             component_points: &HashSet<usize>,
             assigned: &mut [Option<usize>],
             point_uses: &mut [usize],
@@ -6081,7 +6112,7 @@ impl MeshQuotient {
                     .iter()
                     .copied()
                     .filter(|point| {
-                        root_edges[root].iter().all(|edge| {
+                        let pair_viable = root_edges[root].iter().all(|edge| {
                             let [left, right] = edges[*edge];
                             let other = if left == root { right } else { left };
                             assigned[other].is_none_or(|other_point| {
@@ -6091,7 +6122,43 @@ impl MeshQuotient {
                                     other_point,
                                 )
                             })
-                        })
+                        });
+                        if !pair_viable {
+                            return false;
+                        }
+                        let Some(edge_faces) = edge_faces else {
+                            return true;
+                        };
+                        if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
+                            return false;
+                        }
+                        let mut degrees = HashMap::<(usize, usize), u8>::new();
+                        for (edge, [left, right]) in edges.iter().copied().enumerate() {
+                            let value = |endpoint| {
+                                if endpoint == root {
+                                    Some(*point)
+                                } else {
+                                    assigned[endpoint]
+                                }
+                            };
+                            let (Some(left), Some(right)) = (value(left), value(right)) else {
+                                continue;
+                            };
+                            let faces = edge_faces[edge];
+                            for (rank, face) in faces.into_iter().enumerate() {
+                                if rank > 0 && face == faces[0] {
+                                    continue;
+                                }
+                                for endpoint in [left, right] {
+                                    let degree = degrees.entry((face, endpoint)).or_default();
+                                    *degree = degree.saturating_add(1);
+                                    if *degree > 2 {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                        true
                     })
                     .collect::<Vec<_>>()
             };
@@ -6168,7 +6235,34 @@ impl MeshQuotient {
                 return;
             };
             let Some((root, values)) = branch else {
-                if component_points.iter().all(|point| point_uses[*point] > 0) {
+                let incidence_closed =
+                    edge_faces
+                        .zip(closed_faces)
+                        .is_none_or(|(edge_faces, closed_faces)| {
+                            if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
+                                return false;
+                            }
+                            let mut degrees = HashMap::<(usize, usize), u8>::new();
+                            for (edge, [left, right]) in edges.iter().copied().enumerate() {
+                                let [Some(left), Some(right)] = [assigned[left], assigned[right]]
+                                else {
+                                    return false;
+                                };
+                                let faces = edge_faces[edge];
+                                for (rank, face) in faces.into_iter().enumerate() {
+                                    if rank > 0 && face == faces[0] {
+                                        continue;
+                                    }
+                                    for point in [left, right] {
+                                        *degrees.entry((face, point)).or_default() += 1;
+                                    }
+                                }
+                            }
+                            degrees
+                                .into_iter()
+                                .all(|((face, _), degree)| !closed_faces[face] || degree == 2)
+                        });
+                if incidence_closed && component_points.iter().all(|point| point_uses[*point] > 0) {
                     solutions.push(
                         assigned
                             .iter()
@@ -6195,6 +6289,8 @@ impl MeshQuotient {
                     edge_ids,
                     root_edges,
                     edge_candidates,
+                    edge_faces,
+                    closed_faces,
                     component_points,
                     assigned,
                     point_uses,
@@ -6221,7 +6317,7 @@ impl MeshQuotient {
         if roots.len() < point_count {
             return None;
         }
-        if roots.len() == point_count {
+        if roots.len() == point_count && incidence.is_none() {
             return self.point_assignment_with_budget(point_count, edge_candidates, budget);
         }
         let root_indices = roots
@@ -6303,6 +6399,30 @@ impl MeshQuotient {
                     Some([*local_index.get(&left)?, *local_index.get(&right)?])
                 })
                 .collect::<Option<Vec<_>>>()?;
+            let local_edge_faces = incidence.map(|(edge_faces, _)| {
+                edge_ids
+                    .iter()
+                    .map(|edge| edge_faces[*edge])
+                    .collect::<Vec<_>>()
+            });
+            let closed_faces = incidence.map(|(edge_faces, face_count)| {
+                if budget.is_some_and(|budget| !budget.charge_by(edge_faces.len())) {
+                    return Vec::new();
+                }
+                let local_edges = edge_ids.iter().copied().collect::<HashSet<_>>();
+                let mut closed = vec![true; face_count];
+                for (edge, faces) in edge_faces.iter().copied().enumerate() {
+                    for (rank, face) in faces.into_iter().enumerate() {
+                        if (rank == 0 || face != faces[0]) && !local_edges.contains(&edge) {
+                            closed[face] = false;
+                        }
+                    }
+                }
+                closed
+            });
+            if closed_faces.as_ref().is_some_and(Vec::is_empty) {
+                return None;
+            }
             let local_domains = component
                 .iter()
                 .map(|root| domains[*root].clone())
@@ -6328,6 +6448,8 @@ impl MeshQuotient {
                 &edge_ids,
                 &root_edges,
                 edge_candidates,
+                local_edge_faces.as_deref(),
+                closed_faces.as_deref(),
                 &component_points,
                 &mut vec![None; component.len()],
                 &mut vec![0; point_count],
@@ -10196,9 +10318,11 @@ where
         } else {
             let closure_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
             let mut closed = mesh_quotient.clone();
-            closed.close_coordinate_roots_with_budget(
+            closed.close_coordinate_roots_for_incidence_with_budget(
                 vertex_points.len(),
                 edge_candidates,
+                edge_faces,
+                face_count,
                 Some(&closure_budget),
             )?;
             mesh_quotient = closed;
@@ -13855,6 +13979,56 @@ mod motif_tests {
         assert_eq!(quotient.root_count(), 1);
         assert_eq!(assignment.values().copied().collect::<Vec<_>>(), [0]);
         assert!(!budget.exhausted.get());
+    }
+
+    #[test]
+    fn quotient_coordinate_closure_enforces_complete_face_degrees() {
+        let singleton = |point| Arc::new(HashSet::from([point]));
+        let mut open = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: [singleton(0), singleton(1), singleton(0), singleton(2)].into(),
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let candidates = vec![Vec::new(); 2];
+        let edge_faces = [[0, 0]; 2];
+        let budget = MeshConstraintBudget::new(1_000);
+        open.merge(0, 2).expect("shared endpoint");
+
+        assert!(open
+            .close_coordinate_roots_for_incidence_with_budget(
+                3,
+                &candidates,
+                &edge_faces,
+                1,
+                Some(&budget),
+            )
+            .is_none());
+
+        let mut closed = MeshQuotient {
+            union: UnionFind::new(6),
+            domains: [
+                singleton(0),
+                singleton(1),
+                singleton(1),
+                singleton(2),
+                singleton(2),
+                singleton(0),
+            ]
+            .into(),
+            members: (0..6).map(|node| vec![node]).collect(),
+        };
+        let candidates = vec![Vec::new(); 3];
+        let edge_faces = [[0, 0]; 3];
+
+        assert!(closed
+            .close_coordinate_roots_for_incidence_with_budget(
+                3,
+                &candidates,
+                &edge_faces,
+                1,
+                Some(&MeshConstraintBudget::new(1_000)),
+            )
+            .is_some());
     }
 
     #[test]
