@@ -1703,7 +1703,7 @@ fn decode_variable_scalar(
         return (Some(f64::from_be_bytes(raw)), offset + 7, false);
     }
     let variable_dict = match prefix {
-        0x5b..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
+        0x53..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
         0xad => Some([0x3f, 0xd9]),
         0xb3 => Some([0xbf, 0xe0]),
         0xc6 => Some([0xbf, 0xf3]),
@@ -3607,8 +3607,8 @@ fn positional_dimension(
     let (value, cursor, _) = match payload.get(cursor) {
         Some(0x00) if cursor + 3 <= end => (None, cursor + 3, true),
         Some(0x01) if cursor + 4 <= end => (None, cursor + 4, true),
+        Some(0x0e) => (Some(-0.5), cursor + 1, false),
         Some(0x18) => (Some(0.0), cursor + 1, false),
-        Some(0x53) if cursor + 7 <= end => (None, cursor + 7, true),
         _ => decode_variable_scalar(payload, cursor, end, cache),
     };
     let direction_byte = *payload.get(cursor).filter(|_| cursor < end)?;
@@ -7301,11 +7301,11 @@ mod tests {
     }
 
     #[test]
-    fn positional_dimension_table_retains_opaque_seven_byte_values() {
+    fn positional_dimension_table_retains_bounded_opaque_values() {
         let mut payload = b"prefix\xf8\x03\xf7\x58\xfb\xe2\xf7\x59".to_vec();
         payload.extend_from_slice(&[2, 0x46, 0x08, 0, 0, 0, 0, 0, 0, 0, 0x18, 43]);
         payload.extend_from_slice(b"\xf3\xf7\x58\xe2");
-        payload.extend_from_slice(&[1, 0x53, 0xa1, 0xca, 0xc0, 0x83, 0x12, 0x6f, 0, 0x18, 44]);
+        payload.extend_from_slice(&[1, 0x00, 0x04, 0xa6, 0, 0x18, 44]);
         payload.extend_from_slice(b"\xf3\xf7\x58\xe2");
         payload.extend_from_slice(&[5, 0x0d, 0, 0x18, 45]);
         let cache = scalar::ScalarCache::from_section(&payload);
@@ -7322,10 +7322,11 @@ mod tests {
 
     #[test]
     fn positional_dimensions_decode_the_positive_dict_lattice_and_bounded_opaque_forms() {
-        let positive = [1, 0x5b, 0xad, 0xc3, 0xcd, 0x1f, 0x59, 0x5f, 0, 0x18, 46];
+        let positive = [1, 0x53, 0xa1, 0xca, 0xc0, 0x83, 0x12, 0x6f, 0, 0x18, 46];
         let opaque_three = [1, 0x00, 0x04, 0xa6, 0, 0x18, 47];
         let opaque_four = [1, 0x01, 0x04, 0xfe, 0xf2, 0, 0x18, 48];
         let zero = [2, 0x18, 0, 0x18, 49];
+        let negative_half = [1, 0x0e, 0, 0x18, 50];
         let cache = scalar::ScalarCache::default();
 
         let positive_row = positional_dimension(&positive, 0, positive.len(), &cache)
@@ -7333,9 +7334,12 @@ mod tests {
         assert_eq!(
             positive_row.value,
             Some(f64::from_be_bytes([
-                0x3f, 0xd0, 0xad, 0xc3, 0xcd, 0x1f, 0x59, 0x5f,
+                0x3f, 0xc8, 0xa1, 0xca, 0xc0, 0x83, 0x12, 0x6f,
             ]))
         );
+        assert_eq!(positive_row.direction_byte, 0);
+        assert_eq!(positive_row.auxiliary_value, Some(0.0));
+        assert_eq!(positive_row.external_id, 46);
         assert_eq!(positive_row.external_id, 46);
         for (body, external_id) in [(&opaque_three[..], 47), (&opaque_four[..], 48)] {
             let row = positional_dimension(body, 0, body.len(), &cache)
@@ -7346,6 +7350,11 @@ mod tests {
         let zero_row = positional_dimension(&zero, 0, zero.len(), &cache).expect("zero dimension");
         assert_eq!(zero_row.value, Some(0.0));
         assert_eq!(zero_row.external_id, 49);
+        let negative_half_row =
+            positional_dimension(&negative_half, 0, negative_half.len(), &cache)
+                .expect("negative half dimension");
+        assert_eq!(negative_half_row.value, Some(-0.5));
+        assert_eq!(negative_half_row.external_id, 50);
     }
 
     #[test]

@@ -1022,11 +1022,6 @@ zero slots and `e6` expands to three zero slots. `e4` is the integer value one,
 and `f6` is a null operand. Expansion is bounded independently at four slots
 for each of `a`, `b`, and `c`.
 
-Within a positional `dimtab_ptr` row, `53` begins a seven-byte opaque value
-field. The following byte is the `direct` field; the opaque value bytes do not
-alter the alignment of `aux_value` and `ext_id` or terminate the dimension
-table.
-
 For a type-zero linear-distance relation with operand-vector forms
 `a = [point0, point1, null, 1]`, `b = [0, 0, 0, 0]` or
 `b = [1, 1, 0, 1]`, and
@@ -1126,11 +1121,11 @@ parameter rows within one snapshot use occurrence-qualified identities in source
 order. In positional dimension rows, a bare
 `18` in the `aux_value` slot encodes zero and does not consume the following
 compact `ext_id`.
-The positional `value` lane uses the positive DICT lattice `5b..a3`; the first
+The positional `value` lane uses the positive DICT lattice `53..a3`; the first
 two IEEE bytes are `3F75 + prefix` and the following six bytes complete the
 value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
-`31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero. Unresolved `00 XX YY`, `01 XX YY ZZ`, and
-`53 <tail6>` value forms occupy three, four, and seven bytes respectively, so
+`31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero. Unresolved `00 XX YY` and `01 XX YY ZZ`
+value forms occupy three and four bytes respectively. Compact `0e` is `-0.5`, so
 the following one-byte `direct`, `aux_value`, and compact `ext_id` fields remain
 aligned.
 Type `0x03` has radius display semantics.
