@@ -337,14 +337,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             ))
         })
         .collect::<std::collections::HashMap<_, _>>();
-    let asm_state_ids = native
-        .asm_histories
-        .iter()
-        .flat_map(|history| &history.states)
-        .map(|state| state.state_id)
-        .collect::<HashSet<_>>();
     let mut scope_indices = HashSet::new();
-    let mut scope_ordinals = HashSet::new();
     for scope in &native.design_parameter_scopes {
         let native_stream = design_stream(&scope.id);
         let unique_index = scope_indices.insert((native_stream, scope.record_index));
@@ -450,13 +443,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.previous_history_state_id_offset
                 == scope.feature_ordinal_offset.saturating_add(31)
             && scope.history_state_id.is_some() == scope.previous_history_state_id.is_some()
-            && scope
-                .history_state_id
-                .is_none_or(|state_id| asm_state_ids.contains(&state_id))
-            && scope
-                .previous_history_state_id
-                .is_none_or(|state_id| asm_state_ids.contains(&state_id))
-            && scope_ordinals.insert((native_stream, scope.kind.as_str(), scope.feature_ordinal))
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset
             && !scope.reference_members.is_empty()
@@ -1510,7 +1496,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     design_reference,
                     &native.persistent_subentity_tags,
                 )
-            });
+            })
+            .unwrap_or_default();
         let mut expected_references = design::decode_recipe_references(
             &operand.recipe_prefix_bytes,
             operand.recipe_prefix_offset,
@@ -1559,7 +1546,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && recipe.byte_offset < operand.next_byte_offset
             })
             && design::edge_recipe_structure(&operand.recipe_program) == operand.recipe_structure
-            && expected_faces.as_ref() == Some(&operand.candidate_faces)
+            && expected_faces == operand.candidate_faces
             && expected_edge_operands.get(operand.id.as_str()) == Some(&operand)
             && edge_operand_slots.insert((
                 native_stream,

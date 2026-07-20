@@ -2184,7 +2184,7 @@ fn resolved_edge_group(
             state,
             &group.id,
         )
-        .expect("identity members include at least one unresolved edge");
+        .unwrap_or_else(|| EdgeSelection::Native(group.id.clone()));
     }
     let mut matched_operands = Vec::with_capacity(group.members.len());
     let mut member_identities = HashSet::new();
@@ -2363,7 +2363,7 @@ fn partial_historical_edge_selection<'a>(
             unresolved.push(identity.to_owned());
         }
     }
-    if unresolved.is_empty() {
+    if unresolved.is_empty() || edges.is_empty() {
         return None;
     }
     Some(EdgeSelection::HistoricalPartial {
@@ -4382,6 +4382,7 @@ fn neutral_feature_id(scope: &DesignParameterScope) -> cadmpeg_ir::features::Fea
         native_stream(&scope.id).unwrap_or("f3d:design"),
         &scope.kind,
         scope.feature_ordinal,
+        scope.record_index,
     )
 }
 
@@ -4389,16 +4390,18 @@ fn neutral_feature_id_parts(
     stream: &str,
     kind: &str,
     feature_ordinal: u32,
+    scope_record_index: u32,
 ) -> cadmpeg_ir::features::FeatureId {
     let stream = identity_key_component(stream);
     let kind = identity_key_component(kind);
     cadmpeg_ir::features::FeatureId(format!(
-        "f3d:model:feature#{}:{}{}:{}{}",
+        "f3d:model:feature#{}:{}{}:{}{}:{}",
         stream.len(),
         stream,
         kind.len(),
         kind,
         feature_ordinal,
+        scope_record_index,
     ))
 }
 
@@ -15562,6 +15565,7 @@ pub fn bind_edge_operand_candidates(
         .map(|recipe| (recipe.id.as_str(), recipe))
         .collect::<HashMap<_, _>>();
     for operand in operands {
+        operand.candidate_faces.clear();
         for reference in &mut operand.recipe_references {
             bind_recipe_reference_candidates(reference, tags);
         }
@@ -21236,12 +21240,7 @@ mod relation_tests {
                 FeatureInputTopologyId("state".into()),
                 "group",
             ),
-            Some(EdgeSelection::HistoricalPartial {
-                state: FeatureInputTopologyId("state".into()),
-                edges: Vec::new(),
-                unresolved: vec!["operand-a".into(), "operand-b".into()],
-                native: "group".into(),
-            })
+            None
         );
     }
 
@@ -21282,18 +21281,20 @@ mod relation_tests {
     }
 
     #[test]
-    fn feature_identity_uses_stream_family_and_native_ordinal() {
-        let first = neutral_feature_id_parts("Design/A:B", "Kind:12", 3);
-        let same = neutral_feature_id_parts("Design/A:B", "Kind:12", 3);
-        let different_stream = neutral_feature_id_parts("Design/A", "B:Kind:12", 3);
-        let different_family = neutral_feature_id_parts("Design/A:B", "Kind", 123);
+    fn feature_identity_uses_stream_family_ordinal_and_scope_record() {
+        let first = neutral_feature_id_parts("Design/A:B", "Kind:12", 3, 41);
+        let same = neutral_feature_id_parts("Design/A:B", "Kind:12", 3, 41);
+        let different_stream = neutral_feature_id_parts("Design/A", "B:Kind:12", 3, 41);
+        let different_family = neutral_feature_id_parts("Design/A:B", "Kind", 123, 41);
+        let different_scope = neutral_feature_id_parts("Design/A:B", "Kind:12", 3, 42);
 
         assert_eq!(first, same);
         assert_ne!(first, different_stream);
         assert_ne!(first, different_family);
+        assert_ne!(first, different_scope);
 
-        let localized = neutral_feature_id_parts("Design Name", "Symétrie miroir", 1);
-        let literal_escape = neutral_feature_id_parts("Design%20Name", "Symétrie%20miroir", 1);
+        let localized = neutral_feature_id_parts("Design Name", "Symétrie miroir", 1, 41);
+        let literal_escape = neutral_feature_id_parts("Design%20Name", "Symétrie%20miroir", 1, 41);
         assert!(!localized.0.chars().any(char::is_whitespace));
         assert!(localized.0.contains("Design%20Name"));
         assert!(localized.0.contains("Symétrie%20miroir"));
@@ -25901,6 +25902,21 @@ mod relation_tests {
             edge_operand.candidate_faces,
             [FaceId("f3d:brep:entity#50".into())]
         );
+        let mut local_recipe = recipe.clone();
+        local_recipe.record_index = -1335;
+        bind_edge_operand_candidates(
+            std::slice::from_mut(&mut edge_operand),
+            std::slice::from_ref(&local_recipe),
+            &[PersistentSubentityTag {
+                id: "f3d:asm:persistent-subentity-tag#1".into(),
+                target: AttributeTarget::Face(FaceId("f3d:brep:entity#50".into())),
+                selector: 1,
+                token: "3".into(),
+                design_references: vec![303],
+                ordinal: 0,
+            }],
+        );
+        assert!(edge_operand.candidate_faces.is_empty());
         let mut embedded_program = vec![99];
         embedded_program.extend_from_slice(&edge_operand.recipe_program[7..]);
         embedded_program.push(88);
@@ -30653,23 +30669,14 @@ mod relation_tests {
             FeatureDefinition::Chamfer { groups }
                 if matches!(groups.as_slice(), [
                     ChamferGroup {
-                        edges: EdgeSelection::HistoricalPartial {
-                            state,
-                            edges,
-                            unresolved,
-                            native,
-                        },
+                        edges: EdgeSelection::Unresolved,
                         spec: ChamferSpec::Distance { distance: Length(2.5) },
                     },
                     ChamferGroup {
                         edges: EdgeSelection::Native(selection),
                         spec: ChamferSpec::Distance { distance: Length(2.0) },
                     },
-                ] if state == &feature_input_topology_id(&features[0].id, 21)
-                    && edges.is_empty()
-                    && unresolved == &["f3d:native:lost-edge-reference#1"]
-                    && native == &construction_groups[1].id
-                    && selection == &construction_groups[0].id)
+                ] if selection == &construction_groups[0].id)
         ));
     }
 
