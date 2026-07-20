@@ -347,8 +347,19 @@ pub struct TorusRadiusOverrides {
     pub radius1: f64,
     /// Minor torus radius, or sphere radius.
     pub radius2: f64,
+    /// Whether the first stored scalar is `radius2` or `radius1 + radius2`.
+    pub radius2_encoding: TorusRadius2Encoding,
     /// Byte offset of the `18 0d` radius trailer marker.
     pub offset: usize,
+}
+
+/// Interpretation of the first radial scalar in a tagged type-26 trailer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TorusRadius2Encoding {
+    /// The scalar stores `radius2` directly.
+    Direct,
+    /// The scalar stores the outer ring radius `radius1 + radius2`.
+    OuterRingDifference,
 }
 
 /// Terminal half-angle override in a positional cone body.
@@ -1391,16 +1402,21 @@ fn torus_radius_override_layout(body: &[u8]) -> Option<TorusRadiusOverrideLayout
     });
     let (radius1, radius1_start) = radius1_candidates.next()?;
     radius1_candidates.next().is_none().then_some(())?;
-    let radius2 = if body.get(radius2_end..radius1_start) == Some(&[0x00, 0x0e, 0x01]) {
-        stored_radius2 - radius1
-    } else {
-        stored_radius2
-    };
+    let (radius2, radius2_encoding) =
+        if body.get(radius2_end..radius1_start) == Some(&[0x00, 0x0e, 0x01]) {
+            (
+                stored_radius2 - radius1,
+                TorusRadius2Encoding::OuterRingDifference,
+            )
+        } else {
+            (stored_radius2, TorusRadius2Encoding::Direct)
+        };
     (radius1.is_finite() && radius1 >= 0.0 && radius2.is_finite() && radius2 > 0.0).then_some(
         TorusRadiusOverrideLayout {
             overrides: TorusRadiusOverrides {
                 radius1,
                 radius2,
+                radius2_encoding,
                 offset,
             },
             radius2_start,

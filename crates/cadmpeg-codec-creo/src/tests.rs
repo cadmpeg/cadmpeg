@@ -13,6 +13,7 @@ use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::Exactness;
 
 use crate::container::{self, role, Layout};
+use crate::surface::TorusRadius2Encoding;
 use crate::{decode, CreoCodec};
 
 /// Assemble a minimal PSB file: the `#UGC:2` header, a TOC, then the given
@@ -707,6 +708,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             ],
             0.249_999_999_951_747_04,
             0.249_999_999_951_747_04,
+            TorusRadius2Encoding::Direct,
         ),
         (
             vec![
@@ -714,9 +716,10 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             ],
             0.250_000_000_000_000_06,
             0.75,
+            TorusRadius2Encoding::OuterRingDifference,
         ),
     ];
-    for (body, expected_radius2, stored_radial_scalar) in cases {
+    for (body, expected_radius2, stored_radial_scalar, expected_encoding) in cases {
         let mut payload = visibgeom_payload(1, 0);
         payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
         payload.extend_from_slice(&body);
@@ -729,6 +732,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
             .expect("tagged torus radius overrides");
         assert_eq!(overrides.radius1, 0.499_999_999_999_999_94);
         assert_eq!(overrides.radius2, expected_radius2);
+        assert_eq!(overrides.radius2_encoding, expected_encoding);
         assert_eq!(overrides.offset, 0);
         assert_eq!(
             scan.surface_parameters[0].scalar_values,
@@ -748,6 +752,13 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         assert_eq!(
             native.fields["torus_radius_overrides"]["radius2"],
             expected_radius2
+        );
+        assert_eq!(
+            native.fields["torus_radius_overrides"]["radius2_encoding"],
+            match expected_encoding {
+                TorusRadius2Encoding::Direct => "direct",
+                TorusRadius2Encoding::OuterRingDifference => "outer_ring_difference",
+            }
         );
         assert_eq!(
             result

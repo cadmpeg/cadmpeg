@@ -1672,6 +1672,7 @@ struct CreoTorusOutlineFrame {
 struct CreoTorusRadiusOverrides {
     radius1: f64,
     radius2: f64,
+    radius2_encoding: &'static str,
     offset: usize,
 }
 
@@ -2283,6 +2284,12 @@ fn surface_parameter_records(
                     |overrides| CreoTorusRadiusOverrides {
                         radius1: overrides.radius1,
                         radius2: overrides.radius2,
+                        radius2_encoding: match overrides.radius2_encoding {
+                            crate::surface::TorusRadius2Encoding::Direct => "direct",
+                            crate::surface::TorusRadius2Encoding::OuterRingDifference => {
+                                "outer_ring_difference"
+                            }
+                        },
                         offset: overrides.offset,
                     },
                 ),
