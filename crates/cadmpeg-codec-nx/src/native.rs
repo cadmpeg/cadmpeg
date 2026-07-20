@@ -4595,6 +4595,8 @@ pub struct FeatureDatumCsysPayloadScalar {
     pub field_code: u8,
     /// Finite shifted-IEEE binary64 value.
     pub value: f64,
+    /// Exact shifted-binary64 encoding.
+    pub raw_value: [u8; 8],
     /// Payload-relative offset of the field marker.
     pub payload_offset: u64,
     /// Absolute source offset of the field marker.
@@ -4931,6 +4933,8 @@ pub struct FeatureSketchPayloadScalar {
     pub field_code: u8,
     /// Finite shifted-IEEE binary64 value.
     pub value: f64,
+    /// Exact shifted-binary64 encoding.
+    pub raw_value: [u8; 8],
     /// Byte offset of the field marker within the reconstructed payload.
     pub payload_offset: u64,
     /// Absolute file offset of the field marker.
@@ -6083,6 +6087,8 @@ pub struct FeatureBlockPayloadScalar {
     pub field_code: u8,
     /// Exact finite shifted-binary64 value.
     pub value: f64,
+    /// Exact shifted-binary64 encoding.
+    pub raw_value: [u8; 8],
     /// Payload-relative `PYf` marker offset.
     pub payload_offset: u64,
     /// Absolute source offset of the `PYf` marker.
@@ -7716,6 +7722,7 @@ pub fn feature_datum_csys_payload_scalars(
                         ordinal: ordinal as u32,
                         field_code: scalar.field_code,
                         value: scalar.value,
+                        raw_value: scalar.raw_value,
                         payload_offset: scalar.offset as u64,
                         source_offset: source_offset(scalar.offset)?,
                     })
@@ -8293,6 +8300,7 @@ pub fn feature_sketch_payload_scalars(
                             ordinal: ordinal as u32,
                             field_code: field.field_code,
                             value: field.value,
+                            raw_value: field.raw_value,
                             payload_offset: field.offset as u64,
                             source_offset,
                         }
@@ -10900,6 +10908,7 @@ pub fn feature_block_payload_scalars(
                         ordinal: ordinal as u32,
                         field_code: field.field_code,
                         value: field.value,
+                        raw_value: field.raw_value,
                         payload_offset: field.offset as u64,
                         source_offset,
                     })

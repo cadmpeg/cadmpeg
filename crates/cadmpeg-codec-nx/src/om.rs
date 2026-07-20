@@ -462,6 +462,8 @@ pub struct ConstructionPayloadScalarField {
     pub field_code: u8,
     /// Finite decoded binary64 value.
     pub value: f64,
+    /// Exact shifted-binary64 encoding.
+    pub raw_value: [u8; 8],
 }
 
 /// Decode exact `50 59 66, field_code, 00, shifted-f64` construction fields.
@@ -474,14 +476,20 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
         {
             continue;
         }
-        let Some(value) = shifted_ieee_f64(bytes.get(start + 5..start + 13).unwrap_or_default())
+        let Some(raw_value) = bytes
+            .get(start + 5..start + 13)
+            .and_then(|value| <[u8; 8]>::try_from(value).ok())
         else {
+            continue;
+        };
+        let Some(value) = shifted_ieee_f64(&raw_value) else {
             continue;
         };
         fields.push(ConstructionPayloadScalarField {
             offset: start,
             field_code: bytes[start + 3],
             value,
+            raw_value,
         });
     }
     fields

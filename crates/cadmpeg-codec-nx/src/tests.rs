@@ -6372,6 +6372,7 @@ fn om_datum_csys_scalar_field_uses_the_common_shifted_binary64_frame() {
     assert_eq!(fields[0].offset, 1);
     assert_eq!(fields[0].field_code, 0x64);
     assert_eq!(fields[0].value, 25.4);
+    assert_eq!(fields[0].raw_value, shifted);
 }
 
 #[test]
@@ -8976,15 +8977,20 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         payload_offset: 10,
         source_offset: 100,
     };
-    let scalar = |id: &str, ordinal: u32, value: f64| FeatureBlockPayloadScalar {
-        id: id.to_string(),
-        operation_label: operation_label.clone(),
-        construction_payload: construction_payload.clone(),
-        ordinal,
-        field_code: 100,
-        value,
-        payload_offset: 20 + u64::from(ordinal) * 13,
-        source_offset: 110 + u64::from(ordinal) * 13,
+    let scalar = |id: &str, ordinal: u32, value: f64| {
+        let mut raw_value = value.to_be_bytes();
+        raw_value[0] -= 0x10;
+        FeatureBlockPayloadScalar {
+            id: id.to_string(),
+            operation_label: operation_label.clone(),
+            construction_payload: construction_payload.clone(),
+            ordinal,
+            field_code: 100,
+            value,
+            raw_value,
+            payload_offset: 20 + u64::from(ordinal) * 13,
+            source_offset: 110 + u64::from(ordinal) * 13,
+        }
     };
     let scalars = [scalar("first", 0, 1.25), scalar("second", 1, -2.5)];
     let record = FeatureBlockPayloadNamedRecord {
