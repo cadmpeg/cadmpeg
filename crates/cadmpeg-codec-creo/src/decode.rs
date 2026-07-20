@@ -7000,7 +7000,7 @@ fn transfer_feature_extrusion_surfaces(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
+        if !feature_allows_linear_extrusion(scan, feature_id) {
             continue;
         }
         let Some(order_table) = &definition.order_table else {
@@ -7017,26 +7017,6 @@ fn transfer_feature_extrusion_surfaces(
             .iter()
             .filter(|segment| solved.contains(&segment.external_id))
         {
-            let surface_id = match segment.kind {
-                crate::feature::FeatureSegmentKind::Line
-                | crate::feature::FeatureSegmentKind::Arc => {
-                    order_table.internal_id(segment.external_id).and_then(|_| {
-                        generated_surface_id_for_feature(
-                            &scan.feature_entity_tables,
-                            feature_id,
-                            segment.external_id,
-                        )
-                    })
-                }
-                crate::feature::FeatureSegmentKind::Point => None,
-            };
-            let Some(surface_id) = surface_id else {
-                continue;
-            };
-            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
-            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
-                continue;
-            }
             let Some(section_geometry) =
                 resolved_section_segment_geometry(definition, &points, segment)
             else {
@@ -7045,6 +7025,20 @@ fn transfer_feature_extrusion_surfaces(
             let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
                 continue;
             };
+            let Some(surface_id) = ordered_analytic_surface_id_for_feature(
+                &scan.surface_rows,
+                &scan.feature_entity_tables,
+                feature_id,
+                order_table,
+                segment.external_id,
+                &geometry,
+            ) else {
+                continue;
+            };
+            let id = SurfaceId(format!("creo:visibgeom:surface#{surface_id}"));
+            if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+                continue;
+            }
             annotate(
                 annotations,
                 &id,
@@ -11983,7 +11977,7 @@ fn transfer_resolved_extrusion_vertex_orbit_curves(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if feature_recipe(scan, feature_id) != Some(crate::feature::FeatureRecipeKind::Extrude) {
+        if !feature_allows_linear_extrusion(scan, feature_id) {
             continue;
         }
         let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
@@ -13841,6 +13835,12 @@ fn section_sweep_allows_linear_extrusion(
     recipe == Some(crate::feature::FeatureRecipeKind::Extrude)
         || (matches!(schema_class, 916 | 917)
             && recipe != Some(crate::feature::FeatureRecipeKind::Revolve))
+}
+
+fn feature_allows_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
+    feature_schema_class(scan, feature_id).is_some_and(|schema_class| {
+        section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
+    })
 }
 
 fn preceding_features_establish_body(ir: &CadIr) -> bool {
