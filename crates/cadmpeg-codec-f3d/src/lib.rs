@@ -545,7 +545,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .all(|byte| byte.is_ascii_digit())
             && !scope.kind.is_empty()
             && match (
-                scope.kind.as_str(),
+                is_extrude,
                 scope.extrude_operation,
                 scope.extrude_operation_offset,
                 scope.extrude_extent,
@@ -556,7 +556,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 scope.extrude_start_offset,
             ) {
                 (
-                    "Extrude" | "Extrusion",
+                    true,
                     Some(_),
                     Some(operation_offset),
                     Some(_),
@@ -576,8 +576,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         && direction_reversed_offset == operation_offset.saturating_add(12)
                         && extent_offsets[1] < scope.reference_count_offset
                 }
-                ("Extrude" | "Extrusion", _, _, _, _, _, _, _, _) => false,
-                (_, None, None, None, None, None, None, None, None) => true,
+                (true, _, _, _, _, _, _, _, _) => false,
+                (false, None, None, None, None, None, None, None, None) => true,
                 _ => false,
             }
             && match (scope.kind.as_str(), scope.surface_stitch_operation.as_ref()) {
