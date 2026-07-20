@@ -1030,6 +1030,23 @@ pub struct DraftConstructionFixedLane {
     pub value_offsets: Vec<usize>,
 }
 
+/// Complete shifted-binary32 lane in a reconstructed draft graph payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DraftConstructionBinary32Lane {
+    /// Payload-relative offset of the discriminator.
+    pub offset: usize,
+    /// Exact discriminator selecting the lane form.
+    pub discriminator: [u8; 18],
+    /// Exact `03` or `04` branch byte.
+    pub branch: u8,
+    /// Ordered finite shifted-IEEE binary32 values.
+    pub values: Vec<f64>,
+    /// Exact four-byte shifted encodings.
+    pub raw_values: Vec<[u8; 4]>,
+    /// Payload-relative offsets of the scalar encodings.
+    pub value_offsets: Vec<usize>,
+}
+
 /// Compact object frame in a bounded offset-store block.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DataBlockObjectFrame {
@@ -3238,6 +3255,59 @@ pub fn draft_construction_fixed_lanes(bytes: &[u8]) -> Vec<DraftConstructionFixe
             })
         })
         .collect()
+}
+
+/// Decode every complete shifted-binary32 lane in a reconstructed draft graph payload.
+pub fn draft_construction_binary32_lanes(bytes: &[u8]) -> Vec<DraftConstructionBinary32Lane> {
+    const BRANCH_04: [u8; 18] = [
+        0x90, 0x18, 0x45, 0x01, 0x04, 0x01, 0x04, 0x01, 0xc0, 0x45, 0x04, 0x04, 0x80, 0x86, 0x02,
+        0x00, 0x03, 0x00,
+    ];
+    const BRANCH_03: [u8; 18] = [
+        0x90, 0x18, 0x45, 0x01, 0x04, 0x01, 0x03, 0x01, 0xc0, 0x45, 0x04, 0x00, 0x80, 0x86, 0x02,
+        0x00, 0x03, 0x00,
+    ];
+    let mut lanes = [BRANCH_04, BRANCH_03]
+        .into_iter()
+        .flat_map(|discriminator| {
+            bytes
+                .windows(discriminator.len())
+                .enumerate()
+                .filter_map(move |(offset, window)| {
+                    (window == discriminator).then_some(())?;
+                    let mut at = offset + discriminator.len();
+                    let mut values = Vec::new();
+                    let mut raw_values = Vec::new();
+                    let mut value_offsets = Vec::new();
+                    while matches!(bytes.get(at), Some(0x40..=0x5f | 0xc0..=0xdf)) {
+                        let raw: [u8; 4] = bytes.get(at..at + 4)?.try_into().ok()?;
+                        let Some((value, PayloadScalarEncoding::Binary32, 4)) =
+                            payload_scalar(&raw)
+                        else {
+                            return None;
+                        };
+                        values.push(value);
+                        raw_values.push(raw);
+                        value_offsets.push(at);
+                        at += 4;
+                    }
+                    if values.is_empty() || bytes.get(at) != Some(&0x00) {
+                        return None;
+                    }
+                    Some(DraftConstructionBinary32Lane {
+                        offset,
+                        discriminator,
+                        branch: discriminator[6],
+                        values,
+                        raw_values,
+                        value_offsets,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    lanes.sort_by_key(|lane| lane.offset);
+    lanes
 }
 
 /// Decode a bounded datum-CSYS descriptor containing one unique maximal identity run.

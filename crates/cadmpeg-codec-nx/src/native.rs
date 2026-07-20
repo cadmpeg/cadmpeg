@@ -5344,6 +5344,35 @@ pub struct FeatureDraftConstructionFixedLane {
     pub value_source_offsets: Vec<u64>,
 }
 
+/// Complete shifted-binary32 lane in a reconstructed draft graph payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureDraftConstructionBinary32Lane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `DRAFT` operation label.
+    pub operation_label: String,
+    /// Reconstructed graph payload carrying the lane.
+    pub graph_payload: String,
+    /// Zero-based lane order in the reconstructed payload.
+    pub ordinal: u32,
+    /// Exact discriminator selecting the lane form.
+    pub discriminator: [u8; 18],
+    /// Exact `03` or `04` branch byte.
+    pub branch: u8,
+    /// Ordered finite shifted-IEEE binary32 values.
+    pub values: Vec<f64>,
+    /// Exact four-byte shifted encodings.
+    pub raw_values: Vec<[u8; 4]>,
+    /// Payload-relative offset of the discriminator.
+    pub payload_offset: u64,
+    /// Payload-relative offsets of the scalar encodings.
+    pub value_payload_offsets: Vec<u64>,
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the scalar encodings.
+    pub value_source_offsets: Vec<u64>,
+}
+
 /// Complete identity frame in a reconstructed draft construction payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureDraftConstructionIdentityFrame {
@@ -9135,6 +9164,61 @@ pub fn feature_draft_construction_fixed_lanes(
                         ordinal: ordinal as u32,
                         values: lane.values,
                         markers: lane.markers,
+                        raw_values: lane.raw_values,
+                        payload_offset,
+                        value_payload_offsets,
+                        source_offset: joined_payload_source_offset(
+                            payload_offset,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
+                        value_source_offsets,
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Decode complete shifted-binary32 lanes from reconstructed draft graph payloads.
+pub fn feature_draft_construction_binary32_lanes(
+    container: &Container,
+    payloads: &[FeatureDraftConstructionGraphPayload],
+) -> Vec<FeatureDraftConstructionBinary32Lane> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::draft_construction_binary32_lanes(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, lane)| {
+                    let payload_offset = lane.offset as u64;
+                    let value_payload_offsets = lane
+                        .value_offsets
+                        .into_iter()
+                        .map(|offset| offset as u64)
+                        .collect::<Vec<_>>();
+                    let value_source_offsets = value_payload_offsets
+                        .iter()
+                        .map(|offset| {
+                            joined_payload_source_offset(*offset, &starts, &lengths, &sources)
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(FeatureDraftConstructionBinary32Lane {
+                        id: format!("{}-binary32-lane-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        graph_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        discriminator: lane.discriminator,
+                        branch: lane.branch,
+                        values: lane.values,
                         raw_values: lane.raw_values,
                         payload_offset,
                         value_payload_offsets,

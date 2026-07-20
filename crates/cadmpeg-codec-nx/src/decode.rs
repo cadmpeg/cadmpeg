@@ -7746,6 +7746,11 @@ fn attach_native_object_model(
             &scan.container,
             &feature_draft_construction_graph_payloads,
         );
+    let feature_draft_construction_binary32_lanes =
+        crate::native::feature_draft_construction_binary32_lanes(
+            &scan.container,
+            &feature_draft_construction_graph_payloads,
+        );
     let feature_draft_construction_identity_frames =
         crate::native::feature_draft_construction_identity_frames(
             &scan.container,
@@ -8040,6 +8045,7 @@ fn attach_native_object_model(
         && feature_draft_construction_payloads.is_empty()
         && feature_draft_construction_graph_payloads.is_empty()
         && feature_draft_construction_fixed_lanes.is_empty()
+        && feature_draft_construction_binary32_lanes.is_empty()
         && feature_draft_construction_identity_frames.is_empty()
         && feature_draft_construction_terminal_lanes.is_empty()
         && feature_surface_construction_references.is_empty()
@@ -8838,6 +8844,7 @@ fn attach_native_object_model(
             draft_construction_payloads: &feature_draft_construction_payloads,
             draft_construction_graph_payloads: &feature_draft_construction_graph_payloads,
             draft_construction_fixed_lanes: &feature_draft_construction_fixed_lanes,
+            draft_construction_binary32_lanes: &feature_draft_construction_binary32_lanes,
             draft_construction_identity_frames: &feature_draft_construction_identity_frames,
             draft_construction_terminal_lanes: &feature_draft_construction_terminal_lanes,
             surface_construction_references: &feature_surface_construction_references,
@@ -9312,6 +9319,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_draft_construction_fixed_lanes",
             &feature_draft_construction_fixed_lanes,
+        )?;
+    }
+    if !feature_draft_construction_binary32_lanes.is_empty() {
+        namespace.set_arena(
+            "feature_draft_construction_binary32_lanes",
+            &feature_draft_construction_binary32_lanes,
         )?;
     }
     if !feature_draft_construction_identity_frames.is_empty() {
@@ -10018,6 +10031,7 @@ struct FeatureOperationSources<'a> {
     draft_construction_payloads: &'a [crate::native::FeatureDraftConstructionPayload],
     draft_construction_graph_payloads: &'a [crate::native::FeatureDraftConstructionGraphPayload],
     draft_construction_fixed_lanes: &'a [crate::native::FeatureDraftConstructionFixedLane],
+    draft_construction_binary32_lanes: &'a [crate::native::FeatureDraftConstructionBinary32Lane],
     draft_construction_identity_frames:
         &'a [crate::native::FeatureDraftConstructionIdentityFrame],
     draft_construction_terminal_lanes: &'a [crate::native::FeatureDraftConstructionTerminalLane],
@@ -10123,6 +10137,7 @@ fn attach_feature_operations(
         draft_construction_payloads,
         draft_construction_graph_payloads,
         draft_construction_fixed_lanes,
+        draft_construction_binary32_lanes,
         draft_construction_identity_frames,
         draft_construction_terminal_lanes,
         surface_construction_references,
@@ -10311,6 +10326,10 @@ fn attach_feature_operations(
         });
     let draft_construction_fixed_lanes_by_operation =
         records_by_operation(draft_construction_fixed_lanes, |lane| &lane.operation_label);
+    let draft_construction_binary32_lanes_by_operation =
+        records_by_operation(draft_construction_binary32_lanes, |lane| {
+            &lane.operation_label
+        });
     let draft_construction_identity_frames_by_operation =
         records_by_operation(draft_construction_identity_frames, |frame| {
             &frame.operation_label
@@ -11116,6 +11135,16 @@ fn attach_feature_operations(
         {
             source_properties.insert(
                 format!("draft_construction_fixed_lane.{}", lane.ordinal),
+                lane.id.clone(),
+            );
+        }
+        for lane in draft_construction_binary32_lanes_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("draft_construction_binary32_lane.{}", lane.ordinal),
                 lane.id.clone(),
             );
         }
