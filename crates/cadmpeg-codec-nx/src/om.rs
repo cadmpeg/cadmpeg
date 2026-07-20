@@ -1308,6 +1308,8 @@ pub struct OperationBody11Continuation {
     pub continuation_offset: usize,
     /// Object index in the terminal field.
     pub terminal_object_index: u32,
+    /// Exact serialized terminal object-index token.
+    pub raw_terminal_object_index: Vec<u8>,
     /// Absolute offset of the terminal object-index marker.
     pub terminal_offset: usize,
 }
@@ -1378,6 +1380,10 @@ pub struct ExtrudePayload32Branch {
     pub second_index_offsets: Vec<usize>,
     /// Object index in the terminal field.
     pub terminal_object_index: u32,
+    /// Exact serialized terminal object-index token.
+    pub raw_terminal_object_index: Vec<u8>,
+    /// Absolute offset of the terminal object-index token.
+    pub terminal_offset: usize,
 }
 
 /// Ordered construction-reference field at the start of a `BLOCK` payload.
@@ -2958,6 +2964,7 @@ pub fn operation_body_11_continuations(
                     .to_vec(),
                 continuation_offset: record.offset + continuation_at,
                 terminal_object_index,
+                raw_terminal_object_index: record.bytes[terminal_at..next].to_vec(),
                 terminal_offset: record.offset + terminal_at,
             })
         })
@@ -3117,6 +3124,8 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
             .map(|offset| record.offset + offset)
             .collect(),
         terminal_object_index,
+        raw_terminal_object_index: record.bytes[at + 2..next].to_vec(),
+        terminal_offset: record.offset + at + 2,
     })
 }
 

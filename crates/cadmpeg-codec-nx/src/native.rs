@@ -5972,6 +5972,8 @@ pub struct FeatureOperationBody11Continuation {
     pub continuation_source_offset: u64,
     /// Object index in the terminal field.
     pub terminal_object_index: u32,
+    /// Exact serialized terminal object-index token.
+    pub raw_terminal_object_index: Vec<u8>,
     /// Absolute file offset of the terminal object-index marker.
     pub terminal_source_offset: u64,
 }
@@ -6067,6 +6069,10 @@ pub struct FeatureExtrudePayload32Branch {
     pub second_data_blocks: Vec<Option<String>>,
     /// Object index in the terminal field.
     pub terminal_object_index: u32,
+    /// Exact serialized terminal object-index token.
+    pub raw_terminal_object_index: Vec<u8>,
+    /// Absolute file offset of the terminal object-index token.
+    pub terminal_source_offset: u64,
     /// Absolute file offset of the `32` branch marker.
     pub source_offset: u64,
 }
@@ -10725,6 +10731,7 @@ pub fn feature_operation_body_11_continuations(
                         continuation_source_offset: entry_offset
                             + continuation.continuation_offset as u64,
                         terminal_object_index: continuation.terminal_object_index,
+                        raw_terminal_object_index: continuation.raw_terminal_object_index,
                         terminal_source_offset: entry_offset + continuation.terminal_offset as u64,
                     }),
             );
@@ -10938,6 +10945,8 @@ pub fn feature_extrude_payload_32_branches(
                     .collect(),
                 second_data_blocks,
                 terminal_object_index: branch.terminal_object_index,
+                raw_terminal_object_index: branch.raw_terminal_object_index,
+                terminal_source_offset: entry_offset + branch.terminal_offset as u64,
                 source_offset: entry_offset + branch.offset as u64,
             });
         }

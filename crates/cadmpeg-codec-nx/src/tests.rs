@@ -2778,7 +2778,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 152);
+    assert_eq!(namespace.version, 153);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -8667,6 +8667,7 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     assert_eq!(continuation.raw_continuation_index, [0x80, 0x43]);
     assert_eq!(continuation.continuation_offset, 126);
     assert_eq!(continuation.terminal_object_index, 114);
+    assert_eq!(continuation.raw_terminal_object_index, [0x72]);
     assert_eq!(continuation.terminal_offset, 131);
 
     let mut distinct_terminal = bytes.to_vec();
@@ -8957,6 +8958,8 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     );
     assert_eq!(branch.second_index_offsets, [136, 138]);
     assert_eq!(branch.terminal_object_index, 115);
+    assert_eq!(branch.raw_terminal_object_index, [0x73]);
+    assert_eq!(branch.terminal_offset, 142);
 
     let mut invalid = bytes.to_vec();
     invalid[36] = 0xff;
@@ -9022,6 +9025,8 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         second_index_source_offsets: vec![22],
         second_data_blocks: vec![Some("block#3".to_string())],
         terminal_object_index: 42,
+        raw_terminal_object_index: vec![42],
+        terminal_source_offset: 23,
         source_offset: 20,
     };
     let constructions = crate::native::feature_extrude_32_constructions(
@@ -13533,7 +13538,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 152);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 153);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
