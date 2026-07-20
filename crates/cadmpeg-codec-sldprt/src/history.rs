@@ -349,6 +349,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
             let by_native = history
                 .features
                 .iter()
+                .filter(|feature| !is_history_metadata_record(feature, &history.features))
                 .map(|feature| (feature.id.as_str(), neutral_feature_id(&feature.id)))
                 .collect::<HashMap<_, _>>();
             let native_by_source = source_bindings
@@ -365,7 +366,7 @@ pub fn project_features(histories: &[FeatureHistory]) -> Vec<cadmpeg_ir::feature
             history
                 .features
                 .iter()
-                .filter(|feature| !is_custom_property(feature))
+                .filter(|feature| !is_history_metadata_record(feature, &history.features))
                 .map(move |feature| cadmpeg_ir::features::Feature {
                     id: neutral_feature_id(&feature.id),
                     ordinal: u64::from(feature.ordinal),
@@ -508,9 +509,30 @@ fn is_custom_property(feature: &Feature) -> bool {
     feature.xml_tag.eq_ignore_ascii_case("CustomProperty")
 }
 
+fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
+    if is_custom_property(feature)
+        || matches!(
+            feature.input_class.as_deref(),
+            Some("moAttribute_c" | "moConfigCommentsFolder_c")
+        )
+    {
+        return true;
+    }
+    feature.input_class.is_none()
+        && feature.source_id.as_deref() == Some("-1")
+        && !feature.name.is_empty()
+        && features.iter().any(|candidate| {
+            candidate.input_class.as_deref() == Some("moAttribute_c")
+                && candidate.name.starts_with(&feature.name)
+        })
+}
+
 fn unique_source_bindings(history: &FeatureHistory) -> HashMap<&str, Option<(&str, FeatureId)>> {
     let mut bindings = HashMap::new();
     for feature in &history.features {
+        if is_history_metadata_record(feature, &history.features) {
+            continue;
+        }
         let Some(source) = feature.source_id.as_deref() else {
             continue;
         };
@@ -691,19 +713,34 @@ pub fn project_configurations(histories: &[FeatureHistory]) -> Vec<DesignConfigu
 pub fn project_parameters(histories: &[FeatureHistory]) -> Vec<DesignParameter> {
     let feature_names = histories
         .iter()
-        .flat_map(|history| &history.features)
+        .flat_map(|history| {
+            history
+                .features
+                .iter()
+                .filter(|feature| !is_history_metadata_record(feature, &history.features))
+        })
         .filter(|feature| !feature.name.is_empty())
         .map(|feature| (neutral_feature_id(&feature.id), feature.name.clone()))
         .collect::<HashMap<_, _>>();
     let global_owners = histories
         .iter()
-        .flat_map(|history| &history.features)
+        .flat_map(|history| {
+            history
+                .features
+                .iter()
+                .filter(|feature| !is_history_metadata_record(feature, &history.features))
+        })
         .filter(|feature| feature.kind.eq_ignore_ascii_case("EquationDriven"))
         .map(|feature| neutral_feature_id(&feature.id))
         .collect::<HashSet<_>>();
     let mut parameters = histories
         .iter()
-        .flat_map(|history| &history.features)
+        .flat_map(|history| {
+            history
+                .features
+                .iter()
+                .filter(|feature| !is_history_metadata_record(feature, &history.features))
+        })
         .flat_map(|feature| {
             parameter_names(feature)
                 .into_iter()
@@ -2329,6 +2366,36 @@ mod history_reference_tests {
         });
         sync_neutral_features(&[], &[], &[], &mut native).unwrap();
         assert_eq!(native.unwrap().feature_histories[0].features.len(), 1);
+    }
+
+    #[test]
+    fn native_attribute_records_are_metadata_not_model_features() {
+        let mut definition = feature("definition", Some("-1"), 0);
+        definition.name = "VendorSettings.1".into();
+        definition
+            .parameters
+            .insert("VendorSettings.1".into(), "0".into());
+        let mut attribute = feature("attribute", Some("27"), 1);
+        attribute.name = "VendorSettings.14236".into();
+        attribute.input_class = Some("moAttribute_c".into());
+        let mut comments = feature("comments", Some("28"), 2);
+        comments.input_class = Some("moConfigCommentsFolder_c".into());
+        let mut model = feature("model", Some("29"), 3);
+        model.xml_tag = "Sketch".into();
+        model.kind = "Sketch".into();
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![definition, attribute, comments, model],
+        };
+
+        let projected = project_features(std::slice::from_ref(&history));
+        assert_eq!(projected.len(), 1);
+        assert_eq!(projected[0].native_ref.as_deref(), Some("model"));
+        assert!(project_parameters(&[history]).is_empty());
     }
 
     #[test]
