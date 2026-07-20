@@ -6120,6 +6120,94 @@ impl MeshQuotient {
         }
 
         #[allow(clippy::too_many_arguments)]
+        fn partial_ordered_assignment_viable(
+            assignment: &MeshFaceBoundaryAssignment,
+            edge_ids: &[usize],
+            edges: &[[usize; 2]],
+            domains: &[Vec<usize>],
+            assigned: &[Option<usize>],
+            candidate: (usize, usize),
+            budget: Option<&MeshConstraintBudget>,
+        ) -> bool {
+            let directions = |use_: MeshBoundaryEdgeCandidate| match use_.reversed {
+                Some(reversed) => [Some(reversed), None],
+                None => [Some(false), Some(true)],
+            };
+            let port_root = |use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool| {
+                let local = edge_ids.iter().position(|edge| *edge == use_.edge)?;
+                Some(edges[local][usize::from(if end { !reversed } else { reversed })])
+            };
+            let compatible = |left: usize, right: usize| {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return false;
+                }
+                let value = |root| {
+                    if root == candidate.0 {
+                        Some(candidate.1)
+                    } else {
+                        assigned[root]
+                    }
+                };
+                match (value(left), value(right)) {
+                    (Some(left), Some(right)) => left == right,
+                    (Some(point), None) => domains[right].contains(&point),
+                    (None, Some(point)) => domains[left].contains(&point),
+                    (None, None) => !domains[left]
+                        .iter()
+                        .all(|point| !domains[right].contains(point)),
+                }
+            };
+
+            assignment.boundaries.iter().all(|boundary| {
+                let Some(first) = boundary.first().copied() else {
+                    return false;
+                };
+                directions(first)
+                    .into_iter()
+                    .flatten()
+                    .any(|first_direction| {
+                        let mut previous = vec![first_direction];
+                        for index in 1..boundary.len() {
+                            let mut next = Vec::new();
+                            for direction in directions(boundary[index]).into_iter().flatten() {
+                                if previous.iter().copied().any(|previous_direction| {
+                                    let Some(left) =
+                                        port_root(boundary[index - 1], previous_direction, true)
+                                    else {
+                                        return false;
+                                    };
+                                    let Some(right) = port_root(boundary[index], direction, false)
+                                    else {
+                                        return false;
+                                    };
+                                    compatible(left, right)
+                                }) {
+                                    next.push(direction);
+                                }
+                            }
+                            if next.is_empty() {
+                                return false;
+                            }
+                            previous = next;
+                        }
+                        previous.into_iter().any(|previous_direction| {
+                            let Some(left) = port_root(
+                                *boundary.last().expect("nonempty boundary"),
+                                previous_direction,
+                                true,
+                            ) else {
+                                return false;
+                            };
+                            let Some(right) = port_root(first, first_direction, false) else {
+                                return false;
+                            };
+                            compatible(left, right)
+                        })
+                    })
+            })
+        }
+
+        #[allow(clippy::too_many_arguments)]
         fn walk(
             domains: &[Vec<usize>],
             edges: &[[usize; 2]],
@@ -6206,6 +6294,35 @@ impl MeshQuotient {
                                         return false;
                                     }
                                 }
+                            }
+                        }
+                        if let (Some(boundary_domains), Some(closed_faces)) =
+                            (boundary_domains, closed_faces)
+                        {
+                            let boundaries_viable =
+                                boundary_domains.iter().enumerate().all(|(face, domain)| {
+                                    if !closed_faces[face] {
+                                        return true;
+                                    }
+                                    match domain {
+                                        MeshFaceBoundaryDomain::Ordered(assignments) => {
+                                            assignments.iter().any(|assignment| {
+                                                partial_ordered_assignment_viable(
+                                                    assignment,
+                                                    edge_ids,
+                                                    edges,
+                                                    domains,
+                                                    assigned,
+                                                    (root, *point),
+                                                    budget,
+                                                )
+                                            })
+                                        }
+                                        _ => true,
+                                    }
+                                });
+                            if !boundaries_viable {
+                                return false;
                             }
                         }
                         true
