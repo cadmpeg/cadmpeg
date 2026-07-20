@@ -2482,6 +2482,30 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn localized_cut_extrusion_uses_its_native_class_operation() {
+        let mut cut = feature("cut", Some("43"), 0);
+        cut.input_class = Some("moCut_c".into());
+        cut.parameters.insert("D1".into(), "45".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![cut],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::Extrude {
+                op: BooleanOp::Cut,
+                ..
+            }
+        ));
+    }
+
+    #[test]
     fn revolve_uses_its_ordered_angle_dimension_name() {
         let mut revolve = feature("revolve", Some("42"), 0);
         revolve.input_class = Some("moRevolution_c".into());
@@ -4243,6 +4267,7 @@ fn is_extrude(feature: &Feature) -> bool {
 
 fn extrude_feature_op(feature: &Feature) -> Option<BooleanOp> {
     extrude_op(&feature.kind)
+        .or_else(|| (feature.input_class.as_deref() == Some("moCut_c")).then_some(BooleanOp::Cut))
 }
 
 fn is_revolve(feature: &Feature) -> bool {
