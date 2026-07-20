@@ -6180,7 +6180,7 @@ impl MeshQuotient {
                 rollback(assigned, point_uses, propagated);
                 return;
             };
-            if *states >= MAX_COORDINATE_CLOSURE_STATES {
+            if budget.is_none() && *states >= MAX_COORDINATE_CLOSURE_STATES {
                 *exhausted = true;
                 rollback(assigned, point_uses, propagated);
                 return;
@@ -6347,6 +6347,9 @@ impl MeshQuotient {
             }
         }
         let assignment = assignment.into_iter().collect::<Option<Vec<_>>>()?;
+        for (&root, &point) in roots.iter().zip(&assignment) {
+            self.domains[root] = Arc::new(HashSet::from([point]));
+        }
         let mut root_by_point = HashMap::new();
         for (&root, &point) in roots.iter().zip(&assignment) {
             if let Some(previous) = root_by_point.insert(point, root) {
@@ -10182,12 +10185,30 @@ where
             None => return None,
         }
         propagate_common_boundary_components(&mesh_domains, edge_candidates, &mut mesh_quotient)?;
-        complete_mesh_endpoint_candidates_from_quotient(
+        let completed = complete_mesh_endpoint_candidates_from_quotient(
             edge_candidates,
             &mut mesh_quotient,
             MAX_COMPLETED_PAIRS_PER_EDGE,
             MAX_COMPLETED_PAIRS_TOTAL,
-        )?
+        );
+        if let Some(completed) = completed {
+            completed
+        } else {
+            let closure_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+            let mut closed = mesh_quotient.clone();
+            closed.close_coordinate_roots_with_budget(
+                vertex_points.len(),
+                edge_candidates,
+                Some(&closure_budget),
+            )?;
+            mesh_quotient = closed;
+            complete_mesh_endpoint_candidates_from_quotient(
+                edge_candidates,
+                &mut mesh_quotient,
+                MAX_COMPLETED_PAIRS_PER_EDGE,
+                MAX_COMPLETED_PAIRS_TOTAL,
+            )?
+        }
     } else {
         edge_candidates.to_vec()
     };
@@ -13795,6 +13816,11 @@ mod motif_tests {
         assert_eq!(assignment[&quotient.union.find(0)], 0);
         assert_eq!(assignment[&quotient.union.find(1)], 1);
         assert_eq!(assignment[&quotient.union.find(3)], 2);
+        for node in 0..6 {
+            let root = quotient.union.find(node);
+            assert_eq!(quotient.domains[root].len(), 1);
+            assert_eq!(quotient.domains[root].iter().next(), assignment.get(&root));
+        }
     }
 
     #[test]
