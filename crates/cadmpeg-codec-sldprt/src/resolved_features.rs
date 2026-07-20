@@ -289,6 +289,12 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
             } else if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
                 match code {
                     0 | 1 => SketchInputKind::LineOrCircle,
+                    2 if payload.get(offset..offset + SKETCH_MARKER.len())
+                        == Some(SKETCH_MARKER)
+                        && marker_is_geometry_locus(payload, offset) =>
+                    {
+                        SketchInputKind::LineOrCircle
+                    }
                     2 => SketchInputKind::Arc,
                     _ => SketchInputKind::from_native_code_and_layout(code, false),
                 }
@@ -3270,6 +3276,8 @@ mod marker_tests {
         let mut payload = vec![0; detail + 80];
         payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+        payload[5..13].fill(0xff);
+        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
         payload[17..21].copy_from_slice(&2u32.to_le_bytes());
         payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
         payload[27..29].copy_from_slice(&1u16.to_le_bytes());
@@ -3394,6 +3402,16 @@ mod marker_tests {
         assert_eq!(
             compact_bounded_curve_tangent(&payload, 0),
             Some([-1.0, 0.0])
+        );
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::LineOrCircle
+        );
+
+        payload[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        assert_eq!(
+            sketch_input_entities(&payload, "lane")[0].kind,
+            SketchInputKind::Arc
         );
 
         let mut legacy_112 = vec![0; 112 + LEGACY_SKETCH_MARKER.len()];
