@@ -417,6 +417,60 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && operation.thickness_offset < scope.paired_byte_offset
             }
         };
+        let edge_flange_link = match (&scope.edge_flange_operation, scope.kind.as_str()) {
+            (None, _) => true,
+            (Some(_), kind) if kind != "EdgeFlange" => false,
+            (Some(operation), _) => {
+                let edge_count = operation.edge_wrapper_record_indices.len();
+                edge_count > 0
+                    && operation.edge_group_record_indices.len() == edge_count
+                    && operation.edge_operand_record_indices.len() == edge_count
+                    && operation.aggregate_operand_record_indices.len() == edge_count
+                    && scope.reference_members.len() == edge_count * 4 + 4
+                    && (0..edge_count).all(|ordinal| {
+                        scope.reference_members[ordinal * 3]
+                            == operation.edge_wrapper_record_indices[ordinal]
+                            && scope.reference_members[ordinal * 3 + 1]
+                                == operation.edge_group_record_indices[ordinal]
+                            && scope.reference_members[ordinal * 3 + 2]
+                                == operation.edge_operand_record_indices[ordinal]
+                    })
+                    && scope.reference_members[edge_count * 3]
+                        == operation.height_owner_record_index
+                    && scope.reference_members[edge_count * 3 + 1]
+                        == operation.angle_owner_record_index
+                    && scope.reference_members[edge_count * 3 + 2]
+                        == operation.aggregate_group_record_index
+                    && scope.reference_members[edge_count * 3 + 3..edge_count * 4 + 3]
+                        == operation.aggregate_operand_record_indices
+                    && scope.reference_members.last() == Some(&operation.settings_record_index)
+                    && operation.bend_radius.is_finite()
+                    && operation.bend_radius > 0.0
+                    && operation.bend_radius_offset > scope.byte_offset
+                    && operation.bend_radius_offset < scope.paired_byte_offset
+            }
+        };
+        let hem_link = match (&scope.hem_operation, scope.kind.as_str()) {
+            (None, _) => true,
+            (Some(_), kind) if kind != "Hem" => false,
+            (Some(operation), _) => {
+                scope.reference_members
+                    == [
+                        operation.gap_owner_record_index,
+                        operation.length_owner_record_index,
+                        operation.edge_wrapper_record_index,
+                        operation.edge_group_record_index,
+                        operation.edge_operand_record_index,
+                        operation.aggregate_group_record_index,
+                        operation.aggregate_operand_record_index,
+                        operation.settings_record_index,
+                    ]
+                    && operation.bend_radius.is_finite()
+                    && operation.bend_radius > 0.0
+                    && operation.bend_radius_offset == scope.byte_offset.saturating_add(156)
+                    && operation.bend_radius_offset < scope.paired_byte_offset
+            }
+        };
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -525,6 +579,8 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && extrude_profile_link
             && base_flange_profile_link
             && base_flange_link
+            && edge_flange_link
+            && hem_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;

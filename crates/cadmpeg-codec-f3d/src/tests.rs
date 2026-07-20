@@ -9260,6 +9260,8 @@ fn validation_requires_one_exact_extrude_profile_group() {
         move_operation: None,
         surface_stitch_operation: None,
         base_flange_operation: None,
+        edge_flange_operation: None,
+        hem_operation: None,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,

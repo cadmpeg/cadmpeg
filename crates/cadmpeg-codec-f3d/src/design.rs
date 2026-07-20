@@ -15,11 +15,12 @@ use crate::records::{
     DesignConstructionPersistentIdentity, DesignDimensionAnnotationFrame,
     DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
-    DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader,
-    DesignEntitySelectionOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
-    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup,
-    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
+    DesignDirectFaceOperation, DesignEdgeFlangeOperation, DesignEdgeIdentityOperand,
+    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeExtent,
+    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
+    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignHemOperation,
     DesignMoveOperation, DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion,
     DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
     DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
@@ -17541,6 +17542,16 @@ fn parse_parameter_scope(
     } else {
         None
     };
+    let edge_flange_operation = if kind == "EdgeFlange" {
+        exact_edge_flange_operation(bytes, start, paired_at, reference_members)
+    } else {
+        None
+    };
+    let hem_operation = if kind == "Hem" {
+        exact_hem_operation(bytes, start, paired_at, reference_members)
+    } else {
+        None
+    };
     let family = design_feature_family(kind);
     // A `Sketch` scope carries either the single entity-suffix reference form
     // or, when the stream's sketch entity headers use the `EntityGenesis`
@@ -17717,6 +17728,8 @@ fn parse_parameter_scope(
         move_operation: None,
         surface_stitch_operation,
         base_flange_operation,
+        edge_flange_operation,
+        hem_operation,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
@@ -17803,6 +17816,139 @@ fn exact_base_flange_operation(
         thickness_record_index: *thickness_record_index,
         settings_record_index: *settings_record_index,
     })
+}
+
+fn exact_edge_flange_operation(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+) -> Option<DesignEdgeFlangeOperation> {
+    let edge_count = usize::try_from(u32_at(bytes, start.checked_add(30)?)?).ok()?;
+    if edge_count == 0 || references.len() != edge_count.checked_mul(4)?.checked_add(4)? {
+        return None;
+    }
+    let height_owner_record_index = references[edge_count * 3];
+    let angle_owner_record_index = references[edge_count * 3 + 1];
+    let aggregate_group_record_index = references[edge_count * 3 + 2];
+    let aggregate_operand_record_indices = references
+        .get(edge_count * 3 + 3..edge_count * 4 + 3)?
+        .to_vec();
+    let settings_record_index = *references.last()?;
+    let common = start
+        .checked_add(69)?
+        .checked_add(edge_count.checked_mul(16)?)?;
+    let extent_code = u32_at(bytes, common)?;
+    if usize::try_from(u32_at(bytes, common + 4)?).ok()? != edge_count {
+        return None;
+    }
+    let mut edge_wrapper_record_indices = Vec::with_capacity(edge_count);
+    let mut edge_group_record_indices = Vec::with_capacity(edge_count);
+    let mut edge_operand_record_indices = Vec::with_capacity(edge_count);
+    let mut cursor = common.checked_add(8)?;
+    for ordinal in 0..edge_count {
+        let wrapper = marked_record_reference(bytes, cursor)?;
+        if wrapper != references[ordinal * 3] {
+            return None;
+        }
+        edge_wrapper_record_indices.push(wrapper);
+        edge_group_record_indices.push(references[ordinal * 3 + 1]);
+        edge_operand_record_indices.push(references[ordinal * 3 + 2]);
+        cursor = cursor.checked_add(11)?;
+    }
+    if marked_record_reference(bytes, cursor)? != settings_record_index {
+        return None;
+    }
+    cursor = cursor.checked_add(11)?;
+    let height_datum_code = u32_at(bytes, cursor)?;
+    cursor = cursor.checked_add(4)?;
+    if marked_record_reference(bytes, cursor)? != angle_owner_record_index {
+        return None;
+    }
+    cursor = cursor.checked_add(11)?;
+    if marked_record_reference(bytes, cursor)? != height_owner_record_index {
+        return None;
+    }
+    cursor = cursor.checked_add(11)?;
+    let bend_position_code = u32_at(bytes, cursor)?;
+    let bend_radius_offset = cursor.checked_add(15)?;
+    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    if !bend_radius.is_finite() || bend_radius <= 0.0 {
+        return None;
+    }
+    let result_count = usize::try_from(u32_at(bytes, bend_radius_offset.checked_add(14)?)?).ok()?;
+    let expected_length = 411usize
+        .checked_add(edge_count.checked_mul(82)?)?
+        .checked_add(result_count.checked_mul(15)?)?;
+    if paired_at.checked_sub(start)? != expected_length {
+        return None;
+    }
+    Some(DesignEdgeFlangeOperation {
+        edge_wrapper_record_indices,
+        edge_group_record_indices,
+        edge_operand_record_indices,
+        aggregate_group_record_index,
+        aggregate_operand_record_indices,
+        height_owner_record_index,
+        angle_owner_record_index,
+        settings_record_index,
+        bend_radius,
+        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        extent_code,
+        height_datum_code,
+        bend_position_code,
+    })
+}
+
+fn exact_hem_operation(
+    bytes: &[u8],
+    start: usize,
+    paired_at: usize,
+    references: &[u32],
+) -> Option<DesignHemOperation> {
+    let [gap_owner_record_index, length_owner_record_index, edge_wrapper_record_index, edge_group_record_index, edge_operand_record_index, aggregate_group_record_index, aggregate_operand_record_index, settings_record_index] =
+        references
+    else {
+        return None;
+    };
+    if paired_at.checked_sub(start)? != 494
+        || u32_at(bytes, start + 89)? != 1
+        || marked_record_reference(bytes, start + 93)? != *edge_wrapper_record_index
+        || marked_record_reference(bytes, start + 104)? != *settings_record_index
+        || marked_record_reference(bytes, start + 127)? != *gap_owner_record_index
+        || marked_record_reference(bytes, start + 138)? != *length_owner_record_index
+        || !matches!(bytes.get(start + 119), Some(0 | 1))
+    {
+        return None;
+    }
+    let bend_radius_offset = start.checked_add(156)?;
+    let bend_radius = f64_at(bytes, bend_radius_offset)?;
+    if !bend_radius.is_finite() || bend_radius <= 0.0 {
+        return None;
+    }
+    Some(DesignHemOperation {
+        edge_wrapper_record_index: *edge_wrapper_record_index,
+        edge_group_record_index: *edge_group_record_index,
+        edge_operand_record_index: *edge_operand_record_index,
+        aggregate_group_record_index: *aggregate_group_record_index,
+        aggregate_operand_record_index: *aggregate_operand_record_index,
+        gap_owner_record_index: *gap_owner_record_index,
+        length_owner_record_index: *length_owner_record_index,
+        settings_record_index: *settings_record_index,
+        bend_radius,
+        bend_radius_offset: u64::try_from(bend_radius_offset).ok()?,
+        form_code: u32_at(bytes, start + 85)?,
+        direction_code: u32_at(bytes, start + 115)?,
+        is_flipped: bytes[start + 119] != 0,
+        bend_position_code: u32_at(bytes, start + 121)?,
+    })
+}
+
+fn marked_record_reference(bytes: &[u8], at: usize) -> Option<u32> {
+    if bytes.get(at) != Some(&1) || bytes.get(at + 5..at + 11)? != [0; 6] {
+        return None;
+    }
+    u32_at(bytes, at + 1)
 }
 
 /// Decode the unique local-to-model placement frame referenced by every
@@ -24986,6 +25132,81 @@ mod relation_tests {
     }
 
     #[test]
+    fn edge_flange_scope_binds_each_edge_and_aggregate_operand() {
+        fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
+            bytes[at] = 1;
+            bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+        }
+
+        let references = [
+            101, 102, 103, 111, 112, 113, 121, 122, 123, 131, 132, 133, 140, 141, 150, 151, 152,
+            153, 160, 170,
+        ];
+        let mut bytes = vec![0; 814];
+        bytes[30..34].copy_from_slice(&4u32.to_le_bytes());
+        let common = 133;
+        bytes[common..common + 4].copy_from_slice(&2u32.to_le_bytes());
+        bytes[common + 4..common + 8].copy_from_slice(&4u32.to_le_bytes());
+        for (ordinal, record_index) in [101, 111, 121, 131].into_iter().enumerate() {
+            reference(&mut bytes, common + 8 + ordinal * 11, record_index);
+        }
+        reference(&mut bytes, common + 52, 170);
+        bytes[common + 63..common + 67].copy_from_slice(&2u32.to_le_bytes());
+        reference(&mut bytes, common + 67, 141);
+        reference(&mut bytes, common + 78, 140);
+        bytes[common + 89..common + 93].copy_from_slice(&4u32.to_le_bytes());
+        bytes[237..245].copy_from_slice(&0.25f64.to_le_bytes());
+        bytes[251..255].copy_from_slice(&5u32.to_le_bytes());
+
+        let operation = super::exact_edge_flange_operation(&bytes, 0, 814, &references)
+            .expect("fixed EdgeFlange operation");
+        assert_eq!(operation.edge_wrapper_record_indices, [101, 111, 121, 131]);
+        assert_eq!(operation.edge_group_record_indices, [102, 112, 122, 132]);
+        assert_eq!(operation.edge_operand_record_indices, [103, 113, 123, 133]);
+        assert_eq!(operation.aggregate_group_record_index, 150);
+        assert_eq!(
+            operation.aggregate_operand_record_indices,
+            [151, 152, 153, 160]
+        );
+        assert_eq!(operation.height_owner_record_index, 140);
+        assert_eq!(operation.angle_owner_record_index, 141);
+        assert_eq!(operation.bend_radius, 0.25);
+        assert_eq!(operation.bend_radius_offset, 237);
+    }
+
+    #[test]
+    fn hem_scope_binds_parameters_edge_groups_and_rule_radius() {
+        fn reference(bytes: &mut [u8], at: usize, record_index: u32) {
+            bytes[at] = 1;
+            bytes[at + 1..at + 5].copy_from_slice(&record_index.to_le_bytes());
+        }
+
+        let references = [201, 202, 203, 204, 205, 206, 207, 208];
+        let mut bytes = vec![0; 494];
+        bytes[85..89].copy_from_slice(&3u32.to_le_bytes());
+        bytes[89..93].copy_from_slice(&1u32.to_le_bytes());
+        reference(&mut bytes, 93, 203);
+        reference(&mut bytes, 104, 208);
+        bytes[115..119].copy_from_slice(&1u32.to_le_bytes());
+        bytes[121..125].copy_from_slice(&4u32.to_le_bytes());
+        reference(&mut bytes, 127, 201);
+        reference(&mut bytes, 138, 202);
+        bytes[156..164].copy_from_slice(&0.25f64.to_le_bytes());
+
+        let operation =
+            super::exact_hem_operation(&bytes, 0, 494, &references).expect("fixed Hem operation");
+        assert_eq!(operation.edge_wrapper_record_index, 203);
+        assert_eq!(operation.edge_group_record_index, 204);
+        assert_eq!(operation.edge_operand_record_index, 205);
+        assert_eq!(operation.aggregate_group_record_index, 206);
+        assert_eq!(operation.aggregate_operand_record_index, 207);
+        assert_eq!(operation.gap_owner_record_index, 201);
+        assert_eq!(operation.length_owner_record_index, 202);
+        assert_eq!(operation.bend_radius, 0.25);
+        assert_eq!(operation.bend_radius_offset, 156);
+    }
+
+    #[test]
     fn extrude_operand_group_has_an_exact_counted_frame() {
         fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
             bytes.extend_from_slice(&3u32.to_le_bytes());
@@ -25033,6 +25254,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -25394,6 +25617,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -25778,6 +26003,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -30020,6 +30247,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -30140,6 +30369,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -30307,6 +30538,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -30886,6 +31119,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -31592,6 +31827,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -31865,6 +32102,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -31976,6 +32215,8 @@ mod relation_tests {
                 move_operation: None,
                 surface_stitch_operation: None,
                 base_flange_operation: None,
+                edge_flange_operation: None,
+                hem_operation: None,
                 fixed_extrude_parameters: None,
                 fixed_fillet_parameters: None,
                 fixed_chamfer_parameters: None,
@@ -32617,6 +32858,8 @@ mod relation_tests {
             move_operation: None,
             surface_stitch_operation: None,
             base_flange_operation: None,
+            edge_flange_operation: None,
+            hem_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,

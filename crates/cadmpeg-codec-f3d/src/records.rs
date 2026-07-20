@@ -1072,6 +1072,12 @@ pub struct DesignParameterScope {
     /// Exact profile and thickness records carried by a `BaseFlange` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_flange_operation: Option<DesignBaseFlangeOperation>,
+    /// Exact edge, parameter, and settings records carried by an `EdgeFlange` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_flange_operation: Option<DesignEdgeFlangeOperation>,
+    /// Exact edge, parameter, and settings records carried by a `Hem` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hem_operation: Option<DesignHemOperation>,
     /// Exact fixed scalar lanes carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
@@ -1154,6 +1160,70 @@ pub struct DesignBaseFlangeOperation {
     pub thickness_record_index: u32,
     /// Indexed operation-settings record.
     pub settings_record_index: u32,
+}
+
+/// Fixed construction carried by a sheet-metal `EdgeFlange` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEdgeFlangeOperation {
+    /// Per-edge selection-wrapper records in source order.
+    pub edge_wrapper_record_indices: Vec<u32>,
+    /// Per-edge role-`0x08` operand-group records parallel to the wrappers.
+    pub edge_group_record_indices: Vec<u32>,
+    /// Per-edge recipe-backed operand records parallel to the wrappers.
+    pub edge_operand_record_indices: Vec<u32>,
+    /// Role-`0x43` aggregate operand-group record.
+    pub aggregate_group_record_index: u32,
+    /// Recipe-backed aggregate operands in source order.
+    pub aggregate_operand_record_indices: Vec<u32>,
+    /// Height parameter-owner record.
+    pub height_owner_record_index: u32,
+    /// Angle parameter-owner record.
+    pub angle_owner_record_index: u32,
+    /// Indexed operation-settings record.
+    pub settings_record_index: u32,
+    /// Positive rule-derived inside bend radius in centimetres.
+    pub bend_radius: f64,
+    /// Byte offset of `bend_radius`.
+    pub bend_radius_offset: u64,
+    /// Uninterpreted extent discriminator.
+    pub extent_code: u32,
+    /// Uninterpreted height-datum discriminator.
+    pub height_datum_code: u32,
+    /// Uninterpreted bend-position discriminator.
+    pub bend_position_code: u32,
+}
+
+/// Fixed construction carried by a sheet-metal `Hem` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignHemOperation {
+    /// Selection-wrapper record for the hem edge.
+    pub edge_wrapper_record_index: u32,
+    /// Role-`0x08` operand-group record.
+    pub edge_group_record_index: u32,
+    /// Recipe-backed role-`0x08` operand record.
+    pub edge_operand_record_index: u32,
+    /// Role-`0x43` aggregate operand-group record.
+    pub aggregate_group_record_index: u32,
+    /// Recipe-backed role-`0x43` operand record.
+    pub aggregate_operand_record_index: u32,
+    /// Gap parameter-owner record.
+    pub gap_owner_record_index: u32,
+    /// Length parameter-owner record.
+    pub length_owner_record_index: u32,
+    /// Indexed operation-settings record.
+    pub settings_record_index: u32,
+    /// Positive rule-derived inside bend radius in centimetres.
+    pub bend_radius: f64,
+    /// Byte offset of `bend_radius`.
+    pub bend_radius_offset: u64,
+    /// Uninterpreted hem-form discriminator.
+    pub form_code: u32,
+    /// Uninterpreted direction discriminator.
+    pub direction_code: u32,
+    /// Serialized direction reversal.
+    pub is_flipped: bool,
+    /// Uninterpreted bend-position discriminator.
+    pub bend_position_code: u32,
 }
 
 /// Result bodies captured when a Fusion direct-modeling Base Feature closes.
