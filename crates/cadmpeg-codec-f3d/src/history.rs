@@ -2205,6 +2205,7 @@ pub(crate) fn bind_edge_identity_history(
         operand.historical_state_ids.clear();
         operand.treatment_radius_candidates.clear();
         operand.transition_edge_candidates.clear();
+        operand.resolved_edge_slots.clear();
         operand.resolved_edge_slot = None;
         operand.resolution_identity_id = None;
         let Some(stream) = crate::design::native_stream(&operand.id) else {
@@ -2309,6 +2310,85 @@ pub(crate) fn bind_edge_identity_history(
         }
         operand.resolved_edge_slot = Some(edge);
         operand.resolution_identity_id = Some(identity_id.to_owned());
+    }
+}
+
+/// Resolve a class-297 edge-treatment member whose persistent local identity
+/// names the member's embedded bounded-face recipe. The rule selects every
+/// deleted treatment edge on the recipe's exact preceding support face.
+pub(crate) fn bind_edge_identity_bounded_face_rules(
+    operands: &mut [DesignEdgeIdentityOperand],
+    face_operands: &[crate::records::DesignFaceOperand],
+) {
+    use crate::records::ConstructionRecipeKind;
+
+    for operand in operands {
+        operand.resolved_edge_slots.clear();
+        if operand.resolved_edge_slot.is_some() {
+            continue;
+        }
+        let matches = face_operands
+            .iter()
+            .filter(|face| {
+                crate::design::native_stream(&face.id) == crate::design::native_stream(&operand.id)
+                    && face.scope_record_index == operand.scope_record_index
+                    && face.group_record_index == Some(operand.group_record_index)
+                    && face.group_member_ordinal == Some(operand.group_member_ordinal)
+                    && face.record_index == operand.record_index
+                    && face.class_tag == operand.class_tag
+                    && face.recipe_kind == ConstructionRecipeKind::BoundedFace
+                    && u64::from(face.recipe_record_index) == operand.local_id
+            })
+            .collect::<Vec<_>>();
+        let [face] = matches.as_slice() else { continue };
+        let [support] = face.historical_support_contexts.as_slice() else {
+            continue;
+        };
+        if support.preceding_face_slots.is_empty()
+            || support.changed_preceding_face_slots != support.preceding_face_slots
+            || support.preceding_face_boundaries.len() != support.preceding_face_slots.len()
+            || support
+                .preceding_face_slots
+                .iter()
+                .collect::<HashSet<_>>()
+                .len()
+                != support.preceding_face_slots.len()
+            || support.preceding_face_boundaries.iter().any(|boundary| {
+                support
+                    .preceding_face_boundaries
+                    .iter()
+                    .filter(|candidate| candidate.face_slot == boundary.face_slot)
+                    .count()
+                    != 1
+                    || !support.preceding_face_slots.contains(&boundary.face_slot)
+                    || boundary.loops.iter().any(|loop_| {
+                        loop_.edge_slots.len() != loop_.coedge_slots.len()
+                            || loop_.edge_slots.is_empty()
+                    })
+            })
+        {
+            continue;
+        }
+        let transition = operand
+            .transition_edge_candidates
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>();
+        if transition.is_empty() {
+            continue;
+        }
+        let mut seen = HashSet::new();
+        operand.resolved_edge_slots = support
+            .preceding_face_boundaries
+            .iter()
+            .flat_map(|boundary| &boundary.loops)
+            .flat_map(|loop_| &loop_.edge_slots)
+            .copied()
+            .filter(|edge| transition.contains(edge) && seen.insert(*edge))
+            .collect();
+        if !operand.resolved_edge_slots.is_empty() {
+            operand.resolution_identity_id = Some(face.id.clone());
+        }
     }
 }
 
@@ -4298,5 +4378,101 @@ mod tests {
             &[2].into_iter().collect()
         )
         .is_empty());
+    }
+
+    #[test]
+    fn bounded_face_identity_selects_ordered_deleted_treatment_edges() {
+        use crate::records::{
+            ConstructionRecipeKind, DesignEdgeIdentityOperand, DesignFaceOperand,
+            DesignHistoricalFaceBoundaryContext, DesignHistoricalFaceLoopContext,
+            DesignHistoricalFaceSupportContext,
+        };
+
+        let mut identities = vec![DesignEdgeIdentityOperand {
+            id: "f3d:Design/BulkStream.dat:edge-identity#10".into(),
+            scope_record_index: 1,
+            group_record_index: 2,
+            group_member_ordinal: 0,
+            record_index: 10,
+            byte_offset: 100,
+            class_tag: "297".into(),
+            compact_layout: false,
+            local_id: 13,
+            local_id_offset: 123,
+            asset_id: "asset".into(),
+            asset_id_offset: 0,
+            context_id: "context".into(),
+            context_id_offset: 0,
+            historical_entity_kind: None,
+            historical_entity_ref: None,
+            historical_state_ids: Vec::new(),
+            treatment_radius_candidates: Vec::new(),
+            transition_edge_candidates: vec![7, 8, 9],
+            resolved_edge_slots: Vec::new(),
+            resolved_edge_slot: None,
+            resolution_identity_id: None,
+        }];
+        let face = DesignFaceOperand {
+            id: "f3d:Design/BulkStream.dat:design-face-operand#10".into(),
+            scope_record_index: 1,
+            scope_reference_ordinal: 0,
+            group_record_index: Some(2),
+            group_member_ordinal: Some(0),
+            record_index: 10,
+            byte_offset: 100,
+            class_tag: "297".into(),
+            paired_byte_offset: 200,
+            paired_class_tag: "259".into(),
+            recipe_record_index: 13,
+            recipe_record_byte_offset: 300,
+            recipe_id: "recipe".into(),
+            recipe_prefix_offset: 0,
+            recipe_prefix_bytes: Vec::new(),
+            recipe_references: Vec::new(),
+            recipe_kind: ConstructionRecipeKind::BoundedFace,
+            recipe_program_offset: 0,
+            recipe_program: vec![0],
+            recipe_node_offsets: Vec::new(),
+            recipe_nodes: Vec::new(),
+            candidate_faces: Vec::new(),
+            unreferenced_candidate_faces: Vec::new(),
+            alternate_selector_candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            changed_candidate_faces: Vec::new(),
+            historical_support_contexts: vec![DesignHistoricalFaceSupportContext {
+                active_face_slot: 30,
+                surface_slot: 40,
+                preceding_face_slots: vec![50],
+                preceding_face_boundaries: vec![DesignHistoricalFaceBoundaryContext {
+                    face_slot: 50,
+                    loops: vec![DesignHistoricalFaceLoopContext {
+                        loop_slot: 60,
+                        coedge_slots: vec![70, 71, 72],
+                        edge_slots: vec![8, 6, 7],
+                        vertex_slots: Vec::new(),
+                        point_slots: Vec::new(),
+                        positions: Vec::new(),
+                    }],
+                }],
+                changed_preceding_face_slots: vec![50],
+            }],
+            resolved_face_slots: Vec::new(),
+            next_record_index: 14,
+            next_byte_offset: 400,
+        };
+
+        bind_edge_identity_bounded_face_rules(&mut identities, &[face.clone()]);
+        assert_eq!(identities[0].resolved_edge_slots, [8, 7]);
+        assert_eq!(
+            identities[0].resolution_identity_id.as_deref(),
+            Some(face.id.as_str())
+        );
+
+        let mut inconsistent = face;
+        inconsistent.historical_support_contexts[0]
+            .changed_preceding_face_slots
+            .clear();
+        bind_edge_identity_bounded_face_rules(&mut identities, &[inconsistent]);
+        assert!(identities[0].resolved_edge_slots.is_empty());
     }
 }

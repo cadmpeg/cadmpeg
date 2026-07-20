@@ -1480,12 +1480,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut expected_face_operands = native.design_face_operands.clone();
+    history::bind_face_operand_history_candidates(
+        &mut expected_face_operands,
+        &native.design_parameter_scopes,
+        &native.design_construction_operand_groups,
+        &native.asm_histories,
+    );
     let mut expected_edge_identity_operands = native.design_edge_identity_operands.clone();
     history::bind_edge_identity_history(
         &mut expected_edge_identity_operands,
         &native.design_construction_operand_identities,
         &native.design_parameter_scopes,
         &native.asm_histories,
+    );
+    history::bind_edge_identity_bounded_face_rules(
+        &mut expected_edge_identity_operands,
+        &expected_face_operands,
     );
     let expected_edge_identity_operands = expected_edge_identity_operands
         .iter()
@@ -1942,13 +1953,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|group| ((design_stream(&group.id), group.record_index), group))
         .collect::<HashMap<_, _>>();
-    let mut expected_face_operands = native.design_face_operands.clone();
-    history::bind_face_operand_history_candidates(
-        &mut expected_face_operands,
-        &native.design_parameter_scopes,
-        &native.design_construction_operand_groups,
-        &native.asm_histories,
-    );
     let expected_face_operands = expected_face_operands
         .iter()
         .map(|operand| (operand.id.as_str(), operand))
@@ -2071,21 +2075,13 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 .bytes()
                 .all(|byte| byte.is_ascii_digit())
             && scope.is_some_and(|scope| {
-                matches!(
-                    design::design_feature_family(&scope.kind),
-                    Some(
-                        design::DesignFeatureFamily::Extrude
-                            | design::DesignFeatureFamily::OffsetFaces
-                            | design::DesignFeatureFamily::Shell
-                            | design::DesignFeatureFamily::Thicken
-                            | design::DesignFeatureFamily::Split
-                    )
-                ) && match (operand.group_record_index, operand.group_member_ordinal) {
+                let family = design::design_feature_family(&scope.kind);
+                match (operand.group_record_index, operand.group_member_ordinal) {
                     (Some(group_record_index), Some(group_member_ordinal)) => {
                         let group = face_groups_by_index
                             .get(&(native_stream, group_record_index))
                             .copied();
-                        group.is_some_and(|group| {
+                        let exact_group_member = group.is_some_and(|group| {
                             group.scope_record_index == operand.scope_record_index
                                 && usize::try_from(operand.scope_reference_ordinal)
                                     .ok()
@@ -2095,10 +2091,42 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                                     .ok()
                                     .and_then(|ordinal| group.members.get(ordinal))
                                     == Some(&operand.record_index)
-                        })
+                        });
+                        exact_group_member
+                            && match family {
+                                Some(
+                                    design::DesignFeatureFamily::Extrude
+                                    | design::DesignFeatureFamily::OffsetFaces
+                                    | design::DesignFeatureFamily::Shell
+                                    | design::DesignFeatureFamily::Thicken
+                                    | design::DesignFeatureFamily::Split,
+                                ) => true,
+                                Some(
+                                    design::DesignFeatureFamily::Fillet
+                                    | design::DesignFeatureFamily::Chamfer,
+                                ) => {
+                                    operand.recipe_kind
+                                        == records::ConstructionRecipeKind::BoundedFace
+                                        && native.design_edge_identity_operands.iter().any(
+                                            |identity| {
+                                                design_stream(&identity.id) == native_stream
+                                                    && identity.scope_record_index
+                                                        == operand.scope_record_index
+                                                    && identity.group_record_index
+                                                        == group_record_index
+                                                    && identity.group_member_ordinal
+                                                        == group_member_ordinal
+                                                    && identity.record_index == operand.record_index
+                                                    && identity.class_tag == operand.class_tag
+                                                    && identity.local_id
+                                                        == u64::from(operand.recipe_record_index)
+                                            },
+                                        )
+                                }
+                                _ => false,
+                            }
                     }
                     (None, None) => {
-                        let family = design::design_feature_family(&scope.kind);
                         let direct_member = usize::try_from(operand.scope_reference_ordinal)
                             .ok()
                             .and_then(|ordinal| scope.reference_members.get(ordinal))

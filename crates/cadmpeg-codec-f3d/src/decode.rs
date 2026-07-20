@@ -2300,6 +2300,10 @@ fn extend_related_design_records(
         &native.design_construction_operand_groups,
         &native.asm_histories,
     );
+    crate::history::bind_edge_identity_bounded_face_rules(
+        &mut native.design_edge_identity_operands,
+        &native.design_face_operands,
+    );
     native.design_sketch_placements = crate::design::decode_sketch_placements(
         scan,
         &native.design_parameter_scopes,

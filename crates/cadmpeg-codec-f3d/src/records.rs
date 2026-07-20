@@ -1723,10 +1723,15 @@ pub struct DesignEdgeIdentityOperand {
     /// surviving support faces in the owning feature transition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub transition_edge_candidates: Vec<i64>,
+    /// Ordered deleted treatment edges selected by an embedded bounded-face
+    /// rule owned by this operand.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub resolved_edge_slots: Vec<i64>,
     /// Unique edge slot selected in the owning feature's preceding state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,
-    /// Native identity whose history family proves `resolved_edge_slot`.
+    /// Native identity or embedded bounded-face operand proving the resolved
+    /// edge selection.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolution_identity_id: Option<String>,
 }
