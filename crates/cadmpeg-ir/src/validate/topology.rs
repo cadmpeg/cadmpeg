@@ -1965,8 +1965,7 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                 kind,
                 diameter,
                 extent,
-                direction,
-                position,
+                placements,
             } => {
                 face_selections.extend(face);
                 extents.extend(extent);
@@ -1998,13 +1997,22 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                             && angle.0 < std::f64::consts::PI
                     }
                 };
-                let position_valid = position.is_none_or(|point| {
-                    point.x.is_finite() && point.y.is_finite() && point.z.is_finite()
+                let placements_valid = placements.iter().all(|placement| {
+                    let (point, direction) = match placement {
+                        crate::features::HolePlacement::Directed {
+                            position,
+                            direction,
+                        } => (position, direction),
+                        crate::features::HolePlacement::Axis { origin, axis } => (origin, axis),
+                    };
+                    point.x.is_finite()
+                        && point.y.is_finite()
+                        && point.z.is_finite()
+                        && valid_feature_direction(*direction)
                 });
                 if diameter.is_some_and(|value| !positive_feature_length(value))
                     || !kind_valid
-                    || !position_valid
-                    || direction.is_some_and(|value| !valid_feature_direction(value))
+                    || !placements_valid
                 {
                     feature_geometry_error(findings, feature, "hole geometry is invalid");
                 }

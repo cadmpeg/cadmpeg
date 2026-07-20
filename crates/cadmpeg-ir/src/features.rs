@@ -701,12 +701,9 @@ pub enum FeatureDefinition {
         /// Face the hole is placed on, when known.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         face: Option<FaceSelection>,
-        /// Hole placement position, when recorded independently of `face`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        position: Option<Point3>,
-        /// Drilling direction, when recorded independently of the placement face.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        direction: Option<Vector3>,
+        /// Complete one-or-many hole placements. Empty when placement is unresolved.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        placements: Vec<HolePlacement>,
         /// Entry-shape family of the hole.
         kind: HoleKind,
         /// Hole diameter, when resolved.
@@ -733,6 +730,26 @@ pub enum FeatureDefinition {
         /// Source operation attributes that are not dimensional parameters.
         #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
         properties: BTreeMap<String, String>,
+    },
+}
+
+/// One complete spatial placement in a hole operation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum HolePlacement {
+    /// Position and directed drilling vector recorded by the feature definition.
+    Directed {
+        /// Hole entry position in model space.
+        position: Point3,
+        /// Directed drilling vector.
+        direction: Vector3,
+    },
+    /// Unoriented geometric axis inferred from a generated cylindrical surface.
+    Axis {
+        /// Point on the cylinder axis in model space.
+        origin: Point3,
+        /// Unoriented cylinder-axis vector; its sign has no semantic meaning.
+        axis: Vector3,
     },
 }
 

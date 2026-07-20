@@ -3543,8 +3543,10 @@ fn encoder_writes_source_less_native_features() {
         },
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native("face-g".into())),
-            position: Some(Point3::new(3.0, 4.0, 5.0)),
-            direction: Some(Vector3::new(0.0, 0.0, -1.0)),
+            placements: vec![cadmpeg_ir::features::HolePlacement::Directed {
+                position: Point3::new(3.0, 4.0, 5.0),
+                direction: Vector3::new(0.0, 0.0, -1.0),
+            }],
             kind: HoleKind::Countersink {
                 diameter: Length(8.0),
                 angle: Angle(1.4),
@@ -13798,14 +13800,13 @@ fn semantic_writer_round_trips_typed_simple_blind_hole() {
         &decoded.ir.model.features[0].definition,
         FeatureDefinition::Hole {
             face: None,
-            position: None,
-            direction: None,
+            ref placements,
             kind: HoleKind::Simple,
             diameter: Some(Length(6.35)),
             extent: Some(Extent::Blind {
                 length: Length(12.0),
             }),
-        }
+        } if placements.is_empty()
     ));
 
     let FeatureDefinition::Hole {
@@ -13876,8 +13877,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
     assert!(matches!(
         &decoded.ir.model.features[2].definition,
         FeatureDefinition::Hole {
-            position: None,
-            direction: None,
+            ref placements,
             kind: HoleKind::Unresolved {
                 form: None,
                 counterbore_diameter: Some(Length(11.0)),
@@ -13888,7 +13888,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
             diameter: Some(Length(5.0)),
             extent: None,
             ..
-        }
+        } if placements.is_empty()
     ));
 
     for (index, message) in [
@@ -13935,7 +13935,7 @@ fn semantic_writer_retains_partial_native_hole_construction() {
 
 #[test]
 fn semantic_writer_round_trips_hole_placement() {
-    use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition};
+    use cadmpeg_ir::features::{Extent, FaceSelection, FeatureDefinition, HolePlacement};
     use cadmpeg_ir::math::{Point3, Vector3};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -13949,8 +13949,7 @@ fn semantic_writer_round_trips_hole_placement() {
         .unwrap();
     let FeatureDefinition::Hole {
         face,
-        position,
-        direction,
+        placements,
         extent,
         ..
     } = &mut decoded.ir.model.features[0].definition
@@ -13958,12 +13957,19 @@ fn semantic_writer_round_trips_hole_placement() {
         panic!("typed hole feature");
     };
     assert_eq!(face, &Some(FaceSelection::Native("face:12".into())));
-    assert_eq!(*position, Some(Point3::new(1.0, 2.0, 3.0)));
-    assert_eq!(*direction, Some(Vector3::new(0.0, 0.0, -1.0)));
+    assert_eq!(
+        placements,
+        &[HolePlacement::Directed {
+            position: Point3::new(1.0, 2.0, 3.0),
+            direction: Vector3::new(0.0, 0.0, -1.0),
+        }]
+    );
 
     *face = Some(FaceSelection::Native("face:13".into()));
-    *position = Some(Point3::new(4.0, 5.0, 6.0));
-    *direction = Some(Vector3::new(0.0, 1.0, 0.0));
+    *placements = vec![HolePlacement::Directed {
+        position: Point3::new(4.0, 5.0, 6.0),
+        direction: Vector3::new(0.0, 1.0, 0.0),
+    }];
     *extent = Some(Extent::ThroughAll);
 
     let mut encoded = Vec::new();
@@ -13983,13 +13989,14 @@ fn semantic_writer_round_trips_hole_placement() {
         &regenerated.ir.model.features[0].definition,
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Native(face)),
-            position: Some(position),
-            direction: Some(direction),
+            placements,
             extent: Some(Extent::ThroughAll),
             ..
         } if face == "face:13"
-            && position == &Point3::new(4.0, 5.0, 6.0)
-            && direction == &Vector3::new(0.0, 1.0, 0.0)
+            && placements == &[HolePlacement::Directed {
+                position: Point3::new(4.0, 5.0, 6.0),
+                direction: Vector3::new(0.0, 1.0, 0.0),
+            }]
     ));
 }
 

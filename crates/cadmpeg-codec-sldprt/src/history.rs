@@ -5339,14 +5339,24 @@ fn project_hole(
             .get("Face")
             .cloned()
             .map(FaceSelection::Native),
-        position: match feature.properties.get("Position") {
-            Some(value) => parse_point3_mm(value),
-            None => None,
-        },
-        direction: match feature.properties.get("Direction") {
-            Some(value) => parse_vector3(value).filter(|direction| valid_direction(*direction)),
-            None => None,
-        },
+        placements: feature
+            .properties
+            .get("Position")
+            .and_then(|value| parse_point3_mm(value))
+            .zip(
+                feature
+                    .properties
+                    .get("Direction")
+                    .and_then(|value| parse_vector3(value))
+                    .filter(|direction| valid_direction(*direction)),
+            )
+            .map(|(position, direction)| {
+                vec![cadmpeg_ir::features::HolePlacement::Directed {
+                    position,
+                    direction,
+                }]
+            })
+            .unwrap_or_default(),
         kind,
         diameter,
         extent,
@@ -11111,15 +11121,14 @@ pub fn sync_neutral_features(
             }
             FeatureDefinition::Hole {
                 face,
-                position,
-                direction,
+                placements,
                 kind,
                 diameter,
                 extent,
             } => {
                 if existing
                     .as_deref()
-                    .is_some_and(|record| !feature_family(record, "Hole"))
+                    .is_some_and(|record| classify(record) != Some(FeatureClass::Hole))
                 {
                     return Err(CodecError::NotImplemented(format!(
                         "SLDPRT feature {} changes unsupported hole semantics",
@@ -11193,34 +11202,43 @@ pub fn sync_neutral_features(
                         properties.remove("Face");
                     }
                 }
-                match position {
-                    Some(position)
-                        if position.x.is_finite()
-                            && position.y.is_finite()
-                            && position.z.is_finite() =>
-                    {
+                match placements.as_slice() {
+                    [cadmpeg_ir::features::HolePlacement::Directed {
+                        position,
+                        direction,
+                    }] => {
+                        if !position.x.is_finite()
+                            || !position.y.is_finite()
+                            || !position.z.is_finite()
+                        {
+                            return Err(CodecError::Malformed(format!(
+                                "SLDPRT feature {} has a non-finite hole position",
+                                feature.id
+                            )));
+                        }
+                        require_direction(*direction, &feature.id, "hole direction")?;
                         properties.insert("Position".into(), format_point3_mm(*position));
+                        properties.insert("Direction".into(), format_vector3(*direction));
                     }
-                    Some(_) => {
-                        return Err(CodecError::Malformed(format!(
-                            "SLDPRT feature {} has a non-finite hole position",
+                    [] if existing.is_none() => {
+                        properties.remove("Position");
+                        properties.remove("Direction");
+                    }
+                    [] => {}
+                    placements
+                        if existing.is_some()
+                            && placements.iter().all(|placement| {
+                                matches!(
+                                    placement,
+                                    cadmpeg_ir::features::HolePlacement::Axis { .. }
+                                )
+                            }) => {}
+                    _ => {
+                        return Err(CodecError::NotImplemented(format!(
+                            "SLDPRT feature {} has placements that require native generated-surface identities",
                             feature.id
                         )));
                     }
-                    None if existing.is_none() => {
-                        properties.remove("Position");
-                    }
-                    None => {}
-                }
-                match direction {
-                    Some(direction) => {
-                        require_direction(*direction, &feature.id, "hole direction")?;
-                        properties.insert("Direction".into(), format_vector3(*direction));
-                    }
-                    None if existing.is_none() => {
-                        properties.remove("Direction");
-                    }
-                    None => {}
                 }
                 match extent {
                     Some(Extent::Blind {

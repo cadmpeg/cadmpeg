@@ -13,7 +13,7 @@ use crate::records::{
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::cursor::bounded_len;
 use cadmpeg_ir::features::{
-    Angle, BooleanOp, FeatureDefinition, Length, PathRef, PatternKind, PatternSeed,
+    Angle, BooleanOp, FeatureDefinition, HolePlacement, Length, PathRef, PatternKind, PatternSeed,
 };
 use cadmpeg_ir::geometry::{Curve, CurveGeometry, NurbsCurve, Surface, SurfaceGeometry};
 use cadmpeg_ir::ids::{
@@ -7279,6 +7279,229 @@ pub(crate) fn project_helix_axes(
     }
 }
 
+/// Bind Hole output identities to solved cylindrical axes only when the
+/// producer's output cardinality uniquely accounts for every matching bore
+/// cylinder in the decoded B-rep.
+pub(crate) fn project_hole_axes(
+    model_features: &mut [cadmpeg_ir::features::Feature],
+    surfaces: &[Surface],
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    let native_sources = histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .filter_map(|feature| {
+            Some((
+                feature.id.as_str(),
+                feature.source_id.as_deref()?.parse::<u32>().ok()?,
+            ))
+        })
+        .collect::<HashMap<_, _>>();
+    let mut counts_by_source = HashMap::<u32, HashSet<usize>>::new();
+    for lane in lanes {
+        let counts = lane.generated_surface_identities.iter().fold(
+            HashMap::<u32, usize>::new(),
+            |mut counts, identity| {
+                *counts.entry(identity.feature_source_id).or_default() += 1;
+                counts
+            },
+        );
+        for (source, count) in counts {
+            counts_by_source.entry(source).or_default().insert(count);
+        }
+    }
+
+    for feature in model_features {
+        if feature.suppressed {
+            continue;
+        }
+        let FeatureDefinition::Hole {
+            placements,
+            diameter: Some(Length(diameter)),
+            ..
+        } = &mut feature.definition
+        else {
+            continue;
+        };
+        if !placements.is_empty() || !diameter.is_finite() || *diameter <= 0.0 {
+            continue;
+        }
+        let Some(source) = feature
+            .native_ref
+            .as_deref()
+            .and_then(|native| native_sources.get(native))
+        else {
+            continue;
+        };
+        let Some(counts) = counts_by_source.get(source) else {
+            continue;
+        };
+        if counts.len() != 1 {
+            continue;
+        }
+        let Some(expected) = counts.iter().next().copied() else {
+            continue;
+        };
+        let radius = *diameter / 2.0;
+        let tolerance = (radius.abs() * 1.0e-9).max(1.0e-9);
+        let candidates = surfaces
+            .iter()
+            .filter_map(|surface| match &surface.geometry {
+                SurfaceGeometry::Cylinder {
+                    origin,
+                    axis,
+                    radius: candidate,
+                    ..
+                } if (*candidate - radius).abs() <= tolerance => Some((*origin, *axis)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        if candidates.len() != expected || candidates.is_empty() {
+            continue;
+        }
+        *placements = candidates
+            .into_iter()
+            .map(|(origin, axis)| HolePlacement::Axis { origin, axis })
+            .collect();
+    }
+}
+
+#[cfg(test)]
+mod hole_axis_tests {
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureId, HoleKind, Length};
+    use cadmpeg_ir::geometry::{Surface, SurfaceGeometry};
+    use cadmpeg_ir::ids::SurfaceId;
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    use super::project_hole_axes;
+    use crate::records::{FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane};
+
+    fn model_hole() -> cadmpeg_ir::features::Feature {
+        cadmpeg_ir::features::Feature {
+            id: FeatureId("hole".into()),
+            ordinal: 0,
+            name: Some("Hole".into()),
+            suppressed: false,
+            parent: None,
+            dependencies: Vec::new(),
+            source_properties: Default::default(),
+            source_tag: None,
+            source_text: None,
+            source_content: Vec::new(),
+            outputs: Vec::new(),
+            definition: FeatureDefinition::Hole {
+                face: None,
+                placements: Vec::new(),
+                kind: HoleKind::Simple,
+                diameter: Some(Length(4.0)),
+                extent: None,
+            },
+            native_ref: Some("native-hole".into()),
+        }
+    }
+
+    fn native_history() -> FeatureHistory {
+        FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: Default::default(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![crate::records::Feature {
+                id: "native-hole".into(),
+                parent: "history".into(),
+                xml_tag: "HoleWizard".into(),
+                tree_parent: None,
+                source_id: Some("7".into()),
+                parent_source_id: None,
+                ordinal: 0,
+                name: "Hole".into(),
+                kind: "HoleWizard".into(),
+                input_class: Some("moHoleWzd_c".into()),
+                suppressed: false,
+                parameters: Default::default(),
+                dimension_properties: Default::default(),
+                properties: Default::default(),
+                text: None,
+                content: Vec::new(),
+            }],
+        }
+    }
+
+    fn lane() -> FeatureInputLane {
+        let identity = |ordinal| FeatureInputGeneratedSurfaceIdentity {
+            id: format!("identity-{ordinal}"),
+            parent: "lane".into(),
+            ordinal,
+            offset: u64::from(ordinal),
+            type_prefix: [0xc3, 0x80, 0xc5, 0],
+            feature_source_id: 7,
+            local_identity: 2,
+            components: Vec::new(),
+        };
+        FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: Vec::new(),
+            classes: Vec::new(),
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: vec![identity(0), identity(1)],
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        }
+    }
+
+    fn cylinder(id: usize, x: f64) -> Surface {
+        Surface {
+            id: SurfaceId(format!("surface-{id}")),
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(x, 0.0, 0.0),
+                axis: Vector3::new(0.0, 0.0, 1.0),
+                ref_direction: Vector3::new(1.0, 0.0, 0.0),
+                radius: 2.0,
+            },
+            source_object: None,
+        }
+    }
+
+    #[test]
+    fn hole_axes_require_exact_output_cardinality() {
+        let history = native_history();
+        let lane = lane();
+        let mut features = vec![model_hole()];
+        let mut surfaces = vec![cylinder(0, -5.0), cylinder(1, 5.0)];
+
+        project_hole_axes(
+            &mut features,
+            &surfaces,
+            std::slice::from_ref(&history),
+            std::slice::from_ref(&lane),
+        );
+        let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
+            unreachable!();
+        };
+        assert_eq!(placements.len(), 2);
+
+        let FeatureDefinition::Hole { placements, .. } = &mut features[0].definition else {
+            unreachable!();
+        };
+        placements.clear();
+        surfaces.push(cylinder(2, 15.0));
+        project_hole_axes(&mut features, &surfaces, &[history], &[lane]);
+        let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
+            unreachable!();
+        };
+        assert!(placements.is_empty());
+    }
+}
+
 pub(crate) fn fit_helix_polyline(
     points: &[Point3],
     revolutions: f64,
@@ -8619,7 +8842,7 @@ pub(crate) fn generated_surface_identities(
         let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
         (instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..] == [0, 0]).then_some(instance)
     };
-    let mut prefixes = lane
+    let prefixes = lane
         .classes
         .iter()
         .filter(|class| class.name.ends_with("SurfIdRep_c"))
@@ -8642,58 +8865,72 @@ pub(crate) fn generated_surface_identities(
             }
             Some(prefix)
         })
-        .collect::<Vec<_>>();
-    prefixes.sort_unstable();
-    prefixes.dedup();
+        .collect::<HashSet<_>>();
 
     let mut result = Vec::new();
-    for prefix in prefixes {
-        for terminal in 0..=lane.native_payload.len().saturating_sub(16) {
-            let Some(signature) = signature_prefix_at(terminal, prefix) else {
-                continue;
-            };
-            let tail: [u8; 4] = lane.native_payload[terminal + 12..terminal + 16]
-                .try_into()
-                .expect("bounded surface identity tail");
-            let possible_instance = u16::from_le_bytes(tail[..2].try_into().unwrap());
-            if possible_instance & 0x8000 != 0
-                && possible_instance != u16::MAX
-                && tail[2..] == [0, 0]
-                && signature_prefix_at(terminal + 16, prefix).is_some()
-            {
-                continue;
-            }
-            let mut offset = terminal;
-            while instance_before(offset).is_some()
-                && offset
-                    .checked_sub(16)
-                    .is_some_and(|previous| signature_prefix_at(previous, prefix).is_some())
-            {
-                offset -= 16;
-            }
-            let Some(components) = inline_surface_reference_at(&lane.native_payload, offset) else {
-                continue;
-            };
-            let feature_source_id = u32::from_le_bytes(signature[4..8].try_into().unwrap());
-            let local_identity = u32::from_le_bytes(tail);
-            if result.iter().any(
-                |identity: &crate::records::FeatureInputGeneratedSurfaceIdentity| {
-                    identity.type_prefix == prefix && identity.components == components
-                },
-            ) {
-                continue;
-            }
-            result.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
-                id: String::new(),
-                parent: lane.id.clone(),
-                ordinal: 0,
-                offset: offset as u64,
-                type_prefix: prefix,
-                feature_source_id,
-                local_identity,
-                components,
-            });
+    let mut seen = HashSet::new();
+    for terminal in 0..=lane.native_payload.len().saturating_sub(16) {
+        let Some(prefix) = lane
+            .native_payload
+            .get(terminal..terminal + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .filter(|prefix| prefixes.contains(prefix))
+        else {
+            continue;
+        };
+        let Some(signature) = signature_prefix_at(terminal, prefix) else {
+            continue;
+        };
+        let tail: [u8; 4] = lane.native_payload[terminal + 12..terminal + 16]
+            .try_into()
+            .expect("bounded surface identity tail");
+        let possible_instance = u16::from_le_bytes(tail[..2].try_into().unwrap());
+        if possible_instance & 0x8000 != 0
+            && possible_instance != u16::MAX
+            && tail[2..] == [0, 0]
+            && signature_prefix_at(terminal + 16, prefix).is_some()
+        {
+            continue;
         }
+        let mut offset = terminal;
+        while instance_before(offset).is_some()
+            && offset
+                .checked_sub(16)
+                .is_some_and(|previous| signature_prefix_at(previous, prefix).is_some())
+        {
+            offset -= 16;
+        }
+        let Some(components) = inline_surface_reference_at(&lane.native_payload, offset) else {
+            continue;
+        };
+        let feature_source_id = u32::from_le_bytes(signature[4..8].try_into().unwrap());
+        let local_identity = u32::from_le_bytes(tail);
+        let key = (
+            prefix,
+            components
+                .iter()
+                .map(|component| {
+                    (
+                        component.instance,
+                        component.type_signature,
+                        component.local_id,
+                    )
+                })
+                .collect::<Vec<_>>(),
+        );
+        if !seen.insert(key) {
+            continue;
+        }
+        result.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
+            id: String::new(),
+            parent: lane.id.clone(),
+            ordinal: 0,
+            offset: offset as u64,
+            type_prefix: prefix,
+            feature_source_id,
+            local_identity,
+            components,
+        });
     }
     result.sort_by_key(|identity| identity.offset);
     let lane_key = lane

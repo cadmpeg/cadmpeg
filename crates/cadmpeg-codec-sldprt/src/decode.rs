@@ -1079,15 +1079,13 @@ fn append_design_losses(ir: &CadIr, report: &mut DecodeReport) {
             }
             FeatureDefinition::Hole {
                 face,
-                position,
-                direction,
+                placements,
                 kind,
                 diameter,
                 extent,
             } => {
                 face.as_ref().is_some_and(incomplete_face_selection)
-                    || position.is_none()
-                    || direction.is_none()
+                    || placements.is_empty()
                     || matches!(kind, cadmpeg_ir::features::HoleKind::Unresolved { .. })
                     || diameter.is_none()
                     || extent.as_ref().is_none_or(incomplete_extent)
@@ -1659,6 +1657,12 @@ fn build_geometry_ir(
         &ir.model.faces,
         &ir.model.edges,
         &ir.model.curves,
+    );
+    crate::resolved_features::project_hole_axes(
+        &mut ir.model.features,
+        &ir.model.surfaces,
+        &histories,
+        &native.feature_input_lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);
     stamp_feature_baseline(&mut ir);
@@ -2275,6 +2279,12 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &ir.model.features,
         &ir.model.sketch_entities,
         &ir.model.parameters,
+        &lanes,
+    );
+    crate::resolved_features::project_hole_axes(
+        &mut ir.model.features,
+        &ir.model.surfaces,
+        &histories,
         &lanes,
     );
     crate::history::order_features_for_regeneration(&mut ir.model.features);

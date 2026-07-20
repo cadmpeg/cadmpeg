@@ -2743,8 +2743,7 @@ fn feature_operation_geometry_is_validated() {
         },
         FeatureDefinition::Hole {
             face: Some(FaceSelection::Unresolved),
-            position: None,
-            direction: None,
+            placements: Vec::new(),
             kind: HoleKind::Simple,
             diameter: Some(Length(0.0)),
             extent: Some(Extent::ThroughAll),
