@@ -1220,6 +1220,7 @@ struct IncidenceComponentSearch<'a> {
     degrees: Vec<Vec<u8>>,
     solutions: Vec<Vec<(usize, [usize; 2])>>,
     solution_filter: Option<MeshEndpointSolutionFilter<'a>>,
+    partial_solution_filter: Option<MeshPartialEndpointSolutionFilter<'a>>,
     dead_states: HashSet<Vec<Option<[usize; 2]>>>,
     budget: &'a MeshConstraintBudget,
     states: usize,
@@ -1759,7 +1760,12 @@ impl IncidenceComponentSearch<'_> {
                 assigned.push((edge, pair));
                 affected_faces.extend(self.edge_faces[edge]);
             }
-            if viable && !assigned.is_empty() {
+            if viable
+                && !assigned.is_empty()
+                && self
+                    .partial_solution_filter
+                    .is_none_or(|valid| valid(&self.assignment))
+            {
                 if let Some(next_states) =
                     self.advance_ordered_faces(affected_faces, quotient_states.to_vec())
                 {
@@ -1875,8 +1881,15 @@ impl IncidenceComponentSearch<'_> {
             let mut faces = self.edge_faces[edge].to_vec();
             faces.sort_unstable();
             faces.dedup();
-            if let Some(next_states) = self.advance_ordered_faces(faces, quotient_states.to_vec()) {
-                self.search_with_quotient(&next_states);
+            if self
+                .partial_solution_filter
+                .is_none_or(|valid| valid(&self.assignment))
+            {
+                if let Some(next_states) =
+                    self.advance_ordered_faces(faces, quotient_states.to_vec())
+                {
+                    self.search_with_quotient(&next_states);
+                }
             }
             self.assignment[edge] = None;
             self.adjust(edge, pair, false);
@@ -2129,6 +2142,43 @@ fn boundary_domains_close(
     })
 }
 
+fn completed_incidence_faces_close(
+    faces: &HashSet<usize>,
+    assignment: &[Option<[usize; 2]>],
+    face_edges: &[Vec<usize>],
+    domains: Option<&[MeshFaceBoundaryDomain]>,
+) -> bool {
+    faces.iter().copied().all(|face| {
+        let mut points = vec![[0; 2]; assignment.len()];
+        for &edge in &face_edges[face] {
+            let Some(pair) = assignment[edge] else {
+                return false;
+            };
+            points[edge] = pair;
+        }
+        if incidence_cycles(&face_edges[face], &points).is_none() {
+            return false;
+        }
+        let Some(domain) = domains.and_then(|domains| domains.get(face)) else {
+            return true;
+        };
+        match domain {
+            MeshFaceBoundaryDomain::Ordered(assignments) => {
+                assignments.iter().any(|boundary_assignment| {
+                    labeled_assignment_endpoint_cycles_viable(boundary_assignment, assignment, None)
+                })
+            }
+            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
+                incidence_cycles(edges, &points).is_some_and(|cycles| cycles.len() == 1)
+            }
+            MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+                deferred_boundary_closes(domain, &points)
+            }
+        }
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn component_incidence_pair_solutions<F>(
     choices: &[Vec<[usize; 2]>],
     edge_faces: &[[usize; 2]],
@@ -2136,6 +2186,7 @@ fn component_incidence_pair_solutions<F>(
     point_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
     mesh_quotient: Option<&MeshQuotient>,
+    partial_solution_valid: Option<MeshPartialEndpointSolutionFilter<'_>>,
     solution_valid: &F,
 ) -> Option<Vec<Vec<[usize; 2]>>>
 where
@@ -2179,6 +2230,7 @@ where
     for (component_index, component) in components.into_iter().enumerate() {
         let mut active = vec![false; choices.len()];
         let mut constraints = HashSet::<(usize, usize)>::new();
+        let mut component_faces = HashSet::new();
         for &edge in &component {
             active[edge] = true;
             let faces = edge_faces[edge];
@@ -2186,6 +2238,7 @@ where
                 if rank > 0 && face == faces[0] {
                     continue;
                 }
+                component_faces.insert(face);
                 for point in choices[edge].iter().flatten() {
                     constraints.insert((face, *point));
                 }
@@ -2199,16 +2252,23 @@ where
                 for &(edge, pair) in solution {
                     assignment[edge] = Some(pair);
                 }
-                assignment
-                    .into_iter()
-                    .collect::<Option<Vec<_>>>()
-                    .is_some_and(|pairs| {
-                        boundary_domains_close(mesh_assignments, &pairs) && solution_valid(&pairs)
-                    })
+                completed_incidence_faces_close(
+                    &component_faces,
+                    &assignment,
+                    &face_edges,
+                    mesh_assignments,
+                ) && partial_solution_valid.is_none_or(|valid| valid(&assignment))
+                    && (component_index + 1 != component_count
+                        || assignment
+                            .into_iter()
+                            .collect::<Option<Vec<_>>>()
+                            .is_some_and(|pairs| {
+                                boundary_domains_close(mesh_assignments, &pairs)
+                                    && solution_valid(&pairs)
+                            }))
             })
         };
-        let solution_filter = (component_index + 1 == component_count)
-            .then_some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
+        let solution_filter = Some(&filter as &dyn Fn(&[MeshEndpointPair]) -> bool);
         let (exhausted, solutions) = {
             let mut search = IncidenceComponentSearch {
                 choices,
@@ -2223,6 +2283,7 @@ where
                 degrees: degrees.clone(),
                 solutions: Vec::new(),
                 solution_filter,
+                partial_solution_filter: partial_solution_valid,
                 dead_states: HashSet::new(),
                 budget: &budget,
                 states: 0,
@@ -2286,6 +2347,7 @@ fn reconstruct_incidence_candidates(
         face_count,
         None,
         None,
+        None,
         &port_compatible,
     )?;
     let mut solution = None;
@@ -2322,6 +2384,7 @@ fn incidence_endpoint_pair_solutions<F>(
     face_count: usize,
     mesh_assignments: Option<&[MeshFaceBoundaryDomain]>,
     mesh_quotient: Option<&MeshQuotient>,
+    partial_solution_valid: Option<MeshPartialEndpointSolutionFilter<'_>>,
     solution_valid: &F,
 ) -> Option<Vec<Vec<[usize; 2]>>>
 where
@@ -2354,6 +2417,7 @@ where
         vertex_points.len(),
         mesh_assignments,
         mesh_quotient,
+        partial_solution_valid,
         &complete_valid,
     )?;
     (!solutions.is_empty()).then_some(solutions)
@@ -9350,6 +9414,7 @@ fn propagate_common_boundary_components(
 type MeshFaceSelection = Option<(usize, Vec<Vec<bool>>)>;
 type MeshEndpointPair = (usize, [usize; 2]);
 type MeshEndpointSolutionFilter<'a> = &'a dyn Fn(&[MeshEndpointPair]) -> bool;
+type MeshPartialEndpointSolutionFilter<'a> = &'a dyn Fn(&[Option<[usize; 2]>]) -> bool;
 type MeshFaceEndpointConfiguration = Vec<MeshEndpointPair>;
 type MeshFaceEndpointConfigurations = Vec<MeshFaceEndpointConfiguration>;
 type MeshQuotientSignature = Vec<(Vec<usize>, Vec<usize>)>;
@@ -11110,6 +11175,9 @@ fn resolve_standard_mesh_endpoint_candidates(
 /// applying the exact trim-mesh endpoint quotient. Endpoint graphs must close
 /// every face; all surviving graphs must produce one topology modulo logical
 /// vertex labels, intrinsic edge direction, and boundary-cycle start.
+/// `pair_solution_valid` receives partial assignments during search. It must be
+/// monotone: once it rejects a selected subset, assigning more edges cannot
+/// make that subset valid.
 #[must_use]
 pub fn parse_standard_mesh_incidence_candidates<F>(
     bytes: &[u8],
@@ -11118,7 +11186,7 @@ pub fn parse_standard_mesh_incidence_candidates<F>(
     pair_solution_valid: F,
 ) -> Option<(StandardTopology, Vec<usize>)>
 where
-    F: Fn(&[[usize; 2]]) -> bool,
+    F: Fn(&[Option<[usize; 2]>]) -> bool,
 {
     const MAX_COMPLETED_PAIRS_PER_EDGE: usize = 65_536;
     const MAX_COMPLETED_PAIRS_TOTAL: usize = 1_000_000;
@@ -11207,7 +11275,8 @@ where
         face_count,
         Some(&mesh_domains),
         Some(&mesh_quotient),
-        &pair_solution_valid,
+        Some(&pair_solution_valid),
+        &|pairs| pair_solution_valid(&pairs.iter().copied().map(Some).collect::<Vec<_>>()),
     )?;
     let mut solution = None;
     for pairs in pair_solutions {
@@ -12291,6 +12360,7 @@ mod motif_tests {
             degrees: vec![vec![0, 2]],
             solutions: Vec::new(),
             solution_filter: None,
+            partial_solution_filter: None,
             dead_states: HashSet::new(),
             budget: &budget,
             states: 4_096,
@@ -12324,6 +12394,7 @@ mod motif_tests {
             degrees: vec![vec![0]],
             solutions: Vec::new(),
             solution_filter: None,
+            partial_solution_filter: None,
             dead_states: HashSet::new(),
             budget: &budget,
             states: 0,
@@ -12377,6 +12448,7 @@ mod motif_tests {
             degrees: vec![vec![0]],
             solutions: Vec::new(),
             solution_filter: None,
+            partial_solution_filter: None,
             dead_states: HashSet::new(),
             budget: &budget,
             states: 0,
@@ -12424,6 +12496,7 @@ mod motif_tests {
             degrees: vec![vec![2, 0], vec![1, 1]],
             solutions: Vec::new(),
             solution_filter: None,
+            partial_solution_filter: None,
             dead_states: HashSet::new(),
             budget: &budget,
             states: 0,
@@ -12499,6 +12572,7 @@ mod motif_tests {
             1970,
             None,
             None,
+            None,
             &|_| true,
         )
         .expect("component closure solution");
@@ -12536,6 +12610,7 @@ mod motif_tests {
             4,
             Some(&mesh_assignments),
             None,
+            None,
             &|_| true,
         )
         .expect("ordered component solution");
@@ -12561,6 +12636,7 @@ mod motif_tests {
             1,
             4,
             Some(&domains),
+            None,
             None,
             &|_| true,
         )
@@ -13072,11 +13148,39 @@ mod motif_tests {
             4,
             None,
             None,
+            None,
             &|pairs| pairs[1] == [2, 3],
         )
         .expect("filtered component solution");
 
         assert_eq!(solutions, vec![vec![[0, 1], [2, 3], [1, 2], [3, 0]]]);
+    }
+
+    #[test]
+    fn incidence_components_apply_monotone_partial_constraints_before_solution_limits() {
+        let choices = vec![
+            (0..300).map(|point| [point, point]).collect::<Vec<_>>(),
+            (300..600).map(|point| [point, point]).collect::<Vec<_>>(),
+        ];
+        let edge_faces = [[0, 0], [1, 1]];
+        let partial = |assignment: &[Option<[usize; 2]>]| {
+            assignment[0].is_none_or(|pair| pair == [0, 0])
+                && assignment[1].is_none_or(|pair| pair == [300, 300])
+        };
+
+        let solutions = super::component_incidence_pair_solutions(
+            &choices,
+            &edge_faces,
+            2,
+            600,
+            None,
+            None,
+            Some(&partial),
+            &|_| true,
+        )
+        .expect("partially constrained component solutions");
+
+        assert_eq!(solutions, vec![vec![[0, 0], [300, 300]]]);
     }
 
     #[test]
