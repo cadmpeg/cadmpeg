@@ -1885,13 +1885,114 @@ fn decode_positional_cylinder_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalCylinderFrame> {
-    decode_local_system_cylinder_frame(body, cache)
+    decode_compact_y_axis_cylinder_frame(body, cache)
+        .or_else(|| decode_local_system_cylinder_frame(body, cache))
         .or_else(|| decode_zero_support_cylinder_frame(body, cache))
         .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_held_axis_cylinder_frame(body, cache))
         .or_else(|| decode_axial_radial_cylinder_frame(body, cache))
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
+}
+
+fn decode_compact_y_axis_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    let decode_values = |start: usize, count: usize| {
+        let mut cursor = start;
+        let mut values = Vec::with_capacity(count);
+        for _ in 0..count {
+            let (value, next) =
+                scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+            value.is_finite().then_some(())?;
+            values.push(value);
+            cursor = next;
+        }
+        Some((values, cursor))
+    };
+    let (
+        axial_start,
+        axial_end,
+        transverse_center,
+        transverse_edge,
+        radial_low,
+        radial_high,
+        repeated_start,
+        repeated_end,
+    ) = match body.first()? {
+        0x14 => {
+            let (values, end) = decode_values(1, 9)?;
+            (end == body.len()).then_some(())?;
+            let [axial_start, _, axial_end, transverse_center, repeated_start, radial_low, transverse_edge, repeated_end, radial_high] =
+                values.as_slice()
+            else {
+                return None;
+            };
+            (
+                *axial_start,
+                *axial_end,
+                *transverse_center,
+                *transverse_edge,
+                *radial_low,
+                *radial_high,
+                *repeated_start,
+                *repeated_end,
+            )
+        }
+        0x12 => {
+            let (leading, marker) = decode_values(1, 1)?;
+            (body.get(marker) == Some(&0x14)).then_some(())?;
+            let (trailing, end) = decode_values(marker + 1, 7)?;
+            (end == body.len()).then_some(())?;
+            let [axial_end, transverse_edge, repeated_start, radial_low, transverse_center, repeated_end, radial_high] =
+                trailing.as_slice()
+            else {
+                return None;
+            };
+            (
+                leading[0],
+                *axial_end,
+                *transverse_center,
+                *transverse_edge,
+                *radial_low,
+                *radial_high,
+                *repeated_start,
+                *repeated_end,
+            )
+        }
+        _ => return None,
+    };
+    let scale = [
+        axial_start,
+        axial_end,
+        transverse_center,
+        transverse_edge,
+        radial_low,
+        radial_high,
+    ]
+    .into_iter()
+    .map(f64::abs)
+    .fold(1.0, f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    close(axial_start, repeated_start).then_some(())?;
+    close(axial_end, repeated_end).then_some(())?;
+    let radius = 0.5 * (radial_high - radial_low).abs();
+    (radius > 1e-12 * scale).then_some(())?;
+    close((transverse_edge - transverse_center).abs(), radius).then_some(())?;
+    let length = (axial_end - axial_start).abs();
+    (length > 1e-12 * scale).then_some(())?;
+    Some(PositionalCylinderFrame {
+        origin: [
+            transverse_center,
+            axial_start,
+            f64::midpoint(radial_low, radial_high),
+        ],
+        axis: [0.0, (axial_end - axial_start).signum(), 0.0],
+        ref_direction: [(transverse_edge - transverse_center).signum(), 0.0, 0.0],
+        radius,
+        length: Some(length),
+    })
 }
 
 fn decode_positional_cone_frame(
@@ -4006,6 +4107,46 @@ mod tests {
             decode_positional_cylinder_frame(&inconsistent, &scalar::ScalarCache::default())
                 .is_none()
         );
+    }
+
+    #[test]
+    fn positional_cylinder_frame_decodes_compact_y_axis_envelopes() {
+        let direct = [
+            0x14, 0x2f, 0x10, 0x00, 0x2d, 0x1f, 0x6a, 0x7a, 0x29, 0x55, 0x38, 0x5e, 0x2f, 0x43,
+            0x00, 0x48, 0x29, 0x00, 0x2f, 0x10, 0x00, 0x43, 0xe8, 0x00, 0x48, 0x27, 0x80, 0x2f,
+            0x43, 0x00, 0x2a, 0xe8, 0x00,
+        ];
+        let split = [
+            0x12, 0x2f, 0x10, 0x00, 0x14, 0x2f, 0x43, 0x00, 0x2f, 0x27, 0x80, 0x2f, 0x10, 0x00,
+            0x43, 0xe8, 0x00, 0x2f, 0x29, 0x00, 0x2f, 0x43, 0x00, 0x2a, 0xe8, 0x00,
+        ];
+        let cache = scalar::ScalarCache::default();
+
+        assert_eq!(
+            decode_positional_cylinder_frame(&direct, &cache),
+            Some(PositionalCylinderFrame {
+                origin: [-12.5, 4.0, 0.0],
+                axis: [0.0, 1.0, 0.0],
+                ref_direction: [1.0, 0.0, 0.0],
+                radius: 0.75,
+                length: Some(34.0),
+            })
+        );
+        assert_eq!(
+            decode_positional_cylinder_frame(&split, &cache),
+            Some(PositionalCylinderFrame {
+                origin: [12.5, 4.0, 0.0],
+                axis: [0.0, 1.0, 0.0],
+                ref_direction: [-1.0, 0.0, 0.0],
+                radius: 0.75,
+                length: Some(34.0),
+            })
+        );
+
+        let mut inconsistent = split;
+        inconsistent[20..23].copy_from_slice(&[0x2f, 0x42, 0x00]);
+        assert!(decode_positional_cylinder_frame(&inconsistent, &cache).is_none());
+        assert!(decode_positional_cylinder_frame(&direct[..direct.len() - 3], &cache).is_none());
     }
 
     #[test]

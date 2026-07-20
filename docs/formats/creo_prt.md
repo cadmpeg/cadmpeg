@@ -551,6 +551,15 @@ coordinates followed by `21`. Its split form stores two coordinates, `3a`, a
 six-byte body-local control payload, and two more coordinates at the bounded
 body end. The control payload does not occupy a coordinate slot.
 
+A compact type-24 cylinder envelope has a model-space Y axis. Its direct form
+is `14 <y0> <scalar> <y1> <x-center> <y0> <z0> <x-edge> <y1> <z1>`.
+Its split form is `12 <y0> 14 <y1> <x-edge> <y0> <z0> <x-center> <y1>
+<z1>`. The repeated axial bounds agree, `abs(x-edge - x-center)` equals half
+`abs(z1 - z0)`, and both spans are nonzero. The cylinder origin is
+`(x-center, y0, midpoint(z0, z1))`; its axis points from `y0` to `y1`, its
+reference direction points from `x-center` to `x-edge`, its radius is half the
+Z span, and its finite length is the Y span.
+
 A bounded type-24 round envelope stores two diameter endpoints and two
 three-coordinate extent endpoints. The diameter endpoints occur around a held
 coordinate after `15` or `00 15 1c`, or across the single-byte `12` separator
