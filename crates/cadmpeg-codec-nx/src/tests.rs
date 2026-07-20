@@ -8284,6 +8284,7 @@ fn om_extrude_header_decodes_shifted_ieee_scalars() {
     let header = crate::om::extrude_payload_header(record).unwrap();
     assert_eq!(header.offset, 205);
     assert_eq!(header.scalars, [0.04, 0.038]);
+    assert_eq!(header.raw_scalars.concat(), payload[5..21]);
 
     let mut invalid = payload.to_vec();
     invalid[5] = 0xf0;

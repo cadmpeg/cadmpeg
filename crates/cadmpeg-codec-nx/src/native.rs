@@ -5775,6 +5775,8 @@ pub struct FeatureExtrudePayloadHeader {
     pub operation_label: String,
     /// Ordered finite scalar values.
     pub scalars: [f64; 2],
+    /// Exact shifted-binary64 encodings in scalar order.
+    pub raw_scalars: [[u8; 8]; 2],
     /// Absolute file offset of the first shifted-IEEE scalar.
     pub source_offset: u64,
 }
@@ -10264,6 +10266,7 @@ pub fn feature_extrude_payload_headers(container: &Container) -> Vec<FeatureExtr
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 ),
                 scalars: header.scalars,
+                raw_scalars: header.raw_scalars,
                 source_offset: entry_offset + header.offset as u64,
             });
         }

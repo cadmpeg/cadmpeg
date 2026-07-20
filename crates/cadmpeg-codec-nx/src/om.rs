@@ -1114,6 +1114,8 @@ pub struct ExtrudePayloadHeader {
     pub offset: usize,
     /// Ordered finite scalar values.
     pub scalars: [f64; 2],
+    /// Exact shifted-binary64 encodings in scalar order.
+    pub raw_scalars: [[u8; 8]; 2],
 }
 
 /// Exact terminal discriminator lane in a bounded extrusion payload.
@@ -2529,12 +2531,17 @@ pub fn extrude_payload_header(record: OperationRecord<'_>) -> Option<ExtrudePayl
     {
         return None;
     }
+    let raw_scalars = [
+        <[u8; 8]>::try_from(record.payload.get(5..13)?).ok()?,
+        <[u8; 8]>::try_from(record.payload.get(13..21)?).ok()?,
+    ];
     Some(ExtrudePayloadHeader {
         offset: record.payload_offset + 5,
         scalars: [
-            shifted_ieee_f64(record.payload.get(5..13)?)?,
-            shifted_ieee_f64(record.payload.get(13..21)?)?,
+            shifted_ieee_f64(&raw_scalars[0])?,
+            shifted_ieee_f64(&raw_scalars[1])?,
         ],
+        raw_scalars,
     })
 }
 
