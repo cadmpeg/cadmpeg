@@ -1583,6 +1583,7 @@ mod chart_tests {
         assert!(circular_ranges_are_nonoverlapping_or_coincident(&[
             [0.0, std::f64::consts::PI],
             [0.0, std::f64::consts::PI],
+            [std::f64::consts::PI, tau],
         ]));
         assert!(!circular_ranges_are_nonoverlapping_or_coincident(&[
             [0.0, 4.0],
@@ -7714,19 +7715,18 @@ fn circular_ranges_are_nonoverlapping_or_coincident(ranges: &[[f64; 2]]) -> bool
         }
     }
 
-    let coincident = ranges.iter().skip(1).all(|range| {
-        (range[0] - ranges[0][0]).abs() <= 1e-9 && (range[1] - ranges[0][1]).abs() <= 1e-9
-    });
-    coincident
-        || ranges.iter().enumerate().all(|(left_index, left)| {
-            ranges[left_index + 1..].iter().all(|right| {
-                !segments(*left).iter().any(|left| {
+    ranges.iter().enumerate().all(|(left_index, left)| {
+        ranges[left_index + 1..].iter().all(|right| {
+            let coincident =
+                (right[0] - left[0]).abs() <= 1e-9 && (right[1] - left[1]).abs() <= 1e-9;
+            coincident
+                || !segments(*left).iter().any(|left| {
                     segments(*right)
                         .iter()
                         .any(|right| left[1].min(right[1]) - left[0].max(right[0]) > 1e-6)
                 })
-            })
         })
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
