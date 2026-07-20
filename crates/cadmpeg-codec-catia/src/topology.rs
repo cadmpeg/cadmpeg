@@ -7615,29 +7615,25 @@ fn propagate_common_deferred_quotients(
         .then_some(())
 }
 
-fn common_structural_corner_equations(
+fn common_supported_corner_equations(
     quotient: &mut MeshQuotient,
     assignments: &[MeshFaceBoundaryAssignment],
     budget: &MeshConstraintBudget,
 ) -> Option<HashSet<[usize; 2]>> {
-    fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> Option<Vec<usize>> {
-        let directions = use_
-            .reversed
-            .map_or_else(|| vec![false, true], |reversed| vec![reversed]);
-        directions
-            .into_iter()
-            .map(|reversed| {
-                use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
-                    !reversed
-                } else {
-                    reversed
-                }))
-            })
-            .collect()
+    fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
+        use_.edge
+            .checked_mul(2)?
+            .checked_add(usize::from(if end { !reversed } else { reversed }))
+    }
+
+    fn compatible(quotient: &MeshQuotient, left: usize, right: usize) -> bool {
+        let left = quotient.union.root(left);
+        let right = quotient.union.root(right);
+        left == right || !quotient.domains[left].is_disjoint(&quotient.domains[right])
     }
 
     let mut common = None::<HashSet<[usize; 2]>>;
-    for assignment in assignments {
+    'assignments: for assignment in assignments {
         if !budget.charge() {
             return None;
         }
@@ -7646,23 +7642,133 @@ fn common_structural_corner_equations(
             if boundary.is_empty() {
                 return None;
             }
-            for index in 0..boundary.len() {
-                let left = ports(boundary[index], true)?;
-                let right = ports(boundary[(index + 1) % boundary.len()], false)?;
-                let mut alternatives = HashSet::new();
-                for left in &left {
-                    for right in &right {
-                        let left = quotient.union.find(*left);
-                        let right = quotient.union.find(*right);
-                        alternatives.insert(if left <= right {
-                            [left, right]
-                        } else {
-                            [right, left]
-                        });
+            let directions = boundary
+                .iter()
+                .map(|use_| {
+                    use_.reversed
+                        .map_or_else(|| vec![false, true], |reversed| vec![reversed])
+                })
+                .collect::<Vec<_>>();
+            let mut supported = (0..boundary.len())
+                .map(|index| {
+                    vec![
+                        vec![false; directions[(index + 1) % boundary.len()].len()];
+                        directions[index].len()
+                    ]
+                })
+                .collect::<Vec<_>>();
+            for first in 0..directions[0].len() {
+                let mut forward = directions
+                    .iter()
+                    .map(|states| vec![false; states.len()])
+                    .collect::<Vec<_>>();
+                forward[0][first] = true;
+                for index in 0..boundary.len().saturating_sub(1) {
+                    for left in 0..directions[index].len() {
+                        if !forward[index][left] {
+                            continue;
+                        }
+                        for right in 0..directions[index + 1].len() {
+                            let left_node = port(boundary[index], directions[index][left], true)?;
+                            let right_node =
+                                port(boundary[index + 1], directions[index + 1][right], false)?;
+                            if compatible(quotient, left_node, right_node) {
+                                forward[index + 1][right] = true;
+                            }
+                        }
                     }
                 }
-                if alternatives.len() == 1 {
-                    if let Some(equation) = alternatives.into_iter().next() {
+                let last = boundary.len() - 1;
+                let mut backward = directions
+                    .iter()
+                    .map(|states| vec![false; states.len()])
+                    .collect::<Vec<_>>();
+                for state in 0..directions[last].len() {
+                    let left_node = port(boundary[last], directions[last][state], true)?;
+                    let right_node = port(boundary[0], directions[0][first], false)?;
+                    backward[last][state] =
+                        forward[last][state] && compatible(quotient, left_node, right_node);
+                }
+                for index in (0..last).rev() {
+                    for left in 0..directions[index].len() {
+                        backward[index][left] = forward[index][left]
+                            && (0..directions[index + 1].len()).any(|right| {
+                                if !backward[index + 1][right] {
+                                    return false;
+                                }
+                                let Some(left_node) =
+                                    port(boundary[index], directions[index][left], true)
+                                else {
+                                    return false;
+                                };
+                                let Some(right_node) =
+                                    port(boundary[index + 1], directions[index + 1][right], false)
+                                else {
+                                    return false;
+                                };
+                                compatible(quotient, left_node, right_node)
+                            });
+                    }
+                }
+                if !backward[0][first] {
+                    continue;
+                }
+                for index in 0..last {
+                    for left in 0..directions[index].len() {
+                        if !forward[index][left] {
+                            continue;
+                        }
+                        for right in 0..directions[index + 1].len() {
+                            if backward[index + 1][right] {
+                                let left_node =
+                                    port(boundary[index], directions[index][left], true)?;
+                                let right_node =
+                                    port(boundary[index + 1], directions[index + 1][right], false)?;
+                                if compatible(quotient, left_node, right_node) {
+                                    supported[index][left][right] = true;
+                                }
+                            }
+                        }
+                    }
+                }
+                for state in 0..directions[last].len() {
+                    if backward[last][state] {
+                        supported[last][state][first] = true;
+                    }
+                }
+            }
+            if supported
+                .iter()
+                .any(|transitions| transitions.iter().flatten().all(|value| !value))
+            {
+                continue 'assignments;
+            }
+            for index in 0..boundary.len() {
+                let next = (index + 1) % boundary.len();
+                let mut equations = HashSet::new();
+                for left in 0..directions[index].len() {
+                    for right in 0..directions[next].len() {
+                        if supported[index][left][right] {
+                            let left = quotient.union.find(port(
+                                boundary[index],
+                                directions[index][left],
+                                true,
+                            )?);
+                            let right = quotient.union.find(port(
+                                boundary[next],
+                                directions[next][right],
+                                false,
+                            )?);
+                            equations.insert(if left <= right {
+                                [left, right]
+                            } else {
+                                [right, left]
+                            });
+                        }
+                    }
+                }
+                if equations.len() == 1 {
+                    if let Some(equation) = equations.into_iter().next() {
                         forced.insert(equation);
                     }
                 }
@@ -7770,7 +7876,7 @@ fn propagate_common_ordered_face_quotients(
                 continue;
             };
             if let Some(equations) =
-                common_structural_corner_equations(quotient, assignments, &face_budget)
+                common_supported_corner_equations(quotient, assignments, &face_budget)
             {
                 let mut merged_nodes = Vec::new();
                 for [left, right] in equations {
@@ -8881,7 +8987,7 @@ impl MeshSelectionSearch<'_> {
                     let equations: Vec<[usize; 2]> = if structural_option_bound
                         .is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS)
                     {
-                        let Some(common) = common_structural_corner_equations(
+                        let Some(common) = common_supported_corner_equations(
                             quotient,
                             &self.assignments[face],
                             budget,
@@ -11248,6 +11354,51 @@ mod motif_tests {
         .expect("structural quotient");
 
         assert_eq!(quotient.union.find(0), quotient.union.find(2));
+    }
+
+    #[test]
+    fn ordered_cycle_support_propagates_domain_forced_directions() {
+        let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![
+                    MeshBoundaryEdgeCandidate {
+                        edge: 0,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    },
+                    MeshBoundaryEdgeCandidate {
+                        edge: 1,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    },
+                ]],
+            },
+        ])];
+        let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![
+                Arc::new(HashSet::from([0])),
+                Arc::new(HashSet::from([1])),
+                Arc::new(HashSet::from([1])),
+                Arc::new(HashSet::from([0])),
+            ],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let budget = super::MeshConstraintBudget::new(100);
+
+        super::propagate_common_ordered_face_quotients(
+            &domains,
+            &candidates,
+            &mut quotient,
+            &budget,
+        )
+        .expect("supported cycle quotient");
+
+        assert_eq!(quotient.union.find(0), quotient.union.find(3));
+        assert_eq!(quotient.union.find(1), quotient.union.find(2));
     }
 
     #[test]
