@@ -7253,6 +7253,48 @@ fn propagate_common_ordered_face_quotients(
     loop {
         let before = quotient.signature();
         for domain in domains {
+            if let MeshFaceBoundaryDomain::DeferredValidation(domain) = domain {
+                let mut merged_nodes = Vec::new();
+                for cycle in &domain.cycles {
+                    for index in 0..cycle.exact_uses.len() {
+                        let (left, left_span) = cycle.exact_uses[index];
+                        let right = cycle.exact_uses[(index + 1) % cycle.exact_uses.len()].0;
+                        let left_end = (left.start + left_span) % cycle.length;
+                        let capacity = (right.start + cycle.length - left_end) % cycle.length;
+                        if capacity != 0 {
+                            continue;
+                        }
+                        let left_reversed = left.reversed?;
+                        let right_reversed = right.reversed?;
+                        let left_node = left
+                            .edge
+                            .checked_mul(2)?
+                            .checked_add(usize::from(!left_reversed))?;
+                        let right_node = right
+                            .edge
+                            .checked_mul(2)?
+                            .checked_add(usize::from(right_reversed))?;
+                        merged_nodes.push(quotient.merge(left_node, right_node)?);
+                    }
+                }
+                let affected_edges = merged_nodes
+                    .into_iter()
+                    .flat_map(|node| {
+                        let root = quotient.union.find(node);
+                        quotient.members[root].clone()
+                    })
+                    .map(|node| node / 2)
+                    .filter(|edge| !edge_candidates[*edge].is_empty())
+                    .collect::<HashSet<_>>();
+                if !quotient.propagate_edge_domains_with_budget(
+                    affected_edges,
+                    edge_candidates,
+                    Some(budget),
+                ) {
+                    return None;
+                }
+                continue;
+            }
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
                 continue;
             };
@@ -10642,6 +10684,40 @@ mod motif_tests {
             &domain,
             &overfilled_first_gap
         ));
+    }
+
+    #[test]
+    fn deferred_anchored_runs_propagate_forced_adjacencies() {
+        let use_ = |edge, start| MeshBoundaryEdgeCandidate {
+            edge,
+            start,
+            end: (start + 1) % 2,
+            reversed: Some(false),
+        };
+        let domains = [MeshFaceBoundaryDomain::DeferredValidation(
+            super::MeshDeferredFaceBoundary {
+                cycles: vec![super::MeshDeferredBoundaryCycle {
+                    length: 2,
+                    exact_uses: vec![(use_(0, 0), 1), (use_(1, 1), 1)],
+                }],
+                missing_edges: Vec::new(),
+            },
+        )];
+        let candidates = vec![vec![[0, 1]], vec![[0, 1]]];
+        let mut quotient = super::initial_mesh_quotient(&candidates, 2, &[[0, 1], [2, 3]])
+            .expect("initial quotient");
+        let budget = super::MeshConstraintBudget::new(100);
+
+        super::propagate_common_ordered_face_quotients(
+            &domains,
+            &candidates,
+            &mut quotient,
+            &budget,
+        )
+        .expect("forced deferred quotient");
+
+        assert_eq!(quotient.union.find(0), quotient.union.find(3));
+        assert_eq!(quotient.union.find(1), quotient.union.find(2));
     }
 
     #[test]
