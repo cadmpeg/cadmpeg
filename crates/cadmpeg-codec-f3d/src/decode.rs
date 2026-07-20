@@ -173,6 +173,7 @@ fn report_unresolved_configuration_rules(
 
 #[derive(Debug, Default, PartialEq, Eq)]
 struct DesignProjectionGaps {
+    unresolved_body_bindings: usize,
     native_features: usize,
     unprojected_feature_scopes: usize,
     unprojected_parameters: usize,
@@ -380,6 +381,11 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             .collect::<HashSet<_>>();
 
     let mut gaps = DesignProjectionGaps {
+        unresolved_body_bindings: native
+            .design_body_bindings
+            .iter()
+            .filter(|binding| binding.body.is_none())
+            .count(),
         unprojected_history_dependencies,
         ambiguous_history_dependencies,
         unprojected_feature_scopes: native
@@ -540,6 +546,17 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
 
 fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: &F3dNative) {
     let gaps = design_projection_gaps(ir, native);
+    if gaps.unresolved_body_bindings != 0 {
+        report.losses.push(LossNote {
+            category: LossCategory::Topology,
+            severity: Severity::Warning,
+            message: format!(
+                "{} Design body-map pair(s) do not resolve to a body in the named BREP blob.",
+                gaps.unresolved_body_bindings
+            ),
+            provenance: None,
+        });
+    }
     let mut push = |count: usize, message: String| {
         if count != 0 {
             report.losses.push(LossNote {
@@ -706,6 +723,42 @@ fn report_design_projection_gaps(report: &mut DecodeReport, ir: &CadIr, native: 
     );
 }
 
+fn model_brep_candidates(
+    scan: &ContainerScan,
+    bindings: &[crate::records::DesignBodyBinding],
+) -> Vec<BrepFacts> {
+    let referenced = bindings
+        .iter()
+        .map(|binding| binding.blob_name.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let mut candidates = scan
+        .breps
+        .iter()
+        .filter(|brep| {
+            brep.name
+                .rsplit('/')
+                .next()
+                .is_some_and(|basename| referenced.contains(basename))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        candidates.extend(container::select_active_brep(scan).cloned());
+    } else if let Some(active) = container::select_active_brep(scan) {
+        if let Some(position) = candidates
+            .iter()
+            .position(|candidate| candidate.name == active.name)
+        {
+            candidates.swap(0, position);
+        }
+    }
+    candidates
+}
+
+fn brep_identity_namespace(entry: &str) -> Option<&str> {
+    entry.rsplit('/').next()?.strip_prefix("BREP.")
+}
+
 /// Decode a `.f3d` reader into a document and its loss report.
 pub fn decode(
     reader: &mut dyn ReadSeek,
@@ -729,35 +782,92 @@ pub fn decode(
         return Ok(DecodeResult::new(ir, report));
     }
 
-    // `try_decode_brep` returns `Some` after producing carriers or points.
-    // A framed stream with no geometry uses the metadata-only path.
-    if let Some(active) = container::select_active_brep(&scan).cloned() {
-        if let Some((mut brep, mut report)) = try_decode_brep(reader, &scan, &active)? {
-            let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
-            let body_visibility =
-                crate::design::decode_body_visibility(reader, &scan, &active.name)?;
-            let mut body_visibilities = Vec::new();
-            for body in &mut brep.bodies {
-                if let Some((asm_body_key, visibility)) =
-                    brep.body_keys.get(&body.id).and_then(|key| {
-                        body_visibility
-                            .get(key)
-                            .map(|visibility| (*key, visibility))
+    let unbound_body_bindings = crate::design::decode_design_body_bindings(&scan, None, &[])?;
+    let model_breps = model_brep_candidates(&scan, &unbound_body_bindings);
+
+    // Every Design body-map pair names its owning BREP blob. Decode the
+    // complete referenced set; a document-level model is not confined to one
+    // arbitrary `.smbh` entry.
+    if let Some(model_brep) = model_breps.first().cloned() {
+        let active = container::select_active_brep(&scan)
+            .cloned()
+            .unwrap_or(model_brep);
+        let qualify_ids = model_breps.len() > 1;
+        let mut brep = Brep::default();
+        let mut body_visibilities = Vec::new();
+        let mut decoded_brep_count = 0usize;
+        let all_body_visibility = crate::design::decode_all_body_visibility(&scan)?;
+        let mut selected_body_keys =
+            std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
+        for binding in &unbound_body_bindings {
+            selected_body_keys
+                .entry(binding.blob_name.clone())
+                .or_default()
+                .insert(binding.asm_body_key);
+        }
+        for candidate in &model_breps {
+            let Some(mut part) = try_decode_brep(reader, &scan, candidate)? else {
+                continue;
+            };
+            let blob_name = candidate.name.rsplit('/').next().unwrap_or(&candidate.name);
+            if let Some(keys) = selected_body_keys.get(blob_name) {
+                part.retain_body_keys(keys)?;
+            }
+            let mut body_selectors = part.body_selectors();
+            for body in &mut part.bodies {
+                if let Some(visibility) = body_selectors.get(&body.id).and_then(|selector| {
+                    all_body_visibility.get(&(blob_name.to_owned(), *selector))
+                }) {
+                    body.visible = Some(visibility.visible);
+                }
+            }
+            if qualify_ids {
+                let namespace = brep_identity_namespace(&candidate.name).ok_or_else(|| {
+                    CodecError::Malformed(format!(
+                        "BREP entry has no stable blob identity: {}",
+                        candidate.name
+                    ))
+                })?;
+                part.qualify_ids(namespace)?;
+                body_selectors = part.body_selectors();
+            }
+            for body in &part.bodies {
+                if let Some((body_selector, visibility)) =
+                    body_selectors.get(&body.id).and_then(|selector| {
+                        all_body_visibility
+                            .get(&(blob_name.to_owned(), *selector))
+                            .map(|visibility| (*selector, visibility))
                     })
                 {
-                    body.visible = Some(visibility.visible);
                     body_visibilities.push(crate::records::BodyVisibility {
-                        id: format!("f3d:design:body-visibility#{asm_body_key}"),
+                        id: format!("f3d:{}:body-visibility#{body_selector}", candidate.name),
                         body: body.id.clone(),
                         stream: visibility.stream.clone(),
                         byte_offset: visibility.byte_offset,
                         asm_body_key_offset: visibility.asm_body_key_offset,
-                        asm_body_key,
+                        asm_body_key: body_selector,
                         entity_suffix: visibility.entity_suffix,
                         visible: visibility.visible,
                     });
                 }
             }
+            brep.append(part);
+            decoded_brep_count += 1;
+        }
+        if decoded_brep_count != 0 {
+            let mut report = build_geometry_report(&scan, &brep);
+            if decoded_brep_count != model_breps.len() {
+                report.losses.push(LossNote {
+                    category: LossCategory::Geometry,
+                    severity: Severity::Warning,
+                    message: format!(
+                        "{} Design-referenced BREP blob(s) could not be decoded.",
+                        model_breps.len() - decoded_brep_count
+                    ),
+                    provenance: None,
+                });
+            }
+            let decoded_materials = materials::decode_with_bodies(reader, &scan, &brep.body_keys)?;
             let annotation_records = std::mem::take(&mut brep.annotation_records);
             let (mut ir, mut native) = build_geometry_ir(&scan, &active, brep)?;
             ir.model.subds = crate::tsm::decode(&scan)?;
@@ -1099,12 +1209,7 @@ pub fn decode(
                 Err(error) => report.losses.push(xref_parse_loss(&error)),
             }
             native.store(ir.native.namespace_mut("f3d"))?;
-            populate_annotations(
-                &mut ir,
-                &scan,
-                &native,
-                Some((&active.name, &annotation_records)),
-            );
+            populate_annotations(&mut ir, &scan, &native, Some(&annotation_records));
             preserve_source_image(&scan, &mut ir)?;
             return Ok(DecodeResult::new(ir, report));
         }
@@ -1541,12 +1646,12 @@ fn populate_annotations(
     ir: &mut CadIr,
     scan: &ContainerScan,
     native: &F3dNative,
-    brep: Option<(&str, &[brep::AnnotationRecord])>,
+    brep: Option<&[brep::AnnotationRecord]>,
 ) {
     let mut annotations = AnnotationBuilder::new();
-    if let Some((stream_name, records)) = brep {
-        let stream = annotations.stream(format!("f3d:{stream_name}"));
+    if let Some(records) = brep {
         for record in records {
+            let stream = annotations.stream(format!("f3d:{}", record.stream));
             annotations
                 .note(&record.id, stream, record.offset)
                 .tag(&record.tag);
@@ -2231,7 +2336,7 @@ fn try_decode_brep(
     _reader: &mut dyn ReadSeek,
     scan: &ContainerScan,
     active: &BrepFacts,
-) -> Result<Option<(Brep, DecodeReport)>, CodecError> {
+) -> Result<Option<Brep>, CodecError> {
     let width = active.header.as_ref().map_or(0, |h| h.width);
     if width != 4 && width != 8 {
         return Ok(None);
@@ -2257,8 +2362,7 @@ fn try_decode_brep(
     if decoded.surfaces.is_empty() && decoded.points.is_empty() && decoded.faces.is_empty() {
         return Ok(None);
     }
-    let report = build_geometry_report(scan, &decoded);
-    Ok(Some((decoded, report)))
+    Ok(Some(decoded))
 }
 
 /// Assemble the IR document from the decoded B-rep graph.
@@ -2732,11 +2836,35 @@ mod tests {
     };
     use crate::native::F3dNative;
     use crate::records::{
-        DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
-        DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
-        DesignParameterScope, DesignSketchPlacement, LostEdgeReference, SketchCurveIdentity,
-        SketchPoint, SketchRelation,
+        DesignBodyBinding, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
+        DesignDimensionRecipeRecord, DesignParameter, DesignParameterCompanion,
+        DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignSketchPlacement,
+        LostEdgeReference, SketchCurveIdentity, SketchPoint, SketchRelation,
     };
+
+    #[test]
+    fn design_projection_gaps_count_unresolved_body_map_pairs() {
+        let ir = cadmpeg_ir::document::CadIr::empty(Default::default());
+        let mut native = F3dNative::default();
+        native.design_body_bindings.push(DesignBodyBinding {
+            id: "f3d:design:body-binding#0".into(),
+            stream: "Design/BulkStream.dat".into(),
+            pair_count: 1,
+            pair_ordinal: 0,
+            asm_body_key: 0,
+            asm_body_key_offset: 0,
+            entity_suffix: 1,
+            entity_suffix_offset: 8,
+            blob_name: "BREP.snapshot.smb".into(),
+            blob_name_offset: 16,
+            body: None,
+        });
+
+        assert_eq!(
+            design_projection_gaps(&ir, &native).unresolved_body_bindings,
+            1
+        );
+    }
 
     #[test]
     fn design_projection_gaps_count_each_retained_selection_family() {
@@ -3008,6 +3136,7 @@ mod tests {
         assert_eq!(
             design_projection_gaps(&ir, &native),
             DesignProjectionGaps {
+                unresolved_body_bindings: 0,
                 native_features: 1,
                 unprojected_feature_scopes: 1,
                 unprojected_parameters: 1,

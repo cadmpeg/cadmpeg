@@ -12881,11 +12881,14 @@ pub fn decode_recipes(
     scan: &ContainerScan,
 ) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
-    {
+    for entry in scan.entries.iter().filter(|entry| {
+        entry.role == role::BULKSTREAM
+            && entry.name.contains("Design")
+            && scan
+                .asset_folder
+                .as_ref()
+                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
+    }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         decode_stream(bytes, &entry.name, &mut out);
     }
@@ -21637,8 +21640,8 @@ pub(crate) fn body_bindings(bytes: &[u8]) -> Vec<BodyBinding> {
     out
 }
 
-/// Decode every ordered Design BREP body-map pair and resolve pairs targeting
-/// the selected BREP to solved ASM bodies.
+/// Decode every ordered Design BREP body-map pair and resolve each pair in its
+/// named blob's body-selector namespace.
 pub fn decode_design_body_bindings(
     scan: &ContainerScan,
     active_brep_entry: Option<&str>,
@@ -21646,26 +21649,46 @@ pub fn decode_design_body_bindings(
 ) -> Result<Vec<DesignBodyBinding>, CodecError> {
     let active_basename = active_brep_entry.and_then(|entry| entry.rsplit('/').next());
     let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
-    {
+    for entry in scan.entries.iter().filter(|entry| {
+        entry.role == role::BULKSTREAM
+            && entry.name.contains("Design")
+            && scan
+                .asset_folder
+                .as_ref()
+                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
+    }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         for binding in body_bindings(bytes) {
-            let body = (active_basename == Some(binding.blob_name.as_str()))
-                .then(|| {
-                    let matches = body_keys
+            let source_bodies = body_keys
+                .iter()
+                .filter(|key| {
+                    key.source_brep.as_deref().map_or_else(
+                        || active_basename == Some(binding.blob_name.as_str()),
+                        |source| source == binding.blob_name,
+                    )
+                })
+                .collect::<Vec<_>>();
+            let direct = source_bodies
+                .iter()
+                .filter(|key| key.asm_body_key == Some(binding.asm_key))
+                .map(|key| key.body.clone())
+                .collect::<Vec<_>>();
+            let body = match direct.as_slice() {
+                [body] => Some(body.clone()),
+                [] if source_bodies.iter().all(|key| key.asm_body_key.is_none()) => {
+                    let ordinal = u32::try_from(binding.asm_key).ok();
+                    let ordinal_matches = source_bodies
                         .iter()
-                        .filter(|key| key.asm_body_key == Some(binding.asm_key))
+                        .filter(|key| Some(key.body_ordinal) == ordinal)
                         .map(|key| key.body.clone())
                         .collect::<Vec<_>>();
-                    let [body] = matches.as_slice() else {
-                        return None;
-                    };
-                    Some(body.clone())
-                })
-                .flatten();
+                    match ordinal_matches.as_slice() {
+                        [body] => Some(body.clone()),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
             out.push(DesignBodyBinding {
                 id: format!(
                     "f3d:{}:design-body-binding#{}",
@@ -21712,12 +21735,12 @@ pub fn bind_body_bounds(bounds: &mut [DesignBodyBounds], bindings: &[DesignBodyB
 
 /// Decode per-body display visibility from the Design `BulkStream`.
 ///
-/// The BREP body-map record resolves ASM body keys of `active_brep_entry` to
-/// design-entity suffixes, and each entity's browser-node record carries a
-/// hidden flag directly after the node GUID
+/// Each BREP body-map record resolves blob-qualified body selectors to Design
+/// entity suffixes, and each entity's browser-node record carries a hidden flag
+/// directly after the node GUID
 /// ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/f3d.md#81-design-metadata)).
-/// The result maps each ASM body key to its display visibility; bodies
-/// without records are absent.
+/// The result maps each blob and body selector to its display visibility;
+/// bodies without records are absent.
 #[derive(Debug, Clone)]
 pub(crate) struct DecodedBodyVisibility {
     pub stream: String,
@@ -21727,33 +21750,24 @@ pub(crate) struct DecodedBodyVisibility {
     pub visible: bool,
 }
 
-pub(crate) fn decode_body_visibility(
-    _reader: &mut dyn ReadSeek,
+pub(crate) fn decode_all_body_visibility(
     scan: &ContainerScan,
-    active_brep_entry: &str,
-) -> Result<HashMap<u64, DecodedBodyVisibility>, CodecError> {
-    let Some(basename) = active_brep_entry
-        .rsplit('/')
-        .next()
-        .filter(|name| !name.is_empty())
-    else {
-        return Ok(HashMap::new());
-    };
+) -> Result<HashMap<(String, u64), DecodedBodyVisibility>, CodecError> {
     let mut out = HashMap::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| entry.role == role::BULKSTREAM && entry.name.contains("Design"))
-    {
+    for entry in scan.entries.iter().filter(|entry| {
+        entry.role == role::BULKSTREAM
+            && entry.name.contains("Design")
+            && scan
+                .asset_folder
+                .as_ref()
+                .is_none_or(|folder| entry.name.starts_with(&format!("{folder}/")))
+    }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         let hidden_by_entity = browser_node_hidden_flags(bytes);
         for binding in body_bindings(bytes) {
-            if binding.blob_name != basename {
-                continue;
-            }
             if let Some(node) = hidden_by_entity.get(&binding.entity_suffix) {
                 out.insert(
-                    binding.asm_key,
+                    (binding.blob_name, binding.asm_key),
                     DecodedBodyVisibility {
                         stream: entry.name.clone(),
                         byte_offset: node.byte_offset,

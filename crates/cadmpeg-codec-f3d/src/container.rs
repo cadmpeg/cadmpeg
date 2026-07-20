@@ -3,9 +3,9 @@
 //!
 //! [`scan`] retains the source archive, enumerates each entry, reads ASM headers
 //! from `.smb` and `.smbh` B-rep streams, and locates their `delta_state`
-//! history boundaries. [`select_active_brep`] chooses the `.smbh` stream when
-//! present and otherwise uses the first `.smb` construction snapshot.
-//! [`crate::decode`] passes the selected stream to the SAB and B-rep layers.
+//! history boundaries. [`select_active_brep`] chooses the `.smbh` history
+//! stream when present and otherwise uses the first `.smb` stream. Design body
+//! maps independently select the B-rep blobs that compose the document model.
 
 use std::collections::BTreeMap;
 use std::io::{Cursor, Read, SeekFrom};
@@ -47,7 +47,7 @@ pub(crate) fn read_entry_bounded(
 
 /// Codec-defined role labels for [`ContainerEntry::role`].
 pub mod role {
-    /// The authoritative final-model ASM BREP stream.
+    /// An ASM BREP stream with a history partition.
     pub const BREP_SMBH: &str = "brep-smbh";
     /// An earlier construction-snapshot ASM BREP stream.
     pub const BREP_SMB: &str = "brep-smb";
@@ -159,7 +159,7 @@ fn compression_label(method: CompressionMethod) -> String {
 pub struct BrepFacts {
     /// Entry name.
     pub name: String,
-    /// Whether this is the `.smbh` authoritative stream.
+    /// Whether this is a `.smbh` history stream.
     pub is_smbh: bool,
     /// Uncompressed byte length.
     pub uncompressed_len: u64,
@@ -424,7 +424,7 @@ fn is_guid(value: &str) -> bool {
         })
 }
 
-/// Build a [`ContainerSummary`] with the active B-rep selection.
+/// Build a [`ContainerSummary`] with the active history-stream selection.
 pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     let mut notes = Vec::new();
     if let Some(folder) = &scan.asset_folder {
@@ -432,11 +432,11 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
     }
     match select_active_brep(scan) {
         Some(b) => notes.push(format!(
-            "active BREP candidate: {} ({} bytes uncompressed, {})",
+            "active BREP history candidate: {} ({} bytes uncompressed, {})",
             b.name,
             b.uncompressed_len,
             if b.is_smbh {
-                "authoritative .smbh"
+                ".smbh history stream"
             } else {
                 "no .smbh present; .smb is a construction snapshot"
             }
@@ -444,8 +444,8 @@ pub fn summarize(scan: &ContainerScan) -> ContainerSummary {
         None => notes.push("no ASM BREP stream found".to_string()),
     }
     notes.push(
-        "container-level inspection only; run `decode` to build the B-rep graph and analytic \
-         geometry from the active BREP's SAB record stream"
+        "container-level inspection only; run `decode` to build B-rep graphs and analytic \
+         geometry from the Design-referenced SAB record streams"
             .to_string(),
     );
 

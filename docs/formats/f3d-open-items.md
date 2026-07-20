@@ -22,7 +22,6 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Container, header, and design records
 
-- The authoritative B-rep entry tie-break when more than one `.smb` or `.smbh` entry joins a nonempty Design body map is unresolved. Filename extension, archive order, face count, and the relative size of the history partition do not define that relation.
 - The relation between `.smb` and `.smbh` stream forms, including the presence of a history partition, is unresolved.
 - The header flags word (both widths): bit 1 (always set) and bits 2 and above (always zero) have no assigned semantic meaning.
 - The release word (both widths) encodes the ASM major release ×100 (`22700` on ASM 227.5, `23000` on ASM 230.5 streams); whether the minor release is ever encoded is unresolved.

@@ -51,10 +51,11 @@
 //!
 //! # Data flow
 //!
-//! [`container`] selects the authoritative `.smbh` B-rep, or the first `.smb`
-//! construction snapshot when no `.smbh` exists. [`sab`] frames its active
-//! record slice. [`brep`] builds the topology chain from bodies through
-//! vertices and points, while [`nurbs`] decodes cached spline carriers.
+//! [`container`] selects the `.smbh` history stream, or the first `.smb` when
+//! no `.smbh` exists. [`sab`] frames its active record slice. The Design body
+//! map selects every B-rep blob contributing bodies to the document model;
+//! [`brep`] builds each topology chain from bodies through vertices and points,
+//! while [`nurbs`] decodes cached spline carriers.
 //! [`design`], [`history`], and [`materials`] populate source-native records and
 //! appearance bindings.
 //!
@@ -161,11 +162,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         .iter()
         .map(|entity| ((design_stream(&entity.id), entity.entity_suffix), entity))
         .collect::<std::collections::HashMap<_, _>>();
-    let body_native_keys = native
-        .body_native_keys
-        .iter()
-        .filter_map(|key| Some(((key.body.clone(), key.asm_body_key?), key)))
-        .collect::<std::collections::HashMap<_, _>>();
     let mut binding_offsets = HashSet::new();
     let mut binding_groups =
         std::collections::HashMap::<(&str, u64), Vec<&records::DesignBodyBinding>>::new();
@@ -178,7 +174,25 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && binding.blob_name.starts_with("BREP.")
             && binding.blob_name_offset > binding.entity_suffix_offset
             && binding.body.as_ref().is_none_or(|body| {
-                body_native_keys.contains_key(&(body.clone(), binding.asm_body_key))
+                let has_named_source = native
+                    .body_native_keys
+                    .iter()
+                    .any(|key| key.source_brep.as_deref() == Some(binding.blob_name.as_str()));
+                let source_keys = native.body_native_keys.iter().filter(|key| {
+                    if has_named_source {
+                        key.source_brep.as_deref() == Some(binding.blob_name.as_str())
+                    } else {
+                        key.source_brep.is_none()
+                    }
+                });
+                let ordinal_mode = source_keys.clone().all(|key| key.asm_body_key.is_none());
+                source_keys.filter(|key| &key.body == body).any(|key| {
+                    if ordinal_mode {
+                        u64::from(key.body_ordinal) == binding.asm_body_key
+                    } else {
+                        key.asm_body_key == Some(binding.asm_body_key)
+                    }
+                })
             })
             && binding_offsets.insert((native_stream, binding.asm_body_key_offset));
         if !valid {

@@ -18,6 +18,9 @@
 
 use std::collections::{HashMap, HashSet};
 
+use serde::{Deserialize, Serialize};
+use serde_value::Value;
+
 use crate::records::{
     BodyNativeKey, CreationTimestamp, EdgeContinuity, EdgeOwnership, FaceContainment,
     FaceSidedness, MeshSurfaceSentinel, PersistentDesignLink, PersistentSubentityTag,
@@ -63,7 +66,7 @@ fn embedded_pcurve_geometry(pcurve: nurbs::NurbsPcurve) -> PcurveGeometry {
 }
 
 /// The decoded B-rep graph plus loss accounting.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Brep {
     /// Bodies.
     pub bodies: Vec<Body>,
@@ -132,6 +135,7 @@ pub struct Brep {
     /// Loss accounting for the report.
     pub stats: Stats,
     /// Source locations for emitted B-rep and synthetic child records.
+    #[serde(skip)]
     pub annotation_records: Vec<AnnotationRecord>,
 }
 
@@ -139,6 +143,8 @@ pub struct Brep {
 pub struct AnnotationRecord {
     /// Globally unique IR entity id.
     pub id: String,
+    /// BREP ZIP entry containing the source SAB record.
+    pub stream: String,
     /// Byte offset in the decompressed ASM stream.
     pub offset: u64,
     /// Source SAB record name.
@@ -148,7 +154,7 @@ pub struct AnnotationRecord {
 }
 
 /// Counts used to construct the B-rep loss report.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct Stats {
     /// Faces omitted because their required surface reference is null or dangling.
     pub missing_face_surfaces: usize,
@@ -185,6 +191,327 @@ pub struct Stats {
     pub other_records: usize,
     /// Residual record counts by full record name.
     pub other_record_kinds: std::collections::BTreeMap<String, usize>,
+}
+
+impl Brep {
+    /// Map solved bodies to the selector used by this blob's Design body map.
+    pub fn body_selectors(&self) -> HashMap<BodyId, u64> {
+        let ordinal_mode = self
+            .body_native_keys
+            .iter()
+            .all(|body| body.asm_body_key.is_none());
+        self.body_native_keys
+            .iter()
+            .filter_map(|body| {
+                let selector = if ordinal_mode {
+                    Some(u64::from(body.body_ordinal))
+                } else {
+                    body.asm_body_key
+                }?;
+                Some((body.body.clone(), selector))
+            })
+            .collect()
+    }
+
+    /// Retain the connected entity graph rooted at the body-map keys selected
+    /// for one BREP blob.
+    pub fn retain_body_keys(
+        &mut self,
+        selected_keys: &HashSet<u64>,
+    ) -> Result<(), cadmpeg_ir::codec::CodecError> {
+        let annotations = std::mem::take(&mut self.annotation_records);
+        let mut value = serde_value::to_value(&*self).map_err(|error| {
+            cadmpeg_ir::codec::CodecError::Malformed(format!("BREP serialization failed: {error}"))
+        })?;
+        let mut owned = HashSet::new();
+        collect_owned_ids(&value, &mut owned);
+        let roots = self
+            .body_selectors()
+            .into_iter()
+            .filter(|(_, selector)| selected_keys.contains(selector))
+            .map(|(body, _)| body.0)
+            .collect::<HashSet<_>>();
+        let mut adjacency = HashMap::<String, HashSet<String>>::new();
+        collect_entity_adjacency(&value, &owned, &mut adjacency);
+        let mut reachable = roots;
+        let mut pending = reachable.iter().cloned().collect::<Vec<_>>();
+        while let Some(id) = pending.pop() {
+            for adjacent in adjacency.get(&id).into_iter().flatten() {
+                if reachable.insert(adjacent.clone()) {
+                    pending.push(adjacent.clone());
+                }
+            }
+        }
+        retain_root_entities(&mut value, &reachable);
+        let mut retained: Self = value.deserialize_into().map_err(|error| {
+            cadmpeg_ir::codec::CodecError::Malformed(format!(
+                "retained BREP graph is invalid: {error}"
+            ))
+        })?;
+        retained
+            .body_keys
+            .retain(|body, _| reachable.contains(&body.0));
+        retained.annotation_records = annotations
+            .into_iter()
+            .filter(|annotation| reachable.contains(&annotation.id))
+            .collect();
+        *self = retained;
+        Ok(())
+    }
+
+    /// Qualify every entity owned by this graph so several BREP blobs can
+    /// coexist in one document model without record-index collisions.
+    pub fn qualify_ids(&mut self, namespace: &str) -> Result<(), cadmpeg_ir::codec::CodecError> {
+        let annotations = std::mem::take(&mut self.annotation_records);
+        let mut value = serde_value::to_value(&*self).map_err(|error| {
+            cadmpeg_ir::codec::CodecError::Malformed(format!("BREP serialization failed: {error}"))
+        })?;
+        let mut owned = HashSet::new();
+        collect_owned_ids(&value, &mut owned);
+        let replacements = owned
+            .into_iter()
+            .map(|id| {
+                let replacement = format!(
+                    "f3d:brep/{namespace}/{}",
+                    id.strip_prefix("f3d:").unwrap_or(&id)
+                );
+                (id, replacement)
+            })
+            .collect::<HashMap<_, _>>();
+        remap_owned_ids(&mut value, &replacements);
+        let mut qualified: Self = value.deserialize_into().map_err(|error| {
+            cadmpeg_ir::codec::CodecError::Malformed(format!("qualified BREP is invalid: {error}"))
+        })?;
+        qualified.annotation_records = annotations
+            .into_iter()
+            .map(|mut annotation| {
+                if let Some(id) = replacements.get(&annotation.id) {
+                    annotation.id.clone_from(id);
+                }
+                annotation
+            })
+            .collect();
+        *self = qualified;
+        Ok(())
+    }
+
+    /// Append a disjoint, already-qualified BREP graph.
+    pub fn append(&mut self, mut other: Self) {
+        macro_rules! append_vecs {
+            ($($field:ident),+ $(,)?) => {
+                $(self.$field.append(&mut other.$field);)+
+            };
+        }
+        append_vecs!(
+            bodies,
+            regions,
+            shells,
+            faces,
+            loops,
+            coedges,
+            edges,
+            vertices,
+            points,
+            surfaces,
+            curves,
+            pcurves,
+            procedural_surfaces,
+            procedural_curves,
+            sketch_curve_links,
+            persistent_design_links,
+            persistent_subentity_tags,
+            creation_timestamps,
+            edge_continuities,
+            edge_ownerships,
+            vertex_ownerships,
+            face_sidedness,
+            tolerant_coedge_parameters,
+            tolerant_edge_tails,
+            tolerant_vertex_tails,
+            mesh_surface_sentinels,
+            transform_hints,
+            body_native_keys,
+            wire_topologies,
+            attributes,
+            unknowns,
+            annotation_records,
+        );
+        self.body_keys.extend(other.body_keys);
+        self.stats.merge(other.stats);
+    }
+}
+
+impl Stats {
+    fn merge(&mut self, other: Self) {
+        macro_rules! add_counts {
+            ($($field:ident),+ $(,)?) => {
+                $(self.$field += other.$field;)+
+            };
+        }
+        add_counts!(
+            missing_face_surfaces,
+            unknown_surface_faces,
+            mesh_surface_faces,
+            nurbs_surfaces,
+            nurbs_curves,
+            procedural_curve_edges,
+            undecoded_pcurve_refs,
+            partial_procedural_supports,
+            other_records,
+        );
+        for (target, source) in [
+            (
+                &mut self.missing_face_surface_kinds,
+                other.missing_face_surface_kinds,
+            ),
+            (&mut self.unknown_surface_kinds, other.unknown_surface_kinds),
+            (
+                &mut self.procedural_curve_kinds,
+                other.procedural_curve_kinds,
+            ),
+            (
+                &mut self.undecoded_pcurve_kinds,
+                other.undecoded_pcurve_kinds,
+            ),
+            (&mut self.other_record_kinds, other.other_record_kinds),
+        ] {
+            for (kind, count) in source {
+                *target.entry(kind).or_default() += count;
+            }
+        }
+    }
+}
+
+fn collect_owned_ids(value: &Value, out: &mut HashSet<String>) {
+    match value {
+        Value::Map(fields) => {
+            if let Some(id) = fields
+                .get(&Value::String("id".into()))
+                .and_then(value_string)
+            {
+                out.insert(id.to_owned());
+            }
+            for (key, value) in fields {
+                collect_owned_ids(key, out);
+                collect_owned_ids(value, out);
+            }
+        }
+        Value::Seq(items) => {
+            for item in items {
+                collect_owned_ids(item, out);
+            }
+        }
+        Value::Option(Some(value)) | Value::Newtype(value) => collect_owned_ids(value, out),
+        _ => {}
+    }
+}
+
+fn value_string(value: &Value) -> Option<&str> {
+    match value {
+        Value::String(value) => Some(value),
+        Value::Newtype(value) => value_string(value),
+        _ => None,
+    }
+}
+
+fn collect_entity_adjacency(
+    value: &Value,
+    owned: &HashSet<String>,
+    out: &mut HashMap<String, HashSet<String>>,
+) {
+    let Value::Map(fields) = value else {
+        return;
+    };
+    for value in fields.values() {
+        let Value::Seq(items) = value else {
+            continue;
+        };
+        for item in items {
+            let Some(id) = entity_id(item) else {
+                continue;
+            };
+            let mut references = HashSet::new();
+            collect_references(item, owned, &mut references);
+            references.remove(id);
+            for reference in references {
+                out.entry(id.to_owned())
+                    .or_default()
+                    .insert(reference.clone());
+                out.entry(reference).or_default().insert(id.to_owned());
+            }
+        }
+    }
+}
+
+fn entity_id(value: &Value) -> Option<&str> {
+    let Value::Map(fields) = value else {
+        return None;
+    };
+    fields
+        .get(&Value::String("id".into()))
+        .and_then(value_string)
+}
+
+fn collect_references(value: &Value, owned: &HashSet<String>, out: &mut HashSet<String>) {
+    match value {
+        Value::String(id) if owned.contains(id) => {
+            out.insert(id.clone());
+        }
+        Value::Seq(items) => {
+            for item in items {
+                collect_references(item, owned, out);
+            }
+        }
+        Value::Map(fields) => {
+            for (key, value) in fields {
+                collect_references(key, owned, out);
+                collect_references(value, owned, out);
+            }
+        }
+        Value::Option(Some(value)) | Value::Newtype(value) => {
+            collect_references(value, owned, out);
+        }
+        _ => {}
+    }
+}
+
+fn retain_root_entities(value: &mut Value, reachable: &HashSet<String>) {
+    let Value::Map(fields) = value else {
+        return;
+    };
+    for value in fields.values_mut() {
+        let Value::Seq(items) = value else {
+            continue;
+        };
+        items.retain(|item| entity_id(item).is_none_or(|id| reachable.contains(id)));
+    }
+}
+
+fn remap_owned_ids(value: &mut Value, replacements: &HashMap<String, String>) {
+    match value {
+        Value::String(id) => {
+            if let Some(replacement) = replacements.get(id) {
+                id.clone_from(replacement);
+            }
+        }
+        Value::Seq(items) => {
+            for item in items {
+                remap_owned_ids(item, replacements);
+            }
+        }
+        Value::Map(fields) => {
+            let entries = std::mem::take(fields);
+            for (mut key, mut item) in entries {
+                remap_owned_ids(&mut key, replacements);
+                remap_owned_ids(&mut item, replacements);
+                fields.insert(key, item);
+            }
+        }
+        Value::Option(Some(value)) | Value::Newtype(value) => {
+            remap_owned_ids(value, replacements);
+        }
+        _ => {}
+    }
 }
 
 fn count_kind(counts: &mut std::collections::BTreeMap<String, usize>, kind: &str) {
@@ -787,7 +1114,7 @@ fn pcurve_inline_tail_flags(rec: &Record) -> Option<[bool; 4]> {
 ///
 /// `stream` names the source ZIP entry for provenance. Ids are minted as
 /// `f3d:brep:entity#<record-index>`, unique across the `RecordTable`.
-pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
+pub fn decode(records: &[Record], bytes: &[u8], stream: &str) -> Brep {
     let mut out = Brep::default();
 
     let id = |i: i64| format!("f3d:brep:entity#{i}");
@@ -5000,6 +5327,8 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
                         id: format!("f3d:asm:body-native-key#{i}"),
                         body: body_id.clone(),
                         record_index: r.index as u32,
+                        body_ordinal: out.body_native_keys.len() as u32,
+                        source_brep: stream.rsplit('/').next().map(str::to_owned),
                         asm_body_key: (*key >= 0).then_some(*key as u64),
                     });
                     if *key >= 0 {
@@ -5239,6 +5568,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             }
             out.annotation_records.push(AnnotationRecord {
                 id: entity_id,
+                stream: stream.to_owned(),
                 offset: record.offset as u64,
                 tag: record.name.clone(),
                 derived_fields,
@@ -5252,6 +5582,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         {
             out.annotation_records.push(AnnotationRecord {
                 id: attribute_id,
+                stream: stream.to_owned(),
                 offset: record.offset as u64,
                 tag: record.name.clone(),
                 derived_fields: Vec::new(),
@@ -5265,6 +5596,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         {
             out.annotation_records.push(AnnotationRecord {
                 id: unknown_id,
+                stream: stream.to_owned(),
                 offset: record.offset as u64,
                 tag: record.name.clone(),
                 derived_fields: Vec::new(),
@@ -5291,6 +5623,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             {
                 out.annotation_records.push(AnnotationRecord {
                     id: synthetic_id,
+                    stream: stream.to_owned(),
                     offset: record.offset as u64,
                     tag: tag.into(),
                     derived_fields: Vec::new(),
@@ -5323,6 +5656,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
         };
         out.annotation_records.push(AnnotationRecord {
             id: entity_id.to_owned(),
+            stream: stream.to_owned(),
             offset: record.offset as u64,
             tag: tag.into(),
             derived_fields: Vec::new(),
@@ -6814,6 +7148,144 @@ mod topology_tests {
             assert!(is_asm_stream_delimiter(name));
         }
         assert!(!is_asm_stream_delimiter("ATTRIB_CUSTOM-attrib"));
+    }
+
+    #[test]
+    fn brep_qualification_rewrites_owned_ids_and_cross_references() {
+        use cadmpeg_ir::ids::{BodyId, RegionId};
+        use cadmpeg_ir::topology::{Body, Region};
+
+        let body = BodyId("f3d:brep:entity#1".into());
+        let region = RegionId("f3d:brep:entity#2".into());
+        let mut brep = Brep {
+            bodies: vec![Body {
+                id: body.clone(),
+                kind: Default::default(),
+                regions: vec![region.clone()],
+                transform: None,
+                name: None,
+                color: None,
+                visible: None,
+            }],
+            regions: vec![Region {
+                id: region,
+                body: body.clone(),
+                shells: Vec::new(),
+            }],
+            body_keys: HashMap::from([(body.clone(), 7)]),
+            body_native_keys: vec![BodyNativeKey {
+                id: "f3d:asm:body-native-key#1".into(),
+                body,
+                record_index: 1,
+                body_ordinal: 0,
+                source_brep: Some("BREP.source.smbh".into()),
+                asm_body_key: Some(7),
+            }],
+            annotation_records: vec![AnnotationRecord {
+                id: "f3d:brep:entity#1".into(),
+                stream: "asset/BREP.source.smbh".into(),
+                offset: 10,
+                tag: "body".into(),
+                derived_fields: Vec::new(),
+            }],
+            ..Brep::default()
+        };
+
+        brep.qualify_ids("source").expect("qualify BREP");
+
+        let qualified = BodyId("f3d:brep/source/brep:entity#1".into());
+        assert_eq!(brep.bodies[0].id, qualified);
+        assert_eq!(brep.regions[0].body, qualified);
+        assert_eq!(brep.body_native_keys[0].body, qualified);
+        assert_eq!(brep.body_keys.get(&qualified), Some(&7));
+        assert_eq!(brep.annotation_records[0].id, qualified.0);
+        assert_eq!(
+            brep.body_native_keys[0].source_brep.as_deref(),
+            Some("BREP.source.smbh")
+        );
+    }
+
+    #[test]
+    fn body_key_retention_keeps_only_the_selected_connected_graph() {
+        use cadmpeg_ir::ids::{BodyId, RegionId};
+        use cadmpeg_ir::topology::{Body, Region};
+
+        let body = |index, region| Body {
+            id: BodyId(format!("f3d:brep:entity#{index}")),
+            kind: Default::default(),
+            regions: vec![RegionId(format!("f3d:brep:entity#{region}"))],
+            transform: None,
+            name: None,
+            color: None,
+            visible: None,
+        };
+        let native_key = |index, key| BodyNativeKey {
+            id: format!("f3d:asm:body-native-key#{index}"),
+            body: BodyId(format!("f3d:brep:entity#{index}")),
+            record_index: index,
+            body_ordinal: index - 1,
+            source_brep: Some("BREP.source.smbh".into()),
+            asm_body_key: Some(key),
+        };
+        let mut brep = Brep {
+            bodies: vec![body(1, 2), body(3, 4)],
+            regions: vec![
+                Region {
+                    id: RegionId("f3d:brep:entity#2".into()),
+                    body: BodyId("f3d:brep:entity#1".into()),
+                    shells: Vec::new(),
+                },
+                Region {
+                    id: RegionId("f3d:brep:entity#4".into()),
+                    body: BodyId("f3d:brep:entity#3".into()),
+                    shells: Vec::new(),
+                },
+            ],
+            body_keys: HashMap::from([
+                (BodyId("f3d:brep:entity#1".into()), 10),
+                (BodyId("f3d:brep:entity#3".into()), 20),
+            ]),
+            body_native_keys: vec![native_key(1, 10), native_key(3, 20)],
+            ..Brep::default()
+        };
+
+        brep.retain_body_keys(&HashSet::from([20]))
+            .expect("retain body graph");
+
+        assert_eq!(brep.bodies.len(), 1);
+        assert_eq!(brep.bodies[0].id.0, "f3d:brep:entity#3");
+        assert_eq!(brep.regions.len(), 1);
+        assert_eq!(brep.regions[0].id.0, "f3d:brep:entity#4");
+        assert_eq!(brep.body_native_keys.len(), 1);
+        assert_eq!(brep.body_keys.len(), 1);
+    }
+
+    #[test]
+    fn body_selectors_use_ordinals_only_for_an_all_null_key_lane() {
+        let native_key = |ordinal, key| BodyNativeKey {
+            id: format!("f3d:asm:body-native-key#{ordinal}"),
+            body: BodyId(format!("f3d:brep:entity#{ordinal}")),
+            record_index: ordinal,
+            body_ordinal: ordinal,
+            source_brep: Some("BREP.source.smb".into()),
+            asm_body_key: key,
+        };
+        let mut brep = Brep {
+            body_native_keys: vec![native_key(0, None), native_key(1, None)],
+            ..Brep::default()
+        };
+
+        assert_eq!(brep.body_selectors().len(), 2);
+        assert_eq!(
+            brep.body_selectors()[&BodyId("f3d:brep:entity#1".into())],
+            1
+        );
+
+        brep.body_native_keys[1].asm_body_key = Some(7);
+        assert_eq!(
+            brep.body_selectors(),
+            HashMap::from([(BodyId("f3d:brep:entity#1".into()), 7)])
+        );
     }
 
     #[test]

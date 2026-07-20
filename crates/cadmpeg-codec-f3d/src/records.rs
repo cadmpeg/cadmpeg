@@ -2859,7 +2859,7 @@ pub struct DesignBodyBinding {
     pub pair_count: u32,
     /// Zero-based position in the enclosing body map.
     pub pair_ordinal: u32,
-    /// ASM body key stored by this pair.
+    /// BREP body selector stored by this pair.
     pub asm_body_key: u64,
     /// Byte offset of `asm_body_key` within `stream`.
     pub asm_body_key_offset: u64,
@@ -2871,7 +2871,7 @@ pub struct DesignBodyBinding {
     pub blob_name: String,
     /// Byte offset of the UTF-16LE `blob_name` code units within `stream`.
     pub blob_name_offset: u64,
-    /// Solved body when this pair targets the selected active BREP.
+    /// Solved body in the BREP blob named by this pair.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body: Option<BodyId>,
 }
@@ -2906,7 +2906,13 @@ pub struct BodyNativeKey {
     pub body: BodyId,
     /// Source SAB body record index.
     pub record_index: u32,
-    /// Non-negative Design-join key; absence is the native `-1` sub-body sentinel.
+    /// Zero-based body-record position within the BREP blob.
+    #[serde(default)]
+    pub body_ordinal: u32,
+    /// Basename of the BREP blob containing this body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_brep: Option<String>,
+    /// Non-negative Design-join key; absence is the native `-1` null value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub asm_body_key: Option<u64>,
 }

@@ -5208,7 +5208,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert!(!f3d_native(&round_trip.ir).body_visibilities[0].visible);
     assert_eq!(
         f3d_native(&round_trip.ir).body_visibilities[0].id,
-        "f3d:design:body-visibility#42"
+        "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh:body-visibility#42"
     );
     assert_eq!(
         round_trip.ir.model.bodies[0].kind,
@@ -11153,11 +11153,11 @@ fn inspect_enumerates_and_reads_headers() {
     assert!(smbh.attributes.contains_key("delta_state_first_offset"));
     assert!(smbh.attributes.contains_key("sha256"));
 
-    // The active-BREP selection note prefers the .smbh.
+    // The active history-stream selection prefers the .smbh.
     assert!(summary
         .notes
         .iter()
-        .any(|n| n.contains("authoritative .smbh")));
+        .any(|n| n.contains(".smbh history stream")));
 }
 
 #[test]
@@ -20652,30 +20652,23 @@ fn body_visibility_maps_asm_keys_through_member_nodes() {
 
     let mut cursor = Cursor::new(bytes);
     let scan = container::scan(&mut cursor).unwrap();
-    let visibility = crate::design::decode_body_visibility(
-        &mut cursor,
-        &scan,
-        "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
-    )
-    .unwrap();
+    let visibility = crate::design::decode_all_body_visibility(&scan).unwrap();
     assert_eq!(
-        visibility.get(&3).map(|item| item.visible),
+        visibility
+            .get(&("BREP.synthetic.smbh".into(), 3))
+            .map(|item| item.visible),
         Some(true),
         "flag 0 decodes visible"
     );
     assert_eq!(
-        visibility.get(&6).map(|item| item.visible),
+        visibility
+            .get(&("BREP.synthetic.smbh".into(), 6))
+            .map(|item| item.visible),
         Some(false),
         "flag 1 decodes hidden"
     );
 
-    let other = crate::design::decode_body_visibility(
-        &mut cursor,
-        &scan,
-        "FusionAssetName[Active]/Breps.BlobParts/BREP.other.smbh",
-    )
-    .unwrap();
-    assert!(other.is_empty(), "bindings for other blobs do not apply");
+    assert!(!visibility.contains_key(&("BREP.other.smbh".into(), 3)));
 }
 
 fn lp_utf16_bytes(value: &str) -> Vec<u8> {
