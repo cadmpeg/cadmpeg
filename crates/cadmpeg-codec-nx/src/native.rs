@@ -12240,6 +12240,9 @@ pub struct ObjectRecord {
     pub id: String,
     /// Persistent OM object identifier when the section carries an ID table.
     pub object_id: Option<u32>,
+    /// Absolute file offset of the paired object-id table word.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_id_source_offset: Option<u64>,
     /// Zero-based indexed-section ordinal within the container.
     pub section_ordinal: u32,
     /// Zero-based record ordinal within the indexed section.
@@ -13657,6 +13660,9 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                     ObjectRecord {
                         id: record_id(record_ordinal),
                         object_id: record.object_id,
+                        object_id_source_offset: record
+                            .object_id_offset
+                            .map(|offset| entry_offset + offset as u64),
                         section_ordinal: section_ordinal as u32,
                         record_ordinal: record_ordinal as u32,
                         section_offset,

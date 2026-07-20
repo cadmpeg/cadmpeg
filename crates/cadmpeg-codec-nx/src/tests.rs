@@ -2734,10 +2734,18 @@ fn om_index_pairs_object_ids_with_bounded_entity_records() {
     assert_eq!(sections[0].records.len(), 2);
     assert_eq!(sections[0].records[0].object_id, Some(0x101));
     assert_eq!(
+        sections[0].records[0].object_id_offset,
+        Some(sections[0].object_id_table_offset + 8)
+    );
+    assert_eq!(
         sections[0].records[0].bytes,
         b"\x04\x01\x0eNX 2027.3102\x00hostglobalvariables"
     );
     assert_eq!(sections[0].records[1].object_id, Some(0x102));
+    assert_eq!(
+        sections[0].records[1].object_id_offset,
+        Some(sections[0].object_id_table_offset + 12)
+    );
     assert_eq!(sections[0].column_storage, None);
     assert_eq!(sections[0].fields.len(), 1);
     assert_eq!(sections[0].fields[0].name, "m_target");
@@ -5016,16 +5024,19 @@ fn nx_sketch_payload_join_preserves_order_and_cross_block_values() {
 fn nx_offset_store_block_bytes_follow_catalog_identity() {
     let control = crate::om::EntityRecord {
         object_id: None,
+        object_id_offset: None,
         offset: 5,
         bytes: &[0xaa],
     };
     let first = crate::om::EntityRecord {
         object_id: None,
+        object_id_offset: None,
         offset: 6,
         bytes: &[0xbb],
     };
     let second = crate::om::EntityRecord {
         object_id: None,
+        object_id_offset: None,
         offset: 7,
         bytes: &[0xcc],
     };
@@ -13479,6 +13490,12 @@ fn decode_retains_typed_nx_numeric_expression() {
     assert_eq!(headers[0].version, "NX 2027.3102");
     assert_eq!(headers[0].object_id, Some(0x101));
     assert_eq!(object_records[1].object_id, Some(0x102));
+    assert_eq!(
+        object_records[1].object_id_source_offset,
+        object_records[0]
+            .object_id_source_offset
+            .map(|offset| offset + 4)
+    );
     assert_eq!(expressions[0].record.as_ref(), Some(&object_records[1].id));
     assert_eq!(object_records[1].record_ordinal, 1);
     assert_eq!(

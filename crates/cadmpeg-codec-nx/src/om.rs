@@ -11,6 +11,8 @@ pub struct EntityRecord<'a> {
     /// NX object identifier paired with this boundary slot, when the section
     /// carries a fixed-width object-id table.
     pub object_id: Option<u32>,
+    /// Absolute byte offset of the paired object-id table word, when present.
+    pub object_id_offset: Option<usize>,
     /// Absolute byte offset of the entity payload.
     pub offset: usize,
     /// Exactly bounded serialized entity payload.
@@ -4462,6 +4464,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             };
             records.push(EntityRecord {
                 object_id: Some(object_id),
+                object_id_offset: Some(table + 4 + index * 4),
                 offset: start,
                 bytes: payload,
             });
@@ -4531,6 +4534,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             .windows(2)
             .map(|bounds| EntityRecord {
                 object_id: None,
+                object_id_offset: None,
                 offset: bounds[0],
                 bytes: &bytes[bounds[0]..bounds[1]],
             })
@@ -4543,6 +4547,7 @@ pub fn indexed_sections(bytes: &[u8]) -> Vec<IndexedSection<'_>> {
             fields: all_field_definitions(bytes, 0, index_start),
             control: Some(EntityRecord {
                 object_id: None,
+                object_id_offset: None,
                 offset: offsets[0],
                 bytes: &bytes[offsets[0]..offsets[1]],
             }),
