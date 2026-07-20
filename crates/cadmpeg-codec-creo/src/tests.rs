@@ -1850,7 +1850,7 @@ fn decode_types_row_only_class_916_as_subtractive_extrusion() {
 }
 
 #[test]
-fn decode_types_named_protrusion_without_section_operands() {
+fn decode_types_named_base_protrusion_as_new_body() {
     let data = build_prt("c", &[("MdlStatus", b"Protrusion id 4\0".to_vec())]);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
     let feature = result
@@ -1867,7 +1867,7 @@ fn decode_types_named_protrusion_without_section_operands() {
             profile: cadmpeg_ir::features::ProfileRef::Unresolved,
             direction: None,
             extent: cadmpeg_ir::features::Extent::Unresolved,
-            op: cadmpeg_ir::features::BooleanOp::Unresolved,
+            op: cadmpeg_ir::features::BooleanOp::NewBody,
             ..
         }
     ));
