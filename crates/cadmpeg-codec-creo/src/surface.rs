@@ -1382,7 +1382,7 @@ fn torus_radius_override_layout(body: &[u8]) -> Option<TorusRadiusOverrideLayout
     let (offset, _) = markers.next()?;
     markers.next().is_none().then_some(())?;
     let radius2_start = offset + 2;
-    let (radius2, radius2_end) = scalar::decode(body, radius2_start)?;
+    let (stored_radius2, radius2_end) = scalar::decode(body, radius2_start)?;
     let radius1_marker = (radius2_end..=radius2_end.checked_add(1)?)
         .find(|candidate| body.get(*candidate) == Some(&0x0e))?;
     let mut radius1_candidates = (radius1_marker + 1..=radius1_marker + 2).filter_map(|start| {
@@ -1391,6 +1391,11 @@ fn torus_radius_override_layout(body: &[u8]) -> Option<TorusRadiusOverrideLayout
     });
     let (radius1, radius1_start) = radius1_candidates.next()?;
     radius1_candidates.next().is_none().then_some(())?;
+    let radius2 = if body.get(radius2_end..radius1_start) == Some(&[0x00, 0x0e, 0x01]) {
+        stored_radius2 - radius1
+    } else {
+        stored_radius2
+    };
     (radius1.is_finite() && radius1 >= 0.0 && radius2.is_finite() && radius2 > 0.0).then_some(
         TorusRadiusOverrideLayout {
             overrides: TorusRadiusOverrides {

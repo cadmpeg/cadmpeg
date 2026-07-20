@@ -706,15 +706,17 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
                 0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff,
             ],
             0.249_999_999_951_747_04,
+            0.249_999_999_951_747_04,
         ),
         (
             vec![
                 0x18, 0x0d, 0x2a, 0xe8, 0x00, 0x00, 0x0e, 0x01, 0x29, 0xdf, 0xff,
             ],
+            0.250_000_000_000_000_06,
             0.75,
         ),
     ];
-    for (body, expected_radius2) in cases {
+    for (body, expected_radius2, stored_radial_scalar) in cases {
         let mut payload = visibgeom_payload(1, 0);
         payload.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 0]);
         payload.extend_from_slice(&body);
@@ -730,7 +732,7 @@ fn torus_parameter_trailer_retains_tagged_radius_overrides() {
         assert_eq!(overrides.offset, 0);
         assert_eq!(
             scan.surface_parameters[0].scalar_values,
-            [expected_radius2, 0.499_999_999_999_999_94]
+            [stored_radial_scalar, 0.499_999_999_999_999_94]
         );
         assert!(scan.surface_parameters[0]
             .torus_radius_overrides(0x24)
