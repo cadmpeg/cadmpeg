@@ -54,9 +54,11 @@ This document records F3D semantics that the format specification does not yet d
 - The semantics of `neutronData` when its GUID differs from `neutronRole` are unresolved.
 - The grammar of a non-empty `ComponentReferenceData.json` is unresolved.
 - The role of the `0x01`-tagged eight-byte value preceding the owning-design GUID in a `DcXRefPCIFeature` record is unresolved.
+- The semantic roles of the u32 fields in the role-adjacent occurrence-placement tail are unresolved.
 
 ## Material assets
 
 - The semantic role of the u32 prelude before `texture_RealWorldOffsetX`, the complete Distance and unit-tag namespaces, and the application-defined meanings of texture map-channel integer values are unresolved.
+- The complete Design-record grammar binding canvas and decal objects to `Images.BlobParts` entries is unresolved.
 - The resolution of preset phrases against the external material library is unresolved.
 - The precedence of `color-adesk-attrib`, `material-adesk-attrib`, and `rh_material` library records relative to direct colors and appearance assignments is unresolved.
