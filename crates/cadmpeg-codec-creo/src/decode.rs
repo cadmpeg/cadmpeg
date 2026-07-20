@@ -3366,6 +3366,17 @@ fn sketch_feature_id(sketch: &SketchId) -> IrFeatureId {
     ))
 }
 
+fn section_owner_feature_id(
+    scan: &ContainerScan,
+    definition_id: u32,
+    sketch: &SketchId,
+) -> IrFeatureId {
+    owned_section_feature_id(scan, definition_id).map_or_else(
+        || sketch_feature_id(sketch),
+        |feature_id| IrFeatureId(format!("creo:model:feature#{feature_id}")),
+    )
+}
+
 fn feature_definition_records(scan: &ContainerScan) -> Vec<CreoFeatureDefinitionRecord> {
     scan.feature_definitions
         .iter()
@@ -11146,33 +11157,35 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             profiles,
             native_ref: Some(sketch_native_ref(&sketch_id)),
         });
-        let feature_id = sketch_feature_id(&sketch_id);
-        annotate(
-            annotations,
-            &feature_id.0,
-            "FeatDefs",
-            source_offset as u64,
-            "section_sketch_feature",
-            Exactness::Derived,
-        );
-        ir.model.features.push(Feature {
-            id: feature_id,
-            ordinal: ir.model.features.len() as u64,
-            name: None,
-            suppressed: false,
-            parent: None,
-            dependencies: Vec::new(),
-            source_properties: BTreeMap::new(),
-            source_tag: Some("section".to_string()),
-            source_text: None,
-            source_content: Vec::new(),
-            outputs: Vec::new(),
-            definition: IrFeatureDefinition::Sketch {
-                space: SketchSpace::Planar,
-                sketch: Some(sketch_id.clone()),
-            },
-            native_ref: Some(sketch_native_ref(&sketch_id)),
-        });
+        if owned_section_feature_id(scan, definition.id).is_none() {
+            let feature_id = sketch_feature_id(&sketch_id);
+            annotate(
+                annotations,
+                &feature_id.0,
+                "FeatDefs",
+                source_offset as u64,
+                "section_sketch_feature",
+                Exactness::Derived,
+            );
+            ir.model.features.push(Feature {
+                id: feature_id,
+                ordinal: ir.model.features.len() as u64,
+                name: None,
+                suppressed: false,
+                parent: None,
+                dependencies: Vec::new(),
+                source_properties: BTreeMap::new(),
+                source_tag: Some("section".to_string()),
+                source_text: None,
+                source_content: Vec::new(),
+                outputs: Vec::new(),
+                definition: IrFeatureDefinition::Sketch {
+                    space: SketchSpace::Planar,
+                    sketch: Some(sketch_id.clone()),
+                },
+                native_ref: Some(sketch_native_ref(&sketch_id)),
+            });
+        }
     }
 }
 
@@ -11189,16 +11202,8 @@ fn link_feature_sketch_history(scan: &ContainerScan, ir: &mut CadIr) {
         })
         .filter_map(|transform| {
             let owner = IrFeatureId(format!("creo:model:feature#{}", transform.feature_id?));
-            let sketch_feature = owned_section_feature_id(scan, transform.definition_id)
-                .map_or_else(
-                    || {
-                        IrFeatureId(format!(
-                            "creo:model:sketch_feature#{}",
-                            transform.definition_id
-                        ))
-                    },
-                    |feature_id| IrFeatureId(format!("creo:model:feature#{feature_id}")),
-                );
+            let sketch = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
+            let sketch_feature = section_owner_feature_id(scan, transform.definition_id, &sketch);
             ir.model
                 .features
                 .iter()
@@ -11967,7 +11972,7 @@ fn transfer_feature_dimensions(
     let mut candidates = Vec::new();
     for definition in &scan.feature_definitions {
         let sketch = model_sketch_id(scan, definition);
-        let owner = sketch_feature_id(&sketch);
+        let owner = section_owner_feature_id(scan, definition.id, &sketch);
         if !feature_ids.contains(&owner) {
             continue;
         }
@@ -11994,7 +11999,7 @@ fn transfer_feature_dimensions(
     for ((sketch, definition, source_ordinal, dimension), (ordinal, name, occurrence)) in
         candidates.into_iter().zip(layout)
     {
-        let owner_id = sketch_feature_id(&sketch);
+        let owner_id = section_owner_feature_id(scan, definition.id, &sketch);
         let id = feature_dimension_parameter_row_id(&sketch, dimension.external_id, occurrence);
         annotate(
             annotations,
