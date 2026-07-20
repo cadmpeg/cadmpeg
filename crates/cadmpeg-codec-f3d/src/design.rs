@@ -12513,7 +12513,14 @@ fn parse_design_parameter(payload: &[u8]) -> Option<DesignParameter> {
     if payload.get(expression_end..expression_end + 9) != Some(&expression_trailer) {
         return None;
     }
-    let source_kind_at = expression_end + 9;
+    let source_kind_at = if owner_record_index.is_some()
+        && payload.get(expression_end..expression_end + 10) == Some(&[0; 10])
+        && lp_utf16(payload, expression_end + 10).is_some()
+    {
+        expression_end + 10
+    } else {
+        expression_end + 9
+    };
     let (source_kind, source_kind_end) = lp_utf16(payload, source_kind_at)?;
     if u32_at(payload, source_kind_end) != Some(0)
         || !valid_design_parameter_prefix(prefix_value, &source_kind)
@@ -22922,6 +22929,20 @@ mod relation_tests {
 
         revised_distance[tail + 2] = 19;
         assert!(parse_design_parameter(&revised_distance).is_none());
+
+        let mut sheet_metal =
+            parameter_record(Some(301), "50.00 mm", "FlangeHeight", Some("mm"), "d2", 5.0);
+        sheet_metal[22..30].copy_from_slice(&6u64.to_le_bytes());
+        let (_, expression_end) =
+            super::lp_utf16(&sheet_metal, 46).expect("sheet-metal expression");
+        sheet_metal.insert(expression_end + 9, 0);
+        let tail = sheet_metal.len() - 12;
+        sheet_metal[tail + 2] = 16;
+        let sheet_metal = parse_design_parameter(&sheet_metal)
+            .expect("sheet-metal parameter with ten-byte expression trailer");
+        assert_eq!(sheet_metal.source_kind, "FlangeHeight");
+        assert_eq!(sheet_metal.owner_record_index, Some(301));
+        assert_eq!(sheet_metal.evaluated_value, 5.0);
     }
 
     #[test]
