@@ -3100,6 +3100,18 @@ mod marker_tests {
             vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
         );
 
+        payload[curve_offset + 23..curve_offset + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        payload[curve_offset + 35..curve_offset + 39].copy_from_slice(&[0x00, 0x00, 0x05, 0x00]);
+        assert_eq!(
+            legacy_coordinate_roster_curve_endpoint_markers(&payload, &entities[3], &markers)
+                .iter()
+                .map(|marker| marker.coordinates_m)
+                .collect::<Vec<_>>(),
+            vec![Some([1.0, 2.0]), Some([5.0, 6.0])]
+        );
+        payload[curve_offset + 23..curve_offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[curve_offset + 35..curve_offset + 39].copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+
         payload[curve_offset + 56..curve_offset + 58].copy_from_slice(&1u16.to_le_bytes());
         payload[curve_offset + 58..curve_offset + 60].copy_from_slice(&2u16.to_le_bytes());
         payload[curve_offset + 84..curve_offset + 84 + LEGACY_SKETCH_MARKER.len()]
@@ -18382,7 +18394,10 @@ fn legacy_coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Op
     if legacy_state_five_curve_endpoint_indices(payload, offset).is_some() {
         return Some(64);
     }
-    if payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00]) {
+    if !matches!(
+        payload.get(offset + 23..offset + 27),
+        Some(locus) if locus == [0x04, 0x00, 0x02, 0x00] || locus == [0x05, 0x00, 0x01, 0x00]
+    ) {
         return None;
     }
     if compact_indexed_curve_endpoint_indices(payload, offset).is_some() {
@@ -18662,6 +18677,10 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
         || prefix == LEGACY_EXTENDED_SKETCH_MARKER;
     let supported_locus = marker_is_geometry_locus(payload, offset)
         || payload.get(offset + 23..offset + 27) == Some(&[0x04, 0x00, 0x02, 0x00]);
+    let supported_state = payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x04, 0x00])
+        || prefix == LEGACY_SKETCH_MARKER
+            && marker_is_geometry_locus(payload, offset)
+            && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x05, 0x00]);
     if !supported_prefix
         || !matches!(
             u32::from_le_bytes(payload.get(offset + 17..offset + 21)?.try_into().ok()?),
@@ -18670,7 +18689,7 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
         || !supported_locus
         || marker_profile_curve_role(payload, offset) != Some(1)
         || payload.get(offset + 31..offset + 35) != Some(&[0x00, 0x00, 0x80, 0xbf])
-        || payload.get(offset + 35..offset + 39) != Some(&[0x00, 0x00, 0x04, 0x00])
+        || !supported_state
         || f64::from_le_bytes(payload.get(offset + 48..offset + 56)?.try_into().ok()?) != 1.0
         || payload.get(offset + 68..offset + 72) != Some(&[0x01, 0x00, 0x00, 0x00])
         || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
