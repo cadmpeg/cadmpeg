@@ -306,6 +306,16 @@ center coordinate. The axis points from the second axial endpoint toward the
 first. The reference direction points from the diameter midpoint toward the
 first corner.
 
+The directrix-lane compact axis-aligned body has the same `11 18 13` opener
+and exactly seven scalars through the body boundary, but every scalar uses the
+first tabulated-cylinder directrix-coordinate lane. The first scalar is
+positive. The remaining six scalars are two XYZ corners. Exactly one pair of
+coordinate spans has a unique two-to-one relation; those spans are the
+diameter and radius. The remaining coordinate is axial, and its corner span is
+the bounded axial length. Origin, axis, and reference direction follow the
+same second-corner, midpoint, and first-corner rules as the surface-row compact
+body.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.

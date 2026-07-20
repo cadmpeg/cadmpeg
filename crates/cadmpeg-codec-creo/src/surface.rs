@@ -1692,6 +1692,7 @@ fn decode_positional_cylinder_frame(
 ) -> Option<PositionalCylinderFrame> {
     decode_local_system_cylinder_frame(body, cache)
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
+        .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
 }
 
 fn decode_local_system_cylinder_frame(
@@ -1789,40 +1790,76 @@ fn decode_compact_axis_aligned_cylinder_frame(
         cursor = next;
     }
     (cursor == body.len() && values[0] > 0.0).then_some(())?;
-    let length = values[0];
-    let first: [f64; 3] = values[1..4].try_into().ok()?;
-    let second: [f64; 3] = values[4..7].try_into().ok()?;
+    axis_aligned_cylinder_from_corners(
+        values[1..4].try_into().ok()?,
+        values[4..7].try_into().ok()?,
+        Some(values[0]),
+    )
+}
+
+fn decode_directrix_lane_axis_aligned_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    body.starts_with(&[0x11, 0x18, 0x13]).then_some(())?;
+    let mut cursor = 3;
+    let mut values = [0.0; 7];
+    for value in &mut values {
+        let (decoded, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    (cursor == body.len() && values[0] > 0.0).then_some(())?;
+    axis_aligned_cylinder_from_corners(
+        values[1..4].try_into().ok()?,
+        values[4..7].try_into().ok()?,
+        None,
+    )
+}
+
+fn axis_aligned_cylinder_from_corners(
+    first: [f64; 3],
+    second: [f64; 3],
+    stored_length: Option<f64>,
+) -> Option<PositionalCylinderFrame> {
     let spans = std::array::from_fn::<_, 3, _>(|index| (second[index] - first[index]).abs());
-    let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+    let scale = first
+        .iter()
+        .chain(second.iter())
+        .chain(stored_length.iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
     let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
-    let axis_indices = (0..3)
-        .filter(|index| close(spans[*index], length))
+    let radial_pairs = [(0, 1, 2), (0, 2, 1), (1, 2, 0)]
+        .into_iter()
+        .filter_map(|(first_radial, second_radial, axis_index)| {
+            let (diameter_index, radius_index) = match (
+                close(spans[first_radial], 2.0 * spans[second_radial]),
+                close(spans[second_radial], 2.0 * spans[first_radial]),
+            ) {
+                (true, false) => (first_radial, second_radial),
+                (false, true) => (second_radial, first_radial),
+                _ => return None,
+            };
+            stored_length
+                .is_none_or(|length| close(spans[axis_index], length))
+                .then_some((diameter_index, radius_index, axis_index))
+        })
         .collect::<Vec<_>>();
-    let [axis_index] = axis_indices.as_slice() else {
+    let [(diameter_index, radius_index, axis_index)] = radial_pairs.as_slice() else {
         return None;
     };
-    let radial = (0..3)
-        .filter(|index| index != axis_index)
-        .collect::<Vec<_>>();
-    let [first_radial, second_radial] = radial.as_slice() else {
-        return None;
-    };
-    let (diameter_index, radius_index) = match (
-        close(spans[*first_radial], 2.0 * spans[*second_radial]),
-        close(spans[*second_radial], 2.0 * spans[*first_radial]),
-    ) {
-        (true, false) => (*first_radial, *second_radial),
-        (false, true) => (*second_radial, *first_radial),
-        _ => return None,
-    };
-    let radius = spans[radius_index];
-    (radius > 0.0).then_some(())?;
+    let radius = spans[*radius_index];
+    let length = spans[*axis_index];
+    (radius > 0.0 && length > 0.0).then_some(())?;
     let mut origin = second;
-    origin[diameter_index] = f64::midpoint(first[diameter_index], second[diameter_index]);
+    origin[*diameter_index] = f64::midpoint(first[*diameter_index], second[*diameter_index]);
     let mut axis = [0.0; 3];
     axis[*axis_index] = (first[*axis_index] - second[*axis_index]).signum();
     let mut ref_direction = [0.0; 3];
-    ref_direction[diameter_index] = (first[diameter_index] - second[diameter_index]).signum();
+    ref_direction[*diameter_index] = (first[*diameter_index] - second[*diameter_index]).signum();
     Some(PositionalCylinderFrame {
         origin,
         axis,
@@ -3130,6 +3167,20 @@ mod tests {
         assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
         assert!((frame.radius - 1.5).abs() < 1e-12);
         assert!((frame.length - 1.7).abs() < 1e-12);
+
+        let directrix_lane = [
+            17, 24, 19, 135, 122, 225, 71, 174, 20, 123, 71, 0, 204, 45, 45, 20, 122, 225, 71, 174,
+            21, 65, 169, 153, 153, 153, 153, 153, 160, 46, 0, 204, 45, 48, 163, 215, 10, 61, 112,
+            164, 134, 174, 20, 122, 225, 71, 174,
+        ];
+        let frame =
+            decode_positional_cylinder_frame(&directrix_lane, &scalar::ScalarCache::default())
+                .expect("complete directrix-lane axis-aligned cylinder");
+        assert_eq!(frame.origin, [0.0, 16.64, 1.73]);
+        assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
+        assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
+        assert!((frame.radius - 2.1).abs() < 1e-12);
+        assert!((frame.length - 1.68).abs() < 1e-12);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;
