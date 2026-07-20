@@ -63,6 +63,17 @@ fn unique_feature_definition(
     matches.next().is_none().then_some(definition)
 }
 
+fn unique_owned_feature_definition(
+    definitions: &[crate::feature::FeatureDefinition],
+    feature_id: u32,
+) -> Option<&crate::feature::FeatureDefinition> {
+    let mut matches = definitions
+        .iter()
+        .filter(|definition| definition.owner_feature_id == Some(feature_id));
+    let definition = matches.next()?;
+    matches.next().is_none().then_some(definition)
+}
+
 fn unique_feature_section_transform(
     transforms: &[crate::placement::FeatureSectionTransform],
     definition_id: u32,
@@ -13530,13 +13541,11 @@ fn schema_feature_definition(
     if schema_class == 917
         && section_sweep_allows_linear_extrusion(schema_class, feature_recipe(scan, feature_id))
     {
-        let definitions = scan
-            .feature_definitions
-            .iter()
-            .filter(|definition| definition.owner_feature_id == Some(feature_id))
-            .collect::<Vec<_>>();
         let sweep = circular_sweep_geometry(scan, feature_id);
-        if let ([definition], Some(sweep)) = (definitions.as_slice(), sweep) {
+        if let (Some(definition), Some(sweep)) = (
+            unique_owned_feature_definition(&scan.feature_definitions, feature_id),
+            sweep,
+        ) {
             if sweep
                 .section_definition_id
                 .is_none_or(|definition_id| definition_id == definition.id)
@@ -13568,22 +13577,27 @@ fn schema_feature_definition(
             .iter()
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        let (profile, axis) = if let [transform] = transforms.as_slice() {
-            let definition =
-                unique_feature_definition(&scan.feature_definitions, transform.definition_id);
-            (
-                definition.map(|definition| {
-                    section_profile_ref(
-                        ir,
-                        definition.id,
-                        feature_sketch_record_id_in_scan(scan, definition),
-                    )
-                }),
-                definition.and_then(|definition| resolved_revolution_axis(definition, transform)),
-            )
-        } else {
-            (None, None)
+        let (definition, transform) = match transforms.as_slice() {
+            [transform] => (
+                unique_feature_definition(&scan.feature_definitions, transform.definition_id),
+                Some(*transform),
+            ),
+            [] => (
+                unique_owned_feature_definition(&scan.feature_definitions, feature_id),
+                None,
+            ),
+            _ => (None, None),
         };
+        let profile = definition.map(|definition| {
+            section_profile_ref(
+                ir,
+                definition.id,
+                feature_sketch_record_id_in_scan(scan, definition),
+            )
+        });
+        let axis = definition
+            .zip(transform)
+            .and_then(|(definition, transform)| resolved_revolution_axis(definition, transform));
         let output_kind = evaluated_sweep_body_kind(ir, "revolution", feature_id);
         return IrFeatureDefinition::Revolve {
             construction: RevolutionConstruction {
@@ -13611,19 +13625,20 @@ fn schema_feature_definition(
             .iter()
             .filter(|transform| transform.feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        let profile = if let [transform] = transforms.as_slice() {
-            unique_feature_definition(&scan.feature_definitions, transform.definition_id).map(
-                |definition| {
-                    section_profile_ref(
-                        ir,
-                        definition.id,
-                        feature_sketch_record_id_in_scan(scan, definition),
-                    )
-                },
-            )
-        } else {
-            None
+        let definition = match transforms.as_slice() {
+            [transform] => {
+                unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+            }
+            [] => unique_owned_feature_definition(&scan.feature_definitions, feature_id),
+            _ => None,
         };
+        let profile = definition.map(|definition| {
+            section_profile_ref(
+                ir,
+                definition.id,
+                feature_sketch_record_id_in_scan(scan, definition),
+            )
+        });
         let construction =
             if let ([transform], Some(profile)) = (transforms.as_slice(), profile.clone()) {
                 extrusion_extent_and_direction(
@@ -16495,6 +16510,14 @@ mod resolved_sketch_tests {
             unique_feature_definition(std::slice::from_ref(&definition), definition.id)
                 .map(|matched| matched.offset),
             Some(0)
+        );
+        assert_eq!(
+            unique_owned_feature_definition(std::slice::from_ref(&definition), 6)
+                .map(|matched| matched.id),
+            Some(5)
+        );
+        assert!(
+            unique_owned_feature_definition(&[definition.clone(), definition.clone()], 6).is_none()
         );
         assert!(unique_feature_definition(&[definition.clone(), definition], 5).is_none());
         let operation = crate::feature::FeatureOperation {

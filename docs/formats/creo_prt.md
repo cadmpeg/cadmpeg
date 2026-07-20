@@ -1599,7 +1599,10 @@ parallel generated cap-plane equations is a linear extrusion even when its
 current feature-state record omits the recipe discriminator. A stored
 rotational recipe excludes this classification.
 Without complete placement or cap equations, the same non-rotational class
-remains a linear extrusion with unresolved profile, direction, and extent.
+remains a linear extrusion with unresolved direction and extent. Its uniquely
+owned section definition still supplies the native profile reference. That
+reference resolves to the neutral sketch when the sketch contains a resolved
+profile chain; competing definitions leave the profile unresolved.
 Within the generating feature, a complete plane `local_sys` supplies the cap
 support point and normal. A held-coordinate outline for the same surface takes
 precedence.
