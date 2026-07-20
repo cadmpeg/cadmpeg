@@ -980,10 +980,12 @@ pub struct DatumPlanePayloadHeader {
 }
 
 /// Count-two datum-plane branch shared by tags `1b` and `23`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DatumPlaneSingleReferenceBranch {
     /// Non-null compact descriptor index.
     pub descriptor_index: u32,
+    /// Exact serialized compact descriptor-index token.
+    pub raw_descriptor_index: Vec<u8>,
     /// Absolute offset of the compact descriptor index.
     pub descriptor_offset: usize,
     /// Canonical payload object index.
@@ -3193,6 +3195,7 @@ pub fn datum_plane_single_reference_branch(
     else {
         return None;
     };
+    let raw_descriptor_index = record.payload[at..at + width].to_vec();
     at += width;
     (record.payload.get(at) == Some(&0x01)).then_some(())?;
     at += 1;
@@ -3202,6 +3205,7 @@ pub fn datum_plane_single_reference_branch(
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor_index,
+        raw_descriptor_index,
         descriptor_offset,
         object_index,
         object_offset,
@@ -3231,6 +3235,7 @@ pub fn datum_plane_descriptor_reference_branch(
     else {
         return None;
     };
+    let raw_descriptor_index = record.payload[at..at + width].to_vec();
     at += width;
     (record.payload.get(at..at + SEPARATOR.len()) == Some(&SEPARATOR)).then_some(())?;
     at += SEPARATOR.len();
@@ -3240,6 +3245,7 @@ pub fn datum_plane_descriptor_reference_branch(
     (record.payload.get(at..at + SUFFIX.len()) == Some(&SUFFIX)).then_some(())?;
     Some(DatumPlaneSingleReferenceBranch {
         descriptor_index,
+        raw_descriptor_index,
         descriptor_offset,
         object_index,
         object_offset,

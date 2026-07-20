@@ -6644,6 +6644,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
     })
     .unwrap();
     assert_eq!(branch.descriptor_index, 76);
+    assert_eq!(branch.raw_descriptor_index, [0x80, 0x4c]);
     assert_eq!(branch.descriptor_offset, 110);
     assert_eq!(branch.object_index, 699);
     assert_eq!(branch.object_offset, 113);
@@ -6706,6 +6707,7 @@ fn om_datum_plane_header_requires_common_prefix_and_nontrivial_count() {
         })
         .unwrap();
     assert_eq!(descriptor_count_three.descriptor_index, 77);
+    assert_eq!(descriptor_count_three.raw_descriptor_index, [0x80, 0x4d]);
     assert_eq!(descriptor_count_three.descriptor_offset, 110);
     assert_eq!(descriptor_count_three.object_index, 721);
     assert_eq!(descriptor_count_three.object_offset, 116);

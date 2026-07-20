@@ -4667,6 +4667,9 @@ pub struct FeatureDatumPlaneHeader {
     /// Ordered compact descriptor indices carried by the selected branch.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub descriptor_indices: Vec<u32>,
+    /// Exact compact descriptor-index tokens in branch order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub raw_descriptor_indices: Vec<Vec<u8>>,
     /// Ordered canonical object indices carried by the selected branch.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub object_indices: Vec<u32>,
@@ -7556,6 +7559,10 @@ pub fn feature_datum_plane_headers(container: &Container) -> Vec<FeatureDatumPla
                 declared_count: header.declared_count,
                 branch_tag: header.branch_tag,
                 descriptor_indices,
+                raw_descriptor_indices: single
+                    .iter()
+                    .map(|branch| branch.raw_descriptor_index.clone())
+                    .collect(),
                 object_indices,
                 descriptor_data_blocks: resolved
                     .as_ref()
