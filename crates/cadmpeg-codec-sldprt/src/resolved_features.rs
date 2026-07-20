@@ -7392,6 +7392,7 @@ pub(crate) fn project_hole_position_sketches(
         };
         let authored_markers = lanes
             .iter()
+            .filter(|lane| lane.configuration == sketch.configuration)
             .flat_map(|lane| &lane.sketch_entities)
             .filter(|marker| {
                 marker.feature_ref.as_deref() == Some(position_feature.id.as_str())
@@ -7737,8 +7738,17 @@ mod hole_axis_tests {
             },
         }];
         let mut features = vec![hole, sketch_feature];
+        let mut alternate_configuration = lane.clone();
+        alternate_configuration.id = "alternate-lane".into();
+        alternate_configuration.configuration = Some("alternate".into());
 
-        project_hole_position_sketches(&mut features, &[sketch], &entities, &[history], &[lane]);
+        project_hole_position_sketches(
+            &mut features,
+            &[sketch],
+            &entities,
+            &[history],
+            &[lane, alternate_configuration],
+        );
 
         let FeatureDefinition::Hole { placements, .. } = &features[0].definition else {
             panic!("expected hole");
