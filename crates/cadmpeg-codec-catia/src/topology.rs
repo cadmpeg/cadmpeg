@@ -1319,21 +1319,25 @@ fn compact_boundary_domains_jointly_viable<'a>(
                 .unwrap_or_else(|| choices[edge].clone())
         })
         .collect::<Vec<_>>();
-    let mut states = vec![quotient.clone()];
+    let mut states = vec![(quotient.clone(), HashSet::new())];
     for alternatives in ordered {
         let mut next = Vec::new();
         let mut signatures = HashSet::new();
-        for state in states {
+        for (state, oriented_edges) in states {
             for face in &alternatives {
                 for (_, mut candidate) in state.assignment_options_limited(
                     face,
                     &candidates,
-                    &HashSet::new(),
+                    &oriented_edges,
                     MAX_QUOTIENT_STATES.saturating_sub(next.len()),
                     Some(budget),
                 ) {
-                    if signatures.insert(candidate.signature()) {
-                        next.push(candidate);
+                    let mut next_oriented = oriented_edges.clone();
+                    next_oriented.extend(face.boundaries.iter().flatten().map(|use_| use_.edge));
+                    let mut oriented_signature = next_oriented.iter().copied().collect::<Vec<_>>();
+                    oriented_signature.sort_unstable();
+                    if signatures.insert((candidate.signature(), oriented_signature)) {
+                        next.push((candidate, next_oriented));
                     }
                     if next.len() == MAX_QUOTIENT_STATES {
                         break;
@@ -10440,6 +10444,38 @@ mod motif_tests {
             &[domain(false), domain(true)],
             &choices,
             &[Some([0, 1]), Some([0, 1])],
+            None,
+            &quotient,
+            &budget,
+        ));
+    }
+
+    #[test]
+    fn compact_faces_share_one_physical_edge_direction_gauge() {
+        let choices = vec![
+            vec![[0, 1]],
+            vec![[1, 2]],
+            vec![[0, 2]],
+            vec![[0, 3]],
+            vec![[1, 3]],
+        ];
+        let assignment = choices
+            .iter()
+            .map(|choices| Some(choices[0]))
+            .collect::<Vec<_>>();
+        let domains = [
+            MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2]),
+            MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 3, 4]),
+        ];
+        let quotient =
+            super::initial_mesh_quotient(&choices, 4, &[[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]])
+                .expect("initial quotient");
+        let budget = super::MeshConstraintBudget::new(10_000);
+
+        assert!(super::compact_boundary_domains_jointly_viable(
+            &domains,
+            &choices,
+            &assignment,
             None,
             &quotient,
             &budget,
