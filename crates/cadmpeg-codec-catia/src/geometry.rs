@@ -1589,12 +1589,31 @@ pub struct ConsolidatedTopologyEdgeRun {
 /// Two adjacent oriented uses and their terminal native edge node.
 #[derive(Debug, Clone)]
 pub struct ConsolidatedEdgeUseRun {
+    /// Immediately preceding edge-definition frame in classes `0x23..=0x25`.
+    pub definition: Option<ConsolidatedEdgeDefinition>,
     /// The two serialized edge uses, in side order.
     pub uses: [B2UseMetadata; 2],
     /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
     pub node: B2EdgeNode,
     /// Whether the use references and endpoint selectors close one allocation chain.
     pub identity_chain_consistent: bool,
+}
+
+/// Framed edge definition structurally owned by an adjacent oriented-use run.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConsolidatedEdgeDefinition {
+    /// Record byte offset.
+    pub pos: usize,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent framing flag.
+    pub flag: u8,
+    /// Edge-definition class in `0x23..=0x25`.
+    pub class: u8,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Complete class-specific payload.
+    pub payload: Vec<u8>,
 }
 
 /// Native endpoint-incidence graph of complete consolidated edge runs.
@@ -1766,9 +1785,11 @@ pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
         .into_iter()
         .map(|value| (value.pos, value))
         .collect::<BTreeMap<_, _>>();
-    consolidated_records(data)
+    let records = consolidated_records(data);
+    records
         .windows(3)
-        .filter_map(|window| {
+        .enumerate()
+        .filter_map(|(index, window)| {
             let [use0, use1, node] = window else {
                 return None;
             };
@@ -1795,7 +1816,22 @@ pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
                         && uses[1].references.as_deref() == Some(&[second, node.curve_ref])
                 })
                 && [node.start_parameter_ref, node.end_parameter_ref] == [2, 1];
+            let definition = index
+                .checked_sub(1)
+                .and_then(|preceding| records.get(preceding))
+                .filter(|record| {
+                    record.family == ConsolidatedFamily::B && matches!(record.class, 0x23..=0x25)
+                })
+                .map(|record| ConsolidatedEdgeDefinition {
+                    pos: record.range.start,
+                    width: record.width,
+                    flag: record.flag,
+                    class: record.class,
+                    header_token: record.header_token,
+                    payload: data[record.payload.clone()].to_vec(),
+                });
             Some(ConsolidatedEdgeUseRun {
+                definition,
                 uses,
                 node,
                 identity_chain_consistent,

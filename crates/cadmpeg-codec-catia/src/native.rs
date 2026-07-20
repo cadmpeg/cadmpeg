@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 64;
+pub const CATIA_NATIVE_VERSION: u32 = 65;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -139,9 +139,29 @@ pub struct CatiaConsolidatedEdgeNode {
     pub parameter_selectors: [u32; 2],
     /// Terminal layout byte.
     pub tail: u8,
+    /// Adjacent class-`0x23..=0x25` edge-definition frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub definition: Option<CatiaConsolidatedEdgeDefinition>,
     /// Adjacent oriented uses whose references close on this edge node.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uses: Option<CatiaConsolidatedEdgeUses>,
+}
+
+/// Exact class-specific edge-definition frame owned by one consolidated edge node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedEdgeDefinition {
+    /// Record byte offset.
+    pub byte_offset: u64,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent framing flag.
+    pub flag: u8,
+    /// Edge-definition class in `0x23..=0x25`.
+    pub class: u8,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Complete class-specific payload.
+    pub payload: Vec<u8>,
 }
 
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
@@ -786,7 +806,13 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
             if !run.identity_chain_consistent {
                 return None;
             }
-            Some((run.node.pos, native_consolidated_edge_uses(&run.uses)?))
+            Some((
+                run.node.pos,
+                (
+                    native_consolidated_edge_uses(&run.uses)?,
+                    run.definition.map(native_consolidated_edge_definition),
+                ),
+            ))
         })
         .collect::<HashMap<_, _>>();
     geometry::b2_edge_nodes(bytes)
@@ -805,10 +831,24 @@ fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
                 vertices: [String::new(), String::new()],
                 parameter_selectors: [node.start_parameter_ref, node.end_parameter_ref],
                 tail: node.tail,
-                uses: use_runs.get(&node.pos).cloned(),
+                definition: use_runs.get(&node.pos).and_then(|(_, value)| value.clone()),
+                uses: use_runs.get(&node.pos).map(|(value, _)| value.clone()),
             })
         })
         .collect()
+}
+
+fn native_consolidated_edge_definition(
+    definition: geometry::ConsolidatedEdgeDefinition,
+) -> CatiaConsolidatedEdgeDefinition {
+    CatiaConsolidatedEdgeDefinition {
+        byte_offset: definition.pos as u64,
+        width: definition.width,
+        flag: definition.flag,
+        class: definition.class,
+        header_token: definition.header_token,
+        payload: definition.payload,
+    }
 }
 
 fn native_consolidated_edge_uses(
@@ -958,11 +998,22 @@ fn validate_consolidated_edge_runs(
                 && uses.senses == [0x88, 0x84]
                 && node.parameter_selectors == [2, 1]
         });
+        let definition_valid = node.definition.as_ref().is_none_or(|definition| {
+            let token_limit = 1u32.checked_shl(u32::from(definition.width) * 8);
+            node.uses.is_some()
+                && matches!(definition.width, 1..=3)
+                && matches!(definition.flag, 0x03 | 0x13 | 0x83)
+                && matches!(definition.class, 0x23..=0x25)
+                && token_limit.is_some_and(|limit| definition.header_token < limit)
+                && !definition.payload.is_empty()
+                && definition.byte_offset < node.byte_offset
+        });
         if node.id != format!("catia:consolidated:edge-node#{index}")
             || !matches!(node.width, 1..=3)
             || !matches!(node.flag, 0x03 | 0x13 | 0x83)
             || token_limit.is_some_and(|limit| node.header_token >= limit)
             || !uses_valid
+            || !definition_valid
             || index > 0 && nodes[index - 1].byte_offset >= node.byte_offset
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(

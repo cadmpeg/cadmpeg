@@ -4143,6 +4143,9 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     let uses = node.uses.as_ref().expect("edge-owned oriented uses");
     assert_eq!(uses.references, [[4, 5], [5, 6]]);
     assert_eq!(uses.senses, [0x88, 0x84]);
+    let definition = node.definition.as_ref().expect("edge-owned definition");
+    assert_eq!(definition.class, 0x23);
+    assert!(definition.byte_offset < node.byte_offset);
     assert_eq!(native.consolidated_vertex_identities.len(), 2);
     assert_eq!(native.consolidated_vertex_identities[0].identity, 139);
     assert_eq!(
@@ -4163,6 +4166,26 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     invalid
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA edge run for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut invalid = crate::native::CatiaNative::decode(&bytes);
+    invalid.consolidated_edge_nodes[0]
+        .definition
+        .as_mut()
+        .expect("edge definition")
+        .class = 0x26;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA edge definition");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut invalid = crate::native::CatiaNative::decode(&bytes);
+    invalid.consolidated_edge_nodes[0].uses = None;
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store orphaned CATIA edge definition");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
 
     let mut invalid = crate::native::CatiaNative::decode(&bytes);
@@ -4886,6 +4909,31 @@ fn consolidated_edge_use_run_is_independent_of_pcurve_availability() {
     assert_eq!(run.uses[1].sense, Some(B2UseSense::Sense84));
     assert_eq!(run.node.start_vertex_ref, 139);
     assert_eq!(run.node.end_vertex_ref, 142);
+}
+
+#[test]
+fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
+    let mut bytes = vec![0xb2, 0x03, 0x24, 0x05, 0x05, 0x05, 0x81, 0x05, 0x0f, 0x87];
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+
+    let runs = crate::geometry::consolidated_edge_use_runs(&bytes);
+    let [run] = runs.as_slice() else {
+        panic!("one edge-use run");
+    };
+    let definition = run.definition.as_ref().expect("adjacent definition");
+    assert_eq!(definition.class, 0x24);
+    assert_eq!(definition.header_token, 5);
+    assert_eq!(definition.payload, [0x05, 0x81, 0x05, 0x0f, 0x87]);
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert_eq!(
+        native.consolidated_edge_nodes[0]
+            .definition
+            .as_ref()
+            .expect("native definition")
+            .class,
+        0x24
+    );
 }
 
 #[test]
