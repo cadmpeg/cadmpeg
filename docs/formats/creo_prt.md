@@ -908,6 +908,9 @@ separates direct items when the item count exceeds two. The row trailer is
 its item `e2`, and the final row may end at the following named record. Solver
 integer fields extend the compact-integer lattice with `c0..df XX YY`, equal
 to `((head-c0)<<16)|(XX<<8)|YY`.
+The least-significant `status` bit is the constraint enable state: zero denies
+the constraint and one enables it. Higher status bits are independent solver
+state and remain in the native row.
 
 For a two-item type-zero incidence, sense `2` selects the native first endpoint
 and sense `3` selects the native second endpoint. Sense `4` selects an arc or

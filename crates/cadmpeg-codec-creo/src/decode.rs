@@ -10398,6 +10398,10 @@ fn section_skamp_constraints(
     section_skamp_constraints_for_geometry(definition, sketch, None)
 }
 
+fn section_skamp_active(status: u32) -> bool {
+    status & 1 != 0
+}
+
 fn section_skamp_constraints_for_geometry(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -10650,7 +10654,7 @@ fn section_skamp_constraints_for_geometry(
                     definition: constraint_definition,
                     name: None,
                     driving: None,
-                    active: None,
+                    active: Some(section_skamp_active(skamp.status)),
                     virtual_space: None,
                     visible: None,
                     orientation: None,
@@ -18685,6 +18689,16 @@ mod resolved_sketch_tests {
         segment.kind = crate::feature::FeatureSegmentKind::Arc;
         segment.vertical_horizontal = Some(0);
         assert_eq!(line_orientation_definition(&segment, entity), None);
+    }
+
+    #[test]
+    fn skamp_status_low_bit_controls_constraint_activity() {
+        assert!(!section_skamp_active(2));
+        assert!(section_skamp_active(3));
+        assert!(!section_skamp_active(34));
+        assert!(section_skamp_active(35));
+        assert!(!section_skamp_active(50));
+        assert!(!section_skamp_active(65_570));
     }
 
     #[test]
