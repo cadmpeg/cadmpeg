@@ -166,6 +166,8 @@ Keywords records bound to `moAlignGroup_c`, `moAttribute_c`, and `moConfigCommen
 
 A classless Keywords `Feature` whose ordered dimension children exactly cover its parameters uses the parameter schema as its operation class. A `D2` value with a diameter modifier and no parameter outside `D1` and `D2` is a cosmetic thread. Exactly `D1` and `D2`, with positive distance `D1` and an explicitly unit-suffixed `D2` angle strictly between zero and pi, is a distance-angle chamfer.
 
+In the legacy repeated-class form, a non-direct feature name carries a u16 class token immediately before its name marker. A token group is a Hole Wizard group when the feature-input lane declares exactly one Hole Wizard class and every uniquely named history feature in the group is immediately followed by two consecutive profile-feature records. The two profiles are the operation's position and generated-profile sketches.
+
 Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order.
 
 A named feature-input object bound to a classless history `Sketch` record with a nonzero source identifier is a profile-feature object. It participates in the same object-order ownership rules as an object whose class is `moProfileFeature_c`.

@@ -11290,6 +11290,17 @@ pub(crate) fn bind_history_classes(
         }
     }
 
+    let legacy_hole_bindings = legacy_repeated_hole_wizard_classes(histories, lanes);
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| feature.input_class.is_none())
+    {
+        if let Some(class) = legacy_hole_bindings.get(&feature.id) {
+            feature.input_class = Some(class.clone());
+        }
+    }
+
     for feature in histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
@@ -11299,6 +11310,90 @@ pub(crate) fn bind_history_classes(
             feature.input_class = Some(class.into());
         }
     }
+}
+
+fn legacy_repeated_hole_wizard_classes(
+    histories: &[crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) -> HashMap<String, String> {
+    let mut by_name = HashMap::<&str, Option<&crate::records::Feature>>::new();
+    let mut hole_shapes = HashSet::<&str>::new();
+    for history in histories {
+        for feature in &history.features {
+            if !feature.name.is_empty() {
+                by_name
+                    .entry(&feature.name)
+                    .and_modify(|candidate| *candidate = None)
+                    .or_insert(Some(feature));
+            }
+        }
+        for records in history.features.windows(3) {
+            let [operation, first_sketch, second_sketch] = records else {
+                continue;
+            };
+            if operation.input_class.is_none()
+                && operation.source_id.is_none()
+                && operation.xml_tag.eq_ignore_ascii_case("Feature")
+                && first_sketch.ordinal == operation.ordinal + 1
+                && second_sketch.ordinal == operation.ordinal + 2
+                && [first_sketch, second_sketch].into_iter().all(|sketch| {
+                    sketch.input_class.as_deref().is_some_and(|class| {
+                        native_object_class(class).kind == NativeClassKind::ProfileFeature
+                    })
+                })
+            {
+                hole_shapes.insert(operation.id.as_str());
+            }
+        }
+    }
+
+    let mut bindings = HashMap::new();
+    for lane in lanes {
+        let mut declared = lane
+            .classes
+            .iter()
+            .filter(|class| native_object_class(&class.name).kind == NativeClassKind::HoleWizard)
+            .map(|class| class.name.as_str())
+            .collect::<Vec<_>>();
+        declared.sort_unstable();
+        declared.dedup();
+        let [class] = declared.as_slice() else {
+            continue;
+        };
+        let direct_name_offsets = lane
+            .classes
+            .iter()
+            .map(|class| class.offset + 6 + class.name.len() as u64)
+            .collect::<HashSet<_>>();
+        let mut groups = HashMap::<u16, Vec<&crate::records::Feature>>::new();
+        for name in &lane.names {
+            if direct_name_offsets.contains(&name.offset) {
+                continue;
+            }
+            let Some(feature) = by_name.get(name.value.as_str()).copied().flatten() else {
+                continue;
+            };
+            let Some(token) = usize::try_from(name.offset)
+                .ok()
+                .and_then(|offset| repeated_class_token(&lane.native_payload, offset))
+                .filter(|token| token & 0x8000 != 0 && *token != 0xffff)
+            else {
+                continue;
+            };
+            groups.entry(token).or_default().push(feature);
+        }
+        for features in groups.values() {
+            if features
+                .iter()
+                .all(|feature| hole_shapes.contains(feature.id.as_str()))
+            {
+                for feature in features {
+                    bindings.insert(feature.id.clone(), (*class).to_string());
+                }
+            }
+        }
+    }
+    bindings
 }
 
 fn classless_dimension_schema_class(feature: &crate::records::Feature) -> Option<&'static str> {
@@ -11430,6 +11525,89 @@ mod idless_history_binding_tests {
         assert_eq!(classless_dimension_schema_class(&chamfer), None);
         chamfer.content.pop();
         assert_eq!(classless_dimension_schema_class(&chamfer), None);
+    }
+
+    #[test]
+    fn repeated_legacy_holes_own_two_consecutive_profile_children() {
+        let mut first = feature(10, "localized hole A");
+        first.name = "hole A".into();
+        let mut first_position = feature(11, "sketch");
+        first_position.input_class = Some("moProfileFeature_c".into());
+        let mut first_profile = feature(12, "sketch");
+        first_profile.input_class = Some("moProfileFeature_c".into());
+        let mut second = feature(20, "localized hole B");
+        second.name = "hole B".into();
+        let mut second_position = feature(21, "sketch");
+        second_position.input_class = Some("moProfileFeature_c".into());
+        let mut second_profile = feature(22, "sketch");
+        second_profile.input_class = Some("moProfileFeature_c".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![
+                first,
+                first_position,
+                first_profile,
+                second,
+                second_position,
+                second_profile,
+            ],
+        };
+        let mut payload = vec![0; 240];
+        payload[98..100].copy_from_slice(&0x82a4u16.to_le_bytes());
+        payload[198..200].copy_from_slice(&0x82a4u16.to_le_bytes());
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: vec![FeatureInputClass {
+                id: "class".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                name: "moHoleWzd_c".into(),
+                role: FeatureInputClassRole::Feature,
+            }],
+            names: vec![
+                FeatureInputName {
+                    id: "first".into(),
+                    parent: "lane".into(),
+                    ordinal: 0,
+                    offset: 100,
+                    object_id: Some(41),
+                    value: "hole A".into(),
+                },
+                FeatureInputName {
+                    id: "second".into(),
+                    parent: "lane".into(),
+                    ordinal: 1,
+                    offset: 200,
+                    object_id: Some(42),
+                    value: "hole B".into(),
+                },
+            ],
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        let bindings = legacy_repeated_hole_wizard_classes(&[history], &[lane]);
+        assert_eq!(
+            bindings.get("feature-10").map(String::as_str),
+            Some("moHoleWzd_c")
+        );
+        assert_eq!(
+            bindings.get("feature-20").map(String::as_str),
+            Some("moHoleWzd_c")
+        );
     }
 
     #[test]
