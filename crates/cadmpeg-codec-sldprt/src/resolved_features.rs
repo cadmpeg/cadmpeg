@@ -7289,29 +7289,23 @@ fn hole_position_sketch_source(
         return None;
     }
     let source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
-    let offset = usize::try_from(feature_object_name(feature, lane)?.offset).ok()?;
-    if lane.native_payload.get(offset + 20..offset + 28)
+    let name = feature_object_name(feature, lane)?;
+    let offset = usize::try_from(name.offset)
+        .ok()?
+        .checked_add(6 + name.value.encode_utf16().count().checked_mul(2)?)?;
+    if lane.native_payload.get(offset..offset + 8)
         != Some(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40])
-        || lane.native_payload.get(offset + 28..offset + 32) != Some(&source.to_le_bytes())
-        || lane.native_payload.get(offset + 32..offset + 40)
-            != Some(&[0x00, 0x00, 0x00, 0x00, 0xff, 0xfe, 0xff, 0x00])
-        || lane.native_payload.get(offset + 40..offset + 52)
-            != Some(&[
-                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x1c, 0x82, 0xc7, 0x80,
-            ])
-        || lane.native_payload.get(offset + 52..offset + 60)
-            != Some(&[0xff, 0xfe, 0xff, 0x03, 0x49, 0x83, 0xfe, 0x56])
-        || lane.native_payload.get(offset + 64..offset + 70)
-            != Some(&[0x00, 0x00, 0x00, 0x00, 0x00, 0xc0])
+        || lane.native_payload.get(offset + 8..offset + 12) != Some(&source.to_le_bytes())
+        || lane.native_payload.get(offset + 12..offset + 16) != Some(&[0x00; 4])
     {
         return None;
     }
-    let source = u32::from_le_bytes(
-        lane.native_payload
-            .get(offset + 70..offset + 74)?
-            .try_into()
-            .ok()?,
-    );
+    let body = lane.native_payload.get(offset + 16..offset + 144)?;
+    let reference = body.windows(12).position(|bytes| {
+        bytes[..2] == [0x00, 0xc0]
+            && (bytes[6..12] == [0; 6] || bytes[6..12] == [0, 0, 0, 0, 0xff, 0xfe])
+    })?;
+    let source = u32::from_le_bytes(body.get(reference + 2..reference + 6)?.try_into().ok()?);
     (source != 0 && source != u32::MAX).then_some(source)
 }
 
@@ -7536,7 +7530,7 @@ mod hole_axis_tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 
-    use super::{project_hole_axes, project_hole_position_sketches};
+    use super::{hole_position_sketch_source, project_hole_axes, project_hole_position_sketches};
     use crate::records::{
         FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
         SketchInputEntity, SketchInputKind,
@@ -7677,7 +7671,7 @@ mod hole_axis_tests {
             content: Vec::new(),
         });
         let mut lane = lane();
-        lane.native_payload.resize(100, 0);
+        lane.native_payload.resize(200, 0);
         lane.names.push(FeatureInputName {
             id: "hole-name".into(),
             parent: "lane".into(),
@@ -7686,14 +7680,20 @@ mod hole_axis_tests {
             value: "Hole".into(),
             object_id: Some(7),
         });
-        lane.native_payload[20..28].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
-        lane.native_payload[28..32].copy_from_slice(&7u32.to_le_bytes());
-        lane.native_payload[32..40].copy_from_slice(&[0, 0, 0, 0, 0xff, 0xfe, 0xff, 0]);
-        lane.native_payload[40..52]
-            .copy_from_slice(&[0, 0, 0, 0, 0, 0, 3, 0, 0x1c, 0x82, 0xc7, 0x80]);
-        lane.native_payload[52..60].copy_from_slice(&[0xff, 0xfe, 0xff, 3, 0x49, 0x83, 0xfe, 0x56]);
-        lane.native_payload[68..70].copy_from_slice(&[0, 0xc0]);
-        lane.native_payload[70..74].copy_from_slice(&6u32.to_le_bytes());
+        let trailer = 6 + "Hole".encode_utf16().count() * 2;
+        lane.native_payload[trailer..trailer + 8].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
+        lane.native_payload[trailer + 8..trailer + 12].copy_from_slice(&7u32.to_le_bytes());
+        lane.native_payload[trailer + 48..trailer + 50].copy_from_slice(&[0, 0xc0]);
+        lane.native_payload[trailer + 50..trailer + 54].copy_from_slice(&6u32.to_le_bytes());
+        assert_eq!(
+            hole_position_sketch_source(&history.features[0], &lane),
+            Some(6)
+        );
+        lane.native_payload[trailer + 58..trailer + 60].copy_from_slice(&[0xff, 0xfe]);
+        assert_eq!(
+            hole_position_sketch_source(&history.features[0], &lane),
+            Some(6)
+        );
         lane.sketch_entities.push(SketchInputEntity {
             id: "authored-point".into(),
             parent: "lane".into(),
