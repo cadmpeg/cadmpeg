@@ -3193,6 +3193,16 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
         None
     };
     let close = find_bytes(payload, &[0xf1, psb::token::ENTITY_REF], cursor, end)?;
+    let prototype = (|| {
+        let mut field = cursor;
+        for label in [b"ext_id\0".as_slice(), b"int_id\0", b"bitmask\0"] {
+            let offset = find_bytes(payload, label, field, close)?;
+            let (_, next) = segment_int(payload, offset + label.len());
+            (next > offset + label.len() && next <= close).then_some(())?;
+            field = next;
+        }
+        Some(())
+    })();
     let (_, next) = psb::reference_id(payload, close + 2).ok()?;
     cursor = next;
     if payload.get(cursor) == Some(&0xe2) {
@@ -3201,7 +3211,8 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
     let mut rows = Vec::new();
     let mut external_ids = BTreeSet::new();
     let mut internal_ids = BTreeSet::new();
-    let row_limit = usize::try_from(declared_count).unwrap_or(usize::MAX);
+    let row_limit = usize::try_from(declared_count.saturating_sub(u32::from(prototype.is_some())))
+        .unwrap_or(usize::MAX);
     while cursor < end && rows.len() < row_limit {
         if payload[cursor] == 0xe2 {
             cursor += 1;
@@ -3243,7 +3254,7 @@ fn order_table(payload: &[u8], start: usize, end: usize) -> Option<FeatureOrderT
     }
     Some(FeatureOrderTable {
         declared_count,
-        has_prototype: false,
+        has_prototype: prototype.is_some(),
         entity_ref,
         rows,
         offset: table,
@@ -7816,6 +7827,24 @@ mod tests {
         });
         assert_eq!(duplicate_internal.external_id(2), None);
         assert_eq!(duplicate_internal.internal_id(10), None);
+    }
+
+    #[test]
+    fn named_order_table_replays_prototype_and_following_rows() {
+        let payload = b"order_table\0\xf8\x03\xf7\x42\xfb\xe2\
+            \xe0\x01ext_id\0\x09\xe0\x01int_id\0\x01\
+            \xe0\x01bitmask\0\x00\xf1\xf7\x42\xe2\
+            \x0a\x02\x01\xe2\x0b\x03\x00";
+
+        let order = order_table(payload, 0, payload.len()).expect("named order_table");
+
+        assert_eq!(order.declared_count, 3);
+        assert!(order.has_prototype);
+        assert!(order.is_complete());
+        assert_eq!(order.entity_ref, Some(66));
+        assert_eq!(order.rows.len(), 2);
+        assert_eq!(order.external_id(2), Some(10));
+        assert_eq!(order.internal_id(11), Some(3));
     }
 
     #[test]
