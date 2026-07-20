@@ -5910,6 +5910,8 @@ pub struct FeatureOperationBody11Continuation {
     pub body_object_index: u32,
     /// Compact index in the single-entry continuation lane.
     pub continuation_index: u32,
+    /// Exact compact-index token in the continuation lane.
+    pub raw_continuation_index: Vec<u8>,
     /// Absolute file offset of the continuation compact-index marker.
     pub continuation_source_offset: u64,
     /// Object index in the terminal field.
@@ -10519,6 +10521,7 @@ pub fn feature_operation_body_11_continuations(
                         body_reference_ordinal: continuation.body_reference_ordinal,
                         body_object_index: continuation.body_object_index,
                         continuation_index: continuation.continuation_index,
+                        raw_continuation_index: continuation.raw_continuation_index,
                         continuation_source_offset: entry_offset
                             + continuation.continuation_offset as u64,
                         terminal_object_index: continuation.terminal_object_index,

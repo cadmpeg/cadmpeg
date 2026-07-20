@@ -1218,7 +1218,7 @@ pub struct OperationBodyMember {
 }
 
 /// Exact continuation following a `TRIM BODY` branch-`11` member lane.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationBody11Continuation {
     /// Zero-based body-reference occurrence order.
     pub body_reference_ordinal: u32,
@@ -1226,6 +1226,8 @@ pub struct OperationBody11Continuation {
     pub body_object_index: u32,
     /// Compact index in the single-entry continuation lane.
     pub continuation_index: u32,
+    /// Exact compact-index token in the continuation lane.
+    pub raw_continuation_index: Vec<u8>,
     /// Absolute offset of the continuation compact-index marker.
     pub continuation_offset: usize,
     /// Object index in the terminal field.
@@ -2828,6 +2830,8 @@ pub fn operation_body_11_continuations(
                 body_reference_ordinal: body_ordinal as u32,
                 body_object_index: reference.object_index,
                 continuation_index,
+                raw_continuation_index: record.bytes[continuation_at..continuation_at + width]
+                    .to_vec(),
                 continuation_offset: record.offset + continuation_at,
                 terminal_object_index,
                 terminal_offset: record.offset + terminal_at,

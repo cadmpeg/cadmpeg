@@ -8472,10 +8472,11 @@ fn om_trim_body_branch_11_decodes_terminal_continuation_atomically() {
     };
     let continuations = crate::om::operation_body_11_continuations(record);
     assert_eq!(continuations.len(), 1);
-    let continuation = continuations[0];
+    let continuation = &continuations[0];
     assert_eq!(continuation.body_reference_ordinal, 0);
     assert_eq!(continuation.body_object_index, 114);
     assert_eq!(continuation.continuation_index, 67);
+    assert_eq!(continuation.raw_continuation_index, [0x80, 0x43]);
     assert_eq!(continuation.continuation_offset, 126);
     assert_eq!(continuation.terminal_object_index, 114);
     assert_eq!(continuation.terminal_offset, 131);
