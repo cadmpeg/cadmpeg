@@ -8029,6 +8029,117 @@ fn mesh_boundary_domain_edges(domain: &MeshFaceBoundaryDomain) -> Vec<usize> {
     edges
 }
 
+fn bounded_unordered_cycle_assignments(
+    edges: &[usize],
+    quotient: &MeshQuotient,
+    limit: usize,
+    budget: &MeshConstraintBudget,
+) -> Option<Vec<MeshFaceBoundaryAssignment>> {
+    struct Search<'a> {
+        edges: &'a [usize],
+        compatible: &'a HashSet<(usize, usize)>,
+        limit: usize,
+        budget: &'a MeshConstraintBudget,
+        assignments: Vec<MeshFaceBoundaryAssignment>,
+    }
+
+    impl Search<'_> {
+        fn walk(
+            &mut self,
+            first_start: usize,
+            previous_end: usize,
+            used: u64,
+            boundary: &mut Vec<MeshBoundaryEdgeCandidate>,
+        ) -> bool {
+            if !self.budget.charge() {
+                return false;
+            }
+            if boundary.len() == self.edges.len() {
+                if self.compatible.contains(&(previous_end, first_start)) {
+                    self.assignments.push(MeshFaceBoundaryAssignment {
+                        boundaries: vec![boundary.clone()],
+                    });
+                }
+                return self.assignments.len() <= self.limit;
+            }
+            for rank in 1..self.edges.len() {
+                if used & (1 << rank) != 0 {
+                    continue;
+                }
+                let edge = self.edges[rank];
+                for reversed in [false, true] {
+                    let start = edge * 2 + usize::from(reversed);
+                    if !self.compatible.contains(&(previous_end, start)) {
+                        continue;
+                    }
+                    boundary.push(MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: Some(reversed),
+                    });
+                    if !self.walk(
+                        first_start,
+                        edge * 2 + usize::from(!reversed),
+                        used | (1 << rank),
+                        boundary,
+                    ) {
+                        return false;
+                    }
+                    boundary.pop();
+                }
+            }
+            true
+        }
+    }
+
+    if edges.is_empty() || edges.len() > u64::BITS as usize {
+        return None;
+    }
+    let edge_count = edges.len();
+    let mut edges = edges.to_vec();
+    edges.sort_unstable();
+    edges.dedup();
+    if edges.len() != edge_count {
+        return None;
+    }
+    let mut quotient = quotient.clone();
+    let nodes = edges
+        .iter()
+        .flat_map(|edge| [edge * 2, edge * 2 + 1])
+        .collect::<Vec<_>>();
+    let mut compatible = HashSet::new();
+    for &left in &nodes {
+        let left_root = quotient.union.find(left);
+        for &right in &nodes {
+            let right_root = quotient.union.find(right);
+            if left_root == right_root
+                || !quotient.domains[left_root].is_disjoint(&quotient.domains[right_root])
+            {
+                compatible.insert((left, right));
+            }
+        }
+    }
+    let first = edges[0];
+    let first_start = first * 2;
+    let mut boundary = vec![MeshBoundaryEdgeCandidate {
+        edge: first,
+        start: 0,
+        end: 0,
+        reversed: Some(false),
+    }];
+    let mut search = Search {
+        edges: &edges,
+        compatible: &compatible,
+        limit,
+        budget,
+        assignments: Vec::new(),
+    };
+    search
+        .walk(first_start, first * 2 + 1, 1, &mut boundary)
+        .then_some(search.assignments)
+}
+
 fn advance_boundary_component_states(
     domain: &MeshFaceBoundaryDomain,
     states: &[MeshQuotientGaugeState],
@@ -8092,7 +8203,25 @@ fn advance_boundary_component_states(
                         .collect()
                 }
             }
-            MeshFaceBoundaryDomain::UnorderedFullCycle(_) => return None,
+            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
+                let assignments =
+                    bounded_unordered_cycle_assignments(edges, state, remaining, budget)?;
+                assignments
+                    .iter()
+                    .flat_map(|assignment| {
+                        state
+                            .assignment_options_limited(
+                                assignment,
+                                edge_candidates,
+                                oriented_edges,
+                                remaining,
+                                Some(budget),
+                            )
+                            .into_iter()
+                            .map(|(_, quotient)| quotient)
+                    })
+                    .collect()
+            }
         };
         for mut candidate in candidates {
             let mut next_oriented = oriented_edges.clone();
@@ -11682,6 +11811,45 @@ mod motif_tests {
 
         assert_eq!(quotient.union.find(0), quotient.union.find(3));
         assert_eq!(quotient.union.find(1), quotient.union.find(2));
+    }
+
+    #[test]
+    fn unordered_components_close_cycles_in_the_abstract_quotient() {
+        let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![2, 0, 1])];
+        let candidates = vec![Vec::new(); 3];
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(6),
+            domains: [0, 1, 1, 2, 2, 0]
+                .into_iter()
+                .map(|point| Arc::new(HashSet::from([point])))
+                .collect(),
+            members: (0..6).map(|node| vec![node]).collect(),
+        };
+
+        super::propagate_common_boundary_components(&domains, &candidates, &mut quotient)
+            .expect("unordered component quotient");
+
+        assert_eq!(quotient.union.find(1), quotient.union.find(2));
+        assert_eq!(quotient.union.find(3), quotient.union.find(4));
+        assert_eq!(quotient.union.find(5), quotient.union.find(0));
+    }
+
+    #[test]
+    fn unordered_component_enumeration_is_atomic_at_its_state_limit() {
+        let quotient = MeshQuotient {
+            union: UnionFind::new(16),
+            domains: vec![Arc::new(HashSet::from([0])); 16],
+            members: (0..16).map(|node| vec![node]).collect(),
+        };
+        let budget = super::MeshConstraintBudget::new(10_000);
+
+        assert!(super::bounded_unordered_cycle_assignments(
+            &(0..8).collect::<Vec<_>>(),
+            &quotient,
+            16,
+            &budget,
+        )
+        .is_none());
     }
 
     #[test]
