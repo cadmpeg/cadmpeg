@@ -1692,8 +1692,62 @@ fn decode_positional_cylinder_frame(
 ) -> Option<PositionalCylinderFrame> {
     decode_local_system_cylinder_frame(body, cache)
         .or_else(|| decode_zero_support_cylinder_frame(body, cache))
+        .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
+}
+
+fn decode_referenced_planar_envelope_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    body.starts_with(&[0x11, 0x18, 0x13]).then_some(())?;
+    let mut cursor = 3;
+    let (length, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (first_radial, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (first_axial, next) =
+        if body.get(cursor) == Some(&0x18) && matches!(body.get(cursor + 1), Some(0x19 | 0x32)) {
+            (0.0, cursor + 1)
+        } else {
+            scalar::decode_in_surface_row_lane(body, cursor, cache)?
+        };
+    cursor = next;
+    let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (second_radial, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (second_axial, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (radius, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    (next == body.len()).then_some(())?;
+
+    let values = [
+        length,
+        first_radial,
+        first_axial,
+        second_radial,
+        second_axial,
+        radius,
+    ];
+    values.iter().all(|value| value.is_finite()).then_some(())?;
+    (length > 0.0 && radius > 0.0).then_some(())?;
+    let scale = values.iter().map(|value| value.abs()).fold(1.0, f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    close((second_axial - first_axial).abs(), length).then_some(())?;
+    close((second_radial - first_radial).abs(), 2.0 * radius).then_some(())?;
+
+    let radial_midpoint = f64::midpoint(first_radial, second_radial);
+    let axial_sign = (second_axial - first_axial).signum();
+    let radial_sign = (second_radial - first_radial).signum();
+    Some(PositionalCylinderFrame {
+        origin: [radial_midpoint, second_axial, 0.0],
+        axis: [0.0, axial_sign, 0.0],
+        ref_direction: [radial_sign, 0.0, 0.0],
+        radius,
+        length,
+    })
 }
 
 fn decode_local_system_cylinder_frame(
@@ -3360,6 +3414,21 @@ mod tests {
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert_eq!(frame.radius, 0.75);
         assert_eq!(frame.length, 8.0);
+
+        let referenced_planar_envelope = [
+            17, 24, 19, 47, 48, 0, 71, 17, 204, 24, 50, 195, 162, 112, 229, 160, 63, 250, 46, 17,
+            204, 47, 48, 0, 46, 17, 204,
+        ];
+        let frame = decode_positional_cylinder_frame(
+            &referenced_planar_envelope,
+            &scalar::ScalarCache::default(),
+        )
+        .expect("complete referenced planar-envelope cylinder");
+        assert_eq!(frame.origin, [0.0, 16.0, 0.0]);
+        assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert!((frame.radius - 4.45).abs() < 1e-12);
+        assert_eq!(frame.length, 16.0);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;

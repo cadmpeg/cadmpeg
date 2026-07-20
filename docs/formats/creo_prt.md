@@ -330,6 +330,17 @@ coordinate equals exactly one axial corner. The axis points from that endpoint
 toward the other. The reference direction points from the radial midpoint
 toward the second radial corner.
 
+A referenced planar-envelope positional cylinder begins `11 18 13` and stores
+positive axial length, first radial bound, first axial bound, one complete
+`19` or `32` model-reference token, second radial bound, second axial bound,
+and positive radius. All geometric fields use the positional surface-row
+scalar lane. The radial span equals twice the radius and the axial span equals
+the stored length. The cylinder origin has zero third coordinate, the radial
+midpoint as its first coordinate, and the second axial bound as its second
+coordinate. The axis points from the first axial bound toward the second, and
+the reference direction points from the first radial bound toward the second.
+The model-reference token does not contribute a geometric coordinate.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.
