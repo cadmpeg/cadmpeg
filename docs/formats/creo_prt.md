@@ -295,6 +295,17 @@ contain the reference direction; reversing the axis also reverses that
 direction. These fields define the cylinder carrier, radius, and bounded axial
 length.
 
+The compact axis-aligned positional cylinder body also begins `11 18 13` and
+contains exactly seven surface-row scalars through the body boundary: positive
+axial length followed by two XYZ corners. Exactly one corner-coordinate span
+equals the axial length. Of the other two spans, exactly one is twice the
+other. The smaller span is the radius and the larger is the diameter. The
+second corner supplies the axial endpoint and the center coordinate on the
+radius-span axis; the midpoint of the diameter span supplies the remaining
+center coordinate. The axis points from the second axial endpoint toward the
+first. The reference direction points from the diameter midpoint toward the
+first corner.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.
