@@ -5948,6 +5948,50 @@ fn agreed_generated_cylinder_extent(
     ))
 }
 
+fn directed_blind_extrusion_span(
+    profile_direction: [f64; 3],
+    extrusion_direction: [f64; 3],
+    length: f64,
+) -> Option<ExtrusionSpan> {
+    (length.is_finite() && length > 0.0).then_some(())?;
+    let profile_direction = normalized(profile_direction)?;
+    let extrusion_direction = normalized(extrusion_direction)?;
+    let alignment = dot(profile_direction, extrusion_direction);
+    (alignment.abs() >= 1.0 - 1e-9).then_some(())?;
+    Some(if alignment.is_sign_positive() {
+        ExtrusionSpan {
+            lower: 0.0,
+            upper: length,
+        }
+    } else {
+        ExtrusionSpan {
+            lower: -length,
+            upper: 0.0,
+        }
+    })
+}
+
+fn resolved_feature_extrusion_span(
+    scan: &ContainerScan,
+    definition: &crate::feature::FeatureDefinition,
+    transform: &crate::placement::FeatureSectionTransform,
+) -> Option<ExtrusionSpan> {
+    generated_arc_cylinder_extent(scan, definition, transform)
+        .and_then(|(extent, direction)| match extent {
+            Extent::Blind { length } => {
+                directed_blind_extrusion_span(transform.normal, direction, length.0)
+            }
+            _ => None,
+        })
+        .or_else(|| {
+            extrusion_span(
+                transform.origin,
+                transform.normal,
+                feature_plane_equations(scan, definition.owner_feature_id?),
+            )
+        })
+}
+
 #[cfg(test)]
 fn extruded_segment_surface(
     transform: &crate::placement::FeatureSectionTransform,
@@ -7146,11 +7190,7 @@ fn transfer_feature_extrusion_surfaces(
                     .then_some((surface_id, spline))
             })
             .collect::<Vec<_>>();
-        let Some(span) = extrusion_span(
-            transform.origin,
-            transform.normal,
-            feature_plane_equations(scan, feature_id),
-        ) else {
+        let Some(span) = resolved_feature_extrusion_span(scan, definition, transform) else {
             continue;
         };
         let lower_translation = transform.normal.map(|value| value * span.lower);
@@ -8038,7 +8078,7 @@ fn transfer_resolved_revolution_breps(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
+    for transform in &scan.feature_section_transforms {
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
@@ -8052,10 +8092,7 @@ fn transfer_resolved_revolution_breps(
         };
         if current_additive_feature_recipe(&scan.feature_operations, feature_id)
             != Some(crate::feature::FeatureRecipeKind::Revolve)
-            || scan.feature_section_transforms[..transform_index]
-                .iter()
-                .filter_map(|preceding| preceding.feature_id)
-                .any(|preceding| feature_recipe(scan, preceding).is_some())
+            || !feature_is_first_material_operation(scan, feature_id)
             || unique_feature_revolution_extent_kind(&scan.feature_revolution_extents, feature_id)
                 != Some(crate::feature::FeatureRevolutionExtentKind::FullTurn)
         {
@@ -8293,7 +8330,7 @@ fn transfer_resolved_circular_extrusion_breps(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
+    for transform in &scan.feature_section_transforms {
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
@@ -8305,12 +8342,8 @@ fn transfer_resolved_circular_extrusion_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if current_additive_feature_recipe(&scan.feature_operations, feature_id)
-            != Some(crate::feature::FeatureRecipeKind::Extrude)
-            || scan.feature_section_transforms[..transform_index]
-                .iter()
-                .filter_map(|preceding| preceding.feature_id)
-                .any(|preceding| feature_recipe(scan, preceding).is_some())
+        if !feature_allows_additive_linear_extrusion(scan, feature_id)
+            || !feature_is_first_material_operation(scan, feature_id)
         {
             continue;
         }
@@ -8628,7 +8661,7 @@ fn transfer_resolved_extrusion_breps(
     annotations: &mut AnnotationBuilder,
 ) -> usize {
     let mut transferred = 0;
-    for (transform_index, transform) in scan.feature_section_transforms.iter().enumerate() {
+    for transform in &scan.feature_section_transforms {
         if unique_feature_section_transform(
             &scan.feature_section_transforms,
             transform.definition_id,
@@ -8640,21 +8673,18 @@ fn transfer_resolved_extrusion_breps(
         let Some(feature_id) = transform.feature_id else {
             continue;
         };
-        if current_additive_feature_recipe(&scan.feature_operations, feature_id)
-            != Some(crate::feature::FeatureRecipeKind::Extrude)
-        {
-            continue;
-        }
-        if scan.feature_section_transforms[..transform_index]
-            .iter()
-            .filter_map(|preceding| preceding.feature_id)
-            .any(|preceding| feature_recipe(scan, preceding).is_some())
+        if !feature_allows_additive_linear_extrusion(scan, feature_id)
+            || !feature_is_first_material_operation(scan, feature_id)
         {
             continue;
         }
         let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
-        let cap_origins = feature_plane_equations(scan, feature_id);
-        let Some(span) = extrusion_span(transform.origin, transform.normal, cap_origins) else {
+        let Some(definition) =
+            unique_feature_definition(&scan.feature_definitions, transform.definition_id)
+        else {
+            continue;
+        };
+        let Some(span) = resolved_feature_extrusion_span(scan, definition, transform) else {
             continue;
         };
         let length = span.upper - span.lower;
@@ -9146,6 +9176,31 @@ fn current_additive_feature_recipe(
 ) -> Option<crate::feature::FeatureRecipeKind> {
     let recipe = current_feature_recipe(operations, feature_id)?;
     (recipe.effect() == crate::feature::FeatureRecipeEffect::Protrude).then(|| recipe.kind())
+}
+
+fn feature_is_first_material_operation(scan: &ContainerScan, feature_id: u32) -> bool {
+    let Some(target) = current_feature_operation(&scan.feature_operations, feature_id) else {
+        return false;
+    };
+    scan.feature_operations
+        .iter()
+        .map(|operation| operation.feature_id)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter(|candidate| *candidate != feature_id)
+        .filter_map(|candidate| {
+            let operation = current_feature_operation(&scan.feature_operations, candidate)?;
+            let recipe_is_material = operation.recipe.is_some_and(|recipe| {
+                matches!(
+                    recipe.effect(),
+                    crate::feature::FeatureRecipeEffect::Protrude
+                        | crate::feature::FeatureRecipeEffect::Cut
+                )
+            });
+            (recipe_is_material || matches!(feature_schema_class(scan, candidate), Some(916 | 917)))
+                .then_some(operation)
+        })
+        .all(|operation| operation.state_offset > target.state_offset)
 }
 
 fn current_feature_recipe(
@@ -13865,6 +13920,13 @@ fn feature_allows_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> boo
     })
 }
 
+fn feature_allows_additive_linear_extrusion(scan: &ContainerScan, feature_id: u32) -> bool {
+    feature_schema_class(scan, feature_id) == Some(917)
+        && section_sweep_allows_linear_extrusion(917, feature_recipe(scan, feature_id))
+        && feature_recipe_effect(scan, feature_id)
+            .is_none_or(|effect| effect == crate::feature::FeatureRecipeEffect::Protrude)
+}
+
 fn preceding_features_establish_body(ir: &CadIr) -> bool {
     ir.model.features.iter().any(|feature| {
         !feature.suppressed
@@ -16524,6 +16586,21 @@ mod resolved_sketch_tests {
                 [0.0, 1.0, 0.0]
             ))
         );
+        assert_eq!(
+            directed_blind_extrusion_span(transform.normal, [0.0, 1.0, 0.0], 34.0),
+            Some(ExtrusionSpan {
+                lower: 0.0,
+                upper: 34.0,
+            })
+        );
+        assert_eq!(
+            directed_blind_extrusion_span(transform.normal, [0.0, -1.0, 0.0], 34.0),
+            Some(ExtrusionSpan {
+                lower: -34.0,
+                upper: 0.0,
+            })
+        );
+        assert!(directed_blind_extrusion_span(transform.normal, [1.0, 0.0, 0.0], 34.0).is_none());
 
         let mut inconsistent = frames;
         inconsistent[1].length = Some(33.0);
