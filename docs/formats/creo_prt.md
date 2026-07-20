@@ -1110,11 +1110,13 @@ difference. Sign `1` defines `second-first=+value`; sign `f6` defines
 Only a linear selected dimension contributes this section-coordinate equation;
 an angular or schema-defined dimension does not supply a length ordinate.
 The two point identifiers denote endpoint loci shared by every incident
-`segtab` entity. Exactly one segment spanning the pair is required to refine the
-relation to a horizontal or vertical distance constraint. The selected
-`dimtab_ptr` row is the driving parameter independently of whether both endpoint
-coordinates are evaluated.
-The segment's unique orientation component selects the neutral distance axis.
+`segtab` entity. A segment spanning the pair is not required when each point
+has an incident unique entity and the two solved points agree on exactly one
+coordinate. Equal `u` selects a vertical distance and equal `v` selects a
+horizontal distance. The selected `dimtab_ptr` row is the driving parameter
+independently of whether both endpoint coordinates are evaluated.
+A spanning segment's unique orientation component otherwise selects the neutral
+distance axis.
 A directly stored `verhor` selector and an orientation established through
 type-one, type-two, type-five, or type-seven incidences have the same effect;
 conflicting or unresolved orientation does not select an axis-specific neutral

@@ -10186,6 +10186,38 @@ fn section_dimension_constraints(
                                     _ => {}
                                 }
                             }
+                            let points = resolved_section_points(definition);
+                            if let (Some(first_point), Some(second_point)) =
+                                (points.get(&first_id), points.get(&second_id))
+                            {
+                                let scale = first_point
+                                    .iter()
+                                    .chain(second_point)
+                                    .map(|coordinate| coordinate.abs())
+                                    .fold(1.0, f64::max);
+                                let same_u =
+                                    (first_point[0] - second_point[0]).abs() <= 1e-9 * scale;
+                                let same_v =
+                                    (first_point[1] - second_point[1]).abs() <= 1e-9 * scale;
+                                if same_u != same_v {
+                                    let first = section_point_locus(definition, sketch, first_id)?;
+                                    let second =
+                                        section_point_locus(definition, sketch, second_id)?;
+                                    return Some(if same_u {
+                                        SketchConstraintDefinition::VerticalDistance {
+                                            first,
+                                            second,
+                                            parameter,
+                                        }
+                                    } else {
+                                        SketchConstraintDefinition::HorizontalDistance {
+                                            first,
+                                            second,
+                                            parameter,
+                                        }
+                                    });
+                                }
+                            }
                         }
                     }
                 }
@@ -10260,6 +10292,46 @@ fn section_linear_distance_vectors(vectors: [[Option<u32>; 4]; 3]) -> bool {
             [Some(0), Some(0), Some(0), Some(0)] | [Some(1), Some(1), Some(0), Some(1)]
         )
         && vectors[2] == [Some(15), Some(16), Some(15), Some(1)]
+}
+
+fn section_point_locus(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    point_id: u32,
+) -> Option<SketchLocus> {
+    let unique_entities = unique_section_segment_external_ids(definition);
+    definition
+        .segments
+        .as_ref()?
+        .rows
+        .iter()
+        .filter(|segment| unique_entities.contains(&segment.external_id))
+        .filter_map(|segment| {
+            let entity = sketch_entity_id(sketch, segment.external_id);
+            let locus = match segment.kind {
+                crate::feature::FeatureSegmentKind::Point
+                    if segment.point_ids[0] == point_id && segment.point_ids[1] == point_id =>
+                {
+                    SketchLocus::Entity(entity)
+                }
+                crate::feature::FeatureSegmentKind::Line if segment.point_ids[0] == point_id => {
+                    SketchLocus::Start(entity)
+                }
+                crate::feature::FeatureSegmentKind::Line if segment.point_ids[1] == point_id => {
+                    SketchLocus::End(entity)
+                }
+                crate::feature::FeatureSegmentKind::Arc if segment.point_ids[0] == point_id => {
+                    SketchLocus::End(entity)
+                }
+                crate::feature::FeatureSegmentKind::Arc if segment.point_ids[1] == point_id => {
+                    SketchLocus::Start(entity)
+                }
+                _ => return None,
+            };
+            Some((segment.offset, locus))
+        })
+        .min_by_key(|(offset, _)| *offset)
+        .map(|(_, locus)| locus)
 }
 
 fn unique_opaque_section_segment(
@@ -19473,7 +19545,7 @@ mod resolved_sketch_tests {
     }
 
     #[test]
-    fn unary_solver_incidences_define_line_orientation() {
+    fn section_solver_constraints_require_complete_unique_semantics() {
         let segment = crate::feature::FeatureSegment {
             kind: crate::feature::FeatureSegmentKind::Line,
             directions: [None; 3],
@@ -21001,6 +21073,69 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
+        let mut separate_point_distance = distance_definition.clone();
+        separate_point_distance
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows[0]
+            .operand_vectors = Some([
+            [Some(1), Some(5), None, Some(1)],
+            [Some(0), Some(0), Some(0), Some(0)],
+            [Some(15), Some(16), Some(15), Some(1)],
+        ]);
+        assert_eq!(
+            section_dimension_constraints(
+                &separate_point_distance,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::HorizontalDistance {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:15".to_string()
+                )),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            }
+        );
+        let mut coincident_point_keys = separate_point_distance.clone();
+        coincident_point_keys
+            .variables
+            .as_mut()
+            .expect("variables")
+            .points
+            .iter_mut()
+            .find(|point| point.point_id == 5)
+            .expect("point 5")
+            .u = Some(0.0);
+        assert!(matches!(
+            section_dimension_constraints(
+                &coincident_point_keys,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+        separate_point_distance
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows
+            .retain(|segment| !segment.point_ids.contains(&5));
+        synchronize_segment_count(&mut separate_point_distance);
+        assert!(matches!(
+            section_dimension_constraints(
+                &separate_point_distance,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
         let mut incidence_oriented_distance = distance_definition.clone();
         incidence_oriented_distance
             .segments
