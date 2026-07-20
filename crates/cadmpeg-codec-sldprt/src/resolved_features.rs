@@ -279,28 +279,38 @@ pub(crate) fn spatial_sketches(
 fn marker_spatial_coordinates(payload: &[u8], offset: usize) -> Option<Point3> {
     const NATIVE_TO_IR: f64 = 1000.0;
     let locus = payload.get(offset + 23..offset + 27)?;
-    let coordinate_offset = match payload.get(offset..offset + SKETCH_MARKER.len())? {
-        prefix
-            if prefix == SKETCH_MARKER
-                && marker_native_code(payload, offset) == Some(0)
-                && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
-                && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
-        {
-            offset.checked_add(66)?
-        }
-        prefix
-            if prefix == LEGACY_EXTENDED_SKETCH_MARKER
-                && matches!(
-                    (marker_native_code(payload, offset), locus),
-                    (Some(1), [0x04, 0x00, 0x02, 0x00]) | (Some(0), [0x05, 0x00, 0x01, 0x00])
-                )
-                && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
-        {
-            offset.checked_add(58)?
-        }
-        _ => return None,
-    };
-    if marker_profile_curve_role(payload, offset) != Some(1) {
+    let (coordinate_offset, requires_profile_role) =
+        match payload.get(offset..offset + SKETCH_MARKER.len())? {
+            prefix
+                if prefix == SKETCH_MARKER
+                    && marker_native_code(payload, offset) == Some(0)
+                    && matches!(locus, [0x04, 0x00, 0x02, 0x00] | [0x05, 0x00, 0x01, 0x00])
+                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(66)?, true)
+            }
+            prefix
+                if prefix == LEGACY_SKETCH_MARKER
+                    && matches!(marker_native_code(payload, offset), Some(0 | 2))
+                    && locus == [0x04, 0x00, 0x02, 0x00]
+                    && marker_object_index(payload, offset).is_some()
+                    && payload.get(offset + 64..offset + 66) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(66)?, false)
+            }
+            prefix
+                if prefix == LEGACY_EXTENDED_SKETCH_MARKER
+                    && matches!(
+                        (marker_native_code(payload, offset), locus),
+                        (Some(1), [0x04, 0x00, 0x02, 0x00]) | (Some(0), [0x05, 0x00, 0x01, 0x00])
+                    )
+                    && payload.get(offset + 56..offset + 58) == Some(&[0x0e, 0x00]) =>
+            {
+                (offset.checked_add(58)?, true)
+            }
+            _ => return None,
+        };
+    if requires_profile_role && marker_profile_curve_role(payload, offset) != Some(1) {
         return None;
     }
     let point = Point3::new(
@@ -858,6 +868,31 @@ mod marker_tests {
         );
         payload[64] = 0x1e;
         assert_eq!(marker_spatial_coordinates(&payload, 0), None);
+    }
+
+    #[test]
+    fn legacy_spatial_point_marker_decodes_model_coordinates() {
+        let offset = 4;
+        let mut payload = vec![0; 94];
+        payload[..offset].copy_from_slice(&1u32.to_le_bytes());
+        payload[offset..offset + LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[offset + 17..offset + 21].copy_from_slice(&2u32.to_le_bytes());
+        payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+        payload[offset + 64..offset + 66].copy_from_slice(&[0x0e, 0x00]);
+        for (index, value) in [0.125_f64, -0.25, 0.375].into_iter().enumerate() {
+            let start = offset + 66 + index * 8;
+            payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+        }
+
+        assert_eq!(
+            marker_spatial_coordinates(&payload, offset),
+            Some(Point3::new(125.0, -250.0, 375.0))
+        );
+        payload[offset + 4] = 3;
+        assert_eq!(marker_spatial_coordinates(&payload, offset), None);
     }
 
     #[test]
