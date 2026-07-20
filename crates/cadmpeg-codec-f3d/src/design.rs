@@ -84,6 +84,13 @@ pub(crate) fn design_feature_family(kind: &str) -> Option<DesignFeatureFamily> {
     }
 }
 
+fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Option<u64> {
+    let kind_bytes = u64::try_from(scope.kind.encode_utf16().count())
+        .ok()?
+        .checked_mul(2)?;
+    scope.frame_length.checked_sub(kind_bytes)
+}
+
 fn has_typed_edge_treatment_group(kind: &str) -> bool {
     matches!(
         design_feature_family(kind),
@@ -15177,8 +15184,11 @@ fn exact_direct_face_operation(
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::OffsetFaces
             if matches!(
-                (scope.frame_length, scope.reference_members.len()),
-                (286, 4) | (275, 3)
+                (
+                    parameter_scope_payload_length(scope),
+                    scope.reference_members.len()
+                ),
+                (Some(264), 4) | (Some(253), 3)
             ) && bytes.get(start + 25) == Some(&1) =>
         {
             let distance_record_index = u32_at(bytes, start + 26)?;
@@ -15193,7 +15203,7 @@ fn exact_direct_face_operation(
             })
         }
         DesignFeatureFamily::Thicken
-            if scope.frame_length == 301
+            if parameter_scope_payload_length(scope) == Some(287)
                 && bytes.get(start + 47) == Some(&1)
                 && scope.reference_members.len() == 3 =>
         {
@@ -15212,7 +15222,7 @@ fn exact_direct_face_operation(
             })
         }
         DesignFeatureFamily::Shell
-            if scope.frame_length == 278
+            if parameter_scope_payload_length(scope) == Some(268)
                 && scope.reference_members.len() == 3
                 && matches!(bytes.get(start + 25), Some(0 | 1))
                 && bytes.get(start + 26) == Some(&0)
@@ -15460,7 +15470,7 @@ fn exact_path_feature_construction(
     };
     match design_feature_family(&scope.kind)? {
         DesignFeatureFamily::Revolve
-            if scope.frame_length == 386
+            if parameter_scope_payload_length(scope) == Some(372)
                 && scope.reference_members.len() == 7
                 && u32_at(bytes, start + 29) == Some(2)
                 && bytes.get(start + 33) == Some(&0) =>
@@ -15496,7 +15506,10 @@ fn exact_path_feature_construction(
                 opposite_angle_offset: opposite.value_offset,
             })
         }
-        DesignFeatureFamily::Loft if scope.class_tag.len() == 3 && scope.frame_length >= 376 => {
+        DesignFeatureFamily::Loft
+            if scope.class_tag.len() == 3
+                && parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
+        {
             Some(DesignPathFeatureConstruction::Loft {
                 operation: operation(start + 29)?,
                 operation_offset: u64::try_from(start + 29).ok()?,
