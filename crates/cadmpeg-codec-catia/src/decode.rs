@@ -2223,6 +2223,67 @@ mod chart_tests {
     }
 
     #[test]
+    fn standard_planar_intersection_spline_uses_the_common_line_domain() {
+        let mut ir = CadIr::empty(Units::default());
+        for (index, position) in [
+            Point3::new(-2.0, 0.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            ir.model.points.push(Point {
+                id: PointId(format!("p{index}")),
+                position,
+                source_object: None,
+            });
+        }
+        for (index, normal) in [Vector3::new(0.0, 0.0, 1.0), Vector3::new(0.0, 1.0, 0.0)]
+            .into_iter()
+            .enumerate()
+        {
+            ir.model.surfaces.push(Surface {
+                id: SurfaceId(format!("s{index}")),
+                geometry: SurfaceGeometry::Plane {
+                    origin: Point3::new(0.0, 0.0, 0.0),
+                    normal,
+                    u_axis: Vector3::new(1.0, 0.0, 0.0),
+                },
+                source_object: None,
+            });
+        }
+        let bindings = [
+            (SurfaceId("s0".to_string()), true, 0),
+            (SurfaceId("s1".to_string()), true, 0),
+        ];
+        let indices = [
+            (SurfaceId("s0".to_string()), 0),
+            (SurfaceId("s1".to_string()), 1),
+        ]
+        .into_iter()
+        .collect();
+        let support = StandardCurveSupport {
+            pos: 0,
+            tag: 1,
+            faces: [0, 1],
+            geometry: StandardCurveGeometry::Bspline,
+        };
+
+        let choices = resolve_standard_endpoint_pairs(
+            &ir,
+            &bindings,
+            &indices,
+            &[support],
+            &[vec![0, 1, 2, 3]],
+        )
+        .expect("endpoint option pass");
+
+        assert_eq!(choices, [vec![[0, 1]]]);
+    }
+
+    #[test]
     fn standard_parallel_line_rows_bind_by_serialized_branch_rank() {
         let mut ir = CadIr::empty(Units::default());
         for (index, position) in [
@@ -6583,11 +6644,23 @@ fn resolve_standard_endpoint_pairs(
     }
     let mut line_groups = HashMap::<[usize; 2], Vec<usize>>::new();
     for (edge, support) in supports.iter().enumerate() {
-        if resolved[edge].is_empty()
-            && matches!(support.geometry, geometry::StandardCurveGeometry::Line)
-        {
-            let mut faces = support.faces;
-            faces.sort_unstable();
+        if !resolved[edge].is_empty() {
+            continue;
+        }
+        let mut faces = support.faces;
+        faces.sort_unstable();
+        let line_like = match support.geometry {
+            geometry::StandardCurveGeometry::Line => true,
+            geometry::StandardCurveGeometry::Bspline => {
+                let surfaces = faces.map(|face| {
+                    face_surface(ir, bindings, surface_indices, face)
+                        .map(|surface| &surface.geometry)
+                });
+                matches!(surfaces, [Some(left), Some(right)] if intersection_line_direction(left, right).is_some())
+            }
+            geometry::StandardCurveGeometry::Circle { .. } => false,
+        };
+        if line_like {
             line_groups.entry(faces).or_default().push(edge);
         }
     }
