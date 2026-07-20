@@ -6245,33 +6245,32 @@ impl MeshQuotient {
                 *exhausted = true;
                 return;
             }
-            let viable_values = |root: usize, assigned: &[Option<usize>]| {
-                domains[root]
-                    .iter()
-                    .copied()
-                    .filter(|point| {
-                        let pair_viable = root_edges[root].iter().all(|edge| {
-                            let [left, right] = edges[*edge];
-                            let other = if left == root { right } else { left };
-                            assigned[other].is_none_or(|other_point| {
-                                pair_supported(
-                                    &edge_candidates[edge_ids[*edge]],
-                                    *point,
-                                    other_point,
-                                )
-                            })
-                        });
-                        if !pair_viable {
-                            return false;
-                        }
-                        let Some(edge_faces) = edge_faces else {
-                            return true;
-                        };
-                        if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
-                            return false;
-                        }
-                        let mut degrees = HashMap::<(usize, usize), u8>::new();
-                        for (edge, [left, right]) in edges.iter().copied().enumerate() {
+            let viable_values =
+                |root: usize, assigned: &[Option<usize>]| {
+                    domains[root]
+                        .iter()
+                        .copied()
+                        .filter(|point| {
+                            let pair_viable = root_edges[root].iter().all(|edge| {
+                                let [left, right] = edges[*edge];
+                                let other = if left == root { right } else { left };
+                                assigned[other].is_none_or(|other_point| {
+                                    pair_supported(
+                                        &edge_candidates[edge_ids[*edge]],
+                                        *point,
+                                        other_point,
+                                    )
+                                })
+                            });
+                            if !pair_viable {
+                                return false;
+                            }
+                            let Some(edge_faces) = edge_faces else {
+                                return true;
+                            };
+                            if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
+                                return false;
+                            }
                             let value = |endpoint| {
                                 if endpoint == root {
                                     Some(*point)
@@ -6279,56 +6278,89 @@ impl MeshQuotient {
                                     assigned[endpoint]
                                 }
                             };
-                            let (Some(left), Some(right)) = (value(left), value(right)) else {
-                                continue;
-                            };
-                            let faces = edge_faces[edge];
-                            for (rank, face) in faces.into_iter().enumerate() {
-                                if rank > 0 && face == faces[0] {
+                            let mut degrees = HashMap::<(usize, usize), u8>::new();
+                            for (edge, [left, right]) in edges.iter().copied().enumerate() {
+                                let (Some(left), Some(right)) = (value(left), value(right)) else {
+                                    continue;
+                                };
+                                let faces = edge_faces[edge];
+                                for (rank, face) in faces.into_iter().enumerate() {
+                                    if rank > 0 && face == faces[0] {
+                                        continue;
+                                    }
+                                    for endpoint in [left, right] {
+                                        let degree = degrees.entry((face, endpoint)).or_default();
+                                        *degree = degree.saturating_add(1);
+                                        if *degree > 2 {
+                                            return false;
+                                        }
+                                    }
+                                }
+                            }
+                            for (&(face, point), &degree) in &degrees {
+                                if degree != 1 {
                                     continue;
                                 }
-                                for endpoint in [left, right] {
-                                    let degree = degrees.entry((face, endpoint)).or_default();
-                                    *degree = degree.saturating_add(1);
-                                    if *degree > 2 {
-                                        return false;
-                                    }
+                                if budget.is_some_and(|budget| !budget.charge_by(edges.len())) {
+                                    return false;
+                                }
+                                let supported = edges.iter().copied().enumerate().any(
+                                    |(edge, [left, right])| {
+                                        let faces = edge_faces[edge];
+                                        if !faces.into_iter().enumerate().any(
+                                            |(rank, candidate)| {
+                                                candidate == face
+                                                    && (rank == 0 || candidate != faces[0])
+                                            },
+                                        ) || (value(left).is_some() && value(right).is_some())
+                                        {
+                                            return false;
+                                        }
+                                        let supports = |endpoint| {
+                                            value(endpoint).is_some_and(|value| value == point)
+                                                || (value(endpoint).is_none()
+                                                    && domains[endpoint].contains(&point))
+                                        };
+                                        supports(left) || supports(right)
+                                    },
+                                );
+                                if !supported {
+                                    return false;
                                 }
                             }
-                        }
-                        if let (Some(boundary_domains), Some(closed_faces)) =
-                            (boundary_domains, closed_faces)
-                        {
-                            let boundaries_viable =
-                                boundary_domains.iter().enumerate().all(|(face, domain)| {
-                                    if !closed_faces[face] {
-                                        return true;
-                                    }
-                                    match domain {
-                                        MeshFaceBoundaryDomain::Ordered(assignments) => {
-                                            assignments.iter().any(|assignment| {
-                                                partial_ordered_assignment_viable(
-                                                    assignment,
-                                                    edge_ids,
-                                                    edges,
-                                                    domains,
-                                                    assigned,
-                                                    (root, *point),
-                                                    budget,
-                                                )
-                                            })
+                            if let (Some(boundary_domains), Some(closed_faces)) =
+                                (boundary_domains, closed_faces)
+                            {
+                                let boundaries_viable =
+                                    boundary_domains.iter().enumerate().all(|(face, domain)| {
+                                        if !closed_faces[face] {
+                                            return true;
                                         }
-                                        _ => true,
-                                    }
-                                });
-                            if !boundaries_viable {
-                                return false;
+                                        match domain {
+                                            MeshFaceBoundaryDomain::Ordered(assignments) => {
+                                                assignments.iter().any(|assignment| {
+                                                    partial_ordered_assignment_viable(
+                                                        assignment,
+                                                        edge_ids,
+                                                        edges,
+                                                        domains,
+                                                        assigned,
+                                                        (root, *point),
+                                                        budget,
+                                                    )
+                                                })
+                                            }
+                                            _ => true,
+                                        }
+                                    });
+                                if !boundaries_viable {
+                                    return false;
+                                }
                             }
-                        }
-                        true
-                    })
-                    .collect::<Vec<_>>()
-            };
+                            true
+                        })
+                        .collect::<Vec<_>>()
+                };
 
             let mut propagated = Vec::new();
             let branch = loop {
