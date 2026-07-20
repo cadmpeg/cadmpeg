@@ -1229,14 +1229,16 @@ fn compact_boundary_domain_viable(
     }
 }
 
-fn compact_boundary_domains_jointly_viable<'a>(
+type MeshQuotientGaugeState = (MeshQuotient, HashSet<usize>);
+
+fn advance_compact_boundary_domains<'a>(
     domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
     choices: &[Vec<[usize; 2]>],
     assignment: &[Option<[usize; 2]>],
     selected: Option<(usize, [usize; 2])>,
-    quotient: &MeshQuotient,
+    mut states: Vec<MeshQuotientGaugeState>,
     budget: &MeshConstraintBudget,
-) -> bool {
+) -> Option<Vec<MeshQuotientGaugeState>> {
     const MAX_QUOTIENT_STATES: usize = 4_096;
 
     let mut ordered = Vec::<Vec<MeshFaceBoundaryAssignment>>::new();
@@ -1279,11 +1281,8 @@ fn compact_boundary_domains_jointly_viable<'a>(
         let alternatives = match domain {
             MeshFaceBoundaryDomain::Ordered(assignments) => assignments.clone(),
             MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => {
-                let Some([cycle]) = incidence_cycles(edges, &points)
-                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())
-                else {
-                    return false;
-                };
+                let [cycle] = incidence_cycles(edges, &points)
+                    .and_then(|cycles| <[Vec<(usize, bool)>; 1]>::try_from(cycles).ok())?;
                 vec![MeshFaceBoundaryAssignment {
                     boundaries: vec![cycle
                         .into_iter()
@@ -1297,16 +1296,14 @@ fn compact_boundary_domains_jointly_viable<'a>(
                 }]
             }
             MeshFaceBoundaryDomain::DeferredValidation(domain) => {
-                let Some(materialized) = deferred_boundary_assignment(domain, &points) else {
-                    return false;
-                };
+                let materialized = deferred_boundary_assignment(domain, &points)?;
                 vec![materialized]
             }
         };
         ordered.push(alternatives);
     }
     if ordered.is_empty() {
-        return true;
+        return Some(states);
     }
     let candidates = assignment
         .iter()
@@ -1319,7 +1316,6 @@ fn compact_boundary_domains_jointly_viable<'a>(
                 .unwrap_or_else(|| choices[edge].clone())
         })
         .collect::<Vec<_>>();
-    let mut states = vec![(quotient.clone(), HashSet::new())];
     for alternatives in ordered {
         let mut next = Vec::new();
         let mut signatures = HashSet::new();
@@ -1352,11 +1348,31 @@ fn compact_boundary_domains_jointly_viable<'a>(
             }
         }
         if next.is_empty() || budget.exhausted.get() {
-            return false;
+            return None;
         }
         states = next;
     }
-    true
+    Some(states)
+}
+
+#[cfg(test)]
+fn compact_boundary_domains_jointly_viable<'a>(
+    domains: impl IntoIterator<Item = &'a MeshFaceBoundaryDomain>,
+    choices: &[Vec<[usize; 2]>],
+    assignment: &[Option<[usize; 2]>],
+    selected: Option<(usize, [usize; 2])>,
+    quotient: &MeshQuotient,
+    budget: &MeshConstraintBudget,
+) -> bool {
+    advance_compact_boundary_domains(
+        domains,
+        choices,
+        assignment,
+        selected,
+        vec![(quotient.clone(), HashSet::new())],
+        budget,
+    )
+    .is_some()
 }
 
 impl IncidenceComponentSearch<'_> {
@@ -1516,9 +1532,13 @@ impl IncidenceComponentSearch<'_> {
         }
     }
 
-    fn ordered_faces_feasible(&self, faces: impl IntoIterator<Item = usize>) -> bool {
+    fn advance_ordered_faces(
+        &self,
+        faces: impl IntoIterator<Item = usize>,
+        quotient_states: Vec<MeshQuotientGaugeState>,
+    ) -> Option<Vec<MeshQuotientGaugeState>> {
         let Some(mesh_assignments) = self.mesh_assignments else {
-            return true;
+            return Some(quotient_states);
         };
         let mut faces = faces.into_iter().collect::<Vec<_>>();
         faces.sort_unstable();
@@ -1544,18 +1564,29 @@ impl IncidenceComponentSearch<'_> {
                     _ => compact_boundary_domain_viable(domain, &self.assignment, None),
                 })
         });
-        viable
-            && self.mesh_quotient.is_none_or(|quotient| {
-                compact_boundary_domains_jointly_viable(
-                    faces.iter().filter_map(|face| mesh_assignments.get(*face)),
-                    self.choices,
-                    &self.assignment,
-                    None,
-                    quotient,
-                    self.budget,
-                )
-            })
-            && !self.budget.exhausted.get()
+        if !viable || self.budget.exhausted.get() {
+            return None;
+        }
+        if quotient_states.is_empty() {
+            Some(quotient_states)
+        } else {
+            advance_compact_boundary_domains(
+                faces.iter().filter_map(|face| mesh_assignments.get(*face)),
+                self.choices,
+                &self.assignment,
+                None,
+                quotient_states,
+                self.budget,
+            )
+        }
+    }
+
+    #[cfg(test)]
+    fn ordered_faces_feasible(&self, faces: impl IntoIterator<Item = usize>) -> bool {
+        let states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
+            vec![(quotient.clone(), HashSet::new())]
+        });
+        self.advance_ordered_faces(faces, states).is_some()
     }
 
     fn face_configuration_options(&self) -> Option<MeshFaceEndpointConfigurations> {
@@ -1612,7 +1643,11 @@ impl IncidenceComponentSearch<'_> {
         best
     }
 
-    fn search_face_configurations(&mut self, options: MeshFaceEndpointConfigurations) {
+    fn search_face_configurations(
+        &mut self,
+        options: MeshFaceEndpointConfigurations,
+        quotient_states: &[MeshQuotientGaugeState],
+    ) {
         for option in options {
             let mut assigned = Vec::new();
             let mut affected_faces = HashSet::new();
@@ -1633,8 +1668,12 @@ impl IncidenceComponentSearch<'_> {
                 assigned.push((edge, pair));
                 affected_faces.extend(self.edge_faces[edge]);
             }
-            if viable && !assigned.is_empty() && self.ordered_faces_feasible(affected_faces) {
-                self.search();
+            if viable && !assigned.is_empty() {
+                if let Some(next_states) =
+                    self.advance_ordered_faces(affected_faces, quotient_states.to_vec())
+                {
+                    self.search_with_quotient(&next_states);
+                }
             }
             for (edge, pair) in assigned.into_iter().rev() {
                 self.assignment[edge] = None;
@@ -1647,6 +1686,13 @@ impl IncidenceComponentSearch<'_> {
     }
 
     fn search(&mut self) {
+        let quotient_states = self.mesh_quotient.map_or_else(Vec::new, |quotient| {
+            vec![(quotient.clone(), HashSet::new())]
+        });
+        self.search_with_quotient(&quotient_states);
+    }
+
+    fn search_with_quotient(&mut self, quotient_states: &[MeshQuotientGaugeState]) {
         if self.exhausted {
             return;
         }
@@ -1663,13 +1709,13 @@ impl IncidenceComponentSearch<'_> {
             return;
         }
         let solutions_before = self.solutions.len();
-        self.search_state();
+        self.search_state(quotient_states);
         if !self.exhausted && self.solutions.len() == solutions_before {
             self.dead_states.insert(state);
         }
     }
 
-    fn search_state(&mut self) {
+    fn search_state(&mut self, quotient_states: &[MeshQuotientGaugeState]) {
         const MAX_SOLUTIONS: usize = 256;
         if self.exhausted {
             return;
@@ -1685,7 +1731,7 @@ impl IncidenceComponentSearch<'_> {
         }
         if let Some(options) = face_options {
             if !options.is_empty() && self.charge_branch(options.len()) {
-                self.search_face_configurations(options);
+                self.search_face_configurations(options, quotient_states);
             }
             return;
         }
@@ -1738,8 +1784,8 @@ impl IncidenceComponentSearch<'_> {
             let mut faces = self.edge_faces[edge].to_vec();
             faces.sort_unstable();
             faces.dedup();
-            if self.ordered_faces_feasible(faces) {
-                self.search();
+            if let Some(next_states) = self.advance_ordered_faces(faces, quotient_states.to_vec()) {
+                self.search_with_quotient(&next_states);
             }
             self.assignment[edge] = None;
             self.adjust(edge, pair, false);
@@ -10480,6 +10526,61 @@ mod motif_tests {
             &quotient,
             &budget,
         ));
+    }
+
+    #[test]
+    fn compact_face_quotient_states_accumulate_across_calls() {
+        let use_ = |edge, reversed| MeshBoundaryEdgeCandidate {
+            edge,
+            start: edge,
+            end: (edge + 1) % 2,
+            reversed: Some(reversed),
+        };
+        let domain = |second_reversed| {
+            MeshFaceBoundaryDomain::DeferredValidation(super::MeshDeferredFaceBoundary {
+                cycles: vec![super::MeshDeferredBoundaryCycle {
+                    length: 2,
+                    exact_uses: vec![(use_(0, false), 1), (use_(1, second_reversed), 1)],
+                }],
+                missing_edges: Vec::new(),
+            })
+        };
+        let choices = vec![vec![[0, 1]], vec![[0, 1]]];
+        let assignment = [Some([0, 1]), Some([0, 1])];
+        let quotient =
+            super::initial_mesh_quotient(&choices, 2, &[[0, 1], [2, 3]]).expect("initial quotient");
+        let budget = super::MeshConstraintBudget::new(10_000);
+        let first = domain(false);
+        let conflicting = domain(true);
+        let initial = vec![(quotient.clone(), HashSet::new())];
+
+        let first_states = super::advance_compact_boundary_domains(
+            [&first],
+            &choices,
+            &assignment,
+            None,
+            initial.clone(),
+            &budget,
+        )
+        .expect("first face quotient");
+        assert!(super::advance_compact_boundary_domains(
+            [&conflicting],
+            &choices,
+            &assignment,
+            None,
+            initial,
+            &budget,
+        )
+        .is_some());
+        assert!(super::advance_compact_boundary_domains(
+            [&conflicting],
+            &choices,
+            &assignment,
+            None,
+            first_states,
+            &budget,
+        )
+        .is_none());
     }
 
     #[test]
