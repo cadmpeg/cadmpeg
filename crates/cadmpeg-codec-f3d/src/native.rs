@@ -11,13 +11,13 @@ use crate::records::{
     DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
     DesignDimensionAnnotationFrame, DesignDimensionLocusGroup, DesignDimensionLocusPair,
     DesignDimensionNullLocusPair, DesignDimensionRecipeRecord, DesignEdgeIdentityOperand,
-    DesignEdgeOperand, DesignEntityHeader, DesignExtrudeSelectionGroup,
-    DesignExtrudeSelectionMember, DesignFaceOperand, DesignFilletRadiusGroup,
-    DesignMaterialAssignment, DesignObject, DesignParameter, DesignParameterCompanion,
-    DesignParameterOwner, DesignParameterScope, DesignRecordHeader, DesignSketchPlacement,
-    EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference, MeshSurfaceSentinel,
-    PersistentDesignLink, PersistentReference, PersistentSubentityTag, SketchCurveIdentity,
-    SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
+    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignFaceOperand,
+    DesignFilletRadiusGroup, DesignMaterialAssignment, DesignObject, DesignParameter,
+    DesignParameterCompanion, DesignParameterOwner, DesignParameterScope, DesignRecordHeader,
+    DesignSketchPlacement, EdgeContinuity, EdgeOwnership, FaceSidedness, LostEdgeReference,
+    MeshSurfaceSentinel, PersistentDesignLink, PersistentReference, PersistentSubentityTag,
+    SketchCurveIdentity, SketchCurveLink, SketchPoint, SketchRelation, SketchSurface, SketchText,
     TolerantCoedgeParameters, TolerantEdgeTail, TolerantVertexTail, TransformHints,
     VertexOwnership, WireTopology, XrefDesign, XrefReference,
 };
@@ -52,6 +52,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "design_edge_identity_operands",
     "design_edge_operands",
     "design_entity_headers",
+    "design_entity_selection_operands",
     "design_extrude_selection_groups",
     "design_extrude_selection_members",
     "design_face_operands",
@@ -104,6 +105,7 @@ macro_rules! f3d_arenas {
             design_dimension_recipe_records: DesignDimensionRecipeRecord;
             design_edge_operands: DesignEdgeOperand;
             design_edge_identity_operands: DesignEdgeIdentityOperand;
+            design_entity_selection_operands: DesignEntitySelectionOperand;
             design_face_operands: DesignFaceOperand;
             design_construction_operand_groups: DesignConstructionOperandGroup;
             design_construction_operand_identities: DesignConstructionOperandIdentity;
@@ -253,6 +255,9 @@ pub struct F3dNative {
     /// Fixed-width members named by Extrude selection groups.
     #[serde(default)]
     pub design_extrude_selection_members: Vec<DesignExtrudeSelectionMember>,
+    /// Nested persistent-entity operands named by counted construction groups.
+    #[serde(default)]
+    pub design_entity_selection_operands: Vec<DesignEntitySelectionOperand>,
     /// Radius parameters paired with counted Fillet edge groups.
     #[serde(default)]
     pub design_fillet_radius_groups: Vec<DesignFilletRadiusGroup>,
@@ -393,6 +398,7 @@ impl Default for F3dNative {
             design_construction_operand_identities: Vec::new(),
             design_extrude_selection_groups: Vec::new(),
             design_extrude_selection_members: Vec::new(),
+            design_entity_selection_operands: Vec::new(),
             design_fillet_radius_groups: Vec::new(),
             design_parameter_companions: Vec::new(),
             design_parameter_owners: Vec::new(),

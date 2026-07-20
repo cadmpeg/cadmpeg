@@ -1405,6 +1405,49 @@ pub struct DesignExtrudeSelectionMember {
     pub next_byte_offset: u64,
 }
 
+/// Persistent Design entity selected through a nested indexed-record frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignEntitySelectionOperand {
+    /// Globally unique deterministic identifier for this native operand.
+    pub id: String,
+    /// Owning feature scope record.
+    pub scope_record_index: u32,
+    /// Owning construction-operand group record.
+    pub group_record_index: u32,
+    /// Zero-based position in the group's ordered member run.
+    pub group_member_ordinal: u32,
+    /// Primary indexed-record identity.
+    pub record_index: u32,
+    /// Primary indexed-header byte offset.
+    pub byte_offset: u64,
+    /// Source per-file dynamic primary class tag.
+    pub class_tag: String,
+    /// Asset UUID qualifying the selection namespace.
+    pub asset_id: String,
+    /// Byte offset of the asset identifier's UTF-16LE code units.
+    pub asset_id_offset: u64,
+    /// UUID of the selection context.
+    pub context_id: String,
+    /// Byte offset of the context UUID's UTF-16LE code units.
+    pub context_id_offset: u64,
+    /// Nested indexed record that carries the persistent entity identity.
+    pub identity_record_index: u32,
+    /// Byte offset of the nested identity record.
+    pub identity_record_offset: u64,
+    /// First u64 in the nested identity pair.
+    pub primary_identity: u64,
+    /// Byte offset of `primary_identity`.
+    pub primary_identity_offset: u64,
+    /// Second u64 in the nested identity pair.
+    pub secondary_identity: u64,
+    /// Byte offset of `secondary_identity`.
+    pub secondary_identity_offset: u64,
+    /// Identity of the indexed record immediately following the identity record.
+    pub next_record_index: u32,
+    /// Byte offset of the indexed record immediately following the identity record.
+    pub next_byte_offset: u64,
+}
+
 /// Stable ASM entity family named by a Design persistent identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

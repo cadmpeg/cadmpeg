@@ -16,9 +16,10 @@ use crate::records::{
     DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
     DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
     DesignDirectFaceOperation, DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader,
-    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
-    DesignExtrudeProfileOperand, DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember,
-    DesignExtrudeStart, DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
+    DesignEntitySelectionOperand, DesignExtrudeExtent, DesignExtrudeFaceRole,
+    DesignExtrudeOperandRole, DesignExtrudeOperation, DesignExtrudeProfileOperand,
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
     DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignMoveOperation, DesignObject,
     DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
@@ -16237,6 +16238,129 @@ pub fn decode_extrude_selection_members(
     Ok(out)
 }
 
+/// Decode nested persistent-entity frames named by construction groups.
+pub fn decode_entity_selection_operands(
+    scan: &ContainerScan,
+    groups: &[DesignConstructionOperandGroup],
+    headers: &[DesignRecordHeader],
+) -> Result<Vec<DesignEntitySelectionOperand>, CodecError> {
+    let headers = headers
+        .iter()
+        .filter_map(|header| Some(((native_stream(&header.id)?, header.record_index), header)))
+        .collect::<HashMap<_, _>>();
+    let mut out = Vec::new();
+    for group in groups {
+        let Some(stream) = native_stream(&group.id) else {
+            continue;
+        };
+        let Some(entry) = scan.entries.iter().find(|entry| {
+            entry.role == role::BULKSTREAM
+                && entry.name.contains("Design")
+                && stream == format!("f3d:{}", entry.name)
+        }) else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        for (ordinal, record_index) in group.members.iter().copied().enumerate() {
+            let Ok(ordinal) = u32::try_from(ordinal) else {
+                continue;
+            };
+            let Some(header) = headers.get(&(stream, record_index)) else {
+                continue;
+            };
+            if let Some(mut operand) = parse_entity_selection_operand(bytes, group, ordinal, header)
+            {
+                operand.id = format!(
+                    "f3d:{}:design-entity-selection-operand#{}",
+                    entry.name, header.byte_offset
+                );
+                out.push(operand);
+            }
+        }
+    }
+    out.sort_by_key(|operand| operand.id.clone());
+    Ok(out)
+}
+
+fn parse_entity_selection_operand(
+    bytes: &[u8],
+    group: &DesignConstructionOperandGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Option<DesignEntitySelectionOperand> {
+    let start = usize::try_from(header.byte_offset).ok()?;
+    if bytes.get(start + 11..start + 21)? != [0; 10]
+        || bytes.get(start + 21) != Some(&1)
+        || u32_at(bytes, start + 22)? != header.record_index.checked_add(3)?
+        || bytes.get(start + 26..start + 32)? != [0; 6]
+        || u32_at(bytes, start + 32)? != 1
+    {
+        return None;
+    }
+    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 36)?;
+    let (context_id, after_context_id) = lp_utf16(bytes, after_asset_id)?;
+    if !is_guid(&asset_id)
+        || !is_guid(&context_id)
+        || u32_at(bytes, after_context_id)? != 2
+        || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
+    {
+        return None;
+    }
+    let paired_at = next_indexed_record_offset(bytes, after_context_id + 8)?;
+    let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
+    let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
+    let identity_at = next_indexed_record_offset(bytes, nested_two_at + 11)?;
+    let next_at = next_indexed_record_offset(bytes, identity_at + 11)?;
+    let expected = [
+        header.record_index,
+        header.record_index.checked_add(1)?,
+        header.record_index.checked_add(2)?,
+        header.record_index.checked_add(3)?,
+        header.record_index.checked_add(4)?,
+    ];
+    for (offset, expected) in [
+        paired_at,
+        nested_one_at,
+        nested_two_at,
+        identity_at,
+        next_at,
+    ]
+    .into_iter()
+    .zip(expected)
+    {
+        let (_, after_tag) = lp_ascii(bytes, offset)?;
+        if u32_at(bytes, after_tag)? != expected {
+            return None;
+        }
+    }
+    if bytes.get(identity_at + 11..identity_at + 29)? != [0; 18]
+        || identity_at.checked_add(45)? != next_at
+    {
+        return None;
+    }
+    Some(DesignEntitySelectionOperand {
+        id: String::new(),
+        scope_record_index: group.scope_record_index,
+        group_record_index: group.record_index,
+        group_member_ordinal,
+        record_index: header.record_index,
+        byte_offset: header.byte_offset,
+        class_tag: header.class_tag.clone(),
+        asset_id,
+        asset_id_offset: u64::try_from(start + 40).ok()?,
+        context_id,
+        context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
+        identity_record_index: header.record_index.checked_add(3)?,
+        identity_record_offset: u64::try_from(identity_at).ok()?,
+        primary_identity: read_u64(bytes, identity_at + 29)?,
+        primary_identity_offset: u64::try_from(identity_at + 29).ok()?,
+        secondary_identity: read_u64(bytes, identity_at + 37)?,
+        secondary_identity_offset: u64::try_from(identity_at + 37).ok()?,
+        next_record_index: header.record_index.checked_add(4)?,
+        next_byte_offset: u64::try_from(next_at).ok()?,
+    })
+}
+
 /// Resolve selection-member local identities against persistent point and
 /// curve identities owned by the Extrude scope's selected Sketch.
 pub fn bind_extrude_selection_geometry(
@@ -20588,16 +20712,17 @@ mod relation_tests {
         offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
-        parse_dimension_null_locus_pair, parse_edge_operand, parse_extrude_selection_group,
-        parse_extrude_selection_member, parse_face_operand, parse_genesis_entity_header,
-        parse_parameter_companion, parse_parameter_owner, parse_parameter_scope,
-        parse_settled_entity_header, parse_sketch_placement_candidates, parse_sketch_profile,
-        parse_sketch_relation, parse_sketch_surface, partial_historical_edge_selection,
-        point_lies_on_sketch_geometry, point_on_sketch_entity, project_configurations,
-        project_dimension_constraints, project_extrude, project_parameter_design,
-        project_sketch_constraints, project_sketch_design, project_spatial_sketch_constraints,
-        project_spatial_sketch_design, radial_dimension_definition, recipe_record_prefix,
-        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
+        parse_dimension_null_locus_pair, parse_edge_operand, parse_entity_selection_operand,
+        parse_extrude_selection_group, parse_extrude_selection_member, parse_face_operand,
+        parse_genesis_entity_header, parse_parameter_companion, parse_parameter_owner,
+        parse_parameter_scope, parse_settled_entity_header, parse_sketch_placement_candidates,
+        parse_sketch_profile, parse_sketch_relation, parse_sketch_surface,
+        partial_historical_edge_selection, point_lies_on_sketch_geometry, point_on_sketch_entity,
+        project_configurations, project_dimension_constraints, project_extrude,
+        project_parameter_design, project_sketch_constraints, project_sketch_design,
+        project_spatial_sketch_constraints, project_spatial_sketch_design,
+        radial_dimension_definition, recipe_record_prefix, region_containing_points,
+        remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, sketch_entity_endpoints, two_locus_distance_dimension,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
@@ -24633,6 +24758,76 @@ mod relation_tests {
             bound_group.lost_edge_references,
             ["f3d:Design/BulkStream.dat:lost-edge-reference#152"]
         );
+    }
+
+    #[test]
+    fn nested_entity_selection_member_retains_both_identity_values() {
+        fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(&class_tag);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+        }
+
+        let group = DesignConstructionOperandGroup {
+            id: "f3d:Design/BulkStream.dat:operand-group#90".into(),
+            scope_record_index: 80,
+            scope_reference_ordinal: 0,
+            record_index: 90,
+            byte_offset: 900,
+            class_tag: "269".into(),
+            member_count_offset: 921,
+            members: vec![100],
+            lost_edge_references: Vec::new(),
+            member_offsets: vec![926],
+            identity_record_index: 200,
+            identity_record_offset: 943,
+            role: 0x0000_0005_0000_0000,
+            extrude_role: None,
+            extrude_face_role: None,
+            role_offset: 953,
+            opaque_index: 1,
+            opaque_index_offset: 971,
+            opaque_scalar: 0.0,
+            opaque_scalar_offset: 975,
+            variant: false,
+            paired_class_tag: "265".into(),
+            paired_byte_offset: 1024,
+        };
+        let record = DesignRecordHeader {
+            id: "f3d:Design/BulkStream.dat:record#100".into(),
+            byte_offset: 0,
+            class_tag: "333".into(),
+            record_index: 100,
+        };
+        let mut bytes = Vec::new();
+        header(&mut bytes, *b"333", 100);
+        bytes.extend_from_slice(&[0; 10]);
+        bytes.push(1);
+        bytes.extend_from_slice(&103u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
+        lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        bytes.extend_from_slice(&[1, 0, 0]);
+        header(&mut bytes, *b"265", 100);
+        header(&mut bytes, *b"301", 101);
+        header(&mut bytes, *b"446", 102);
+        let identity_at = bytes.len();
+        header(&mut bytes, *b"429", 103);
+        bytes.extend_from_slice(&[0; 18]);
+        bytes.extend_from_slice(&1331u64.to_le_bytes());
+        bytes.extend_from_slice(&183u64.to_le_bytes());
+        let next_at = bytes.len();
+        header(&mut bytes, *b"311", 104);
+
+        let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
+            .expect("nested entity-selection frame");
+        assert_eq!(operand.primary_identity, 1331);
+        assert_eq!(operand.secondary_identity, 183);
+        assert_eq!(operand.identity_record_offset, identity_at as u64);
+        assert_eq!(operand.next_byte_offset, next_at as u64);
     }
 
     #[test]

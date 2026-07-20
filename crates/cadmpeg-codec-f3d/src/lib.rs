@@ -1398,6 +1398,46 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             });
         }
     }
+    let mut entity_selection_slots = HashSet::new();
+    for operand in &native.design_entity_selection_operands {
+        let native_stream = design_stream(&operand.id);
+        let group = operand_groups_by_index.get(&(native_stream, operand.group_record_index));
+        let header = records_by_index.get(&(native_stream, operand.record_index));
+        let valid = operand.class_tag.len() == 3
+            && operand.class_tag.bytes().all(|byte| byte.is_ascii_digit())
+            && group.is_some_and(|group| {
+                group.scope_record_index == operand.scope_record_index
+                    && usize::try_from(operand.group_member_ordinal)
+                        .ok()
+                        .and_then(|ordinal| group.members.get(ordinal))
+                        == Some(&operand.record_index)
+            })
+            && header.is_some_and(|header| {
+                header.byte_offset == operand.byte_offset && header.class_tag == operand.class_tag
+            })
+            && valid_design_guid(&operand.asset_id)
+            && valid_design_guid(&operand.context_id)
+            && operand.identity_record_index == operand.record_index.saturating_add(3)
+            && operand.primary_identity_offset == operand.identity_record_offset.saturating_add(29)
+            && operand.secondary_identity_offset
+                == operand.identity_record_offset.saturating_add(37)
+            && operand.next_record_index == operand.record_index.saturating_add(4)
+            && operand.next_byte_offset == operand.identity_record_offset.saturating_add(45)
+            && entity_selection_slots.insert((
+                native_stream,
+                operand.group_record_index,
+                operand.group_member_ordinal,
+            ));
+        if !valid {
+            findings.push(Finding {
+                check: Check::NativeLinks,
+                severity: Severity::Error,
+                message: "Fusion Design entity-selection operand has an invalid nested frame"
+                    .into(),
+                entity: Some(operand.id.clone()),
+            });
+        }
+    }
     for group in &native.design_extrude_selection_groups {
         let native_stream = design_stream(&group.id);
         let complete = (0..group.members.len()).all(|ordinal| {

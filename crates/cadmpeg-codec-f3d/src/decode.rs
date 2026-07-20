@@ -2044,6 +2044,11 @@ fn extend_related_design_records(
         &native.design_extrude_selection_groups,
         &native.design_record_headers,
     )?;
+    native.design_entity_selection_operands = crate::design::decode_entity_selection_operands(
+        scan,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+    )?;
     crate::design::bind_extrude_selection_identities(
         &mut native.design_extrude_selection_members,
         &native.design_construction_operand_identities,
