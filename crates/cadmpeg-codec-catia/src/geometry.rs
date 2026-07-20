@@ -1586,6 +1586,17 @@ pub struct ConsolidatedTopologyEdgeRun {
     pub identity_chain_consistent: bool,
 }
 
+/// Two adjacent oriented uses and their terminal native edge node.
+#[derive(Debug, Clone)]
+pub struct ConsolidatedEdgeUseRun {
+    /// The two serialized edge uses, in side order.
+    pub uses: [B2UseMetadata; 2],
+    /// Native edge node carrying curve, endpoint, and endpoint-parameter identities.
+    pub node: B2EdgeNode,
+    /// Whether the use references and endpoint selectors close one allocation chain.
+    pub identity_chain_consistent: bool,
+}
+
 /// Native endpoint-incidence graph of complete consolidated edge runs.
 #[derive(Debug, Clone)]
 pub struct ConsolidatedNativeEdgeGraph {
@@ -1707,13 +1718,9 @@ pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyE
         .into_iter()
         .map(|edge| (edge.pcurves[0].pos, edge))
         .collect::<BTreeMap<_, _>>();
-    let uses = b2_use_metadata(data)
+    let use_runs = consolidated_edge_use_runs(data)
         .into_iter()
-        .map(|value| (value.pos, value))
-        .collect::<BTreeMap<_, _>>();
-    let nodes = b2_edge_nodes(data)
-        .into_iter()
-        .map(|value| (value.pos, value))
+        .map(|value| (value.uses[0].pos, value))
         .collect::<BTreeMap<_, _>>();
     consolidated_records(data)
         .windows(6)
@@ -1733,29 +1740,66 @@ pub fn consolidated_topology_edge_runs(data: &[u8]) -> Vec<ConsolidatedTopologyE
                 && node.family == ConsolidatedFamily::B
                 && node.class == 0x5e
             {
-                let node = *nodes.get(&node.range.start)?;
-                let uses = [
-                    uses.get(&use0.range.start)?.clone(),
-                    uses.get(&use1.range.start)?.clone(),
-                ];
-                let identity_chain_consistent = node
-                    .curve_ref
-                    .checked_sub(2)
-                    .zip(node.curve_ref.checked_sub(1))
-                    .is_some_and(|(first, second)| {
-                        uses[0].references.as_deref() == Some(&[first, second])
-                            && uses[1].references.as_deref() == Some(&[second, node.curve_ref])
-                    })
-                    && [node.start_parameter_ref, node.end_parameter_ref] == [2, 1];
+                let use_run = use_runs.get(&use0.range.start)?;
                 Some(ConsolidatedTopologyEdgeRun {
                     edge: edges.get(&pcurve0.range.start)?.clone(),
-                    uses,
-                    node,
-                    identity_chain_consistent,
+                    uses: use_run.uses.clone(),
+                    node: use_run.node,
+                    identity_chain_consistent: use_run.identity_chain_consistent,
                 })
             } else {
                 None
             }
+        })
+        .collect()
+}
+
+/// Decode every adjacent `06,06,5e` edge-use run independently of pcurve
+/// availability. Records separated by another framed record do not form a run.
+#[must_use]
+pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
+    let uses = b2_use_metadata(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    let nodes = b2_edge_nodes(data)
+        .into_iter()
+        .map(|value| (value.pos, value))
+        .collect::<BTreeMap<_, _>>();
+    consolidated_records(data)
+        .windows(3)
+        .filter_map(|window| {
+            let [use0, use1, node] = window else {
+                return None;
+            };
+            if use0.family != ConsolidatedFamily::B
+                || use0.class != 0x06
+                || use1.family != ConsolidatedFamily::B
+                || use1.class != 0x06
+                || node.family != ConsolidatedFamily::B
+                || node.class != 0x5e
+            {
+                return None;
+            }
+            let node = *nodes.get(&node.range.start)?;
+            let uses = [
+                uses.get(&use0.range.start)?.clone(),
+                uses.get(&use1.range.start)?.clone(),
+            ];
+            let identity_chain_consistent = node
+                .curve_ref
+                .checked_sub(2)
+                .zip(node.curve_ref.checked_sub(1))
+                .is_some_and(|(first, second)| {
+                    uses[0].references.as_deref() == Some(&[first, second])
+                        && uses[1].references.as_deref() == Some(&[second, node.curve_ref])
+                })
+                && [node.start_parameter_ref, node.end_parameter_ref] == [2, 1];
+            Some(ConsolidatedEdgeUseRun {
+                uses,
+                node,
+                identity_chain_consistent,
+            })
         })
         .collect()
 }

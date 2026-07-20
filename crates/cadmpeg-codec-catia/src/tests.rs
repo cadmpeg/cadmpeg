@@ -4127,8 +4127,6 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         run.pcurves,
         ["catia:consolidated:pcurve#0", "catia:consolidated:pcurve#1"]
     );
-    assert_eq!(run.use_references, [[4, 5], [5, 6]]);
-    assert_eq!(run.use_senses, [0x88, 0x84]);
     assert_eq!(run.node, "catia:consolidated:edge-node#0");
     let [node] = native.consolidated_edge_nodes.as_slice() else {
         panic!("one consolidated edge node");
@@ -4142,6 +4140,9 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         ]
     );
     assert_eq!(node.parameter_selectors, [2, 1]);
+    let uses = node.uses.as_ref().expect("edge-owned oriented uses");
+    assert_eq!(uses.references, [[4, 5], [5, 6]]);
+    assert_eq!(uses.senses, [0x88, 0x84]);
     assert_eq!(native.consolidated_vertex_identities.len(), 2);
     assert_eq!(native.consolidated_vertex_identities[0].identity, 139);
     assert_eq!(
@@ -4214,6 +4215,7 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
     assert_eq!(node.flag, 0x03);
     assert_eq!(node.header_token, 5);
     assert_eq!(node.vertex_refs, [889, 895]);
+    assert!(node.uses.is_none());
     assert_eq!(native.consolidated_vertex_identities.len(), 2);
     assert_eq!(
         native.consolidated_vertex_identities[0].incident_edge_nodes,
@@ -4229,6 +4231,20 @@ fn native_namespace_retains_standalone_consolidated_edge_nodes() {
             .expect("load standalone consolidated edge node"),
         native
     );
+}
+
+#[test]
+fn native_namespace_attaches_oriented_uses_without_pcurves() {
+    let bytes = a5_native_edge_identity_stream(6, 139, 142);
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert!(native.consolidated_edge_runs.is_empty());
+    let [node] = native.consolidated_edge_nodes.as_slice() else {
+        panic!("one consolidated edge node");
+    };
+    let uses = node.uses.as_ref().expect("standalone edge-owned uses");
+    assert_eq!(uses.references, [[4, 5], [5, 6]]);
+    assert_eq!(uses.senses, [0x88, 0x84]);
 }
 
 #[test]
@@ -4854,6 +4870,22 @@ fn consolidated_edge_block_groups_b_family_pcurves() {
     assert!(blocks[0].co_parametric);
     assert_eq!(blocks[0].pcurves[0].support_id, 0x1234);
     assert_eq!(blocks[0].pcurves[1].range, [0.0, 1.0]);
+}
+
+#[test]
+fn consolidated_edge_use_run_is_independent_of_pcurve_availability() {
+    use crate::geometry::B2UseSense;
+
+    let runs =
+        crate::geometry::consolidated_edge_use_runs(&a5_native_edge_identity_stream(6, 139, 142));
+    let [run] = runs.as_slice() else {
+        panic!("one standalone edge-use run");
+    };
+    assert!(run.identity_chain_consistent);
+    assert_eq!(run.uses[0].sense, Some(B2UseSense::Sense88));
+    assert_eq!(run.uses[1].sense, Some(B2UseSense::Sense84));
+    assert_eq!(run.node.start_vertex_ref, 139);
+    assert_eq!(run.node.end_vertex_ref, 142);
 }
 
 #[test]
