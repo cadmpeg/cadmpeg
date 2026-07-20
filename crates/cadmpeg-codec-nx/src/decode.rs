@@ -1379,11 +1379,18 @@ fn try_decode_geometry(
         return None;
     }
 
-    let mut active_body_selection = select_active_body(
-        &mut ir,
-        &body_node_ids,
-        &scan.container.rmfastload_object_ids(),
-    );
+    let rmfastload_ids = scan
+        .container
+        .rmfastload_object_id_table()
+        .map(|(_, table)| {
+            table
+                .object_ids
+                .into_iter()
+                .map(|object_id| object_id.value)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let mut active_body_selection = select_active_body(&mut ir, &body_node_ids, &rmfastload_ids);
     if !active_body_selection {
         active_body_selection = select_terminal_feature_bodies(&mut ir, scan);
     }
@@ -6856,11 +6863,10 @@ fn source_meta(scan: &Scan) -> SourceMeta {
     {
         attributes.insert(format!("external_reference.{index}"), path);
     }
-    let active_ids = scan.container.rmfastload_object_ids();
-    if !active_ids.is_empty() {
+    if let Some((_, table)) = scan.container.rmfastload_object_id_table() {
         attributes.insert(
             "rmfastload_active_object_count".to_string(),
-            active_ids.len().to_string(),
+            table.object_ids.len().to_string(),
         );
     }
     let mut preview_count = 0usize;
@@ -7954,6 +7960,11 @@ fn attach_native_object_model(
     let classes = crate::native::class_definitions(&scan.container);
     let fields = crate::native::field_definitions(&scan.container);
     let object_records = crate::native::object_records(&scan.container);
+    let (rmfastload_object_id_tables, rmfastload_object_ids) =
+        match crate::native::rmfastload_object_id_table(&scan.container) {
+            Some((table, object_ids)) => (vec![table], object_ids),
+            None => (Vec::new(), Vec::new()),
+        };
     let data_blocks = crate::native::data_blocks(&scan.container);
     let data_block_control_values = crate::native::data_block_control_values(&scan.container);
     let data_block_control_class_references =
@@ -8147,6 +8158,8 @@ fn attach_native_object_model(
         && classes.is_empty()
         && fields.is_empty()
         && object_records.is_empty()
+        && rmfastload_object_id_tables.is_empty()
+        && rmfastload_object_ids.is_empty()
         && data_blocks.is_empty()
         && data_block_control_values.is_empty()
         && data_block_control_class_references.is_empty()
@@ -8961,7 +8974,7 @@ fn attach_native_object_model(
         .features
         .sort_by(|first, second| first.id.cmp(&second.id));
     let namespace = ir.native.namespace_mut("nx");
-    namespace.version = namespace.version.max(146);
+    namespace.version = namespace.version.max(147);
     if !segment_index_rows.is_empty() {
         namespace.set_arena("segment_index_rows", &segment_index_rows)?;
     }
@@ -9687,6 +9700,12 @@ fn attach_native_object_model(
     }
     if !object_records.is_empty() {
         namespace.set_arena("object_records", &object_records)?;
+    }
+    if !rmfastload_object_id_tables.is_empty() {
+        namespace.set_arena("rmfastload_object_id_tables", &rmfastload_object_id_tables)?;
+    }
+    if !rmfastload_object_ids.is_empty() {
+        namespace.set_arena("rmfastload_object_ids", &rmfastload_object_ids)?;
     }
     if !data_blocks.is_empty() {
         namespace.set_arena("data_blocks", &data_blocks)?;

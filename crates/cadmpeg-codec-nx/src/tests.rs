@@ -2778,7 +2778,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 146);
+    assert_eq!(namespace.version, 147);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -13409,7 +13409,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 146);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 147);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
@@ -18002,18 +18002,76 @@ fn nx_control_handle_pairs_require_maximal_runs_of_exactly_two() {
 #[test]
 fn container_reads_rmfastload_active_ids() {
     let container = container::scan_bytes(rmfastload_prt()).unwrap();
+    let (entry, table) = container
+        .rmfastload_object_id_table()
+        .expect("RMFastLoad object-id table");
+    assert_eq!(entry.name, "/Root/FastLoad/RMFastLoad");
+    assert_eq!(table.registry_offset, 0);
+    assert_eq!(table.count_offset, b"UGS::Solid::Topol".len());
+    assert_eq!(table.raw_count, 50u32.to_le_bytes());
     assert_eq!(
-        container.rmfastload_object_ids(),
+        table
+            .object_ids
+            .iter()
+            .map(|object_id| object_id.value)
+            .collect::<Vec<_>>(),
         (1..=50).collect::<Vec<_>>()
     );
+    assert_eq!(table.object_ids[0].offset, table.count_offset + 4);
+    assert_eq!(table.object_ids[0].raw, 1u32.to_le_bytes());
+    assert_eq!(table.object_ids[49].offset, table.count_offset + 4 + 49 * 4);
+    assert_eq!(table.object_ids[49].raw, 50u32.to_le_bytes());
+}
+
+#[test]
+fn native_retains_rmfastload_table_and_member_words() {
+    let container = container::scan_bytes(rmfastload_prt()).unwrap();
+    let entry_offset = container
+        .entries
+        .iter()
+        .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
+        .and_then(|entry| entry.file_span)
+        .expect("RMFastLoad span")
+        .0;
+    let (table, object_ids) =
+        crate::native::rmfastload_object_id_table(&container).expect("native RMFastLoad table");
+
+    assert_eq!(table.id, "nx:rmfastload:object-id-table#0");
+    assert_eq!(table.members.len(), 50);
+    assert_eq!(table.raw_count, 50u32.to_le_bytes());
+    assert_eq!(table.registry_source_offset, entry_offset);
+    assert_eq!(
+        table.source_offset,
+        entry_offset + b"UGS::Solid::Topol".len() as u64
+    );
+    assert_eq!(object_ids[0].table, table.id);
+    assert_eq!(object_ids[0].value, 1);
+    assert_eq!(object_ids[0].raw, 1u32.to_le_bytes());
+    assert_eq!(object_ids[0].source_offset, table.source_offset + 4);
+    assert_eq!(object_ids[49].ordinal, 49);
+    assert_eq!(object_ids[49].value, 50);
+    assert_eq!(object_ids[49].raw, 50u32.to_le_bytes());
+    assert_eq!(table.members[49], object_ids[49].id);
 }
 
 #[test]
 fn decode_selects_dominant_rmfastload_body() {
     let mut cur = Cursor::new(prt_with_two_bodies_and_rmfastload());
     let result = NxCodec.decode(&mut cur, &DecodeOptions::default()).unwrap();
+    let namespace = result.ir.native.namespace("nx").expect("NX namespace");
+    let tables = namespace
+        .arena_as::<crate::native::RmFastLoadObjectIdTable>("rmfastload_object_id_tables")
+        .expect("RMFastLoad tables");
+    let object_ids = namespace
+        .arena_as::<crate::native::RmFastLoadObjectId>("rmfastload_object_ids")
+        .expect("RMFastLoad object IDs");
 
     assert_eq!(result.ir.model.bodies.len(), 1);
+    assert_eq!(tables.len(), 1);
+    assert_eq!(tables[0].members.len(), 50);
+    assert_eq!(object_ids.len(), 50);
+    assert_eq!(object_ids[0].value, 1_000);
+    assert_eq!(object_ids[49].value, 1_049);
     assert!(result.ir.model.bodies[0].id.0.starts_with("nx:s0:"));
     assert_eq!(result.ir.model.faces.len(), 50);
     assert_eq!(result.ir.model.surfaces.len(), 50);

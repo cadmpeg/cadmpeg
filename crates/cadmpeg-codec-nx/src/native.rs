@@ -12265,6 +12265,40 @@ pub struct ObjectRecord {
     pub source_offset: u64,
 }
 
+/// Counted active-object membership table from `RMFastLoad`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RmFastLoadObjectIdTable {
+    /// Globally unique table identity.
+    pub id: String,
+    /// Ordered members in the native `rmfastload_object_ids` arena.
+    pub members: Vec<String>,
+    /// Exact serialized little-endian member-count word.
+    pub raw_count: [u8; 4],
+    /// Directory entry containing the table.
+    pub source_entry: String,
+    /// Absolute file offset of the `UGS::Solid::Topol` registry marker.
+    pub registry_source_offset: u64,
+    /// Absolute file offset of the four-byte count word.
+    pub source_offset: u64,
+}
+
+/// One fixed-width active-object membership word from `RMFastLoad`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RmFastLoadObjectId {
+    /// Globally unique member identity.
+    pub id: String,
+    /// Owning table in the native `rmfastload_object_id_tables` arena.
+    pub table: String,
+    /// Zero-based serialized member order.
+    pub ordinal: u32,
+    /// Decoded active object identifier.
+    pub value: u32,
+    /// Exact serialized little-endian object-id word.
+    pub raw: [u8; 4],
+    /// Absolute file offset of the four-byte object-id word.
+    pub source_offset: u64,
+}
+
 /// One externally bounded block in an NX OM offset-only column store.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DataBlock {
@@ -13687,6 +13721,40 @@ pub fn object_records(container: &Container) -> Vec<ObjectRecord> {
                 .collect()
         })
         .collect()
+}
+
+/// Retain the complete counted `RMFastLoad` active-object membership table.
+pub fn rmfastload_object_id_table(
+    container: &Container,
+) -> Option<(RmFastLoadObjectIdTable, Vec<RmFastLoadObjectId>)> {
+    let (entry, table) = container.rmfastload_object_id_table()?;
+    let entry_offset = entry.file_span?.0;
+    let table_id = "nx:rmfastload:object-id-table#0".to_string();
+    let object_ids = table
+        .object_ids
+        .into_iter()
+        .enumerate()
+        .map(|(ordinal, object_id)| RmFastLoadObjectId {
+            id: format!("nx:rmfastload:object-id#{ordinal:010}"),
+            table: table_id.clone(),
+            ordinal: ordinal as u32,
+            value: object_id.value,
+            raw: object_id.raw,
+            source_offset: entry_offset + object_id.offset as u64,
+        })
+        .collect::<Vec<_>>();
+    let native_table = RmFastLoadObjectIdTable {
+        id: table_id,
+        members: object_ids
+            .iter()
+            .map(|object_id| object_id.id.clone())
+            .collect(),
+        raw_count: table.raw_count,
+        source_entry: entry.name.clone(),
+        registry_source_offset: entry_offset + table.registry_offset as u64,
+        source_offset: entry_offset + table.count_offset as u64,
+    };
+    Some((native_table, object_ids))
 }
 
 /// Catalog every externally bounded block in offset-only NX OM storage.

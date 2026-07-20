@@ -55,6 +55,30 @@ pub struct SegmentIndex<'a> {
     pub byte_len: usize,
 }
 
+/// One fixed-width member of the `RMFastLoad` object-id table.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RmFastLoadObjectId {
+    /// Decoded little-endian object identifier.
+    pub value: u32,
+    /// Payload-relative offset of the four-byte table word.
+    pub offset: usize,
+    /// Exact serialized table word.
+    pub raw: [u8; 4],
+}
+
+/// Counted object-id table in `/Root/FastLoad/RMFastLoad`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RmFastLoadObjectIdTable {
+    /// Payload-relative offset of the `UGS::Solid::Topol` registry marker.
+    pub registry_offset: usize,
+    /// Payload-relative offset of the four-byte count word.
+    pub count_offset: usize,
+    /// Exact serialized little-endian count word.
+    pub raw_count: [u8; 4],
+    /// Ordered fixed-width object-id members.
+    pub object_ids: Vec<RmFastLoadObjectId>,
+}
+
 impl Region {
     /// Return the directory-region label used in summaries.
     pub fn label(self) -> &'static str {
@@ -221,52 +245,57 @@ impl Container {
             .collect()
     }
 
-    /// Extract active NX object identifiers from `/Root/FastLoad/RMFastLoad`.
-    pub fn rmfastload_object_ids(&self) -> Vec<u32> {
-        let Some((offset, size)) = self
+    /// Decode the counted object-id table from `/Root/FastLoad/RMFastLoad`.
+    pub fn rmfastload_object_id_table(&self) -> Option<(&DirEntry, RmFastLoadObjectIdTable)> {
+        let entry = self
             .entries
             .iter()
             .find(|entry| entry.name == "/Root/FastLoad/RMFastLoad")
-            .and_then(|entry| entry.file_span)
-        else {
-            return Vec::new();
-        };
-        let Ok(offset) = usize::try_from(offset) else {
-            return Vec::new();
-        };
-        let Ok(size) = usize::try_from(size) else {
-            return Vec::new();
-        };
-        let Some(bytes) = self.data.get(offset..offset.saturating_add(size)) else {
-            return Vec::new();
-        };
-        let Some(registry) = find(bytes, b"UGS::Solid::Topol") else {
-            return Vec::new();
-        };
-        for pos in registry..bytes.len().saturating_sub(4) {
-            let Some(count) = u32_le(bytes, pos).map(|value| value as usize) else {
+            .filter(|entry| entry.file_span.is_some())?;
+        let (offset, size) = entry.file_span?;
+        let (offset, size) = (usize::try_from(offset).ok()?, usize::try_from(size).ok()?);
+        let bytes = self.data.get(offset..offset.checked_add(size)?)?;
+        let registry_offset = find(bytes, b"UGS::Solid::Topol")?;
+        for count_offset in registry_offset..bytes.len().saturating_sub(4) {
+            let Some(count) = u32_le(bytes, count_offset).map(|value| value as usize) else {
                 continue;
             };
             if !(50..=70_000).contains(&count) {
                 continue;
             }
-            let Some(raw) = bytes.get(pos + 4..pos + 4 + count * 4) else {
+            let Some(raw_ids) = bytes.get(count_offset + 4..count_offset + 4 + count * 4) else {
                 continue;
             };
-            let ids: Vec<_> = raw
+            let object_ids: Vec<_> = raw_ids
                 .chunks_exact(4)
-                .map(|word| {
-                    u32::from_le_bytes(
-                        word.try_into()
-                            .expect("invariant: chunks_exact(4) yields exactly 4-byte slices"),
-                    )
+                .enumerate()
+                .map(|(ordinal, word)| {
+                    let raw = <[u8; 4]>::try_from(word)
+                        .expect("invariant: chunks_exact(4) yields four-byte slices");
+                    RmFastLoadObjectId {
+                        value: u32::from_le_bytes(raw),
+                        offset: count_offset + 4 + ordinal * 4,
+                        raw,
+                    }
                 })
                 .collect();
-            if ids.iter().all(|id| (1..70_000).contains(id)) {
-                return ids;
+            if object_ids
+                .iter()
+                .all(|object_id| (1..70_000).contains(&object_id.value))
+            {
+                let raw_count = bytes.get(count_offset..count_offset + 4)?.try_into().ok()?;
+                return Some((
+                    entry,
+                    RmFastLoadObjectIdTable {
+                        registry_offset,
+                        count_offset,
+                        raw_count,
+                        object_ids,
+                    },
+                ));
             }
         }
-        Vec::new()
+        None
     }
 }
 
