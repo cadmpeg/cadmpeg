@@ -10241,6 +10241,51 @@ fn section_skamp_is_point(
         .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
 }
 
+fn section_skamp_is_arc(
+    definition: &crate::feature::FeatureDefinition,
+    item: &crate::feature::FeatureSkampItem,
+) -> bool {
+    let has_segment = definition
+        .segments
+        .iter()
+        .flat_map(|table| &table.rows)
+        .any(|segment| segment.external_id == item.entity_id);
+    if has_segment {
+        return unique_decoded_section_segment(definition, item.entity_id)
+            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Arc);
+    }
+    section_saved_entity(definition, item.entity_id)
+        .is_some_and(|entity| matches!(entity, crate::feature::FeatureSavedEntity::Arc(_)))
+}
+
+fn section_skamp_midpoint(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    first: &crate::feature::FeatureSkampItem,
+    second: &crate::feature::FeatureSkampItem,
+) -> Option<(SketchLocus, SketchEntityId)> {
+    let target = |item: &crate::feature::FeatureSkampItem| {
+        (item.sense == 0
+            && (section_skamp_is_line(definition, item) || section_skamp_is_arc(definition, item)))
+        .then(|| sketch_entity_id(sketch, item.entity_id))
+    };
+    let point = |item: &crate::feature::FeatureSkampItem| {
+        if item.sense == 0 && section_skamp_is_point(definition, item) {
+            Some(SketchLocus::Entity(sketch_entity_id(
+                sketch,
+                item.entity_id,
+            )))
+        } else {
+            section_skamp_point_locus(definition, sketch, item)
+        }
+    };
+    match (target(first), point(second), target(second), point(first)) {
+        (Some(entity), Some(point), None, _) => Some((point, entity)),
+        (None, _, Some(entity), Some(point)) => Some((point, entity)),
+        _ => None,
+    }
+}
+
 fn section_saved_entity(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
@@ -10469,6 +10514,13 @@ fn section_skamp_constraints_for_geometry(
                         SketchConstraintDefinition::Equal { first, second }
                     }
                     (9, [first, second])
+                        if section_skamp_line_pair(definition, sketch, first, second).is_some() =>
+                    {
+                        let [first, second] =
+                            section_skamp_line_pair(definition, sketch, first, second)?;
+                        SketchConstraintDefinition::Collinear { first, second }
+                    }
+                    (9, [first, second])
                         if first.sense == 0
                             && second.sense == 0
                             && ((section_skamp_is_line(definition, first)
@@ -10519,6 +10571,15 @@ fn section_skamp_constraints_for_geometry(
                                 second,
                                 axis,
                             }
+                        } else {
+                            native_constraint()?
+                        }
+                    }
+                    (35, [first, second]) => {
+                        if let Some((point, entity)) =
+                            section_skamp_midpoint(definition, sketch, first, second)
+                        {
+                            SketchConstraintDefinition::Midpoint { point, entity }
                         } else {
                             native_constraint()?
                         }
@@ -10597,8 +10658,10 @@ fn sketch_constraint_loci_compatible(
         | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
             locus_compatible(first) && locus_compatible(second)
         }
-        SketchConstraintDefinition::Midpoint { point, .. }
-        | SketchConstraintDefinition::PointOnObject { point, .. } => locus_compatible(point),
+        SketchConstraintDefinition::Midpoint { point, entity }
+        | SketchConstraintDefinition::PointOnObject { point, entity } => {
+            locus_compatible(point) && geometry.contains_key(entity)
+        }
         SketchConstraintDefinition::Symmetric { first, second, .. } => {
             locus_compatible(first) && locus_compatible(second)
         }
@@ -19137,6 +19200,146 @@ mod resolved_sketch_tests {
             saved_section: None,
             offset: 0,
         };
+        let mut collinear_definition = definition.clone();
+        let collinear_relations = collinear_definition.relations.as_mut().expect("relations");
+        collinear_relations.skamps = vec![crate::feature::FeatureSkamp {
+            id: 9,
+            kind: 9,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 15,
+                    sense: 0,
+                },
+            ],
+            offset: 83,
+        }];
+        collinear_relations
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = 1;
+        assert_eq!(
+            section_skamp_constraints(
+                &collinear_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Collinear {
+                first: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+                second: SketchEntityId("creo:featdefs:sketch_entity#917:15".to_string()),
+            }
+        );
+        let mut midpoint_definition = definition.clone();
+        let midpoint = crate::feature::FeatureSkamp {
+            id: 35,
+            kind: 35,
+            flags: 0,
+            status: 0,
+            items: vec![
+                crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                },
+                crate::feature::FeatureSkampItem {
+                    entity_id: 14,
+                    sense: 0,
+                },
+            ],
+            offset: 83,
+        };
+        let midpoint_relations = midpoint_definition.relations.as_mut().expect("relations");
+        midpoint_relations.skamps = vec![midpoint];
+        midpoint_relations
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = 1;
+        assert_eq!(
+            section_skamp_constraints(
+                &midpoint_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Midpoint {
+                point: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:14".to_string()
+                )),
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+            }
+        );
+        let midpoint_geometry = BTreeMap::from([
+            (
+                SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+                SketchGeometry::Line {
+                    start: Point2::new(0.0, 0.0),
+                    end: Point2::new(2.0, 0.0),
+                },
+            ),
+            (
+                SketchEntityId("creo:featdefs:sketch_entity#917:14".to_string()),
+                SketchGeometry::Point {
+                    position: Point2::new(1.0, 0.0),
+                },
+            ),
+        ]);
+        assert!(matches!(
+            section_skamp_constraints_for_geometry(
+                &midpoint_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&midpoint_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Midpoint { .. }
+        ));
+        let unresolved_midpoint_geometry = BTreeMap::from([(
+            SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+            SketchGeometry::Line {
+                start: Point2::new(0.0, 0.0),
+                end: Point2::new(2.0, 0.0),
+            },
+        )]);
+        assert!(matches!(
+            section_skamp_constraints_for_geometry(
+                &midpoint_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&unresolved_midpoint_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native { .. }
+        ));
+        midpoint_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[0]
+            .items[1] = crate::feature::FeatureSkampItem {
+            entity_id: 13,
+            sense: 2,
+        };
+        assert_eq!(
+            section_skamp_constraints(
+                &midpoint_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Midpoint {
+                point: SketchLocus::End(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:13".to_string()
+                )),
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+            }
+        );
         let mut equal_radius_definition = definition.clone();
         let equal_radius_segments = &mut equal_radius_definition
             .segments

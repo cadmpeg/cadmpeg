@@ -946,6 +946,8 @@ A two-item type-three incidence has one sense-zero point entity and one
 endpoint-selected entity; the point and endpoint loci map to a neutral
 coincident-loci constraint. The separate sense-zero-line form maps to
 point-on-object as defined above.
+A two-item type-nine incidence with sense zero on two lines makes the lines
+collinear. The line-and-point form maps to point-on-object as defined above.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
 line vertical. Other senses select a locus and do not define an entity-level
@@ -989,6 +991,11 @@ flag `2` selects the section `v` coordinate. This discriminator defines the
 neutral same-coordinate axis without requiring solved locus coordinates. When
 both loci are solved, their selected coordinates must agree. Other flag values
 and contradictory solved coordinates retain the native incidence.
+A two-item type-35 incidence whose operands resolve as one point locus and one
+bounded line or arc places that point at the entity midpoint. The target entity
+has sense zero. The point operand is either a sense-zero point entity or an
+endpoint or center locus selected by sense `2`, `3`, or `4`. Operand order does
+not change these roles. A circle is not a bounded midpoint target.
 An incidence item may reference a complete saved-section entity through its
 `order_table.ext_id`. When its type/sense pattern has no neutral constraint
 mapping, retain the incidence type, ordered entity identifiers, and sense values
