@@ -830,6 +830,11 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
+                    Some(design::DesignFeatureFamily::Scale) => {
+                        group.role == 0x0000_0004_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
                     Some(_) => false,
                     None if scope.kind == "RemoveBody" => {
                         group.role == 0x0000_0004_0000_0000

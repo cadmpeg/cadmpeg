@@ -1066,6 +1066,9 @@ pub struct DesignParameterScope {
     /// Exact rigid transform carried by a Move scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub move_operation: Option<DesignMoveOperation>,
+    /// Exact uniform body-scale construction carried by a Scale scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scale_operation: Option<DesignScaleOperation>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
@@ -1227,6 +1230,19 @@ pub struct DesignHemOperation {
     pub is_flipped: bool,
     /// Uninterpreted bend-position discriminator.
     pub bend_position_code: u32,
+}
+
+/// Fixed construction carried by a uniform body-scale scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignScaleOperation {
+    /// Counted construction group selecting the transformed bodies.
+    pub body_group_record_index: u32,
+    /// Native reference selecting the fixed scale center.
+    pub center_record_index: u32,
+    /// Positive uniform scale factor.
+    pub uniform_factor: f64,
+    /// Byte offset of `uniform_factor`.
+    pub uniform_factor_offset: u64,
 }
 
 /// Source and copied Design body identities carried by `CopyPasteBodies`.

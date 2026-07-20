@@ -9258,6 +9258,7 @@ fn validation_requires_one_exact_extrude_profile_group() {
         solid_primitive: None,
         direct_face_operation: None,
         move_operation: None,
+        scale_operation: None,
         surface_stitch_operation: None,
         base_flange_operation: None,
         edge_flange_operation: None,
