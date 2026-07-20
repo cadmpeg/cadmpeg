@@ -8655,6 +8655,56 @@ fn circular_section_profile_from_cylinder(
     ))
 }
 
+fn sketch_profiles_cover_generated_extrusion_sides(
+    scan: &ContainerScan,
+    definition: &crate::feature::FeatureDefinition,
+    feature_id: u32,
+    sketch: &Sketch,
+) -> bool {
+    let Some(order) = &definition.order_table else {
+        return false;
+    };
+    let expected_entities = scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .flat_map(|table| &table.entries)
+        .filter_map(|entry| {
+            let external_id = entry.source_entity_id?;
+            order.internal_id(external_id)?;
+            scan.surface_rows
+                .iter()
+                .any(|row| {
+                    row.id == entry.entity_id
+                        && row.feature_id == feature_id
+                        && matches!(
+                            row.kind,
+                            crate::surface::SurfaceKind::Plane
+                                | crate::surface::SurfaceKind::Cylinder
+                                | crate::surface::SurfaceKind::Extrusion
+                        )
+                })
+                .then(|| {
+                    SketchEntityId(format!(
+                        "creo:featdefs:sketch_entity#{}:{external_id}",
+                        definition.id
+                    ))
+                })
+        })
+        .collect::<Vec<_>>();
+    let expected = expected_entities.iter().cloned().collect::<BTreeSet<_>>();
+    let profile_entities = sketch
+        .profiles
+        .iter()
+        .flatten()
+        .map(|entity_use| entity_use.entity.clone())
+        .collect::<Vec<_>>();
+    !expected.is_empty()
+        && expected_entities.len() == expected.len()
+        && profile_entities.len() == expected.len()
+        && profile_entities.into_iter().collect::<BTreeSet<_>>() == expected
+}
+
 fn transfer_resolved_extrusion_breps(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -8688,6 +8738,17 @@ fn transfer_resolved_extrusion_breps(
             continue;
         };
         let length = span.upper - span.lower;
+        let Some(sketch) = ir
+            .model
+            .sketches
+            .iter()
+            .find(|sketch| sketch.id == sketch_id)
+        else {
+            continue;
+        };
+        if !sketch_profiles_cover_generated_extrusion_sides(scan, definition, feature_id, sketch) {
+            continue;
+        }
         let Some(profiles) = resolved_sketch_profiles(ir, &sketch_id, 2) else {
             continue;
         };
