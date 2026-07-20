@@ -1110,6 +1110,32 @@ fn decode_withholds_axis_aligned_surface_without_parameter_chart() {
 }
 
 #[test]
+fn decode_transfers_held_coordinate_plane_with_canonical_chart() {
+    let mut payload = visibgeom_payload(1, 0);
+    payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
+    for value in [0.0, 0.0, 0.0, 0.0, -1.0, -1.0, 1.0, 1.0, 2.0, 1.0] {
+        push_generated_scalar(&mut payload, value);
+    }
+    payload.push(0xe3);
+
+    let result = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("decode");
+
+    assert_eq!(result.ir.model.surfaces.len(), 1);
+    assert_eq!(
+        result.ir.model.surfaces[0].geometry,
+        cadmpeg_ir::geometry::SurfaceGeometry::Plane {
+            origin: cadmpeg_ir::math::Point3::new(0.0, 0.0, 1.0),
+            normal: cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            u_axis: cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        }
+    );
+}
+
+#[test]
 fn scan_decodes_standard_and_compact_plane_envelopes() {
     let mut payload = visibgeom_payload(2, 0);
     payload.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 8]);

@@ -653,7 +653,7 @@ normal = normalize(cross(first, second))
 Exactly one of the three support triples is the zero triple. The guard requires
 orthogonal, equal-scale nonzero support directions. `outline f9 02 03` stores two XYZ corners. In these positional scalar lanes, `73` and `bb` each begin a seven-byte scalar token. Repeated identical tokens denote equal stored values; tokens with different prefixes denote distinct values. Token equality remains defined when the scalar magnitude is not decoded.
 
-When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. Zero or multiple held coordinates do not establish a plane equation from the outline.
+When exactly one coordinate is held constant across both corners, its axis is the positive basis normal and its value is the model-space plane offset. The other two coordinate pairs need only be known to be distinct; their magnitudes are not required. In the absence of a complete local-system chart, the first positive basis direction perpendicular to the normal is the neutral parameter reference direction. A complete local-system chart takes precedence. Zero or multiple held coordinates do not establish a plane equation from the outline.
 The held coordinate establishes only the plane equation. It does not establish
 the parameter-chart origin or either parameter direction.
 

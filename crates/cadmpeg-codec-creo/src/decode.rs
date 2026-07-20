@@ -24152,6 +24152,12 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 offset: frame.offset,
             });
     }
+    let local_chart_ids = scan
+        .plane_local_systems
+        .iter()
+        .filter(|frame| frame.origin.is_some() && frame.normal.is_some() && frame.u_axis.is_some())
+        .map(|frame| frame.surface_id)
+        .collect::<BTreeSet<_>>();
     for outline in &scan.outline_planes {
         candidates
             .entry(outline.surface_id)
@@ -24161,7 +24167,11 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                     origin: outline.origin,
                     normal: outline.normal,
                 },
-                chart: None,
+                chart: (!local_chart_ids.contains(&outline.surface_id)).then_some(PlaneChart {
+                    origin: outline.origin,
+                    normal: outline.normal,
+                    u_axis: outline.u_axis,
+                }),
                 offset: outline.offset,
             });
     }
