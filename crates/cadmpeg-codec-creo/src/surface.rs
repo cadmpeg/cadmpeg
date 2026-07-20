@@ -3005,14 +3005,6 @@ fn scalar_slots(body: &[u8], count: usize, cache: &scalar::ScalarCache) -> Vec<O
 
 type ScalarTokenSlot = (Option<f64>, Vec<u8>);
 
-fn scalar_slots_with_tokens(
-    body: &[u8],
-    count: usize,
-    cache: &scalar::ScalarCache,
-) -> Vec<ScalarTokenSlot> {
-    scalar_slots_with_tokens_and_end(body, count, cache).0
-}
-
 fn scalar_slots_with_tokens_and_end(
     body: &[u8],
     count: usize,
@@ -3022,6 +3014,32 @@ fn scalar_slots_with_tokens_and_end(
     let mut cursor = 0;
     while cursor < body.len() && slots.len() < count {
         if body[cursor] == 0x18 && cursor + 1 == body.len() {
+            slots.push((Some(0.0), vec![0x18]));
+            cursor += 1;
+        } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
+        {
+            slots.push((Some(value), body[cursor..next].to_vec()));
+            cursor = next;
+        } else {
+            cursor += 1;
+        }
+    }
+    slots.resize_with(count, || (None, Vec::new()));
+    (slots, cursor)
+}
+
+fn plane_envelope_scalar_slots_with_tokens_and_end(
+    body: &[u8],
+    count: usize,
+    cache: &scalar::ScalarCache,
+) -> (Vec<ScalarTokenSlot>, usize) {
+    let mut slots = Vec::with_capacity(count);
+    let mut cursor = 0;
+    while cursor < body.len() && slots.len() < count {
+        if body[cursor] == 0x0e {
+            slots.push((Some(0.5), vec![0x0e]));
+            cursor += 1;
+        } else if body[cursor] == 0x18 && cursor + 1 == body.len() {
             slots.push((Some(0.0), vec![0x18]));
             cursor += 1;
         } else if let Some((value, next)) = scalar::decode_in_surface_row_lane(body, cursor, cache)
@@ -3269,7 +3287,7 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
         let body = payload[*body_start..body_end].to_vec();
         let scalar_tokens;
         let (envelope, corner_coordinate_equal) = if body.first() == Some(&0x0e) {
-            let slots = scalar_slots_with_tokens(&body[1..], 9, &cache);
+            let slots = plane_envelope_scalar_slots_with_tokens_and_end(&body[1..], 9, &cache).0;
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
             scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
@@ -3304,7 +3322,7 @@ fn plane_envelopes_for_rows(payload: &[u8], all_rows: &[SurfaceRow]) -> Vec<Plan
                 ],
             )
         } else {
-            let slots = scalar_slots_with_tokens(&body, 10, &cache);
+            let slots = plane_envelope_scalar_slots_with_tokens_and_end(&body, 10, &cache).0;
             let values = slots.iter().map(|slot| slot.0).collect::<Vec<_>>();
             scalar_tokens = slots.iter().map(|slot| slot.1.clone()).collect();
             (
@@ -3389,7 +3407,7 @@ fn complete_plane_compact_scalar_suffix(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<Vec<(Option<f64>, Vec<u8>)>> {
-    let standard = scalar_slots_with_tokens(body, 10, cache);
+    let standard = plane_envelope_scalar_slots_with_tokens_and_end(body, 10, cache).0;
     if standard
         .iter()
         .all(|(value, token)| value.is_some() && !token.is_empty())
@@ -3400,10 +3418,12 @@ fn complete_plane_compact_scalar_suffix(
     let frames = scalar_frames(&tokens);
     let frame = terminal_scalar_frame(body, &frames)?;
     (frame.offset > 0 && frame.slots.len() == 9).then_some(())?;
-    frame
-        .slots
+    let (slots, consumed) =
+        plane_envelope_scalar_slots_with_tokens_and_end(&body[frame.offset..], 9, cache);
+    (consumed == body.len() - frame.offset).then_some(())?;
+    slots
         .into_iter()
-        .map(|slot| Some((Some(slot.value?), slot.raw)))
+        .map(|(value, raw)| Some((Some(value?), raw)))
         .collect()
 }
 
@@ -4495,6 +4515,25 @@ mod tests {
     }
 
     #[test]
+    fn plane_envelope_coordinates_decode_compact_positive_half() {
+        let body = [
+            0x0f, 0xe4, 0x0d, 0x0f, 0x43, 0xe0, 0x00, 0xe4, 0x0f, 0x0e, 0xe4, 0x0f,
+        ];
+        let (slots, consumed) = plane_envelope_scalar_slots_with_tokens_and_end(
+            &body,
+            10,
+            &scalar::ScalarCache::default(),
+        );
+
+        assert_eq!(consumed, body.len());
+        assert_eq!(slots[4].0, Some(-0.5));
+        assert_eq!(slots[7].0, Some(0.5));
+        assert_eq!(slot_equality(&slots[4], &slots[7]), Some(false));
+        assert_eq!(slot_equality(&slots[5], &slots[8]), Some(true));
+        assert_eq!(slot_equality(&slots[6], &slots[9]), Some(true));
+    }
+
+    #[test]
     fn decodes_named_plane_outline_with_zero_boundary_type() {
         let payload = b"srf_array\0\xf8\x01\xe0\x01geom_id\0\x07\xe0\x01geom_type\0\x22\xe0\x01feat_id\0\x04\xe0\x01orient\0\x01\xe0\x01boundary_type\0\x00\xe0\x01next_geom_ptr\0\x00\xe0\x02outline\0\xf9\x02\x03\xe4\x18\xe4\xe4\xe4\x18\xe0\x00srf_prim_ptr(plane)\0\xe3";
 
@@ -4696,7 +4735,7 @@ mod tests {
         let body = [
             0xbb, 1, 2, 3, 4, 5, 6, 0xbb, 1, 2, 3, 4, 5, 6, 0x73, 1, 2, 3, 4, 5, 6,
         ];
-        let slots = scalar_slots_with_tokens(&body, 3, &scalar::ScalarCache::default());
+        let slots = scalar_slots_with_tokens_and_end(&body, 3, &scalar::ScalarCache::default()).0;
 
         let magnitude = f64::from_be_bytes([0x3f, 0xe8, 1, 2, 3, 4, 5, 6]);
         assert_eq!(
@@ -4709,7 +4748,8 @@ mod tests {
 
     #[test]
     fn terminal_positional_slot_zero_occupies_one_byte() {
-        let slots = scalar_slots_with_tokens(&[0xe4, 0x18], 2, &scalar::ScalarCache::default());
+        let slots =
+            scalar_slots_with_tokens_and_end(&[0xe4, 0x18], 2, &scalar::ScalarCache::default()).0;
 
         assert_eq!(slots, [(Some(1.0), vec![0xe4]), (Some(0.0), vec![0x18])]);
     }
