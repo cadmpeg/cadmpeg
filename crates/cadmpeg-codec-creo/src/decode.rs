@@ -1639,6 +1639,7 @@ struct CreoSurfaceParameterRecord {
     terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
     tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
     positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
+    type24_cylinder_radius: Option<CreoType24CylinderRadius>,
     positional_cone_frame: Option<CreoPositionalConeFrame>,
     torus_outline_frame: Option<CreoTorusOutlineFrame>,
     torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
@@ -1662,6 +1663,13 @@ struct CreoPositionalCylinderFrame {
     ref_direction: [f64; 3],
     radius: f64,
     length: Option<f64>,
+}
+
+#[derive(Serialize)]
+struct CreoType24CylinderRadius {
+    radius: f64,
+    encoding: &'static str,
+    offset: usize,
 }
 
 #[derive(Serialize)]
@@ -2276,6 +2284,16 @@ fn surface_parameter_records(
                         length: frame.length,
                     }
                 }),
+                type24_cylinder_radius: record.type24_cylinder_radius(row.type_byte).map(
+                    |radius| CreoType24CylinderRadius {
+                        radius: radius.radius,
+                        encoding: match radius.encoding {
+                            crate::surface::Type24CylinderRadiusEncoding::Direct => "direct",
+                            crate::surface::Type24CylinderRadiusEncoding::Split => "split",
+                        },
+                        offset: radius.offset,
+                    },
+                ),
                 positional_cone_frame: record.positional_cone_frame.map(|frame| {
                     CreoPositionalConeFrame {
                         apex: frame.apex,

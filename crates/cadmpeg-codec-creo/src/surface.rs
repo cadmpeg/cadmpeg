@@ -447,6 +447,26 @@ pub struct LineExtrusionFrame {
     pub directrix: [[f64; 3]; 2],
 }
 
+/// Encoding of a bounded type-24 positional cylinder radius.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Type24CylinderRadiusEncoding {
+    /// Radius starts a nine-scalar body after `14`.
+    Direct,
+    /// Radius follows `12` and precedes `14` plus a seven-scalar body.
+    Split,
+}
+
+/// Positive radius retained from a bounded type-24 positional cylinder body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Type24CylinderRadius {
+    /// Stored positive radius.
+    pub radius: f64,
+    /// Exact bounded body layout.
+    pub encoding: Type24CylinderRadiusEncoding,
+    /// Radius scalar offset relative to the parameter body.
+    pub offset: usize,
+}
+
 /// One positional cubic B-spline replay bound to a following tabulated-
 /// cylinder surface row.
 #[derive(Debug, Clone, PartialEq)]
@@ -483,6 +503,50 @@ pub struct TabulatedCylinderCurveReplay {
 }
 
 impl SurfaceParameterRecord {
+    /// Decode the positive radius of a bounded type-24 cylinder body.
+    #[must_use]
+    pub fn type24_cylinder_radius(&self, type_byte: u8) -> Option<Type24CylinderRadius> {
+        (type_byte == 0x24).then_some(())?;
+        let contiguous = |frame: &SurfaceParameterScalarFrame| {
+            let mut cursor = frame.offset;
+            for slot in &frame.slots {
+                (slot.offset == cursor).then_some(())?;
+                cursor = cursor.checked_add(slot.length)?;
+            }
+            Some(cursor)
+        };
+        let (slot, encoding) = match self.scalar_frames.as_slice() {
+            [frame]
+                if self.body.first() == Some(&0x14)
+                    && frame.offset == 1
+                    && frame.slots.len() == 9
+                    && contiguous(frame) == Some(self.body.len()) =>
+            {
+                (&frame.slots[0], Type24CylinderRadiusEncoding::Direct)
+            }
+            [leading, trailing]
+                if self.body.first() == Some(&0x12)
+                    && leading.offset == 1
+                    && leading.slots.len() == 1
+                    && contiguous(leading).is_some_and(|end| {
+                        end.checked_add(1) == Some(trailing.offset)
+                            && self.body.get(end) == Some(&0x14)
+                    })
+                    && trailing.slots.len() == 7
+                    && contiguous(trailing) == Some(self.body.len()) =>
+            {
+                (&leading.slots[0], Type24CylinderRadiusEncoding::Split)
+            }
+            _ => return None,
+        };
+        let radius = slot.value?;
+        (radius.is_finite() && radius > 0.0).then_some(Type24CylinderRadius {
+            radius,
+            encoding,
+            offset: slot.offset,
+        })
+    }
+
     /// Decode the terminal positive-DICT half-angle of a positional cone body.
     #[must_use]
     pub fn cone_half_angle_override(&self, type_byte: u8) -> Option<ConeHalfAngleOverride> {
@@ -4225,6 +4289,46 @@ mod tests {
         let mut inconsistent = separated;
         inconsistent[31..34].copy_from_slice(&[0x2f, 0x12, 0x00]);
         assert!(record(&inconsistent).type24_round_radius(0x24).is_none());
+    }
+
+    #[test]
+    fn decodes_direct_and_split_type24_cylinder_radii() {
+        let record = |body: &[u8]| {
+            let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+            payload.extend_from_slice(body);
+            payload.push(0xe3);
+            parameter_records(&payload).remove(0)
+        };
+        let direct = [
+            0x14, 0x2f, 0x10, 0x00, 0x2d, 0x1f, 0x6a, 0x7a, 0x29, 0x55, 0x38, 0x5e, 0x2f, 0x43,
+            0x00, 0x48, 0x29, 0x00, 0x2f, 0x10, 0x00, 0x43, 0xe8, 0x00, 0x48, 0x27, 0x80, 0x2f,
+            0x43, 0x00, 0x2a, 0xe8, 0x00,
+        ];
+        let split = [
+            0x12, 0x2f, 0x10, 0x00, 0x14, 0x2f, 0x43, 0x00, 0x2f, 0x27, 0x80, 0x2f, 0x10, 0x00,
+            0x43, 0xe8, 0x00, 0x2f, 0x29, 0x00, 0x2f, 0x43, 0x00, 0x2a, 0xe8, 0x00,
+        ];
+
+        assert_eq!(
+            record(&direct).type24_cylinder_radius(0x24),
+            Some(Type24CylinderRadius {
+                radius: 4.0,
+                encoding: Type24CylinderRadiusEncoding::Direct,
+                offset: 1,
+            })
+        );
+        assert_eq!(
+            record(&split).type24_cylinder_radius(0x24),
+            Some(Type24CylinderRadius {
+                radius: 4.0,
+                encoding: Type24CylinderRadiusEncoding::Split,
+                offset: 1,
+            })
+        );
+        assert!(record(&direct).type24_cylinder_radius(0x25).is_none());
+        assert!(record(&direct[..direct.len() - 3])
+            .type24_cylinder_radius(0x24)
+            .is_none());
     }
 
     #[test]
