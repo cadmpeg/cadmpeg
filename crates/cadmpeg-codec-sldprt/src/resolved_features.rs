@@ -7541,13 +7541,44 @@ fn hole_position_sketch_source(
     {
         return None;
     }
-    let body = lane.native_payload.get(offset + 16..offset + 144)?;
-    let reference = body.windows(12).position(|bytes| {
-        bytes[..2] == [0x00, 0xc0]
-            && (bytes[6..12] == [0; 6] || bytes[6..12] == [0, 0, 0, 0, 0xff, 0xfe])
-    })?;
-    let source = u32::from_le_bytes(body.get(reference + 2..reference + 6)?.try_into().ok()?);
-    (source != 0 && source != u32::MAX).then_some(source)
+    let body_start = offset + 16;
+    let body_end = offset + 144;
+    let body = lane.native_payload.get(body_start..body_end)?;
+    let mut sources = body
+        .windows(12)
+        .filter_map(|bytes| {
+            (bytes[..2] == [0x00, 0xc0]
+                && (bytes[6..12] == [0; 6] || bytes[6..12] == [0, 0, 0, 0, 0xff, 0xfe]))
+            .then(|| u32::from_le_bytes(bytes[2..6].try_into().expect("four-byte source")))
+            .filter(|source| *source != 0 && *source != u32::MAX)
+        })
+        .collect::<HashSet<_>>();
+
+    sources.extend(lane.names.iter().filter_map(|child| {
+        let child_offset = usize::try_from(child.offset).ok()?;
+        if !(body_start..body_end).contains(&child_offset) {
+            return None;
+        }
+        let child_source = child.object_id?;
+        let trailer =
+            child_offset.checked_add(6 + child.value.encode_utf16().count().checked_mul(2)?)?;
+        if trailer.checked_add(12)? > body_end {
+            return None;
+        }
+        (lane.native_payload.get(trailer..trailer + 8)
+            == Some(&[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40])
+            && lane.native_payload.get(trailer + 8..trailer + 12)
+                == Some(&child_source.to_le_bytes())
+            && child_source != 0
+            && child_source != u32::MAX)
+            .then_some(child_source)
+    }));
+    let mut sources = sources.into_iter();
+    let source = sources.next()?;
+    if sources.next().is_some() {
+        return None;
+    }
+    Some(source)
 }
 
 /// Recover legacy Hole Wizard profile ownership from its adjacent typed child sources.
@@ -8107,6 +8138,59 @@ mod hole_axis_tests {
             },
             source_object: None,
         }
+    }
+
+    #[test]
+    fn embedded_position_sketch_name_resolves_its_typed_source() {
+        let history = native_history();
+        let mut lane = lane();
+        lane.native_payload.resize(200, 0);
+        lane.names.push(FeatureInputName {
+            id: "hole-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            value: "Hole".into(),
+            object_id: Some(7),
+        });
+        let hole_trailer = 6 + "Hole".encode_utf16().count() * 2;
+        lane.native_payload[hole_trailer..hole_trailer + 8]
+            .copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
+        lane.native_payload[hole_trailer + 8..hole_trailer + 12]
+            .copy_from_slice(&7u32.to_le_bytes());
+
+        let child_offset = hole_trailer + 32;
+        lane.names.push(FeatureInputName {
+            id: "position-name".into(),
+            parent: "lane".into(),
+            ordinal: 1,
+            offset: child_offset as u64,
+            value: "Position".into(),
+            object_id: Some(6),
+        });
+        let child_trailer = child_offset + 6 + "Position".encode_utf16().count() * 2;
+        lane.native_payload[child_trailer..child_trailer + 8]
+            .copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
+        lane.native_payload[child_trailer + 8..child_trailer + 12]
+            .copy_from_slice(&6u32.to_le_bytes());
+
+        assert_eq!(
+            hole_position_sketch_source(&history.features[0], &lane),
+            Some(6)
+        );
+        lane.native_payload[hole_trailer + 16..hole_trailer + 18].copy_from_slice(&[0, 0xc0]);
+        lane.native_payload[hole_trailer + 18..hole_trailer + 22]
+            .copy_from_slice(&5u32.to_le_bytes());
+        assert_eq!(
+            hole_position_sketch_source(&history.features[0], &lane),
+            None
+        );
+        lane.native_payload[hole_trailer + 16..hole_trailer + 28].fill(0);
+        lane.native_payload[child_trailer + 8] = 5;
+        assert_eq!(
+            hole_position_sketch_source(&history.features[0], &lane),
+            None
+        );
     }
 
     #[test]
