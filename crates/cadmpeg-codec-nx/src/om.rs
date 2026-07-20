@@ -801,12 +801,14 @@ pub struct OperationPayloadString<'a> {
 }
 
 /// One canonical variable-width object index in an operation payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayloadObjectReference {
     /// Absolute offset of the width marker.
     pub offset: usize,
     /// Decoded object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
 }
 
 /// Counted reference field in one bounded sketch-operation payload.
@@ -865,7 +867,7 @@ pub struct PatternPayloadTransformLane {
 }
 
 /// Exact construction header in a point-feature payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PointFeaturePayloadHeader {
     /// Construction object referenced by the header.
     pub reference: PayloadObjectReference,
@@ -1864,6 +1866,7 @@ fn sketch_reference_field(
         references.push(PayloadObjectReference {
             offset: record.payload_offset + at,
             object_index,
+            raw_object_index: record.payload[at..at + width].to_vec(),
         });
         at += width;
     }
@@ -1875,6 +1878,7 @@ fn sketch_reference_field(
     references.push(PayloadObjectReference {
         offset: record.payload_offset + at,
         object_index,
+        raw_object_index: record.payload[at..at + width].to_vec(),
     });
     at += width;
     if record.payload.get(at..at + 4) != Some(&[0x01, 0x00, 0x00, 0x00]) {
@@ -1917,6 +1921,7 @@ pub fn projected_curve_payload_references(
         Some(PayloadObjectReference {
             offset: record.payload_offset + offset,
             object_index,
+            raw_object_index: record.payload[offset..offset + width].to_vec(),
         })
     };
     let decode_field = |start: usize| match record.label.value {
@@ -2013,6 +2018,7 @@ pub fn pattern_payload_references(
         Some(PayloadObjectReference {
             offset: record.payload_offset + offset,
             object_index,
+            raw_object_index: record.payload[offset..offset + width].to_vec(),
         })
     };
     let decode_graph = |start: usize| {
@@ -2205,6 +2211,7 @@ pub fn point_feature_payload_header(
         reference: PayloadObjectReference {
             offset: record.payload_offset + reference_offset,
             object_index,
+            raw_object_index: record.payload[reference_offset..reference_offset + width].to_vec(),
         },
         mode,
     })
@@ -2277,6 +2284,7 @@ pub fn draft_feature_payload_references(
             Some(PayloadObjectReference {
                 offset: record.payload_offset + offset,
                 object_index,
+                raw_object_index: record.payload[offset..offset + width].to_vec(),
             })
         };
         let first = decode_reference(&mut at)?;
@@ -2446,6 +2454,7 @@ pub fn surface_feature_payload_references(
         Some(PayloadObjectReference {
             offset: record.payload_offset + offset,
             object_index,
+            raw_object_index: record.payload[offset..offset + width].to_vec(),
         })
     };
     let mut at = 5;
@@ -2509,6 +2518,7 @@ fn surface_feature_branch_paths(
         members.push(PayloadObjectReference {
             offset: payload_offset + cursor,
             object_index,
+            raw_object_index: payload[cursor..cursor + width].to_vec(),
         });
         cursor += width;
     }
@@ -2538,6 +2548,7 @@ fn surface_feature_branch_paths(
     let terminal = PayloadObjectReference {
         offset: payload_offset + cursor,
         object_index,
+        raw_object_index: payload[cursor..cursor + width].to_vec(),
     };
     cursor += width;
     if payload.get(cursor) != Some(&0x00) {
@@ -2566,7 +2577,7 @@ fn surface_feature_branch_paths(
                 declared_count,
                 witnessed,
                 members: members.clone(),
-                terminal,
+                terminal: terminal.clone(),
                 suffix: suffix.to_vec(),
             };
             continuation.insert(0, branch);

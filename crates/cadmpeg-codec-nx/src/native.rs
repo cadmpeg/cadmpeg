@@ -5186,6 +5186,8 @@ pub struct FeatureSketchReference {
     pub terminal: bool,
     /// Serialized object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Unique target in the native `data_blocks` arena.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub data_block: Option<String>,
@@ -9108,6 +9110,7 @@ pub fn feature_sketch_references(container: &Container) -> Vec<FeatureSketchRefe
                     declared_count,
                     terminal: ordinal == terminal_ordinal,
                     object_index: reference.object_index,
+                    raw_object_index: reference.raw_object_index,
                     data_block,
                     source_offset: entry_offset + reference.offset as u64,
                 }

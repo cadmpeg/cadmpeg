@@ -2778,7 +2778,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 147);
+    assert_eq!(namespace.version, 148);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -4936,6 +4936,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         declared_count: 2,
         terminal: ordinal == 1,
         object_index: index,
+        raw_object_index: vec![0xf0, index as u8],
         data_block: Some(format!("nx:om-data-blocks-2:block#{index}")),
         source_offset: 740 + u64::from(ordinal),
     };
@@ -6119,6 +6120,7 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
         declared_count: 2,
         terminal: ordinal == 1,
         object_index: 10 + ordinal,
+        raw_object_index: vec![0xf0, (10 + ordinal) as u8],
         data_block: block.map(str::to_string),
         source_offset: 200 + u64::from(ordinal),
     };
@@ -6150,6 +6152,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         declared_count: 2,
         terminal,
         object_index: 12 + ordinal,
+        raw_object_index: vec![0xf0, (12 + ordinal) as u8],
         data_block: block.map(str::to_string),
         source_offset: 300 + u64::from(ordinal),
     };
@@ -8039,7 +8042,10 @@ fn om_draft_feature_references_require_one_complete_graph() {
     };
     let field = crate::om::draft_feature_payload_references(record).expect("complete graph");
     assert_eq!(
-        field.references.map(|reference| reference.object_index),
+        field
+            .references
+            .clone()
+            .map(|reference| reference.object_index),
         [7036, 7037, 7038, 7039]
     );
     assert_eq!(
@@ -8257,14 +8263,29 @@ fn om_sketch_payload_reference_field_is_counted_ordered_and_canonical() {
     };
     let field = crate::om::sketch_payload_references(record).unwrap();
     assert_eq!(field.declared_count, 5);
-    let references: [crate::om::PayloadObjectReference; 5] = field.references.try_into().unwrap();
+    let references: [crate::om::PayloadObjectReference; 5] =
+        field.references.clone().try_into().unwrap();
     assert_eq!(
-        references.map(|reference| reference.object_index),
+        references.clone().map(|reference| reference.object_index),
         [255, 256, 257, 258, 259]
     );
     assert_eq!(
         references.map(|reference| reference.offset),
         [204, 206, 209, 212, 217]
+    );
+    assert_eq!(
+        field
+            .references
+            .iter()
+            .map(|reference| reference.raw_object_index.as_slice())
+            .collect::<Vec<_>>(),
+        [
+            &[0xf0, 0xff][..],
+            &[0xf1, 0x01, 0x00][..],
+            &[0xf1, 0x01, 0x01][..],
+            &[0xf1, 0x01, 0x02][..],
+            &[0xf1, 0x01, 0x03][..],
+        ]
     );
     let zero = b"\x01\x00\x00\x00\x00\xf0\x42\x01\x00\x00\x00";
     let field = crate::om::sketch_payload_references(crate::om::OperationRecord {
@@ -13409,7 +13430,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 147);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 148);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
