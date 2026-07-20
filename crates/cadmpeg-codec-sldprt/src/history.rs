@@ -2401,6 +2401,36 @@ mod history_reference_tests {
     }
 
     #[test]
+    fn configuration_snapshots_preserve_base_tree_node_roles() {
+        let light = feature("light", Some("30"), 0);
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![light],
+        };
+        let mut configured = project_features(std::slice::from_ref(&history));
+        assert!(matches!(
+            configured[0].definition,
+            FeatureDefinition::Native { .. }
+        ));
+        let mut base = configured.clone();
+        base[0].definition = FeatureDefinition::TreeNode {
+            role: FeatureTreeNodeRole::DirectionalLight,
+        };
+
+        restore_configuration_tree_node_definitions(&mut configured, &base);
+        assert!(matches!(
+            configured[0].definition,
+            FeatureDefinition::TreeNode {
+                role: FeatureTreeNodeRole::DirectionalLight
+            }
+        ));
+    }
+
+    #[test]
     fn simple_hole_uses_its_profile_dimension_roles() {
         let mut hole = feature("hole", Some("214"), 0);
         hole.xml_tag = "HoleWizard".into();
@@ -6660,6 +6690,7 @@ pub(crate) fn project_configuration_design_states(
             histories,
             scoped_lanes,
         );
+        restore_configuration_tree_node_definitions(&mut features, &ir.model.features);
         ir.model.configurations[configuration_index].feature_states = features
             .into_iter()
             .map(|feature| {
@@ -6674,6 +6705,25 @@ pub(crate) fn project_configuration_design_states(
                 )
             })
             .collect();
+    }
+}
+
+fn restore_configuration_tree_node_definitions(
+    features: &mut [cadmpeg_ir::features::Feature],
+    base_features: &[cadmpeg_ir::features::Feature],
+) {
+    let base = base_features
+        .iter()
+        .map(|feature| (&feature.id, &feature.definition))
+        .collect::<HashMap<_, _>>();
+    for feature in features {
+        if !matches!(feature.definition, FeatureDefinition::Native { .. }) {
+            continue;
+        }
+        let Some(FeatureDefinition::TreeNode { role }) = base.get(&feature.id).copied() else {
+            continue;
+        };
+        feature.definition = FeatureDefinition::TreeNode { role: *role };
     }
 }
 
