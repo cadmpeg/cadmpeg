@@ -2372,6 +2372,74 @@ fn decode_types_round_with_labeled_edge_selection() {
 }
 
 #[test]
+fn decode_identifies_variable_round_form_from_differing_complete_envelopes() {
+    let geometry = |type_bytes: [u8; 2]| {
+        let mut geometry = b"srf_array\0\xf8\x02".to_vec();
+        for ((surface_id, next_surface, diameter, extent), type_byte) in
+            [(7, 8, 1.0, [1.0, 2.0, 2.0]), (8, 0, 2.0, [2.0, 1.0, 1.0])]
+                .into_iter()
+                .zip(type_bytes)
+        {
+            geometry.extend_from_slice(&[surface_id, type_byte, 4, 0x01, 0, next_surface]);
+            geometry.push(0x15);
+            for value in [0.0, 0.0, diameter, 0.0, 0.0, 0.0]
+                .into_iter()
+                .chain(extent)
+            {
+                push_generated_scalar(&mut geometry, value);
+            }
+            geometry.push(0xe3);
+        }
+        geometry.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+        geometry
+    };
+    let allfeatur = b"\x04\xeb\x04\x00\x10\x01\x00\xe5\xe3\xf6\x83\x91\xe1".to_vec();
+    let data = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry([0x24, 0x24])),
+            ("AllFeatur", allfeatur.clone()),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+    let feature = result
+        .ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#4")
+        .expect("round feature");
+    assert!(matches!(
+        feature.definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved {
+                form: Some(cadmpeg_ir::features::RadiusForm::Variable)
+            },
+            ..
+        }
+    ));
+
+    let mixed = build_prt(
+        "c",
+        &[
+            ("VisibGeom", geometry([0x24, 0x26])),
+            ("AllFeatur", allfeatur),
+            ("MdlStatus", b"Round id 4\0".to_vec()),
+        ],
+    );
+    let mixed = decode::decode(&mut Cursor::new(mixed), &DecodeOptions::default()).expect("decode");
+    assert!(matches!(
+        mixed.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { form: None },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn decode_transfers_strong_parents_as_ordered_dependencies() {
     let mut datum = vec![4, 0x22, 1, 1, 0, 0];
     datum.extend([0x0f; 4]);

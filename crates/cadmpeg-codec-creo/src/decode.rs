@@ -18,7 +18,7 @@ use cadmpeg_ir::features::{
     Angle, BooleanOp, ChamferSpec, DesignParameter, DimensionDisplay, EdgeSelection, Extent,
     FaceSelection, Feature, FeatureDefinition as IrFeatureDefinition, FeatureId as IrFeatureId,
     FeatureSourceContent, FeatureTreeNodeRole, HoleBottom, HoleKind, Length, ParameterId,
-    ParameterValue, PatternForm, PatternKind, ProfileRef, RadiusSpec, RevolutionAxis,
+    ParameterValue, PatternForm, PatternKind, ProfileRef, RadiusForm, RadiusSpec, RevolutionAxis,
     RevolutionConstruction, SketchSpace,
 };
 use cadmpeg_ir::geometry::{
@@ -13221,6 +13221,12 @@ fn prototype_envelope_round_radius(
 }
 
 fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
+    if let Some(radius) = round_direct_radii(scan, feature_id)
+        .as_deref()
+        .and_then(unique_positive_length)
+    {
+        return Some(radius);
+    }
     let cylinder_rows = scan
         .surface_rows
         .iter()
@@ -13241,30 +13247,13 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         {
             return None;
         }
-        let radii = generated_rows
-            .iter()
-            .map(|row| {
-                let record = unique_surface_parameter_record(scan, row)?;
-                record
-                    .torus_radius_overrides(row.type_byte)
-                    .map(|overrides| overrides.radius2)
-            })
-            .collect::<Option<Vec<_>>>();
-        return radii
-            .as_deref()
-            .and_then(unique_positive_length)
-            .or_else(|| prototype_envelope_round_radius(scan, &generated_rows));
+        return prototype_envelope_round_radius(scan, &generated_rows);
     }
-    let envelope_radii = cylinder_rows
+    let generated_row_count = scan
+        .surface_rows
         .iter()
-        .map(|row| {
-            let record = unique_surface_parameter_record(scan, row)?;
-            record.type24_round_radius(row.type_byte)
-        })
-        .collect::<Option<Vec<_>>>();
-    if let Some(radius) = envelope_radii.as_deref().and_then(unique_positive_length) {
-        return Some(radius);
-    }
+        .filter(|row| row.feature_id == feature_id)
+        .count();
     let cylinder_radii = cylinder_rows
         .iter()
         .filter_map(|row| {
@@ -13279,7 +13268,7 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
                 })
         })
         .collect::<Vec<_>>();
-    if cylinder_radii.len() == cylinder_rows.len() {
+    if cylinder_rows.len() == generated_row_count && cylinder_radii.len() == cylinder_rows.len() {
         return unique_positive_length(&cylinder_radii);
     }
     let named_ids = agreed_feature_affected_ids(
@@ -13319,6 +13308,55 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         })
         .collect::<Vec<_>>();
     (support_planes.len() == support_ids.len()).then(|| parallel_support_radius(support_planes))?
+}
+
+fn round_direct_radii(scan: &ContainerScan, feature_id: u32) -> Option<Vec<f64>> {
+    let generated_rows = scan
+        .surface_rows
+        .iter()
+        .filter(|row| row.feature_id == feature_id)
+        .collect::<Vec<_>>();
+    let first_kind = generated_rows.first()?.kind;
+    if generated_rows.iter().any(|row| row.kind != first_kind) {
+        return None;
+    }
+    match first_kind {
+        crate::surface::SurfaceKind::Cylinder => generated_rows
+            .iter()
+            .map(|row| {
+                unique_surface_parameter_record(scan, row)?.type24_round_radius(row.type_byte)
+            })
+            .collect(),
+        crate::surface::SurfaceKind::TorusOrSphere => generated_rows
+            .iter()
+            .map(|row| {
+                unique_surface_parameter_record(scan, row)?
+                    .torus_radius_overrides(row.type_byte)
+                    .map(|overrides| overrides.radius2)
+            })
+            .collect(),
+        _ => None,
+    }
+}
+
+fn differing_positive_lengths(values: &[f64]) -> bool {
+    let Some(&first) = values.first() else {
+        return false;
+    };
+    if values
+        .iter()
+        .any(|value| !value.is_finite() || *value <= 0.0)
+    {
+        return false;
+    }
+    let scale = values
+        .iter()
+        .copied()
+        .map(f64::abs)
+        .fold(first.abs().max(1.0), f64::max);
+    values
+        .iter()
+        .any(|value| (*value - first).abs() > 1e-9 * scale)
 }
 
 fn unique_positive_length(values: &[f64]) -> Option<f64> {
@@ -13455,15 +13493,21 @@ fn schema_feature_definition(
         };
     }
     if schema_class == 913 {
+        let radius = round_constant_radius(scan, ir, feature_id).map_or_else(
+            || RadiusSpec::Unresolved {
+                form: round_direct_radii(scan, feature_id)
+                    .as_deref()
+                    .is_some_and(differing_positive_lengths)
+                    .then_some(RadiusForm::Variable),
+            },
+            |radius| RadiusSpec::Constant {
+                radius: Length(radius),
+            },
+        );
         return IrFeatureDefinition::Fillet {
             edges: feature_edge_selection(scan, ir, feature_id)
                 .unwrap_or(EdgeSelection::Unresolved),
-            radius: round_constant_radius(scan, ir, feature_id).map_or(
-                RadiusSpec::Unresolved { form: None },
-                |radius| RadiusSpec::Constant {
-                    radius: Length(radius),
-                },
-            ),
+            radius,
         };
     }
     if schema_class == 914 {
@@ -16092,6 +16136,9 @@ mod resolved_sketch_tests {
         assert_eq!(unique_positive_length(&[0.5, 0.5 + 1e-12]), Some(0.5));
         assert_eq!(unique_positive_length(&[0.5, 0.6]), None);
         assert_eq!(unique_positive_length(&[0.0]), None);
+        assert!(!differing_positive_lengths(&[15.0, 15.0 + 1e-12]));
+        assert!(differing_positive_lengths(&[15.0, 7.0, 15.0]));
+        assert!(!differing_positive_lengths(&[0.0, 1.0]));
         assert_eq!(
             parallel_support_radius([
                 ([-8.0, 0.0, 0.0], [1.0, 0.0, 0.0]),
