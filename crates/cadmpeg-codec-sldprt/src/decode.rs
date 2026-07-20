@@ -1665,6 +1665,14 @@ fn build_geometry_ir(
         &histories,
         &native.feature_input_lanes,
     );
+    crate::resolved_features::project_spatial_hole_position_sketches(
+        &mut ir.model.features,
+        &ir.model.spatial_sketches,
+        &ir.model.spatial_sketch_entities,
+        &ir.model.surfaces,
+        &histories,
+        &native.feature_input_lanes,
+    );
     crate::resolved_features::project_hole_axes(
         &mut ir.model.features,
         &ir.model.surfaces,
@@ -2292,6 +2300,14 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<CadIr, CodecError> {
         &mut ir.model.features,
         &ir.model.sketches,
         &ir.model.sketch_entities,
+        &histories,
+        &lanes,
+    );
+    crate::resolved_features::project_spatial_hole_position_sketches(
+        &mut ir.model.features,
+        &ir.model.spatial_sketches,
+        &ir.model.spatial_sketch_entities,
+        &ir.model.surfaces,
         &histories,
         &lanes,
     );
