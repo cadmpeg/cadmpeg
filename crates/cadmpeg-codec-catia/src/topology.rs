@@ -7247,6 +7247,26 @@ struct DeferredFaceQuotientOptions {
     base_nodes: Vec<usize>,
 }
 
+fn materialize_deferred_quotient_option(
+    base: &MeshQuotient,
+    local: &MeshQuotient,
+    base_nodes: &[usize],
+    affected_edges: impl IntoIterator<Item = usize>,
+    edge_candidates: &[Vec<[usize; 2]>],
+    budget: &MeshConstraintBudget,
+) -> Option<MeshQuotient> {
+    let mut materialized = base.clone();
+    for local_node in 0..base_nodes.len() {
+        let local_root = local.union.root(local_node);
+        if local_root != local_node {
+            materialized.merge(base_nodes[local_root], base_nodes[local_node])?;
+        }
+    }
+    materialized
+        .propagate_edge_domains_with_budget(affected_edges, edge_candidates, Some(budget))
+        .then_some(materialized)
+}
+
 fn deferred_face_quotient_options_limited(
     domain: &MeshDeferredFaceBoundary,
     edge_candidates: &[Vec<[usize; 2]>],
@@ -7377,22 +7397,16 @@ fn deferred_face_quotient_options_limited(
                 .copied()
                 .filter(|edge| !edge_candidates[*edge].is_empty())
                 .collect::<HashSet<_>>();
-            let mut materialized = base_quotient.clone();
-            for local in 0..base_nodes.len() {
-                let local_root = quotient.union.root(local);
-                if local_root != local
-                    && materialized
-                        .merge(base_nodes[local_root], base_nodes[local])
-                        .is_none()
-                {
-                    return;
-                }
-            }
-            if materialized.propagate_edge_domains_with_budget(
+            if materialize_deferred_quotient_option(
+                base_quotient,
+                quotient,
+                base_nodes,
                 affected_edges,
                 edge_candidates,
-                Some(budget),
-            ) {
+                budget,
+            )
+            .is_some()
+            {
                 output.push(quotient.clone());
             }
             return;
@@ -7991,7 +8005,115 @@ fn propagate_common_ordered_face_quotients(
     }
 }
 
-fn propagate_common_ordered_components(
+fn mesh_boundary_domain_edges(domain: &MeshFaceBoundaryDomain) -> Vec<usize> {
+    let mut edges = match domain {
+        MeshFaceBoundaryDomain::Ordered(assignments) => assignments
+            .iter()
+            .flat_map(|assignment| assignment.boundaries.iter().flatten())
+            .map(|use_| use_.edge)
+            .collect::<Vec<_>>(),
+        MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.clone(),
+        MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+            let mut edges = domain.missing_edges.clone();
+            edges.extend(
+                domain
+                    .cycles
+                    .iter()
+                    .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
+            );
+            edges
+        }
+    };
+    edges.sort_unstable();
+    edges.dedup();
+    edges
+}
+
+fn advance_boundary_component_states(
+    domain: &MeshFaceBoundaryDomain,
+    states: &[MeshQuotientGaugeState],
+    edge_candidates: &[Vec<[usize; 2]>],
+    limit: usize,
+    budget: &MeshConstraintBudget,
+) -> Option<Vec<MeshQuotientGaugeState>> {
+    let mut next = Vec::new();
+    let mut signatures = HashSet::new();
+    let domain_edges = mesh_boundary_domain_edges(domain);
+    for (state, oriented_edges) in states {
+        let remaining = limit.saturating_add(1).saturating_sub(next.len());
+        if remaining == 0 {
+            return None;
+        }
+        let candidates = match domain {
+            MeshFaceBoundaryDomain::Ordered(assignments) => assignments
+                .iter()
+                .flat_map(|assignment| {
+                    state
+                        .assignment_options_limited(
+                            assignment,
+                            edge_candidates,
+                            oriented_edges,
+                            remaining,
+                            Some(budget),
+                        )
+                        .into_iter()
+                        .map(|(_, quotient)| quotient)
+                })
+                .collect::<Vec<_>>(),
+            MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+                let options = deferred_face_quotient_options_limited(
+                    domain,
+                    edge_candidates,
+                    state,
+                    remaining,
+                    budget,
+                )?;
+                if options.alternatives.is_empty() && domain.missing_edges.is_empty() {
+                    vec![state.clone()]
+                } else {
+                    let affected_edges = domain_edges
+                        .iter()
+                        .copied()
+                        .filter(|edge| !edge_candidates[*edge].is_empty())
+                        .collect::<HashSet<_>>();
+                    options
+                        .alternatives
+                        .iter()
+                        .filter_map(|local| {
+                            materialize_deferred_quotient_option(
+                                state,
+                                local,
+                                &options.base_nodes,
+                                affected_edges.iter().copied(),
+                                edge_candidates,
+                                budget,
+                            )
+                        })
+                        .collect()
+                }
+            }
+            MeshFaceBoundaryDomain::UnorderedFullCycle(_) => return None,
+        };
+        for mut candidate in candidates {
+            let mut next_oriented = oriented_edges.clone();
+            next_oriented.extend(domain_edges.iter().copied());
+            let mut oriented_signature = next_oriented.iter().copied().collect::<Vec<_>>();
+            oriented_signature.sort_unstable();
+            if signatures.insert((candidate.signature(), oriented_signature)) {
+                next.push((candidate, next_oriented));
+            }
+            if next.len() > limit {
+                return None;
+            }
+        }
+        if budget.exhausted.get() {
+            return None;
+        }
+    }
+    (!next.is_empty()).then_some(next)
+}
+
+fn propagate_common_boundary_components(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
     quotient: &mut MeshQuotient,
@@ -8003,13 +8125,9 @@ fn propagate_common_ordered_components(
         .iter()
         .enumerate()
         .filter_map(|(face, domain)| {
-            let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
-                return None;
-            };
-            assignments
-                .iter()
-                .flat_map(|assignment| assignment.boundaries.iter().flatten())
-                .any(|use_| edge_candidates[use_.edge].is_empty())
+            mesh_boundary_domain_edges(domain)
+                .into_iter()
+                .any(|edge| edge_candidates[edge].is_empty())
                 .then_some(face)
         })
         .collect::<Vec<_>>();
@@ -8021,15 +8139,8 @@ fn propagate_common_ordered_components(
     let mut components = UnionFind::new(active_faces.len());
     let mut edge_owner = HashMap::<usize, usize>::new();
     for &face in &active_faces {
-        let MeshFaceBoundaryDomain::Ordered(assignments) = &domains[face] else {
-            continue;
-        };
         let index = active_index[&face];
-        for edge in assignments
-            .iter()
-            .flat_map(|assignment| assignment.boundaries.iter().flatten())
-            .map(|use_| use_.edge)
-        {
+        for edge in mesh_boundary_domain_edges(&domains[face]) {
             if let Some(previous) = edge_owner.insert(edge, index) {
                 components.union(previous, index);
             }
@@ -8044,22 +8155,25 @@ fn propagate_common_ordered_components(
     face_components.sort_by_key(|faces| faces.iter().copied().min().unwrap_or(usize::MAX));
 
     for mut faces in face_components {
-        let face_key = |face: usize| {
-            let MeshFaceBoundaryDomain::Ordered(assignments) = &domains[face] else {
-                return (usize::MAX, usize::MAX, face);
-            };
-            let direction_work = assignments
-                .iter()
-                .map(|assignment| {
-                    assignment
-                        .boundaries
-                        .iter()
-                        .flatten()
-                        .filter(|use_| use_.reversed.is_none())
-                        .count()
-                })
-                .sum::<usize>();
-            (assignments.len(), direction_work, face)
+        let face_key = |face: usize| match &domains[face] {
+            MeshFaceBoundaryDomain::Ordered(assignments) => {
+                let direction_work = assignments
+                    .iter()
+                    .map(|assignment| {
+                        assignment
+                            .boundaries
+                            .iter()
+                            .flatten()
+                            .filter(|use_| use_.reversed.is_none())
+                            .count()
+                    })
+                    .sum::<usize>();
+                (0, assignments.len(), direction_work, face)
+            }
+            MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+                (1, domain.missing_edges.len(), 0, face)
+            }
+            MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => (2, edges.len(), 0, face),
         };
         let mut ordered_faces = Vec::with_capacity(faces.len());
         let mut selected_edges = HashSet::new();
@@ -8068,88 +8182,46 @@ fn propagate_common_ordered_components(
                 .iter()
                 .enumerate()
                 .min_by_key(|(_, face)| {
-                    let shared = match &domains[**face] {
-                        MeshFaceBoundaryDomain::Ordered(assignments) => assignments
-                            .iter()
-                            .flat_map(|assignment| assignment.boundaries.iter().flatten())
-                            .filter(|use_| selected_edges.contains(&use_.edge))
-                            .count(),
-                        MeshFaceBoundaryDomain::UnorderedFullCycle(_)
-                        | MeshFaceBoundaryDomain::DeferredValidation(_) => 0,
-                    };
-                    (usize::MAX - shared, face_key(**face))
+                    let shared = mesh_boundary_domain_edges(&domains[**face])
+                        .into_iter()
+                        .filter(|edge| selected_edges.contains(edge))
+                        .count();
+                    let key = face_key(**face);
+                    (key.0, usize::MAX - shared, key)
                 })
                 .map(|(index, _)| index)?;
             let face = faces.swap_remove(next);
-            if let MeshFaceBoundaryDomain::Ordered(assignments) = &domains[face] {
-                selected_edges.extend(
-                    assignments
-                        .iter()
-                        .flat_map(|assignment| assignment.boundaries.iter().flatten())
-                        .map(|use_| use_.edge),
-                );
-            }
+            selected_edges.extend(mesh_boundary_domain_edges(&domains[face]));
             ordered_faces.push(face);
         }
-        let budget = MeshConstraintBudget::new(MAX_COMPONENT_OPERATIONS);
-        let mut states = vec![(quotient.clone(), HashSet::<usize>::new())];
-        let mut complete = true;
-        let mut processed = 0usize;
-        for face in ordered_faces {
-            let MeshFaceBoundaryDomain::Ordered(assignments) = &domains[face] else {
-                continue;
-            };
-            let mut next = Vec::new();
-            let mut signatures = HashSet::new();
-            for (state, oriented_edges) in &states {
-                for assignment in assignments {
-                    let remaining = MAX_COMPONENT_STATES
-                        .saturating_add(1)
-                        .saturating_sub(next.len());
-                    if remaining == 0 {
-                        break;
-                    }
-                    for (_, mut candidate) in state.assignment_options_limited(
-                        assignment,
-                        edge_candidates,
-                        oriented_edges,
-                        remaining,
-                        Some(&budget),
-                    ) {
-                        let mut next_oriented = oriented_edges.clone();
-                        next_oriented
-                            .extend(assignment.boundaries.iter().flatten().map(|use_| use_.edge));
-                        let mut oriented_signature =
-                            next_oriented.iter().copied().collect::<Vec<_>>();
-                        oriented_signature.sort_unstable();
-                        if signatures.insert((candidate.signature(), oriented_signature)) {
-                            next.push((candidate, next_oriented));
-                        }
-                        if next.len() > MAX_COMPONENT_STATES {
-                            break;
-                        }
-                    }
-                    if next.len() > MAX_COMPONENT_STATES || budget.exhausted.get() {
-                        break;
-                    }
-                }
-                if next.len() > MAX_COMPONENT_STATES || budget.exhausted.get() {
+        let mut cursor = 0usize;
+        while cursor < ordered_faces.len() {
+            let budget = MeshConstraintBudget::new(MAX_COMPONENT_OPERATIONS);
+            let mut states = vec![(quotient.clone(), HashSet::<usize>::new())];
+            let mut processed = 0usize;
+            while let Some(&face) = ordered_faces.get(cursor + processed) {
+                let Some(next) = advance_boundary_component_states(
+                    &domains[face],
+                    &states,
+                    edge_candidates,
+                    MAX_COMPONENT_STATES,
+                    &budget,
+                ) else {
                     break;
-                }
+                };
+                states = next;
+                processed += 1;
             }
-            if next.is_empty() || next.len() > MAX_COMPONENT_STATES || budget.exhausted.get() {
-                complete = false;
-                break;
+            if processed == 0 {
+                cursor += 1;
+                continue;
             }
-            states = next;
-            processed += 1;
-        }
-        if complete || processed > 0 {
             propagate_common_full_quotients(
                 states.into_iter().map(|(state, _)| state).collect(),
                 edge_candidates,
                 quotient,
             )?;
+            cursor += processed;
         }
     }
     Some(())
@@ -9973,7 +10045,7 @@ where
             None if common_budget.exhausted.get() => {}
             None => return None,
         }
-        propagate_common_ordered_components(&mesh_domains, edge_candidates, &mut mesh_quotient)?;
+        propagate_common_boundary_components(&mesh_domains, edge_candidates, &mut mesh_quotient)?;
         complete_mesh_endpoint_candidates_from_quotient(
             edge_candidates,
             &mut mesh_quotient,
@@ -11598,11 +11670,46 @@ mod motif_tests {
             members: (0..4).map(|node| vec![node]).collect(),
         };
 
-        super::propagate_common_ordered_components(&domains, &candidates, &mut quotient)
+        super::propagate_common_boundary_components(&domains, &candidates, &mut quotient)
             .expect("ordered component quotient");
 
         assert_eq!(quotient.union.find(0), quotient.union.find(3));
         assert_eq!(quotient.union.find(1), quotient.union.find(2));
+    }
+
+    #[test]
+    fn deferred_components_select_gap_orders_in_the_abstract_quotient() {
+        let use_ = |edge, start| MeshBoundaryEdgeCandidate {
+            edge,
+            start,
+            end: (start + 1) % 4,
+            reversed: Some(false),
+        };
+        let domains = [MeshFaceBoundaryDomain::DeferredValidation(
+            super::MeshDeferredFaceBoundary {
+                cycles: vec![super::MeshDeferredBoundaryCycle {
+                    length: 4,
+                    exact_uses: vec![(use_(0, 0), 1), (use_(1, 2), 1)],
+                }],
+                missing_edges: vec![2, 3],
+            },
+        )];
+        let candidates = vec![Vec::new(); 4];
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(8),
+            domains: (0..8)
+                .map(|node| Arc::new(HashSet::from([[0, 1, 2, 3, 1, 2, 3, 0][node]])))
+                .collect(),
+            members: (0..8).map(|node| vec![node]).collect(),
+        };
+
+        super::propagate_common_boundary_components(&domains, &candidates, &mut quotient)
+            .expect("deferred component quotient");
+
+        assert_eq!(quotient.union.find(1), quotient.union.find(4));
+        assert_eq!(quotient.union.find(5), quotient.union.find(2));
+        assert_eq!(quotient.union.find(3), quotient.union.find(6));
+        assert_eq!(quotient.union.find(7), quotient.union.find(0));
     }
 
     #[test]
