@@ -2033,6 +2033,13 @@ direction, and a complete saved arc or circle generates a cylinder whose axis
 is the sweep direction. The generated surface row must belong to the sweep
 feature and have the matching plane or cylinder family.
 
+Source-bound positional cylinders also define a blind linear-sweep extent when
+every such cylinder owned by the feature starts in the resolved section plane,
+has the same directed axis parallel to the section normal, and stores the same
+positive finite length. The stored cylinder length takes precedence over
+unbound same-feature plane offsets. A missing length or disagreement in start
+plane, direction, or length leaves the extent unresolved.
+
 The generated-table source identifier remains part of the owning feature's design record even when the corresponding positional section entity is not decoded. It identifies the source section entity; it is not a global geometry identifier or a generated-table ordinal.
 
 The positional `order_table` opener is `f8 <count> f7 <table_class> fb e2 f7

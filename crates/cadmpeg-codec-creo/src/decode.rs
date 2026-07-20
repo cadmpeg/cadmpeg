@@ -5869,6 +5869,85 @@ fn feature_outline_planes(scan: &ContainerScan, feature_id: u32) -> Vec<(u32, [f
         .collect()
 }
 
+fn generated_arc_cylinder_extent(
+    scan: &ContainerScan,
+    definition: &crate::feature::FeatureDefinition,
+    transform: &crate::placement::FeatureSectionTransform,
+) -> Option<(Extent, [f64; 3])> {
+    let feature_id = definition.owner_feature_id?;
+    definition.segments.as_ref()?.is_complete().then_some(())?;
+    let mut frames = Vec::new();
+    let mut surface_ids = BTreeSet::new();
+    for entry in scan
+        .feature_entity_tables
+        .iter()
+        .filter(|table| table.feature_id == Some(feature_id))
+        .flat_map(|table| &table.entries)
+    {
+        let Some(source_id) = entry.source_entity_id else {
+            continue;
+        };
+        let Some(segment) = definition.segments.as_ref()?.segment(source_id) else {
+            continue;
+        };
+        if segment.kind != crate::feature::FeatureSegmentKind::Arc {
+            continue;
+        }
+        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, entry.entity_id)
+            .filter(|row| {
+                row.feature_id == feature_id && row.kind == crate::surface::SurfaceKind::Cylinder
+            })
+        else {
+            continue;
+        };
+        let frame = crate::surface::unique_surface_parameter(&scan.surface_parameters, row.id)?
+            .positional_cylinder_frame?;
+        surface_ids.insert(row.id).then_some(())?;
+        frames.push(frame);
+    }
+    (!frames.is_empty()).then_some(())?;
+    agreed_generated_cylinder_extent(transform, &frames)
+}
+
+fn agreed_generated_cylinder_extent(
+    transform: &crate::placement::FeatureSectionTransform,
+    frames: &[crate::surface::PositionalCylinderFrame],
+) -> Option<(Extent, [f64; 3])> {
+    let normal = normalized(transform.normal)?;
+    let first = *frames.first()?;
+    let length = first.length.filter(|length| *length > 0.0)?;
+    let direction = normalized(first.axis)?;
+    let close =
+        |left: f64, right: f64| (left - right).abs() <= 1e-9 * left.abs().max(right.abs()).max(1.0);
+    frames
+        .iter()
+        .all(|frame| {
+            frame
+                .length
+                .is_some_and(|candidate| close(candidate, length))
+                && normalized(frame.axis).is_some_and(|axis| {
+                    axis.iter()
+                        .zip(direction)
+                        .all(|(left, right)| close(*left, right))
+                })
+                && close(
+                    dot(
+                        std::array::from_fn(|index| frame.origin[index] - transform.origin[index]),
+                        normal,
+                    ),
+                    0.0,
+                )
+        })
+        .then_some(())?;
+    close(dot(direction, normal).abs(), 1.0).then_some(())?;
+    Some((
+        Extent::Blind {
+            length: Length(length),
+        },
+        direction,
+    ))
+}
+
 #[cfg(test)]
 fn extruded_segment_surface(
     transform: &crate::placement::FeatureSectionTransform,
@@ -13639,13 +13718,17 @@ fn schema_feature_definition(
                 feature_sketch_record_id_in_scan(scan, definition),
             )
         });
-        let construction =
-            if let ([transform], Some(profile)) = (transforms.as_slice(), profile.clone()) {
-                extrusion_extent_and_direction(
-                    transform.origin,
-                    transform.normal,
-                    feature_plane_equations(scan, feature_id),
-                )
+        let construction = if let ([transform], Some(profile), Some(definition)) =
+            (transforms.as_slice(), profile.clone(), definition)
+        {
+            generated_arc_cylinder_extent(scan, definition, transform)
+                .or_else(|| {
+                    extrusion_extent_and_direction(
+                        transform.origin,
+                        transform.normal,
+                        feature_plane_equations(scan, feature_id),
+                    )
+                })
                 .map(|(extent, direction)| {
                     (
                         profile,
@@ -13653,9 +13736,9 @@ fn schema_feature_definition(
                         extent,
                     )
                 })
-            } else {
-                None
-            };
+        } else {
+            None
+        };
         let (profile, direction, extent) = construction.unwrap_or((
             profile.unwrap_or(ProfileRef::Unresolved),
             None,
@@ -16316,6 +16399,55 @@ mod resolved_sketch_tests {
                 [-0.0, 1.0, -0.0],
             ))
         );
+    }
+
+    #[test]
+    fn agreeing_generated_cylinders_define_blind_extrusion_extent() {
+        let transform = crate::placement::FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(40),
+            origin: [0.0, 4.0, 0.0],
+            u_axis: [1.0, 0.0, 0.0],
+            v_axis: [0.0, 0.0, -1.0],
+            normal: [0.0, 1.0, 0.0],
+            offset: 100,
+        };
+        let frame = |origin| crate::surface::PositionalCylinderFrame {
+            origin,
+            axis: [0.0, 1.0, 0.0],
+            ref_direction: [1.0, 0.0, 0.0],
+            radius: 0.75,
+            length: Some(34.0),
+        };
+        let frames = [frame([-12.5, 4.0, 0.0]), frame([12.5, 4.0, 0.0])];
+        assert_eq!(
+            agreed_generated_cylinder_extent(&transform, &frames),
+            Some((
+                Extent::Blind {
+                    length: Length(34.0)
+                },
+                [0.0, 1.0, 0.0]
+            ))
+        );
+
+        let mut inconsistent = frames;
+        inconsistent[1].length = Some(33.0);
+        assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
+        inconsistent = frames;
+        inconsistent[1].origin[1] = 5.0;
+        assert!(agreed_generated_cylinder_extent(&transform, &inconsistent).is_none());
+
+        let diagonal = 0.5_f64.sqrt();
+        let diagonal_transform = crate::placement::FeatureSectionTransform {
+            normal: [diagonal, diagonal, 0.0],
+            ..transform
+        };
+        let perpendicular = [crate::surface::PositionalCylinderFrame {
+            origin: diagonal_transform.origin,
+            axis: [diagonal, -diagonal, 0.0],
+            ..frames[0]
+        }];
+        assert!(agreed_generated_cylinder_extent(&diagonal_transform, &perpendicular).is_none());
     }
 
     #[test]
