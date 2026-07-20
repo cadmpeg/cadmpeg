@@ -6494,7 +6494,19 @@ fn native_namespace_retains_surface_alias_core() {
     assert_eq!(row.tag, 0x0012_3456);
     assert_eq!(row.tag_raw, 0xab12_3456);
     assert_eq!(row.entity_record_ordinal, 7);
+    assert!(row.design_object.is_none());
     assert_eq!((row.f2, row.f3), (0x1122_3344, 0x5566_7788));
+
+    let mut invalid = native;
+    invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store unresolved alias with a design-object link");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]
@@ -6517,6 +6529,19 @@ fn native_alias_f1_resolves_primary_object_record() {
         row.object_record.as_deref(),
         Some("catia:outer:object-record#0000000028")
     );
+    let record = &native.object_graphs[0].records[1];
+    assert_eq!(row.design_object, record.design_object);
+
+    let mut invalid = native;
+    invalid.alias_rows[0].design_object = Some("catia:missing-design-object".to_string());
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut namespace)
+        .expect("store invalid alias design-object link");
+    assert!(matches!(
+        crate::native::CatiaNative::load(&namespace),
+        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
+    ));
 }
 
 #[test]

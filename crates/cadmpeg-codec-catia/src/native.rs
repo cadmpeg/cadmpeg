@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 56;
+pub const CATIA_NATIVE_VERSION: u32 = 57;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -242,6 +242,9 @@ pub struct CatiaAliasRow {
     /// One-based F1 ordinal resolved to its exact `7C09` record.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_record: Option<String>,
+    /// Design object owning the selected record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_object: Option<String>,
     /// First trailing fixed-width field.
     pub f2: u32,
     /// Second trailing fixed-width field.
@@ -1146,15 +1149,27 @@ fn validate_native_links(
             .and_then(|index| {
                 let graph = primary_graph?;
                 let record = graph.records.get(index)?;
-                Some((graph.id.as_str(), record.id.as_str()))
+                Some((
+                    graph.id.as_str(),
+                    record.id.as_str(),
+                    record.design_object.as_deref(),
+                ))
             });
-        let stored = alias
-            .object_graph
-            .as_deref()
-            .zip(alias.object_record.as_deref());
-        if stored != expected {
+        let valid = expected.map_or_else(
+            || {
+                alias.object_graph.is_none()
+                    && alias.object_record.is_none()
+                    && alias.design_object.is_none()
+            },
+            |(graph, record, object)| {
+                alias.object_graph.as_deref() == Some(graph)
+                    && alias.object_record.as_deref() == Some(record)
+                    && alias.design_object.as_deref() == object
+            },
+        );
+        if !valid {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "alias row `{}` has an invalid graph-record link",
+                "alias row `{}` has invalid graph, record, or design-object links",
                 alias.id
             )));
         }
@@ -1229,6 +1244,7 @@ impl CatiaNative {
                 };
                 row.object_graph = Some(graph.id.clone());
                 row.object_record = Some(record.id.clone());
+                row.design_object.clone_from(&record.design_object);
             }
         }
         let value_blocks = parsed_value_blocks
@@ -1642,6 +1658,7 @@ impl From<object_graph::SurfaceAlias> for CatiaAliasRow {
             entity_record_ordinal: row.entity_record_ordinal,
             object_graph: None,
             object_record: None,
+            design_object: None,
             f2: row.f2,
             f3: row.f3,
         }
