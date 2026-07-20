@@ -5731,14 +5731,15 @@ fn initial_mesh_quotient(
         .then_some(quotient)
 }
 
-fn complete_mesh_endpoint_candidates_from_ports(
+fn complete_mesh_endpoint_candidates_from_quotient(
     edge_candidates: &[Vec<[usize; 2]>],
-    point_count: usize,
-    port_identities: &[[u32; 2]],
+    quotient: &mut MeshQuotient,
     max_pairs_per_edge: usize,
     max_pairs_total: usize,
 ) -> Option<Vec<Vec<[usize; 2]>>> {
-    let mut quotient = initial_mesh_quotient(edge_candidates, point_count, port_identities)?;
+    if quotient.union.len() != edge_candidates.len().checked_mul(2)? {
+        return None;
+    }
     let mut pair_count = 0usize;
     edge_candidates
         .iter()
@@ -7236,6 +7237,100 @@ impl MeshQuotient {
             .into_iter()
             .map(|solution| roots.iter().copied().zip(solution).collect())
             .collect()
+    }
+}
+
+fn propagate_common_ordered_face_quotients(
+    domains: &[MeshFaceBoundaryDomain],
+    edge_candidates: &[Vec<[usize; 2]>],
+    quotient: &mut MeshQuotient,
+    budget: &MeshConstraintBudget,
+) -> Option<()> {
+    const MAX_FACE_OPTIONS: usize = 4_096;
+
+    loop {
+        let before = quotient.signature();
+        for domain in domains {
+            let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
+                continue;
+            };
+            let mut alternatives = Vec::new();
+            let mut truncated = false;
+            for assignment in assignments {
+                let options = quotient.assignment_options_limited(
+                    assignment,
+                    edge_candidates,
+                    &HashSet::new(),
+                    MAX_FACE_OPTIONS + 1,
+                    Some(budget),
+                );
+                if budget.exhausted.get() {
+                    return None;
+                }
+                if options.len() > MAX_FACE_OPTIONS {
+                    truncated = true;
+                    break;
+                }
+                alternatives.extend(options.into_iter().map(|(_, quotient)| quotient));
+                if alternatives.len() > MAX_FACE_OPTIONS {
+                    truncated = true;
+                    break;
+                }
+            }
+            if truncated {
+                continue;
+            }
+            if alternatives.is_empty() {
+                return None;
+            }
+
+            let node_count = quotient.union.len();
+            let mut equivalence_classes = HashMap::<Vec<usize>, Vec<usize>>::new();
+            for node in 0..node_count {
+                let signature = alternatives
+                    .iter_mut()
+                    .map(|alternative| alternative.union.find(node))
+                    .collect::<Vec<_>>();
+                equivalence_classes.entry(signature).or_default().push(node);
+            }
+            for nodes in equivalence_classes.into_values() {
+                let Some((&representative, rest)) = nodes.split_first() else {
+                    continue;
+                };
+                for &node in rest {
+                    quotient.merge(representative, node)?;
+                }
+            }
+
+            let mut roots = Vec::new();
+            for node in 0..node_count {
+                if quotient.union.find(node) == node {
+                    roots.push(node);
+                }
+            }
+            for root in roots {
+                let representative = quotient.members[root][0];
+                let mut allowed = HashSet::new();
+                for alternative in &mut alternatives {
+                    let alternative_root = alternative.union.find(representative);
+                    allowed.extend(alternative.domains[alternative_root].iter().copied());
+                }
+                let narrowed = quotient.domains[root]
+                    .intersection(&allowed)
+                    .copied()
+                    .collect::<HashSet<_>>();
+                if narrowed.is_empty() {
+                    return None;
+                }
+                quotient.domains[root] = Arc::new(narrowed);
+            }
+            if !quotient.edge_domains_viable(edge_candidates) {
+                return None;
+            }
+        }
+        if quotient.signature() == before {
+            return Some(());
+        }
     }
 }
 
@@ -9103,15 +9198,33 @@ where
     if port_identities.len() != edge_rows.len() {
         return None;
     }
-    let edge_candidates = complete_mesh_endpoint_candidates_from_ports(
-        edge_candidates,
-        vertex_points.len(),
-        &port_identities,
-        MAX_COMPLETED_PAIRS_PER_EDGE,
-        MAX_COMPLETED_PAIRS_TOTAL,
-    )?;
-    let mesh_quotient =
-        initial_mesh_quotient(&edge_candidates, vertex_points.len(), &port_identities)?;
+    let mut mesh_quotient =
+        initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)?;
+    let edge_candidates = if edge_candidates.iter().any(Vec::is_empty) {
+        let common_budget = MeshConstraintBudget::new(MAX_MESH_CONSTRAINT_OPERATIONS);
+        let mut propagated_quotient = mesh_quotient.clone();
+        match propagate_common_ordered_face_quotients(
+            &mesh_domains,
+            edge_candidates,
+            &mut propagated_quotient,
+            &common_budget,
+        ) {
+            Some(()) => mesh_quotient = propagated_quotient,
+            None if common_budget.exhausted.get() => {}
+            None => return None,
+        }
+        complete_mesh_endpoint_candidates_from_quotient(
+            edge_candidates,
+            &mut mesh_quotient,
+            MAX_COMPLETED_PAIRS_PER_EDGE,
+            MAX_COMPLETED_PAIRS_TOTAL,
+        )?
+    } else {
+        edge_candidates.to_vec()
+    };
+    if !mesh_quotient.edge_domains_viable(&edge_candidates) {
+        return None;
+    }
     let pair_solutions = incidence_endpoint_pair_solutions(
         &edge_rows,
         &vertex_points,
@@ -10834,10 +10947,13 @@ mod motif_tests {
 
     #[test]
     fn port_quotient_completes_only_supported_unknown_edge_pairs() {
-        let completed = super::complete_mesh_endpoint_candidates_from_ports(
-            &[vec![[0, 1]], Vec::new(), vec![[2, 3]]],
-            5,
-            &[[10, 11], [10, 12], [12, 13]],
+        let candidates = [vec![[0, 1]], Vec::new(), vec![[2, 3]]];
+        let mut quotient =
+            super::initial_mesh_quotient(&candidates, 5, &[[10, 11], [10, 12], [12, 13]])
+                .expect("initial quotient");
+        let completed = super::complete_mesh_endpoint_candidates_from_quotient(
+            &candidates,
+            &mut quotient,
             16,
             32,
         )
@@ -10850,14 +10966,54 @@ mod motif_tests {
 
     #[test]
     fn port_quotient_declines_unbounded_unknown_edge_pairs() {
-        assert!(super::complete_mesh_endpoint_candidates_from_ports(
-            &[Vec::new()],
-            100,
-            &[[10, 11]],
+        let candidates = [Vec::new()];
+        let mut quotient =
+            super::initial_mesh_quotient(&candidates, 100, &[[10, 11]]).expect("initial quotient");
+        assert!(super::complete_mesh_endpoint_candidates_from_quotient(
+            &candidates,
+            &mut quotient,
             1_000,
             1_000,
         )
         .is_none());
+    }
+
+    #[test]
+    fn ordered_face_equations_narrow_unknown_edge_roots_before_pair_completion() {
+        let edge_candidates = vec![vec![[0, 1]], Vec::new(), vec![[0, 2]]];
+        let mut quotient =
+            super::initial_mesh_quotient(&edge_candidates, 3, &[[10, 11], [12, 13], [14, 15]])
+                .expect("initial quotient");
+        let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![(0..3)
+                    .map(|edge| MeshBoundaryEdgeCandidate {
+                        edge,
+                        start: 0,
+                        end: 0,
+                        reversed: Some(false),
+                    })
+                    .collect()],
+            },
+        ])];
+        let budget = super::MeshConstraintBudget::new(10_000);
+
+        super::propagate_common_ordered_face_quotients(
+            &domains,
+            &edge_candidates,
+            &mut quotient,
+            &budget,
+        )
+        .expect("common face equations");
+        let completed = super::complete_mesh_endpoint_candidates_from_quotient(
+            &edge_candidates,
+            &mut quotient,
+            16,
+            32,
+        )
+        .expect("completed edge domain");
+
+        assert_eq!(completed[1], vec![[1, 2]]);
     }
 
     #[test]
