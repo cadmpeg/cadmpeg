@@ -1715,6 +1715,14 @@ pub struct DesignEdgeIdentityOperand {
     /// ASM history states containing the identity, in history arena order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub historical_state_ids: Vec<i64>,
+    /// Deleted source edges proved by newly inserted radius carriers and their
+    /// two surviving support faces in the owning feature transition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub treatment_radius_candidates: Vec<DesignEdgeTreatmentRadiusCandidate>,
+    /// Deleted source-edge slots proved by a new treatment face joining two
+    /// surviving support faces in the owning feature transition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transition_edge_candidates: Vec<i64>,
     /// Unique edge slot selected in the owning feature's preceding state.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolved_edge_slot: Option<i64>,

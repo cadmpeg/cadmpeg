@@ -2505,8 +2505,7 @@ fn resolved_edge_group(
             .collect::<Vec<_>>();
         match matches.as_slice() {
             [operand] => {
-                operand.recipe_structure.is_some()
-                    || operand.resolved_edge_slot.is_some()
+                operand.resolved_edge_slot.is_some()
                     || !operand.changed_boundary_edge_slots.is_empty()
                     || !operand.deleted_boundary_edge_slots.is_empty()
                     || !operand.treatment_radius_candidates.is_empty()
@@ -2514,14 +2513,43 @@ fn resolved_edge_group(
             _ => false,
         }
     });
+    let identity_transition_slots = identity_matches.as_ref().and_then(|operands| {
+        let [operand] = operands.as_slice() else {
+            return None;
+        };
+        let mut edges = operand.transition_edge_candidates.clone();
+        edges.sort_unstable();
+        edges.dedup();
+        (!edges.is_empty()).then_some(edges)
+    });
     let has_complete_identity_selection = identity_matches.as_ref().is_some_and(|operands| {
         !operands.is_empty()
-            && operands
+            && (operands
                 .iter()
                 .all(|operand| operand.resolved_edge_slot.is_some())
+                || identity_transition_slots.is_some())
     });
+    let recipe_corroborates_identity_transition =
+        identity_transition_slots.as_ref().is_some_and(|slots| {
+            group.members.len() == 1
+                && operands
+                    .iter()
+                    .filter(|operand| {
+                        native_stream(&operand.id) == stream
+                            && operand.scope_record_index == group.scope_record_index
+                            && operand.record_index == group.members[0]
+                    })
+                    .all(|operand| {
+                        slots.iter().all(|slot| {
+                            operand.changed_boundary_edge_slots.contains(slot)
+                                || operand.deleted_boundary_edge_slots.contains(slot)
+                        })
+                    })
+        });
     if let Some(identity_matches) = identity_matches.as_ref().filter(|_| {
-        !has_recipe_operands || (has_complete_identity_selection && !has_concrete_recipe_evidence)
+        !has_recipe_operands
+            || (has_complete_identity_selection
+                && (!has_concrete_recipe_evidence || recipe_corroborates_identity_transition))
     }) {
         if identity_matches.is_empty() {
             return unmatched_selection(previous_state_id);
@@ -2530,12 +2558,27 @@ fn resolved_edge_group(
             return unmatched_selection(None);
         };
         let state = feature_input_topology_id(feature_id, previous_state_id);
+        if identity_matches.len() == 1 && identity_matches[0].resolved_edge_slot.is_none() {
+            if let Some(edges) = identity_transition_slots.as_ref() {
+                return EdgeSelection::Historical {
+                    state,
+                    edges: edges
+                        .iter()
+                        .map(|edge_slot| {
+                            HistoricalEdgeId(format!(
+                                "f3d:history-input:edge#{}:{}:{previous_state_id}:{edge_slot}",
+                                feature_key.len(),
+                                feature_key
+                            ))
+                        })
+                        .collect(),
+                    native: group.id.clone(),
+                };
+            }
+        }
         let members = identity_matches
             .iter()
-            .map(|operand| {
-                let edge = operand.resolved_edge_slot;
-                (operand.id.as_str(), edge)
-            })
+            .map(|operand| (operand.id.as_str(), operand.resolved_edge_slot))
             .collect::<Vec<_>>();
         if members.iter().all(|(_, edge)| edge.is_some()) {
             let edges = members
@@ -16148,6 +16191,8 @@ pub fn decode_edge_identity_operands(
                 historical_entity_kind: None,
                 historical_entity_ref: None,
                 historical_state_ids: Vec::new(),
+                treatment_radius_candidates: Vec::new(),
+                transition_edge_candidates: Vec::new(),
                 resolved_edge_slot: None,
                 resolution_identity_id: None,
             });
@@ -27202,6 +27247,8 @@ mod relation_tests {
             historical_entity_kind: None,
             historical_entity_ref: None,
             historical_state_ids: Vec::new(),
+            treatment_radius_candidates: Vec::new(),
+            transition_edge_candidates: Vec::new(),
             resolved_edge_slot: edge,
             resolution_identity_id: None,
         };
@@ -27231,7 +27278,7 @@ mod relation_tests {
         let complete = super::resolved_edge_group(
             &terminal_group,
             std::slice::from_ref(&terminal_group),
-            &[recipe_unresolved, terminal_unresolved],
+            &[recipe_unresolved.clone(), terminal_unresolved],
             &[identity(100, 0, Some(17)), identity(104, 1, Some(18))],
             Some(8),
             &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
@@ -27239,6 +27286,33 @@ mod relation_tests {
         );
         assert!(matches!(
             complete,
+            cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
+                if edges == &[
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:8:17".into()
+                    ),
+                    cadmpeg_ir::ids::HistoricalEdgeId(
+                        "f3d:history-input:edge#6:fillet:8:18".into()
+                    ),
+                ]
+        ));
+        let mut chain_group = terminal_group.clone();
+        chain_group.members = vec![100];
+        let mut chain_recipe = recipe_unresolved.clone();
+        chain_recipe.changed_boundary_edge_slots = vec![17, 18];
+        let mut chain_identity = identity(100, 0, None);
+        chain_identity.transition_edge_candidates = vec![18, 17];
+        let chain = super::resolved_edge_group(
+            &chain_group,
+            std::slice::from_ref(&chain_group),
+            &[chain_recipe],
+            &[chain_identity],
+            Some(8),
+            &cadmpeg_ir::features::FeatureId("f3d:model:feature#fillet".into()),
+            None,
+        );
+        assert!(matches!(
+            chain,
             cadmpeg_ir::features::EdgeSelection::Historical { ref edges, .. }
                 if edges == &[
                     cadmpeg_ir::ids::HistoricalEdgeId(

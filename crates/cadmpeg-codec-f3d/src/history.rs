@@ -1439,7 +1439,7 @@ pub(crate) fn bind_edge_operand_history_candidates(
             &transition.topology.edges.updated,
         );
         operand.treatment_radius_candidates = treatment_radius_candidates(
-            &operand.result_candidate_faces,
+            Some(&operand.result_candidate_faces),
             &transition.topology.faces.inserted,
             result_topology,
             topology,
@@ -1647,12 +1647,72 @@ fn terminal_edge_recipe_reference_faces(
 }
 
 fn treatment_radius_candidates(
-    result_candidate_faces: &[cadmpeg_ir::ids::FaceId],
+    result_candidate_faces: Option<&[cadmpeg_ir::ids::FaceId]>,
     inserted_faces: &[i64],
     result: &AsmHistoricalTopology,
     preceding: &AsmHistoricalTopology,
     deleted_edges: &[i64],
 ) -> Vec<crate::records::DesignEdgeTreatmentRadiusCandidate> {
+    let boundary = |face, topology: &AsmHistoricalTopology| {
+        face_boundary_contexts_for_slots(&[face], topology)
+            .into_iter()
+            .flat_map(|context| context.loops)
+            .flat_map(|loop_| loop_.edge_slots)
+            .collect::<HashSet<_>>()
+    };
+    let mut out = Vec::new();
+    let candidate_edges = result_candidate_faces
+        .into_iter()
+        .flatten()
+        .filter_map(|face| stable_ref(&face.0))
+        .flat_map(|face| boundary(face, result))
+        .collect::<HashSet<_>>();
+    for (inserted, carrier, supports) in treatment_face_supports(inserted_faces, result, preceding)
+    {
+        let inserted_boundary = boundary(inserted, result);
+        if !candidate_edges.is_empty() && inserted_boundary.is_disjoint(&candidate_edges) {
+            continue;
+        }
+        let mut radii = result
+            .surface_radii
+            .iter()
+            .filter(|candidate| candidate.surface == carrier);
+        let Some(radius) = radii.next().map(|candidate| candidate.radius) else {
+            continue;
+        };
+        if radii.next().is_some() || !radius.is_finite() || radius <= 0.0 {
+            continue;
+        }
+        for (ordinal, left) in supports.iter().enumerate() {
+            let left_edges = boundary(*left, preceding);
+            for right in supports.iter().skip(ordinal + 1) {
+                let right_edges = boundary(*right, preceding);
+                out.extend(
+                    left_edges
+                        .intersection(&right_edges)
+                        .filter(|edge| deleted_edges.contains(edge))
+                        .map(|edge| crate::records::DesignEdgeTreatmentRadiusCandidate {
+                            edge_slot: *edge,
+                            radius,
+                        }),
+                );
+            }
+        }
+    }
+    out.sort_by(|left, right| {
+        left.radius
+            .total_cmp(&right.radius)
+            .then(left.edge_slot.cmp(&right.edge_slot))
+    });
+    out.dedup_by(|left, right| left.radius == right.radius && left.edge_slot == right.edge_slot);
+    out
+}
+
+fn treatment_face_supports(
+    inserted_faces: &[i64],
+    result: &AsmHistoricalTopology,
+    preceding: &AsmHistoricalTopology,
+) -> Vec<(i64, i64, Vec<i64>)> {
     let boundary = |face, topology: &AsmHistoricalTopology| {
         face_boundary_contexts_for_slots(&[face], topology)
             .into_iter()
@@ -1677,47 +1737,49 @@ fn treatment_radius_candidates(
         let face = matches.next()?.entity;
         matches.next().is_none().then_some(face)
     };
-    let result_faces = result.faces.clone();
-    let mut out = Vec::new();
-    let candidate_edges = result_candidate_faces
+    inserted_faces
         .iter()
-        .filter_map(|face| stable_ref(&face.0))
-        .flat_map(|face| boundary(face, result))
-        .collect::<HashSet<_>>();
-    for inserted in inserted_faces.iter().copied() {
-        let inserted_boundary = boundary(inserted, result);
-        if inserted_boundary.is_disjoint(&candidate_edges) {
-            continue;
-        }
-        let mut carrier_bindings = result
-            .face_surfaces
-            .iter()
-            .filter(|binding| binding.entity == inserted);
-        let Some(carrier) = carrier_bindings.next().map(|binding| binding.carrier) else {
-            continue;
-        };
-        if carrier_bindings.next().is_some() || preceding_surfaces.contains(&carrier) {
-            continue;
-        }
-        let mut radii = result
-            .surface_radii
-            .iter()
-            .filter(|candidate| candidate.surface == carrier);
-        let Some(radius) = radii.next().map(|candidate| candidate.radius) else {
-            continue;
-        };
-        if radii.next().is_some() || !radius.is_finite() || radius <= 0.0 {
-            continue;
-        }
-        let mut supports = result_faces
-            .iter()
-            .copied()
-            .filter(|face| *face != inserted)
-            .filter(|face| !boundary(*face, result).is_disjoint(&inserted_boundary))
-            .filter_map(support)
-            .collect::<Vec<_>>();
-        supports.sort_unstable();
-        supports.dedup();
+        .copied()
+        .filter_map(|inserted| {
+            let mut bindings = result
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.entity == inserted);
+            let carrier = bindings.next()?.carrier;
+            if bindings.next().is_some() || preceding_surfaces.contains(&carrier) {
+                return None;
+            }
+            let inserted_boundary = boundary(inserted, result);
+            let mut supports = result
+                .faces
+                .iter()
+                .copied()
+                .filter(|face| *face != inserted)
+                .filter(|face| !boundary(*face, result).is_disjoint(&inserted_boundary))
+                .filter_map(support)
+                .collect::<Vec<_>>();
+            supports.sort_unstable();
+            supports.dedup();
+            Some((inserted, carrier, supports))
+        })
+        .collect()
+}
+
+fn treatment_transition_edge_candidates(
+    inserted_faces: &[i64],
+    result: &AsmHistoricalTopology,
+    preceding: &AsmHistoricalTopology,
+    deleted_edges: &[i64],
+) -> Vec<i64> {
+    let boundary = |face, topology: &AsmHistoricalTopology| {
+        face_boundary_contexts_for_slots(&[face], topology)
+            .into_iter()
+            .flat_map(|context| context.loops)
+            .flat_map(|loop_| loop_.edge_slots)
+            .collect::<HashSet<_>>()
+    };
+    let mut out = Vec::new();
+    for (_, _, supports) in treatment_face_supports(inserted_faces, result, preceding) {
         for (ordinal, left) in supports.iter().enumerate() {
             let left_edges = boundary(*left, preceding);
             for right in supports.iter().skip(ordinal + 1) {
@@ -1726,20 +1788,13 @@ fn treatment_radius_candidates(
                     left_edges
                         .intersection(&right_edges)
                         .filter(|edge| deleted_edges.contains(edge))
-                        .map(|edge| crate::records::DesignEdgeTreatmentRadiusCandidate {
-                            edge_slot: *edge,
-                            radius,
-                        }),
+                        .copied(),
                 );
             }
         }
     }
-    out.sort_by(|left, right| {
-        left.radius
-            .total_cmp(&right.radius)
-            .then(left.edge_slot.cmp(&right.edge_slot))
-    });
-    out.dedup_by(|left, right| left.radius == right.radius && left.edge_slot == right.edge_slot);
+    out.sort_unstable();
+    out.dedup();
     out
 }
 
@@ -2148,15 +2203,10 @@ pub(crate) fn bind_edge_identity_history(
         operand.historical_entity_kind = None;
         operand.historical_entity_ref = None;
         operand.historical_state_ids.clear();
+        operand.treatment_radius_candidates.clear();
+        operand.transition_edge_candidates.clear();
         operand.resolved_edge_slot = None;
         operand.resolution_identity_id = None;
-        if let Some((kind, entity_ref, states)) =
-            historical_selection_identity_kind(histories, operand.local_id)
-        {
-            operand.historical_entity_kind = Some(kind);
-            operand.historical_entity_ref = Some(entity_ref);
-            operand.historical_state_ids = states;
-        }
         let Some(stream) = crate::design::native_stream(&operand.id) else {
             continue;
         };
@@ -2170,6 +2220,21 @@ pub(crate) fn bind_edge_identity_history(
         else {
             continue;
         };
+        let current_state_id = scopes
+            .iter()
+            .find(|scope| {
+                crate::design::native_stream(&scope.id) == Some(stream)
+                    && scope.record_index == operand.scope_record_index
+            })
+            .and_then(|scope| scope.history_state_id);
+        if let Some((kind, entity_ref, states)) =
+            historical_selection_identity_kind(histories, operand.local_id)
+                .filter(|(_, _, states)| states.contains(&previous_state_id))
+        {
+            operand.historical_entity_kind = Some(kind);
+            operand.historical_entity_ref = Some(entity_ref);
+            operand.historical_state_ids = states;
+        }
         let mut topologies = histories
             .iter()
             .flat_map(|history| &history.states)
@@ -2180,6 +2245,38 @@ pub(crate) fn bind_edge_identity_history(
         };
         if topologies.next().is_some() {
             continue;
+        }
+        if let Some(current_state_id) = current_state_id {
+            let mut current_states = histories
+                .iter()
+                .flat_map(|history| &history.states)
+                .filter(|state| state.state_id == current_state_id);
+            let current = current_states.next().filter(|state| {
+                state
+                    .transition
+                    .as_ref()
+                    .and_then(|transition| transition.previous_state_id)
+                    == Some(previous_state_id)
+            });
+            if current_states.next().is_none() {
+                if let Some((result, transition)) =
+                    current.and_then(|state| state.topology.as_ref().zip(state.transition.as_ref()))
+                {
+                    operand.treatment_radius_candidates = treatment_radius_candidates(
+                        None,
+                        &transition.topology.faces.inserted,
+                        result,
+                        topology,
+                        &transition.topology.edges.deleted,
+                    );
+                    operand.transition_edge_candidates = treatment_transition_edge_candidates(
+                        &transition.topology.faces.inserted,
+                        result,
+                        topology,
+                        &transition.topology.edges.deleted,
+                    );
+                }
+            }
         }
         let direct = operand
             .historical_entity_kind
@@ -3119,7 +3216,7 @@ mod tests {
             ..AsmHistoricalTopology::default()
         };
         let candidates = treatment_radius_candidates(
-            &[FaceId("f3d:brep:entity#10".into())],
+            Some(&[FaceId("f3d:brep:entity#10".into())]),
             &[20],
             &result,
             &preceding,
@@ -3128,19 +3225,24 @@ mod tests {
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].edge_slot, 17);
         assert_eq!(candidates[0].radius, 3.0);
+        assert_eq!(
+            treatment_transition_edge_candidates(&[20], &result, &preceding, &[17]),
+            [17]
+        );
 
         let mut existing_carrier = preceding.clone();
         existing_carrier.surfaces.push(200);
         assert!(treatment_radius_candidates(
-            &[FaceId("f3d:brep:entity#10".into())],
+            Some(&[FaceId("f3d:brep:entity#10".into())]),
             &[20],
             &result,
             &existing_carrier,
             &[17],
         )
         .is_empty());
+        assert!(treatment_transition_edge_candidates(&[20], &result, &preceding, &[18]).is_empty());
         assert!(treatment_radius_candidates(
-            &[FaceId("f3d:brep:entity#10".into())],
+            Some(&[FaceId("f3d:brep:entity#10".into())]),
             &[20],
             &result,
             &preceding,

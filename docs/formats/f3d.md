@@ -893,6 +893,8 @@ The ACT root-component link follows its class tag and record index with ten zero
 
 On a body, `generic_tag_attrib_def` supplies a one-through-eight-byte ASCII design/construction ID distinct from the material-assignment suffix. This ID keys the design BulkStream body construction-recipe records and is retained without truncation. A body can have no body-keyed recipe.
 
+An executed edge-treatment group with one selection operand resolves a connected source-edge chain from its exact ASM transition. A result face is a treatment face when its sole surface carrier is absent from the preceding topology. Its support faces are result faces adjacent across its boundary whose sole surface carrier maps to exactly one preceding face. Every preceding edge shared by a pair of those support faces and deleted by the transition belongs to the selected chain. The chain is the nonempty increasing stable-slot-order union across all treatment faces. When the operand also has recipe-derived changed or deleted boundary edges, every chain edge must occur in that recipe-derived set.
+
 #### Constant-radius edge chains
 
 A constant-radius group resolves by a chain proof; the per-member boundary-filtered candidate sets remain assignment diagnostics and do not restrict this proof. Every member contributes all of its radius-qualified deleted predecessor edges, including candidates outside that member's changed boundary; an individually proven member also contributes its proven edge. A member with neither contribution is permitted only when its changed-boundary-edge set is empty. The group resolves to the increasing stable-slot-order union of these contributions. One operand can therefore denote more than one edge in a connected treatment chain.
