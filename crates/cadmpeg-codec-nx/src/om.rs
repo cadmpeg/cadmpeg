@@ -154,6 +154,8 @@ pub struct OffsetStoreAbrReferenceLane {
     pub offset: usize,
     /// Sixteen ordered nullable compact indices and their byte offsets.
     pub slots: Vec<(Option<u32>, usize)>,
+    /// Exact compact-index tokens in slot order.
+    pub raw_slots: Vec<Vec<u8>>,
 }
 
 /// One self-framed index row in contiguous offset-store column storage.
@@ -389,6 +391,7 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
         }
         let mut at = start + 1;
         let mut slots = Vec::with_capacity(SLOT_COUNT);
+        let mut raw_slots = Vec::with_capacity(SLOT_COUNT);
         for _ in 0..SLOT_COUNT {
             let Some((value, width)) = bytes.get(at..).and_then(compact_index) else {
                 break;
@@ -400,12 +403,14 @@ pub fn offset_store_abr_reference_lanes(bytes: &[u8]) -> Vec<OffsetStoreAbrRefer
                 },
                 at,
             ));
+            raw_slots.push(bytes[at..at + width].to_vec());
             at += width;
         }
         if slots.len() == SLOT_COUNT && bytes.get(at..at + TERMINATOR.len()) == Some(&TERMINATOR) {
             lanes.push(OffsetStoreAbrReferenceLane {
                 offset: start,
                 slots,
+                raw_slots,
             });
         }
     }

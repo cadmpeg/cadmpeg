@@ -12332,6 +12332,8 @@ pub struct DataBlockAbrReferenceLane {
     pub ordinal: u32,
     /// Sixteen ordered nullable serialized block indices.
     pub slot_indices: Vec<Option<u32>>,
+    /// Exact compact-index tokens in slot order.
+    pub raw_slot_indices: Vec<Vec<u8>>,
     /// Sixteen ordered nullable same-section block identities.
     pub slot_data_blocks: Vec<Option<String>>,
     /// Absolute file offsets of the sixteen compact-index tokens.
@@ -14083,6 +14085,7 @@ pub fn data_block_abr_reference_lanes(container: &Container) -> Vec<DataBlockAbr
                         section_ordinal: section_ordinal as u32,
                         ordinal: ordinal as u32,
                         slot_indices: lane.slots.iter().map(|(value, _)| *value).collect(),
+                        raw_slot_indices: lane.raw_slots,
                         slot_data_blocks,
                         slot_source_offsets: lane
                             .slots

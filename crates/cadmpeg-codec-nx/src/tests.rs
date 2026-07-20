@@ -5844,6 +5844,12 @@ fn om_offset_store_abr_lane_requires_sixteen_slots_and_exact_terminator() {
     assert_eq!(lanes[0].offset, 1);
     assert_eq!(lanes[0].slots.len(), 16);
     assert_eq!(lanes[0].slots[6], (Some(643), 8));
+    assert_eq!(lanes[0].raw_slots[6], [0x82, 0x83]);
+    assert!(lanes[0]
+        .raw_slots
+        .iter()
+        .enumerate()
+        .all(|(slot, raw)| slot == 6 || raw == &[0xff]));
     assert!(lanes[0]
         .slots
         .iter()
