@@ -5242,6 +5242,33 @@ pub struct FeaturePatternConstructionString {
     pub source_offset: u64,
 }
 
+/// Complete signed Q1.55 lane in a reconstructed pattern payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeaturePatternConstructionFixedLane {
+    /// Globally unique lane identity.
+    pub id: String,
+    /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
+    pub operation_label: String,
+    /// Reconstructed pattern payload carrying the lane.
+    pub construction_payload: String,
+    /// Zero-based lane order within the payload.
+    pub ordinal: u32,
+    /// Ordered dimensionless Q1.55 values.
+    pub values: Vec<f64>,
+    /// Exact atom markers in value order.
+    pub markers: Vec<u8>,
+    /// Exact seven-byte two's-complement payloads.
+    pub raw_values: Vec<[u8; 7]>,
+    /// Payload-relative offset of the fixed discriminator.
+    pub payload_offset: u64,
+    /// Payload-relative offsets of the atom markers.
+    pub value_payload_offsets: Vec<u64>,
+    /// Absolute source offset of the fixed discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the atom markers.
+    pub value_source_offsets: Vec<u64>,
+}
+
 /// Scalar width selected by one exact pattern-transform lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -9112,6 +9139,60 @@ pub fn feature_pattern_construction_strings(
                             &lengths,
                             &sources,
                         )?,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode complete signed Q1.55 lanes from reconstructed pattern payloads.
+pub fn feature_pattern_construction_fixed_lanes(
+    container: &Container,
+    payloads: &[FeaturePatternConstructionPayload],
+) -> Vec<FeaturePatternConstructionFixedLane> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::draft_construction_fixed_lanes(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, lane)| {
+                    let payload_offset = lane.offset as u64;
+                    let value_payload_offsets = lane
+                        .value_offsets
+                        .into_iter()
+                        .map(|offset| offset as u64)
+                        .collect::<Vec<_>>();
+                    let value_source_offsets = value_payload_offsets
+                        .iter()
+                        .map(|offset| {
+                            joined_payload_source_offset(*offset, &starts, &lengths, &sources)
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    Some(FeaturePatternConstructionFixedLane {
+                        id: format!("{}-fixed-lane-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        values: lane.values,
+                        markers: lane.markers,
+                        raw_values: lane.raw_values,
+                        payload_offset,
+                        value_payload_offsets,
+                        source_offset: joined_payload_source_offset(
+                            payload_offset,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
+                        value_source_offsets,
                     })
                 })
                 .collect()

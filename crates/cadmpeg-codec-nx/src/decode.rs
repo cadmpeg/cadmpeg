@@ -7730,6 +7730,11 @@ fn attach_native_object_model(
         &scan.container,
         &feature_pattern_construction_payloads,
     );
+    let feature_pattern_construction_fixed_lanes =
+        crate::native::feature_pattern_construction_fixed_lanes(
+            &scan.container,
+            &feature_pattern_construction_payloads,
+        );
     let feature_pattern_transform_lanes =
         crate::native::feature_pattern_transform_lanes(&scan.container);
     let feature_point_construction_headers =
@@ -8071,6 +8076,7 @@ fn attach_native_object_model(
         && feature_pattern_references.is_empty()
         && feature_pattern_construction_payloads.is_empty()
         && feature_pattern_construction_strings.is_empty()
+        && feature_pattern_construction_fixed_lanes.is_empty()
         && feature_pattern_transform_lanes.is_empty()
         && feature_point_construction_headers.is_empty()
         && feature_point_construction_scalar_lanes.is_empty()
@@ -8877,6 +8883,7 @@ fn attach_native_object_model(
             pattern_references: &feature_pattern_references,
             pattern_construction_payloads: &feature_pattern_construction_payloads,
             pattern_construction_strings: &feature_pattern_construction_strings,
+            pattern_construction_fixed_lanes: &feature_pattern_construction_fixed_lanes,
             pattern_transform_lanes: &feature_pattern_transform_lanes,
             point_construction_headers: &feature_point_construction_headers,
             point_construction_scalar_lanes: &feature_point_construction_scalar_lanes,
@@ -9334,6 +9341,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_pattern_construction_strings",
             &feature_pattern_construction_strings,
+        )?;
+    }
+    if !feature_pattern_construction_fixed_lanes.is_empty() {
+        namespace.set_arena(
+            "feature_pattern_construction_fixed_lanes",
+            &feature_pattern_construction_fixed_lanes,
         )?;
     }
     if !feature_pattern_transform_lanes.is_empty() {
@@ -10113,6 +10126,7 @@ struct FeatureOperationSources<'a> {
     pattern_references: &'a [crate::native::FeaturePatternReference],
     pattern_construction_payloads: &'a [crate::native::FeaturePatternConstructionPayload],
     pattern_construction_strings: &'a [crate::native::FeaturePatternConstructionString],
+    pattern_construction_fixed_lanes: &'a [crate::native::FeaturePatternConstructionFixedLane],
     pattern_transform_lanes: &'a [crate::native::FeaturePatternTransformLane],
     point_construction_headers: &'a [crate::native::FeaturePointConstructionHeader],
     point_construction_scalar_lanes: &'a [crate::native::FeaturePointConstructionScalarLane],
@@ -10226,6 +10240,7 @@ fn attach_feature_operations(
         pattern_references,
         pattern_construction_payloads,
         pattern_construction_strings,
+        pattern_construction_fixed_lanes,
         pattern_transform_lanes,
         point_construction_headers,
         point_construction_scalar_lanes,
@@ -10409,6 +10424,10 @@ fn attach_feature_operations(
         });
     let pattern_construction_strings_by_operation =
         records_by_operation(pattern_construction_strings, |value| &value.operation_label);
+    let pattern_construction_fixed_lanes_by_operation =
+        records_by_operation(pattern_construction_fixed_lanes, |lane| {
+            &lane.operation_label
+        });
     let pattern_transform_lanes_by_operation =
         records_by_operation(pattern_transform_lanes, |lane| &lane.operation_label);
     let point_construction_headers_by_operation = point_construction_headers
@@ -11212,6 +11231,16 @@ fn attach_feature_operations(
             source_properties.insert(
                 format!("pattern_construction_string.{}", value.ordinal),
                 value.id.clone(),
+            );
+        }
+        for lane in pattern_construction_fixed_lanes_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("pattern_construction_fixed_lane.{}", lane.ordinal),
+                lane.id.clone(),
             );
         }
         for lane in pattern_transform_lanes_by_operation
