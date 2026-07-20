@@ -10274,6 +10274,52 @@ fn equal_scalars(first: &[f64], second: &[f64]) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub fn project_dimension_constraints(
     placements: &[DesignSketchPlacement],
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    pairs: &[DesignDimensionLocusPair],
+    groups: &[DesignDimensionLocusGroup],
+    annotation_frames: &[DesignDimensionAnnotationFrame],
+    null_pairs: &[DesignDimensionNullLocusPair],
+    companions: &[DesignParameterCompanion],
+    recipe_records: &[DesignDimensionRecipeRecord],
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Vec<cadmpeg_ir::sketches::SketchConstraint> {
+    let spatial_sketch_ids = spatial_sketches
+        .iter()
+        .map(|sketch| sketch.id.clone())
+        .collect::<HashSet<_>>();
+    project_all_dimension_constraints(
+        placements,
+        parameters,
+        owners,
+        pairs,
+        groups,
+        annotation_frames,
+        null_pairs,
+        companions,
+        recipe_records,
+        points,
+        curves,
+        entities,
+    )
+    .into_iter()
+    .filter(|constraint| {
+        placements
+            .iter()
+            .find(|placement| neutral_sketch_id(placement) == constraint.sketch)
+            .is_none_or(|placement| {
+                !spatial_sketch_ids.contains(&neutral_spatial_sketch_id(placement))
+            })
+    })
+    .collect()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn project_all_dimension_constraints(
+    placements: &[DesignSketchPlacement],
     parameters: &[DesignParameter],
     owners: &[DesignParameterOwner],
     pairs: &[DesignDimensionLocusPair],
@@ -11096,6 +11142,80 @@ pub(crate) fn bind_offset_dimension_parameters(
         index += 1;
         keep
     });
+}
+
+/// Project dimensions owned by model-space sketches without assigning them
+/// planar relation semantics.
+#[allow(clippy::too_many_arguments)]
+pub fn project_spatial_dimension_constraints(
+    placements: &[DesignSketchPlacement],
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
+    parameters: &[DesignParameter],
+    owners: &[DesignParameterOwner],
+    pairs: &[DesignDimensionLocusPair],
+    groups: &[DesignDimensionLocusGroup],
+    annotation_frames: &[DesignDimensionAnnotationFrame],
+    null_pairs: &[DesignDimensionNullLocusPair],
+    companions: &[DesignParameterCompanion],
+    recipe_records: &[DesignDimensionRecipeRecord],
+    points: &[SketchPoint],
+    curves: &[SketchCurveIdentity],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinition, SpatialSketchConstraint, SpatialSketchConstraintDefinition,
+    };
+
+    let spatial_by_planar_id = placements
+        .iter()
+        .filter_map(|placement| {
+            let spatial_id = neutral_spatial_sketch_id(placement);
+            spatial_sketches
+                .iter()
+                .any(|sketch| sketch.id == spatial_id)
+                .then(|| (neutral_sketch_id(placement), spatial_id))
+        })
+        .collect::<HashMap<_, _>>();
+    project_all_dimension_constraints(
+        placements,
+        parameters,
+        owners,
+        pairs,
+        groups,
+        annotation_frames,
+        null_pairs,
+        companions,
+        recipe_records,
+        points,
+        curves,
+        entities,
+    )
+    .into_iter()
+    .filter_map(|constraint| {
+        let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
+        let SketchConstraintDefinition::Native {
+            native_kind,
+            native_state,
+            parameter,
+            operands,
+            ..
+        } = constraint.definition
+        else {
+            return None;
+        };
+        Some(SpatialSketchConstraint {
+            id: constraint.id,
+            sketch,
+            definition: SpatialSketchConstraintDefinition::Native {
+                native_kind,
+                native_state,
+                parameter,
+                operands,
+            },
+            native_ref: constraint.native_ref,
+        })
+    })
+    .collect()
 }
 
 fn repeated_linear_dimension(
@@ -16210,6 +16330,7 @@ pub(crate) fn bind_loft_sketch_profiles(
     headers: &[DesignRecordHeader],
     entities: &[DesignEntityHeader],
     placements: &[DesignSketchPlacement],
+    spatial_sketches: &[cadmpeg_ir::sketches::SpatialSketch],
     features: &mut [cadmpeg_ir::features::Feature],
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftSection, ProfileRef};
@@ -16250,6 +16371,9 @@ pub(crate) fn bind_loft_sketch_profiles(
             .filter(|placement| {
                 native_stream(&placement.id) == Some(stream)
                     && placement.entity_id == profile.entity_id
+                    && !spatial_sketches
+                        .iter()
+                        .any(|sketch| sketch.id == neutral_spatial_sketch_id(placement))
             })
             .collect::<Vec<_>>();
         let [placement] = matches.as_slice() else {
@@ -21717,9 +21841,9 @@ mod relation_tests {
         has_typed_edge_treatment_group, historical_profile_face_candidates, identity_matrix,
         indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
         neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        next_indexed_record_offset_with_index, null_locus_dimension_definition,
-        offset_parameter_factor, parse_construction_operand_group,
+        neutral_sketch_id, neutral_sketch_point_id, neutral_spatial_sketch_id,
+        next_indexed_record_offset, next_indexed_record_offset_with_index,
+        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_entity_selection_operand,
@@ -21730,9 +21854,9 @@ mod relation_tests {
         partial_historical_edge_selection, point_lies_on_sketch_geometry, point_on_sketch_entity,
         project_configurations, project_dimension_constraints, project_extrude,
         project_parameter_design, project_sketch_constraints, project_sketch_design,
-        project_spatial_sketch_constraints, project_spatial_sketch_design,
-        radial_dimension_definition, recipe_record_prefix, region_containing_points,
-        remove_dimension_frame_relations, repeated_linear_dimension,
+        project_spatial_dimension_constraints, project_spatial_sketch_constraints,
+        project_spatial_sketch_design, radial_dimension_definition, recipe_record_prefix,
+        region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
         resolved_face_group, sketch_entity_endpoints, two_locus_distance_dimension,
         unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
@@ -21766,7 +21890,8 @@ mod relation_tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
         Sketch, SketchAxis, SketchConstraintDefinition, SketchEntity, SketchEntityId,
-        SketchEntityUse, SketchGeometry, SketchId,
+        SketchEntityUse, SketchGeometry, SketchId, SpatialSketch,
+        SpatialSketchConstraintDefinition,
     };
     use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -29894,6 +30019,7 @@ mod relation_tests {
 
         let constraints = project_dimension_constraints(
             std::slice::from_ref(&placement),
+            &[],
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&owner),
             std::slice::from_ref(&pair),
@@ -29913,12 +30039,64 @@ mod relation_tests {
             SketchConstraintDefinition::VerticalDistance { .. }
         ));
 
+        let spatial_sketch = SpatialSketch {
+            id: neutral_spatial_sketch_id(&placement),
+            name: None,
+            configuration: None,
+            native_ref: Some(placement.id.clone()),
+        };
+        assert!(project_dimension_constraints(
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&spatial_sketch),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&owner),
+            std::slice::from_ref(&pair),
+            std::slice::from_ref(&group),
+            &[],
+            &[],
+            std::slice::from_ref(&companion),
+            &[],
+            &points,
+            &[],
+            &entities,
+        )
+        .is_empty());
+        let spatial_constraints = project_spatial_dimension_constraints(
+            std::slice::from_ref(&placement),
+            std::slice::from_ref(&spatial_sketch),
+            std::slice::from_ref(&parameter),
+            std::slice::from_ref(&owner),
+            std::slice::from_ref(&pair),
+            std::slice::from_ref(&group),
+            &[],
+            &[],
+            std::slice::from_ref(&companion),
+            &[],
+            &points,
+            &[],
+            &[],
+        );
+        assert_eq!(spatial_constraints.len(), 1, "{spatial_constraints:#?}");
+        assert!(matches!(
+            &spatial_constraints[0],
+            cadmpeg_ir::sketches::SpatialSketchConstraint {
+                sketch: actual_sketch,
+                definition: SpatialSketchConstraintDefinition::Native {
+                    parameter: Some(actual_parameter),
+                    ..
+                },
+                ..
+            } if actual_sketch == &spatial_sketch.id
+                && actual_parameter == &neutral_parameter_id_parts(stream, 4)
+        ));
+
         let mut zero_parameter = parameter;
         zero_parameter.evaluated_value = 0.0;
         let mut duplicate_pair = pair;
         duplicate_pair.second_geometry_record_index = duplicate_pair.first_geometry_record_index;
         let duplicate = project_dimension_constraints(
             std::slice::from_ref(&placement),
+            &[],
             std::slice::from_ref(&zero_parameter),
             std::slice::from_ref(&owner),
             std::slice::from_ref(&duplicate_pair),
@@ -29946,6 +30124,7 @@ mod relation_tests {
         group_owner.companion_record_index = group.companion_record_index;
         let grouped = project_dimension_constraints(
             std::slice::from_ref(&placement),
+            &[],
             std::slice::from_ref(&zero_parameter),
             std::slice::from_ref(&group_owner),
             &[],
@@ -30232,6 +30411,7 @@ mod relation_tests {
         ];
         let constraints = project_dimension_constraints(
             std::slice::from_ref(&placement),
+            &[],
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&owner),
             &[],
@@ -30269,6 +30449,7 @@ mod relation_tests {
         incompatible_unit.unit = Some("deg".into());
         let constraints = project_dimension_constraints(
             std::slice::from_ref(&placement),
+            &[],
             std::slice::from_ref(&incompatible_unit),
             std::slice::from_ref(&owner),
             &[],
@@ -30291,6 +30472,7 @@ mod relation_tests {
 
         let retained = project_dimension_constraints(
             std::slice::from_ref(&placement),
+            &[],
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&owner),
             &[],
@@ -30334,6 +30516,7 @@ mod relation_tests {
         empty_companion.payload_byte_length = 0;
         let retained = project_dimension_constraints(
             std::slice::from_ref(&placement),
+            &[],
             std::slice::from_ref(&parameter),
             std::slice::from_ref(&owner),
             &[],

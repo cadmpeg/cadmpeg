@@ -265,6 +265,22 @@ pub(super) fn check_native_links(
                 });
             }
         }
+        if let crate::sketches::SpatialSketchConstraintDefinition::Native { operands, .. } =
+            &constraint.definition
+        {
+            for operand in operands {
+                if let Some(target) = &operand.native_ref {
+                    if !native_ids.contains(target.as_str()) {
+                        findings.push(Finding {
+                            check: Check::NativeLinks,
+                            severity: Severity::Error,
+                            message: format!("operand native_ref `{target}` does not resolve"),
+                            entity: Some(constraint.id.0.clone()),
+                        });
+                    }
+                }
+            }
+        }
     }
 
     let native_unknowns = ir.all_native_unknowns().unwrap_or_default();

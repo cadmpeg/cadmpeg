@@ -239,6 +239,20 @@ pub struct SpatialSketchConstraint {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SpatialSketchConstraintDefinition {
+    /// Source-native spatial relation without complete neutral semantics.
+    Native {
+        /// Source relation family.
+        native_kind: String,
+        /// Source relation state or subtype discriminator, when present.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        native_state: Option<u64>,
+        /// Neutral parameter driving the relation, when resolved.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        parameter: Option<crate::features::ParameterId>,
+        /// Full-fidelity source operands in field order.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        operands: Vec<SketchNativeOperand>,
+    },
     /// Two model-space sketch points occupy the same solved position.
     Coincident {
         /// First coincident point.

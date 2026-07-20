@@ -441,6 +441,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             );
         }
         let entities = match &constraint.definition {
+            SpatialConstraint::Native { .. } => Vec::new(),
             SpatialConstraint::SplineGroup { entities } => entities.clone(),
             SpatialConstraint::Coincident { first, second }
             | SpatialConstraint::Tangent { first, second } => {
@@ -456,6 +457,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         };
         let distinct = entities.iter().collect::<HashSet<_>>();
         let valid_arity = match &constraint.definition {
+            SpatialConstraint::Native { .. } => true,
             SpatialConstraint::ParallelToDirection { .. } => entities.len() == 1,
             _ => entities.len() >= 2,
         };
@@ -478,6 +480,7 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             }
         }
         match &constraint.definition {
+            SpatialConstraint::Native { .. } => {}
             SpatialConstraint::Coincident { first, second }
                 if !matches!(
                     spatial_geometry.get(first),

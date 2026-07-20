@@ -360,13 +360,24 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
             unprojected_history_dependencies += 1;
         }
     }
-    let projected_dimension_parameters = ir
-        .model
-        .sketch_constraints
-        .iter()
-        .flat_map(|constraint| constraint_parameters(&constraint.definition))
-        .cloned()
-        .collect::<HashSet<_>>();
+    let projected_dimension_parameters =
+        ir.model
+            .sketch_constraints
+            .iter()
+            .flat_map(|constraint| constraint_parameters(&constraint.definition))
+            .chain(
+                ir.model.spatial_sketch_constraints.iter().filter_map(
+                    |constraint| match &constraint.definition {
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Native {
+                            parameter,
+                            ..
+                        } => parameter.as_ref(),
+                        _ => None,
+                    },
+                ),
+            )
+            .cloned()
+            .collect::<HashSet<_>>();
 
     let mut gaps = DesignProjectionGaps {
         unprojected_history_dependencies,
@@ -399,7 +410,17 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                     SketchConstraintDefinition::Native { .. }
                 )
             })
-            .count(),
+            .count()
+            + ir.model
+                .spatial_sketch_constraints
+                .iter()
+                .filter(|constraint| {
+                    matches!(
+                        constraint.definition,
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::Native { .. }
+                    )
+                })
+                .count(),
         unprojected_sketch_placements: native
             .design_sketch_placements
             .iter()
@@ -875,14 +896,6 @@ pub fn decode(
                     &native.design_sketch_placements,
                     &native.design_body_bindings,
                 );
-            crate::design::bind_loft_sketch_profiles(
-                &scan,
-                &native.design_construction_operand_groups,
-                &native.design_record_headers,
-                &native.design_entity_headers,
-                &native.design_sketch_placements,
-                &mut ir.model.features,
-            )?;
             crate::design::bind_form_cages(
                 &scan,
                 &native.design_parameter_scopes,
@@ -932,6 +945,15 @@ pub fn decode(
                     &native.sketch_surfaces,
                     &native.sketch_relations,
                 );
+            crate::design::bind_loft_sketch_profiles(
+                &scan,
+                &native.design_construction_operand_groups,
+                &native.design_record_headers,
+                &native.design_entity_headers,
+                &native.design_sketch_placements,
+                &ir.model.spatial_sketches,
+                &mut ir.model.features,
+            )?;
             crate::design::bind_sketch_feature_geometry(
                 &mut ir.model.features,
                 &native.design_parameter_scopes,
@@ -984,6 +1006,7 @@ pub fn decode(
                 .sketch_constraints
                 .extend(crate::design::project_dimension_constraints(
                     &native.design_sketch_placements,
+                    &ir.model.spatial_sketches,
                     &native.design_parameters,
                     &native.design_parameter_owners,
                     &native.design_dimension_locus_pairs,
@@ -996,12 +1019,32 @@ pub fn decode(
                     &native.sketch_curve_identities,
                     &ir.model.sketch_entities,
                 ));
+            ir.model.spatial_sketch_constraints.extend(
+                crate::design::project_spatial_dimension_constraints(
+                    &native.design_sketch_placements,
+                    &ir.model.spatial_sketches,
+                    &native.design_parameters,
+                    &native.design_parameter_owners,
+                    &native.design_dimension_locus_pairs,
+                    &native.design_dimension_locus_groups,
+                    &native.design_dimension_annotation_frames,
+                    &native.design_dimension_null_locus_pairs,
+                    &native.design_parameter_companions,
+                    &native.design_dimension_recipe_records,
+                    &native.sketch_points,
+                    &native.sketch_curve_identities,
+                    &ir.model.sketch_entities,
+                ),
+            );
             crate::design::bind_offset_dimension_parameters(
                 &mut ir.model.sketch_constraints,
                 &native.design_parameters,
             );
             ir.model
                 .sketch_constraints
+                .sort_by_key(|constraint| constraint.id.clone());
+            ir.model
+                .spatial_sketch_constraints
                 .sort_by_key(|constraint| constraint.id.clone());
             let act = crate::act::decode(reader, &scan)?;
             native.act_entities = act.entities;
@@ -1197,14 +1240,6 @@ pub fn decode(
             &native.design_sketch_placements,
             &native.design_body_bindings,
         );
-    crate::design::bind_loft_sketch_profiles(
-        &scan,
-        &native.design_construction_operand_groups,
-        &native.design_record_headers,
-        &native.design_entity_headers,
-        &native.design_sketch_placements,
-        &mut ir.model.features,
-    )?;
     crate::design::bind_form_cages(
         &scan,
         &native.design_parameter_scopes,
@@ -1254,6 +1289,15 @@ pub fn decode(
             &native.sketch_surfaces,
             &native.sketch_relations,
         );
+    crate::design::bind_loft_sketch_profiles(
+        &scan,
+        &native.design_construction_operand_groups,
+        &native.design_record_headers,
+        &native.design_entity_headers,
+        &native.design_sketch_placements,
+        &ir.model.spatial_sketches,
+        &mut ir.model.features,
+    )?;
     crate::design::bind_sketch_feature_geometry(
         &mut ir.model.features,
         &native.design_parameter_scopes,
@@ -1306,6 +1350,7 @@ pub fn decode(
         .sketch_constraints
         .extend(crate::design::project_dimension_constraints(
             &native.design_sketch_placements,
+            &ir.model.spatial_sketches,
             &native.design_parameters,
             &native.design_parameter_owners,
             &native.design_dimension_locus_pairs,
@@ -1318,12 +1363,32 @@ pub fn decode(
             &native.sketch_curve_identities,
             &ir.model.sketch_entities,
         ));
+    ir.model.spatial_sketch_constraints.extend(
+        crate::design::project_spatial_dimension_constraints(
+            &native.design_sketch_placements,
+            &ir.model.spatial_sketches,
+            &native.design_parameters,
+            &native.design_parameter_owners,
+            &native.design_dimension_locus_pairs,
+            &native.design_dimension_locus_groups,
+            &native.design_dimension_annotation_frames,
+            &native.design_dimension_null_locus_pairs,
+            &native.design_parameter_companions,
+            &native.design_dimension_recipe_records,
+            &native.sketch_points,
+            &native.sketch_curve_identities,
+            &ir.model.sketch_entities,
+        ),
+    );
     crate::design::bind_offset_dimension_parameters(
         &mut ir.model.sketch_constraints,
         &native.design_parameters,
     );
     ir.model
         .sketch_constraints
+        .sort_by_key(|constraint| constraint.id.clone());
+    ir.model
+        .spatial_sketch_constraints
         .sort_by_key(|constraint| constraint.id.clone());
     let act = crate::act::decode(reader, &scan)?;
     native.act_entities = act.entities;
