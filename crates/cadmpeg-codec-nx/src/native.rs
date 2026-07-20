@@ -5497,6 +5497,31 @@ pub struct FeatureSurfaceConstructionPayload {
     pub block_source_offsets: [u64; 14],
 }
 
+/// One exactly framed scalar pair in a reconstructed surface payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeatureSurfaceConstructionScalarPair {
+    /// Globally unique scalar-pair identity.
+    pub id: String,
+    /// Owning `SKIN` or `Studio Surface` operation label.
+    pub operation_label: String,
+    /// Reconstructed surface payload carrying the frame.
+    pub surface_construction_payload: String,
+    /// Zero-based frame order within the payload.
+    pub ordinal: u32,
+    /// Ordered finite shifted-IEEE values.
+    pub values: [f64; 2],
+    /// Payload-relative offset of the discriminator.
+    pub payload_offset: u64,
+    /// Payload-relative scalar offsets.
+    pub value_payload_offsets: [u64; 2],
+    /// Absolute source offset of the discriminator.
+    pub source_offset: u64,
+    /// Absolute source offsets of the scalar encodings.
+    pub value_source_offsets: [u64; 2],
+    /// Exact discriminator selecting the scalar-pair branch.
+    pub discriminator: Vec<u8>,
+}
+
 /// One resolved reference within a surface-construction branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceBranchReference {
@@ -9491,6 +9516,60 @@ pub fn feature_surface_construction_payloads(
                 block_byte_lengths: lengths.try_into().ok()?,
                 block_source_offsets: sources.try_into().ok()?,
             })
+        })
+        .collect()
+}
+
+/// Decode exact scalar-pair frames from reconstructed surface payloads.
+pub fn feature_surface_construction_scalar_pairs(
+    container: &Container,
+    payloads: &[FeatureSurfaceConstructionPayload],
+) -> Vec<FeatureSurfaceConstructionScalarPair> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::object_payload_scalar_pairs(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, pair)| {
+                    Some(FeatureSurfaceConstructionScalarPair {
+                        id: format!("{}-scalar-pair-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        surface_construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        values: pair.values,
+                        payload_offset: pair.offset as u64,
+                        value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
+                        source_offset: joined_payload_source_offset(
+                            pair.offset as u64,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
+                        value_source_offsets: [
+                            joined_payload_source_offset(
+                                pair.value_offsets[0] as u64,
+                                &starts,
+                                &lengths,
+                                &sources,
+                            )?,
+                            joined_payload_source_offset(
+                                pair.value_offsets[1] as u64,
+                                &starts,
+                                &lengths,
+                                &sources,
+                            )?,
+                        ],
+                        discriminator: pair.discriminator,
+                    })
+                })
+                .collect()
         })
         .collect()
 }
