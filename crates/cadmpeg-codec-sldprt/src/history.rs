@@ -5873,7 +5873,7 @@ fn parse_positive_length_mm(value: &str) -> Option<f64> {
     parse_length_mm(value).filter(|value| *value > 0.0)
 }
 
-fn parse_positive_dimension_length_mm(value: &str) -> Option<f64> {
+pub(crate) fn parse_positive_dimension_length_mm(value: &str) -> Option<f64> {
     parse_positive_length_mm(value).or_else(|| {
         value
             .trim()
@@ -5928,7 +5928,7 @@ pub(crate) fn format_length_mm(value: f64) -> String {
     format!("{}mm", format_f64_literal(value))
 }
 
-fn parse_angle_rad(value: &str) -> Option<f64> {
+pub(crate) fn parse_angle_rad(value: &str) -> Option<f64> {
     let value = value.trim();
     if let Some(number) = value
         .strip_suffix("deg")

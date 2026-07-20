@@ -11289,6 +11289,67 @@ pub(crate) fn bind_history_classes(
             feature.input_class = Some(class.clone());
         }
     }
+
+    for feature in histories
+        .iter_mut()
+        .flat_map(|history| &mut history.features)
+        .filter(|feature| feature.input_class.is_none())
+    {
+        if let Some(class) = classless_dimension_schema_class(feature) {
+            feature.input_class = Some(class.into());
+        }
+    }
+}
+
+fn classless_dimension_schema_class(feature: &crate::records::Feature) -> Option<&'static str> {
+    if !feature.xml_tag.eq_ignore_ascii_case("Feature")
+        || feature.parameters.is_empty()
+        || feature.content.len() != feature.parameters.len()
+    {
+        return None;
+    }
+    let dimensions = feature
+        .content
+        .iter()
+        .map(|content| match content {
+            crate::records::FeatureContent::Dimension(name) => Some(name.as_str()),
+            _ => None,
+        })
+        .collect::<Option<HashSet<_>>>()?;
+    if dimensions.len() != feature.parameters.len()
+        || !feature
+            .parameters
+            .keys()
+            .all(|name| dimensions.contains(name.as_str()))
+    {
+        return None;
+    }
+    if cosmetic_thread_parameter_shape(feature) {
+        return Some("moCosmeticThread_c");
+    }
+    if feature.parameters.len() == 2
+        && feature
+            .parameters
+            .keys()
+            .all(|name| matches!(name.as_str(), "D1" | "D2"))
+        && feature
+            .parameters
+            .get("D1")
+            .and_then(|value| crate::history::parse_positive_dimension_length_mm(value))
+            .is_some()
+        && feature
+            .parameters
+            .get("D2")
+            .filter(|value| {
+                let value = value.trim();
+                value.ends_with("deg") || value.ends_with('°') || value.ends_with("rad")
+            })
+            .and_then(|value| crate::history::parse_angle_rad(value))
+            .is_some_and(|angle| angle > 0.0 && angle < std::f64::consts::PI)
+    {
+        return Some("Chamfer_c");
+    }
+    None
 }
 
 fn cosmetic_thread_parameter_shape(feature: &crate::records::Feature) -> bool {
@@ -11306,7 +11367,7 @@ fn cosmetic_thread_parameter_shape(feature: &crate::records::Feature) -> bool {
 #[cfg(test)]
 mod idless_history_binding_tests {
     use super::*;
-    use crate::records::{Feature, FeatureHistory};
+    use crate::records::{Feature, FeatureContent, FeatureHistory};
 
     fn feature(ordinal: u32, kind: &str) -> Feature {
         Feature {
@@ -11341,6 +11402,34 @@ mod idless_history_binding_tests {
         sketch.source_id = Some("77".into());
         sketch.input_class = Some("moRefPlane_c".into());
         assert!(!is_profile_feature_object(&sketch));
+    }
+
+    #[test]
+    fn exact_dimension_schemas_bind_classless_thread_and_chamfer_features() {
+        let mut thread = feature(1, "localized thread");
+        thread.parameters.insert("D2".into(), "<MOD-DIAM>8".into());
+        thread.content.push(FeatureContent::Dimension("D2".into()));
+        assert_eq!(
+            classless_dimension_schema_class(&thread),
+            Some("moCosmeticThread_c")
+        );
+
+        let mut chamfer = feature(2, "localized chamfer");
+        chamfer.parameters.insert("D1".into(), "0.57".into());
+        chamfer.parameters.insert("D2".into(), "45°".into());
+        chamfer.content.extend([
+            FeatureContent::Dimension("D1".into()),
+            FeatureContent::Dimension("D2".into()),
+        ]);
+        assert_eq!(
+            classless_dimension_schema_class(&chamfer),
+            Some("Chamfer_c")
+        );
+
+        chamfer.parameters.insert("D2".into(), "1.25".into());
+        assert_eq!(classless_dimension_schema_class(&chamfer), None);
+        chamfer.content.pop();
+        assert_eq!(classless_dimension_schema_class(&chamfer), None);
     }
 
     #[test]
