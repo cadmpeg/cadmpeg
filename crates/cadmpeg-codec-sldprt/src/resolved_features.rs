@@ -14719,7 +14719,7 @@ fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) 
         else {
             continue;
         };
-        let Some((center, radius)) = fitted_marker_circle(&component_points, tolerance) else {
+        let Some((center, _)) = fitted_marker_circle(&component_points, tolerance) else {
             continue;
         };
         let mut component_replacements = Vec::new();
@@ -14734,22 +14734,11 @@ fn resolve_connected_marker_arcs(entities: &mut [SketchEntity], tolerance: f64) 
                 component_replacements.clear();
                 break;
             };
-            let start_angle = (start.v - center.v).atan2(start.u - center.u);
-            let end_angle = (end.v - center.v).atan2(end.u - center.u);
-            let sweep = (end_angle - start_angle).rem_euclid(std::f64::consts::TAU);
-            if !(sweep > tolerance && sweep <= std::f64::consts::PI + tolerance) {
+            let Some(geometry) = minor_arc_geometry(start, end, center, tolerance) else {
                 component_replacements.clear();
                 break;
-            }
-            component_replacements.push((
-                index,
-                SketchGeometry::Arc {
-                    center,
-                    radius: Length(radius),
-                    start_angle: Angle(start_angle),
-                    end_angle: Angle(end_angle),
-                },
-            ));
+            };
+            component_replacements.push((index, geometry));
         }
         if component_replacements.len() >= 2 {
             replacements.extend(component_replacements);
@@ -23808,6 +23797,16 @@ mod profile_join_tests {
                 } if center == Point2::new(0.0, 0.0)
             ));
         }
+        for entity in &mut entities[3..] {
+            entity.endpoint_refs.reverse();
+            entity.geometry = SketchGeometry::Native {
+                native_kind: "sldprt:marker-geometry:2".into(),
+            };
+        }
+        resolve_connected_marker_arcs(&mut entities, 1.0e-8);
+        assert!(entities[3..]
+            .iter()
+            .all(|entity| matches!(entity.geometry, SketchGeometry::Arc { .. })));
         entities.push(SketchEntity {
             id: SketchEntityId("entity-line".into()),
             sketch,
