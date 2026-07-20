@@ -5198,6 +5198,50 @@ pub struct FeaturePatternReference {
     pub source_offset: u64,
 }
 
+/// Exact logical payload reconstructed from an ordered pattern-reference graph.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeaturePatternConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
+    pub operation_label: String,
+    /// Exact operation family selecting the graph grammar.
+    pub operation_kind: String,
+    /// Ordered non-null construction-reference records.
+    pub construction_references: Vec<String>,
+    /// Ordered source blocks.
+    pub data_blocks: Vec<String>,
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: Vec<u64>,
+    /// Exact source-block lengths.
+    pub block_byte_lengths: Vec<u64>,
+    /// Absolute source-block offsets.
+    pub block_source_offsets: Vec<u64>,
+}
+
+/// Canonical printable string in a reconstructed pattern payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeaturePatternConstructionString {
+    /// Globally unique string identity.
+    pub id: String,
+    /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
+    pub operation_label: String,
+    /// Reconstructed pattern payload carrying the string.
+    pub construction_payload: String,
+    /// Zero-based string order within the payload.
+    pub ordinal: u32,
+    /// Exact printable value.
+    pub value: String,
+    /// Payload-relative offset of the `66 32 03` marker.
+    pub payload_offset: u64,
+    /// Absolute source offset of the marker.
+    pub source_offset: u64,
+}
+
 /// Scalar width selected by one exact pattern-transform lane.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -8967,6 +9011,112 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
         }
     })
     .collect()
+}
+
+/// Reconstruct ordered logical payloads from complete pattern-reference graphs.
+pub fn feature_pattern_construction_payloads(
+    container: &Container,
+    labels: &[FeatureOperationLabel],
+    references: &[FeaturePatternReference],
+) -> Vec<FeaturePatternConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    let kinds = labels
+        .iter()
+        .map(|label| (label.id.as_str(), label.value.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    references
+        .iter()
+        .map(|reference| reference.operation_label.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|operation_label| {
+            let operation_kind = *kinds.get(operation_label)?;
+            if !matches!(operation_kind, "Pattern Feature" | "Pattern Geometry") {
+                return None;
+            }
+            let mut graph = references
+                .iter()
+                .filter(|reference| reference.operation_label == operation_label)
+                .collect::<Vec<_>>();
+            graph.sort_by_key(|reference| reference.ordinal);
+            if !matches!(graph.len(), 9 | 10)
+                || graph
+                    .iter()
+                    .enumerate()
+                    .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+            {
+                return None;
+            }
+            let data_blocks = graph
+                .iter()
+                .map(|reference| reference.data_block.clone())
+                .collect::<Option<Vec<_>>>()?;
+            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+            if data_blocks.iter().any(|block| {
+                block
+                    .rsplit_once(":block#")
+                    .is_none_or(|(prefix, _)| prefix != store)
+            }) {
+                return None;
+            }
+            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, operation_key) = operation_label.rsplit_once('#')?;
+            Some(FeaturePatternConstructionPayload {
+                id: format!("nx:feature-history:pattern-construction-payload#{operation_key}"),
+                operation_label: operation_label.to_string(),
+                operation_kind: operation_kind.to_string(),
+                construction_references: graph
+                    .iter()
+                    .map(|reference| reference.id.clone())
+                    .collect(),
+                data_blocks,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets: starts,
+                block_byte_lengths: lengths,
+                block_source_offsets: sources,
+            })
+        })
+        .collect()
+}
+
+/// Decode canonical printable strings from reconstructed pattern payloads.
+pub fn feature_pattern_construction_strings(
+    container: &Container,
+    payloads: &[FeaturePatternConstructionPayload],
+) -> Vec<FeaturePatternConstructionString> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::string_values(&bytes, 0)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, value)| {
+                    let payload_offset = value.offset as u64;
+                    Some(FeaturePatternConstructionString {
+                        id: format!("{}-string-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        value: value.value.to_string(),
+                        payload_offset,
+                        source_offset: joined_payload_source_offset(
+                            payload_offset,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
+                    })
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Decode exact counted transform lanes from bounded pattern payloads.

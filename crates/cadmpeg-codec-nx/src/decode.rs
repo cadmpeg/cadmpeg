@@ -7720,6 +7720,16 @@ fn attach_native_object_model(
     let feature_projected_curve_references =
         crate::native::feature_projected_curve_references(&scan.container);
     let feature_pattern_references = crate::native::feature_pattern_references(&scan.container);
+    let feature_pattern_construction_payloads =
+        crate::native::feature_pattern_construction_payloads(
+            &scan.container,
+            &feature_operation_labels,
+            &feature_pattern_references,
+        );
+    let feature_pattern_construction_strings = crate::native::feature_pattern_construction_strings(
+        &scan.container,
+        &feature_pattern_construction_payloads,
+    );
     let feature_pattern_transform_lanes =
         crate::native::feature_pattern_transform_lanes(&scan.container);
     let feature_point_construction_headers =
@@ -8059,6 +8069,8 @@ fn attach_native_object_model(
         && feature_sketch_references.is_empty()
         && feature_projected_curve_references.is_empty()
         && feature_pattern_references.is_empty()
+        && feature_pattern_construction_payloads.is_empty()
+        && feature_pattern_construction_strings.is_empty()
         && feature_pattern_transform_lanes.is_empty()
         && feature_point_construction_headers.is_empty()
         && feature_point_construction_scalar_lanes.is_empty()
@@ -8863,6 +8875,8 @@ fn attach_native_object_model(
             sketch_references: &feature_sketch_references,
             projected_curve_references: &feature_projected_curve_references,
             pattern_references: &feature_pattern_references,
+            pattern_construction_payloads: &feature_pattern_construction_payloads,
+            pattern_construction_strings: &feature_pattern_construction_strings,
             pattern_transform_lanes: &feature_pattern_transform_lanes,
             point_construction_headers: &feature_point_construction_headers,
             point_construction_scalar_lanes: &feature_point_construction_scalar_lanes,
@@ -9309,6 +9323,18 @@ fn attach_native_object_model(
     }
     if !feature_pattern_references.is_empty() {
         namespace.set_arena("feature_pattern_references", &feature_pattern_references)?;
+    }
+    if !feature_pattern_construction_payloads.is_empty() {
+        namespace.set_arena(
+            "feature_pattern_construction_payloads",
+            &feature_pattern_construction_payloads,
+        )?;
+    }
+    if !feature_pattern_construction_strings.is_empty() {
+        namespace.set_arena(
+            "feature_pattern_construction_strings",
+            &feature_pattern_construction_strings,
+        )?;
     }
     if !feature_pattern_transform_lanes.is_empty() {
         namespace.set_arena(
@@ -10085,6 +10111,8 @@ struct FeatureOperationSources<'a> {
     sketch_references: &'a [crate::native::FeatureSketchReference],
     projected_curve_references: &'a [crate::native::FeatureProjectedCurveReference],
     pattern_references: &'a [crate::native::FeaturePatternReference],
+    pattern_construction_payloads: &'a [crate::native::FeaturePatternConstructionPayload],
+    pattern_construction_strings: &'a [crate::native::FeaturePatternConstructionString],
     pattern_transform_lanes: &'a [crate::native::FeaturePatternTransformLane],
     point_construction_headers: &'a [crate::native::FeaturePointConstructionHeader],
     point_construction_scalar_lanes: &'a [crate::native::FeaturePointConstructionScalarLane],
@@ -10196,6 +10224,8 @@ fn attach_feature_operations(
         sketch_references,
         projected_curve_references,
         pattern_references,
+        pattern_construction_payloads,
+        pattern_construction_strings,
         pattern_transform_lanes,
         point_construction_headers,
         point_construction_scalar_lanes,
@@ -10373,6 +10403,12 @@ fn attach_feature_operations(
         });
     let pattern_references_by_operation =
         records_by_operation(pattern_references, |reference| &reference.operation_label);
+    let pattern_construction_payloads_by_operation =
+        records_by_operation(pattern_construction_payloads, |payload| {
+            &payload.operation_label
+        });
+    let pattern_construction_strings_by_operation =
+        records_by_operation(pattern_construction_strings, |value| &value.operation_label);
     let pattern_transform_lanes_by_operation =
         records_by_operation(pattern_transform_lanes, |lane| &lane.operation_label);
     let point_construction_headers_by_operation = point_construction_headers
@@ -11156,6 +11192,26 @@ fn attach_feature_operations(
                     .data_block
                     .clone()
                     .unwrap_or_else(|| reference.object_index.to_string()),
+            );
+        }
+        for payload in pattern_construction_payloads_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                "pattern_construction_payload".to_string(),
+                payload.id.clone(),
+            );
+        }
+        for value in pattern_construction_strings_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                format!("pattern_construction_string.{}", value.ordinal),
+                value.id.clone(),
             );
         }
         for lane in pattern_transform_lanes_by_operation
