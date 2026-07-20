@@ -13078,6 +13078,14 @@ fn feature_dimension_table_complete(table: &crate::feature::FeatureDimensionTabl
     usize::try_from(table.declared_count).ok() == Some(table.rows.len())
 }
 
+fn feature_dimension_display(dimension_type: u32) -> Option<DimensionDisplay> {
+    match dimension_type {
+        0x03 => Some(DimensionDisplay::Radius),
+        0x04 => Some(DimensionDisplay::Diameter),
+        _ => None,
+    }
+}
+
 fn feature_relation_table_complete(table: &crate::feature::FeatureRelationTable) -> bool {
     table
         .declared_count
@@ -13226,7 +13234,7 @@ fn transfer_feature_dimensions(
             ordinal,
             name,
             expression,
-            display: (dimension.dimension_type == 0x03).then_some(DimensionDisplay::Radius),
+            display: feature_dimension_display(dimension.dimension_type),
             value,
             dependencies: Vec::new(),
             properties,
@@ -19329,6 +19337,20 @@ mod resolved_sketch_tests {
         assert!(
             unique_feature_definition(&[definition.clone(), definition.clone()], 917).is_none()
         );
+    }
+
+    #[test]
+    fn dimension_display_preserves_radius_and_diameter_types() {
+        assert_eq!(
+            feature_dimension_display(0x03),
+            Some(DimensionDisplay::Radius)
+        );
+        assert_eq!(
+            feature_dimension_display(0x04),
+            Some(DimensionDisplay::Diameter)
+        );
+        assert_eq!(feature_dimension_display(0x02), None);
+        assert_eq!(feature_dimension_display(0x0a), None);
     }
 
     #[test]
