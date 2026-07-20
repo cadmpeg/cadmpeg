@@ -10279,7 +10279,7 @@ fn section_skamp_locus(
         };
     }
     if unique_opaque_section_segment(definition, item.entity_id, 1).is_some() {
-        return (item.sense == 0).then_some(SketchLocus::Entity(entity));
+        return matches!(item.sense, 0 | 4).then_some(SketchLocus::Entity(entity));
     }
     if unique_opaque_section_segment(definition, item.entity_id, 47).is_some() {
         return match item.sense {
@@ -20299,6 +20299,17 @@ mod resolved_sketch_tests {
             })
         );
         assert!(section_skamp_is_point(&opaque_point, &opaque_point_item));
+        assert!(matches!(
+            section_skamp_locus(
+                &opaque_point,
+                &SketchId("creo:model:sketch#917".into()),
+                &crate::feature::FeatureSkampItem {
+                    sense: 4,
+                    ..opaque_point_item.clone()
+                },
+            ),
+            Some(SketchLocus::Entity(entity)) if entity.0.ends_with(":99")
+        ));
         assert!(matches!(
             section_skamp_midpoint(
                 &opaque_point,

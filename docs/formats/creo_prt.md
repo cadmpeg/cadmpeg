@@ -884,7 +884,8 @@ A type-one `segtab` row is a construction point. Its first point slot is null,
 its second point slot is the structural value one, and `cntrid` selects the
 point key in `var_arr`. Complete point coordinates define the neutral sketch
 point. Sense zero selects the whole point in solver incidences. Construction
-points do not participate in `ent_tab` profile chains.
+points do not participate in `ent_tab` profile chains. Sense four selects the
+same point as a point locus.
 A type-47 `segtab` row is a centered construction line when `dir=[0,0,0]`,
 the point slots are `[null,1]`, and `cntrid=2`. Point keys zero and one are
 the line endpoints; point key two is their midpoint. Complete coordinates
