@@ -514,8 +514,6 @@ The payload is a serialized token stream. `32 <ordinal:u32le>` selects the zero-
 
 Resolve every in-range selector to the exact entry in the block's source schema. A selector begins one stored value; its complete encoded value is every following token before the next selector or the end of the payload. The first token is the value's primary typed token. Preserve selector order and payload offset. Preserve the absent-schema sentinel as a selector without an entry link or value assignment.
 
-The owning object graph and the value block use this same source-schema catalog. For an in-range selector, the candidate object fields are exactly the graph's `7C09` records whose `class_ref` equals the selector ordinal, retained in graph order. The absent-schema sentinel has no field candidates.
-
 ### 7.4 Outer alias rows
 
 ```text

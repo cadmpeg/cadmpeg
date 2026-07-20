@@ -6368,30 +6368,6 @@ fn decode_retains_value_blocks_at_their_schema_boundary() {
     );
     assert_eq!(native.value_blocks[0].schema_selections.len(), 1);
     assert_eq!(native.value_blocks[0].schema_selections[0].ordinal, 4);
-    assert!(!native.value_blocks[0].schema_selections[0]
-        .field_candidates
-        .is_empty());
-    assert_eq!(
-        native.value_blocks[0].schema_selections[0].field_candidates,
-        native.object_graphs[0]
-            .records
-            .iter()
-            .filter(|record| record.class_ref == Some(4))
-            .map(|record| record.id.clone())
-            .collect::<Vec<_>>()
-    );
-    let mut malformed = native.clone();
-    malformed.value_blocks[0].schema_selections[0]
-        .field_candidates
-        .clear();
-    let mut namespace = cadmpeg_ir::NativeNamespace::default();
-    malformed
-        .store(&mut namespace)
-        .expect("store malformed value-field candidates");
-    assert!(matches!(
-        crate::native::CatiaNative::load(&namespace),
-        Err(cadmpeg_ir::NativeConvertError::InvalidOwner(_))
-    ));
     assert_eq!(
         native.value_blocks[0].schema_selections[0].entry.as_deref(),
         Some(native.catalogs[0].entries[4].id.as_str())

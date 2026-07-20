@@ -13,7 +13,7 @@ This document records `.CATPart` semantics that remain unresolved. The format sp
 
 ## Design records
 
-- Selection of one field among multiple same-schema `7C09` candidates for a grouped `7C0B` stored value is unresolved.
+- The relation from grouped `7C0B` stored values to `7C09` design-object fields is unresolved.
 
 ## Standard nested `V5_CFV2`
 

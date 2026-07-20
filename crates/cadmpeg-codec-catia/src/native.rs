@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 56;
+pub const CATIA_NATIVE_VERSION: u32 = 55;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -286,9 +286,6 @@ pub struct CatiaValueSchemaSelection {
     /// Selected catalog entry; absent for the terminal sentinel.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub entry: Option<String>,
-    /// Object-graph fields carrying the selected schema ordinal, in graph order.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub field_candidates: Vec<String>,
     /// Encoded value token immediately following an in-range selector.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<value_block::ValueField>,
@@ -1024,6 +1021,17 @@ fn validate_native_links(
                 block.id, block.catalog
             )));
         }
+        let payload_len = u64::try_from(block.payload.len()).ok();
+        if block.declared_len.checked_add(1) != Some(block.byte_len)
+            || payload_len.and_then(|len| len.checked_add(6)) != Some(block.declared_len)
+            || value_block::tokenize(&block.payload) != block.fields
+            || value_schema_selections(&block.fields, catalog) != block.schema_selections
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "value block `{}` has an invalid derived view",
+                block.id
+            )));
+        }
         let mut adjacent_graphs = graphs.iter().filter(|graph| {
             graph.byte_offset.checked_add(graph.byte_len) == Some(block.byte_offset)
         });
@@ -1033,18 +1041,6 @@ fn validate_native_links(
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "value block `{}` has an invalid adjacent graph link",
-                block.id
-            )));
-        }
-        let payload_len = u64::try_from(block.payload.len()).ok();
-        if block.declared_len.checked_add(1) != Some(block.byte_len)
-            || payload_len.and_then(|len| len.checked_add(6)) != Some(block.declared_len)
-            || value_block::tokenize(&block.payload) != block.fields
-            || value_schema_selections(&block.fields, catalog, adjacent_graph)
-                != block.schema_selections
-        {
-            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
-                "value block `{}` has an invalid derived view",
                 block.id
             )));
         }
@@ -1560,7 +1556,6 @@ impl CatiaNative {
 fn value_schema_selections(
     fields: &[value_block::ValueField],
     catalog: &CatiaCatalog,
-    object_graph: Option<&CatiaObjectGraph>,
 ) -> Vec<CatiaValueSchemaSelection> {
     let selector_indices = fields
         .iter()
@@ -1582,16 +1577,6 @@ fn value_schema_selections(
                     .entries
                     .get(ordinal_index)
                     .map(|entry| entry.id.clone());
-                let field_candidates = if entry.is_some() {
-                    object_graph
-                        .into_iter()
-                        .flat_map(|graph| &graph.records)
-                        .filter(|record| record.class_ref == Some(*ordinal))
-                        .map(|record| record.id.clone())
-                        .collect()
-                } else {
-                    Vec::new()
-                };
                 let value_end = selector_indices
                     .get(selector_rank + 1)
                     .copied()
@@ -1606,7 +1591,6 @@ fn value_schema_selections(
                         Vec::new()
                     },
                     entry,
-                    field_candidates,
                 })
             }
             _ => None,
@@ -1620,7 +1604,7 @@ impl CatiaValueBlock {
         catalog: &CatiaCatalog,
         object_graph: Option<&CatiaObjectGraph>,
     ) -> Self {
-        let schema_selections = value_schema_selections(&block.fields, catalog, object_graph);
+        let schema_selections = value_schema_selections(&block.fields, catalog);
         Self {
             id: format!("catia:outer:value-block#{:010}", block.pos),
             byte_offset: block.pos as u64,
