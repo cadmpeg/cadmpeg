@@ -513,7 +513,7 @@ fn is_history_metadata_record(feature: &Feature, features: &[Feature]) -> bool {
     if is_custom_property(feature)
         || matches!(
             feature.input_class.as_deref(),
-            Some("moAttribute_c" | "moConfigCommentsFolder_c")
+            Some("moAlignGroup_c" | "moAttribute_c" | "moConfigCommentsFolder_c")
         )
     {
         return true;
@@ -2380,7 +2380,9 @@ mod history_reference_tests {
         attribute.input_class = Some("moAttribute_c".into());
         let mut comments = feature("comments", Some("28"), 2);
         comments.input_class = Some("moConfigCommentsFolder_c".into());
-        let mut model = feature("model", Some("29"), 3);
+        let mut alignment = feature("alignment", Some("29"), 3);
+        alignment.input_class = Some("moAlignGroup_c".into());
+        let mut model = feature("model", Some("30"), 4);
         model.xml_tag = "Sketch".into();
         model.kind = "Sketch".into();
         let history = FeatureHistory {
@@ -2389,7 +2391,7 @@ mod history_reference_tests {
             properties: BTreeMap::new(),
             content: Vec::new(),
             configurations: Vec::new(),
-            features: vec![definition, attribute, comments, model],
+            features: vec![definition, attribute, comments, alignment, model],
         };
 
         let projected = project_features(std::slice::from_ref(&history));

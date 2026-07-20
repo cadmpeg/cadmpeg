@@ -162,7 +162,7 @@ A detailed curve record is immediately followed by a curve-detail marker of the 
 
 Keywords feature attributes that contain object identifiers use the feature's `id` namespace. `DissectableChildren` is a separator-delimited ordered list of child object identifiers. A single sketch child of an extrusion is that extrusion's profile dependency.
 
-Keywords records bound to `moAttribute_c` and `moConfigCommentsFolder_c` are metadata objects, not regeneration features. A classless source `-1` record whose name prefixes an `moAttribute_c` instance name is that attribute family's definition object.
+Keywords records bound to `moAlignGroup_c`, `moAttribute_c`, and `moConfigCommentsFolder_c` are metadata objects, not regeneration features. A classless source `-1` record whose name prefixes an `moAttribute_c` instance name is that attribute family's definition object.
 
 Keywords element order is serialization order, not regeneration order. Neutral regeneration order is the stable topological order of parent and dependency references; unrelated features retain their serialization order.
 
