@@ -881,6 +881,10 @@ the second point slot is the structural value one, `cntrid` selects the center
 point, and `radius` selects the ordinal radius or diameter dimension. A
 type-three selected dimension stores the radius. A type-four selected dimension
 stores the diameter, so half its positive value is the solved geometric radius.
+The unique type-10 circle and selected dimension transfer as a neutral radius
+constraint for type three and a neutral diameter constraint for type four.
+Other dimension types do not define the circle size or a circular-size
+constraint.
 A type-one `segtab` row is a construction point. Its first point slot is null,
 its second point slot is the structural value one, and `cntrid` selects the
 point key in `var_arr`. Complete point coordinates define the neutral sketch

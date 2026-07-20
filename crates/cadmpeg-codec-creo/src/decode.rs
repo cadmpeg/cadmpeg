@@ -9959,7 +9959,7 @@ fn section_angular_entities(
         .then(|| [first, second].map(|external_id| sketch_entity_id(sketch, external_id)))
 }
 
-fn section_circle_diameter_constraints(
+fn section_circle_size_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
 ) -> Vec<(SketchConstraint, usize)> {
@@ -9980,18 +9980,20 @@ fn section_circle_diameter_constraints(
         .filter_map(|(circle, ordinal)| {
             let (dimension, parameter) =
                 resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?;
-            (dimension.dimension_type == 4).then_some(())?;
+            let kind = match dimension.dimension_type {
+                3 => "radius",
+                4 => "diameter",
+                _ => return None,
+            };
             Some((
                 SketchConstraint {
-                    id: sketch_constraint_id(
-                        sketch,
-                        format_args!("diameter:{}", circle.external_id),
-                    ),
+                    id: sketch_constraint_id(sketch, format_args!("{kind}:{}", circle.external_id)),
                     sketch: sketch.clone(),
-                    definition: SketchConstraintDefinition::Diameter {
-                        entity: sketch_entity_id(sketch, circle.external_id),
+                    definition: circular_dimension_constraint(
+                        sketch_entity_id(sketch, circle.external_id),
                         parameter,
-                    },
+                        dimension.dimension_type,
+                    ),
                     name: None,
                     driving: None,
                     active: None,
@@ -12248,8 +12250,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             );
             constraints.push(constraint);
         }
-        for (mut constraint, offset) in section_circle_diameter_constraints(definition, &sketch_id)
-        {
+        for (mut constraint, offset) in section_circle_size_constraints(definition, &sketch_id) {
             if !reconcile_constraint_entity_references(
                 &mut constraint.definition,
                 &emitted_entity_ids,
@@ -12261,7 +12262,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 &constraint.id.0,
                 "FeatDefs",
                 offset as u64,
-                "section_circle_diameter_constraint",
+                "section_circle_size_constraint",
                 Exactness::ByteExact,
             );
             constraints.push(constraint);
@@ -19280,21 +19281,53 @@ mod resolved_sketch_tests {
             .as_mut()
             .expect("dimension table")
             .rows[0]
+            .dimension_type = 3;
+        assert_eq!(
+            resolved_section_radii(&definition),
+            BTreeMap::from([(0, 5.0)])
+        );
+        let radius = section_circle_size_constraints(&definition, &sketch_917);
+        assert_eq!(radius.len(), 1);
+        assert_eq!(
+            radius[0].0.definition,
+            SketchConstraintDefinition::Radius {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            }
+        );
+        definition
+            .dimensions
+            .as_mut()
+            .expect("dimension table")
+            .rows[0]
             .dimension_type = 4;
         assert_eq!(
             resolved_section_radii(&definition),
             BTreeMap::from([(0, 2.5)])
         );
-        let diameter = section_circle_diameter_constraints(&definition, &sketch_917);
+        let diameter = section_circle_size_constraints(&definition, &sketch_917);
         assert_eq!(diameter.len(), 1);
-        assert!(matches!(
+        assert_eq!(
             diameter[0].0.definition,
             SketchConstraintDefinition::Diameter {
-                ref entity,
-                ref parameter,
-            } if entity == &SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string())
-                && parameter == &ParameterId("creo:featdefs:parameter#917:3".to_string())
-        ));
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            }
+        );
+        definition
+            .dimensions
+            .as_mut()
+            .expect("dimension table")
+            .rows[0]
+            .dimension_type = 2;
+        assert!(resolved_section_radii(&definition).is_empty());
+        assert!(section_circle_size_constraints(&definition, &sketch_917).is_empty());
+        definition
+            .dimensions
+            .as_mut()
+            .expect("dimension table")
+            .rows[0]
+            .dimension_type = 4;
         assert_eq!(
             section_opaque_circle_geometry(
                 &BTreeMap::from([(7, [1.0, 2.0])]),
