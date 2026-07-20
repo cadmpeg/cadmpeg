@@ -593,7 +593,10 @@ fn legacy_extended_profile_curve_kind(payload: &[u8], offset: usize) -> Option<S
     if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
         != Some(LEGACY_EXTENDED_SKETCH_MARKER)
         || payload.get(offset + 17..offset + 21) != Some(&0u32.to_le_bytes())
-        || payload.get(offset + 23..offset + 27) != Some(&[0x04, 0x00, 0x02, 0x00])
+        || !matches!(
+            payload.get(offset + 23..offset + 27),
+            Some(locus) if locus == [0x04, 0x00, 0x02, 0x00] || locus == [0x05, 0x00, 0x01, 0x00]
+        )
         || marker_profile_curve_role(payload, offset) != Some(1)
     {
         return None;
@@ -3426,6 +3429,12 @@ mod marker_tests {
             legacy_extended_profile_curve_kind(&curve, 0),
             Some(SketchInputKind::LineOrCircle)
         );
+        curve[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+        assert_eq!(
+            legacy_extended_profile_curve_kind(&curve, 0),
+            Some(SketchInputKind::LineOrCircle)
+        );
+        curve[23..27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
         curve[89..93].copy_from_slice(&[0xff, 0xff, 0x04, 0x00]);
         assert_eq!(
             legacy_extended_profile_curve_kind(&curve, 0),
