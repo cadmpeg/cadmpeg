@@ -385,6 +385,19 @@ parameter-space reference direction. The apex, signed axis, zero apex radius,
 unit radial ratio, and positive half-angle define the exact cone independently
 of the station token's scalar meaning.
 
+A planar-envelope positional cone has an axis parallel to model Y and a
+reference direction along positive model X. It stores positive outer and inner
+apex distances, symmetric negative and positive radial bounds, and the paired
+outer and inner Y stations. Subtracting each apex distance from its paired Y
+station produces the same apex Y coordinate. The half-angle is
+`atan(positive radial bound / outer apex distance)`. The body beginning `15`
+separates the two apex distances with `18`, separates the inner station from
+the positive radial bound with `18`, repeats the positive radial bound after
+the outer station, and ends there. The body beginning `17` separates the apex
+distances with `15`, repeats the negative radial bound after the inner station,
+and ends with one complete model-reference token followed by `f7 2c`. The
+model-reference token does not contribute a geometric coordinate.
+
 The next valid named field or the enclosing `e3` compound close terminates a named prototype field, whichever occurs first. A named-field header has a field type no greater than `24` and a nonempty identifier made from ASCII letters, digits, underscores, or parentheses. An `e0` byte inside a scalar token does not terminate the field. Bytes after the structural close belong to subsequent instance or namespace records.
 A parenthesized `srf_prim_ptr(<family>)` record also ends at the next legacy
 `srf_prim_ptr\0` record. Fields owned by that sibling prototype do not belong

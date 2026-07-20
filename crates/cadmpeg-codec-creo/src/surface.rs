@@ -1722,12 +1722,101 @@ fn decode_positional_cone_frame(
     body: &[u8],
     cache: &scalar::ScalarCache,
 ) -> Option<PositionalConeFrame> {
-    let angle = terminal_cone_half_angle_layout(body)?;
-    let reference_candidates = (0..angle.start)
+    decode_planar_envelope_cone_frame(body, cache).or_else(|| {
+        let angle = terminal_cone_half_angle_layout(body)?;
+        decode_support_apex_cone_frame(&body[..angle.start], angle.value, cache)
+    })
+}
+
+fn decode_planar_envelope_cone_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalConeFrame> {
+    let close = |left: f64, right: f64| {
+        let scale = left.abs().max(right.abs()).max(1.0);
+        (left - right).abs() <= 1e-9 * scale
+    };
+    let mut cursor = 1;
+    let (outer_distance, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let first_separator = match body.first()? {
+        0x15 => 0x18,
+        0x17 => 0x15,
+        _ => return None,
+    };
+    (body.get(cursor) == Some(&first_separator)).then_some(())?;
+    cursor += 1;
+    let (inner_distance, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+    cursor = next;
+    let (radial_low, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (inner_axial, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    cursor = next;
+    if body[0] == 0x15 {
+        (body.get(cursor) == Some(&0x18)).then_some(())?;
+        cursor += 1;
+    } else {
+        let (repeated_radial_low, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        close(repeated_radial_low, radial_low).then_some(())?;
+        cursor = next;
+    }
+    let (radial_high, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (outer_axial, next) =
+        scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+    cursor = next;
+    if body[0] == 0x15 {
+        let (repeated_radial_high, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        close(repeated_radial_high, radial_high).then_some(())?;
+        cursor = next;
+        (cursor == body.len()).then_some(())?;
+    } else {
+        let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
+        (body.get(next..) == Some(&[0xf7, 0x2c])).then_some(())?;
+    }
+
+    [
+        outer_distance,
+        inner_distance,
+        radial_low,
+        radial_high,
+        inner_axial,
+        outer_axial,
+    ]
+    .into_iter()
+    .all(f64::is_finite)
+    .then_some(())?;
+    (outer_distance > 0.0 && inner_distance > 0.0 && radial_high > 0.0).then_some(())?;
+    close(radial_low, -radial_high).then_some(())?;
+    let outer_apex = outer_axial - outer_distance;
+    let inner_apex = inner_axial - inner_distance;
+    close(outer_apex, inner_apex).then_some(())?;
+    let half_angle = radial_high.atan2(outer_distance);
+    valid_half_angle(half_angle).then_some(())?;
+    Some(PositionalConeFrame {
+        apex: [0.0, outer_apex.midpoint(inner_apex), 0.0],
+        axis: [0.0, 1.0, 0.0],
+        ref_direction: [1.0, 0.0, 0.0],
+        half_angle,
+    })
+}
+
+fn decode_support_apex_cone_frame(
+    body: &[u8],
+    half_angle: f64,
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalConeFrame> {
+    valid_half_angle(half_angle).then_some(())?;
+    let reference_candidates = (0..body.len())
         .filter_map(|start| {
             matches!(body.get(start), Some(0x19 | 0x32)).then_some(())?;
             let (_, end) = scalar::decode_model_reference_coordinate(body, start, cache)?;
-            (end + 3 == angle.start).then_some(start)
+            (end + 3 == body.len()).then_some(start)
         })
         .collect::<Vec<_>>();
     let [reference_start] = reference_candidates.as_slice() else {
@@ -1793,8 +1882,30 @@ fn decode_positional_cone_frame(
         apex,
         axis,
         ref_direction: second.map(|value| -value),
-        half_angle: angle.value,
+        half_angle,
     })
+}
+
+/// Decode a named cone prototype whose local-system body carries the complete
+/// support-apex suffix and whose half-angle is a single scalar field.
+pub(crate) fn prototype_cone_frame(record: &SurfacePrototypeRecord) -> Option<PositionalConeFrame> {
+    (record.family == SurfacePrototypeFamily::Cone).then_some(())?;
+    let local_system = record.field("local_sys")?;
+    local_system
+        .body
+        .starts_with(&[0xf9, 0x04, 0x03])
+        .then_some(())?;
+    let SurfaceNamedValue::ScalarSequence(angles) = &record.field("half_angle")?.value else {
+        return None;
+    };
+    let [half_angle] = angles.as_slice() else {
+        return None;
+    };
+    decode_support_apex_cone_frame(
+        &local_system.body[3..],
+        *half_angle,
+        &scalar::ScalarCache::default(),
+    )
 }
 
 fn decode_referenced_planar_envelope_cylinder_frame(
@@ -3738,10 +3849,66 @@ mod tests {
         assert_eq!(frame.ref_direction, [-0.0, -0.0, -1.0]);
         assert!((frame.half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
 
+        let angle = terminal_cone_half_angle_layout(&body).expect("terminal half-angle");
+        let mut local_system_body = vec![0xf9, 0x04, 0x03];
+        local_system_body.extend_from_slice(&body[..angle.start]);
+        let prototype = SurfacePrototypeRecord {
+            declared_family: "cone".to_string(),
+            family: SurfacePrototypeFamily::Cone,
+            parameters: vec![
+                SurfaceNamedParameter {
+                    name: "local_sys".to_string(),
+                    value: SurfaceNamedValue::Opaque(local_system_body.clone()),
+                    body: local_system_body,
+                    offset: 0,
+                    value_offset: 0,
+                },
+                SurfaceNamedParameter {
+                    name: "half_angle".to_string(),
+                    value: SurfaceNamedValue::ScalarSequence(vec![angle.value]),
+                    body: body[angle.start..].to_vec(),
+                    offset: 0,
+                    value_offset: 0,
+                },
+            ],
+            offset: 0,
+        };
+        assert_eq!(prototype_cone_frame(&prototype), Some(frame));
+
         let mut incomplete = body.to_vec();
         incomplete.remove(86);
         assert!(
             decode_positional_cone_frame(&incomplete, &scalar::ScalarCache::default()).is_none()
+        );
+    }
+
+    #[test]
+    fn positional_cone_frame_decodes_complete_planar_envelopes() {
+        let unreferenced = [
+            21, 70, 34, 171, 89, 29, 204, 62, 140, 24, 70, 28, 153, 105, 188, 41, 208, 189, 71, 27,
+            153, 70, 40, 122, 225, 71, 174, 20, 126, 24, 46, 27, 153, 70, 36, 28, 61, 7, 246, 190,
+            80, 46, 27, 153,
+        ];
+        let referenced = [
+            23, 70, 34, 171, 89, 29, 204, 62, 140, 21, 70, 28, 153, 105, 188, 41, 208, 189, 71, 27,
+            153, 70, 40, 122, 225, 71, 174, 20, 126, 71, 27, 153, 46, 27, 153, 70, 36, 28, 61, 7,
+            246, 190, 80, 25, 206, 113, 206, 177, 182, 81, 244, 247, 44,
+        ];
+        for body in [&unreferenced[..], &referenced[..]] {
+            let frame = decode_positional_cone_frame(body, &scalar::ScalarCache::default())
+                .expect("complete planar-envelope cone");
+            assert_eq!(frame.apex[0], 0.0);
+            assert!((frame.apex[1] + 19.389_817_409_565_175).abs() < 1e-12);
+            assert_eq!(frame.apex[2], 0.0);
+            assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
+            assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+            assert!((frame.half_angle - 0.636_540_466_818_335).abs() < 1e-12);
+        }
+
+        let mut inconsistent = unreferenced;
+        inconsistent[43] = 0x98;
+        assert!(
+            decode_positional_cone_frame(&inconsistent, &scalar::ScalarCache::default()).is_none()
         );
     }
 

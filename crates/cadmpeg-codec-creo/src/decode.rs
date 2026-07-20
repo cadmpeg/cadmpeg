@@ -27003,6 +27003,7 @@ fn transfer_first_instance_prototype_surfaces(
             crate::surface::SurfacePrototypeFamily::Torus => {
                 crate::surface::SurfaceKind::TorusOrSphere
             }
+            crate::surface::SurfacePrototypeFamily::Cone => crate::surface::SurfaceKind::Cone,
             crate::surface::SurfacePrototypeFamily::Spline => crate::surface::SurfaceKind::Spline,
             _ => continue,
         };
@@ -27090,6 +27091,23 @@ fn transfer_first_instance_prototype_surfaces(
                         major_radius: radius1,
                         minor_radius: radius2,
                     }
+                }
+            }
+            crate::surface::SurfacePrototypeFamily::Cone => {
+                let Some(frame) = crate::surface::prototype_cone_frame(record) else {
+                    continue;
+                };
+                SurfaceGeometry::Cone {
+                    origin: Point3::new(frame.apex[0], frame.apex[1], frame.apex[2]),
+                    axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                    ref_direction: Vector3::new(
+                        frame.ref_direction[0],
+                        frame.ref_direction[1],
+                        frame.ref_direction[2],
+                    ),
+                    radius: 0.0,
+                    ratio: 1.0,
+                    half_angle: frame.half_angle,
                 }
             }
             crate::surface::SurfacePrototypeFamily::Spline => {
@@ -32079,14 +32097,14 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              census srf_array={srf} / crv_array={crv}; {} typed surface rows, {} labeled curve \
              prototypes, {} canonical curve-topology rows, and {} closed native loops were decoded. \
              Outline-backed planes, guarded non-axis support frames, complete ND first-instance \
-             plane, torus, and interpolation-spline prototypes, unbound straight positional \
+             plane, cone, torus, and interpolation-spline prototypes, unbound straight positional \
              surface-of-extrusion planes, \
              topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
              circular-sweep cylinders, \
              four-entry simple-hole cylinders with complete cap outlines, and compact simple-hole \
              cylinders with complete positional carriers, complete positional cylinder bodies, \
-             and support-apex positional cones transfer as carriers; \
+             and complete support-apex and planar-envelope positional cones transfer as carriers; \
              other parameter bodies remain structural records.",
             scan.sections.len(),
             scan.layout.token(),
@@ -32137,7 +32155,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             severity: Severity::Info,
             message: format!(
                 "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
-                 torus, or interpolation-spline carrier(s) from complete named parameters."
+                 cone, torus, or interpolation-spline carrier(s) from complete named parameters."
             ),
             provenance: None,
         });
@@ -32149,7 +32167,7 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             severity: Severity::Info,
             message: format!(
                 "Transferred {positional_cone_count} exact positional cone carrier(s) from \
-                 complete support, apex, and half-angle suffixes."
+                 complete support-apex or planar-envelope bodies."
             ),
             provenance: None,
         });
