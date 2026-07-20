@@ -880,6 +880,11 @@ the second point slot is the structural value one, `cntrid` selects the center
 point, and `radius` selects the ordinal radius or diameter dimension. A
 type-three selected dimension stores the radius. A type-four selected dimension
 stores the diameter, so half its positive value is the solved geometric radius.
+A type-one `segtab` row is a construction point. Its first point slot is null,
+its second point slot is the structural value one, and `cntrid` selects the
+point key in `var_arr`. Complete point coordinates define the neutral sketch
+point. Sense zero selects the whole point in solver incidences. Construction
+points do not participate in `ent_tab` profile chains.
 The `order_table` header retains its declared count and table-class reference
 when its prototype or positional identity rows do not validate.
 The `relat_ptr` header and its independent `skamp_ptr` and `triples_ptr` tables
@@ -1136,7 +1141,7 @@ Positional rows may insert the two-byte `c0 80` or `c1 00` wrapper before
 `ext_id` value of zero is an identifier; the `f6` control sentinel represents
 an absent value.
 The `c0 80` wrapper may also precede the named row's scalar `type`. Segment
-families other than types `2`, `3`, `5`, and `10` retain the same fields and
+families other than types `1`, `2`, `3`, `5`, and `10` retain the same fields and
 count toward table completeness, but do not define line, arc, point, or circle
 geometry.
 `ext_id` is the neutral section-entity identity when exactly one `segtab` row

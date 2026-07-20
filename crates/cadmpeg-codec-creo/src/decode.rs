@@ -3554,6 +3554,17 @@ fn section_opaque_circle_geometry(
     })
 }
 
+fn section_opaque_point_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureOpaqueSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == 1).then_some(())?;
+    let point = points.get(&segment.center_id?)?;
+    Some(SketchGeometry::Point {
+        position: Point2::new(point[0], point[1]),
+    })
+}
+
 fn section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -5138,7 +5149,7 @@ pub(crate) fn resolved_section_radii(
             .flat_map(|segments| &segments.opaque_rows)
             .filter(|segment| {
                 segment.kind == 10
-                    && unique_opaque_section_circle(definition, segment.external_id)
+                    && unique_opaque_section_segment(definition, segment.external_id, 10)
                         .is_some_and(|candidate| candidate == *segment)
             })
         {
@@ -5292,7 +5303,7 @@ fn section_skamp_radius_source(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SectionRadiusSource> {
-    if let Some(circle) = unique_opaque_section_circle(definition, item.entity_id) {
+    if let Some(circle) = unique_opaque_section_segment(definition, item.entity_id, 10) {
         return circle.radius_ref.map(SectionRadiusSource::Reference);
     }
     if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
@@ -9931,7 +9942,7 @@ fn section_circle_diameter_constraints(
         .flat_map(|segments| &segments.opaque_rows)
         .filter(|segment| segment.kind == 10)
         .filter(|segment| {
-            unique_opaque_section_circle(definition, segment.external_id)
+            unique_opaque_section_segment(definition, segment.external_id, 10)
                 .is_some_and(|candidate| candidate == *segment)
         })
         .filter_map(|segment| Some((segment, usize::try_from(segment.radius_ref?).ok()?)))
@@ -10200,24 +10211,26 @@ fn section_linear_distance_vectors(vectors: [[Option<u32>; 4]; 3]) -> bool {
         && vectors[2] == [Some(15), Some(16), Some(15), Some(1)]
 }
 
-fn unique_opaque_section_circle(
+fn unique_opaque_section_segment(
     definition: &crate::feature::FeatureDefinition,
     external_id: u32,
+    kind: u32,
 ) -> Option<&crate::feature::FeatureOpaqueSegment> {
     let mut matches = definition.segments.iter().flat_map(|segments| {
         segments
             .opaque_rows
             .iter()
-            .filter(|segment| segment.external_id == external_id && segment.kind == 10)
+            .filter(|segment| segment.external_id == external_id)
     });
-    let circle = matches.next()?;
-    (matches.next().is_none()
+    let segment = matches.next()?;
+    (segment.kind == kind
+        && matches.next().is_none()
         && !definition
             .segments
             .iter()
             .flat_map(|segments| &segments.rows)
             .any(|segment| segment.external_id == external_id))
-    .then_some(circle)
+    .then_some(segment)
 }
 
 fn section_skamp_locus(
@@ -10237,7 +10250,10 @@ fn section_skamp_locus(
             _ => None,
         };
     }
-    if let Some(circle) = unique_opaque_section_circle(definition, item.entity_id) {
+    if unique_opaque_section_segment(definition, item.entity_id, 1).is_some() {
+        return (item.sense == 0).then_some(SketchLocus::Entity(entity));
+    }
+    if let Some(circle) = unique_opaque_section_segment(definition, item.entity_id, 10) {
         return match item.sense {
             0 => Some(SketchLocus::Entity(entity)),
             4 if section_opaque_circle_geometry(
@@ -10399,8 +10415,9 @@ fn section_skamp_is_point(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    unique_decoded_section_segment(definition, item.entity_id)
-        .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
+    unique_opaque_section_segment(definition, item.entity_id, 1).is_some()
+        || unique_decoded_section_segment(definition, item.entity_id)
+            .is_some_and(|segment| segment.kind == crate::feature::FeatureSegmentKind::Point)
 }
 
 fn section_skamp_is_arc(
@@ -10531,7 +10548,7 @@ fn section_skamp_is_circular(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
-    if unique_opaque_section_circle(definition, item.entity_id).is_some() {
+    if unique_opaque_section_segment(definition, item.entity_id, 10).is_some() {
         return true;
     }
     let has_segment = definition
@@ -11514,14 +11531,15 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         let segment_geometry = |segment: &crate::feature::FeatureSegment| {
             segment_geometries.get(&segment.offset).cloned().flatten()
         };
-        let opaque_circle_geometries = definition
+        let opaque_geometries = definition
             .segments
             .iter()
             .flat_map(|table| &table.opaque_rows)
             .filter_map(|segment| {
                 Some((
                     segment.offset,
-                    section_opaque_circle_geometry(&points, &radii, segment)?,
+                    section_opaque_point_geometry(&points, segment)
+                        .or_else(|| section_opaque_circle_geometry(&points, &radii, segment))?,
                 ))
             })
             .collect::<BTreeMap<_, _>>();
@@ -11569,7 +11587,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                         segment.kind == 10 && unique_segment_ids.contains(&segment.external_id)
                     })
                     .filter_map(|segment| {
-                        let geometry = opaque_circle_geometries.get(&segment.offset)?.clone();
+                        let geometry = opaque_geometries.get(&segment.offset)?.clone();
                         let expected_kinds = section_generated_profile_surface_kinds(&geometry)?;
                         section_entity_is_generated_profile(
                             complete_segment_table,
@@ -11696,31 +11714,38 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 format!("opaque:offset:{}", segment.offset)
             };
             let id = sketch_entity_id(&sketch_id, suffix);
-            let geometry = if segment.kind == 10 {
-                opaque_circle_geometries
+            let geometry = if matches!(segment.kind, 1 | 10) {
+                opaque_geometries
                     .get(&segment.offset)
                     .cloned()
                     .unwrap_or_else(|| SketchGeometry::Native {
-                        native_kind: "circle".to_string(),
+                        native_kind: if segment.kind == 1 { "point" } else { "circle" }.to_string(),
                     })
             } else {
                 SketchGeometry::Native {
                     native_kind: format!("segment_type:{}", segment.kind),
                 }
             };
-            let solved_circle = matches!(&geometry, SketchGeometry::Circle { .. });
+            let solved_geometry = matches!(
+                &geometry,
+                SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
+            );
             let construction = !unique_external_id || !profile_entities.contains(&id);
             annotate(
                 annotations,
                 &id.0,
                 "FeatDefs",
                 segment.offset as u64,
-                if solved_circle {
-                    "solved_section_circle"
+                if solved_geometry {
+                    if segment.kind == 1 {
+                        "solved_section_point"
+                    } else {
+                        "solved_section_circle"
+                    }
                 } else {
                     "opaque_section_segment"
                 },
-                if solved_circle {
+                if solved_geometry {
                     Exactness::Derived
                 } else {
                     Exactness::ByteExact
@@ -11984,8 +12009,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 .flat_map(|segments| &segments.opaque_rows)
                 .filter(|segment| segment.kind == 10)
             {
-                let Some(section_geometry) = opaque_circle_geometries.get(&segment.offset).cloned()
-                else {
+                let Some(section_geometry) = opaque_geometries.get(&segment.offset).cloned() else {
                     continue;
                 };
                 let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry)
@@ -20179,6 +20203,89 @@ mod resolved_sketch_tests {
             .push(opaque_segment.clone());
         assert!(unique_section_segment_external_ids(&opaque_entity).contains(&99));
         assert!(section_entity_external_ids(&opaque_entity).contains(&99));
+
+        let mut opaque_point = definition.clone();
+        opaque_point
+            .segments
+            .as_mut()
+            .expect("segments")
+            .declared_count += 1;
+        opaque_point
+            .segments
+            .as_mut()
+            .expect("segments")
+            .opaque_rows
+            .push(crate::feature::FeatureOpaqueSegment {
+                kind: 1,
+                directions: [Some(0); 3],
+                point_ids: [None, Some(1)],
+                center_id: Some(1),
+                arc_orientation: Some(0),
+                vertical_horizontal: Some(0),
+                radius_ref: None,
+                radius2_ref: None,
+                external_id: 99,
+                offset: 601,
+            });
+        let opaque_point_item = crate::feature::FeatureSkampItem {
+            entity_id: 99,
+            sense: 0,
+        };
+        assert_eq!(
+            section_opaque_point_geometry(
+                &resolved_section_points(&opaque_point),
+                &opaque_point
+                    .segments
+                    .as_ref()
+                    .expect("segments")
+                    .opaque_rows[0],
+            ),
+            Some(SketchGeometry::Point {
+                position: Point2::new(0.0, 2.0),
+            })
+        );
+        assert!(section_skamp_is_point(&opaque_point, &opaque_point_item));
+        assert!(matches!(
+            section_skamp_midpoint(
+                &opaque_point,
+                &SketchId("creo:model:sketch#917".into()),
+                &crate::feature::FeatureSkampItem {
+                    entity_id: 12,
+                    sense: 0,
+                },
+                &opaque_point_item,
+            ),
+            Some((SketchLocus::Entity(entity), target))
+                if entity.0.ends_with(":99") && target.0.ends_with(":12")
+        ));
+        let mut opaque_family_collision = opaque_point.clone();
+        opaque_family_collision
+            .segments
+            .as_mut()
+            .expect("segments")
+            .declared_count += 1;
+        let colliding_row = crate::feature::FeatureOpaqueSegment {
+            kind: 10,
+            center_id: Some(1),
+            radius_ref: Some(0),
+            offset: 602,
+            ..opaque_family_collision
+                .segments
+                .as_ref()
+                .expect("segments")
+                .opaque_rows[0]
+                .clone()
+        };
+        opaque_family_collision
+            .segments
+            .as_mut()
+            .expect("segments")
+            .opaque_rows
+            .push(colliding_row);
+        assert!(!section_skamp_is_point(
+            &opaque_family_collision,
+            &opaque_point_item,
+        ));
 
         let mut opaque_collision = definition.clone();
         opaque_collision
