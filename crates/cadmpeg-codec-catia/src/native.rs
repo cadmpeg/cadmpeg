@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 59;
+pub const CATIA_NATIVE_VERSION: u32 = 60;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -399,6 +399,15 @@ pub struct CatiaObjectRecordReference {
     pub design_object: Option<String>,
 }
 
+/// One exact schema class retained on a grouped design object.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaDesignClass {
+    /// Selected source-schema entry.
+    pub entry: String,
+    /// UTF-8 class name stored by the entry.
+    pub name: String,
+}
+
 /// One serialized design object formed by a shared `7C09` owner ordinal.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaDesignObject {
@@ -415,17 +424,17 @@ pub struct CatiaDesignObject {
     /// Record selected by `owner_ordinal` when it lies inside the graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_record: Option<String>,
-    /// Resolved class of a separator-form owner declaration.
+    /// Exact class of a separator-form owner declaration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner_class: Option<String>,
+    pub owner_class: Option<CatiaDesignClass>,
     /// Class-specific storage selector of a separator-form owner declaration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_storage_ref: Option<u32>,
     /// Field records carrying this owner ordinal, in serialized order.
     pub fields: Vec<String>,
-    /// Distinct resolved field classes, in first field order.
+    /// Distinct exact field classes, in first field order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub field_classes: Vec<String>,
+    pub field_classes: Vec<CatiaDesignClass>,
     /// Referenced design objects, in first field-reference order.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<String>,
@@ -479,14 +488,24 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                         owner_record: owner_record.map(|record| record.id.clone()),
                         owner_class: owner_record
                             .filter(|record| record_has_separator_roles(record))
-                            .and_then(|record| record.class_name.clone()),
+                            .and_then(|record| {
+                                Some(CatiaDesignClass {
+                                    entry: record.class_entry.clone()?,
+                                    name: record.class_name.clone()?,
+                                })
+                            }),
                         owner_storage_ref: owner_record
                             .filter(|record| record_has_separator_roles(record))
                             .and_then(|record| record.storage_ref),
                         fields: records.iter().map(|record| record.id.clone()).collect(),
                         field_classes: records
                             .iter()
-                            .filter_map(|record| record.class_name.clone())
+                            .filter_map(|record| {
+                                Some(CatiaDesignClass {
+                                    entry: record.class_entry.clone()?,
+                                    name: record.class_name.clone()?,
+                                })
+                            })
                             .fold(Vec::new(), |mut classes, class| {
                                 if !classes.contains(&class) {
                                     classes.push(class);

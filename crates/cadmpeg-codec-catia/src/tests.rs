@@ -5425,7 +5425,43 @@ fn compact_design_objects_use_field_vocabulary_not_anchor_class() {
     assert!(object.owner_record.is_some());
     assert_eq!(object.owner_class, None);
     assert_eq!(object.owner_storage_ref, None);
-    assert_eq!(object.field_classes, ["BaseFeature", "Groove"]);
+    assert_eq!(
+        object.field_classes,
+        [
+            crate::native::CatiaDesignClass {
+                entry: native.catalogs[0].entries[4].id.clone(),
+                name: "BaseFeature".to_string(),
+            },
+            crate::native::CatiaDesignClass {
+                entry: native.catalogs[0].entries[5].id.clone(),
+                name: "Groove".to_string(),
+            },
+        ]
+    );
+}
+
+#[test]
+fn design_field_vocabulary_distinguishes_equal_names_from_distinct_entries() {
+    let mut bytes = object_graph_from_records(&[
+        object_graph_record(&[0x12, 0x82, 0x84], &[0xfe]),
+        object_graph_record(&[0x12, 0x82, 0x85], &[0xfe]),
+    ]);
+    bytes.extend(value_block_stream(&[0x81]));
+    bytes.extend(catalog_stream(&[
+        "CATCatalogManager",
+        "catalogManager",
+        "catalogLinks",
+        "",
+        "Feature",
+        "Feature",
+    ]));
+
+    let native = crate::native::CatiaNative::decode(&bytes);
+    let classes = &native.design_objects[0].field_classes;
+
+    assert_eq!(classes.len(), 2);
+    assert_eq!(classes[0].name, classes[1].name);
+    assert_ne!(classes[0].entry, classes[1].entry);
 }
 
 #[test]
@@ -5599,11 +5635,23 @@ fn outer_object_graph_resolves_class_names_from_following_schema() {
     );
     assert_eq!(
         native.design_objects[0].field_classes,
-        [String::new(), "Sketch".to_string()]
+        [
+            crate::native::CatiaDesignClass {
+                entry: native.catalogs[0].entries[3].id.clone(),
+                name: String::new(),
+            },
+            crate::native::CatiaDesignClass {
+                entry: native.catalogs[0].entries[4].id.clone(),
+                name: "Sketch".to_string(),
+            },
+        ]
     );
     assert_eq!(
-        native.design_objects[0].owner_class.as_deref(),
-        Some("Sketch")
+        native.design_objects[0].owner_class,
+        Some(crate::native::CatiaDesignClass {
+            entry: native.catalogs[0].entries[4].id.clone(),
+            name: "Sketch".to_string(),
+        })
     );
     assert_eq!(native.design_objects[0].owner_storage_ref, None);
 }
@@ -6459,7 +6507,11 @@ fn decode_does_not_promote_field_class_names_to_features() {
     )
     .expect("load retained field-class vocabulary");
     assert_eq!(
-        native.design_objects[0].field_classes,
+        native.design_objects[0]
+            .field_classes
+            .iter()
+            .map(|class| class.name.as_str())
+            .collect::<Vec<_>>(),
         ["CurrentFeature", "Groove"]
     );
     assert!(decoded.report.losses.iter().any(|loss| {
