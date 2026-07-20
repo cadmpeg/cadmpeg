@@ -1201,7 +1201,7 @@ pub struct OperationBodyScalarTriple {
 }
 
 /// One wrapped member index in a branch-`11` operation body clause.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationBodyMember {
     /// Zero-based body-reference occurrence order.
     pub body_reference_ordinal: u32,
@@ -1211,6 +1211,8 @@ pub struct OperationBodyMember {
     pub ordinal: u32,
     /// Decoded compact index.
     pub member_index: u32,
+    /// Exact compact-index token.
+    pub raw_member_index: Vec<u8>,
     /// Absolute offset of the compact-index marker.
     pub offset: usize,
 }
@@ -2744,6 +2746,7 @@ pub fn operation_body_members(record: OperationRecord<'_>) -> Vec<OperationBodyM
                     body_object_index: reference.object_index,
                     ordinal: ordinal as u32,
                     member_index,
+                    raw_member_index: record.bytes[member_at..member_at + width].to_vec(),
                     offset: record.offset + member_at,
                 });
             }

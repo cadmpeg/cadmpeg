@@ -812,7 +812,7 @@ The three-scalar extrusion branch places `11` and three self-delimiting scalar a
 
 The same three-scalar clause framing applies independently to every complete body-reference occurrence in any operation record: the body-reference terminator is followed by a one-byte branch discriminator and three self-delimiting scalar atoms. Each complete clause retains its body-reference occurrence order, body object index, discriminator, scalar values, width forms, exact scalar bytes, and source offsets. A body occurrence without three complete scalar atoms does not produce a scalar clause.
 
-A branch-`11` body clause may continue with a wrapped member lane `01, count:u8, (2e, compact_index, 00)[count-1]`, where `count >= 2` and compact indices use the non-null compact-index form. The lane is atomic and retains body-reference occurrence order, member order, decoded index, and source offset.
+A branch-`11` body clause may continue with a wrapped member lane `01, count:u8, (2e, compact_index, 00)[count-1]`, where `count >= 2` and compact indices use the non-null compact-index form. The lane is atomic and retains body-reference occurrence order, member order, decoded index, exact compact-index token, and source offset.
 
 For `TRIM BODY`, the branch-`11` member lane is followed by `01, 02, compact_index, 00, 00, 01, object_index, 00, 00`. The compact index and terminal object index are non-null. The continuation is atomic and retains the anchoring body index, continuation index, terminal object index, and their source offsets.
 

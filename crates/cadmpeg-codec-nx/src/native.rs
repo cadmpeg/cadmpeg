@@ -5860,6 +5860,8 @@ pub struct FeatureOperationBodyMember {
     pub ordinal: u32,
     /// Decoded compact index.
     pub member_index: u32,
+    /// Exact compact-index token.
+    pub raw_member_index: Vec<u8>,
     /// Absolute file offset of the compact-index marker.
     pub source_offset: u64,
 }
@@ -10430,6 +10432,7 @@ pub fn feature_operation_body_members(container: &Container) -> Vec<FeatureOpera
                         body_object_index: member.body_object_index,
                         ordinal: member.ordinal,
                         member_index: member.member_index,
+                        raw_member_index: member.raw_member_index,
                         source_offset: entry_offset + member.offset as u64,
                     }),
             );
