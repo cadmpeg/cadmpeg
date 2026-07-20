@@ -3433,6 +3433,19 @@ fn project_fixed_fillet(
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
+                && !group.members.is_empty()
+                && group.members.iter().all(|member| {
+                    edge_operands.iter().any(|operand| {
+                        native_stream(&operand.id) == Some(stream)
+                            && operand.scope_record_index == scope.record_index
+                            && operand.record_index == *member
+                    }) || edge_identity_operands.iter().any(|operand| {
+                        native_stream(&operand.id) == Some(stream)
+                            && operand.scope_record_index == scope.record_index
+                            && operand.group_record_index == group.record_index
+                            && operand.record_index == *member
+                    })
+                })
         })
         .collect::<Vec<_>>();
     let [group] = groups.as_slice() else {
