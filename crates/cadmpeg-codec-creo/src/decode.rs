@@ -3592,7 +3592,9 @@ fn saved_section_line_geometry(
                         && trimmed
                             .rows
                             .iter()
-                            .any(|row| row.external_id == candidate.external_id)
+                            .any(|row| {
+                                trim_segment_id(definition, row) == Some(candidate.external_id)
+                            })
                         && !order_table
                             .rows
                             .iter()
@@ -3621,7 +3623,10 @@ fn saved_section_line_geometry(
                 }
                 _ => None,
             }
-        })?;
+        });
+    let Some(internal_id) = internal_id else {
+        return saved_section_missing_line_geometry(definition, segment);
+    };
     unique_saved_section_internal_ids(definition)
         .contains(&internal_id)
         .then_some(())?;
@@ -3877,6 +3882,90 @@ fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> 
         }
         _ => None,
     }
+}
+
+fn saved_section_missing_line_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    let order = definition.order_table.as_ref()?;
+    order.is_complete().then_some(())?;
+    let segments = definition.segments.as_ref()?;
+    segments.is_complete().then_some(())?;
+    let trim = definition.trim_entities.as_ref()?;
+    (trim.has_complete_bucket_frame() && trim.has_unique_external_ids()).then_some(())?;
+    let missing = segments
+        .rows
+        .iter()
+        .filter(|candidate| {
+            candidate.kind == crate::feature::FeatureSegmentKind::Line
+                && order.internal_id(candidate.external_id).is_none()
+                && trim
+                    .rows
+                    .iter()
+                    .any(|row| trim_segment_id(definition, row) == Some(candidate.external_id))
+        })
+        .collect::<Vec<_>>();
+    let [missing] = missing.as_slice() else {
+        return None;
+    };
+    std::ptr::eq(*missing, segment).then_some(())?;
+
+    let saved = definition.saved_section.as_ref()?;
+    let geometries = saved
+        .entities
+        .iter()
+        .filter_map(saved_section_entity_geometry)
+        .filter(|(internal_id, _, _)| order.rows.iter().any(|row| row.internal_id == *internal_id))
+        .collect::<Vec<_>>();
+    let ordered_ids = order
+        .rows
+        .iter()
+        .map(|row| row.internal_id)
+        .collect::<BTreeSet<_>>();
+    let geometry_ids = geometries
+        .iter()
+        .map(|(internal_id, _, _)| *internal_id)
+        .collect::<BTreeSet<_>>();
+    (ordered_ids.len() == order.rows.len()
+        && geometry_ids.len() == geometries.len()
+        && geometry_ids == ordered_ids)
+        .then_some(())?;
+    let endpoints = geometries
+        .iter()
+        .filter_map(|(_, geometry, _)| saved_geometry_endpoints(geometry))
+        .flatten()
+        .collect::<Vec<_>>();
+    (endpoints.len() == 2 * geometries.len()).then_some(())?;
+    let mate_counts = endpoints
+        .iter()
+        .enumerate()
+        .map(|(index, endpoint)| {
+            endpoints
+                .iter()
+                .enumerate()
+                .filter(|(candidate_index, candidate)| {
+                    *candidate_index != index && saved_points_coincide(*endpoint, **candidate)
+                })
+                .count()
+        })
+        .collect::<Vec<_>>();
+    (mate_counts.iter().filter(|count| **count == 0).count() == 2
+        && mate_counts.iter().all(|count| *count <= 1))
+    .then_some(())?;
+    let open = endpoints
+        .iter()
+        .zip(mate_counts)
+        .filter(|(_, count)| *count == 0)
+        .map(|(endpoint, _)| *endpoint)
+        .collect::<Vec<_>>();
+    let [start, end] = open.as_slice() else {
+        return None;
+    };
+    Some(SketchGeometry::Line {
+        start: Point2::new(start[0], start[1]),
+        end: Point2::new(end[0], end[1]),
+    })
 }
 
 fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
@@ -7105,11 +7194,10 @@ fn transfer_feature_extrusion_surfaces(
             let Some(geometry) = extruded_geometry_surface(transform, &section_geometry) else {
                 continue;
             };
-            let Some(surface_id) = ordered_analytic_surface_id_for_feature(
+            let Some(surface_id) = analytic_surface_id_for_feature(
                 &scan.surface_rows,
                 &scan.feature_entity_tables,
                 feature_id,
-                order_table,
                 segment.external_id,
                 &geometry,
             ) else {
@@ -11710,6 +11798,16 @@ fn ordered_analytic_surface_id_for_feature(
     geometry: &SurfaceGeometry,
 ) -> Option<u32> {
     order.internal_id(external_id)?;
+    analytic_surface_id_for_feature(surface_rows, tables, feature_id, external_id, geometry)
+}
+
+fn analytic_surface_id_for_feature(
+    surface_rows: &[crate::surface::SurfaceRow],
+    tables: &[crate::feature::FeatureEntityTable],
+    feature_id: u32,
+    external_id: u32,
+    geometry: &SurfaceGeometry,
+) -> Option<u32> {
     let surface_id = generated_surface_id_for_feature(tables, feature_id, external_id)?;
     let expected_kind = surface_kind_for_geometry(geometry)?;
     crate::surface::unique_surface_row(surface_rows, surface_id)
@@ -15457,6 +15555,33 @@ mod resolved_sketch_tests {
             ref_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: 2.0,
         };
+        let cone = SurfaceGeometry::Cone {
+            origin: Point3::new(0.0, 0.0, 0.0),
+            axis: Vector3::new(0.0, 0.0, 1.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 1.0,
+            ratio: 1.0,
+            half_angle: 0.5,
+        };
+        assert_eq!(
+            analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cone,),
+            Some(42)
+        );
+        assert_eq!(
+            ordered_analytic_surface_id_for_feature(
+                &rows,
+                std::slice::from_ref(&table),
+                17,
+                &order,
+                10,
+                &cone,
+            ),
+            None
+        );
+        assert_eq!(
+            analytic_surface_id_for_feature(&rows, std::slice::from_ref(&table), 17, 10, &cylinder,),
+            None
+        );
         assert_eq!(
             ordered_analytic_surface_id_for_feature(
                 &rows,
@@ -17463,6 +17588,31 @@ mod resolved_sketch_tests {
         });
         assert_eq!(
             saved_section_line_geometry(&completed, &segment),
+            Some(SketchGeometry::Line {
+                start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
+                end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
+            })
+        );
+        let mut replay_mismatched = completed.clone();
+        replay_mismatched
+            .trim_entities
+            .as_mut()
+            .expect("trim table")
+            .rows[0]
+            .external_id = 99;
+        assert_eq!(
+            trim_segment_id(
+                &replay_mismatched,
+                &replay_mismatched
+                    .trim_entities
+                    .as_ref()
+                    .expect("trim table")
+                    .rows[0],
+            ),
+            Some(42)
+        );
+        assert_eq!(
+            saved_section_line_geometry(&replay_mismatched, &segment),
             Some(SketchGeometry::Line {
                 start: cadmpeg_ir::math::Point2::new(-8.0, -0.85),
                 end: cadmpeg_ir::math::Point2::new(8.0, -0.85),
