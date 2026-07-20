@@ -11161,6 +11161,7 @@ pub fn project_spatial_dimension_constraints(
     points: &[SketchPoint],
     curves: &[SketchCurveIdentity],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
+    spatial_entities: &[cadmpeg_ir::sketches::SpatialSketchEntity],
 ) -> Vec<cadmpeg_ir::sketches::SpatialSketchConstraint> {
     use cadmpeg_ir::sketches::{
         SketchConstraintDefinition, SpatialSketchConstraint, SpatialSketchConstraintDefinition,
@@ -11174,6 +11175,39 @@ pub fn project_spatial_dimension_constraints(
                 .iter()
                 .any(|sketch| sketch.id == spatial_id)
                 .then(|| (neutral_sketch_id(placement), spatial_id))
+        })
+        .collect::<HashMap<_, _>>();
+    let native_record_indices = points
+        .iter()
+        .filter_map(|point| {
+            Some((
+                point.id.as_str(),
+                (native_stream(&point.id)?, point.record_index),
+            ))
+        })
+        .chain(curves.iter().filter_map(|curve| {
+            Some((
+                curve.id.as_str(),
+                (native_stream(&curve.id)?, curve.record_index),
+            ))
+        }))
+        .collect::<HashMap<_, _>>();
+    let spatial_by_record = spatial_entities
+        .iter()
+        .filter_map(|entity| {
+            let native_ref = entity.native_ref.as_deref()?;
+            native_record_indices
+                .get(native_ref)
+                .map(|key| (*key, entity))
+        })
+        .collect::<HashMap<_, _>>();
+    let parameter_lengths = parameters
+        .iter()
+        .filter_map(|parameter| {
+            Some((
+                neutral_parameter_id(parameter),
+                design_length(parameter)?.0.abs(),
+            ))
         })
         .collect::<HashMap<_, _>>();
     project_all_dimension_constraints(
@@ -11193,29 +11227,121 @@ pub fn project_spatial_dimension_constraints(
     .into_iter()
     .filter_map(|constraint| {
         let sketch = spatial_by_planar_id.get(&constraint.sketch)?.clone();
-        let SketchConstraintDefinition::Native {
-            native_kind,
-            native_state,
-            parameter,
-            operands,
-            ..
-        } = constraint.definition
-        else {
-            return None;
-        };
-        Some(SpatialSketchConstraint {
-            id: constraint.id,
-            sketch,
-            definition: SpatialSketchConstraintDefinition::Native {
+        let definition = match constraint.definition {
+            SketchConstraintDefinition::Native {
                 native_kind,
                 native_state,
                 parameter,
                 operands,
-            },
+                ..
+            } => {
+                let distance = parameter.as_ref().and_then(|parameter| {
+                    let expected = *parameter_lengths.get(parameter)?;
+                    let scope = native_stream(constraint.native_ref.as_deref()?)?;
+                    let measured = operands
+                        .iter()
+                        .filter(|operand| operand.object_index != 0)
+                        .map(|operand| {
+                            spatial_by_record
+                                .get(&(scope, operand.object_index))
+                                .copied()
+                        })
+                        .collect::<Option<Vec<_>>>()?;
+                    let [first, second] = measured.as_slice() else {
+                        return None;
+                    };
+                    (native_kind.starts_with("Linear Dimension")
+                        && first.sketch == sketch
+                        && second.sketch == sketch
+                        && spatial_parallel_line_distance_matches(
+                            &first.geometry,
+                            &second.geometry,
+                            expected,
+                        ))
+                    .then(|| {
+                        SpatialSketchConstraintDefinition::ParallelLineDistance {
+                            first: first.id.clone(),
+                            second: second.id.clone(),
+                            parameter: parameter.clone(),
+                        }
+                    })
+                });
+                distance.unwrap_or(SpatialSketchConstraintDefinition::Native {
+                    native_kind,
+                    native_state,
+                    parameter,
+                    operands,
+                })
+            }
+            _ => return None,
+        };
+        Some(SpatialSketchConstraint {
+            id: constraint.id,
+            sketch,
+            definition,
             native_ref: constraint.native_ref,
         })
     })
     .collect()
+}
+
+fn spatial_parallel_line_distance_matches(
+    first: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    second: &cadmpeg_ir::sketches::SpatialSketchGeometry,
+    expected: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SpatialSketchGeometry;
+
+    let (
+        SpatialSketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SpatialSketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        return false;
+    };
+    let first_direction = Vector3::new(
+        first_end.x - first_start.x,
+        first_end.y - first_start.y,
+        first_end.z - first_start.z,
+    );
+    let second_direction = Vector3::new(
+        second_end.x - second_start.x,
+        second_end.y - second_start.y,
+        second_end.z - second_start.z,
+    );
+    let first_length = first_direction.norm();
+    let second_length = second_direction.norm();
+    let cross = Vector3::new(
+        first_direction.y * second_direction.z - first_direction.z * second_direction.y,
+        first_direction.z * second_direction.x - first_direction.x * second_direction.z,
+        first_direction.x * second_direction.y - first_direction.y * second_direction.x,
+    );
+    if first_length <= 1.0e-12
+        || second_length <= 1.0e-12
+        || cross.norm() > 1.0e-9 * first_length * second_length
+    {
+        return false;
+    }
+    let offset = Vector3::new(
+        second_start.x - first_start.x,
+        second_start.y - first_start.y,
+        second_start.z - first_start.z,
+    );
+    let area = Vector3::new(
+        offset.y * first_direction.z - offset.z * first_direction.y,
+        offset.z * first_direction.x - offset.x * first_direction.z,
+        offset.x * first_direction.y - offset.y * first_direction.x,
+    )
+    .norm();
+    let measured = area / first_length;
+    let scale = 1.0 + measured.max(expected.abs());
+    expected.is_finite() && (measured - expected.abs()).abs() <= 1.0e-9 * scale
 }
 
 fn repeated_linear_dimension(
@@ -21872,12 +21998,14 @@ mod relation_tests {
         project_spatial_sketch_design, radial_dimension_definition, recipe_record_prefix,
         region_containing_points, remove_dimension_frame_relations, repeated_linear_dimension,
         resolved_edge_candidate_intersection, resolved_extrude_profile_selection,
-        resolved_face_group, sketch_entity_endpoints, two_locus_distance_dimension,
-        unresolved_configuration_member_count, unresolved_configuration_parameter_override_count,
-        unresolved_configuration_rule_count, unresolved_configuration_suppressed_feature_count,
+        resolved_face_group, sketch_entity_endpoints, spatial_parallel_line_distance_matches,
+        two_locus_distance_dimension, unresolved_configuration_member_count,
+        unresolved_configuration_parameter_override_count, unresolved_configuration_rule_count,
+        unresolved_configuration_suppressed_feature_count,
         unresolved_parameter_expression_dependency_count, untyped_parameter_unit_count,
         validate_configuration_payload, DesignFeatureFamily, FaceRecipeProgramKind,
     };
+
     use crate::records::{
         ConstructionRecipe, ConstructionRecipeKind, DesignCoilExtent, DesignCoilSection,
         DesignCoilSectionPlacement, DesignConfiguration, DesignConfigurationKind,
@@ -21908,6 +22036,32 @@ mod relation_tests {
         SpatialSketchConstraintDefinition,
     };
     use std::collections::{BTreeMap, HashMap, HashSet};
+
+    #[test]
+    fn spatial_line_distance_requires_parallel_geometry_and_exact_value() {
+        use cadmpeg_ir::sketches::SpatialSketchGeometry::Line;
+
+        let first = Line {
+            start: Point3::new(0.0, 0.0, 0.0),
+            end: Point3::new(0.0, 10.0, 0.0),
+        };
+        let second = Line {
+            start: Point3::new(3.0, 0.0, 4.0),
+            end: Point3::new(3.0, -5.0, 4.0),
+        };
+        let crossing = Line {
+            start: Point3::new(0.0, 0.0, 0.0),
+            end: Point3::new(1.0, 0.0, 0.0),
+        };
+
+        assert!(spatial_parallel_line_distance_matches(&first, &second, 5.0));
+        assert!(!spatial_parallel_line_distance_matches(
+            &first, &second, 4.0
+        ));
+        assert!(!spatial_parallel_line_distance_matches(
+            &first, &crossing, 0.0
+        ));
+    }
 
     #[test]
     fn sketch_surface_parser_recovers_tensor_product_grid() {
@@ -30087,6 +30241,7 @@ mod relation_tests {
             std::slice::from_ref(&companion),
             &[],
             &points,
+            &[],
             &[],
             &[],
         );

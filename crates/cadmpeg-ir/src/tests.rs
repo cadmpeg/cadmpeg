@@ -3008,7 +3008,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
 
 #[test]
 fn spatial_sketch_geometry_round_trips_and_validates() {
-    use crate::features::Length;
+    use crate::features::{DesignParameter, Length, ParameterId, ParameterValue};
     use crate::sketches::{
         SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
@@ -3037,6 +3037,34 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
             reference_direction: Vector3::new(1.0, 0.0, 0.0),
             radius: Length(4.0),
         },
+    });
+    let parallel_line =
+        SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#parallel-line".into());
+    ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
+        id: parallel_line.clone(),
+        sketch: sketch.clone(),
+        construction: true,
+        native_ref: None,
+        geometry_ref: None,
+        endpoint_refs: Vec::new(),
+        geometry: SpatialSketchGeometry::Line {
+            start: Point3::new(0.0, 2.0f64.sqrt(), -2.0f64.sqrt()),
+            end: Point3::new(1.0, 1.0 + 2.0f64.sqrt(), 1.0 - 2.0f64.sqrt()),
+        },
+    });
+    let distance = ParameterId("synthetic:test:parameter#spatial-distance".into());
+    ir.model.parameters.push(DesignParameter {
+        id: distance.clone(),
+        owner: None,
+        ordinal: 0,
+        name: "spatial_distance".into(),
+        expression: "2 mm".into(),
+        display: None,
+        value: Some(ParameterValue::Length(Length(2.0))),
+        dependencies: Vec::new(),
+        properties: Default::default(),
+        pmi: None,
+        native_ref: None,
     });
     let surface = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#surface".into());
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
@@ -3169,6 +3197,18 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     ir.model
         .spatial_sketch_constraints
         .push(SpatialSketchConstraint {
+            id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#distance".into()),
+            sketch: sketch.clone(),
+            definition: SpatialSketchConstraintDefinition::ParallelLineDistance {
+                first: line.clone(),
+                second: parallel_line,
+                parameter: distance.clone(),
+            },
+            native_ref: None,
+        });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
             id: SketchConstraintId("synthetic:test:spatial-sketch-constraint#tangent".into()),
             sketch,
             definition: SpatialSketchConstraintDefinition::Tangent {
@@ -3179,6 +3219,20 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
         });
     ir.finalize();
     assert!(validate(&ir, Vec::new()).findings.is_empty());
+    let mut invalid_distance = ir.clone();
+    invalid_distance
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.id == distance)
+        .expect("spatial distance parameter")
+        .value = Some(ParameterValue::Length(Length(3.0)));
+    assert!(validate(&invalid_distance, Vec::new())
+        .findings
+        .iter()
+        .any(|finding| finding
+            .message
+            .contains("spatial distance requires parallel lines")));
     let json = ir.to_canonical_json().expect("serialize spatial sketch");
     let decoded = CadIr::from_json(&json).expect("deserialize spatial sketch");
     assert_eq!(decoded.model.spatial_sketches, ir.model.spatial_sketches);

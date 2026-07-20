@@ -281,6 +281,15 @@ pub enum SpatialSketchConstraintDefinition {
         /// Second tangent curve.
         second: SpatialSketchEntityId,
     },
+    /// Minimum separation between two parallel model-space sketch lines.
+    ParallelLineDistance {
+        /// First measured line.
+        first: SpatialSketchEntityId,
+        /// Second measured line.
+        second: SpatialSketchEntityId,
+        /// Driving distance parameter.
+        parameter: crate::features::ParameterId,
+    },
     /// A model-space line is parallel to one fixed model-space direction.
     ParallelToDirection {
         /// Line constrained to the direction.

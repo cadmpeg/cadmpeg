@@ -373,6 +373,10 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
                             parameter,
                             ..
                         } => parameter.as_ref(),
+                        cadmpeg_ir::sketches::SpatialSketchConstraintDefinition::ParallelLineDistance {
+                            parameter,
+                            ..
+                        } => Some(parameter),
                         _ => None,
                     },
                 ),
@@ -1144,6 +1148,7 @@ pub fn decode(
                     &native.sketch_points,
                     &native.sketch_curve_identities,
                     &ir.model.sketch_entities,
+                    &ir.model.spatial_sketch_entities,
                 ),
             );
             crate::design::bind_offset_dimension_parameters(
@@ -1483,6 +1488,7 @@ pub fn decode(
             &native.sketch_points,
             &native.sketch_curve_identities,
             &ir.model.sketch_entities,
+            &ir.model.spatial_sketch_entities,
         ),
     );
     crate::design::bind_offset_dimension_parameters(

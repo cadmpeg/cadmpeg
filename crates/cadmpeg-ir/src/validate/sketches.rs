@@ -76,6 +76,62 @@ fn line_offset_matches(source: &SketchGeometry, result: &SketchGeometry, expecte
         && (distance_at(result_end) - expected).abs() <= 1.0e-9 * scale
 }
 
+fn spatial_parallel_line_distance(
+    first: &SpatialSketchGeometry,
+    second: &SpatialSketchGeometry,
+) -> Option<f64> {
+    let (
+        SpatialSketchGeometry::Line {
+            start: first_start,
+            end: first_end,
+        },
+        SpatialSketchGeometry::Line {
+            start: second_start,
+            end: second_end,
+        },
+    ) = (first, second)
+    else {
+        return None;
+    };
+    let first_direction = crate::math::Vector3::new(
+        first_end.x - first_start.x,
+        first_end.y - first_start.y,
+        first_end.z - first_start.z,
+    );
+    let second_direction = crate::math::Vector3::new(
+        second_end.x - second_start.x,
+        second_end.y - second_start.y,
+        second_end.z - second_start.z,
+    );
+    let first_length = first_direction.norm();
+    let second_length = second_direction.norm();
+    let cross = crate::math::Vector3::new(
+        first_direction.y * second_direction.z - first_direction.z * second_direction.y,
+        first_direction.z * second_direction.x - first_direction.x * second_direction.z,
+        first_direction.x * second_direction.y - first_direction.y * second_direction.x,
+    );
+    if first_length <= 1.0e-12
+        || second_length <= 1.0e-12
+        || cross.norm() > 1.0e-9 * first_length * second_length
+    {
+        return None;
+    }
+    let offset = crate::math::Vector3::new(
+        second_start.x - first_start.x,
+        second_start.y - first_start.y,
+        second_start.z - first_start.z,
+    );
+    Some(
+        crate::math::Vector3::new(
+            offset.y * first_direction.z - offset.z * first_direction.y,
+            offset.z * first_direction.x - offset.x * first_direction.z,
+            offset.x * first_direction.y - offset.y * first_direction.x,
+        )
+        .norm()
+            / first_length,
+    )
+}
+
 pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
     let entity_geometry = ir
         .model
@@ -431,6 +487,12 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|entity| (&entity.id, &entity.geometry))
         .collect::<HashMap<_, _>>();
+    let parameter_values = ir
+        .model
+        .parameters
+        .iter()
+        .map(|parameter| (&parameter.id, &parameter.value))
+        .collect::<HashMap<_, _>>();
     for constraint in &ir.model.spatial_sketch_constraints {
         if !spatial_sketches.contains(&constraint.sketch) {
             finding(
@@ -444,7 +506,8 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
             SpatialConstraint::Native { .. } => Vec::new(),
             SpatialConstraint::SplineGroup { entities } => entities.clone(),
             SpatialConstraint::Coincident { first, second }
-            | SpatialConstraint::Tangent { first, second } => {
+            | SpatialConstraint::Tangent { first, second }
+            | SpatialConstraint::ParallelLineDistance { first, second, .. } => {
                 vec![first.clone(), second.clone()]
             }
             SpatialConstraint::Midpoint { point, entity } => {
@@ -554,6 +617,35 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
                     &constraint.id.0,
                     "spatial tangent requires two curves",
                 );
+            }
+            SpatialConstraint::ParallelLineDistance {
+                first,
+                second,
+                parameter,
+            } => {
+                let measured = spatial_geometry.get(first).and_then(|first| {
+                    spatial_geometry
+                        .get(second)
+                        .and_then(|second| spatial_parallel_line_distance(first, second))
+                });
+                let expected = match parameter_values.get(parameter) {
+                    Some(Some(crate::features::ParameterValue::Length(length))) => {
+                        Some(length.0.abs())
+                    }
+                    _ => None,
+                };
+                let matches = measured.zip(expected).is_some_and(|(measured, expected)| {
+                    let scale = 1.0 + measured.max(expected);
+                    (measured - expected).abs() <= 1.0e-9 * scale
+                });
+                if !matches {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &constraint.id.0,
+                        "spatial distance requires parallel lines separated by its length parameter",
+                    );
+                }
             }
             SpatialConstraint::ParallelToDirection { entity, direction } => {
                 let direction_norm = direction.norm();
