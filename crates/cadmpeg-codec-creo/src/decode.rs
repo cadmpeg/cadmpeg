@@ -13290,12 +13290,9 @@ fn preceding_features_establish_body(ir: &CadIr) -> bool {
 fn section_sweep_boolean_operation(
     recipe_effect: Option<crate::feature::FeatureRecipeEffect>,
     kind: &str,
-    creates_body: bool,
+    has_evaluated_body: bool,
     prior_body: bool,
 ) -> BooleanOp {
-    if creates_body {
-        return BooleanOp::NewBody;
-    }
     match recipe_effect {
         Some(crate::feature::FeatureRecipeEffect::Protrude) if prior_body => BooleanOp::Join,
         Some(crate::feature::FeatureRecipeEffect::Protrude) => BooleanOp::NewBody,
@@ -13303,6 +13300,7 @@ fn section_sweep_boolean_operation(
         None if kind == "Protrusion" && prior_body => BooleanOp::Join,
         None if kind == "Protrusion" => BooleanOp::NewBody,
         None if kind == "Cut" => BooleanOp::Cut,
+        None if has_evaluated_body => BooleanOp::NewBody,
         _ => BooleanOp::Unresolved,
     }
 }
@@ -15088,6 +15086,14 @@ mod resolved_sketch_tests {
             BooleanOp::NewBody
         );
         assert_eq!(
+            section_sweep_boolean_operation(Some(Protrude), "Protrusion", true, true),
+            BooleanOp::Join
+        );
+        assert_eq!(
+            section_sweep_boolean_operation(Some(Cut), "Cut", true, true),
+            BooleanOp::Cut
+        );
+        assert_eq!(
             section_sweep_boolean_operation(Some(Protrude), "Körper", false, false),
             BooleanOp::NewBody
         );
@@ -15102,6 +15108,10 @@ mod resolved_sketch_tests {
         assert_eq!(
             section_sweep_boolean_operation(None, "Körper", false, true),
             BooleanOp::Unresolved
+        );
+        assert_eq!(
+            section_sweep_boolean_operation(None, "Körper", true, false),
+            BooleanOp::NewBody
         );
     }
 
