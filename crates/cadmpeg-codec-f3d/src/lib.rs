@@ -433,6 +433,21 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 (_, None, None, None, None, None, None, None, None) => true,
                 _ => false,
             }
+            && match (scope.kind.as_str(), scope.surface_stitch_operation.as_ref()) {
+                ("SurfaceStitch", Some(operation)) => {
+                    operation.gap_tolerance.is_finite()
+                        && operation.gap_tolerance > 0.0
+                        && operation.gap_tolerance_offset > scope.paired_byte_offset
+                        && scope.reference_members.len() >= 4
+                        && scope.reference_members.len().is_multiple_of(2)
+                        && scope.reference_members[scope.reference_members.len() - 2]
+                            == operation.tolerance_record_index
+                        && scope.reference_members.last() == Some(&operation.settings_record_index)
+                }
+                ("SurfaceStitch", None) => false,
+                (_, None) => true,
+                (_, Some(_)) => false,
+            }
             && scope.frame_length > 89
             && scope.paired_byte_offset == scope.byte_offset.saturating_add(scope.frame_length)
             && scope.kind_offset > scope.byte_offset
@@ -663,9 +678,21 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                             && group.extrude_role.is_none()
                             && group.extrude_face_role.is_none()
                     }
-                    _ => false,
+                    Some(_) => false,
+                    None if scope.kind == "RemoveBody" => {
+                        group.role == 0x0000_0004_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    None if scope.kind == "SurfaceStitch" => {
+                        group.role == 0x0000_0005_0000_0000
+                            && group.extrude_role.is_none()
+                            && group.extrude_face_role.is_none()
+                    }
+                    None => false,
                 };
-                design::design_feature_family(&scope.kind).is_some()
+                (design::design_feature_family(&scope.kind).is_some()
+                    || matches!(scope.kind.as_str(), "RemoveBody" | "SurfaceStitch"))
                     && role_is_valid
                     && usize::try_from(group.scope_reference_ordinal)
                         .ok()
@@ -679,7 +706,14 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && header.is_some_and(|header| {
                 header.byte_offset == group.byte_offset && header.class_tag == group.class_tag
             })
-            && group.member_count_offset == group.byte_offset.saturating_add(21)
+            && group.member_count_offset
+                == group.byte_offset.saturating_add(
+                    if scope.is_some_and(|scope| scope.kind == "SurfaceStitch") {
+                        88
+                    } else {
+                        21
+                    },
+                )
             && !group.members.is_empty()
             && group.members.len() == group.member_offsets.len()
             && group.members.iter().copied().collect::<HashSet<_>>().len() == group.members.len()

@@ -23,11 +23,11 @@ use crate::records::{
     DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignMoveOperation, DesignObject,
     DesignObjectKind, DesignParameter, DesignParameterCompanion, DesignParameterKind,
     DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction, DesignRecordHeader,
-    DesignSketchPlacement, DesignSolidPrimitive, DesignTopologyRecipeEntry,
-    DesignTopologyRecipeSide, DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference,
-    PersistentReferenceKind, PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry,
-    SketchCurveIdentity, SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
-    SketchText,
+    DesignSketchPlacement, DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, PersistentSubentityTag,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand, SketchSurface, SketchText,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -974,6 +974,14 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     }
                 })
+            } else if scope.kind == "SurfaceStitch" {
+                project_surface_stitch(scope, construction_groups).unwrap_or_else(|| {
+                    FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    }
+                })
             } else if family == Some(DesignFeatureFamily::Move) {
                 project_move(scope, construction_groups).unwrap_or_else(|| {
                     FeatureDefinition::Native {
@@ -1561,6 +1569,42 @@ fn project_remove_body(
     Some(FeatureDefinition::DeleteBody {
         bodies: BodySelection::Native(group.id.clone()),
         mode: BodyRetentionMode::DeleteSelected,
+    })
+}
+
+fn project_surface_stitch(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, Length};
+
+    let operation = scope.surface_stitch_operation.as_ref()?;
+    let input_references = scope
+        .reference_members
+        .get(..scope.reference_members.len() - 2)?;
+    let mut matching = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == native_stream(&scope.id)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    matching.sort_by_key(|group| group.scope_reference_ordinal);
+    if matching.len().checked_mul(2)? != input_references.len()
+        || matching.iter().enumerate().any(|(ordinal, group)| {
+            u32::try_from(ordinal * 2) != Ok(group.scope_reference_ordinal)
+                || group.record_index != input_references[ordinal * 2]
+                || group.members.as_slice() != [input_references[ordinal * 2 + 1]]
+                || group.role != 0x0000_0005_0000_0000
+        })
+    {
+        return None;
+    }
+    Some(FeatureDefinition::KnitSurface {
+        faces: FaceSelection::Native(scope.id.clone()),
+        merge_entities: true,
+        create_solid: true,
+        gap_tolerance: Some(Length(operation.gap_tolerance * 10.0)),
     })
 }
 
@@ -15816,6 +15860,7 @@ pub fn decode_construction_operand_groups(
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::BoundaryFill)
             || design_feature_family(&scope.kind) == Some(DesignFeatureFamily::Split)
             || scope.kind == "RemoveBody"
+            || scope.kind == "SurfaceStitch"
             || has_typed_edge_treatment_group(&scope.kind)
     }) {
         let scope_group_start = out.len();
@@ -15959,14 +16004,30 @@ fn parse_construction_operand_group(
     header: &DesignRecordHeader,
 ) -> Option<DesignConstructionOperandGroup> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    if bytes.get(start + 11..start + 21)? != [0; 10] {
-        return None;
-    }
-    let count = usize::try_from(u32_at(bytes, start + 21)?).ok()?;
+    let count_at = if scope.kind == "SurfaceStitch" {
+        if bytes.get(start + 11..start + 20)? != [0; 9]
+            || bytes.get(start + 20) != Some(&1)
+            || u32_at(bytes, start + 21)? != 1
+        {
+            return None;
+        }
+        let (property, after_property) = lp_ascii(bytes, start + 25)?;
+        let (property_type, after_property_type) = lp_ascii(bytes, after_property)?;
+        if property != "DcFeatureOperationIdFlag" || property_type != "IntrinsicMetaTypeuint64" {
+            return None;
+        }
+        after_property_type.checked_add(8)?
+    } else {
+        if bytes.get(start + 11..start + 21)? != [0; 10] {
+            return None;
+        }
+        start.checked_add(21)?
+    };
+    let count = usize::try_from(u32_at(bytes, count_at)?).ok()?;
     if count == 0 {
         return None;
     }
-    let mut position = start.checked_add(25)?;
+    let mut position = count_at.checked_add(4)?;
     let mut members = Vec::with_capacity(count);
     let mut member_offsets = Vec::with_capacity(count);
     for _ in 0..count {
@@ -16034,7 +16095,7 @@ fn parse_construction_operand_group(
         record_index: header.record_index,
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
-        member_count_offset: u64::try_from(start + 21).ok()?,
+        member_count_offset: u64::try_from(count_at).ok()?,
         members,
         lost_edge_references: Vec::new(),
         member_offsets,
@@ -17405,6 +17466,11 @@ fn parse_parameter_scope(
     else {
         return None;
     };
+    let surface_stitch_operation = if kind == "SurfaceStitch" {
+        exact_surface_stitch_operation(bytes, header.record_index, reference_members)
+    } else {
+        None
+    };
     let family = design_feature_family(kind);
     // A `Sketch` scope carries either the single entity-suffix reference form
     // or, when the stream's sketch entity headers use the `EntityGenesis`
@@ -17579,6 +17645,7 @@ fn parse_parameter_scope(
         solid_primitive: None,
         direct_face_operation: None,
         move_operation: None,
+        surface_stitch_operation,
         fixed_extrude_parameters: None,
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
@@ -17596,6 +17663,32 @@ fn parse_parameter_scope(
         entity_reference_offset: None,
         paired_class_tag,
         paired_byte_offset: paired_at as u64,
+    })
+}
+
+fn exact_surface_stitch_operation(
+    bytes: &[u8],
+    scope_record_index: u32,
+    references: &[u32],
+) -> Option<DesignSurfaceStitchOperation> {
+    if references.len() < 4 || !references.len().is_multiple_of(2) {
+        return None;
+    }
+    let tolerance_record_index = references[references.len() - 2];
+    let settings_record_index = references[references.len() - 1];
+    let scalar = exact_fixed_scalar(bytes, tolerance_record_index)?;
+    if scalar.owner_record_index != Some(scope_record_index) || scalar.ordinal != 0 {
+        return None;
+    }
+    let gap_tolerance = scalar.value;
+    if !gap_tolerance.is_finite() || gap_tolerance <= 0.0 {
+        return None;
+    }
+    Some(DesignSurfaceStitchOperation {
+        gap_tolerance,
+        gap_tolerance_offset: scalar.value_offset,
+        tolerance_record_index,
+        settings_record_index,
     })
 }
 
@@ -20821,15 +20914,15 @@ mod relation_tests {
         exact_atomic_constraint, exact_base_feature_construction, exact_counted_dimension_relation,
         exact_counted_offset, exact_direct_face_operation, exact_fixed_chamfer_parameters,
         exact_fixed_extrude_parameters, exact_fixed_fillet_parameters, exact_offset_constraint,
-        exact_path_feature_construction, exact_solid_primitive, exact_work_plane_frame,
-        exact_work_point_position, expression_identifiers, face_recipe_program_kind,
-        feature_input_topology_id, find_dimension_locus_groups, find_dimension_locus_pair,
-        find_dimension_null_locus_pair, historical_profile_face_candidates, identity_matrix,
-        indexed_record_containing, indirect_angular_lines, neutral_dimension_constraint_id,
-        neutral_feature_id_parts, neutral_parameter_id_parts, neutral_sketch_curve_id,
-        neutral_sketch_id, neutral_sketch_point_id, next_indexed_record_offset,
-        next_indexed_record_offset_with_index, null_locus_dimension_definition,
-        offset_parameter_factor, parse_construction_operand_group,
+        exact_path_feature_construction, exact_solid_primitive, exact_surface_stitch_operation,
+        exact_work_plane_frame, exact_work_point_position, expression_identifiers,
+        face_recipe_program_kind, feature_input_topology_id, find_dimension_locus_groups,
+        find_dimension_locus_pair, find_dimension_null_locus_pair,
+        historical_profile_face_candidates, identity_matrix, indexed_record_containing,
+        indirect_angular_lines, neutral_dimension_constraint_id, neutral_feature_id_parts,
+        neutral_parameter_id_parts, neutral_sketch_curve_id, neutral_sketch_id,
+        neutral_sketch_point_id, next_indexed_record_offset, next_indexed_record_offset_with_index,
+        null_locus_dimension_definition, offset_parameter_factor, parse_construction_operand_group,
         parse_construction_operand_identity, parse_design_parameter,
         parse_dimension_annotation_frame, parse_dimension_locus_group, parse_dimension_locus_pair,
         parse_dimension_null_locus_pair, parse_edge_operand, parse_entity_selection_operand,
@@ -20862,9 +20955,10 @@ mod relation_tests {
         DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignObjectKind,
         DesignParameter, DesignParameterCompanion, DesignParameterKind, DesignParameterOwner,
         DesignParameterScope, DesignPathFeatureConstruction, DesignRecipeReference,
-        DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive, LostEdgeReference,
-        PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-        SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface,
+        DesignRecordHeader, DesignSketchPlacement, DesignSolidPrimitive,
+        DesignSurfaceStitchOperation, LostEdgeReference, PersistentSubentityTag,
+        SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint,
+        SketchRelation, SketchRelationOperand, SketchSurface,
     };
     use cadmpeg_ir::attributes::AttributeTarget;
     use cadmpeg_ir::features::{
@@ -24781,6 +24875,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -24856,7 +24951,7 @@ mod relation_tests {
         assert_eq!(compact.role, 0x0000_0008_0000_0000);
         assert_eq!(compact.paired_byte_offset, (paired_at - 3) as u64);
 
-        let mut remove_scope = scope;
+        let mut remove_scope = scope.clone();
         remove_scope.kind = "RemoveBody".into();
         let mut remove_group = group;
         remove_group.id = "f3d:Design/BulkStream.dat:operand-group#100".into();
@@ -24864,8 +24959,64 @@ mod relation_tests {
         assert_eq!(
             super::project_remove_body(&remove_scope, std::slice::from_ref(&remove_group)),
             Some(cadmpeg_ir::features::FeatureDefinition::DeleteBody {
-                bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id),
+                bodies: cadmpeg_ir::features::BodySelection::Native(remove_group.id.clone()),
                 mode: cadmpeg_ir::features::BodyRetentionMode::DeleteSelected,
+            })
+        );
+
+        let mut stitch_scope = scope;
+        stitch_scope.kind = "SurfaceStitch".into();
+        stitch_scope.reference_members = vec![100, 200, 300, 301];
+        stitch_scope.surface_stitch_operation = Some(DesignSurfaceStitchOperation {
+            gap_tolerance: 0.01,
+            gap_tolerance_offset: 40,
+            tolerance_record_index: 300,
+            settings_record_index: 301,
+        });
+        let mut stitch_group = remove_group;
+        stitch_group.members = vec![200];
+        stitch_group.role = 0x0000_0005_0000_0000;
+        assert_eq!(
+            super::project_surface_stitch(&stitch_scope, std::slice::from_ref(&stitch_group)),
+            Some(cadmpeg_ir::features::FeatureDefinition::KnitSurface {
+                faces: cadmpeg_ir::features::FaceSelection::Native(stitch_scope.id),
+                merge_entities: true,
+                create_solid: true,
+                gap_tolerance: Some(cadmpeg_ir::features::Length(0.1)),
+            })
+        );
+    }
+
+    #[test]
+    fn surface_stitch_tolerance_uses_its_fixed_scope_owned_frame() {
+        fn header(bytes: &mut Vec<u8>, class_tag: [u8; 3], record_index: u32) {
+            bytes.extend_from_slice(&3u32.to_le_bytes());
+            bytes.extend_from_slice(&class_tag);
+            bytes.extend_from_slice(&record_index.to_le_bytes());
+        }
+
+        let mut bytes = Vec::new();
+        header(&mut bytes, *b"308", 300);
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&[1, 1, 0, 0, 0]);
+        bytes.push(1);
+        bytes.extend_from_slice(&12u32.to_le_bytes());
+        bytes.extend_from_slice(&[0; 11]);
+        bytes.extend_from_slice(&0.01f64.to_le_bytes());
+        bytes.resize(104, 0);
+        header(&mut bytes, *b"258", 300);
+        bytes.extend_from_slice(&[0; 20]);
+        header(&mut bytes, *b"331", 301);
+        bytes.extend_from_slice(&[0; 20]);
+        header(&mut bytes, *b"258", 301);
+
+        assert_eq!(
+            exact_surface_stitch_operation(&bytes, 12, &[100, 200, 300, 301]),
+            Some(DesignSurfaceStitchOperation {
+                gap_tolerance: 0.01,
+                gap_tolerance_offset: 40,
+                tolerance_record_index: 300,
+                settings_record_index: 301,
             })
         );
     }
@@ -25083,6 +25234,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -25464,6 +25616,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -29703,6 +29856,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -29820,6 +29974,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -29984,6 +30139,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -30560,6 +30716,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -31263,6 +31420,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -31533,6 +31691,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
@@ -31641,6 +31800,7 @@ mod relation_tests {
                 solid_primitive: None,
                 direct_face_operation: None,
                 move_operation: None,
+                surface_stitch_operation: None,
                 fixed_extrude_parameters: None,
                 fixed_fillet_parameters: None,
                 fixed_chamfer_parameters: None,
@@ -32279,6 +32439,7 @@ mod relation_tests {
             solid_primitive: None,
             direct_face_operation: None,
             move_operation: None,
+            surface_stitch_operation: None,
             fixed_extrude_parameters: None,
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,

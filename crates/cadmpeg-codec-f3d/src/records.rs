@@ -1066,6 +1066,9 @@ pub struct DesignParameterScope {
     /// Exact rigid transform carried by a Move scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub move_operation: Option<DesignMoveOperation>,
+    /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_stitch_operation: Option<DesignSurfaceStitchOperation>,
     /// Exact fixed scalar lanes carried by an Extrude scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixed_extrude_parameters: Option<DesignFixedExtrudeParameters>,
@@ -1115,6 +1118,19 @@ pub struct DesignParameterScope {
     pub paired_class_tag: String,
     /// Byte offset of the paired indexed record header.
     pub paired_byte_offset: u64,
+}
+
+/// Fixed operation records named by a `SurfaceStitch` scope.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignSurfaceStitchOperation {
+    /// Positive maximum stitched-boundary gap in centimetres.
+    pub gap_tolerance: f64,
+    /// Byte offset of `gap_tolerance`.
+    pub gap_tolerance_offset: u64,
+    /// Indexed tolerance-record identity.
+    pub tolerance_record_index: u32,
+    /// Indexed operation-settings record identity.
+    pub settings_record_index: u32,
 }
 
 /// Result bodies captured when a Fusion direct-modeling Base Feature closes.
