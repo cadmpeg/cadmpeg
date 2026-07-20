@@ -1412,12 +1412,14 @@ pub struct ExpressionDeclarationName<'a> {
 }
 
 /// Primary body-object reference carried by one bounded operation record.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationBodyReference {
     /// Absolute offset of the object-index token.
     pub offset: usize,
     /// Referenced body object index.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
 }
 
 /// Object-index reference in one bounded offset-only OM data block.
@@ -3976,7 +3978,7 @@ pub fn operation_body_reference(record: OperationRecord<'_>) -> Option<Operation
     let [reference] = matches.as_slice() else {
         return None;
     };
-    Some(*reference)
+    Some(reference.clone())
 }
 
 /// Decode every ordered `01 02 10 index ff` body-reference field in one operation.
@@ -3996,6 +3998,7 @@ pub fn operation_body_references(record: OperationRecord<'_>) -> Vec<OperationBo
             matches.push(OperationBodyReference {
                 offset: record.offset + token,
                 object_index,
+                raw_object_index: record.bytes[token..end].to_vec(),
             });
         }
     }

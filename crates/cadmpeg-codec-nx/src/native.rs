@@ -4277,6 +4277,8 @@ pub struct FeatureBodyReference {
     pub operation_label: String,
     /// Primary body object index.
     pub body_object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_body_object_index: Vec<u8>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
 }
@@ -4292,6 +4294,8 @@ pub struct FeatureBodyReferenceOccurrence {
     pub ordinal: u32,
     /// Serialized body object index.
     pub body_object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_body_object_index: Vec<u8>,
     /// Absolute file offset of the object-index token.
     pub source_offset: u64,
 }
@@ -4318,6 +4322,8 @@ pub struct FeatureInputBlock {
     pub input_slot: u8,
     /// Object index serialized in that slot.
     pub object_index: u32,
+    /// Exact serialized variable-width object-index token.
+    pub raw_object_index: Vec<u8>,
     /// Target in the native `data_blocks` arena.
     pub data_block: String,
     /// Absolute file offset of the object-index token.
@@ -6888,6 +6894,7 @@ pub fn feature_body_references(container: &Container) -> Vec<FeatureBodyReferenc
                 id: format!("nx:feature-history:body-reference#{section_key}-{ordinal:010}"),
                 operation_label,
                 body_object_index: reference.object_index,
+                raw_body_object_index: reference.raw_object_index,
                 source_offset: entry_offset + reference.offset as u64,
             });
         }
@@ -6928,6 +6935,7 @@ pub fn feature_body_reference_occurrences(
                         operation_label: operation_label.clone(),
                         ordinal: ordinal as u32,
                         body_object_index: reference.object_index,
+                        raw_body_object_index: reference.raw_object_index,
                         source_offset: entry_offset + reference.offset as u64,
                     }),
             );
@@ -7158,6 +7166,25 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                 let Some(data_block) = unique_offset_data_block(&indexed, object_index) else {
                     continue;
                 };
+                let Some(record_area_offset) = section.record_area_offset else {
+                    continue;
+                };
+                let token_offset = label.object_index_offsets[input_slot];
+                let token_end = label
+                    .object_index_offsets
+                    .get(input_slot + 1)
+                    .copied()
+                    .unwrap_or(label.offset);
+                let Some(raw_object_index) = section.record_area.and_then(|record_area| {
+                    record_area
+                        .get(
+                            token_offset.checked_sub(record_area_offset)?
+                                ..token_end.checked_sub(record_area_offset)?,
+                        )
+                        .map(<[u8]>::to_vec)
+                }) else {
+                    continue;
+                };
                 let operation_label = format!(
                     "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
                 );
@@ -7168,6 +7195,7 @@ pub fn feature_input_blocks(container: &Container) -> Vec<FeatureInputBlock> {
                     operation_label,
                     input_slot: input_slot as u8,
                     object_index,
+                    raw_object_index,
                     data_block,
                     source_offset: entry_offset + label.object_index_offsets[input_slot] as u64,
                 });

@@ -125,8 +125,9 @@ decoded values and exact serialized tokens. `name` contains printable
 ASCII bytes and `length = name_length + 2`.
 Each non-null header slot addresses the zero-based entity-record ordinal in the
 offset-only OM store. The addressed record retains its external index boundary
-as the operation's ordered input block. A slot binds only when exactly one
-offset-only store contains that ordinal.
+as the operation's ordered input block. The input binding retains the exact
+object-index token and its offset. A slot binds only when exactly one offset-only
+store contains that ordinal.
 Input bindings from two or more distinct operation headers form an identity
 group when they resolve to the same bounded data block. Group members retain
 their input-binding identity, operation-label identity, header slot, and
@@ -156,8 +157,9 @@ unresolved without discarding the operation family or Boolean kind.
 
 A body-affecting operation record contains exactly one primary-body field
 `01 02 10 body_object_index ff`. The object index uses the operation-header
-encoding. Operations sharing the index form one ordered body lineage. An
-operation depends on the preceding operation in its primary-body lineage. A
+encoding and retains its exact token and offset. Operations sharing the index
+form one ordered body lineage. An operation depends on the preceding operation
+in its primary-body lineage. A
 Boolean additionally depends on the preceding operation in each tool-body
 lineage, preserving tool order and omitting duplicate dependencies. When the
 primary body object has a segment body-image binding, every surviving neutral

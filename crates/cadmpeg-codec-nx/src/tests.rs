@@ -2778,7 +2778,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 149);
+    assert_eq!(namespace.version, 150);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -4925,6 +4925,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         operation_label: label.id.clone(),
         input_slot: slot,
         object_index: index,
+        raw_object_index: vec![index as u8],
         data_block: format!("nx:om-data-blocks-2:block#{index}"),
         source_offset: 710 + u64::from(slot),
     };
@@ -5081,6 +5082,7 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         operation_label: "nx:feature-history:operation-label#0-7".to_string(),
         input_slot: 0,
         object_index: 45,
+        raw_object_index: vec![45],
         data_block: "nx:om-data-blocks-2:block#45".to_string(),
         source_offset: 700,
     };
@@ -5460,6 +5462,7 @@ fn feature_input_identity_groups_require_distinct_operations_and_preserve_order(
         operation_label: operation.to_string(),
         input_slot: slot,
         object_index: 7,
+        raw_object_index: vec![7],
         data_block: block.to_string(),
         source_offset: offset,
     };
@@ -5489,6 +5492,7 @@ fn feature_input_column_row_uses_preserve_index_row_slots() {
         operation_label: "operation#1".into(),
         input_slot: 2,
         object_index: 7,
+        raw_object_index: vec![7],
         data_block: "block#4".into(),
         source_offset: 10,
     };
@@ -5540,6 +5544,7 @@ fn feature_input_column_row_uses_preserve_linked_row_slots() {
         operation_label: "operation#1".into(),
         input_slot: 2,
         object_index: 4,
+        raw_object_index: vec![4],
         data_block: "block#4".into(),
         source_offset: 10,
     };
@@ -5615,6 +5620,7 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         operation_label: "operation#1".into(),
         input_slot: 2,
         object_index: 4,
+        raw_object_index: vec![4],
         data_block: "block#4".into(),
         source_offset: 10,
     };
@@ -7004,6 +7010,7 @@ fn nx_datum_csys_block_uses_preserve_reference_and_input_order() {
             operation_label: operation.to_string(),
             input_slot: slot,
             object_index: 44,
+            raw_object_index: vec![44],
             data_block: block.to_string(),
             source_offset: 200,
         };
@@ -7080,6 +7087,7 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
         Some(crate::om::OperationBodyReference {
             offset: 103,
             object_index: 6466,
+            raw_object_index: vec![0x90, 0x19, 0x42],
         })
     );
 
@@ -7096,10 +7104,12 @@ fn om_operation_primary_body_reference_requires_one_complete_field() {
             crate::om::OperationBodyReference {
                 offset: 103,
                 object_index: 6466,
+                raw_object_index: vec![0x90, 0x19, 0x42],
             },
             crate::om::OperationBodyReference {
                 offset: 110,
                 object_index: 6466,
+                raw_object_index: vec![0x90, 0x19, 0x42],
             },
         ]
     );
@@ -7167,6 +7177,7 @@ fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
         id: format!("reference#{body_object_index}"),
         operation_label: operation.to_string(),
         body_object_index,
+        raw_body_object_index: vec![body_object_index as u8],
         source_offset: 0,
     };
     let references = [reference("operation#0", 10), reference("operation#1", 20)];
@@ -7202,6 +7213,7 @@ fn feature_body_lineage_consumes_delete_body_references() {
         id: "reference#10".to_string(),
         operation_label: "operation#delete".to_string(),
         body_object_index: 10,
+        raw_body_object_index: vec![10],
         source_offset: 0,
     }];
     let bindings = [SegmentBodyBinding {
@@ -7239,6 +7251,7 @@ fn feature_body_lineage_allows_a_writer_after_delete() {
         id: format!("reference#{ordinal}"),
         operation_label: format!("operation#{ordinal}"),
         body_object_index: 10,
+        raw_body_object_index: vec![10],
         source_offset: u64::from(ordinal),
     };
     let references = [reference(0), reference(1)];
@@ -7282,6 +7295,7 @@ fn feature_body_lineage_continues_across_ordered_history_sections() {
         id: "reference#20".to_string(),
         operation_label: "operation#early".to_string(),
         body_object_index: 20,
+        raw_body_object_index: vec![20],
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {
@@ -7329,6 +7343,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         id: "reference#0".to_string(),
         operation_label: "operation#0".to_string(),
         body_object_index: 10,
+        raw_body_object_index: vec![10],
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {
@@ -7373,6 +7388,7 @@ fn feature_body_segment_uses_require_one_alias_pair() {
         id: "nx:feature-history:body-reference#0".into(),
         operation_label: "operation#0".into(),
         body_object_index: 11,
+        raw_body_object_index: vec![11],
         source_offset: 90,
     };
     let binding = SegmentBodyBinding {
@@ -7413,6 +7429,7 @@ fn feature_body_lineage_treats_segment_tuple_indices_as_one_identity() {
         id: "reference#150".to_string(),
         operation_label: "operation#0".to_string(),
         body_object_index: 150,
+        raw_body_object_index: vec![0x80, 150],
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {
@@ -7467,6 +7484,7 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         id: "reference#30".to_string(),
         operation_label: "operation#0".to_string(),
         body_object_index: 30,
+        raw_body_object_index: vec![30],
         source_offset: 0,
     }];
     let booleans = [FeatureBooleanOperation {
@@ -8813,6 +8831,7 @@ fn nx_operation_body_operands_require_known_distinct_body_identities() {
         operation_label: "earlier".to_string(),
         ordinal: 0,
         body_object_index: 20,
+        raw_body_object_index: vec![20],
         source_offset: 0,
     }];
     let bindings = [SegmentBodyBinding {
@@ -13430,7 +13449,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 149);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 150);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));
