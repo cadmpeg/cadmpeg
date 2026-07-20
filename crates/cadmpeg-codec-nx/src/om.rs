@@ -949,6 +949,8 @@ pub struct DatumPlaneObjectScalarPair {
     pub offset: usize,
     /// Ordered finite shifted-IEEE binary64 values.
     pub values: [f64; 2],
+    /// Exact shifted-binary64 encodings in value order.
+    pub raw_values: [[u8; 8]; 2],
     /// Payload-relative offsets of the two scalar encodings.
     pub value_offsets: [usize; 2],
 }
@@ -973,6 +975,8 @@ pub struct ObjectPayloadScalarPair {
     pub offset: usize,
     /// Ordered finite shifted-IEEE values.
     pub values: [f64; 2],
+    /// Exact shifted-binary64 encodings in value order.
+    pub raw_values: [[u8; 8]; 2],
     /// Payload-relative offsets of the two scalar encodings.
     pub value_offsets: [usize; 2],
     /// Exact discriminator selecting the scalar-pair branch.
@@ -3184,6 +3188,10 @@ pub fn datum_plane_object_scalar_pairs(bytes: &[u8]) -> Vec<DatumPlaneObjectScal
                     shifted_ieee_f64(bytes.get(first..first + 8)?)?,
                     shifted_ieee_f64(bytes.get(second..second + 8)?)?,
                 ],
+                raw_values: [
+                    bytes.get(first..first + 8)?.try_into().ok()?,
+                    bytes.get(second..second + 8)?.try_into().ok()?,
+                ],
                 value_offsets: [first, second],
             })
         })
@@ -3244,11 +3252,23 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
             }
             let first = offset + discriminator.len();
             let second = first + 9;
-            let Some(values) = bytes
+            if bytes.get(first + 8) != Some(&0x00) {
+                continue;
+            }
+            let Some(raw_values) = bytes
                 .get(first..first + 8)
-                .and_then(shifted_ieee_f64)
-                .zip(bytes.get(second..second + 8).and_then(shifted_ieee_f64))
-                .filter(|_| bytes.get(first + 8) == Some(&0x00))
+                .and_then(|value| <[u8; 8]>::try_from(value).ok())
+                .zip(
+                    bytes
+                        .get(second..second + 8)
+                        .and_then(|value| <[u8; 8]>::try_from(value).ok()),
+                )
+                .map(|(first, second)| [first, second])
+            else {
+                continue;
+            };
+            let Some(values) = shifted_ieee_f64(&raw_values[0])
+                .zip(shifted_ieee_f64(&raw_values[1]))
                 .map(|(first, second)| [first, second])
             else {
                 continue;
@@ -3256,6 +3276,7 @@ pub fn object_payload_scalar_pairs(bytes: &[u8]) -> Vec<ObjectPayloadScalarPair>
             pairs.push(ObjectPayloadScalarPair {
                 offset,
                 values,
+                raw_values,
                 value_offsets: [first, second],
                 discriminator: discriminator.to_vec(),
             });

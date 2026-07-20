@@ -4539,6 +4539,8 @@ pub struct FeatureDatumCsysPayloadScalarPair {
     pub ordinal: u32,
     /// Ordered finite shifted-IEEE values.
     pub values: [f64; 2],
+    /// Exact shifted-binary64 encodings in value order.
+    pub raw_values: [[u8; 8]; 2],
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
     /// Payload-relative scalar offsets.
@@ -4729,6 +4731,8 @@ pub struct FeatureDatumPlanePayloadScalarPair {
     pub ordinal: u32,
     /// Ordered finite shifted-IEEE values.
     pub values: [f64; 2],
+    /// Exact shifted-binary64 encodings in value order.
+    pub raw_values: [[u8; 8]; 2],
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
     /// Payload-relative offsets of the scalar encodings.
@@ -4873,6 +4877,8 @@ pub struct FeatureSketchPayloadCoordinatePair {
     pub ordinal: u32,
     /// Ordered finite shifted-IEEE values.
     pub values: [f64; 2],
+    /// Exact shifted-binary64 encodings in value order.
+    pub raw_values: [[u8; 8]; 2],
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
     /// Payload-relative scalar offsets.
@@ -5660,6 +5666,8 @@ pub struct FeatureSurfaceConstructionScalarPair {
     pub ordinal: u32,
     /// Ordered finite shifted-IEEE values.
     pub values: [f64; 2],
+    /// Exact shifted-binary64 encodings in value order.
+    pub raw_values: [[u8; 8]; 2],
     /// Payload-relative offset of the discriminator.
     pub payload_offset: u64,
     /// Payload-relative scalar offsets.
@@ -7607,6 +7615,7 @@ pub fn feature_datum_csys_payload_scalar_pairs(
                         datum_csys_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         values: pair.values,
+                        raw_values: pair.raw_values,
                         payload_offset: pair.offset as u64,
                         value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                         source_offset: source_offset(pair.offset)?,
@@ -7813,6 +7822,7 @@ pub fn feature_datum_plane_payload_scalar_pairs(
                         datum_plane_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         values: pair.values,
+                        raw_values: pair.raw_values,
                         payload_offset: pair.offset as u64,
                         value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                         source_offset: source_offset(pair.offset)?,
@@ -8123,6 +8133,7 @@ pub fn feature_sketch_payload_coordinate_pairs(
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         values: pair.values,
+                        raw_values: pair.raw_values,
                         payload_offset: pair.offset as u64,
                         value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                         source_offset: source_offset(pair.offset)?,
@@ -10036,6 +10047,7 @@ pub fn feature_surface_construction_scalar_pairs(
                         surface_construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         values: pair.values,
+                        raw_values: pair.raw_values,
                         payload_offset: pair.offset as u64,
                         value_payload_offsets: pair.value_offsets.map(|offset| offset as u64),
                         source_offset: joined_payload_source_offset(
