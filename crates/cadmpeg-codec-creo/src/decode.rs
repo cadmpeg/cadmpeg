@@ -13105,6 +13105,54 @@ fn slot_fillet_cylinder(
         .then_some(first)
 }
 
+fn outline_has_unique_radius_delta(frame: crate::surface::TorusOutlineFrame, radius: f64) -> bool {
+    let scale = frame
+        .values
+        .iter()
+        .map(|value| value.abs())
+        .fold(radius.abs().max(1.0), f64::max);
+    frame.values[..3]
+        .iter()
+        .zip(&frame.values[3..])
+        .filter(|(first, second)| ((*second - *first).abs() - radius).abs() <= 1e-9 * scale)
+        .count()
+        == 1
+}
+
+fn prototype_outline_round_radius(
+    scan: &ContainerScan,
+    rows: &[&crate::surface::SurfaceRow],
+) -> Option<f64> {
+    (scan.layout == crate::container::Layout::Nd).then_some(())?;
+    let feature_id = rows.first()?.feature_id;
+    let prototype_radii = unique_surface_prototype_associations(scan)
+        .into_iter()
+        .filter(|(record, row, _)| {
+            record.family == crate::surface::SurfacePrototypeFamily::Torus
+                && row.feature_id == feature_id
+                && rows.iter().any(|candidate| candidate.offset == row.offset)
+        })
+        .filter_map(|(record, _, _)| prototype_scalar(record, "radius2"))
+        .collect::<Vec<_>>();
+    let radius = unique_positive_length(&prototype_radii)?;
+    rows.iter()
+        .all(|row| {
+            let records = scan
+                .surface_parameters
+                .iter()
+                .filter(|record| record.offset == row.offset)
+                .collect::<Vec<_>>();
+            let [record] = records.as_slice() else {
+                return false;
+            };
+            record.torus_radius_overrides(row.type_byte).is_none()
+                && record
+                    .torus_outline_frame(row.type_byte)
+                    .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius))
+        })
+        .then_some(radius)
+}
+
 fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
     let cylinder_rows = scan
         .surface_rows
@@ -13141,8 +13189,11 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
                     .torus_radius_overrides(row.type_byte)
                     .map(|overrides| overrides.radius2)
             })
-            .collect::<Option<Vec<_>>>()?;
-        return unique_positive_length(&radii);
+            .collect::<Option<Vec<_>>>();
+        return radii
+            .as_deref()
+            .and_then(unique_positive_length)
+            .or_else(|| prototype_outline_round_radius(scan, &generated_rows));
     }
     let cylinder_radii = cylinder_rows
         .iter()
@@ -15920,6 +15971,27 @@ mod resolved_sketch_tests {
         assert!(
             compact_simple_hole_cylinder_id(107, std::slice::from_ref(&table), &[row]).is_none()
         );
+    }
+
+    #[test]
+    fn torus_outline_identifies_exactly_one_prototype_radius_delta() {
+        let outline = |values| crate::surface::TorusOutlineFrame {
+            values,
+            selector: 0,
+            offset: 0,
+        };
+        assert!(outline_has_unique_radius_delta(
+            outline([-192.5, -5.0, -40.0, -167.5, -3.0, 52.5]),
+            2.0
+        ));
+        assert!(!outline_has_unique_radius_delta(
+            outline([-2.0, -2.0, 0.0, 0.0, 0.0, 8.0]),
+            2.0
+        ));
+        assert!(!outline_has_unique_radius_delta(
+            outline([-2.0, 0.0, 0.0, 2.0, 0.0, 8.0]),
+            2.0
+        ));
     }
 
     #[test]
@@ -27023,14 +27095,13 @@ fn prototype_local_frame(
     Some((origin, axis, reference))
 }
 
-fn transfer_first_instance_prototype_surfaces(
+fn unique_surface_prototype_associations(
     scan: &ContainerScan,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-) -> usize {
-    if scan.layout != crate::container::Layout::Nd {
-        return 0;
-    }
+) -> Vec<(
+    &crate::surface::SurfacePrototypeRecord,
+    &crate::surface::SurfaceRow,
+    &crate::container::Section,
+)> {
     let mut associations = Vec::new();
     for record in &scan.surface_prototype_records {
         let row_kind = match record.family {
@@ -27075,12 +27146,22 @@ fn transfer_first_instance_prototype_surfaces(
     for (_, row, _) in &associations {
         *association_counts.entry(row.offset).or_default() += 1;
     }
+    associations
+        .into_iter()
+        .filter(|(_, row, _)| association_counts.get(&row.offset) == Some(&1))
+        .collect()
+}
 
+fn transfer_first_instance_prototype_surfaces(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    if scan.layout != crate::container::Layout::Nd {
+        return 0;
+    }
     let mut transferred = 0;
-    for (record, row, section) in associations {
-        if association_counts.get(&row.offset) != Some(&1) {
-            continue;
-        }
+    for (record, row, section) in unique_surface_prototype_associations(scan) {
         let geometry = match record.family {
             crate::surface::SurfacePrototypeFamily::Plane => {
                 let Some((origin, axis, reference)) = prototype_local_frame(record) else {
