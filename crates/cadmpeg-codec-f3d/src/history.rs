@@ -333,10 +333,13 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
     let Some(active_records) = framed.get(..active_count) else {
         return;
     };
+    let Some(archive) = historical_record_archive(states, active_records, bytes, width) else {
+        return;
+    };
     let topology = states
         .iter()
         .map(|state| {
-            let records = materialize_record_table(states, state, active_records, bytes, width)?;
+            let records = materialize_record_table(state, &archive)?;
             historical_topology(&crate::brep::decode(&records, bytes, "history"))
         })
         .collect::<Option<Vec<_>>>();
@@ -347,6 +350,83 @@ fn bind_complete_record_tables(states: &mut [AsmDeltaState], bytes: &[u8], width
         }
         bind_historical_transitions(states);
     }
+}
+
+struct HistoricalRecordArchive {
+    records: HashMap<i64, crate::sab::Record>,
+}
+
+fn historical_record_archive(
+    states: &[AsmDeltaState],
+    active_records: &[crate::sab::Record],
+    bytes: &[u8],
+    width: usize,
+) -> Option<HistoricalRecordArchive> {
+    if active_records
+        .iter()
+        .enumerate()
+        .any(|(index, record)| record.index != index)
+    {
+        return None;
+    }
+    let active_count = i64::try_from(active_records.len()).ok()?;
+    let mut revision_entities = (0..active_count)
+        .map(|entity_ref| (entity_ref, entity_ref))
+        .collect::<HashMap<_, _>>();
+    for change in states
+        .iter()
+        .flat_map(|state| &state.bulletin_boards)
+        .flat_map(|board| &board.changes)
+    {
+        let Some(old_ref) = change.old_ref else {
+            continue;
+        };
+        let entity_ref = change.new_ref.unwrap_or(old_ref);
+        if revision_entities.insert(old_ref, entity_ref).is_some() {
+            return None;
+        }
+    }
+    let mut records = active_records
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(revision, record)| Some((i64::try_from(revision).ok()?, record)))
+        .collect::<Option<HashMap<_, _>>>()?;
+    for record in states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter(|record| record.name != "End-of-ASM-data")
+    {
+        let revision_id = record.revision_id?;
+        let offset = usize::try_from(record.byte_offset).ok()?;
+        let limit = offset.checked_add(record.raw_bytes.len())?;
+        if bytes.get(offset..limit)? != record.raw_bytes {
+            return None;
+        }
+        let mut framed = crate::sab::frame(bytes, offset, limit, width).ok()?;
+        if framed.len() != 1 {
+            return None;
+        }
+        let framed = framed.pop()?;
+        if framed.name != record.name || records.insert(revision_id, framed).is_some() {
+            return None;
+        }
+    }
+    if records.len() != revision_entities.len() {
+        return None;
+    }
+    for (&revision_ref, record) in &mut records {
+        record.index = usize::try_from(*revision_entities.get(&revision_ref)?).ok()?;
+        for token in &mut record.tokens {
+            let crate::sab::Token::Ref(reference) = token else {
+                continue;
+            };
+            if *reference >= 0 {
+                *reference = *revision_entities.get(reference)?;
+            }
+        }
+    }
+    Some(HistoricalRecordArchive { records })
 }
 
 fn bind_historical_transitions(states: &mut [AsmDeltaState]) {
@@ -2833,59 +2913,10 @@ fn historical_topology(brep: &crate::brep::Brep) -> Option<AsmHistoricalTopology
 }
 
 fn materialize_record_table(
-    states: &[AsmDeltaState],
     state: &AsmDeltaState,
-    active_records: &[crate::sab::Record],
-    bytes: &[u8],
-    width: usize,
+    archive: &HistoricalRecordArchive,
 ) -> Option<Vec<crate::sab::Record>> {
-    if state.entity_versions.is_empty()
-        || active_records
-            .iter()
-            .enumerate()
-            .any(|(index, record)| record.index != index)
-    {
-        return None;
-    }
-    let active_count = i64::try_from(active_records.len()).ok()?;
-    let mut revision_entities = (0..active_count)
-        .map(|entity_ref| (entity_ref, entity_ref))
-        .collect::<HashMap<_, _>>();
-    for change in states
-        .iter()
-        .flat_map(|state| &state.bulletin_boards)
-        .flat_map(|board| &board.changes)
-    {
-        let Some(old_ref) = change.old_ref else {
-            continue;
-        };
-        let entity_ref = change.new_ref.unwrap_or(old_ref);
-        if revision_entities.insert(old_ref, entity_ref).is_some() {
-            return None;
-        }
-    }
-    let mut archived_records = HashMap::new();
-    for record in states
-        .iter()
-        .flat_map(|state| &state.records)
-        .filter(|record| record.name != "End-of-ASM-data")
-    {
-        let revision_id = record.revision_id?;
-        let offset = usize::try_from(record.byte_offset).ok()?;
-        let limit = offset.checked_add(record.raw_bytes.len())?;
-        if bytes.get(offset..limit)? != record.raw_bytes {
-            return None;
-        }
-        let mut framed = crate::sab::frame(bytes, offset, limit, width).ok()?;
-        if framed.len() != 1 {
-            return None;
-        }
-        let framed = framed.pop()?;
-        if framed.name != record.name || archived_records.insert(revision_id, framed).is_some() {
-            return None;
-        }
-    }
-    if archived_records.len() != revision_entities.len().checked_sub(active_records.len())? {
+    if state.entity_versions.is_empty() {
         return None;
     }
     let present = state
@@ -2898,30 +2929,19 @@ fn materialize_record_table(
     }
     let mut records = Vec::with_capacity(state.entity_versions.len());
     for version in &state.entity_versions {
-        if revision_entities.get(&version.record_ref) != Some(&version.entity_ref) {
+        let record = archive.records.get(&version.record_ref)?;
+        if i64::try_from(record.index).ok() != Some(version.entity_ref) {
             return None;
         }
-        let mut record = if version.record_ref < active_count {
-            active_records
-                .get(usize::try_from(version.record_ref).ok()?)?
-                .clone()
-        } else {
-            archived_records.get(&version.record_ref)?.clone()
-        };
-        record.index = usize::try_from(version.entity_ref).ok()?;
-        for token in &mut record.tokens {
+        for token in &record.tokens {
             let crate::sab::Token::Ref(reference) = token else {
                 continue;
             };
-            if *reference < 0 {
-                continue;
-            }
-            *reference = *revision_entities.get(reference)?;
-            if !present.contains(reference) {
+            if *reference >= 0 && !present.contains(reference) {
                 return None;
             }
         }
-        records.push(record);
+        records.push(record.clone());
     }
     records.sort_unstable_by_key(|record| record.index);
     Some(records)
@@ -4170,14 +4190,11 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        let table = materialize_record_table(
-            std::slice::from_ref(&state),
-            &state,
-            &active,
-            &archived_bytes,
-            8,
-        )
-        .expect("complete historical RecordTable");
+        let archive =
+            historical_record_archive(std::slice::from_ref(&state), &active, &archived_bytes, 8)
+                .expect("complete historical record archive");
+        let table =
+            materialize_record_table(&state, &archive).expect("complete historical RecordTable");
 
         assert_eq!(table.len(), 2);
         assert_eq!(table[1].index, 1);
