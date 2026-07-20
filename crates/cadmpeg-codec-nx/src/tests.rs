@@ -5605,7 +5605,9 @@ fn feature_input_column_row_uses_preserve_target_row_slots() {
         section_ordinal: 0,
         ordinal: 3,
         target_index: 4,
+        raw_target_index: vec![4],
         indices: [5, 6, 4],
+        raw_indices: [vec![5], vec![6], vec![4]],
         data_blocks: [
             "block#4".into(),
             "block#5".into(),
@@ -5708,7 +5710,9 @@ fn data_block_column_index_tables_require_complete_mode_and_target_sequence() {
         section_ordinal: 2,
         ordinal: 0,
         target_index: index,
+        raw_target_index: vec![index as u8],
         indices: [5, 6, 7],
+        raw_indices: [vec![5], vec![6], vec![7]],
         data_blocks: [
             format!("block#{index}"),
             "block#5".into(),
@@ -9346,7 +9350,9 @@ fn om_offset_store_target_index_rows_require_complete_exact_frames() {
     let rows = crate::om::offset_store_target_index_rows(row);
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].target_index, (62, 5));
+    assert_eq!(rows[0].raw_target_index, [0x3e]);
     assert_eq!(rows[0].indices, [(30, 10), (32, 11), (88, 12)]);
+    assert_eq!(rows[0].raw_indices, [vec![0x1e], vec![0x20], vec![0x58]]);
     assert_eq!(rows[0].mode, 7);
 
     let mut null = row.to_vec();

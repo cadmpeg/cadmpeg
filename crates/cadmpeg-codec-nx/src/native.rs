@@ -12435,8 +12435,12 @@ pub struct DataBlockTargetIndexRow {
     pub ordinal: u32,
     /// Target compact block index.
     pub target_index: u32,
+    /// Exact serialized target-index token.
+    pub raw_target_index: Vec<u8>,
     /// Three compact block indices after `ff ff 90 fe`.
     pub indices: [u32; 3],
+    /// Exact serialized post-marker tokens in row order.
+    pub raw_indices: [Vec<u8>; 3],
     /// Target block followed by the three post-marker blocks.
     pub data_blocks: [String; 4],
     /// Serialized `04` or `07` mode.
@@ -14277,7 +14281,9 @@ pub fn data_block_target_index_rows(container: &Container) -> Vec<DataBlockTarge
                         section_ordinal: section_ordinal as u32,
                         ordinal: ordinal as u32,
                         target_index: row.target_index.0,
+                        raw_target_index: row.raw_target_index,
                         indices: row.indices.map(|(index, _)| index),
+                        raw_indices: row.raw_indices,
                         data_blocks,
                         mode: row.mode,
                         source_entry: entry.name.clone(),
