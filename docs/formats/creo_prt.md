@@ -1128,7 +1128,8 @@ order. In positional dimension rows, a bare
 compact `ext_id`.
 The positional `value` lane uses the positive DICT lattice `5b..a3`; the first
 two IEEE bytes are `3F75 + prefix` and the following six bytes complete the
-value; `ad` is an alias for leading bytes `3F D9`. A bare `18` value is zero. Unresolved `00 XX YY`, `01 XX YY ZZ`, and
+value; `ad` is an alias for leading bytes `3F D9`. The seven-byte
+`31 <tail6>` form reconstructs `[40, tail6, 00]`. A bare `18` value is zero. Unresolved `00 XX YY`, `01 XX YY ZZ`, and
 `53 <tail6>` value forms occupy three, four, and seven bytes respectively, so
 the following one-byte `direct`, `aux_value`, and compact `ext_id` fields remain
 aligned.

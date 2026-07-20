@@ -1696,6 +1696,12 @@ fn decode_variable_scalar(
         raw[1..].copy_from_slice(&payload[offset + 1..offset + 8]);
         return (Some(f64::from_be_bytes(raw)), offset + 8, false);
     }
+    if prefix == 0x31 && offset + 7 <= end {
+        let mut raw = [0; 8];
+        raw[0] = 0x40;
+        raw[1..7].copy_from_slice(&payload[offset + 1..offset + 7]);
+        return (Some(f64::from_be_bytes(raw)), offset + 7, false);
+    }
     let variable_dict = match prefix {
         0x5b..=0xa3 => Some((0x3f75_u16 + u16::from(prefix)).to_be_bytes()),
         0xad => Some([0x3f, 0xd9]),
@@ -7340,6 +7346,23 @@ mod tests {
         let zero_row = positional_dimension(&zero, 0, zero.len(), &cache).expect("zero dimension");
         assert_eq!(zero_row.value, Some(0.0));
         assert_eq!(zero_row.external_id, 49);
+    }
+
+    #[test]
+    fn positional_dimension_seven_byte_positive_value_preserves_field_alignment() {
+        let body = [2, 0x31, 0x60, 0x07, 0x53, 0x93, 0xb5, 0xe5, 0, 0x18, 27];
+        let row = positional_dimension(&body, 0, body.len(), &scalar::ScalarCache::default())
+            .expect("seven-byte positive dimension");
+
+        assert_eq!(
+            row.value,
+            Some(f64::from_be_bytes([
+                0x40, 0x60, 0x07, 0x53, 0x93, 0xb5, 0xe5, 0,
+            ]))
+        );
+        assert_eq!(row.direction_byte, 0);
+        assert_eq!(row.auxiliary_value, Some(0.0));
+        assert_eq!(row.external_id, 27);
     }
 
     #[test]
