@@ -983,9 +983,10 @@ A two-item type-nine incidence with sense zero on two lines makes the lines
 collinear. The line-and-point form maps to point-on-object as defined above.
 A one-item type-one incidence with sense zero makes the referenced line
 horizontal. A one-item type-two incidence with sense zero makes the referenced
-line vertical. A separate sense-`2` or sense-`3` solver operand establishes the
-endpoint-bearing line role when that entity's geometry remains native. Other
-senses select a locus and do not define an entity-level orientation constraint.
+line vertical. A separate sense-`2` or sense-`3` solver operand or sense-zero
+type-35 midpoint-target operand establishes the line role when that entity's
+geometry remains native. Other senses select a locus and do not define an
+entity-level orientation constraint.
 Stored horizontal/vertical selectors and unique type-one/type-two incidences
 define the line's held `v`/`u` coordinate, respectively. For type three or type
 nine, a selected point on such a line inherits that held coordinate from either

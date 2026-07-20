@@ -10502,14 +10502,27 @@ fn section_skamp_oriented_line(
     if section_skamp_is_line(definition, item) {
         return Some(entity);
     }
-    let endpoint_bearing = definition
+    let line_role_evidence = definition
         .relations
         .iter()
         .filter(|relations| feature_skamp_table_complete(relations))
         .flat_map(|relations| &relations.skamps)
-        .flat_map(|skamp| &skamp.items)
-        .any(|candidate| candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3));
-    (endpoint_bearing
+        .any(|skamp| {
+            skamp.items.iter().any(|candidate| {
+                candidate.entity_id == item.entity_id && matches!(candidate.sense, 2 | 3)
+            }) || match (skamp.kind, skamp.items.as_slice()) {
+                (35, [first, second]) => {
+                    (first.entity_id == item.entity_id
+                        && first.sense == 0
+                        && matches!(second.sense, 2..=4))
+                        || (second.entity_id == item.entity_id
+                            && second.sense == 0
+                            && matches!(first.sense, 2..=4))
+                }
+                _ => false,
+            }
+        });
+    (line_role_evidence
         && geometry?
             .get(&entity)
             .is_some_and(|geometry| matches!(geometry, SketchGeometry::Native { .. })))
@@ -20162,6 +20175,31 @@ mod resolved_sketch_tests {
                 entity: native_endpoint,
             }
         );
+        let point_coincidence_relations = point_coincidence_definition
+            .relations
+            .as_mut()
+            .expect("relations");
+        point_coincidence_relations.skamps[1].kind = 35;
+        point_coincidence_relations.skamps[1].items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 99,
+                sense: 0,
+            },
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 2,
+            },
+        ];
+        assert!(matches!(
+            section_skamp_constraints_for_geometry(
+                &point_coincidence_definition,
+                &SketchId("creo:model:sketch#917".into()),
+                Some(&incidence_geometry),
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Horizontal { .. }
+        ));
         let mut collinear_definition = definition.clone();
         let collinear_relations = collinear_definition.relations.as_mut().expect("relations");
         collinear_relations.skamps = vec![crate::feature::FeatureSkamp {
