@@ -799,6 +799,8 @@ pub struct PointFeaturePayloadHeader {
 pub struct PointFeatureScalarLane {
     /// Six finite scalar values in byte order.
     pub values: [f64; 6],
+    /// Exact shifted-binary64 encodings in byte order.
+    pub raw_values: [[u8; 8]; 6],
     /// Scalar marker offsets across the concatenated preceding and target blocks.
     pub value_offsets: [usize; 6],
 }
@@ -2088,14 +2090,21 @@ pub fn point_feature_scalar_lane(
     let mut lane = Vec::with_capacity(48);
     lane.extend_from_slice(&preceding_block[preceding_start..]);
     lane.extend_from_slice(target_block.get(..45)?);
-    let values = lane
+    let raw_values: [[u8; 8]; 6] = lane
         .chunks_exact(8)
-        .map(shifted_ieee_f64)
+        .map(|bytes| bytes.try_into().expect("eight-byte chunk"))
+        .collect::<Vec<_>>()
+        .try_into()
+        .ok()?;
+    let values = raw_values
+        .iter()
+        .map(|bytes| shifted_ieee_f64(bytes))
         .collect::<Option<Vec<_>>>()?
         .try_into()
         .ok()?;
     Some(PointFeatureScalarLane {
         values,
+        raw_values,
         value_offsets: [
             preceding_start,
             preceding_block.len() + 5,

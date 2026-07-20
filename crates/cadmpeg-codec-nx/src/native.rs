@@ -5377,6 +5377,8 @@ pub struct FeaturePointConstructionScalarLane {
     pub data_blocks: [String; 2],
     /// Six finite scalar values in byte order.
     pub values: [f64; 6],
+    /// Exact shifted-binary64 encodings in byte order.
+    pub raw_values: [[u8; 8]; 6],
     /// Absolute file offsets of the six scalar markers.
     pub source_offsets: [u64; 6],
 }
@@ -9506,6 +9508,7 @@ pub fn feature_point_construction_scalar_lanes(
                 format!("nx:om-data-blocks-{section_ordinal}:block#{target_ordinal}"),
             ],
             values: lane.values,
+            raw_values: lane.raw_values,
             source_offsets,
         });
     }

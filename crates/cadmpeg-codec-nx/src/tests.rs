@@ -7897,6 +7897,7 @@ fn om_point_feature_scalar_lane_spans_the_preceding_block_atomically() {
 
     let lane = crate::om::point_feature_scalar_lane(&preceding, &target).expect("complete lane");
     assert_eq!(lane.values, [1.0, -2.0, 3.5, 4.0, 5.25, -6.0]);
+    assert_eq!(lane.raw_values.concat(), encoded);
     assert_eq!(lane.value_offsets, [2, 10, 18, 26, 34, 42]);
 
     let mut malformed = target.clone();
