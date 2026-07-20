@@ -2105,6 +2105,56 @@ fn decode_types_class_913_without_an_edge_array() {
 }
 
 #[test]
+fn torus_only_round_uses_agreeing_tagged_minor_radii() {
+    let direct_quarter = [
+        0x18, 0x0d, 0x41, 0xcf, 0xff, 0xff, 0xff, 0xe5, 0x79, 0x7b, 0x0e, 0x29, 0xdf, 0xff, 0xe3,
+    ];
+    let round = |second_trailer: &[u8]| {
+        let mut geometry = visibgeom_payload(2, 0);
+        geometry.extend_from_slice(&[7, 0x26, 4, 0x01, 0, 8]);
+        geometry.extend_from_slice(&direct_quarter);
+        geometry.extend_from_slice(&[8, 0x26, 4, 0x01, 0, 0]);
+        geometry.extend_from_slice(second_trailer);
+        let allfeatur = vec![
+            4, 0xeb, 0x04, 0, 0x10, 1, 0x80, 0x80, 0, 0xe4, 0xe3, 0xf6, 0x83, 0x91, 0xe1,
+        ];
+        build_prt(
+            "c",
+            &[
+                ("VisibGeom", geometry),
+                ("AllFeatur", allfeatur),
+                ("MdlStatus", b"Round id 4\0".to_vec()),
+            ],
+        )
+    };
+    let data = round(&direct_quarter);
+    let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");
+
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            radius: cadmpeg_ir::features::RadiusSpec::Constant {
+                radius: cadmpeg_ir::features::Length(radius),
+            },
+            ..
+        } if (radius - 0.249_999_999_951_747_04).abs() < 1e-12
+    ));
+
+    let conflicting = round(&[
+        0x18, 0x0d, 0x29, 0xdf, 0xff, 0x7b, 0x0e, 0x29, 0xdf, 0xff, 0xe3,
+    ]);
+    let result =
+        decode::decode(&mut Cursor::new(conflicting), &DecodeOptions::default()).expect("decode");
+    assert!(matches!(
+        result.ir.model.features[0].definition,
+        cadmpeg_ir::features::FeatureDefinition::Fillet {
+            radius: cadmpeg_ir::features::RadiusSpec::Unresolved { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
 fn decode_types_named_german_round_without_a_schema_row() {
     let data = build_prt("c", &[("MdlStatus", b"Rundung id 4\0".to_vec())]);
     let result = decode::decode(&mut Cursor::new(data), &DecodeOptions::default()).expect("decode");

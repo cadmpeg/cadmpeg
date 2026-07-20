@@ -13114,7 +13114,35 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         })
         .collect::<Vec<_>>();
     if cylinder_rows.is_empty() {
-        return None;
+        let generated_rows = scan
+            .surface_rows
+            .iter()
+            .filter(|row| row.feature_id == feature_id)
+            .collect::<Vec<_>>();
+        if generated_rows.is_empty()
+            || generated_rows
+                .iter()
+                .any(|row| row.kind != crate::surface::SurfaceKind::TorusOrSphere)
+        {
+            return None;
+        }
+        let radii = generated_rows
+            .iter()
+            .map(|row| {
+                let records = scan
+                    .surface_parameters
+                    .iter()
+                    .filter(|record| record.offset == row.offset)
+                    .collect::<Vec<_>>();
+                let [record] = records.as_slice() else {
+                    return None;
+                };
+                record
+                    .torus_radius_overrides(row.type_byte)
+                    .map(|overrides| overrides.radius2)
+            })
+            .collect::<Option<Vec<_>>>()?;
+        return unique_positive_length(&radii);
     }
     let cylinder_radii = cylinder_rows
         .iter()
