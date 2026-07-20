@@ -619,6 +619,66 @@ impl SurfaceParameterRecord {
         })
     }
 
+    /// Decode the rolling radius repeated by a bounded type-24 round envelope.
+    #[must_use]
+    pub fn type24_round_radius(&self, type_byte: u8) -> Option<f64> {
+        (type_byte == 0x24).then_some(())?;
+        let contiguous_values = |frame: &SurfaceParameterScalarFrame| {
+            let mut cursor = frame.offset;
+            let mut values = Vec::with_capacity(frame.slots.len());
+            for slot in &frame.slots {
+                (slot.offset == cursor).then_some(())?;
+                cursor = cursor.checked_add(slot.length)?;
+                values.push(slot.value?);
+            }
+            values.iter().all(|value| value.is_finite()).then_some(())?;
+            Some((values, cursor))
+        };
+        let (diameter_endpoints, extent_endpoints) = match self.scalar_frames.as_slice() {
+            [frame]
+                if matches!(
+                    self.body.get(..frame.offset),
+                    Some([0x15] | [0x00, 0x15, 0x1c])
+                ) =>
+            {
+                let (values, end) = contiguous_values(frame)?;
+                let [first, _, second, a0, a1, a2, b0, b1, b2] = values.as_slice() else {
+                    return None;
+                };
+                (end == self.body.len()).then_some(())?;
+                ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
+            }
+            [leading, trailing] => {
+                let (leading_values, leading_end) = contiguous_values(leading)?;
+                let [_, first] = leading_values.as_slice() else {
+                    return None;
+                };
+                let (trailing_values, trailing_end) = contiguous_values(trailing)?;
+                let [second, a0, a1, a2, b0, b1, b2] = trailing_values.as_slice() else {
+                    return None;
+                };
+                (leading.offset == 0
+                    && self.body.get(leading_end..trailing.offset) == Some(&[0x12])
+                    && trailing_end == self.body.len())
+                .then_some(())?;
+                ([*first, *second], [[*a0, *a1, *a2], [*b0, *b1, *b2]])
+            }
+            _ => return None,
+        };
+        let diameter = (diameter_endpoints[1] - diameter_endpoints[0]).abs();
+        let scale = diameter_endpoints
+            .iter()
+            .chain(extent_endpoints.iter().flatten())
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        (diameter > 1e-12 * scale).then_some(())?;
+        extent_endpoints[0]
+            .iter()
+            .zip(extent_endpoints[1])
+            .any(|(first, second)| ((second - first).abs() - diameter).abs() <= 1e-9 * scale)
+            .then_some(0.5 * diameter)
+    }
+
     /// Decode the common model-space sweep-direction prefix of a positional
     /// `surface_of_extrusion` body.
     #[must_use]
@@ -4131,6 +4191,40 @@ mod tests {
             .iter()
             .zip([-4.95, 17.24, 16.74, 4.95])
             .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
+    }
+
+    #[test]
+    fn decodes_repeated_diameter_type24_round_envelopes() {
+        let record = |body: &[u8]| {
+            let mut payload = vec![7, 0x24, 4, 0x01, 0, 0];
+            payload.extend_from_slice(body);
+            payload.push(0xe3);
+            parameter_records(&payload).remove(0)
+        };
+        let panel = [
+            0x15, 0x2d, 0x2b, 0x4d, 0xd8, 0x2f, 0xd7, 0x5e, 0x1f, 0x18, 0x2d, 0x2c, 0x1a, 0xa4,
+            0xfc, 0xa4, 0x2a, 0xec, 0x2f, 0x00, 0x00, 0x2d, 0x36, 0x59, 0x99, 0x99, 0x99, 0x99,
+            0x9a, 0x42, 0xf7, 0x33, 0x2e, 0x03, 0x33, 0x2e, 0x37, 0xcc, 0x29, 0xf7, 0x33,
+        ];
+        let prefixed_panel = [
+            0x00, 0x15, 0x1c, 0x2d, 0x32, 0x0d, 0x52, 0x7e, 0x52, 0x15, 0x76, 0x18, 0x2d, 0x32,
+            0x73, 0xb8, 0xe4, 0xb8, 0x7b, 0xdc, 0x47, 0x03, 0x33, 0x2d, 0x36, 0x59, 0x99, 0x99,
+            0x99, 0x99, 0x99, 0x42, 0xf7, 0x33, 0x48, 0x00, 0x00, 0x2e, 0x37, 0xcc, 0x29, 0xf7,
+            0x33,
+        ];
+        let separated = [
+            0x18, 0x2d, 0x31, 0xa4, 0xa8, 0xc1, 0x54, 0xc9, 0x87, 0x12, 0x2d, 0x35, 0xa4, 0xa8,
+            0xc1, 0x54, 0xc9, 0x87, 0x48, 0x1c, 0x00, 0x2f, 0x22, 0x00, 0x18, 0x48, 0x00, 0x00,
+            0x2f, 0x2c, 0x00, 0x2f, 0x10, 0x00,
+        ];
+
+        assert!((record(&panel).type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
+        assert!((record(&prefixed_panel).type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
+        assert!((record(&separated).type24_round_radius(0x24).unwrap() - 2.0).abs() < 1.0e-12);
+
+        let mut inconsistent = separated;
+        inconsistent[31..34].copy_from_slice(&[0x2f, 0x12, 0x00]);
+        assert!(record(&inconsistent).type24_round_radius(0x24).is_none());
     }
 
     #[test]

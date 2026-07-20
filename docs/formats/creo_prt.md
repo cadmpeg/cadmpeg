@@ -551,6 +551,14 @@ coordinates followed by `21`. Its split form stores two coordinates, `3a`, a
 six-byte body-local control payload, and two more coordinates at the bounded
 body end. The control payload does not occupy a coordinate slot.
 
+A bounded type-24 round envelope stores two diameter endpoints and two
+three-coordinate extent endpoints. The diameter endpoints occur around a held
+coordinate after `15` or `00 15 1c`, or across the single-byte `12` separator
+between a two-scalar leading frame and a seven-scalar trailing frame. At least
+one corresponding extent-coordinate delta repeats the positive diameter. Half
+that repeated diameter is the rolling radius; it is independent of the
+generated cylinder carrier radius.
+
 A tagged `geom_type = 26` radius trailer begins with `18 0d`, followed by one
 positive radial scalar, zero or one selector byte, and `0e`. Zero or one
 selector byte after `0e` precedes the terminal positive `radius1` scalar. The

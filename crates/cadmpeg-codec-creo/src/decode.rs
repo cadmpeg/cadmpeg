@@ -13153,6 +13153,18 @@ fn five_coordinate_envelope_proves_torus_radii(
         && coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], major_radius, minor_radius)
 }
 
+fn unique_surface_parameter_record<'a>(
+    scan: &'a ContainerScan,
+    row: &crate::surface::SurfaceRow,
+) -> Option<&'a crate::surface::SurfaceParameterRecord> {
+    let mut records = scan
+        .surface_parameters
+        .iter()
+        .filter(|record| record.offset == row.offset);
+    let record = records.next()?;
+    records.next().is_none().then_some(record)
+}
+
 fn prototype_envelope_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
@@ -13186,12 +13198,7 @@ fn prototype_envelope_round_radius(
     .then_some(())?;
     rows.iter()
         .all(|row| {
-            let records = scan
-                .surface_parameters
-                .iter()
-                .filter(|record| record.offset == row.offset)
-                .collect::<Vec<_>>();
-            let [record] = records.as_slice() else {
+            let Some(record) = unique_surface_parameter_record(scan, row) else {
                 return false;
             };
             record.torus_radius_overrides(row.type_byte).is_none()
@@ -13237,14 +13244,7 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         let radii = generated_rows
             .iter()
             .map(|row| {
-                let records = scan
-                    .surface_parameters
-                    .iter()
-                    .filter(|record| record.offset == row.offset)
-                    .collect::<Vec<_>>();
-                let [record] = records.as_slice() else {
-                    return None;
-                };
+                let record = unique_surface_parameter_record(scan, row)?;
                 record
                     .torus_radius_overrides(row.type_byte)
                     .map(|overrides| overrides.radius2)
@@ -13254,6 +13254,16 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
             .as_deref()
             .and_then(unique_positive_length)
             .or_else(|| prototype_envelope_round_radius(scan, &generated_rows));
+    }
+    let envelope_radii = cylinder_rows
+        .iter()
+        .map(|row| {
+            let record = unique_surface_parameter_record(scan, row)?;
+            record.type24_round_radius(row.type_byte)
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(radius) = envelope_radii.as_deref().and_then(unique_positive_length) {
+        return Some(radius);
     }
     let cylinder_radii = cylinder_rows
         .iter()
