@@ -5036,6 +5036,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     assert!(!carrier.angle_parameter_consistent);
     assert_eq!(carrier.parameter_sign, None);
     assert_eq!(carrier.reference_direction_row_frame, None);
+    assert_eq!(carrier.sample_direction_row_frame, [1.0, 0.0]);
     let mut trailing = scan.curve_parameters[0].clone();
     trailing.body.push(0xfe);
     assert!(crate::curve::fc05_circles(&[trailing]).is_empty());
@@ -5043,6 +5044,7 @@ fn scan_validates_fc05_circle_from_record_points() {
     let records = &result.ir.native.namespace("creo").unwrap().arenas["fc05_circles"];
     assert_eq!(records[0].fields["curve_id"], 7);
     assert_eq!(records[0].fields["radius_mm"], 1.0);
+    assert_eq!(records[0].fields["sample_direction_row_frame"][0], 1.0);
     assert_eq!(records[0].fields["parameter_sign"], 1);
 }
 
@@ -5064,7 +5066,13 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         }
         payload.push(0xe3);
     }
-    fn circle_row(payload: &mut Vec<u8>, curve: u8, plane: u8, ordinate: f64) {
+    fn circle_row(
+        payload: &mut Vec<u8>,
+        curve: u8,
+        plane: u8,
+        ordinate: f64,
+        preserve_parameters: bool,
+    ) {
         payload.extend_from_slice(&[curve, 0x09, 4, 0x01, 0xf6, 0xfc, 0x05]);
         for [a, b, parameter] in [
             [4.0, 5.0, 2.0],
@@ -5074,7 +5082,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
         ] {
             world(payload, a);
             world(payload, b);
-            world(payload, parameter);
+            world(payload, if preserve_parameters { parameter } else { 2.0 });
             world(payload, ordinate);
         }
         payload.push(0xff);
@@ -5088,7 +5096,7 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
     plane_row(&mut payload, 12, 0, -2.0);
     payload.extend_from_slice(b"crv_array\0\xf3\xf8\x02topol_ref_data\0");
     let mut one_cap_payload = payload.clone();
-    circle_row(&mut one_cap_payload, 20, 11, -5.0);
+    circle_row(&mut one_cap_payload, 20, 11, -5.0, true);
     let one_cap = decode::decode(
         &mut Cursor::new(build_prt("c", &[("VisibGeom", one_cap_payload)])),
         &DecodeOptions::default(),
@@ -5137,8 +5145,34 @@ fn decode_places_x_axis_cylinder_from_outline_bound_cap_pair() {
             ..
         }
     ));
-    circle_row(&mut payload, 20, 11, 2.0);
-    circle_row(&mut payload, 21, 12, -2.0);
+    let mut neutral_chart_payload = payload.clone();
+    circle_row(&mut neutral_chart_payload, 22, 11, -5.0, false);
+    let neutral_chart = decode::decode(
+        &mut Cursor::new(build_prt("c", &[("VisibGeom", neutral_chart_payload)])),
+        &DecodeOptions::default(),
+    )
+    .expect("neutral-chart decode");
+    let neutral_circle = neutral_chart
+        .ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id.as_str() == "creo:visibgeom:curve#22")
+        .expect("circle with neutral sample chart");
+    assert!(matches!(
+        neutral_circle.geometry,
+        cadmpeg_ir::geometry::CurveGeometry::Circle {
+            ref_direction: cadmpeg_ir::math::Vector3 {
+                x: 0.0,
+                y: 0.0,
+                z: 1.0
+            },
+            ..
+        }
+    ));
+
+    circle_row(&mut payload, 20, 11, 2.0, true);
+    circle_row(&mut payload, 21, 12, -2.0, true);
     let result = decode::decode(
         &mut Cursor::new(build_prt("c", &[("VisibGeom", payload)])),
         &DecodeOptions::default(),

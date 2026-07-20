@@ -846,6 +846,7 @@ struct CreoFc05CircleRecord {
     curve_id: u32,
     center_row_frame: [f64; 2],
     radius_mm: f64,
+    sample_direction_row_frame: [f64; 2],
     reference_direction_row_frame: Option<[f64; 2]>,
     parameter_sign: Option<i8>,
     cap_ordinate_row_frame: Option<f64>,
@@ -1392,6 +1393,7 @@ fn fc05_circle_records(scan: &ContainerScan) -> Vec<CreoFc05CircleRecord> {
             curve_id: record.curve_id,
             center_row_frame: record.center_row_frame,
             radius_mm: record.radius_mm,
+            sample_direction_row_frame: record.sample_direction_row_frame,
             reference_direction_row_frame: record.reference_direction_row_frame,
             parameter_sign: record.parameter_sign,
             cap_ordinate_row_frame: record.cap_ordinate_row_frame,
@@ -28368,11 +28370,9 @@ fn transfer_fc05_cap_circles(
             })
             .copied()
             .collect::<Vec<_>>();
-        let ([cap], [cylinder_id], Some(reference), Some(parameter_sign), Some(_)) = (
+        let ([cap], [cylinder_id], Some(_)) = (
             cap_planes.as_slice(),
             cylinders.as_slice(),
-            circle.reference_direction_row_frame,
-            circle.parameter_sign,
             circle.cap_ordinate_row_frame,
         ) else {
             continue;
@@ -28381,7 +28381,16 @@ fn transfer_fc05_cap_circles(
             continue;
         };
         let [first, second] = circle.center_row_frame;
-        let axis_sign = -f64::from(parameter_sign);
+        let (reference, axis_sign) = circle
+            .reference_direction_row_frame
+            .zip(circle.parameter_sign)
+            .map_or(
+                (
+                    circle.sample_direction_row_frame,
+                    cap.normal[axis_index].signum(),
+                ),
+                |(reference, parameter_sign)| (reference, -f64::from(parameter_sign)),
+            );
         let (center, axis, ref_direction) = fc05_model_frame(
             axis_index,
             cap.origin[axis_index],

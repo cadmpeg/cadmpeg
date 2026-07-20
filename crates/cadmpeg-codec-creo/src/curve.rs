@@ -306,6 +306,8 @@ pub struct Fc05Circle {
     pub center_row_frame: [f64; 2],
     /// Exact radius in mm.
     pub radius_mm: f64,
+    /// Unit radial direction from the fitted center to the first stored sample.
+    pub sample_direction_row_frame: [f64; 2],
     /// Unit radial direction at stored curve parameter zero in the row's
     /// `(x, z)` frame.
     pub reference_direction_row_frame: Option<[f64; 2]>,
@@ -1524,10 +1526,13 @@ pub fn fc05_circles(parameters: &[CurveParameterRecord]) -> Vec<Fc05Circle> {
                 let reference_angle = angle_0 - f64::from(sign) * parameter_0;
                 [reference_angle.cos(), reference_angle.sin()]
             });
+        let sample_direction_row_frame =
+            [(first.0 - center_x) / radius, (first.1 - center_z) / radius];
         circles.push(Fc05Circle {
             curve_id: record.curve_id,
             center_row_frame: [center_x, center_z],
             radius_mm: radius,
+            sample_direction_row_frame,
             reference_direction_row_frame,
             parameter_sign,
             cap_ordinate_row_frame: Some(ordinate),
@@ -2100,6 +2105,7 @@ mod tests {
             curve_id,
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
+            sample_direction_row_frame: [1.0, 0.0],
             reference_direction_row_frame: Some([1.0, 0.0]),
             parameter_sign: Some(1),
             cap_ordinate_row_frame: Some(ordinate),
@@ -2160,6 +2166,7 @@ mod tests {
             curve_id,
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
+            sample_direction_row_frame: [1.0, 0.0],
             reference_direction_row_frame: Some([1.0, 0.0]),
             parameter_sign: Some(1),
             cap_ordinate_row_frame: Some(ordinate),
@@ -2245,6 +2252,7 @@ mod tests {
             curve_id: 20,
             center_row_frame: [3.0, 4.0],
             radius_mm: 2.0,
+            sample_direction_row_frame: [1.0, 0.0],
             reference_direction_row_frame: Some([1.0, 0.0]),
             parameter_sign: Some(1),
             cap_ordinate_row_frame: Some(5.0),
