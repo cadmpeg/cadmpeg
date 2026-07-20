@@ -489,6 +489,10 @@ fn is_known_record_head(head: &str) -> bool {
         || is_analytic_curve(head)
 }
 
+fn is_asm_stream_delimiter(name: &str) -> bool {
+    matches!(name, "Begin-of-ASM-History-Data" | "End-of-ASM-data")
+}
+
 /// The millimeter-space position of an edge-record vertex reference.
 fn vertex_position(by_index: &HashMap<i64, &Record>, vertex: i64) -> Option<Point3> {
     let vertex_record = by_index.get(&vertex).filter(|r| is_vertex_record(r))?;
@@ -5161,7 +5165,7 @@ pub fn decode(records: &[Record], bytes: &[u8], _stream: &str) -> Brep {
             || emitted_attributes.contains(&i)
             || pcurve_intcurves.contains(&i);
         if !is_known_record_head(&r.head)
-            && r.name != "Begin-of-ASM-History-Data"
+            && !is_asm_stream_delimiter(&r.name)
             && !undecoded_carriers.contains(&i)
             && !transferred
         {
@@ -6802,6 +6806,14 @@ mod topology_tests {
         for head in ["subshell", "wire", "tcoedge", "tedge", "tvertex"] {
             assert!(is_known_record_head(head), "{head}");
         }
+    }
+
+    #[test]
+    fn asm_stream_delimiters_are_not_application_records() {
+        for name in ["Begin-of-ASM-History-Data", "End-of-ASM-data"] {
+            assert!(is_asm_stream_delimiter(name));
+        }
+        assert!(!is_asm_stream_delimiter("ATTRIB_CUSTOM-attrib"));
     }
 
     #[test]
