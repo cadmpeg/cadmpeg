@@ -28,12 +28,13 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 62;
+pub const CATIA_NATIVE_VERSION: u32 = 63;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
     "catalog_entries",
     "catalogs",
+    "consolidated_edge_nodes",
     "consolidated_edge_runs",
     "consolidated_pcurves",
     "consolidated_vertex_identities",
@@ -106,16 +107,8 @@ pub struct CatiaConsolidatedEdgeRun {
     pub use_references: [[u32; 2]; 2],
     /// Terminal side-use sense bytes in serialized order.
     pub use_senses: [u8; 2],
-    /// Allocation-local curve reference terminating the use chain.
-    pub curve_ref: u32,
-    /// Global native endpoint identities in edge direction.
-    pub vertex_refs: [u32; 2],
-    /// Retained vertex-identity records in edge direction.
-    pub vertices: [String; 2],
-    /// Allocation-local endpoint selectors.
-    pub parameter_selectors: [u32; 2],
-    /// Terminal edge-node layout byte.
-    pub tail: u8,
+    /// Exact terminal edge node.
+    pub node: String,
     /// Uniquely resolved support carrier for each pcurve side.
     #[serde(default)]
     pub support_bindings: [Option<CatiaConsolidatedSupportBinding>; 2],
@@ -127,6 +120,31 @@ pub struct CatiaConsolidatedEdgeRun {
     pub endpoint_loci: Option<[[f64; 3]; 2]>,
 }
 
+/// One structurally complete width-coded class-`0x5e` edge node.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedEdgeNode {
+    /// Stable native-record identity.
+    pub id: String,
+    /// Record byte offset.
+    pub byte_offset: u64,
+    /// Header-token width in bytes.
+    pub width: u8,
+    /// Independent framing flag.
+    pub flag: u8,
+    /// Width-coded header token.
+    pub header_token: u32,
+    /// Allocation-local curve-support reference.
+    pub curve_ref: u32,
+    /// Global native endpoint identities in edge direction.
+    pub vertex_refs: [u32; 2],
+    /// Retained vertex-identity records in edge direction.
+    pub vertices: [String; 2],
+    /// Allocation-local endpoint selectors.
+    pub parameter_selectors: [u32; 2],
+    /// Terminal layout byte.
+    pub tail: u8,
+}
+
 /// One global endpoint identity retained by consolidated topology edge nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConsolidatedVertexIdentity {
@@ -134,8 +152,8 @@ pub struct CatiaConsolidatedVertexIdentity {
     pub id: String,
     /// Global native endpoint identity.
     pub identity: u32,
-    /// Incident consolidated edge runs in source order.
-    pub incident_edges: Vec<String>,
+    /// Incident consolidated edge nodes in source order.
+    pub incident_edge_nodes: Vec<String>,
 }
 
 /// Exact carrier selected for one side of a consolidated historical edge.
@@ -607,6 +625,9 @@ pub struct CatiaNative {
     /// Framed source-schema name catalogs.
     #[serde(default)]
     pub catalogs: Vec<CatiaCatalog>,
+    /// Structurally complete consolidated edge nodes.
+    #[serde(default)]
+    pub consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode>,
     /// Complete consolidated historical edge runs.
     #[serde(default)]
     pub consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun>,
@@ -642,6 +663,7 @@ impl Default for CatiaNative {
             version: CATIA_NATIVE_VERSION,
             alias_rows: Vec::new(),
             catalogs: Vec::new(),
+            consolidated_edge_nodes: Vec::new(),
             consolidated_edge_runs: Vec::new(),
             consolidated_pcurves: Vec::new(),
             consolidated_vertex_identities: Vec::new(),
@@ -689,6 +711,7 @@ fn consolidated_pcurves(bytes: &[u8]) -> Vec<CatiaConsolidatedPcurve> {
 fn consolidated_edge_runs(
     bytes: &[u8],
     pcurves: &[CatiaConsolidatedPcurve],
+    nodes: &[CatiaConsolidatedEdgeNode],
 ) -> Vec<CatiaConsolidatedEdgeRun> {
     let pcurve_ids = pcurves
         .iter()
@@ -697,6 +720,10 @@ fn consolidated_edge_runs(
     let resolved = geometry::resolve_consolidated_edge_blocks(bytes)
         .into_iter()
         .map(|block| (block.block.pcurves[0].pos, block))
+        .collect::<HashMap<_, _>>();
+    let node_ids = nodes
+        .iter()
+        .map(|node| (node.byte_offset, node.id.clone()))
         .collect::<HashMap<_, _>>();
     geometry::consolidated_topology_edge_runs(bytes)
         .into_iter()
@@ -740,11 +767,7 @@ fn consolidated_edge_runs(
                     tolerance: run.edge.parameters.tolerance,
                     use_references,
                     use_senses,
-                    curve_ref: run.node.curve_ref,
-                    vertex_refs: [run.node.start_vertex_ref, run.node.end_vertex_ref],
-                    vertices: [String::new(), String::new()],
-                    parameter_selectors: [run.node.start_parameter_ref, run.node.end_parameter_ref],
-                    tail: run.node.tail,
+                    node: node_ids.get(&(run.node.pos as u64))?.clone(),
                     support_bindings: resolved.map_or([None, None], |resolved| {
                         resolved.supports.each_ref().map(|binding| {
                             binding.as_ref().map(native_consolidated_support_binding)
@@ -762,26 +785,53 @@ fn consolidated_edge_runs(
         .collect()
 }
 
+fn consolidated_edge_nodes(bytes: &[u8]) -> Vec<CatiaConsolidatedEdgeNode> {
+    let frames = geometry::consolidated_records(bytes)
+        .into_iter()
+        .filter(|record| record.family == geometry::ConsolidatedFamily::B && record.class == 0x5e)
+        .map(|record| (record.range.start, (record.width, record.flag)))
+        .collect::<HashMap<_, _>>();
+    geometry::b2_edge_nodes(bytes)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, node)| {
+            let (width, flag) = frames.get(&node.pos)?;
+            Some(CatiaConsolidatedEdgeNode {
+                id: format!("catia:consolidated:edge-node#{index}"),
+                byte_offset: node.pos as u64,
+                width: *width,
+                flag: *flag,
+                header_token: node.header_token,
+                curve_ref: node.curve_ref,
+                vertex_refs: [node.start_vertex_ref, node.end_vertex_ref],
+                vertices: [String::new(), String::new()],
+                parameter_selectors: [node.start_parameter_ref, node.end_parameter_ref],
+                tail: node.tail,
+            })
+        })
+        .collect()
+}
+
 fn consolidated_vertex_identities(
-    runs: &mut [CatiaConsolidatedEdgeRun],
+    nodes: &mut [CatiaConsolidatedEdgeNode],
 ) -> Vec<CatiaConsolidatedVertexIdentity> {
     let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
     let mut identity_indices = HashMap::<u32, usize>::new();
-    for run in runs {
-        for (endpoint, identity) in run.vertex_refs.into_iter().enumerate() {
+    for node in nodes {
+        for (endpoint, identity) in node.vertex_refs.into_iter().enumerate() {
             let index = *identity_indices.entry(identity).or_insert_with(|| {
                 let index = identities.len();
                 identities.push(CatiaConsolidatedVertexIdentity {
                     id: format!("catia:consolidated:vertex-identity#{index}"),
                     identity,
-                    incident_edges: Vec::new(),
+                    incident_edge_nodes: Vec::new(),
                 });
                 index
             });
             let vertex = &mut identities[index];
-            run.vertices[endpoint].clone_from(&vertex.id);
-            if vertex.incident_edges.last() != Some(&run.id) {
-                vertex.incident_edges.push(run.id.clone());
+            node.vertices[endpoint].clone_from(&vertex.id);
+            if vertex.incident_edge_nodes.last() != Some(&node.id) {
+                vertex.incident_edge_nodes.push(node.id.clone());
             }
         }
     }
@@ -863,12 +913,32 @@ fn validate_consolidated_pcurves(
 fn validate_consolidated_edge_runs(
     runs: &[CatiaConsolidatedEdgeRun],
     pcurves: &[CatiaConsolidatedPcurve],
+    nodes: &[CatiaConsolidatedEdgeNode],
     vertex_identities: &[CatiaConsolidatedVertexIdentity],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let pcurves = pcurves
         .iter()
         .map(|pcurve| (pcurve.id.as_str(), pcurve))
         .collect::<HashMap<_, _>>();
+    let nodes_by_id = nodes
+        .iter()
+        .map(|node| (node.id.as_str(), node))
+        .collect::<HashMap<_, _>>();
+    let mut run_nodes = HashSet::new();
+    for (index, node) in nodes.iter().enumerate() {
+        let token_limit = 1u32.checked_shl(u32::from(node.width) * 8);
+        if node.id != format!("catia:consolidated:edge-node#{index}")
+            || !matches!(node.width, 1..=3)
+            || !matches!(node.flag, 0x03 | 0x13 | 0x83)
+            || token_limit.is_some_and(|limit| node.header_token >= limit)
+            || index > 0 && nodes[index - 1].byte_offset >= node.byte_offset
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated edge node `{}` is structurally invalid",
+                node.id
+            )));
+        }
+    }
     for (index, run) in runs.iter().enumerate() {
         let expected_id = format!("catia:consolidated:edge-run#{index}");
         let pcurve_offsets = run
@@ -879,10 +949,22 @@ fn validate_consolidated_edge_runs(
             .pcurves
             .each_ref()
             .map(|id| pcurves.get(id.as_str()).map(|pcurve| pcurve.range));
-        let chain = run
+        let Some(node) = nodes_by_id.get(run.node.as_str()) else {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated edge run `{}` references missing node `{}`",
+                run.id, run.node
+            )));
+        };
+        if !run_nodes.insert(run.node.as_str()) {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "consolidated edge node `{}` belongs to multiple runs",
+                run.node
+            )));
+        }
+        let chain = node
             .curve_ref
             .checked_sub(2)
-            .zip(run.curve_ref.checked_sub(1));
+            .zip(node.curve_ref.checked_sub(1));
         let loci_valid = run.shared_loci.as_ref().map_or_else(
             || run.endpoint_loci.is_none(),
             |loci| {
@@ -907,17 +989,18 @@ fn validate_consolidated_edge_runs(
             || pcurve_offsets[0] != Some(run.byte_offset)
             || pcurve_offsets[1].is_none()
             || pcurve_offsets[0] >= pcurve_offsets[1]
+            || pcurve_offsets[1].is_some_and(|offset| offset >= node.byte_offset)
             || pcurve_ranges != [Some(run.parameter_range), Some(run.parameter_range)]
             || run.parameter_range[0] >= run.parameter_range[1]
             || !run.parameter_range.iter().all(|value| value.is_finite())
             || !run.tolerance.is_finite()
             || run.tolerance < 0.0
             || chain.is_none_or(|(first, second)| {
-                run.use_references != [[first, second], [second, run.curve_ref]]
+                run.use_references != [[first, second], [second, node.curve_ref]]
             })
             || run.use_senses != [0x88, 0x84]
-            || run.parameter_selectors != [2, 1]
-            || !matches!(run.tail, 0x01 | 0x21)
+            || node.parameter_selectors != [2, 1]
+            || !matches!(node.tail, 0x01 | 0x21)
             || !bindings_valid
             || !loci_valid
             || index > 0 && runs[index - 1].byte_offset >= run.byte_offset
@@ -928,9 +1011,9 @@ fn validate_consolidated_edge_runs(
             )));
         }
     }
-    let mut expected_runs = runs.to_vec();
-    let expected_identities = consolidated_vertex_identities(&mut expected_runs);
-    if expected_runs != runs || expected_identities != vertex_identities {
+    let mut expected_nodes = nodes.to_vec();
+    let expected_identities = consolidated_vertex_identities(&mut expected_nodes);
+    if expected_nodes != nodes || expected_identities != vertex_identities {
         return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
             "consolidated vertex identities disagree with edge incidence".to_string(),
         ));
@@ -1385,13 +1468,16 @@ impl CatiaNative {
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
         let consolidated_pcurves = consolidated_pcurves(bytes);
-        let mut consolidated_edge_runs = consolidated_edge_runs(bytes, &consolidated_pcurves);
+        let mut consolidated_edge_nodes = consolidated_edge_nodes(bytes);
+        let consolidated_edge_runs =
+            consolidated_edge_runs(bytes, &consolidated_pcurves, &consolidated_edge_nodes);
         let consolidated_vertex_identities =
-            consolidated_vertex_identities(&mut consolidated_edge_runs);
+            consolidated_vertex_identities(&mut consolidated_edge_nodes);
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
+            consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_pcurves,
             consolidated_vertex_identities,
@@ -1571,11 +1657,15 @@ impl CatiaNative {
         let mut consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun> =
             namespace.arena_as("consolidated_edge_runs")?;
         consolidated_edge_runs.sort_by_key(|run| run.byte_offset);
+        let mut consolidated_edge_nodes: Vec<CatiaConsolidatedEdgeNode> =
+            namespace.arena_as("consolidated_edge_nodes")?;
+        consolidated_edge_nodes.sort_by_key(|node| node.byte_offset);
         let consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity> =
             namespace.arena_as("consolidated_vertex_identities")?;
         validate_consolidated_edge_runs(
             &consolidated_edge_runs,
             &consolidated_pcurves,
+            &consolidated_edge_nodes,
             &consolidated_vertex_identities,
         )?;
         validate_native_links(
@@ -1589,6 +1679,7 @@ impl CatiaNative {
             version: namespace.version,
             alias_rows,
             catalogs,
+            consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_pcurves,
             consolidated_vertex_identities,
@@ -1636,6 +1727,7 @@ impl CatiaNative {
             .flat_map(|graph| graph.records.iter().cloned())
             .collect::<Vec<_>>();
         namespace.set_arena("catalogs", &catalogs)?;
+        namespace.set_arena("consolidated_edge_nodes", &self.consolidated_edge_nodes)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
         namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
         namespace.set_arena(
@@ -1669,6 +1761,7 @@ impl CatiaNative {
             version: _,
             alias_rows,
             mut catalogs,
+            consolidated_edge_nodes,
             consolidated_edge_runs,
             consolidated_pcurves,
             consolidated_vertex_identities,
@@ -1690,6 +1783,7 @@ impl CatiaNative {
 
         namespace.version = CATIA_NATIVE_VERSION;
         namespace.set_arena_owned("catalogs", catalogs)?;
+        namespace.set_arena_owned("consolidated_edge_nodes", consolidated_edge_nodes)?;
         namespace.set_arena_owned("consolidated_edge_runs", consolidated_edge_runs)?;
         namespace.set_arena_owned("consolidated_pcurves", consolidated_pcurves)?;
         namespace.set_arena_owned(

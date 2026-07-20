@@ -4129,20 +4129,24 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     );
     assert_eq!(run.use_references, [[4, 5], [5, 6]]);
     assert_eq!(run.use_senses, [0x88, 0x84]);
-    assert_eq!(run.vertex_refs, [139, 142]);
+    assert_eq!(run.node, "catia:consolidated:edge-node#0");
+    let [node] = native.consolidated_edge_nodes.as_slice() else {
+        panic!("one consolidated edge node");
+    };
+    assert_eq!(node.vertex_refs, [139, 142]);
     assert_eq!(
-        run.vertices,
+        node.vertices,
         [
             "catia:consolidated:vertex-identity#0",
             "catia:consolidated:vertex-identity#1"
         ]
     );
-    assert_eq!(run.parameter_selectors, [2, 1]);
+    assert_eq!(node.parameter_selectors, [2, 1]);
     assert_eq!(native.consolidated_vertex_identities.len(), 2);
     assert_eq!(native.consolidated_vertex_identities[0].identity, 139);
     assert_eq!(
-        native.consolidated_vertex_identities[0].incident_edges,
-        ["catia:consolidated:edge-run#0"]
+        native.consolidated_vertex_identities[0].incident_edge_nodes,
+        ["catia:consolidated:edge-node#0"]
     );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
@@ -4162,7 +4166,7 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
 
     let mut invalid = crate::native::CatiaNative::decode(&bytes);
     invalid.consolidated_vertex_identities[0]
-        .incident_edges
+        .incident_edge_nodes
         .clear();
     let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
     invalid
@@ -4185,15 +4189,45 @@ fn native_namespace_merges_shared_consolidated_vertex_identity() {
         .find(|vertex| vertex.identity == 142)
         .expect("shared consolidated vertex identity");
     assert_eq!(
-        shared.incident_edges,
+        shared.incident_edge_nodes,
         [
-            "catia:consolidated:edge-run#0",
-            "catia:consolidated:edge-run#1"
+            "catia:consolidated:edge-node#0",
+            "catia:consolidated:edge-node#1"
         ]
     );
     assert_eq!(
-        native.consolidated_edge_runs[0].vertices[1],
-        native.consolidated_edge_runs[1].vertices[0]
+        native.consolidated_edge_nodes[0].vertices[1],
+        native.consolidated_edge_nodes[1].vertices[0]
+    );
+}
+
+#[test]
+fn native_namespace_retains_standalone_consolidated_edge_nodes() {
+    let bytes = b2_edge_node_stream();
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert!(native.consolidated_edge_runs.is_empty());
+    let [node] = native.consolidated_edge_nodes.as_slice() else {
+        panic!("one standalone consolidated edge node");
+    };
+    assert_eq!(node.width, 1);
+    assert_eq!(node.flag, 0x03);
+    assert_eq!(node.header_token, 5);
+    assert_eq!(node.vertex_refs, [889, 895]);
+    assert_eq!(native.consolidated_vertex_identities.len(), 2);
+    assert_eq!(
+        native.consolidated_vertex_identities[0].incident_edge_nodes,
+        ["catia:consolidated:edge-node#0"]
+    );
+
+    let mut namespace = cadmpeg_ir::NativeNamespace::default();
+    native
+        .store(&mut namespace)
+        .expect("store standalone consolidated edge node");
+    assert_eq!(
+        crate::native::CatiaNative::load(&namespace)
+            .expect("load standalone consolidated edge node"),
+        native
     );
 }
 
