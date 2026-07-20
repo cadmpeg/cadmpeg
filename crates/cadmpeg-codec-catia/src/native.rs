@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 61;
+pub const CATIA_NATIVE_VERSION: u32 = 62;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -36,6 +36,7 @@ const CATIA_ARENA_NAMES: &[&str] = &[
     "catalogs",
     "consolidated_edge_runs",
     "consolidated_pcurves",
+    "consolidated_vertex_identities",
     "design_objects",
     "external_references",
     "finjpl_segments",
@@ -109,6 +110,8 @@ pub struct CatiaConsolidatedEdgeRun {
     pub curve_ref: u32,
     /// Global native endpoint identities in edge direction.
     pub vertex_refs: [u32; 2],
+    /// Retained vertex-identity records in edge direction.
+    pub vertices: [String; 2],
     /// Allocation-local endpoint selectors.
     pub parameter_selectors: [u32; 2],
     /// Terminal edge-node layout byte.
@@ -122,6 +125,17 @@ pub struct CatiaConsolidatedEdgeRun {
     /// First and last shared loci in physical edge direction.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint_loci: Option<[[f64; 3]; 2]>,
+}
+
+/// One global endpoint identity retained by consolidated topology edge nodes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct CatiaConsolidatedVertexIdentity {
+    /// Stable native-record identity assigned in first-incidence order.
+    pub id: String,
+    /// Global native endpoint identity.
+    pub identity: u32,
+    /// Incident consolidated edge runs in source order.
+    pub incident_edges: Vec<String>,
 }
 
 /// Exact carrier selected for one side of a consolidated historical edge.
@@ -599,6 +613,9 @@ pub struct CatiaNative {
     /// Consolidated pcurve jets retained before support resolution.
     #[serde(default)]
     pub consolidated_pcurves: Vec<CatiaConsolidatedPcurve>,
+    /// Global endpoint identities and their consolidated edge incidence.
+    #[serde(default)]
+    pub consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity>,
     /// Design objects grouped by their serialized owner ordinal.
     #[serde(default)]
     pub design_objects: Vec<CatiaDesignObject>,
@@ -627,6 +644,7 @@ impl Default for CatiaNative {
             catalogs: Vec::new(),
             consolidated_edge_runs: Vec::new(),
             consolidated_pcurves: Vec::new(),
+            consolidated_vertex_identities: Vec::new(),
             design_objects: Vec::new(),
             external_references: Vec::new(),
             finjpl_segments: Vec::new(),
@@ -724,6 +742,7 @@ fn consolidated_edge_runs(
                     use_senses,
                     curve_ref: run.node.curve_ref,
                     vertex_refs: [run.node.start_vertex_ref, run.node.end_vertex_ref],
+                    vertices: [String::new(), String::new()],
                     parameter_selectors: [run.node.start_parameter_ref, run.node.end_parameter_ref],
                     tail: run.node.tail,
                     support_bindings: resolved.map_or([None, None], |resolved| {
@@ -741,6 +760,32 @@ fn consolidated_edge_runs(
             },
         )
         .collect()
+}
+
+fn consolidated_vertex_identities(
+    runs: &mut [CatiaConsolidatedEdgeRun],
+) -> Vec<CatiaConsolidatedVertexIdentity> {
+    let mut identities = Vec::<CatiaConsolidatedVertexIdentity>::new();
+    let mut identity_indices = HashMap::<u32, usize>::new();
+    for run in runs {
+        for (endpoint, identity) in run.vertex_refs.into_iter().enumerate() {
+            let index = *identity_indices.entry(identity).or_insert_with(|| {
+                let index = identities.len();
+                identities.push(CatiaConsolidatedVertexIdentity {
+                    id: format!("catia:consolidated:vertex-identity#{index}"),
+                    identity,
+                    incident_edges: Vec::new(),
+                });
+                index
+            });
+            let vertex = &mut identities[index];
+            run.vertices[endpoint].clone_from(&vertex.id);
+            if vertex.incident_edges.last() != Some(&run.id) {
+                vertex.incident_edges.push(run.id.clone());
+            }
+        }
+    }
+    identities
 }
 
 fn point_coordinates(point: &cadmpeg_ir::math::Point3) -> [f64; 3] {
@@ -818,6 +863,7 @@ fn validate_consolidated_pcurves(
 fn validate_consolidated_edge_runs(
     runs: &[CatiaConsolidatedEdgeRun],
     pcurves: &[CatiaConsolidatedPcurve],
+    vertex_identities: &[CatiaConsolidatedVertexIdentity],
 ) -> Result<(), cadmpeg_ir::NativeConvertError> {
     let pcurves = pcurves
         .iter()
@@ -881,6 +927,13 @@ fn validate_consolidated_edge_runs(
                 run.id
             )));
         }
+    }
+    let mut expected_runs = runs.to_vec();
+    let expected_identities = consolidated_vertex_identities(&mut expected_runs);
+    if expected_runs != runs || expected_identities != vertex_identities {
+        return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(
+            "consolidated vertex identities disagree with edge incidence".to_string(),
+        ));
     }
     Ok(())
 }
@@ -1332,13 +1385,16 @@ impl CatiaNative {
         let preview_images = preview_views(&finjpl_segments);
         let external_references = external_reference_views(&finjpl_segments);
         let consolidated_pcurves = consolidated_pcurves(bytes);
-        let consolidated_edge_runs = consolidated_edge_runs(bytes, &consolidated_pcurves);
+        let mut consolidated_edge_runs = consolidated_edge_runs(bytes, &consolidated_pcurves);
+        let consolidated_vertex_identities =
+            consolidated_vertex_identities(&mut consolidated_edge_runs);
         Self {
             version: CATIA_NATIVE_VERSION,
             alias_rows,
             catalogs,
             consolidated_edge_runs,
             consolidated_pcurves,
+            consolidated_vertex_identities,
             design_objects,
             external_references,
             finjpl_segments,
@@ -1515,7 +1571,13 @@ impl CatiaNative {
         let mut consolidated_edge_runs: Vec<CatiaConsolidatedEdgeRun> =
             namespace.arena_as("consolidated_edge_runs")?;
         consolidated_edge_runs.sort_by_key(|run| run.byte_offset);
-        validate_consolidated_edge_runs(&consolidated_edge_runs, &consolidated_pcurves)?;
+        let consolidated_vertex_identities: Vec<CatiaConsolidatedVertexIdentity> =
+            namespace.arena_as("consolidated_vertex_identities")?;
+        validate_consolidated_edge_runs(
+            &consolidated_edge_runs,
+            &consolidated_pcurves,
+            &consolidated_vertex_identities,
+        )?;
         validate_native_links(
             &alias_rows,
             &catalogs,
@@ -1529,6 +1591,7 @@ impl CatiaNative {
             catalogs,
             consolidated_edge_runs,
             consolidated_pcurves,
+            consolidated_vertex_identities,
             design_objects,
             external_references,
             finjpl_segments,
@@ -1575,6 +1638,10 @@ impl CatiaNative {
         namespace.set_arena("catalogs", &catalogs)?;
         namespace.set_arena("consolidated_edge_runs", &self.consolidated_edge_runs)?;
         namespace.set_arena("consolidated_pcurves", &self.consolidated_pcurves)?;
+        namespace.set_arena(
+            "consolidated_vertex_identities",
+            &self.consolidated_vertex_identities,
+        )?;
         namespace.set_arena("design_objects", &self.design_objects)?;
         namespace.set_arena("external_references", &self.external_references)?;
         namespace.set_arena("finjpl_segments", &self.finjpl_segments)?;
@@ -1604,6 +1671,7 @@ impl CatiaNative {
             mut catalogs,
             consolidated_edge_runs,
             consolidated_pcurves,
+            consolidated_vertex_identities,
             design_objects,
             external_references,
             finjpl_segments,
@@ -1624,6 +1692,10 @@ impl CatiaNative {
         namespace.set_arena_owned("catalogs", catalogs)?;
         namespace.set_arena_owned("consolidated_edge_runs", consolidated_edge_runs)?;
         namespace.set_arena_owned("consolidated_pcurves", consolidated_pcurves)?;
+        namespace.set_arena_owned(
+            "consolidated_vertex_identities",
+            consolidated_vertex_identities,
+        )?;
         namespace.set_arena_owned("design_objects", design_objects)?;
         namespace.set_arena_owned("external_references", external_references)?;
         namespace.set_arena_owned("catalog_entries", entries)?;

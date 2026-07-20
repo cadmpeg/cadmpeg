@@ -4130,7 +4130,20 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
     assert_eq!(run.use_references, [[4, 5], [5, 6]]);
     assert_eq!(run.use_senses, [0x88, 0x84]);
     assert_eq!(run.vertex_refs, [139, 142]);
+    assert_eq!(
+        run.vertices,
+        [
+            "catia:consolidated:vertex-identity#0",
+            "catia:consolidated:vertex-identity#1"
+        ]
+    );
     assert_eq!(run.parameter_selectors, [2, 1]);
+    assert_eq!(native.consolidated_vertex_identities.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities[0].identity, 139);
+    assert_eq!(
+        native.consolidated_vertex_identities[0].incident_edges,
+        ["catia:consolidated:edge-run#0"]
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native.store(&mut namespace).expect("store CATIA edge run");
@@ -4146,6 +4159,42 @@ fn native_namespace_retains_consolidated_historical_edge_runs() {
         .store(&mut invalid_namespace)
         .expect("store invalid CATIA edge run for load validation");
     assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+
+    let mut invalid = crate::native::CatiaNative::decode(&bytes);
+    invalid.consolidated_vertex_identities[0]
+        .incident_edges
+        .clear();
+    let mut invalid_namespace = cadmpeg_ir::NativeNamespace::default();
+    invalid
+        .store(&mut invalid_namespace)
+        .expect("store invalid CATIA vertex incidence for load validation");
+    assert!(crate::native::CatiaNative::load(&invalid_namespace).is_err());
+}
+
+#[test]
+fn native_namespace_merges_shared_consolidated_vertex_identity() {
+    let mut bytes = a5_native_edge_run_stream(6, 139, 142);
+    bytes.extend_from_slice(&a5_native_edge_run_stream(9, 142, 151));
+    let native = crate::native::CatiaNative::decode(&bytes);
+
+    assert_eq!(native.consolidated_edge_runs.len(), 2);
+    assert_eq!(native.consolidated_vertex_identities.len(), 3);
+    let shared = native
+        .consolidated_vertex_identities
+        .iter()
+        .find(|vertex| vertex.identity == 142)
+        .expect("shared consolidated vertex identity");
+    assert_eq!(
+        shared.incident_edges,
+        [
+            "catia:consolidated:edge-run#0",
+            "catia:consolidated:edge-run#1"
+        ]
+    );
+    assert_eq!(
+        native.consolidated_edge_runs[0].vertices[1],
+        native.consolidated_edge_runs[1].vertices[0]
+    );
 }
 
 #[test]
