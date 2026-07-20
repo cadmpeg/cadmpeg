@@ -6486,6 +6486,33 @@ impl MeshQuotient {
                 }
             }
 
+            fn affected_roots(
+                root: usize,
+                root_edges: &[Vec<usize>],
+                edges: &[[usize; 2]],
+                edge_faces: Option<&[[usize; 2]]>,
+                face_edges: Option<&[Vec<usize>]>,
+            ) -> HashSet<usize> {
+                let mut affected = HashSet::new();
+                for &edge in &root_edges[root] {
+                    affected.extend(edges[edge]);
+                    let (Some(edge_faces), Some(face_edges)) = (edge_faces, face_edges) else {
+                        continue;
+                    };
+                    let faces = edge_faces[edge];
+                    for (rank, face) in faces.into_iter().enumerate() {
+                        if rank > 0 && face == faces[0] {
+                            continue;
+                        }
+                        for &face_edge in &face_edges[face] {
+                            affected.extend(edges[face_edge]);
+                        }
+                    }
+                }
+                affected.remove(&root);
+                affected
+            }
+
             if solutions.len() > 1 || *exhausted {
                 return;
             }
@@ -6643,6 +6670,7 @@ impl MeshQuotient {
                 let mut dead = false;
                 let mut progress = false;
                 let mut supported_unused = HashSet::new();
+                let mut unused_point_root = HashMap::<usize, Option<usize>>::new();
                 let mut base_degrees = HashMap::<(usize, usize), u8>::new();
                 if let Some(edge_faces) = edge_faces {
                     if budget.is_some_and(|budget| !budget.charge_by(edges.len().max(1))) {
@@ -6689,33 +6717,25 @@ impl MeshQuotient {
                             .copied()
                             .filter(|point| point_uses[*point] == 0),
                     );
+                    for &point in values.iter().filter(|point| point_uses[**point] == 0) {
+                        unused_point_root
+                            .entry(point)
+                            .and_modify(|support| {
+                                if support.is_some_and(|stored| stored != root) {
+                                    *support = None;
+                                }
+                            })
+                            .or_insert(Some(root));
+                    }
                     if let [point] = values.as_slice() {
                         assigned[root] = Some(*point);
                         point_uses[*point] += 1;
                         propagated.push((root, *point));
                         progress = true;
                         if edge_faces.is_some() {
-                            let mut affected = HashSet::new();
-                            for &edge in &root_edges[root] {
-                                affected.extend(edges[edge]);
-                                let Some(edge_faces) = edge_faces else {
-                                    continue;
-                                };
-                                let Some(face_edges) = face_edges else {
-                                    continue;
-                                };
-                                let faces = edge_faces[edge];
-                                for (rank, face) in faces.into_iter().enumerate() {
-                                    if rank > 0 && face == faces[0] {
-                                        continue;
-                                    }
-                                    for &face_edge in &face_edges[face] {
-                                        affected.extend(edges[face_edge]);
-                                    }
-                                }
-                            }
-                            affected.remove(&root);
-                            pending_roots = Some(affected);
+                            pending_roots = Some(affected_roots(
+                                root, root_edges, edges, edge_faces, face_edges,
+                            ));
                             break;
                         }
                     } else if best
@@ -6736,6 +6756,25 @@ impl MeshQuotient {
                 }
                 if partial_scan {
                     pending_roots = None;
+                    continue;
+                }
+                let mut uniquely_required = unused_point_root
+                    .into_iter()
+                    .filter_map(|(point, root)| root.map(|root| (point, root)))
+                    .collect::<Vec<_>>();
+                uniquely_required.sort_unstable();
+                if let Some(&(point, root)) = uniquely_required.first() {
+                    if uniquely_required.iter().any(|&(other_point, other_root)| {
+                        other_root == root && other_point != point
+                    }) {
+                        break None;
+                    }
+                    assigned[root] = Some(point);
+                    point_uses[point] += 1;
+                    propagated.push((root, point));
+                    pending_roots = Some(affected_roots(
+                        root, root_edges, edges, edge_faces, face_edges,
+                    ));
                     continue;
                 }
                 if component_points
@@ -14647,6 +14686,29 @@ mod motif_tests {
         assert_eq!(quotient.root_count(), 2);
         assert_eq!(assignment[&quotient.union.find(0)], 0);
         assert_eq!(assignment[&quotient.union.find(4)], 1);
+        assert!(!budget.exhausted.get());
+    }
+
+    #[test]
+    fn quotient_coordinate_closure_forces_the_only_root_supporting_a_point() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: [vec![0, 1], vec![0], vec![0, 1, 2], vec![0]]
+                .into_iter()
+                .map(|domain| Arc::new(domain.into_iter().collect()))
+                .collect(),
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let budget = MeshConstraintBudget::new(100);
+
+        let assignment = quotient
+            .close_coordinate_roots_with_budget(3, &[Vec::new(), Vec::new()], Some(&budget))
+            .expect("point-support-forced coordinate closure");
+
+        assert_eq!(quotient.root_count(), 3);
+        assert_eq!(assignment[&quotient.union.find(0)], 1);
+        assert_eq!(assignment[&quotient.union.find(1)], 0);
+        assert_eq!(assignment[&quotient.union.find(2)], 2);
         assert!(!budget.exhausted.get());
     }
 
