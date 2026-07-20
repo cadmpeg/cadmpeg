@@ -545,6 +545,12 @@ An untagged type-26 body can have the complete form `18 18 01 11 <scalar>
 coordinate slot. The five coordinates are contiguous positional-row scalars;
 the terminal `18` closes the envelope and is not a sixth coordinate.
 
+The untagged torus-envelope prefix begins after eight body-local bytes with
+`18 94 3f 02 70 16 be fc 00 12 20`. Its direct form stores five contiguous
+coordinates followed by `21`. Its split form stores two coordinates, `3a`, a
+six-byte body-local control payload, and two more coordinates at the bounded
+body end. The control payload does not occupy a coordinate slot.
+
 A tagged `geom_type = 26` radius trailer begins with `18 0d`, followed by one
 positive radial scalar, zero or one selector byte, and `0e`. Zero or one
 selector byte after `0e` precedes the terminal positive `radius1` scalar. The
@@ -1422,10 +1428,13 @@ torus prototype supplies the rolling-ball-radius candidate from `radius2`.
 Every generated row must carry a complete terminal outline, and exactly one of
 the three corresponding endpoint-coordinate deltas in each outline must equal
 that candidate. The candidate then defines the constant fillet radius.
-For a prototype with `radius1 = 0`, the untagged five-coordinate envelope is an
-independent radius proof. With coordinates `[a1,a2,b0,b1,b2]`, it requires
-`a1 = b0`, `abs(b1-a1) = 2*radius2`, and `abs(b2-a2) = radius2` in every
-generated row.
+The untagged five-coordinate envelope is an independent radius proof. With
+coordinates `[a1,a2,b0,b1,b2]`, it requires `a1 = b0`; the two remaining
+endpoint deltas, under exactly one coordinate ordering, must equal
+`2*(radius1+radius2)` and `radius2`. The split four-coordinate form applies the
+same two-delta rule to its leading and trailing coordinate pairs. Every
+generated row must satisfy one of these envelope forms against the same
+prototype radii.
 Two linearly independent parallel support pairs with the same gap locate the
 cylinder axis at the intersection of their midplanes. Intersecting those
 midplanes with either axial cap plane fixes the carrier origin. Every support

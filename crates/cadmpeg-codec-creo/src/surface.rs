@@ -349,6 +349,15 @@ pub struct Type26FiveCoordinateEnvelope {
     pub offset: usize,
 }
 
+/// Four coordinates separated by a body-local control payload in a type-26 body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Type26SplitCoordinateEnvelope {
+    /// Two coordinates before and two coordinates after the control payload.
+    pub values: [f64; 4],
+    /// Byte offset of the first coordinate relative to the body.
+    pub offset: usize,
+}
+
 /// Tagged radius overrides in a positional torus-or-sphere body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TorusRadiusOverrides {
@@ -539,28 +548,36 @@ impl SurfaceParameterRecord {
         &self,
         type_byte: u8,
     ) -> Option<Type26FiveCoordinateEnvelope> {
-        (type_byte == 0x26
-            && self.body.starts_with(&[0x18, 0x18, 0x01, 0x11])
-            && self.body.ends_with(&[0x18]))
-        .then_some(())?;
-        let frames = self
+        (type_byte == 0x26).then_some(())?;
+        let (frame_offset, leading_count, frame_end) =
+            if self.body.starts_with(&[0x18, 0x18, 0x01, 0x11]) && self.body.ends_with(&[0x18]) {
+                (4, 1, self.body.len() - 1)
+            } else if self.body.get(8..19)
+                == Some(&[
+                    0x18, 0x94, 0x3f, 0x02, 0x70, 0x16, 0xbe, 0xfc, 0x00, 0x12, 0x20,
+                ])
+                && self.body.get(44) == Some(&0x21)
+            {
+                (19, 0, 44)
+            } else {
+                return None;
+            };
+        let mut frames = self
             .scalar_frames
             .iter()
-            .filter(|frame| frame.offset >= 4)
-            .collect::<Vec<_>>();
-        let [frame] = frames.as_slice() else {
+            .filter(|frame| frame.offset == frame_offset);
+        let frame = frames.next()?;
+        frames.next().is_none().then_some(())?;
+        let slots = frame.slots.get(leading_count..)?;
+        let [a1, a2, b0, b1, b2] = slots else {
             return None;
         };
-        let [leading, a1, a2, b0, b1, b2] = frame.slots.as_slice() else {
-            return None;
-        };
-        (leading.offset == 4).then_some(())?;
-        let mut cursor = 4;
+        let mut cursor = frame.offset;
         for slot in &frame.slots {
             (slot.offset == cursor).then_some(())?;
             cursor = cursor.checked_add(slot.length)?;
         }
-        (cursor + 1 == self.body.len()).then_some(())?;
+        (cursor == frame_end).then_some(())?;
         let values = [a1.value?, a2.value?, b0.value?, b1.value?, b2.value?];
         values
             .iter()
@@ -569,6 +586,37 @@ impl SurfaceParameterRecord {
                 values,
                 offset: a1.offset,
             })
+    }
+
+    /// Decode the type-26 envelope whose final coordinate pair follows a
+    /// six-byte body-local control payload.
+    #[must_use]
+    pub fn type26_split_coordinate_envelope(
+        &self,
+        type_byte: u8,
+    ) -> Option<Type26SplitCoordinateEnvelope> {
+        (type_byte == 0x26
+            && self.body.get(8..19)
+                == Some(&[
+                    0x18, 0x94, 0x3f, 0x02, 0x70, 0x16, 0xbe, 0xfc, 0x00, 0x12, 0x20,
+                ])
+            && self.body.get(30) == Some(&0x3a)
+            && self.body.len() == 48)
+            .then_some(())?;
+        let decode_at = |offset| {
+            let (value, end) = scalar::decode(&self.body, offset)?;
+            value.is_finite().then_some((value, end))
+        };
+        let (a1, first_end) = decode_at(19)?;
+        let (a2, second_end) = decode_at(first_end)?;
+        (second_end == 30).then_some(())?;
+        let (b1, third_end) = decode_at(37)?;
+        let (b2, fourth_end) = decode_at(third_end)?;
+        (third_end == 45 && fourth_end == self.body.len()).then_some(())?;
+        Some(Type26SplitCoordinateEnvelope {
+            values: [a1, a2, b1, b2],
+            offset: 19,
+        })
     }
 
     /// Decode the common model-space sweep-direction prefix of a positional
@@ -4042,6 +4090,47 @@ mod tests {
         assert!(parameter_records(&payload)[0]
             .type26_five_coordinate_envelope(0x26)
             .is_none());
+    }
+
+    #[test]
+    fn decodes_direct_and_split_type26_torus_envelopes() {
+        let prefix = [
+            0x28, 0x8d, 0x07, 0x1b, 0xd2, 0x65, 0x6f, 0x6c, 0x18, 0x94, 0x3f, 0x02, 0x70, 0x16,
+            0xbe, 0xfc, 0x00, 0x12, 0x20,
+        ];
+        let direct_tail = [
+            0x47, 0x13, 0xcc, 0x46, 0x31, 0x3d, 0x70, 0xa3, 0xd7, 0x0a, 0x3e, 0x47, 0x13, 0xcc,
+            0x2e, 0x13, 0xcc, 0x46, 0x30, 0xbd, 0x70, 0xa3, 0xd7, 0x0a, 0x3e, 0x21,
+        ];
+        let split_tail = [
+            0x47, 0x13, 0xcc, 0x46, 0x31, 0x3d, 0x70, 0xa3, 0xd7, 0x0a, 0x3e, 0x3a, 0xb1, 0x47,
+            0xba, 0x2e, 0x13, 0xcc, 0x46, 0x30, 0xbd, 0x70, 0xa3, 0xd7, 0x0a, 0x3e, 0x2e, 0x13,
+            0xcc,
+        ];
+        let record = |tail: &[u8]| {
+            let mut payload = vec![7, 0x26, 4, 0x01, 0, 0];
+            payload.extend_from_slice(&prefix);
+            payload.extend_from_slice(tail);
+            payload.push(0xe3);
+            parameter_records(&payload).remove(0)
+        };
+
+        let direct = record(&direct_tail)
+            .type26_five_coordinate_envelope(0x26)
+            .expect("direct torus envelope");
+        assert!(direct
+            .values
+            .iter()
+            .zip([-4.95, 17.24, -4.95, 4.95, 16.74])
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
+        let split = record(&split_tail)
+            .type26_split_coordinate_envelope(0x26)
+            .expect("split torus envelope");
+        assert!(split
+            .values
+            .iter()
+            .zip([-4.95, 17.24, 16.74, 4.95])
+            .all(|(actual, expected)| (actual - expected).abs() < 1.0e-12));
     }
 
     #[test]

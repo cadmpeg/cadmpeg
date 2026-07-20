@@ -13119,18 +13119,38 @@ fn outline_has_unique_radius_delta(frame: crate::surface::TorusOutlineFrame, rad
         == 1
 }
 
-fn five_coordinate_envelope_proves_sphere_radius(
+fn coordinate_pair_proves_torus_radii(
+    first: [f64; 2],
+    second: [f64; 2],
+    major_radius: f64,
+    minor_radius: f64,
+) -> bool {
+    let scale = first.iter().chain(&second).map(|value| value.abs()).fold(
+        major_radius.abs().max(minor_radius.abs()).max(1.0),
+        f64::max,
+    );
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    let proves = |outer: f64, minor: f64| {
+        close(outer.abs(), 2.0 * (major_radius + minor_radius)) && close(minor.abs(), minor_radius)
+    };
+    let direct = proves(second[0] - first[0], second[1] - first[1]);
+    let swapped = proves(second[1] - first[0], second[0] - first[1]);
+    direct ^ swapped
+}
+
+fn five_coordinate_envelope_proves_torus_radii(
     envelope: crate::surface::Type26FiveCoordinateEnvelope,
-    radius: f64,
+    major_radius: f64,
+    minor_radius: f64,
 ) -> bool {
     let [a1, a2, b0, b1, b2] = envelope.values;
-    let scale = envelope
-        .values
-        .iter()
-        .map(|value| value.abs())
-        .fold(radius.abs().max(1.0), f64::max);
+    let scale = envelope.values.iter().map(|value| value.abs()).fold(
+        major_radius.abs().max(minor_radius.abs()).max(1.0),
+        f64::max,
+    );
     let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
-    close(a1, b0) && close((b1 - a1).abs(), 2.0 * radius) && close((b2 - a2).abs(), radius)
+    close(a1, b0)
+        && coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], major_radius, minor_radius)
 }
 
 fn prototype_envelope_round_radius(
@@ -13178,12 +13198,17 @@ fn prototype_envelope_round_radius(
                 && (record
                     .torus_outline_frame(row.type_byte)
                     .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius2))
-                    || (radius1 == 0.0
-                        && record
-                            .type26_five_coordinate_envelope(row.type_byte)
-                            .is_some_and(|envelope| {
-                                five_coordinate_envelope_proves_sphere_radius(envelope, radius2)
-                            })))
+                    || record
+                        .type26_five_coordinate_envelope(row.type_byte)
+                        .is_some_and(|envelope| {
+                            five_coordinate_envelope_proves_torus_radii(envelope, radius1, radius2)
+                        })
+                    || record
+                        .type26_split_coordinate_envelope(row.type_byte)
+                        .is_some_and(|envelope| {
+                            let [a1, a2, b1, b2] = envelope.values;
+                            coordinate_pair_proves_torus_radii([a1, a2], [b1, b2], radius1, radius2)
+                        }))
         })
         .then_some(radius2)
 }
@@ -16029,13 +16054,26 @@ mod resolved_sketch_tests {
         ));
         let five_coordinate =
             |values| crate::surface::Type26FiveCoordinateEnvelope { values, offset: 0 };
-        assert!(five_coordinate_envelope_proves_sphere_radius(
+        assert!(five_coordinate_envelope_proves_torus_radii(
             five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
+            0.0,
             2.65
         ));
-        assert!(!five_coordinate_envelope_proves_sphere_radius(
+        assert!(!five_coordinate_envelope_proves_torus_radii(
             five_coordinate([-2.65, -15.0, -2.5, 2.65, -17.65]),
+            0.0,
             2.65
+        ));
+        assert!(five_coordinate_envelope_proves_torus_radii(
+            five_coordinate([-4.95, 17.24, -4.95, 4.95, 16.74]),
+            4.45,
+            0.5
+        ));
+        assert!(coordinate_pair_proves_torus_radii(
+            [-4.95, 17.24],
+            [16.74, 4.95],
+            4.45,
+            0.5
         ));
     }
 
