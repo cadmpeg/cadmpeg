@@ -27,7 +27,9 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Rotational-sweep angular termination selectors other than the defined
   full-turn `angle_choice` form are unspecified, including one-sided,
   symmetric, and two-sided travel.
-- Model-space analytic equations for non-plane surface rows are unspecified, including cylinder axis and location and cone apex and axis.
+- Model-space analytic equations for remaining non-plane surface rows are
+  unspecified, including positional cylinder variants outside the defined
+  complete X- and Y-axis body and cone apex and axis.
 - Round and fillet byte semantics are unspecified, including non-prismatic radii, flank geometry, and generated face bindings.
 - The negative DICT prefix lattice for scalar lanes that block geometry records is unspecified.
 

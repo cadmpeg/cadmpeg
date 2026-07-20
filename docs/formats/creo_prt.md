@@ -281,6 +281,20 @@ coordinate. The other two coordinate pairs are byte-distinct. This defines
 the plane equation independently of the positional `local_sys`; it does not
 define the plane's parameter-space reference direction.
 
+A complete positional cylinder body begins `11 18 13`, followed by axial
+length and the first corner's three coordinates, then the second corner's first
+two coordinates in the positional surface-row scalar lane. An opaque third
+coordinate follows that prefix. The body then contains exactly one complete
+twelve-slot positional `local_sys` and ends with one positive scalar radius.
+For an X- or Y-axis carrier, exactly one stored corner-coordinate difference
+equals the positive axial length and the other stored difference equals twice
+the radius. Slots 9 through 11 of the local system contain the model-space
+origin. Its axial coordinate equals exactly one axial corner coordinate. The
+axis points from that endpoint toward the other endpoint. Slots 0 through 2
+contain the reference direction; reversing the axis also reverses that
+direction. These fields define the cylinder carrier, radius, and bounded axial
+length.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.

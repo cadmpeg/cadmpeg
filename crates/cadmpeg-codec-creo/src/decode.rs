@@ -1627,6 +1627,7 @@ struct CreoSurfaceParameterRecord {
     scalar_frames: Vec<CreoSurfaceParameterScalarFrame>,
     terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
     tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
+    positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
     torus_outline_frame: Option<CreoTorusOutlineFrame>,
     torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
     cone_half_angle_override: Option<CreoConeHalfAngleOverride>,
@@ -1640,6 +1641,15 @@ struct CreoSurfaceParameterRecord {
 struct CreoTabulatedCylinderFrame {
     values: [f64; 6],
     prefixes: [u8; 6],
+}
+
+#[derive(Serialize)]
+struct CreoPositionalCylinderFrame {
+    origin: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+    radius: f64,
+    length: f64,
 }
 
 #[derive(Serialize)]
@@ -2234,6 +2244,15 @@ fn surface_parameter_records(
                     CreoTabulatedCylinderFrame {
                         values: frame.values,
                         prefixes: frame.prefixes,
+                    }
+                }),
+                positional_cylinder_frame: record.positional_cylinder_frame.map(|frame| {
+                    CreoPositionalCylinderFrame {
+                        origin: frame.origin,
+                        axis: frame.axis,
+                        ref_direction: frame.ref_direction,
+                        radius: frame.radius,
+                        length: frame.length,
                     }
                 }),
                 torus_outline_frame: record.torus_outline_frame(row.type_byte).map(|frame| {
@@ -13183,9 +13202,14 @@ fn schema_feature_definition(
     }
     if schema_class == 911 {
         let placement = hole_placement(feature_outline_planes(scan, feature_id));
-        let solved = simple_hole_geometry(scan, feature_id);
-        let simple_form = solved.is_some()
-            || is_compact_simple_hole(feature_id, &scan.feature_entity_tables, &scan.surface_rows);
+        let compact_cylinder_id = compact_simple_hole_cylinder_id(
+            feature_id,
+            &scan.feature_entity_tables,
+            &scan.surface_rows,
+        );
+        let solved = simple_hole_geometry(scan, feature_id)
+            .or_else(|| compact_simple_hole_geometry(scan, feature_id));
+        let simple_form = solved.is_some() || compact_cylinder_id.is_some();
         let face_selection = |surface_id| {
             let native = format!("creo:visibgeom:surface#{surface_id}");
             let face = FaceId(format!("creo:visibgeom:face#{surface_id}"));
@@ -13219,7 +13243,7 @@ fn schema_feature_definition(
                     unreachable!("simple hole helper returns a cylinder")
                 };
                 (
-                    Some(face_selection(hole.entry_surface_id)),
+                    hole.entry_surface_id.map(face_selection),
                     Some(origin),
                     Some(Vector3::new(
                         hole.direction[0],
@@ -13841,8 +13865,8 @@ fn hole_cylinder_from_cap_outlines(caps: [HoleCapOutline; 2]) -> Option<SurfaceG
 
 #[derive(Debug, Clone, PartialEq)]
 struct SimpleHoleGeometry {
-    entry_surface_id: u32,
-    cylinder_ids: [u32; 2],
+    entry_surface_id: Option<u32>,
+    cylinder_ids: Vec<u32>,
     direction: [f64; 3],
     extent: Extent,
     geometry: SurfaceGeometry,
@@ -13898,20 +13922,20 @@ fn simple_hole_geometry(scan: &ContainerScan, feature_id: u32) -> Option<SimpleH
     let (_, direction, extent) =
         hole_placement([*first, *second].map(|(id, origin, normal, _)| (id, origin, normal)))?;
     Some(SimpleHoleGeometry {
-        entry_surface_id: *entry_plane,
-        cylinder_ids,
+        entry_surface_id: Some(*entry_plane),
+        cylinder_ids: cylinder_ids.to_vec(),
         direction,
         extent,
         geometry: hole_cylinder_from_cap_outlines([*first, *second])?,
     })
 }
 
-fn is_compact_simple_hole(
+fn compact_simple_hole_cylinder_id(
     feature_id: u32,
     tables: &[crate::feature::FeatureEntityTable],
     rows: &[crate::surface::SurfaceRow],
-) -> bool {
-    tables
+) -> Option<u32> {
+    let ids = tables
         .iter()
         .filter(|table| table.feature_id == Some(feature_id))
         .filter_map(|table| {
@@ -13948,8 +13972,42 @@ fn is_compact_simple_hole(
                 }))
             .then_some(side.entity_id)
         })
-        .count()
-        == 1
+        .collect::<Vec<_>>();
+    let [id] = ids.as_slice() else {
+        return None;
+    };
+    Some(*id)
+}
+
+fn compact_simple_hole_geometry(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<SimpleHoleGeometry> {
+    let cylinder_id = compact_simple_hole_cylinder_id(
+        feature_id,
+        &scan.feature_entity_tables,
+        &scan.surface_rows,
+    )?;
+    let frame = crate::surface::unique_surface_parameter(&scan.surface_parameters, cylinder_id)?
+        .positional_cylinder_frame?;
+    Some(SimpleHoleGeometry {
+        entry_surface_id: None,
+        cylinder_ids: vec![cylinder_id],
+        direction: frame.axis,
+        extent: Extent::Blind {
+            length: Length(frame.length),
+        },
+        geometry: SurfaceGeometry::Cylinder {
+            origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+            axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+            ref_direction: Vector3::new(
+                frame.ref_direction[0],
+                frame.ref_direction[1],
+                frame.ref_direction[2],
+            ),
+            radius: frame.radius,
+        },
+    })
 }
 
 fn circular_sweep_cylinder_from_cap_outlines(
@@ -14507,6 +14565,7 @@ mod resolved_sketch_tests {
             ],
             terminal_scalar_frame: None,
             tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
@@ -14611,6 +14670,7 @@ mod resolved_sketch_tests {
             }],
             terminal_scalar_frame: None,
             tabulated_cylinder_frame: None,
+            positional_cylinder_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
@@ -15785,24 +15845,26 @@ mod resolved_sketch_tests {
             offset: 0,
         };
 
-        assert!(is_compact_simple_hole(
-            107,
-            std::slice::from_ref(&table),
-            &[row.clone()]
-        ));
+        assert_eq!(
+            compact_simple_hole_cylinder_id(
+                107,
+                std::slice::from_ref(&table),
+                std::slice::from_ref(&row),
+            ),
+            Some(117)
+        );
         table.entries[2].source_entity_id = None;
-        assert!(!is_compact_simple_hole(
+        assert!(compact_simple_hole_cylinder_id(
             107,
             std::slice::from_ref(&table),
-            &[row.clone()]
-        ));
+            std::slice::from_ref(&row),
+        )
+        .is_none());
         table.entries[2].source_entity_id = Some(0);
         table.entries[3].class_id = 201;
-        assert!(!is_compact_simple_hole(
-            107,
-            std::slice::from_ref(&table),
-            &[row]
-        ));
+        assert!(
+            compact_simple_hole_cylinder_id(107, std::slice::from_ref(&table), &[row]).is_none()
+        );
     }
 
     #[test]
@@ -29413,6 +29475,65 @@ fn transfer_hole_cylinders(
     transferred
 }
 
+fn transfer_positional_cylinders(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for record in &scan.surface_parameters {
+        let Some(frame) = record.positional_cylinder_frame else {
+            continue;
+        };
+        if crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
+            != Some(record)
+        {
+            continue;
+        }
+        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+            .filter(|row| row.kind == crate::surface::SurfaceKind::Cylinder)
+        else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "positional_cylinder_frame",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Cylinder {
+                origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),
+                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                ref_direction: Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                radius: frame.radius,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", record.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn transfer_circular_sweep_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -30076,6 +30197,7 @@ fn build_ir(
         transfer_resolved_extrusion_vertex_orbit_curves(scan, &mut ir, &mut annotations);
     let circular_sweep_cylinder_count =
         transfer_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
+    let positional_cylinder_count = transfer_positional_cylinders(scan, &mut ir, &mut annotations);
     let hole_cylinder_count = transfer_hole_cylinders(scan, &mut ir, &mut annotations);
     let constrained_slot_fillet_cylinder_count =
         transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
@@ -30182,6 +30304,10 @@ fn build_ir(
         source.attributes.insert(
             "transferred_hole_cylinder_count".to_string(),
             hole_cylinder_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_positional_cylinder_count".to_string(),
+            positional_cylinder_count.to_string(),
         );
         source.attributes.insert(
             "transferred_constrained_slot_fillet_cylinder_count".to_string(),
@@ -31866,7 +31992,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              topology-bound `fc 05` \
              cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
              circular-sweep cylinders, \
-             and four-entry simple-hole cylinders with complete cap outlines transfer as carriers; \
+             four-entry simple-hole cylinders with complete cap outlines, and compact simple-hole \
+             cylinders with complete positional carriers transfer as carriers; \
              other parameter bodies remain structural records.",
             scan.sections.len(),
             scan.layout.token(),
@@ -31888,9 +32015,10 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              every loop is complete; a multi-loop planar face additionally requires one strict \
              containment outer boundary. Selected \
              cylinders transfer when an exact `fc 05` record and placed cap outline binds a row, \
-             or a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
-             square cap outline establishes the complete axis placement, parameterization, and \
-             radius. Later positional instances do not inherit prototype placement or scalar \
+             a four-entry class-917 circular-sweep or class-911 simple-hole table with a complete \
+             square cap outline establishes the complete axis placement and radius, or a compact \
+             class-911 table owns a complete positional cylinder carrier. Later positional \
+             instances do not inherit prototype placement or scalar \
              defaults; they require their per-instance parameter bodies \
              ([spec §4.2](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/creo_prt.md#32-surface-prototypes)). {geom_sections} PSB geometry section(s) were preserved verbatim as unknown \
              records."

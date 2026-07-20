@@ -267,6 +267,8 @@ pub struct SurfaceParameterRecord {
     /// Replay-bound tabulated-cylinder envelope frame decoded with the
     /// containing section's scalar cache.
     pub tabulated_cylinder_frame: Option<TabulatedCylinderFrame>,
+    /// Complete analytic carrier decoded from a positional cylinder row.
+    pub positional_cylinder_frame: Option<PositionalCylinderFrame>,
     /// Structural form that bounded the body.
     pub boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
@@ -295,6 +297,21 @@ pub struct TabulatedCylinderFrame {
     pub values: [f64; 6],
     /// Scalar-lane prefix byte for each coordinate.
     pub prefixes: [u8; 6],
+}
+
+/// Complete model-space carrier and axial extent from a positional cylinder row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PositionalCylinderFrame {
+    /// Model-space origin at one axial end of the bounded cylinder.
+    pub origin: [f64; 3],
+    /// Unit axis directed from `origin` toward the other axial end.
+    pub axis: [f64; 3],
+    /// Unit parameter-space reference direction.
+    pub ref_direction: [f64; 3],
+    /// Cylinder radius.
+    pub radius: f64,
+    /// Positive distance between the axial ends.
+    pub length: f64,
 }
 
 /// Six-slot outline frame in a positional torus-or-sphere body.
@@ -1645,6 +1662,9 @@ fn parameter_records_for_rows(
             .then(|| decode_tabulated_cylinder_frame(&body, &cache))
             .flatten()
             .map(|(frame, _)| frame);
+        let positional_cylinder_frame = (row.kind == SurfaceKind::Cylinder)
+            .then(|| decode_positional_cylinder_frame(&body, &cache))
+            .flatten();
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
             scalar_values: scalar_tokens
@@ -1656,6 +1676,7 @@ fn parameter_records_for_rows(
             scalar_frames,
             terminal_scalar_frame,
             tabulated_cylinder_frame,
+            positional_cylinder_frame,
             body,
             boundary,
             offset: row.offset,
@@ -1663,6 +1684,87 @@ fn parameter_records_for_rows(
         });
     }
     records
+}
+
+fn decode_positional_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    body.starts_with(&[0x11, 0x18, 0x13]).then_some(())?;
+    let mut cursor = 3;
+    let mut envelope = [0.0; 6];
+    for value in &mut envelope {
+        let (decoded, next) = scalar::decode_in_surface_row_lane(body, cursor, cache)?;
+        decoded.is_finite().then_some(())?;
+        *value = decoded;
+        cursor = next;
+    }
+    let radius_start = (cursor..body.len()).find(|start| {
+        scalar::decode(body, *start)
+            .is_some_and(|(value, end)| end == body.len() && value.is_finite() && value > 0.0)
+    })?;
+    let (radius, _) = scalar::decode(body, radius_start)?;
+    let frames = (cursor..radius_start)
+        .filter_map(|start| {
+            scalar::decode_positional_plane_local_system_slots(
+                body.get(start..radius_start)?,
+                cache,
+            )
+        })
+        .collect::<Vec<_>>();
+    let [slots] = frames.as_slice() else {
+        return None;
+    };
+    let length = envelope[0];
+    (length.is_finite() && length > 0.0).then_some(())?;
+    let scale = envelope
+        .iter()
+        .chain(slots.iter())
+        .chain([radius, length].iter())
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let close = |first: f64, second: f64| (first - second).abs() <= 1e-9 * scale;
+    let axis_indices = (0..2)
+        .filter(|index| close((envelope[1 + index] - envelope[4 + index]).abs(), length))
+        .collect::<Vec<_>>();
+    let [axis_index] = axis_indices.as_slice() else {
+        return None;
+    };
+    let radial_index = 1 - axis_index;
+    close(
+        (envelope[1 + radial_index] - envelope[4 + radial_index]).abs(),
+        2.0 * radius,
+    )
+    .then_some(())?;
+    let origin: [f64; 3] = slots[9..12].try_into().ok()?;
+    let first_axial = envelope[1 + axis_index];
+    let second_axial = envelope[4 + axis_index];
+    let origin_at_first = close(origin[*axis_index], first_axial);
+    let origin_at_second = close(origin[*axis_index], second_axial);
+    (origin_at_first ^ origin_at_second).then_some(())?;
+    let sign = if origin_at_first {
+        (second_axial - first_axial).signum()
+    } else {
+        (first_axial - second_axial).signum()
+    };
+    let mut axis = [0.0; 3];
+    axis[*axis_index] = sign;
+    let support: [f64; 3] = slots[0..3].try_into().ok()?;
+    let magnitude = support
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    (magnitude.is_finite() && magnitude > 0.0).then_some(())?;
+    (support[*axis_index].abs() <= 1e-9 * magnitude).then_some(())?;
+    let ref_direction = support.map(|value| sign * value / magnitude);
+    Some(PositionalCylinderFrame {
+        origin,
+        axis,
+        ref_direction,
+        radius,
+        length,
+    })
 }
 
 fn decode_tabulated_cylinder_frame(
@@ -2920,6 +3022,43 @@ mod tests {
                 &scalar::ScalarCache::default(),
             ),
             Some(body.len() - 1)
+        );
+    }
+
+    #[test]
+    fn positional_cylinder_frame_requires_a_complete_consistent_carrier() {
+        let negative_x = [
+            0x11, 0x18, 0x13, 0x29, 0xd9, 0x99, 0x47, 0x03, 0x33, 0x2d, 0x35, 0x0c, 0xcc, 0xcc,
+            0xcc, 0xcc, 0xcd, 0x43, 0xe8, 0x00, 0x48, 0x00, 0x00, 0x2d, 0x36, 0x8c, 0xcc, 0xcc,
+            0xcc, 0xcc, 0xcd, 0x19, 0x9a, 0x79, 0x39, 0x4c, 0x9e, 0x8a, 0x0a, 0xf7, 0x19, 0xe3,
+            0x18, 0xe4, 0x0f, 0xe4, 0x18, 0xe5, 0x0f, 0x18, 0x47, 0x03, 0x33, 0x2e, 0x35, 0xcc,
+            0x18, 0x2a, 0xe8, 0x00,
+        ];
+        let frame = decode_positional_cylinder_frame(&negative_x, &scalar::ScalarCache::default())
+            .expect("complete positional cylinder");
+        assert!((frame.origin[0] + 2.4).abs() < 1e-12);
+        assert!((frame.origin[1] - 21.8).abs() < 1e-12);
+        assert_eq!(frame.origin[2], 0.0);
+        assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
+        assert!((frame.radius - 0.75).abs() < 1e-12);
+        assert!((frame.length - 0.4).abs() < 1e-12);
+
+        let positive_x = [
+            17, 24, 19, 41, 217, 153, 41, 255, 255, 45, 53, 12, 204, 204, 204, 204, 205, 67, 232,
+            0, 46, 3, 51, 45, 54, 140, 204, 204, 204, 204, 205, 25, 154, 121, 57, 76, 158, 138, 10,
+            227, 24, 228, 16, 228, 24, 229, 15, 24, 46, 3, 51, 46, 53, 204, 24, 42, 232, 0,
+        ];
+        let frame = decode_positional_cylinder_frame(&positive_x, &scalar::ScalarCache::default())
+            .expect("oppositely oriented positional cylinder");
+        assert_eq!(frame.axis, [-1.0, 0.0, 0.0]);
+        assert_eq!(frame.ref_direction, [0.0, -1.0, 0.0]);
+
+        let mut inconsistent = negative_x.to_vec();
+        inconsistent[58] = 0xd0;
+        assert!(
+            decode_positional_cylinder_frame(&inconsistent, &scalar::ScalarCache::default())
+                .is_none()
         );
     }
 
