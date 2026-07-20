@@ -124,6 +124,7 @@ pub fn lanes(scan: &ContainerScan, annotations: &mut Annotations) -> Vec<Feature
                 body_selections: Vec::new(),
                 edge_selections: Vec::new(),
                 surface_selections: Vec::new(),
+                generated_surface_identities: Vec::new(),
                 references,
                 sketch_entities,
             })
@@ -649,7 +650,7 @@ mod marker_tests {
         cosmetic_thread_component_face_reference_at, cosmetic_thread_cylinder_reference_at,
         enrich_history_revolution_inputs, explicit_reference_axis_frame,
         explicit_reference_plane_frame, extended_compact_arc_record, fixed_reference_plane_frame,
-        indexed_profile_vertex, inline_surface_reference_at,
+        generated_surface_identities, indexed_profile_vertex, inline_surface_reference_at,
         legacy_coordinate_roster_curve_endpoint_markers,
         legacy_coordinate_roster_selected_axis_endpoint_indices,
         legacy_coordinate_roster_undetailed_line, legacy_extended_profile_curve_kind,
@@ -674,9 +675,10 @@ mod marker_tests {
         SKETCH_MARKER,
     };
     use crate::records::{
-        Feature, FeatureHistory, FeatureInputComponentPathEntry, FeatureInputLane,
-        FeatureInputName, FeatureInputOperand, FeatureInputOperandKind, SketchInputEntity,
-        SketchInputKind, SketchInputLink, SketchRelationKind,
+        Feature, FeatureHistory, FeatureInputClass, FeatureInputClassRole,
+        FeatureInputComponentPathEntry, FeatureInputLane, FeatureInputName, FeatureInputOperand,
+        FeatureInputOperandKind, SketchInputEntity, SketchInputKind, SketchInputLink,
+        SketchRelationKind,
     };
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchEntityId, SketchGeometry, SketchId, SketchLocus};
@@ -2321,6 +2323,7 @@ mod marker_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -3351,6 +3354,7 @@ mod marker_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![
                 entity("curve", 0, None, None, SketchInputKind::Arc),
@@ -4342,6 +4346,60 @@ mod marker_tests {
     }
 
     #[test]
+    fn generated_surface_identities_are_producer_outputs() {
+        let class_name = "moWzdHoleSurfIdRep_c";
+        let prefix = [0xc3, 0x80, 0xc5, 0x00];
+        let mut payload = CLASS_MARKER.to_vec();
+        payload.extend((class_name.len() as u16).to_le_bytes());
+        payload.extend(class_name.as_bytes());
+        payload.extend([0, 0]);
+        payload.extend(prefix);
+        payload.extend(89u32.to_le_bytes());
+        payload.extend(0x52e4_6185u32.to_le_bytes());
+        payload.extend(2u32.to_le_bytes());
+        payload.extend(0x85b5u16.to_le_bytes());
+        payload.extend([0, 0]);
+        payload.extend(prefix);
+        payload.extend(89u32.to_le_bytes());
+        payload.extend(0x52e4_6185u32.to_le_bytes());
+        payload.extend(2u32.to_le_bytes());
+        let lane = FeatureInputLane {
+            id: "lane".into(),
+            configuration: None,
+            native_payload: payload,
+            classes: vec![FeatureInputClass {
+                id: "class".into(),
+                parent: "lane".into(),
+                ordinal: 0,
+                offset: 0,
+                name: class_name.into(),
+                role: FeatureInputClassRole::Auxiliary,
+            }],
+            names: Vec::new(),
+            scalars: Vec::new(),
+            relation_bindings: Vec::new(),
+            relation_instances: Vec::new(),
+            body_selections: Vec::new(),
+            edge_selections: Vec::new(),
+            surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
+            references: Vec::new(),
+            sketch_entities: Vec::new(),
+        };
+
+        let identities = generated_surface_identities(&lane);
+
+        assert_eq!(identities.len(), 2, "{identities:#?}");
+        assert!(identities.iter().all(|identity| {
+            identity.type_prefix == prefix
+                && identity.feature_source_id == 89
+                && identity.local_identity == 2
+        }));
+        assert_eq!(identities[0].components[0].instance, None);
+        assert_eq!(identities[1].components[0].instance, Some(0x85b5));
+    }
+
+    #[test]
     fn component_path_type_identities_name_ordered_features() {
         let feature = |id: &str, source_id: &str| Feature {
             id: id.into(),
@@ -4791,6 +4849,7 @@ mod marker_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![
                 marker("first", 0, Some(1), Some([0.0, 0.0195])),
@@ -4949,6 +5008,7 @@ mod marker_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![
                 marker("first", 0, Some(1), Some([0.0, 0.0195])),
@@ -5024,6 +5084,7 @@ mod marker_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![
                 marker("first", 0, Some(1), Some([0.0, 0.0])),
@@ -5258,6 +5319,7 @@ mod marker_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -7098,6 +7160,7 @@ pub(crate) fn bind_scalar_operands(
         lane.body_selections = compact_body_selections(histories, lane);
         lane.edge_selections = compact_edge_selections(histories, lane);
         lane.surface_selections = compact_surface_selections(histories, lane);
+        lane.generated_surface_identities = generated_surface_identities(lane);
     }
 }
 
@@ -8533,6 +8596,118 @@ fn inline_surface_reference_at(
         }
         cursor += 16;
     }
+}
+
+/// Decode feature-produced surface identities declared by `*SurfIdRep_c`
+/// classes. These are output identities, not selections consumed by the
+/// feature that owns the input lane.
+pub(crate) fn generated_surface_identities(
+    lane: &FeatureInputLane,
+) -> Vec<crate::records::FeatureInputGeneratedSurfaceIdentity> {
+    let signature_prefix_at = |offset: usize, prefix: [u8; 4]| -> Option<[u8; 12]> {
+        let signature: [u8; 12] = lane
+            .native_payload
+            .get(offset..offset + 12)?
+            .try_into()
+            .ok()?;
+        let source = u32::from_le_bytes(signature[4..8].try_into().ok()?);
+        let identity = u32::from_le_bytes(signature[8..12].try_into().ok()?);
+        (signature[..4] == prefix && source != 0 && identity != 0).then_some(signature)
+    };
+    let instance_before = |offset: usize| -> Option<u16> {
+        let bytes = lane.native_payload.get(offset.checked_sub(4)?..offset)?;
+        let instance = u16::from_le_bytes(bytes[..2].try_into().ok()?);
+        (instance & 0x8000 != 0 && instance != u16::MAX && bytes[2..] == [0, 0]).then_some(instance)
+    };
+    let mut prefixes = lane
+        .classes
+        .iter()
+        .filter(|class| class.name.ends_with("SurfIdRep_c"))
+        .filter_map(|class| {
+            let body = usize::try_from(class.offset)
+                .ok()?
+                .checked_add(6 + class.name.len())?;
+            if lane.native_payload.get(body..body + 2)? != [0, 0] {
+                return None;
+            }
+            let prefix: [u8; 4] = lane
+                .native_payload
+                .get(body + 2..body + 6)?
+                .try_into()
+                .ok()?;
+            let family = u16::from_le_bytes(prefix[..2].try_into().ok()?);
+            let variant = u16::from_le_bytes(prefix[2..].try_into().ok()?);
+            if family & 0x8000 == 0 || family == u16::MAX || variant == 0 {
+                return None;
+            }
+            Some(prefix)
+        })
+        .collect::<Vec<_>>();
+    prefixes.sort_unstable();
+    prefixes.dedup();
+
+    let mut result = Vec::new();
+    for prefix in prefixes {
+        for terminal in 0..=lane.native_payload.len().saturating_sub(16) {
+            let Some(signature) = signature_prefix_at(terminal, prefix) else {
+                continue;
+            };
+            let tail: [u8; 4] = lane.native_payload[terminal + 12..terminal + 16]
+                .try_into()
+                .expect("bounded surface identity tail");
+            let possible_instance = u16::from_le_bytes(tail[..2].try_into().unwrap());
+            if possible_instance & 0x8000 != 0
+                && possible_instance != u16::MAX
+                && tail[2..] == [0, 0]
+                && signature_prefix_at(terminal + 16, prefix).is_some()
+            {
+                continue;
+            }
+            let mut offset = terminal;
+            while instance_before(offset).is_some()
+                && offset
+                    .checked_sub(16)
+                    .is_some_and(|previous| signature_prefix_at(previous, prefix).is_some())
+            {
+                offset -= 16;
+            }
+            let Some(components) = inline_surface_reference_at(&lane.native_payload, offset) else {
+                continue;
+            };
+            let feature_source_id = u32::from_le_bytes(signature[4..8].try_into().unwrap());
+            let local_identity = u32::from_le_bytes(tail);
+            if result.iter().any(
+                |identity: &crate::records::FeatureInputGeneratedSurfaceIdentity| {
+                    identity.type_prefix == prefix && identity.components == components
+                },
+            ) {
+                continue;
+            }
+            result.push(crate::records::FeatureInputGeneratedSurfaceIdentity {
+                id: String::new(),
+                parent: lane.id.clone(),
+                ordinal: 0,
+                offset: offset as u64,
+                type_prefix: prefix,
+                feature_source_id,
+                local_identity,
+                components,
+            });
+        }
+    }
+    result.sort_by_key(|identity| identity.offset);
+    let lane_key = lane
+        .id
+        .rsplit_once('#')
+        .map_or(lane.id.as_str(), |(_, key)| key);
+    for (ordinal, identity) in result.iter_mut().enumerate() {
+        identity.ordinal = ordinal as u32;
+        identity.id = format!(
+            "sldprt:feature-input:generated-surface#{lane_key}:{}",
+            identity.offset
+        );
+    }
+    result
 }
 
 fn compact_edge_selection_vector(payload: &[u8], base: usize) -> Option<(usize, Vec<u32>)> {
@@ -11660,6 +11835,7 @@ mod idless_history_binding_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -11763,6 +11939,7 @@ mod idless_history_binding_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -11838,6 +12015,7 @@ mod idless_history_binding_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -11918,6 +12096,7 @@ mod idless_history_binding_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -11987,6 +12166,7 @@ mod idless_history_binding_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -22142,6 +22322,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![point, curve, endpoint, arc, arc_start, arc_end],
         };
@@ -22354,6 +22535,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![center, first, second],
         };
@@ -22821,6 +23003,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![line, first, second],
         };
@@ -22890,6 +23073,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![circle_marker],
         };
@@ -24348,6 +24532,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -24707,6 +24892,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![known_a, known_b, missing],
         };
@@ -24843,6 +25029,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -25082,6 +25269,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };
@@ -25353,6 +25541,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![horizontal, vertical, center],
         };
@@ -25491,6 +25680,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![marker_a, marker_b, marker_c, display, reference.clone()],
         };
@@ -26028,6 +26218,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: markers,
         };
@@ -26217,6 +26408,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: vec![handle, point],
         };
@@ -26437,6 +26629,7 @@ mod profile_join_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: markers,
         };
@@ -28523,6 +28716,7 @@ fn source_less_lane<'a>(
         body_selections: Vec::new(),
         edge_selections: Vec::new(),
         surface_selections: Vec::new(),
+        generated_surface_identities: Vec::new(),
         references: Vec::new(),
         sketch_entities: Vec::new(),
     });

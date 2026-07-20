@@ -3751,6 +3751,7 @@ mod design_loss_tests {
                 body_selections: Vec::new(),
                 edge_selections: Vec::new(),
                 surface_selections: Vec::new(),
+                generated_surface_identities: Vec::new(),
                 references: Vec::new(),
                 sketch_entities: vec![
                     relation_marker,
@@ -3805,6 +3806,7 @@ mod design_loss_tests {
                 body_selections: Vec::new(),
                 edge_selections: Vec::new(),
                 surface_selections: Vec::new(),
+                generated_surface_identities: Vec::new(),
                 references: Vec::new(),
                 sketch_entities: vec![
                     SketchInputEntity {
@@ -3875,6 +3877,7 @@ mod design_loss_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         };

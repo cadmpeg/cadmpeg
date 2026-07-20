@@ -211,6 +211,9 @@ pub struct FeatureInputLane {
     /// Compact surface-component selections owned by feature objects in this lane.
     #[serde(default)]
     pub surface_selections: Vec<FeatureInputSurfaceSelection>,
+    /// Persistent identities of surfaces produced by regenerated features.
+    #[serde(default)]
+    pub generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity>,
     /// Native entity-reference cells in byte order.
     #[serde(default)]
     pub references: Vec<FeatureInputReference>,
@@ -294,6 +297,28 @@ pub struct FeatureInputSurfaceSelection {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_feature_ref: Option<String>,
     /// Ordered typed entries in the persistent surface-component path.
+    #[serde(default)]
+    pub components: Vec<FeatureInputComponentPathEntry>,
+}
+
+/// One persistent identity of a surface produced by a regenerated feature.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct FeatureInputGeneratedSurfaceIdentity {
+    /// Globally unique deterministic identifier.
+    pub id: String,
+    /// Owning feature-input lane record id.
+    pub parent: String,
+    /// Position among generated surface identities in stream order.
+    pub ordinal: u32,
+    /// Byte offset of the first component type signature.
+    pub offset: u64,
+    /// Four-byte serialized surface identity type family.
+    pub type_prefix: [u8; 4],
+    /// Source identifier of the feature that produced the terminal surface.
+    pub feature_source_id: u32,
+    /// Opaque feature-local identity of the terminal surface.
+    pub local_identity: u32,
+    /// Ordered typed entries in the persistent generated-surface path.
     #[serde(default)]
     pub components: Vec<FeatureInputComponentPathEntry>,
 }

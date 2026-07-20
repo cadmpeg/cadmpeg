@@ -1937,6 +1937,7 @@ mod history_reference_tests {
             body_selections: Vec::new(),
             edge_selections: Vec::new(),
             surface_selections: Vec::new(),
+            generated_surface_identities: Vec::new(),
             references: Vec::new(),
             sketch_entities: Vec::new(),
         }

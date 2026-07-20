@@ -6,12 +6,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::records::{
     FeatureHistory, FeatureInputBodySelection, FeatureInputClass, FeatureInputEdgeSelection,
-    FeatureInputLane, FeatureInputName, FeatureInputReference, FeatureInputRelationBinding,
-    FeatureInputRelationInstance, FeatureInputScalar, FeatureInputSurfaceSelection, PmiDimension,
+    FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
+    FeatureInputReference, FeatureInputRelationBinding, FeatureInputRelationInstance,
+    FeatureInputScalar, FeatureInputSurfaceSelection, PmiDimension,
 };
 
 /// Current schema version for the SOLIDWORKS native namespace.
-pub const SLDPRT_NATIVE_VERSION: u32 = 12;
+pub const SLDPRT_NATIVE_VERSION: u32 = 13;
 pub const SLDPRT_MIN_NATIVE_VERSION: u32 = 1;
 
 pub(crate) fn native_version_supported(version: u32) -> bool {
@@ -24,6 +25,7 @@ pub(crate) const SLDPRT_ARENA_NAMES: &[&str] = &[
     "feature_input_body_selections",
     "feature_input_classes",
     "feature_input_edge_selections",
+    "feature_input_generated_surface_identities",
     "feature_input_lanes",
     "feature_input_names",
     "feature_input_references",
@@ -112,6 +114,16 @@ impl SldprtNative {
         } else {
             namespace.arena_as("feature_input_surface_selections")?
         };
+        let generated_surface_identities: Vec<FeatureInputGeneratedSurfaceIdentity> =
+            if namespace.version <= 12
+                && !namespace
+                    .arenas
+                    .contains_key("feature_input_generated_surface_identities")
+            {
+                Vec::new()
+            } else {
+                namespace.arena_as("feature_input_generated_surface_identities")?
+            };
         let names: Vec<FeatureInputName> = namespace.arena_as("feature_input_names")?;
         let references: Vec<FeatureInputReference> =
             namespace.arena_as("feature_input_references")?;
@@ -194,6 +206,15 @@ impl SldprtNative {
         {
             return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                 "feature-input surface selection {} references {}",
+                record.id, record.parent
+            )));
+        }
+        if let Some(record) = generated_surface_identities
+            .iter()
+            .find(|record| !lane_ids.contains(record.parent.as_str()))
+        {
+            return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                "feature-input generated surface identity {} references {}",
                 record.id, record.parent
             )));
         }
@@ -655,6 +676,25 @@ impl SldprtNative {
                     record.id
                 )));
             }
+            lane.generated_surface_identities = if namespace.version <= 12 {
+                crate::resolved_features::generated_surface_identities(lane)
+            } else {
+                let mut records = generated_surface_identities
+                    .iter()
+                    .filter(|record| record.parent == lane.id)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                records.sort_by_key(|record| record.ordinal);
+                records
+            };
+            if lane.generated_surface_identities
+                != crate::resolved_features::generated_surface_identities(lane)
+            {
+                return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
+                    "feature-input lane {} generated surface identities disagree with its payload",
+                    lane.id
+                )));
+            }
             lane.sketch_entities = entities
                 .iter()
                 .filter(|record| record.parent == lane.id)
@@ -1081,6 +1121,7 @@ impl SldprtNative {
                 lane.body_selections.clear();
                 lane.edge_selections.clear();
                 lane.surface_selections.clear();
+                lane.generated_surface_identities.clear();
                 lane.references.clear();
                 lane.sketch_entities.clear();
                 lane
@@ -1109,6 +1150,14 @@ impl SldprtNative {
                 .feature_input_lanes
                 .iter()
                 .flat_map(|lane| lane.surface_selections.clone())
+                .collect::<Vec<_>>(),
+        )?;
+        namespace.set_arena(
+            "feature_input_generated_surface_identities",
+            &self
+                .feature_input_lanes
+                .iter()
+                .flat_map(|lane| lane.generated_surface_identities.clone())
                 .collect::<Vec<_>>(),
         )?;
         namespace.set_arena(
@@ -1171,6 +1220,30 @@ impl SldprtNative {
             .iter()
             .all(|name| namespace.arenas.contains_key(*name)));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SldprtNative, SLDPRT_NATIVE_VERSION};
+
+    #[test]
+    fn version_twelve_adds_generated_surface_identity_arena() {
+        let mut namespace = cadmpeg_ir::NativeNamespace::default();
+        SldprtNative::default().store(&mut namespace).unwrap();
+        namespace.version = 12;
+        namespace
+            .arenas
+            .remove("feature_input_generated_surface_identities");
+
+        let migrated = SldprtNative::load(&namespace).unwrap();
+        let mut current = cadmpeg_ir::NativeNamespace::default();
+        migrated.store(&mut current).unwrap();
+
+        assert_eq!(current.version, SLDPRT_NATIVE_VERSION);
+        assert!(current
+            .arenas
+            .contains_key("feature_input_generated_surface_identities"));
     }
 }
 

@@ -323,6 +323,8 @@ pub(crate) fn native_object_class(name: &str) -> NativeObjectClass {
         | "moSketchExtRef_w"
         | "moSketchRegion_c"
         | "moSurfaceIdRep_c"
+        | "moMirPatternSurfIdRep_c"
+        | "moWzdHoleSurfIdRep_c"
         | "sgExtEnt_c" => (NativeClassKind::Auxiliary, Auxiliary, None, None),
         _ => (NativeClassKind::Unknown, Native, None, None),
     };
@@ -574,6 +576,13 @@ mod tests {
         let markup = native_object_class("moInkMarkupFolder_c");
         assert_eq!(markup.role, FeatureInputClassRole::Auxiliary);
         assert_eq!(markup.tree_node, Some(FeatureTreeNodeRole::Markups));
+
+        for class in ["moMirPatternSurfIdRep_c", "moWzdHoleSurfIdRep_c"] {
+            let output = native_object_class(class);
+            assert_eq!(output.role, FeatureInputClassRole::Auxiliary, "{class}");
+            assert_eq!(output.feature, None, "{class}");
+            assert_eq!(output.tree_node, None, "{class}");
+        }
 
         for class in ["moCosmeticThread_c", "moDerivedCosmeticThread_c"] {
             let thread = native_object_class(class);
