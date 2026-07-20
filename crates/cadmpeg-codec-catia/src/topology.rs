@@ -6726,6 +6726,16 @@ impl MeshQuotient {
                 );
                 scanned_roots.sort_unstable_by_key(|root| domains[*root].len());
                 let partial_scan = scanned_roots.len() < domains.len();
+                let bounded_scan = !partial_scan
+                    && budget.is_some_and(|budget| {
+                        assigned
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, point)| point.is_none())
+                            .map(|(root, _)| domains[root].len().saturating_add(1))
+                            .fold(0usize, usize::saturating_add)
+                            > budget.remaining.get()
+                    });
                 let remaining = assigned.iter().filter(|point| point.is_none()).count();
                 let unused = component_points
                     .iter()
@@ -6737,6 +6747,7 @@ impl MeshQuotient {
                 let mut viable_domains = Vec::new();
                 let mut dead = false;
                 let mut progress = false;
+                let mut scan_truncated = false;
                 let mut supported_unused = HashSet::new();
                 let mut unused_point_roots = HashMap::<usize, Vec<usize>>::new();
                 let mut base_degrees = HashMap::<(usize, usize), u8>::new();
@@ -6793,7 +6804,7 @@ impl MeshQuotient {
                         point_uses[*point] += 1;
                         propagated.push((root, *point));
                         progress = true;
-                        if edge_faces.is_some() {
+                        if edge_faces.is_some() || bounded_scan {
                             pending_roots = Some(affected_roots(
                                 root, root_edges, edges, edge_faces, face_edges,
                             ));
@@ -6801,6 +6812,10 @@ impl MeshQuotient {
                         }
                     } else {
                         viable_domains.push((root, values));
+                        if bounded_scan {
+                            scan_truncated = true;
+                            break;
+                        }
                     }
                 }
                 if *exhausted {
@@ -6811,6 +6826,12 @@ impl MeshQuotient {
                 }
                 if progress {
                     continue;
+                }
+                if scan_truncated {
+                    let best = viable_domains
+                        .into_iter()
+                        .min_by_key(|(_, values)| values.len());
+                    break Some(best);
                 }
                 if partial_scan {
                     pending_roots = None;
