@@ -1628,6 +1628,7 @@ struct CreoSurfaceParameterRecord {
     terminal_scalar_frame: Option<CreoSurfaceParameterScalarFrame>,
     tabulated_cylinder_frame: Option<CreoTabulatedCylinderFrame>,
     positional_cylinder_frame: Option<CreoPositionalCylinderFrame>,
+    positional_cone_frame: Option<CreoPositionalConeFrame>,
     torus_outline_frame: Option<CreoTorusOutlineFrame>,
     torus_radius_overrides: Option<CreoTorusRadiusOverrides>,
     cone_half_angle_override: Option<CreoConeHalfAngleOverride>,
@@ -1650,6 +1651,14 @@ struct CreoPositionalCylinderFrame {
     ref_direction: [f64; 3],
     radius: f64,
     length: Option<f64>,
+}
+
+#[derive(Serialize)]
+struct CreoPositionalConeFrame {
+    apex: [f64; 3],
+    axis: [f64; 3],
+    ref_direction: [f64; 3],
+    half_angle: f64,
 }
 
 #[derive(Serialize)]
@@ -2253,6 +2262,14 @@ fn surface_parameter_records(
                         ref_direction: frame.ref_direction,
                         radius: frame.radius,
                         length: frame.length,
+                    }
+                }),
+                positional_cone_frame: record.positional_cone_frame.map(|frame| {
+                    CreoPositionalConeFrame {
+                        apex: frame.apex,
+                        axis: frame.axis,
+                        ref_direction: frame.ref_direction,
+                        half_angle: frame.half_angle,
                     }
                 }),
                 torus_outline_frame: record.torus_outline_frame(row.type_byte).map(|frame| {
@@ -14567,6 +14584,7 @@ mod resolved_sketch_tests {
             terminal_scalar_frame: None,
             tabulated_cylinder_frame: None,
             positional_cylinder_frame: None,
+            positional_cone_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
@@ -14672,6 +14690,7 @@ mod resolved_sketch_tests {
             terminal_scalar_frame: None,
             tabulated_cylinder_frame: None,
             positional_cylinder_frame: None,
+            positional_cone_frame: None,
             boundary: crate::surface::SurfaceBodyBoundary::CompoundClose,
             offset: 0,
             body_offset: 0,
@@ -29535,6 +29554,67 @@ fn transfer_positional_cylinders(
     transferred
 }
 
+fn transfer_positional_cones(
+    scan: &ContainerScan,
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+) -> usize {
+    let mut transferred = 0;
+    for record in &scan.surface_parameters {
+        let Some(frame) = record.positional_cone_frame else {
+            continue;
+        };
+        if crate::surface::unique_surface_parameter(&scan.surface_parameters, record.surface_id)
+            != Some(record)
+        {
+            continue;
+        }
+        let Some(row) = crate::surface::unique_surface_row(&scan.surface_rows, record.surface_id)
+            .filter(|row| row.kind == crate::surface::SurfaceKind::Cone)
+        else {
+            continue;
+        };
+        let id = SurfaceId(format!("creo:visibgeom:surface#{}", record.surface_id));
+        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
+            continue;
+        }
+        annotate(
+            annotations,
+            &id,
+            "VisibGeom",
+            row.offset as u64,
+            "positional_cone_frame",
+            Exactness::Derived,
+        );
+        ir.model.surfaces.push(Surface {
+            id,
+            geometry: SurfaceGeometry::Cone {
+                origin: Point3::new(frame.apex[0], frame.apex[1], frame.apex[2]),
+                axis: Vector3::new(frame.axis[0], frame.axis[1], frame.axis[2]),
+                ref_direction: Vector3::new(
+                    frame.ref_direction[0],
+                    frame.ref_direction[1],
+                    frame.ref_direction[2],
+                ),
+                radius: 0.0,
+                ratio: 1.0,
+                half_angle: frame.half_angle,
+            },
+            source_object: Some(SourceObjectAssociation {
+                format: "creo".to_string(),
+                object_id: format!("VisibGeom:{}", record.surface_id),
+                name: None,
+                color: None,
+                visible: None,
+                layer: None,
+                instance_path: Vec::new(),
+            }),
+        });
+        transferred += 1;
+    }
+    transferred
+}
+
 fn transfer_circular_sweep_cylinders(
     scan: &ContainerScan,
     ir: &mut CadIr,
@@ -30199,6 +30279,7 @@ fn build_ir(
     let circular_sweep_cylinder_count =
         transfer_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
     let positional_cylinder_count = transfer_positional_cylinders(scan, &mut ir, &mut annotations);
+    let positional_cone_count = transfer_positional_cones(scan, &mut ir, &mut annotations);
     let hole_cylinder_count = transfer_hole_cylinders(scan, &mut ir, &mut annotations);
     let constrained_slot_fillet_cylinder_count =
         transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
@@ -30309,6 +30390,10 @@ fn build_ir(
         source.attributes.insert(
             "transferred_positional_cylinder_count".to_string(),
             positional_cylinder_count.to_string(),
+        );
+        source.attributes.insert(
+            "transferred_positional_cone_count".to_string(),
+            positional_cone_count.to_string(),
         );
         source.attributes.insert(
             "transferred_constrained_slot_fillet_cylinder_count".to_string(),
@@ -31960,6 +32045,12 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
         })
         .and_then(|count| count.parse::<usize>().ok())
         .unwrap_or(0);
+    let positional_cone_count = ir
+        .source
+        .as_ref()
+        .and_then(|source| source.attributes.get("transferred_positional_cone_count"))
+        .and_then(|count| count.parse::<usize>().ok())
+        .unwrap_or(0);
     let mut losses = Vec::new();
 
     if container_only {
@@ -31994,7 +32085,8 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
              cylinders with a resolved axis-normal cap plane, four-entry two-cap and blind \
              circular-sweep cylinders, \
              four-entry simple-hole cylinders with complete cap outlines, and compact simple-hole \
-             cylinders with complete positional carriers transfer as carriers; \
+             cylinders with complete positional carriers, complete positional cylinder bodies, \
+             and support-apex positional cones transfer as carriers; \
              other parameter bodies remain structural records.",
             scan.sections.len(),
             scan.layout.token(),
@@ -32046,6 +32138,18 @@ fn build_report(scan: &ContainerScan, ir: &CadIr, container_only: bool) -> Decod
             message: format!(
                 "Transferred {first_instance_prototype_surface_count} first-instance ND plane, \
                  torus, or interpolation-spline carrier(s) from complete named parameters."
+            ),
+            provenance: None,
+        });
+    }
+
+    if !container_only && positional_cone_count != 0 {
+        losses.push(LossNote {
+            category: LossCategory::Geometry,
+            severity: Severity::Info,
+            message: format!(
+                "Transferred {positional_cone_count} exact positional cone carrier(s) from \
+                 complete support, apex, and half-angle suffixes."
             ),
             provenance: None,
         });

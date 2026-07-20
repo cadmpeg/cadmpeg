@@ -30,7 +30,10 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
 - Model-space analytic equations for remaining non-plane surface rows are
   unspecified, including positional cylinder variants outside the defined
   local-system, compact axis-aligned, referenced planar-envelope, and held-axis
-  and axial/radial bodies and cone apex and axis.
+  and axial/radial bodies and positional cone variants outside the defined
+  support-apex suffix.
+- The three-byte station token between a positional cone's model-reference
+  token and half-angle has unspecified scalar semantics.
 - Round and fillet byte semantics are unspecified, including non-prismatic radii, flank geometry, and generated face bindings.
 - The negative DICT prefix lattice for scalar lanes that block geometry records is unspecified.
 

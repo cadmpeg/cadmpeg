@@ -374,6 +374,17 @@ Cylinder and cone prototype local systems are parameter templates. Their termina
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.
 
+A positional cone suffix consists of exactly one complete nine-slot support
+frame, one axis-coordinate apex scalar, one complete `19` or `32`
+model-reference token, one three-byte station token, and a terminal positive
+DICT half-angle. The support frame's first and third triples are orthogonal
+unit directions. Their cross product defines the axis line. The only nonzero
+apex coordinate lies on that axis; the axis sign points from the apex toward
+model zero. Negating the support frame's third direction defines the
+parameter-space reference direction. The apex, signed axis, zero apex radius,
+unit radial ratio, and positive half-angle define the exact cone independently
+of the station token's scalar meaning.
+
 The next valid named field or the enclosing `e3` compound close terminates a named prototype field, whichever occurs first. A named-field header has a field type no greater than `24` and a nonempty identifier made from ASCII letters, digits, underscores, or parentheses. An `e0` byte inside a scalar token does not terminate the field. Bytes after the structural close belong to subsequent instance or namespace records.
 A parenthesized `srf_prim_ptr(<family>)` record also ends at the next legacy
 `srf_prim_ptr\0` record. Fields owned by that sibling prototype do not belong

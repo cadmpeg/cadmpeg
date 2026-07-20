@@ -269,6 +269,8 @@ pub struct SurfaceParameterRecord {
     pub tabulated_cylinder_frame: Option<TabulatedCylinderFrame>,
     /// Complete analytic carrier decoded from a positional cylinder row.
     pub positional_cylinder_frame: Option<PositionalCylinderFrame>,
+    /// Complete analytic carrier decoded from a positional cone row.
+    pub positional_cone_frame: Option<PositionalConeFrame>,
     /// Structural form that bounded the body.
     pub boundary: SurfaceBodyBoundary,
     /// Byte offset of the positional surface row in the original stream.
@@ -312,6 +314,19 @@ pub struct PositionalCylinderFrame {
     pub radius: f64,
     /// Positive distance between axial ends when the body stores an extent.
     pub length: Option<f64>,
+}
+
+/// Complete model-space carrier decoded from a positional cone row.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PositionalConeFrame {
+    /// Model-space cone apex.
+    pub apex: [f64; 3],
+    /// Unit axis directed from the apex toward increasing radius.
+    pub axis: [f64; 3],
+    /// Unit parameter-space reference direction.
+    pub ref_direction: [f64; 3],
+    /// Positive cone half-angle in radians.
+    pub half_angle: f64,
 }
 
 /// Six-slot outline frame in a positional torus-or-sphere body.
@@ -1665,6 +1680,9 @@ fn parameter_records_for_rows(
         let positional_cylinder_frame = (row.kind == SurfaceKind::Cylinder)
             .then(|| decode_positional_cylinder_frame(&body, &cache))
             .flatten();
+        let positional_cone_frame = (row.kind == SurfaceKind::Cone)
+            .then(|| decode_positional_cone_frame(&body, &cache))
+            .flatten();
         records.push(SurfaceParameterRecord {
             surface_id: row.id,
             scalar_values: scalar_tokens
@@ -1677,6 +1695,7 @@ fn parameter_records_for_rows(
             terminal_scalar_frame,
             tabulated_cylinder_frame,
             positional_cylinder_frame,
+            positional_cone_frame,
             body,
             boundary,
             offset: row.offset,
@@ -1697,6 +1716,85 @@ fn decode_positional_cylinder_frame(
         .or_else(|| decode_axial_radial_cylinder_frame(body, cache))
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
+}
+
+fn decode_positional_cone_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalConeFrame> {
+    let angle = terminal_cone_half_angle_layout(body)?;
+    let reference_candidates = (0..angle.start)
+        .filter_map(|start| {
+            matches!(body.get(start), Some(0x19 | 0x32)).then_some(())?;
+            let (_, end) = scalar::decode_model_reference_coordinate(body, start, cache)?;
+            (end + 3 == angle.start).then_some(start)
+        })
+        .collect::<Vec<_>>();
+    let [reference_start] = reference_candidates.as_slice() else {
+        return None;
+    };
+    let apex_candidates = (0..*reference_start)
+        .filter_map(|start| {
+            let (apex, end) = scalar::decode_in_surface_row_lane(body, start, cache)?;
+            (end == *reference_start && apex.is_finite()).then_some((apex, start))
+        })
+        .collect::<Vec<_>>();
+    let [(apex_coordinate, apex_start)] = apex_candidates.as_slice() else {
+        return None;
+    };
+    let support_candidates = (0..*apex_start)
+        .filter_map(|start| {
+            let mut frame = body.get(start..*apex_start)?.to_vec();
+            frame.extend_from_slice(&[0x18, 0x18, 0x18]);
+            let slots = scalar::decode_positional_plane_local_system_slots(&frame, cache)?;
+            (slots[9..12] == [0.0, 0.0, 0.0]).then_some(slots)
+        })
+        .collect::<Vec<_>>();
+    let [slots] = support_candidates.as_slice() else {
+        return None;
+    };
+    let first: [f64; 3] = slots[0..3].try_into().ok()?;
+    let second: [f64; 3] = slots[6..9].try_into().ok()?;
+    let normalize = |vector: [f64; 3]| {
+        let magnitude = vector.iter().map(|value| value * value).sum::<f64>().sqrt();
+        (magnitude.is_finite() && magnitude > 0.0).then(|| vector.map(|value| value / magnitude))
+    };
+    let first = normalize(first)?;
+    let second = normalize(second)?;
+    (first
+        .iter()
+        .zip(second)
+        .map(|(a, b)| a * b)
+        .sum::<f64>()
+        .abs()
+        <= 1e-9)
+        .then_some(())?;
+    let cross = [
+        first[1] * second[2] - first[2] * second[1],
+        first[2] * second[0] - first[0] * second[2],
+        first[0] * second[1] - first[1] * second[0],
+    ];
+    let mut axis = normalize(cross)?;
+    let axis_indices = axis
+        .iter()
+        .enumerate()
+        .filter_map(|(index, value)| (value.abs() >= 1.0 - 1e-9).then_some(index))
+        .collect::<Vec<_>>();
+    let [axis_index] = axis_indices.as_slice() else {
+        return None;
+    };
+    let mut apex = [0.0; 3];
+    apex[*axis_index] = *apex_coordinate;
+    (apex_coordinate.abs() > 1e-12).then_some(())?;
+    if axis[*axis_index] * apex_coordinate > 0.0 {
+        axis = axis.map(|value| -value);
+    }
+    Some(PositionalConeFrame {
+        apex,
+        axis,
+        ref_direction: second.map(|value| -value),
+        half_angle: angle.value,
+    })
 }
 
 fn decode_referenced_planar_envelope_cylinder_frame(
@@ -3620,6 +3718,30 @@ mod tests {
         assert!(
             decode_positional_cylinder_frame(&inconsistent, &scalar::ScalarCache::default())
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn positional_cone_frame_requires_complete_support_apex_and_angle() {
+        let body = [
+            197, 251, 126, 24, 209, 212, 112, 107, 81, 235, 133, 30, 184, 70, 125, 251, 126, 24,
+            209, 212, 112, 123, 0, 68, 204, 99, 17, 228, 72, 66, 64, 192, 170, 175, 125, 232, 45,
+            177, 195, 0, 68, 204, 99, 17, 220, 70, 66, 1, 69, 135, 177, 98, 82, 120, 170, 175, 125,
+            232, 45, 187, 65, 200, 122, 225, 71, 174, 20, 128, 227, 24, 228, 15, 24, 15, 24, 16,
+            24, 228, 70, 66, 129, 71, 174, 20, 122, 225, 25, 194, 145, 29, 33, 143, 32, 210, 52,
+            233, 0, 116, 33, 251, 84, 68, 45, 5,
+        ];
+        let frame = decode_positional_cone_frame(&body, &scalar::ScalarCache::default())
+            .expect("complete positional cone");
+        assert_eq!(frame.apex, [37.01, 0.0, 0.0]);
+        assert_eq!(frame.axis, [-1.0, -0.0, -0.0]);
+        assert_eq!(frame.ref_direction, [-0.0, -0.0, -1.0]);
+        assert!((frame.half_angle - std::f64::consts::FRAC_PI_4).abs() < 1e-12);
+
+        let mut incomplete = body.to_vec();
+        incomplete.remove(86);
+        assert!(
+            decode_positional_cone_frame(&incomplete, &scalar::ScalarCache::default()).is_none()
         );
     }
 
