@@ -272,9 +272,9 @@ All records of a given class are fixed-size on Fusion files. Offsets are record-
 
 **Body (61 B):** `chunk[1]` (@+16, i64) is `history / body flags`, the **`asm_body_key`** joined to the design-side body map (§8). A value of `-1` denotes a sub-body without its own Design record. The key field is retained for every body independently of whether a Design join resolves, and native writing preserves or patches it directly. `chunk[3]` @+34 = first_lump, `chunk[4]` @+43 = first_wire or `-1`, `chunk[5]` @+52 = transform or `-1`.
 
-**Lump (61 B):** `chunk[4]` @+43 = first_shell, `chunk[5]` @+52 = owner_body. (The @+27 slot is reserved `-1`, not the first shell.)
+**Lump (61 B):** `chunk[0]` is the attribute-chain head, `chunk[3]` is the next sibling lump, `chunk[4]` @+43 = first_shell, and `chunk[5]` @+52 = owner_body. (The @+27 slot is reserved `-1`, not the first shell.)
 
-**Shell (80 B):** `chunk[5]` @+53 = first_face, `chunk[6]` = wire, `chunk[7]` = owner.
+**Shell (80 B):** `chunk[0]` is the attribute-chain head, `chunk[3]` is the next sibling shell, `chunk[5]` @+53 = first_face, `chunk[6]` = wire, and `chunk[7]` = owner.
 
 **Subshell:** after the entity base header, `chunk[3]` = owner shell or parent subshell,
 `chunk[4]` = next sibling subshell, `chunk[5]` = first child subshell,

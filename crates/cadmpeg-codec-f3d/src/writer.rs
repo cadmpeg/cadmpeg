@@ -3165,10 +3165,10 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .position(|shell| shell.id == *first_shell)
             .expect("wire ownership was validated");
         native_ident(&mut records, "region")?;
-        native_ref(&mut records, next);
+        native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
-        native_ref(&mut records, -1);
+        native_ref(&mut records, next);
         native_ref(
             &mut records,
             native_record_index(shell_start, shell_ordinal)?,
@@ -3202,11 +3202,11 @@ fn encode_wire_body_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             .transpose()?
             .unwrap_or(-1);
         native_ident(&mut records, "shell")?;
-        native_ref(&mut records, next);
+        native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         for reference in [
             -1,
-            -1,
+            next,
             -1,
             -1,
             source_less_wire_record_for_shell(model, wire_start, ordinal)?,
@@ -3537,10 +3537,10 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(region_start, position)?
         };
         native_ident(&mut records, "region")?;
-        native_ref(&mut records, next);
+        native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
-        native_ref(&mut records, -1);
+        native_ref(&mut records, next);
         native_ref(
             &mut records,
             native_record_index(shell_start, shell_ordinal)?,
@@ -3591,10 +3591,10 @@ fn encode_multi_face_shell_smbh(target: &CadIr) -> Result<Vec<u8>, CodecError> {
             native_record_index(shell_start, position)?
         };
         native_ident(&mut records, "shell")?;
-        native_ref(&mut records, next);
+        native_ref(&mut records, -1);
         native_i64(&mut records, -1);
         native_ref(&mut records, -1);
-        native_ref(&mut records, -1);
+        native_ref(&mut records, next);
         native_ref(&mut records, -1);
         native_ref(&mut records, first_face);
         native_ref(

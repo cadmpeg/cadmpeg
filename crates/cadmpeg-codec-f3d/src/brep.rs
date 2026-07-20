@@ -6502,7 +6502,7 @@ fn shell_chain(region_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<She
         }
         out.push(id(si));
         let Some(s) = by_index.get(&si) else { break };
-        cur = s.ref_at(0);
+        cur = s.ref_at(3);
     }
     out
 }
@@ -6518,7 +6518,7 @@ fn region_chain(body_rec: &Record, by_index: &HashMap<i64, &Record>) -> Vec<Regi
         }
         out.push(id(li));
         let Some(l) = by_index.get(&li) else { break };
-        cur = l.ref_at(0);
+        cur = l.ref_at(3);
     }
     out
 }
