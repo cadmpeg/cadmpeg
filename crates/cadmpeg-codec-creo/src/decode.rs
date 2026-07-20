@@ -13119,7 +13119,21 @@ fn outline_has_unique_radius_delta(frame: crate::surface::TorusOutlineFrame, rad
         == 1
 }
 
-fn prototype_outline_round_radius(
+fn five_coordinate_envelope_proves_sphere_radius(
+    envelope: crate::surface::Type26FiveCoordinateEnvelope,
+    radius: f64,
+) -> bool {
+    let [a1, a2, b0, b1, b2] = envelope.values;
+    let scale = envelope
+        .values
+        .iter()
+        .map(|value| value.abs())
+        .fold(radius.abs().max(1.0), f64::max);
+    let close = |left: f64, right: f64| (left - right).abs() <= 1e-9 * scale;
+    close(a1, b0) && close((b1 - a1).abs(), 2.0 * radius) && close((b2 - a2).abs(), radius)
+}
+
+fn prototype_envelope_round_radius(
     scan: &ContainerScan,
     rows: &[&crate::surface::SurfaceRow],
 ) -> Option<f64> {
@@ -13132,9 +13146,24 @@ fn prototype_outline_round_radius(
                 && row.feature_id == feature_id
                 && rows.iter().any(|candidate| candidate.offset == row.offset)
         })
-        .filter_map(|(record, _, _)| prototype_scalar(record, "radius2"))
+        .filter_map(|(record, _, _)| {
+            Some((
+                prototype_scalar(record, "radius1")?,
+                prototype_scalar(record, "radius2")?,
+            ))
+        })
         .collect::<Vec<_>>();
-    let radius = unique_positive_length(&prototype_radii)?;
+    let &(radius1, radius2) = prototype_radii.first()?;
+    let scale = radius1.abs().max(radius2.abs()).max(1.0);
+    (radius1.is_finite()
+        && radius1 >= 0.0
+        && radius2.is_finite()
+        && radius2 > 0.0
+        && prototype_radii.iter().all(|candidate| {
+            (candidate.0 - radius1).abs() <= 1e-9 * scale
+                && (candidate.1 - radius2).abs() <= 1e-9 * scale
+        }))
+    .then_some(())?;
     rows.iter()
         .all(|row| {
             let records = scan
@@ -13146,11 +13175,17 @@ fn prototype_outline_round_radius(
                 return false;
             };
             record.torus_radius_overrides(row.type_byte).is_none()
-                && record
+                && (record
                     .torus_outline_frame(row.type_byte)
-                    .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius))
+                    .is_some_and(|frame| outline_has_unique_radius_delta(frame, radius2))
+                    || (radius1 == 0.0
+                        && record
+                            .type26_five_coordinate_envelope(row.type_byte)
+                            .is_some_and(|envelope| {
+                                five_coordinate_envelope_proves_sphere_radius(envelope, radius2)
+                            })))
         })
-        .then_some(radius)
+        .then_some(radius2)
 }
 
 fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> Option<f64> {
@@ -13193,7 +13228,7 @@ fn round_constant_radius(scan: &ContainerScan, ir: &CadIr, feature_id: u32) -> O
         return radii
             .as_deref()
             .and_then(unique_positive_length)
-            .or_else(|| prototype_outline_round_radius(scan, &generated_rows));
+            .or_else(|| prototype_envelope_round_radius(scan, &generated_rows));
     }
     let cylinder_radii = cylinder_rows
         .iter()
@@ -15991,6 +16026,16 @@ mod resolved_sketch_tests {
         assert!(!outline_has_unique_radius_delta(
             outline([-2.0, 0.0, 0.0, 2.0, 0.0, 8.0]),
             2.0
+        ));
+        let five_coordinate =
+            |values| crate::surface::Type26FiveCoordinateEnvelope { values, offset: 0 };
+        assert!(five_coordinate_envelope_proves_sphere_radius(
+            five_coordinate([-2.65, -15.0, -2.65, 2.65, -17.65]),
+            2.65
+        ));
+        assert!(!five_coordinate_envelope_proves_sphere_radius(
+            five_coordinate([-2.65, -15.0, -2.5, 2.65, -17.65]),
+            2.65
         ));
     }
 

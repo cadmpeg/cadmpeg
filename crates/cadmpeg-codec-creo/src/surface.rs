@@ -340,6 +340,15 @@ pub struct TorusOutlineFrame {
     pub offset: usize,
 }
 
+/// Five-coordinate endpoint envelope in an untagged type-26 body.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Type26FiveCoordinateEnvelope {
+    /// Final five coordinates after the leading body-local scalar.
+    pub values: [f64; 5],
+    /// Byte offset of the first retained coordinate relative to the body.
+    pub offset: usize,
+}
+
 /// Tagged radius overrides in a positional torus-or-sphere body.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TorusRadiusOverrides {
@@ -521,6 +530,44 @@ impl SurfaceParameterRecord {
                 values,
                 selector: *selector,
                 offset: *marker,
+            })
+    }
+
+    /// Decode the bounded untagged five-coordinate type-26 envelope.
+    #[must_use]
+    pub fn type26_five_coordinate_envelope(
+        &self,
+        type_byte: u8,
+    ) -> Option<Type26FiveCoordinateEnvelope> {
+        (type_byte == 0x26
+            && self.body.starts_with(&[0x18, 0x18, 0x01, 0x11])
+            && self.body.ends_with(&[0x18]))
+        .then_some(())?;
+        let frames = self
+            .scalar_frames
+            .iter()
+            .filter(|frame| frame.offset >= 4)
+            .collect::<Vec<_>>();
+        let [frame] = frames.as_slice() else {
+            return None;
+        };
+        let [leading, a1, a2, b0, b1, b2] = frame.slots.as_slice() else {
+            return None;
+        };
+        (leading.offset == 4).then_some(())?;
+        let mut cursor = 4;
+        for slot in &frame.slots {
+            (slot.offset == cursor).then_some(())?;
+            cursor = cursor.checked_add(slot.length)?;
+        }
+        (cursor + 1 == self.body.len()).then_some(())?;
+        let values = [a1.value?, a2.value?, b0.value?, b1.value?, b2.value?];
+        values
+            .iter()
+            .all(|value| value.is_finite())
+            .then_some(Type26FiveCoordinateEnvelope {
+                values,
+                offset: a1.offset,
             })
     }
 
@@ -3965,6 +4012,36 @@ mod tests {
         };
         assert_eq!(unique_surface_parameter(&records, 7), Some(record));
         assert!(unique_surface_parameter(&[record.clone(), record.clone()], 7).is_none());
+    }
+
+    #[test]
+    fn decodes_bounded_untagged_type26_five_coordinate_envelope() {
+        let body = [
+            0x18, 0x18, 0x01, 0x11, 0x2e, 0xb0, 0x12, 0x47, 0x05, 0x33, 0x2d, 0x2d, 0xff, 0xff,
+            0xff, 0xff, 0xff, 0x29, 0x47, 0x05, 0x33, 0x2e, 0x05, 0x33, 0x2d, 0x31, 0xa6, 0x66,
+            0x66, 0x66, 0x66, 0x66, 0x18,
+        ];
+        let mut payload = vec![7, 0x26, 4, 0x01, 0, 0];
+        payload.extend_from_slice(&body);
+        payload.push(0xe3);
+        let records = parameter_records(&payload);
+        let [record] = records.as_slice() else {
+            panic!("one type-26 parameter record");
+        };
+        let envelope = record
+            .type26_five_coordinate_envelope(0x26)
+            .expect("complete five-coordinate envelope");
+        assert_eq!(envelope.offset, 7);
+        assert_eq!(envelope.values[0], -2.65);
+        assert!((envelope.values[1] + 15.0).abs() < 1e-12);
+        assert_eq!(envelope.values[2], -2.65);
+        assert_eq!(envelope.values[3], 2.65);
+        assert!((envelope.values[4] + 17.65).abs() < 1e-12);
+
+        payload[6] = 0x17;
+        assert!(parameter_records(&payload)[0]
+            .type26_five_coordinate_envelope(0x26)
+            .is_none());
     }
 
     #[test]
