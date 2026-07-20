@@ -1455,11 +1455,33 @@ pub struct DesignFilletRadiusGroup {
     pub group_record_index: u32,
     /// Ordered edge-operand records assigned this radius.
     pub edge_operand_record_indices: Vec<u32>,
-    /// Radius parameter record paired with this edge group.
-    pub radius_parameter_record_index: u32,
+    /// Radius law paired with this edge group.
+    pub law: DesignFilletRadiusLaw,
     /// Tangency-weight parameter record paired with this edge group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tangency_weight_parameter_record_index: Option<u32>,
+}
+
+/// Parameter records defining one Fillet group's radius law.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DesignFilletRadiusLaw {
+    /// One radius applies along the complete edge group.
+    Constant {
+        /// Radius parameter record.
+        radius_parameter_record_index: u32,
+    },
+    /// Explicit endpoint and optional midpoint radius controls.
+    Variable {
+        /// Radius at normalized parameter zero.
+        start_radius_parameter_record_index: u32,
+        /// Radius at normalized parameter one.
+        end_radius_parameter_record_index: u32,
+        /// Midpoint radius records in owner-local order.
+        middle_radius_parameter_record_indices: Vec<u32>,
+        /// Midpoint normalized-parameter records parallel to the radii.
+        middle_parameter_record_indices: Vec<u32>,
+    },
 }
 
 /// One fixed-width member named by an Extrude selection group.

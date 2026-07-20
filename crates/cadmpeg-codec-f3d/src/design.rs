@@ -19,15 +19,16 @@ use crate::records::{
     DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeExtent,
     DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
-    DesignFaceOperand, DesignFilletRadiusGroup, DesignFixedChamferParameters,
-    DesignFixedExtrudeParameters, DesignFixedFilletParameters, DesignHemOperation,
-    DesignMoveOperation, DesignObject, DesignObjectKind, DesignParameter, DesignParameterCompanion,
-    DesignParameterKind, DesignParameterOwner, DesignParameterScope, DesignPathFeatureConstruction,
-    DesignRecordHeader, DesignSketchPlacement, DesignSketchProfileOperand, DesignSolidPrimitive,
-    DesignSurfaceStitchOperation, DesignTopologyRecipeEntry, DesignTopologyRecipeSide,
-    DesignTopologyRecipeTriplet, LostEdgeReference, PersistentReference, PersistentReferenceKind,
-    PersistentSubentityTag, SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity,
-    SketchPoint, SketchRelation, SketchRelationOperand, SketchSurface, SketchText,
+    DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
+    DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
+    DesignHemOperation, DesignMoveOperation, DesignObject, DesignObjectKind, DesignParameter,
+    DesignParameterCompanion, DesignParameterKind, DesignParameterOwner, DesignParameterScope,
+    DesignPathFeatureConstruction, DesignRecordHeader, DesignSketchPlacement,
+    DesignSketchProfileOperand, DesignSolidPrimitive, DesignSurfaceStitchOperation,
+    DesignTopologyRecipeEntry, DesignTopologyRecipeSide, DesignTopologyRecipeTriplet,
+    LostEdgeReference, PersistentReference, PersistentReferenceKind, PersistentSubentityTag,
+    SketchConstraintKind, SketchCurveGeometry, SketchCurveIdentity, SketchPoint, SketchRelation,
+    SketchRelationOperand, SketchSurface, SketchText,
 };
 use cadmpeg_ir::codec::{CodecError, ReadSeek};
 use cadmpeg_ir::le::{
@@ -633,7 +634,15 @@ pub fn project_parameter_design_with_edge_identities(
                     properties: native_scope_properties(scope, native_scope),
                 })
             } else if family == Some(DesignFeatureFamily::Fillet) {
-                if let Some(definition) = parameters
+                if let Some(definition) = project_variable_fillet(
+                    scope,
+                    &parameters,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                ) {
+                    definition
+                } else if let Some(definition) = parameters
                     .is_empty()
                     .then(|| {
                         project_fixed_fillet(
@@ -658,7 +667,8 @@ pub fn project_parameter_design_with_edge_identities(
                     let assigned_parameter_records = assignments
                         .iter()
                         .flat_map(|assignment| {
-                            std::iter::once(assignment.radius_parameter_record_index)
+                            fillet_law_parameter_records(&assignment.law)
+                                .into_iter()
                                 .chain(assignment.tangency_weight_parameter_record_index)
                         })
                         .collect::<Vec<_>>();
@@ -710,11 +720,18 @@ pub fn project_parameter_design_with_edge_identities(
                         let groups = assignments
                             .into_iter()
                             .map(|assignment| {
+                                let radius_record_index = match assignment.law {
+                                    DesignFilletRadiusLaw::Constant {
+                                        radius_parameter_record_index,
+                                    } => radius_parameter_record_index,
+                                    DesignFilletRadiusLaw::Variable { .. } => {
+                                        unreachable!("variable Fillet projected before constants")
+                                    }
+                                };
                                 let radius = parameters
                                     .iter()
                                     .find(|(_, parameter)| {
-                                        parameter.record_index
-                                            == assignment.radius_parameter_record_index
+                                        parameter.record_index == radius_record_index
                                     })
                                     .and_then(|(_, parameter)| design_length(parameter))
                                     .expect("complete Fillet assignment has a positive radius");
@@ -1984,7 +2001,7 @@ fn design_length(parameter: &DesignParameter) -> Option<cadmpeg_ir::features::Le
     ))
 }
 
-fn design_length_unit(unit: &str) -> bool {
+pub(crate) fn design_length_unit(unit: &str) -> bool {
     matches!(unit, "mm" | "cm" | "m" | "in" | "ft")
 }
 
@@ -2004,6 +2021,135 @@ fn design_dimension_unit(parameter: &DesignParameter) -> bool {
         return unit.is_some_and(design_angle_unit);
     }
     false
+}
+
+fn project_variable_fillet(
+    scope: &DesignParameterScope,
+    parameters: &[(u32, &DesignParameter)],
+    construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
+) -> Option<cadmpeg_ir::features::FeatureDefinition> {
+    use cadmpeg_ir::features::{FeatureDefinition, FilletGroup, RadiusSpec};
+
+    let stream = native_stream(&scope.id)?;
+    let mut groups = construction_groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
+    let [group] = groups.as_slice() else {
+        return None;
+    };
+    let (points, tangency_weight) = variable_fillet_law(parameters)?;
+    Some(FeatureDefinition::Fillet {
+        groups: vec![FilletGroup {
+            edges: resolved_edge_group(
+                group,
+                construction_groups,
+                edge_operands,
+                edge_identity_operands,
+                scope.previous_history_state_id,
+                &neutral_feature_id(scope),
+                None,
+            ),
+            radius: RadiusSpec::Variable { points },
+            tangency_weight: Some(tangency_weight),
+        }],
+    })
+}
+
+fn variable_fillet_law(
+    parameters: &[(u32, &DesignParameter)],
+) -> Option<(Vec<cadmpeg_ir::features::VariableRadius>, f64)> {
+    use cadmpeg_ir::features::VariableRadius;
+
+    let unique_parameter = |kind: &str| {
+        let mut matches = parameters
+            .iter()
+            .filter_map(|(_, parameter)| (parameter.source_kind == kind).then_some(*parameter));
+        let parameter = matches.next()?;
+        matches.next().is_none().then_some(parameter)
+    };
+    let start = design_length(unique_parameter("StartRadius")?)?;
+    let end = design_length(unique_parameter("EndRadius")?)?;
+    if start.0 < 0.0 || end.0 < 0.0 {
+        return None;
+    }
+    let tangency_weight = unique_parameter("TangencyWeight")?.evaluated_value;
+    if !tangency_weight.is_finite() {
+        return None;
+    }
+    let mut middle_radii = parameters
+        .iter()
+        .filter_map(|(ordinal, parameter)| {
+            (parameter.source_kind == "MidRadius").then_some((*ordinal, *parameter))
+        })
+        .collect::<Vec<_>>();
+    let mut middle_parameters = parameters
+        .iter()
+        .filter_map(|(ordinal, parameter)| {
+            (parameter.source_kind == "MidParams").then_some((*ordinal, *parameter))
+        })
+        .collect::<Vec<_>>();
+    middle_radii.sort_by_key(|(ordinal, _)| *ordinal);
+    middle_parameters.sort_by_key(|(ordinal, _)| *ordinal);
+    if middle_radii.len() != middle_parameters.len()
+        || parameters.iter().any(|(_, parameter)| {
+            !matches!(
+                parameter.source_kind.as_str(),
+                "StartRadius" | "EndRadius" | "MidRadius" | "MidParams" | "TangencyWeight"
+            )
+        })
+    {
+        return None;
+    }
+    let mut points = Vec::with_capacity(middle_radii.len() + 2);
+    points.push(VariableRadius {
+        parameter: 0.0,
+        radius: start,
+    });
+    for ((_, radius), (_, parameter)) in middle_radii.into_iter().zip(middle_parameters) {
+        let radius = design_length(radius)?;
+        let parameter = parameter.evaluated_value;
+        if radius.0 < 0.0 || !parameter.is_finite() || !(0.0..1.0).contains(&parameter) {
+            return None;
+        }
+        points.push(VariableRadius { parameter, radius });
+    }
+    points.push(VariableRadius {
+        parameter: 1.0,
+        radius: end,
+    });
+    if !points
+        .windows(2)
+        .all(|pair| pair[0].parameter < pair[1].parameter)
+        || !points.iter().any(|point| point.radius.0 > 0.0)
+    {
+        return None;
+    }
+    Some((points, tangency_weight))
+}
+
+fn fillet_law_parameter_records(law: &DesignFilletRadiusLaw) -> Vec<u32> {
+    match law {
+        DesignFilletRadiusLaw::Constant {
+            radius_parameter_record_index,
+        } => vec![*radius_parameter_record_index],
+        DesignFilletRadiusLaw::Variable {
+            start_radius_parameter_record_index,
+            end_radius_parameter_record_index,
+            middle_radius_parameter_record_indices,
+            middle_parameter_record_indices,
+        } => std::iter::once(*start_radius_parameter_record_index)
+            .chain(std::iter::once(*end_radius_parameter_record_index))
+            .chain(middle_radius_parameter_record_indices.iter().copied())
+            .chain(middle_parameter_record_indices.iter().copied())
+            .collect(),
+    }
 }
 
 /// Count parameters whose unit token has no settled neutral quantity kind.
@@ -16037,27 +16183,70 @@ pub fn decode_fillet_radius_groups(
                 (parameter.source_kind == "TangencyWeight").then_some(*parameter)
             })
             .collect::<Vec<_>>();
-        if scope_groups.len() != radii.len()
-            || (!weights.is_empty() && weights.len() != scope_groups.len())
+        if scope_groups.len() == radii.len()
+            && (weights.is_empty() || weights.len() == scope_groups.len())
+        {
+            for (ordinal, (group, radius)) in scope_groups.into_iter().zip(radii).enumerate() {
+                let Ok(group_ordinal) = u32::try_from(ordinal) else {
+                    continue;
+                };
+                out.push(DesignFilletRadiusGroup {
+                    id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
+                    scope_record_index: scope.record_index,
+                    group_ordinal,
+                    group_record_index: group.record_index,
+                    edge_operand_record_indices: group.members.clone(),
+                    law: DesignFilletRadiusLaw::Constant {
+                        radius_parameter_record_index: radius.record_index,
+                    },
+                    tangency_weight_parameter_record_index: weights
+                        .get(ordinal)
+                        .map(|parameter| parameter.record_index),
+                });
+            }
+            continue;
+        }
+        let [group] = scope_groups.as_slice() else {
+            continue;
+        };
+        let records = |kind: &str| {
+            owned_parameters
+                .iter()
+                .filter_map(|(_, parameter)| {
+                    (parameter.source_kind == kind).then_some(parameter.record_index)
+                })
+                .collect::<Vec<_>>()
+        };
+        let (start, end, middle_radii, middle_parameters) = (
+            records("StartRadius"),
+            records("EndRadius"),
+            records("MidRadius"),
+            records("MidParams"),
+        );
+        let ([start], [end]) = (start.as_slice(), end.as_slice()) else {
+            continue;
+        };
+        let variable_parameter_count = 2 + middle_radii.len() + middle_parameters.len() + 1;
+        if middle_radii.len() != middle_parameters.len()
+            || weights.len() != 1
+            || owned_parameters.len() != variable_parameter_count
         {
             continue;
         }
-        for (ordinal, (group, radius)) in scope_groups.into_iter().zip(radii).enumerate() {
-            let Ok(group_ordinal) = u32::try_from(ordinal) else {
-                continue;
-            };
-            out.push(DesignFilletRadiusGroup {
-                id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
-                scope_record_index: scope.record_index,
-                group_ordinal,
-                group_record_index: group.record_index,
-                edge_operand_record_indices: group.members.clone(),
-                radius_parameter_record_index: radius.record_index,
-                tangency_weight_parameter_record_index: weights
-                    .get(ordinal)
-                    .map(|parameter| parameter.record_index),
-            });
-        }
+        out.push(DesignFilletRadiusGroup {
+            id: format!("{stream}:design-fillet-radius-group#{}", group.record_index),
+            scope_record_index: scope.record_index,
+            group_ordinal: 0,
+            group_record_index: group.record_index,
+            edge_operand_record_indices: group.members.clone(),
+            law: DesignFilletRadiusLaw::Variable {
+                start_radius_parameter_record_index: *start,
+                end_radius_parameter_record_index: *end,
+                middle_radius_parameter_record_indices: middle_radii,
+                middle_parameter_record_indices: middle_parameters,
+            },
+            tangency_weight_parameter_record_index: Some(weights[0].record_index),
+        });
     }
     out.sort_by_key(|group| group.id.clone());
     out
@@ -31786,6 +31975,56 @@ mod relation_tests {
     }
 
     #[test]
+    fn variable_fillet_law_orders_endpoint_and_midpoint_parameters() {
+        use cadmpeg_ir::features::Length;
+
+        let parameter = |record_index, source_kind: &str, unit, value| {
+            let mut parameter = parse_design_parameter(&parameter_record(
+                Some(record_index + 100),
+                "value",
+                source_kind,
+                unit,
+                "d1",
+                value,
+            ))
+            .expect("variable Fillet parameter");
+            parameter.record_index = record_index;
+            parameter
+        };
+        let start = parameter(1, "StartRadius", Some("mm"), 0.0);
+        let end = parameter(2, "EndRadius", Some("mm"), 0.0);
+        let radius = parameter(3, "MidRadius", Some("mm"), 0.4);
+        let position = parameter(4, "MidParams", None, 0.25);
+        let weight = parameter(5, "TangencyWeight", None, 0.75);
+        let (points, tangency_weight) = super::variable_fillet_law(&[
+            (0, &start),
+            (1, &end),
+            (2, &radius),
+            (3, &position),
+            (4, &weight),
+        ])
+        .expect("complete variable Fillet law");
+        assert_eq!(
+            points,
+            [
+                cadmpeg_ir::features::VariableRadius {
+                    parameter: 0.0,
+                    radius: Length(0.0),
+                },
+                cadmpeg_ir::features::VariableRadius {
+                    parameter: 0.25,
+                    radius: Length(4.0),
+                },
+                cadmpeg_ir::features::VariableRadius {
+                    parameter: 1.0,
+                    radius: Length(0.0),
+                },
+            ]
+        );
+        assert_eq!(tangency_weight, 0.75);
+    }
+
+    #[test]
     fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         let scope = DesignParameterScope {
             id: "f3d:native:scope#12".into(),
@@ -31920,17 +32159,72 @@ mod relation_tests {
         );
         assert_eq!(assignments.len(), 2);
         assert_eq!(assignments[0].edge_operand_record_indices, [200]);
-        assert_eq!(assignments[0].radius_parameter_record_index, 11);
+        assert_eq!(
+            assignments[0].law,
+            super::DesignFilletRadiusLaw::Constant {
+                radius_parameter_record_index: 11,
+            }
+        );
         assert_eq!(
             assignments[0].tangency_weight_parameter_record_index,
             Some(31)
         );
         assert_eq!(assignments[1].edge_operand_record_indices, [201, 202]);
-        assert_eq!(assignments[1].radius_parameter_record_index, 21);
+        assert_eq!(
+            assignments[1].law,
+            super::DesignFilletRadiusLaw::Constant {
+                radius_parameter_record_index: 21,
+            }
+        );
         assert_eq!(
             assignments[1].tangency_weight_parameter_record_index,
             Some(41)
         );
+        let variable_parameters = [
+            parameter(50, 51, "StartRadius", Some("mm"), 0.2),
+            parameter(60, 61, "EndRadius", Some("mm"), 0.6),
+            parameter(70, 71, "MidRadius", Some("mm"), 0.4),
+            parameter(80, 81, "MidParams", None, 0.25),
+            parameter(90, 91, "TangencyWeight", None, 0.75),
+        ];
+        let variable_owners = [
+            owner(50, 51, 0),
+            owner(60, 61, 1),
+            owner(70, 71, 2),
+            owner(80, 81, 3),
+            owner(90, 91, 4),
+        ];
+        let variable_assignments = decode_fillet_radius_groups(
+            std::slice::from_ref(&scope),
+            &operand_groups[..1],
+            &variable_owners,
+            &variable_parameters,
+        );
+        assert_eq!(variable_assignments.len(), 1);
+        assert_eq!(
+            variable_assignments[0].law,
+            super::DesignFilletRadiusLaw::Variable {
+                start_radius_parameter_record_index: 51,
+                end_radius_parameter_record_index: 61,
+                middle_radius_parameter_record_indices: vec![71],
+                middle_parameter_record_indices: vec![81],
+            }
+        );
+        assert_eq!(
+            variable_assignments[0].tangency_weight_parameter_record_index,
+            Some(91)
+        );
+        let mut incomplete_parameters = variable_parameters.to_vec();
+        incomplete_parameters.push(parameter(100, 101, "UnknownLawInput", None, 1.0));
+        let mut incomplete_owners = variable_owners.to_vec();
+        incomplete_owners.push(owner(100, 101, 5));
+        assert!(decode_fillet_radius_groups(
+            std::slice::from_ref(&scope),
+            &operand_groups[..1],
+            &incomplete_owners,
+            &incomplete_parameters,
+        )
+        .is_empty());
         operand_groups[0]
             .lost_edge_references
             .push("f3d:native:lost-edge-reference#1".into());

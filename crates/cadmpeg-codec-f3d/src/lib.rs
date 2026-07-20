@@ -1113,8 +1113,6 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
         let scope = scopes_by_index.get(&(native_stream, assignment.scope_record_index));
         let group =
             construction_groups_by_index.get(&(native_stream, assignment.group_record_index));
-        let radius =
-            parameters_by_index.get(&(native_stream, assignment.radius_parameter_record_index));
         let tangency_weight = assignment
             .tangency_weight_parameter_record_index
             .and_then(|record_index| parameters_by_index.get(&(native_stream, record_index)));
@@ -1123,12 +1121,69 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                 group.scope_record_index == assignment.scope_record_index
                     && group.members == assignment.edge_operand_record_indices
             })
-            && radius.is_some_and(|parameter| {
-                parameter.source_kind == "Radius"
-                    && parameter.unit.as_deref() == Some("mm")
-                    && parameter.evaluated_value > 0.0
-                    && parameter.evaluated_value.is_finite()
-            })
+            && match &assignment.law {
+                records::DesignFilletRadiusLaw::Constant {
+                    radius_parameter_record_index,
+                } => parameters_by_index
+                    .get(&(native_stream, *radius_parameter_record_index))
+                    .is_some_and(|parameter| {
+                        parameter.source_kind == "Radius"
+                            && parameter
+                                .unit
+                                .as_deref()
+                                .is_some_and(design::design_length_unit)
+                            && parameter.evaluated_value > 0.0
+                            && parameter.evaluated_value.is_finite()
+                    }),
+                records::DesignFilletRadiusLaw::Variable {
+                    start_radius_parameter_record_index,
+                    end_radius_parameter_record_index,
+                    middle_radius_parameter_record_indices,
+                    middle_parameter_record_indices,
+                } => {
+                    let radius = |record_index: u32, kind: &str| {
+                        parameters_by_index
+                            .get(&(native_stream, record_index))
+                            .filter(|parameter| {
+                                parameter.source_kind == kind
+                                    && parameter
+                                        .unit
+                                        .as_deref()
+                                        .is_some_and(design::design_length_unit)
+                                    && parameter.evaluated_value.is_finite()
+                                    && parameter.evaluated_value >= 0.0
+                            })
+                            .map(|parameter| parameter.evaluated_value)
+                    };
+                    let start = radius(*start_radius_parameter_record_index, "StartRadius");
+                    let end = radius(*end_radius_parameter_record_index, "EndRadius");
+                    let middle = middle_radius_parameter_record_indices
+                        .iter()
+                        .map(|record_index| radius(*record_index, "MidRadius"))
+                        .collect::<Option<Vec<_>>>();
+                    let positions = middle_parameter_record_indices
+                        .iter()
+                        .map(|record_index| {
+                            parameters_by_index
+                                .get(&(native_stream, *record_index))
+                                .filter(|parameter| {
+                                    parameter.source_kind == "MidParams"
+                                        && parameter.unit.is_none()
+                                        && parameter.evaluated_value.is_finite()
+                                        && (0.0..1.0).contains(&parameter.evaluated_value)
+                                })
+                                .map(|parameter| parameter.evaluated_value)
+                        })
+                        .collect::<Option<Vec<_>>>();
+                    start.zip(end).zip(middle).zip(positions).is_some_and(
+                        |(((start, end), middle), positions)| {
+                            middle.len() == positions.len()
+                                && (start > 0.0 || end > 0.0 || middle.iter().any(|r| *r > 0.0))
+                                && positions.windows(2).all(|pair| pair[0] < pair[1])
+                        },
+                    )
+                }
+            }
             && assignment
                 .tangency_weight_parameter_record_index
                 .is_none_or(|_| {
