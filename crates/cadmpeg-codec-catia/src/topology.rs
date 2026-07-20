@@ -6208,6 +6208,146 @@ impl MeshQuotient {
         }
 
         #[allow(clippy::too_many_arguments)]
+        fn partial_compact_assignment_viable(
+            domain: &MeshFaceBoundaryDomain,
+            local_edge_by_id: &HashMap<usize, usize>,
+            edges: &[[usize; 2]],
+            global_edge_count: usize,
+            assigned: &[Option<usize>],
+            candidate: (usize, usize),
+            budget: Option<&MeshConstraintBudget>,
+        ) -> bool {
+            fn augment(
+                component: usize,
+                compatible: &[Vec<bool>],
+                seen: &mut [bool],
+                matched: &mut [Option<usize>],
+            ) -> bool {
+                for cycle in 0..matched.len() {
+                    if !compatible[component][cycle] || seen[cycle] {
+                        continue;
+                    }
+                    seen[cycle] = true;
+                    if matched[cycle]
+                        .is_none_or(|previous| augment(previous, compatible, seen, matched))
+                    {
+                        matched[cycle] = Some(component);
+                        return true;
+                    }
+                }
+                false
+            }
+
+            let relevant = match domain {
+                MeshFaceBoundaryDomain::Ordered(_) => return true,
+                MeshFaceBoundaryDomain::UnorderedFullCycle(edges) => edges.clone(),
+                MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+                    let mut edges = domain.missing_edges.clone();
+                    edges.extend(
+                        domain
+                            .cycles
+                            .iter()
+                            .flat_map(|cycle| cycle.exact_uses.iter().map(|(use_, _)| use_.edge)),
+                    );
+                    edges.sort_unstable();
+                    edges.dedup();
+                    edges
+                }
+            };
+            if budget.is_some_and(|budget| !budget.charge_by(relevant.len().max(1))) {
+                return false;
+            }
+            let value = |root| {
+                if root == candidate.0 {
+                    Some(candidate.1)
+                } else {
+                    assigned[root]
+                }
+            };
+            let mut selected = HashMap::new();
+            let mut selected_edges = Vec::new();
+            let mut adjacency = HashMap::<usize, Vec<usize>>::new();
+            for &edge in &relevant {
+                let Some(&local) = local_edge_by_id.get(&edge) else {
+                    return false;
+                };
+                let [left, right] = edges[local];
+                let [Some(left), Some(right)] = [value(left), value(right)] else {
+                    continue;
+                };
+                selected.insert(edge, [left, right]);
+                selected_edges.push(edge);
+                adjacency.entry(left).or_default().push(edge);
+                adjacency.entry(right).or_default().push(edge);
+            }
+            let mut closed_components = Vec::new();
+            let mut seen_edges = HashSet::new();
+            for &first in &selected_edges {
+                if seen_edges.contains(&first) {
+                    continue;
+                }
+                let mut stack = vec![first];
+                let mut component = Vec::new();
+                let mut vertices = HashSet::new();
+                while let Some(edge) = stack.pop() {
+                    if !seen_edges.insert(edge) {
+                        continue;
+                    }
+                    component.push(edge);
+                    for point in selected[&edge] {
+                        vertices.insert(point);
+                        stack.extend(adjacency[&point].iter().copied());
+                    }
+                }
+                if vertices.iter().all(|point| adjacency[point].len() == 2) {
+                    closed_components.push(component);
+                }
+            }
+            match domain {
+                MeshFaceBoundaryDomain::Ordered(_) => true,
+                MeshFaceBoundaryDomain::UnorderedFullCycle(_) => {
+                    closed_components.is_empty()
+                        || (selected_edges.len() == relevant.len() && closed_components.len() == 1)
+                }
+                MeshFaceBoundaryDomain::DeferredValidation(domain) => {
+                    if closed_components.len() > domain.cycles.len() {
+                        return false;
+                    }
+                    let missing = domain.missing_edges.iter().copied().collect::<HashSet<_>>();
+                    let mut edge_points = vec![[0; 2]; global_edge_count];
+                    for (&edge, &points) in &selected {
+                        edge_points[edge] = points;
+                    }
+                    let compatible = closed_components
+                        .iter()
+                        .map(|component| {
+                            let incidence = incidence_cycles(component, &edge_points);
+                            let Some([incidence]) = incidence.as_deref() else {
+                                return vec![false; domain.cycles.len()];
+                            };
+                            domain
+                                .cycles
+                                .iter()
+                                .map(|cycle| {
+                                    deferred_boundary_cycle_matches(cycle, incidence, &missing)
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .collect::<Vec<_>>();
+                    let mut matched = vec![None; domain.cycles.len()];
+                    (0..closed_components.len()).all(|component| {
+                        augment(
+                            component,
+                            &compatible,
+                            &mut vec![false; domain.cycles.len()],
+                            &mut matched,
+                        )
+                    })
+                }
+            }
+        }
+
+        #[allow(clippy::too_many_arguments)]
         fn walk(
             domains: &[Vec<usize>],
             edges: &[[usize; 2]],
@@ -6356,7 +6496,15 @@ impl MeshQuotient {
                                                     )
                                                 })
                                             }
-                                            _ => true,
+                                            _ => partial_compact_assignment_viable(
+                                                domain,
+                                                local_edge_by_id,
+                                                edges,
+                                                edge_candidates.len(),
+                                                assigned,
+                                                (root, *point),
+                                                budget,
+                                            ),
                                         }
                                     });
                                 if !boundaries_viable {
@@ -14360,6 +14508,42 @@ mod motif_tests {
                 Some(&MeshConstraintBudget::new(1_000)),
             )
             .is_some());
+    }
+
+    #[test]
+    fn quotient_coordinate_closure_rejects_sealed_unordered_subcycles() {
+        let singleton = |point| Arc::new(HashSet::from([point]));
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(8),
+            domains: [
+                singleton(0),
+                singleton(1),
+                singleton(1),
+                singleton(0),
+                Arc::new(HashSet::from([0, 2])),
+                singleton(3),
+                singleton(3),
+                singleton(2),
+            ]
+            .into(),
+            members: (0..8).map(|node| vec![node]).collect(),
+        };
+        let candidates = vec![vec![[0, 1]], vec![[0, 1]], vec![[2, 3]], vec![[2, 3]]];
+        let edge_faces = [[0, 0]; 4];
+        let domains = [MeshFaceBoundaryDomain::UnorderedFullCycle(vec![0, 1, 2, 3])];
+        let budget = MeshConstraintBudget::new(10_000);
+
+        assert!(quotient
+            .close_coordinate_roots_for_incidence_with_budget(
+                4,
+                &candidates,
+                &edge_faces,
+                1,
+                &domains,
+                Some(&budget),
+            )
+            .is_none());
+        assert!(!budget.exhausted.get());
     }
 
     #[test]
