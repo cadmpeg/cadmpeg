@@ -22821,8 +22821,10 @@ fn agreed_plane_surface(candidates: &[PlaneCandidate]) -> Option<(PlaneEquation,
 #[cfg(test)]
 mod plane_reconciliation_tests {
     use super::{
-        agreed_plane, agreed_plane_surface, dot, PlaneCandidate, PlaneChart, PlaneEquation,
+        agreed_plane, agreed_plane_surface, dot, held_coordinate_plane, PlaneCandidate, PlaneChart,
+        PlaneEquation,
     };
+    use crate::surface::{PlaneEnvelope, PlaneEnvelopeRecord};
 
     #[test]
     fn reconciles_equivalent_plane_frames_and_rejects_conflicts() {
@@ -22876,6 +22878,32 @@ mod plane_reconciliation_tests {
         ])
         .is_none());
     }
+
+    #[test]
+    fn complete_envelope_held_coordinate_defines_only_the_plane_equation() {
+        let envelope = PlaneEnvelopeRecord {
+            surface_id: 12,
+            body: Vec::new(),
+            envelope: PlaneEnvelope::Standard {
+                bounds_2d: [[Some(-2.0), Some(-3.0)], [Some(2.0), Some(3.0)]],
+                corners_3d: [
+                    [Some(-2.0), Some(8.0), Some(-3.0)],
+                    [Some(2.0), Some(8.0), Some(3.0)],
+                ],
+            },
+            corner_coordinate_equal: [Some(false), Some(true), Some(false)],
+            scalar_tokens: Vec::new(),
+            row_offset: 10,
+            offset: 20,
+        };
+        let plane = held_coordinate_plane(&envelope).expect("held-coordinate plane");
+        assert_eq!(plane.origin, [-2.0, 8.0, -3.0]);
+        assert_eq!(plane.normal, [0.0, 1.0, 0.0]);
+
+        let mut unresolved = envelope;
+        unresolved.corner_coordinate_equal[2] = None;
+        assert!(held_coordinate_plane(&unresolved).is_none());
+    }
 }
 
 fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> {
@@ -22913,6 +22941,19 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 offset: outline.offset,
             });
     }
+    for envelope in &scan.plane_envelopes {
+        let Some(equation) = held_coordinate_plane(envelope) else {
+            continue;
+        };
+        candidates
+            .entry(envelope.surface_id)
+            .or_default()
+            .push(PlaneCandidate {
+                equation,
+                chart: None,
+                offset: envelope.offset,
+            });
+    }
     candidates
         .into_iter()
         .filter(|(id, _)| {
@@ -22924,6 +22965,31 @@ fn plane_candidates(scan: &ContainerScan) -> BTreeMap<u32, Vec<PlaneCandidate>> 
                 < 2
         })
         .collect()
+}
+
+fn held_coordinate_plane(envelope: &crate::surface::PlaneEnvelopeRecord) -> Option<PlaneEquation> {
+    let corners = plane_envelope_corners(&envelope.envelope)?;
+    let held = envelope
+        .corner_coordinate_equal
+        .iter()
+        .enumerate()
+        .filter_map(|(axis, equal)| (*equal == Some(true)).then_some(axis))
+        .collect::<Vec<_>>();
+    let [axis] = held.as_slice() else {
+        return None;
+    };
+    envelope
+        .corner_coordinate_equal
+        .iter()
+        .enumerate()
+        .all(|(candidate, equal)| candidate == *axis || *equal == Some(false))
+        .then_some(())?;
+    let mut normal = [0.0; 3];
+    normal[*axis] = 1.0;
+    Some(PlaneEquation {
+        origin: corners[0],
+        normal,
+    })
 }
 
 fn placed_planes(scan: &ContainerScan) -> BTreeMap<u32, PlaneEquation> {
