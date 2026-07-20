@@ -551,12 +551,6 @@ coordinates followed by `21`. Its split form stores two coordinates, `3a`, a
 six-byte body-local control payload, and two more coordinates at the bounded
 body end. The control payload does not occupy a coordinate slot.
 
-A bounded type-24 positional cylinder body stores its positive radius in two
-forms. The direct form is `14 <radius> <scalar[8]>`. The split form is `12
-<radius> 14 <scalar[7]>`. Every scalar is contiguous and the final scalar ends
-at the parameter-body boundary. The radius does not establish the cylinder
-axis or parameter chart.
-
 A bounded type-24 round envelope stores two diameter endpoints and two
 three-coordinate extent endpoints. The diameter endpoints occur around a held
 coordinate after `15` or `00 15 1c`, or across the single-byte `12` separator
