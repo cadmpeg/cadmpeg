@@ -4120,6 +4120,8 @@ pub struct FeatureOperationLabel {
     pub value: String,
     /// Four object-index slots in header order.
     pub object_indices: [Option<u32>; 4],
+    /// Exact serialized object-index tokens in header order.
+    pub raw_object_indices: [Vec<u8>; 4],
     /// Absolute file offset of the `03` label tag.
     pub source_offset: u64,
 }
@@ -6365,16 +6367,45 @@ pub fn feature_operation_labels(container: &Container) -> Vec<FeatureOperationLa
         };
         let section_key = format!("{section_ordinal:010}");
         let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
-        labels.extend(section.operation_labels().into_iter().enumerate().map(
-            |(ordinal, label)| FeatureOperationLabel {
-                id: format!("nx:feature-history:operation-label#{section_key}-{ordinal:010}"),
-                section_link: link.id.clone(),
-                ordinal: ordinal as u32,
-                value: label.value.to_string(),
-                object_indices: label.object_indices,
-                source_offset: entry_offset + label.offset as u64,
-            },
-        ));
+        let Some(record_area) = section.record_area else {
+            continue;
+        };
+        let Some(record_area_offset) = section.record_area_offset else {
+            continue;
+        };
+        labels.extend(
+            section
+                .operation_labels()
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, label)| {
+                    let raw_object_indices: [Option<Vec<u8>>; 4] = std::array::from_fn(|slot| {
+                        let start = label.object_index_offsets[slot] - record_area_offset;
+                        let end = if slot + 1 < label.object_index_offsets.len() {
+                            label.object_index_offsets[slot + 1] - record_area_offset
+                        } else {
+                            label.offset - record_area_offset
+                        };
+                        record_area.get(start..end).map(<[u8]>::to_vec)
+                    });
+                    let raw_object_indices = raw_object_indices
+                        .into_iter()
+                        .collect::<Option<Vec<_>>>()?
+                        .try_into()
+                        .ok()?;
+                    Some(FeatureOperationLabel {
+                        id: format!(
+                            "nx:feature-history:operation-label#{section_key}-{ordinal:010}"
+                        ),
+                        section_link: link.id.clone(),
+                        ordinal: ordinal as u32,
+                        value: label.value.to_string(),
+                        object_indices: label.object_indices,
+                        raw_object_indices,
+                        source_offset: entry_offset + label.offset as u64,
+                    })
+                }),
+        );
     }
     labels
 }

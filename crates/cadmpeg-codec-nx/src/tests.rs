@@ -3577,6 +3577,7 @@ fn nx_simple_hole_template_requires_exact_ordered_tokens() {
         ordinal: 3,
         value: "SIMPLE HOLE".to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: 100,
     };
     let record = FeatureOperationRecord {
@@ -4891,6 +4892,7 @@ fn nx_sketch_record_joins_exact_operation_and_ordered_input_lanes() {
         ordinal: 7,
         value: "SKETCH".to_string(),
         object_indices: [Some(45), None, Some(81), None],
+        raw_object_indices: [vec![45], vec![0xff], vec![81], vec![0xff]],
         source_offset: 700,
     };
     let record = FeatureOperationRecord {
@@ -5233,6 +5235,16 @@ fn decode_orders_and_deduplicates_linked_feature_history_sections() {
         [("BLOCK", 0), ("UNITE", 0)]
     );
     assert_ne!(labels[0].section_link, labels[1].section_link);
+    assert_eq!(
+        labels[0].raw_object_indices,
+        [
+            vec![0x01],
+            vec![0x82, 0x40],
+            vec![0x90, 0x17, 0xd3],
+            vec![0xff]
+        ]
+    );
+    assert_eq!(labels[1].raw_object_indices, labels[0].raw_object_indices);
     let records = namespace
         .arena_as::<crate::native::FeatureOperationRecord>("feature_operation_records")
         .unwrap();
@@ -6243,6 +6255,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         ordinal,
         value: if ordinal == 0 { "SKETCH" } else { "DATUM_CSYS" }.to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: 100 + u64::from(ordinal),
     };
     let labels = [label("sketch", 0), label("csys", 1)];
@@ -7075,6 +7088,7 @@ fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
         ordinal,
         value: value.to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: ordinal as u64,
     };
     let labels = [label(0, "EXTRUDE"), label(1, "EXTRUDE"), label(2, "UNITE")];
@@ -7110,6 +7124,7 @@ fn feature_body_lineage_consumes_delete_body_references() {
         ordinal: 0,
         value: "DELETE".to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: 0,
     }];
     let references = [FeatureBodyReference {
@@ -7145,6 +7160,7 @@ fn feature_body_lineage_allows_a_writer_after_delete() {
         ordinal,
         value: value.to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: u64::from(ordinal),
     };
     let labels = [label(0, "DELETE"), label(1, "EXTRUDE")];
@@ -7184,6 +7200,7 @@ fn feature_body_lineage_continues_across_ordered_history_sections() {
         ordinal,
         value: value.to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: u64::from(ordinal),
     };
     let labels = [
@@ -7224,6 +7241,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             ordinal: 0,
             value: "EXTRUDE".to_string(),
             object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: 0,
         },
         FeatureOperationLabel {
@@ -7232,6 +7250,7 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
             ordinal: 1,
             value: "UNITE".to_string(),
             object_indices: [None; 4],
+            raw_object_indices: std::array::from_fn(|_| vec![0xff]),
             source_offset: 1,
         },
     ];
@@ -7315,6 +7334,7 @@ fn feature_body_lineage_treats_segment_tuple_indices_as_one_identity() {
         ordinal,
         value: value.to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: ordinal as u64,
     };
     let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
@@ -7368,6 +7388,7 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         ordinal,
         value: value.to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: u64::from(ordinal),
     };
     let labels = [label(0, "EXTRUDE"), label(1, "UNITE")];
@@ -7416,6 +7437,7 @@ fn feature_body_lineage_consumes_segment_bound_sew_operands() {
         ordinal: 0,
         value: "SEW".to_string(),
         object_indices: [None; 4],
+        raw_object_indices: std::array::from_fn(|_| vec![0xff]),
         source_offset: 0,
     }];
     let bindings = [SegmentBodyBinding {
