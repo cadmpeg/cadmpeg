@@ -6119,6 +6119,72 @@ impl MeshQuotient {
                     .any(|pair| same_unordered_pair(*pair, [left, right]))
         }
 
+        fn enforce_edge_arc_consistency(
+            domains: &mut [Vec<usize>],
+            edges: &[[usize; 2]],
+            edge_ids: &[usize],
+            root_edges: &[Vec<usize>],
+            edge_candidates: &[Vec<[usize; 2]>],
+            budget: Option<&MeshConstraintBudget>,
+        ) -> bool {
+            let support_work = edge_ids
+                .iter()
+                .map(|edge| edge_candidates[*edge].len().saturating_mul(2))
+                .sum::<usize>();
+            if support_work > 0 && budget.is_some_and(|budget| !budget.charge_by(support_work)) {
+                return false;
+            }
+            let supports = edge_ids
+                .iter()
+                .map(|edge| {
+                    let mut supports = HashMap::<usize, HashSet<usize>>::new();
+                    for [left, right] in edge_candidates[*edge].iter().copied() {
+                        supports.entry(left).or_default().insert(right);
+                        supports.entry(right).or_default().insert(left);
+                    }
+                    supports
+                })
+                .collect::<Vec<_>>();
+            let mut queued = vec![[true; 2]; edges.len()];
+            let mut queue = (0..edges.len())
+                .flat_map(|edge| [(edge, 0usize), (edge, 1usize)])
+                .collect::<VecDeque<_>>();
+            while let Some((edge, side)) = queue.pop_front() {
+                queued[edge][side] = false;
+                if supports[edge].is_empty() {
+                    continue;
+                }
+                let root = edges[edge][side];
+                let other = edges[edge][1 - side];
+                let other_domain = domains[other].iter().copied().collect::<HashSet<_>>();
+                let before = domains[root].len();
+                domains[root].retain(|point| {
+                    let Some(supported) = supports[edge].get(point) else {
+                        return false;
+                    };
+                    if budget.is_some_and(|budget| !budget.charge_by(supported.len().max(1))) {
+                        return false;
+                    }
+                    supported.iter().any(|point| other_domain.contains(point))
+                });
+                if budget.is_some_and(|budget| budget.exhausted.get()) || domains[root].is_empty() {
+                    return false;
+                }
+                if domains[root].len() == before {
+                    continue;
+                }
+                for &neighbor in &root_edges[root] {
+                    let neighbor_side = usize::from(edges[neighbor][1] == root);
+                    let revised_side = 1 - neighbor_side;
+                    if !queued[neighbor][revised_side] {
+                        queued[neighbor][revised_side] = true;
+                        queue.push_back((neighbor, revised_side));
+                    }
+                }
+            }
+            true
+        }
+
         #[allow(clippy::too_many_arguments)]
         fn partial_ordered_assignment_viable(
             assignment: &MeshFaceBoundaryAssignment,
@@ -6894,21 +6960,54 @@ impl MeshQuotient {
             if closed_faces.as_ref().is_some_and(Vec::is_empty) {
                 return None;
             }
-            let local_domains = component
+            let mut local_domains = component
                 .iter()
                 .map(|root| domains[*root].clone())
                 .collect::<Vec<_>>();
-            let component_points = local_domains
-                .iter()
-                .flatten()
-                .copied()
-                .collect::<HashSet<_>>();
             let mut root_edges = vec![Vec::new(); component.len()];
             for (edge, [left, right]) in local_edges.iter().copied().enumerate() {
                 root_edges[left].push(edge);
                 if right != left {
                     root_edges[right].push(edge);
                 }
+            }
+            let component_points = local_domains
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<HashSet<_>>();
+            let mut arc_domains = local_domains.clone();
+            let arc_budget = budget.map(|budget| MeshConstraintBudget::new(budget.remaining.get()));
+            let arc_consistent = enforce_edge_arc_consistency(
+                &mut arc_domains,
+                &local_edges,
+                &edge_ids,
+                &root_edges,
+                edge_candidates,
+                arc_budget.as_ref(),
+            );
+            if arc_consistent {
+                if let (Some(budget), Some(arc_budget)) = (budget, arc_budget.as_ref()) {
+                    let work = budget.remaining.get() - arc_budget.remaining.get();
+                    if !budget.charge_by(work) {
+                        return None;
+                    }
+                }
+                local_domains = arc_domains;
+            } else if arc_budget
+                .as_ref()
+                .is_none_or(|budget| !budget.exhausted.get())
+            {
+                return None;
+            }
+            if local_domains
+                .iter()
+                .flatten()
+                .copied()
+                .collect::<HashSet<_>>()
+                != component_points
+            {
+                return None;
             }
             let mut solutions = Vec::new();
             let mut states = 0;
@@ -14453,6 +14552,31 @@ mod motif_tests {
 
         assert_eq!(quotient.root_count(), 1);
         assert_eq!(assignment.values().copied().collect::<Vec<_>>(), [0]);
+        assert!(!budget.exhausted.get());
+    }
+
+    #[test]
+    fn quotient_coordinate_closure_enforces_edge_arc_consistency_before_search() {
+        const EDGE_COUNT: usize = 50;
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(EDGE_COUNT * 2),
+            domains: vec![Arc::new(HashSet::from([0, 1])); EDGE_COUNT * 2],
+            members: (0..EDGE_COUNT * 2).map(|node| vec![node]).collect(),
+        };
+        let candidates = (0..EDGE_COUNT)
+            .map(|edge| vec![[edge % 2, edge % 2]])
+            .collect::<Vec<_>>();
+        let budget = MeshConstraintBudget::new(1_000);
+
+        let assignment = quotient
+            .close_coordinate_roots_with_budget(2, &candidates, Some(&budget))
+            .expect("arc-consistent coordinate closure");
+
+        assert_eq!(quotient.root_count(), 2);
+        assert_eq!(
+            assignment.values().copied().collect::<HashSet<_>>(),
+            HashSet::from([0, 1])
+        );
         assert!(!budget.exhausted.get());
     }
 
