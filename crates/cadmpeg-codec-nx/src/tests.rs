@@ -8720,6 +8720,7 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     assert_eq!(branch.offset, 105);
     assert_eq!(branch.body_object_index, 115);
     assert!(branch.scalar.is_finite());
+    assert_eq!(branch.raw_scalar, bytes[8..16]);
     assert_eq!(branch.atoms_be, [0x3d82_5600, 0x3d82_5700]);
     assert_eq!(branch.atom_indices, [598, 599]);
     assert_eq!(branch.first_indices, [43, 45, 44]);
@@ -8776,6 +8777,7 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         operation_label: "operation".to_string(),
         body_object_index: 42,
         scalar: 1.0,
+        raw_scalar: [0x2f, 0xf0, 0, 0, 0, 0, 0, 0],
         atoms_be: vec![0x3d80_0100],
         atom_indices: vec![1],
         atom_data_blocks: vec![Some("block#1".to_string())],

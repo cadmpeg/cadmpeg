@@ -1266,6 +1266,8 @@ pub struct ExtrudePayload32Branch {
     pub body_object_index: u32,
     /// Finite shifted-IEEE scalar following the branch marker.
     pub scalar: f64,
+    /// Exact shifted-binary64 scalar encoding.
+    pub raw_scalar: [u8; 8],
     /// Ordered fixed-width big-endian atoms in the first counted lane.
     pub atoms_be: Vec<u32>,
     /// Compact indices wrapped by the fixed-width atoms.
@@ -2903,7 +2905,8 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         return None;
     }
     let branch_at = end + 1;
-    let scalar = shifted_ieee_f64(record.bytes.get(end + 4..end + 12)?)?;
+    let raw_scalar = <[u8; 8]>::try_from(record.bytes.get(end + 4..end + 12)?).ok()?;
+    let scalar = shifted_ieee_f64(&raw_scalar)?;
     let mut at = end + 12;
     let atoms_be = counted_u32_atoms(record.bytes, &mut at)?;
     let atom_indices = atoms_be
@@ -2932,6 +2935,7 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         offset: record.offset + branch_at,
         body_object_index: reference.object_index,
         scalar,
+        raw_scalar,
         atoms_be,
         atom_indices,
         first_indices,

@@ -5969,6 +5969,8 @@ pub struct FeatureExtrudePayload32Branch {
     pub body_object_index: u32,
     /// Finite shifted-IEEE scalar following the branch marker.
     pub scalar: f64,
+    /// Exact shifted-binary64 scalar encoding.
+    pub raw_scalar: [u8; 8],
     /// Ordered fixed-width big-endian atoms in the first counted lane.
     pub atoms_be: Vec<u32>,
     /// Compact indices wrapped by the fixed-width atoms.
@@ -10683,6 +10685,7 @@ pub fn feature_extrude_payload_32_branches(
                 ),
                 body_object_index: branch.body_object_index,
                 scalar: branch.scalar,
+                raw_scalar: branch.raw_scalar,
                 atoms_be: branch.atoms_be,
                 atom_indices: branch.atom_indices,
                 atom_data_blocks,
