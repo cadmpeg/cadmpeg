@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 57;
+pub const CATIA_NATIVE_VERSION: u32 = 58;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -391,6 +391,9 @@ pub struct CatiaObjectRecordReference {
     /// Exact selected record; absent when the ordinal is outside the graph.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// Design object owning the selected record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub design_object: Option<String>,
 }
 
 /// One serialized design object formed by a shared `7C09` owner ordinal.
@@ -537,13 +540,19 @@ fn payload_references(payload: &ObjectPayload) -> impl Iterator<Item = u32> + '_
 fn resolved_payload_references(
     payload: &ObjectPayload,
     record_ids: &[String],
+    record_design_objects: &[Option<String>],
 ) -> Vec<CatiaObjectRecordReference> {
     payload_references(payload)
-        .map(|ordinal| CatiaObjectRecordReference {
-            ordinal,
-            target: object_record_index(ordinal, record_ids.len())
-                .and_then(|index| record_ids.get(index))
-                .cloned(),
+        .map(|ordinal| {
+            let index = object_record_index(ordinal, record_ids.len());
+            CatiaObjectRecordReference {
+                ordinal,
+                target: index.and_then(|index| record_ids.get(index)).cloned(),
+                design_object: index
+                    .and_then(|index| record_design_objects.get(index))
+                    .cloned()
+                    .flatten(),
+            }
         })
         .collect()
 }
@@ -1374,6 +1383,11 @@ impl CatiaNative {
                 .iter()
                 .map(|record| record.id.clone())
                 .collect::<Vec<_>>();
+            let record_design_objects = graph
+                .records
+                .iter()
+                .map(|record| record.design_object.clone())
+                .collect::<Vec<_>>();
             for (ordinal, record) in graph.records.iter().enumerate() {
                 let expected_design_object = record
                     .owner_ref
@@ -1381,7 +1395,11 @@ impl CatiaNative {
                 if usize::try_from(record.ordinal).ok() != Some(ordinal)
                     || record.design_object != expected_design_object
                     || record.references
-                        != resolved_payload_references(&record.payload, &record_ids)
+                        != resolved_payload_references(
+                            &record.payload,
+                            &record_ids,
+                            &record_design_objects,
+                        )
                 {
                     return Err(cadmpeg_ir::NativeConvertError::InvalidOwner(format!(
                         "object graph `{}` has an invalid record sequence",
@@ -1713,15 +1731,22 @@ impl From<object_graph::ObjectGraph> for CatiaObjectGraph {
                 references: Vec::new(),
             })
             .collect::<Vec<_>>();
-        let record_ids = records
-            .iter()
-            .map(|record| record.id.clone())
-            .collect::<Vec<_>>();
         for record in &mut records {
             record.design_object = record
                 .owner_ref
                 .map(|owner| design_object_id(graph.pos as u64, owner));
-            record.references = resolved_payload_references(&record.payload, &record_ids);
+        }
+        let record_ids = records
+            .iter()
+            .map(|record| record.id.clone())
+            .collect::<Vec<_>>();
+        let record_design_objects = records
+            .iter()
+            .map(|record| record.design_object.clone())
+            .collect::<Vec<_>>();
+        for record in &mut records {
+            record.references =
+                resolved_payload_references(&record.payload, &record_ids, &record_design_objects);
         }
         Self {
             id,

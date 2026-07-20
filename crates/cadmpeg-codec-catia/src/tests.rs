@@ -5320,10 +5320,12 @@ fn object_graph_payload_reads_fixed_width_escaped_values() {
             crate::native::CatiaObjectRecordReference {
                 ordinal: 2,
                 target: Some(native.object_graphs[0].records[1].id.clone()),
+                design_object: native.object_graphs[0].records[1].design_object.clone(),
             },
             crate::native::CatiaObjectRecordReference {
                 ordinal: 0x89ab_cdef,
                 target: None,
+                design_object: None,
             },
         ]
     );
@@ -5384,6 +5386,7 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
         [crate::native::CatiaObjectRecordReference {
             ordinal: 3,
             target: Some(graph.records[2].id.clone()),
+            design_object: graph.records[2].design_object.clone(),
         }]
     );
     assert_eq!(
