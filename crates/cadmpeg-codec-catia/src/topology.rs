@@ -7615,6 +7615,67 @@ fn propagate_common_deferred_quotients(
         .then_some(())
 }
 
+fn common_structural_corner_equations(
+    quotient: &mut MeshQuotient,
+    assignments: &[MeshFaceBoundaryAssignment],
+    budget: &MeshConstraintBudget,
+) -> Option<HashSet<[usize; 2]>> {
+    fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> Option<Vec<usize>> {
+        let directions = use_
+            .reversed
+            .map_or_else(|| vec![false, true], |reversed| vec![reversed]);
+        directions
+            .into_iter()
+            .map(|reversed| {
+                use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
+                    !reversed
+                } else {
+                    reversed
+                }))
+            })
+            .collect()
+    }
+
+    let mut common = None::<HashSet<[usize; 2]>>;
+    for assignment in assignments {
+        if !budget.charge() {
+            return None;
+        }
+        let mut forced = HashSet::new();
+        for boundary in &assignment.boundaries {
+            if boundary.is_empty() {
+                return None;
+            }
+            for index in 0..boundary.len() {
+                let left = ports(boundary[index], true)?;
+                let right = ports(boundary[(index + 1) % boundary.len()], false)?;
+                let mut alternatives = HashSet::new();
+                for left in &left {
+                    for right in &right {
+                        let left = quotient.union.find(*left);
+                        let right = quotient.union.find(*right);
+                        alternatives.insert(if left <= right {
+                            [left, right]
+                        } else {
+                            [right, left]
+                        });
+                    }
+                }
+                if alternatives.len() == 1 {
+                    if let Some(equation) = alternatives.into_iter().next() {
+                        forced.insert(equation);
+                    }
+                }
+            }
+        }
+        match &mut common {
+            Some(common) => common.retain(|equation| forced.contains(equation)),
+            None => common = Some(forced),
+        }
+    }
+    common
+}
+
 fn propagate_common_ordered_face_quotients(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -7708,6 +7769,33 @@ fn propagate_common_ordered_face_quotients(
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
                 continue;
             };
+            if let Some(equations) =
+                common_structural_corner_equations(quotient, assignments, &face_budget)
+            {
+                let mut merged_nodes = Vec::new();
+                for [left, right] in equations {
+                    merged_nodes.push(quotient.merge(left, right)?);
+                }
+                let affected_edges = merged_nodes
+                    .into_iter()
+                    .flat_map(|node| {
+                        let root = quotient.union.find(node);
+                        quotient.members[root].clone()
+                    })
+                    .map(|node| node / 2)
+                    .filter(|edge| !edge_candidates[*edge].is_empty())
+                    .collect::<HashSet<_>>();
+                if !quotient.propagate_edge_domains_with_budget(
+                    affected_edges,
+                    edge_candidates,
+                    Some(budget),
+                ) {
+                    return None;
+                }
+            }
+            if face_budget.exhausted.get() {
+                continue;
+            }
             let mut alternatives = Vec::new();
             let mut truncated = false;
             for assignment in assignments {
@@ -8734,67 +8822,6 @@ impl MeshSelectionSearch<'_> {
             common
         }
 
-        fn unconditional_corner_equations(
-            quotient: &mut MeshQuotient,
-            assignments: &[MeshFaceBoundaryAssignment],
-            budget: &MeshConstraintBudget,
-        ) -> Option<HashSet<[usize; 2]>> {
-            fn ports(use_: MeshBoundaryEdgeCandidate, end: bool) -> Option<Vec<usize>> {
-                let directions = use_
-                    .reversed
-                    .map_or_else(|| vec![false, true], |reversed| vec![reversed]);
-                directions
-                    .into_iter()
-                    .map(|reversed| {
-                        use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
-                            !reversed
-                        } else {
-                            reversed
-                        }))
-                    })
-                    .collect()
-            }
-
-            let mut common = None::<HashSet<[usize; 2]>>;
-            for assignment in assignments {
-                if !budget.charge() {
-                    return None;
-                }
-                let mut forced = HashSet::new();
-                for boundary in &assignment.boundaries {
-                    if boundary.is_empty() {
-                        return None;
-                    }
-                    for index in 0..boundary.len() {
-                        let left = ports(boundary[index], true)?;
-                        let right = ports(boundary[(index + 1) % boundary.len()], false)?;
-                        let mut alternatives = HashSet::new();
-                        for left in &left {
-                            for right in &right {
-                                let left = quotient.union.find(*left);
-                                let right = quotient.union.find(*right);
-                                alternatives.insert(if left <= right {
-                                    [left, right]
-                                } else {
-                                    [right, left]
-                                });
-                            }
-                        }
-                        if alternatives.len() == 1 {
-                            if let Some(equation) = alternatives.into_iter().next() {
-                                forced.insert(equation);
-                            }
-                        }
-                    }
-                }
-                match &mut common {
-                    Some(common) => common.retain(|equation| forced.contains(equation)),
-                    None => common = Some(forced),
-                }
-            }
-            common
-        }
-
         let mut queue = self
             .selected
             .iter()
@@ -8854,7 +8881,7 @@ impl MeshSelectionSearch<'_> {
                     let equations: Vec<[usize; 2]> = if structural_option_bound
                         .is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS)
                     {
-                        let Some(common) = unconditional_corner_equations(
+                        let Some(common) = common_structural_corner_equations(
                             quotient,
                             &self.assignments[face],
                             budget,
@@ -11180,6 +11207,47 @@ mod motif_tests {
         assert_eq!(quotient.union.find(5), quotient.union.find(2));
         assert_eq!(quotient.union.find(3), quotient.union.find(6));
         assert_eq!(quotient.union.find(7), quotient.union.find(0));
+    }
+
+    #[test]
+    fn ordered_structural_equations_propagate_without_direction_enumeration() {
+        let domains = [MeshFaceBoundaryDomain::Ordered(vec![
+            MeshFaceBoundaryAssignment {
+                boundaries: vec![vec![
+                    MeshBoundaryEdgeCandidate {
+                        edge: 0,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    },
+                    MeshBoundaryEdgeCandidate {
+                        edge: 1,
+                        start: 0,
+                        end: 0,
+                        reversed: None,
+                    },
+                ]],
+            },
+        ])];
+        let candidates = vec![vec![[0, 0]], vec![[0, 0]]];
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: vec![Arc::new(HashSet::from([0])); 4],
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        quotient.merge(0, 1).expect("first closed edge");
+        quotient.merge(2, 3).expect("second closed edge");
+        let budget = super::MeshConstraintBudget::new(100);
+
+        super::propagate_common_ordered_face_quotients(
+            &domains,
+            &candidates,
+            &mut quotient,
+            &budget,
+        )
+        .expect("structural quotient");
+
+        assert_eq!(quotient.union.find(0), quotient.union.find(2));
     }
 
     #[test]
