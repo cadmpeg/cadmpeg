@@ -1058,6 +1058,7 @@ pub fn decode(
                     &native.sketch_curve_identities,
                     &native.sketch_surfaces,
                     &native.sketch_relations,
+                    ir.tolerances.linear,
                 );
             crate::design::bind_loft_sketch_profiles(
                 &scan,
@@ -1091,6 +1092,8 @@ pub fn decode(
                 &ir.model.sketches,
                 crate::design::ExtrudeProfileResolution {
                     entities: &ir.model.sketch_entities,
+                    spatial_sketches: &ir.model.spatial_sketches,
+                    spatial_entities: &ir.model.spatial_sketch_entities,
                     histories: &native.asm_histories,
                     linear_tolerance: ir.tolerances.linear,
                 },
@@ -1398,6 +1401,7 @@ pub fn decode(
             &native.sketch_curve_identities,
             &native.sketch_surfaces,
             &native.sketch_relations,
+            ir.tolerances.linear,
         );
     crate::design::bind_loft_sketch_profiles(
         &scan,
@@ -1431,6 +1435,8 @@ pub fn decode(
         &ir.model.sketches,
         crate::design::ExtrudeProfileResolution {
             entities: &ir.model.sketch_entities,
+            spatial_sketches: &ir.model.spatial_sketches,
+            spatial_entities: &ir.model.spatial_sketch_entities,
             histories: &native.asm_histories,
             linear_tolerance: ir.tolerances.linear,
         },

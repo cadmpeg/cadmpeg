@@ -1520,6 +1520,20 @@ pub enum ProfileRef {
         /// Full-fidelity native selection records in source order.
         selections: Vec<String>,
     },
+    /// Specific solved profile loops within one neutral spatial sketch.
+    SpatialSketchProfiles {
+        /// Spatial sketch containing the selected loops.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Zero-based indices into [`crate::sketches::SpatialSketch::profiles`].
+        profiles: Vec<u32>,
+    },
+    /// Source-native selection within a known neutral spatial sketch.
+    SpatialSketchSelection {
+        /// Spatial sketch containing the unresolved selected geometry.
+        sketch: crate::sketches::SpatialSketchId,
+        /// Full-fidelity native selection records in source order.
+        selections: Vec<String>,
+    },
     /// Profile given by faces in the consuming feature's input topology.
     HistoricalFaces {
         /// Input topology containing every selected face.

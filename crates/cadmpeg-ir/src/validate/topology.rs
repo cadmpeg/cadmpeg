@@ -3075,6 +3075,12 @@ fn check_feature_sketch_references(
 ) {
     use crate::features::{FeatureDefinition, PathRef, ProfileRef};
 
+    let spatial_sketches = ir
+        .model
+        .spatial_sketches
+        .iter()
+        .map(|sketch| sketch.id.0.as_str())
+        .collect::<HashSet<_>>();
     let mut owners = HashMap::new();
     for feature in &ir.model.features {
         let sketch = match &feature.definition {
@@ -3142,12 +3148,77 @@ fn check_feature_sketch_references(
             _ => {}
         }
         for profile in profiles {
+            if let ProfileRef::SpatialSketchProfiles { sketch, .. }
+            | ProfileRef::SpatialSketchSelection { sketch, .. } = profile
+            {
+                if !matches!(feature.definition, FeatureDefinition::Extrude { .. }) {
+                    feature_geometry_error(
+                        findings,
+                        feature,
+                        "spatial sketch profiles are only supported by extrude features",
+                    );
+                }
+                if !spatial_sketches.contains(sketch.0.as_str()) {
+                    ref_error(findings, &feature.id.0, "spatial sketch profile", &sketch.0);
+                } else if let Some((owner, ordinal)) = owners.get(sketch.0.as_str()) {
+                    if *ordinal >= feature.ordinal {
+                        findings.push(Finding {
+                            check: Check::ReferentialIntegrity,
+                            severity: Severity::Error,
+                            message: format!(
+                                "spatial sketch owner `{owner}` does not precede its profile consumer"
+                            ),
+                            entity: Some(feature.id.0.clone()),
+                        });
+                    }
+                }
+                match profile {
+                    ProfileRef::SpatialSketchProfiles { profiles, .. } => {
+                        let profile_count = ir
+                            .model
+                            .spatial_sketches
+                            .iter()
+                            .find(|candidate| candidate.id == *sketch)
+                            .map_or(0, |sketch| sketch.profiles.len());
+                        let unique = profiles.iter().copied().collect::<HashSet<_>>();
+                        if profiles.is_empty()
+                            || unique.len() != profiles.len()
+                            || profiles
+                                .iter()
+                                .any(|index| *index as usize >= profile_count)
+                        {
+                            feature_geometry_error(
+                                findings,
+                                feature,
+                                "spatial sketch profile indices are empty, repeated, or out of range",
+                            );
+                        }
+                    }
+                    ProfileRef::SpatialSketchSelection { selections, .. }
+                        if selections.is_empty()
+                            || selections.iter().any(String::is_empty)
+                            || selections.iter().collect::<HashSet<_>>().len()
+                                != selections.len() =>
+                    {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "native spatial sketch profile selections are empty or repeated",
+                        );
+                    }
+                    ProfileRef::SpatialSketchSelection { .. } => {}
+                    _ => unreachable!(),
+                }
+                continue;
+            }
             let sketch = match profile {
                 ProfileRef::Sketch(sketch)
                 | ProfileRef::SketchProfiles { sketch, .. }
                 | ProfileRef::SketchRegions { sketch, .. }
                 | ProfileRef::SketchSelection { sketch, .. } => sketch,
                 ProfileRef::Native(_)
+                | ProfileRef::SpatialSketchProfiles { .. }
+                | ProfileRef::SpatialSketchSelection { .. }
                 | ProfileRef::HistoricalFaces { .. }
                 | ProfileRef::Faces(_) => continue,
             };
@@ -3256,6 +3327,8 @@ fn check_feature_sketch_references(
                 ProfileRef::Native(_)
                 | ProfileRef::Sketch(_)
                 | ProfileRef::SketchSelection { .. }
+                | ProfileRef::SpatialSketchProfiles { .. }
+                | ProfileRef::SpatialSketchSelection { .. }
                 | ProfileRef::HistoricalFaces { .. }
                 | ProfileRef::Faces(_) => {}
             }

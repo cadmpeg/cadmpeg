@@ -40,6 +40,76 @@ fn valid_spatial_circle_frame(
             <= 1.0e-9
 }
 
+fn spatial_oriented_endpoints(
+    geometry: &SpatialSketchGeometry,
+    reversed: bool,
+) -> Option<(crate::math::Point3, crate::math::Point3)> {
+    let endpoints = match geometry {
+        SpatialSketchGeometry::Line { start, end } => (*start, *end),
+        SpatialSketchGeometry::Arc {
+            center,
+            normal,
+            reference_direction,
+            radius,
+            start_angle,
+            end_angle,
+        } => {
+            let transverse = crate::math::Vector3::new(
+                normal.y * reference_direction.z - normal.z * reference_direction.y,
+                normal.z * reference_direction.x - normal.x * reference_direction.z,
+                normal.x * reference_direction.y - normal.y * reference_direction.x,
+            );
+            let at = |angle: f64| {
+                crate::math::Point3::new(
+                    center.x
+                        + radius.0
+                            * (reference_direction.x * angle.cos() + transverse.x * angle.sin()),
+                    center.y
+                        + radius.0
+                            * (reference_direction.y * angle.cos() + transverse.y * angle.sin()),
+                    center.z
+                        + radius.0
+                            * (reference_direction.z * angle.cos() + transverse.z * angle.sin()),
+                )
+            };
+            (at(start_angle.0), at(end_angle.0))
+        }
+        SpatialSketchGeometry::Nurbs {
+            degree,
+            knots,
+            control_points,
+            weights,
+            periodic: false,
+        } => {
+            let degree_index = usize::try_from(*degree).ok()?;
+            let start = *knots.get(degree_index)?;
+            let end = *knots.get(knots.len().checked_sub(degree_index + 1)?)?;
+            (
+                crate::eval::nurbs_curve_point(
+                    *degree,
+                    knots,
+                    control_points,
+                    weights.as_deref(),
+                    start,
+                )?,
+                crate::eval::nurbs_curve_point(
+                    *degree,
+                    knots,
+                    control_points,
+                    weights.as_deref(),
+                    end,
+                )?,
+            )
+        }
+        _ => return None,
+    };
+    Some(if reversed {
+        (endpoints.1, endpoints.0)
+    } else {
+        endpoints
+    })
+}
+
 fn line_offset_matches(source: &SketchGeometry, result: &SketchGeometry, expected: f64) -> bool {
     let (
         SketchGeometry::Line {
@@ -324,6 +394,99 @@ pub(super) fn check_sketches(ir: &CadIr, findings: &mut Vec<Finding>) {
         .iter()
         .map(|sketch| &sketch.id)
         .collect::<HashSet<_>>();
+    let spatial_geometry = ir
+        .model
+        .spatial_sketch_entities
+        .iter()
+        .map(|entity| (&entity.id, (&entity.sketch, &entity.geometry)))
+        .collect::<HashMap<_, _>>();
+    for sketch in &ir.model.spatial_sketches {
+        for profile in &sketch.profiles {
+            let normal_length = profile.normal.norm();
+            let u_length = profile.u_axis.norm();
+            let dot = profile.normal.x * profile.u_axis.x
+                + profile.normal.y * profile.u_axis.y
+                + profile.normal.z * profile.u_axis.z;
+            if !finite3(profile.origin)
+                || (normal_length - 1.0).abs() > 1.0e-9
+                || (u_length - 1.0).abs() > 1.0e-9
+                || dot.abs() > 1.0e-9
+            {
+                finding(
+                    findings,
+                    Check::GeometricConsistency,
+                    &sketch.id.0,
+                    "invalid spatial sketch profile plane",
+                );
+            }
+            let unique = profile
+                .boundary
+                .iter()
+                .map(|use_| &use_.entity)
+                .collect::<HashSet<_>>();
+            if profile.boundary.is_empty() || unique.len() != profile.boundary.len() {
+                finding(
+                    findings,
+                    Check::Counts,
+                    &sketch.id.0,
+                    "spatial sketch profile boundary is empty or repeats an entity",
+                );
+            }
+            for use_ in &profile.boundary {
+                if spatial_geometry.get(&use_.entity).map(|(owner, _)| *owner) != Some(&sketch.id) {
+                    finding(
+                        findings,
+                        Check::ReferentialIntegrity,
+                        &sketch.id.0,
+                        "spatial sketch profile entity does not belong to its sketch",
+                    );
+                }
+            }
+            if profile.boundary.len() == 1 {
+                if !matches!(
+                    spatial_geometry.get(&profile.boundary[0].entity),
+                    Some((_, SpatialSketchGeometry::Circle { .. }))
+                ) {
+                    finding(
+                        findings,
+                        Check::GeometricConsistency,
+                        &sketch.id.0,
+                        "single-entity spatial sketch profile is not a full circle",
+                    );
+                }
+            } else {
+                for index in 0..profile.boundary.len() {
+                    let left = &profile.boundary[index];
+                    let right = &profile.boundary[(index + 1) % profile.boundary.len()];
+                    let endpoints = spatial_geometry
+                        .get(&left.entity)
+                        .and_then(|(_, geometry)| {
+                            spatial_oriented_endpoints(geometry, left.reversed)
+                        })
+                        .zip(
+                            spatial_geometry
+                                .get(&right.entity)
+                                .and_then(|(_, geometry)| {
+                                    spatial_oriented_endpoints(geometry, right.reversed)
+                                }),
+                        );
+                    if endpoints.is_some_and(|(left, right)| {
+                        (left.1.x - right.0.x)
+                            .hypot(left.1.y - right.0.y)
+                            .hypot(left.1.z - right.0.z)
+                            > 1.0e-9
+                    }) {
+                        finding(
+                            findings,
+                            Check::GeometricConsistency,
+                            &sketch.id.0,
+                            "spatial sketch profile has disconnected consecutive entities",
+                        );
+                    }
+                }
+            }
+        }
+    }
     for entity in &ir.model.spatial_sketch_entities {
         let id = &entity.id.0;
         if !spatial_sketches.contains(&entity.sketch) {

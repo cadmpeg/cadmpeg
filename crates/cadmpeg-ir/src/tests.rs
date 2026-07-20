@@ -2975,6 +2975,7 @@ fn spatial_sketch_feature_owns_spatial_geometry() {
         id: sketch_id.clone(),
         name: None,
         configuration: None,
+        profiles: Vec::new(),
         native_ref: None,
     });
     ir.model.features.push(Feature {
@@ -3012,18 +3013,27 @@ fn spatial_sketch_geometry_round_trips_and_validates() {
     use crate::sketches::{
         SketchConstraintId, SpatialSketch, SpatialSketchConstraint,
         SpatialSketchConstraintDefinition, SpatialSketchEntity, SpatialSketchEntityId,
-        SpatialSketchGeometry, SpatialSketchId,
+        SpatialSketchEntityUse, SpatialSketchGeometry, SpatialSketchId, SpatialSketchProfile,
     };
 
     let mut ir = unit_cube();
     let sketch = SpatialSketchId("synthetic:test:spatial-sketch#one".into());
+    let circle = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#circle".into());
     ir.model.spatial_sketches.push(SpatialSketch {
         id: sketch.clone(),
         name: Some("3D path".into()),
         configuration: None,
+        profiles: vec![SpatialSketchProfile {
+            origin: Point3::new(1.0, 2.0, 3.0),
+            normal: Vector3::new(0.0, 1.0, 0.0),
+            u_axis: Vector3::new(1.0, 0.0, 0.0),
+            boundary: vec![SpatialSketchEntityUse {
+                entity: circle.clone(),
+                reversed: false,
+            }],
+        }],
         native_ref: None,
     });
-    let circle = SpatialSketchEntityId("synthetic:test:spatial-sketch-entity#circle".into());
     ir.model.spatial_sketch_entities.push(SpatialSketchEntity {
         id: circle.clone(),
         sketch: sketch.clone(),

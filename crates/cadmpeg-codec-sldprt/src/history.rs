@@ -7070,6 +7070,8 @@ fn profile_source(
         ProfileRef::SketchProfiles { .. }
         | ProfileRef::SketchRegions { .. }
         | ProfileRef::SketchSelection { .. }
+        | ProfileRef::SpatialSketchProfiles { .. }
+        | ProfileRef::SpatialSketchSelection { .. }
         | ProfileRef::HistoricalFaces { .. } => None,
         ProfileRef::Faces(faces) if !faces.is_empty() => Some(
             faces

@@ -193,9 +193,35 @@ pub struct SpatialSketch {
     /// Source configuration key, when scoped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<String>,
+    /// Ordered closed profile loops with profile-local planes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub profiles: Vec<SpatialSketchProfile>,
     /// Identifier of the full-fidelity native input lane.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub native_ref: Option<String>,
+}
+
+/// One closed spatial-sketch profile and its model-space plane.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchProfile {
+    /// Profile-plane origin in model space.
+    pub origin: Point3,
+    /// Profile-plane unit normal, oriented by boundary traversal.
+    pub normal: Vector3,
+    /// Profile-plane unit u-axis.
+    pub u_axis: Vector3,
+    /// Ordered oriented boundary uses.
+    pub boundary: Vec<SpatialSketchEntityUse>,
+}
+
+/// Oriented use of one spatial-sketch entity in a profile boundary.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SpatialSketchEntityUse {
+    /// Referenced spatial-sketch entity.
+    pub entity: SpatialSketchEntityId,
+    /// Whether traversal opposes the entity's stored direction.
+    #[serde(default)]
+    pub reversed: bool,
 }
 
 /// Solved model-space geometry belonging to one spatial sketch.
