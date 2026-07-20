@@ -943,7 +943,8 @@ circle center. Sense zero on a type-1 construction-point `segtab` row selects
 that point as a whole-point locus. The two selected point loci coincide and map
 to a neutral coincident-loci constraint. When both loci are arc or circle
 centers, the same incidence maps to the neutral concentric constraint for those
-two circular entities.
+two circular entities. Senses `2` and `3` retain their endpoint-locus meaning
+when the referenced entity geometry remains native.
 When exactly one `segtab` row owns each referenced external identifier, this
 incidence equates the corresponding stored `pointid` coordinates. A solved
 coordinate on either endpoint therefore supplies the missing coordinate on the
