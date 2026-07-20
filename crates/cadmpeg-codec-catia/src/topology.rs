@@ -21,6 +21,14 @@ fn domains_have_distinct_matching<'a>(
     domains: impl IntoIterator<Item = &'a [usize]>,
     point_count: usize,
 ) -> bool {
+    domains_have_distinct_matching_with_budget(domains, point_count, None)
+}
+
+fn domains_have_distinct_matching_with_budget<'a>(
+    domains: impl IntoIterator<Item = &'a [usize]>,
+    point_count: usize,
+    budget: Option<&MeshConstraintBudget>,
+) -> bool {
     let domains = domains.into_iter().collect::<Vec<_>>();
     if domains.len() > point_count {
         return false;
@@ -43,6 +51,9 @@ fn domains_have_distinct_matching<'a>(
                 continue;
             }
             for &point in domains[root] {
+                if budget.is_some_and(|budget| !budget.charge()) {
+                    return false;
+                }
                 if point >= point_count {
                     continue;
                 }
@@ -73,6 +84,9 @@ fn domains_have_distinct_matching<'a>(
                 while cursor[root] < domains[root].len() {
                     let point = domains[root][cursor[root]];
                     cursor[root] += 1;
+                    if budget.is_some_and(|budget| !budget.charge()) {
+                        return false;
+                    }
                     if point >= point_count {
                         continue;
                     }
@@ -6670,7 +6684,7 @@ impl MeshQuotient {
                 let mut dead = false;
                 let mut progress = false;
                 let mut supported_unused = HashSet::new();
-                let mut unused_point_root = HashMap::<usize, Option<usize>>::new();
+                let mut unused_point_roots = HashMap::<usize, Vec<usize>>::new();
                 let mut base_degrees = HashMap::<(usize, usize), u8>::new();
                 if let Some(edge_faces) = edge_faces {
                     if budget.is_some_and(|budget| !budget.charge_by(edges.len().max(1))) {
@@ -6718,14 +6732,7 @@ impl MeshQuotient {
                             .filter(|point| point_uses[*point] == 0),
                     );
                     for &point in values.iter().filter(|point| point_uses[**point] == 0) {
-                        unused_point_root
-                            .entry(point)
-                            .and_modify(|support| {
-                                if support.is_some_and(|stored| stored != root) {
-                                    *support = None;
-                                }
-                            })
-                            .or_insert(Some(root));
+                        unused_point_roots.entry(point).or_default().push(root);
                     }
                     if let [point] = values.as_slice() {
                         assigned[root] = Some(*point);
@@ -6758,9 +6765,48 @@ impl MeshQuotient {
                     pending_roots = None;
                     continue;
                 }
-                let mut uniquely_required = unused_point_root
+                let mut point_support_domains = component_points
+                    .iter()
+                    .filter(|point| point_uses[**point] == 0)
+                    .map(|point| {
+                        unused_point_roots
+                            .get(point)
+                            .map(Vec::as_slice)
+                            .unwrap_or_default()
+                    })
+                    .collect::<Vec<_>>();
+                point_support_domains.sort_unstable();
+                let matching_budget =
+                    budget.map(|budget| MeshConstraintBudget::new(budget.remaining.get()));
+                let coverage_feasible = domains_have_distinct_matching_with_budget(
+                    point_support_domains,
+                    assigned.len(),
+                    matching_budget.as_ref(),
+                );
+                if matching_budget
+                    .as_ref()
+                    .is_none_or(|budget| !budget.exhausted.get())
+                {
+                    if let (Some(budget), Some(matching_budget)) =
+                        (budget, matching_budget.as_ref())
+                    {
+                        let work = budget.remaining.get() - matching_budget.remaining.get();
+                        if !budget.charge_by(work) {
+                            *exhausted = true;
+                            break None;
+                        }
+                    }
+                    if !coverage_feasible {
+                        break None;
+                    }
+                }
+                let mut uniquely_required = unused_point_roots
                     .into_iter()
-                    .filter_map(|(point, root)| root.map(|root| (point, root)))
+                    .filter_map(|(point, roots)| {
+                        <[usize; 1]>::try_from(roots)
+                            .ok()
+                            .map(|[root]| (point, root))
+                    })
                     .collect::<Vec<_>>();
                 uniquely_required.sort_unstable();
                 if let Some(&(point, root)) = uniquely_required.first() {
@@ -14709,6 +14755,24 @@ mod motif_tests {
         assert_eq!(assignment[&quotient.union.find(0)], 1);
         assert_eq!(assignment[&quotient.union.find(1)], 0);
         assert_eq!(assignment[&quotient.union.find(2)], 2);
+        assert!(!budget.exhausted.get());
+    }
+
+    #[test]
+    fn quotient_coordinate_closure_rejects_a_coordinate_support_hall_conflict() {
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(4),
+            domains: [vec![0, 1, 2, 3], vec![0, 1, 2, 3], vec![3], vec![3]]
+                .into_iter()
+                .map(|domain| Arc::new(domain.into_iter().collect()))
+                .collect(),
+            members: (0..4).map(|node| vec![node]).collect(),
+        };
+        let budget = MeshConstraintBudget::new(1_000);
+
+        assert!(quotient
+            .close_coordinate_roots_with_budget(4, &[Vec::new(), Vec::new()], Some(&budget))
+            .is_none());
         assert!(!budget.exhausted.get());
     }
 
