@@ -5522,6 +5522,25 @@ pub struct FeatureSurfaceConstructionScalarPair {
     pub discriminator: Vec<u8>,
 }
 
+/// One printable string frame in a reconstructed surface payload.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSurfaceConstructionString {
+    /// Globally unique string identity.
+    pub id: String,
+    /// Owning `SKIN` or `Studio Surface` operation label.
+    pub operation_label: String,
+    /// Reconstructed surface payload carrying the frame.
+    pub surface_construction_payload: String,
+    /// Zero-based string order within the payload.
+    pub ordinal: u32,
+    /// Exact printable value.
+    pub value: String,
+    /// Payload-relative offset of the `66 1b 03` marker.
+    pub payload_offset: u64,
+    /// Absolute source offset of the marker.
+    pub source_offset: u64,
+}
+
 /// One resolved reference within a surface-construction branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceBranchReference {
@@ -9567,6 +9586,45 @@ pub fn feature_surface_construction_scalar_pairs(
                             )?,
                         ],
                         discriminator: pair.discriminator,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
+/// Decode exact printable string frames from reconstructed surface payloads.
+pub fn feature_surface_construction_strings(
+    container: &Container,
+    payloads: &[FeatureSurfaceConstructionPayload],
+) -> Vec<FeatureSurfaceConstructionString> {
+    let blocks = offset_data_block_bytes(container);
+    payloads
+        .iter()
+        .flat_map(|payload| {
+            let Some((bytes, starts, lengths, sources)) =
+                join_data_block_bytes(&payload.data_blocks, &blocks)
+            else {
+                return Vec::new();
+            };
+            crate::om::surface_payload_strings(&bytes)
+                .into_iter()
+                .enumerate()
+                .filter_map(|(ordinal, value)| {
+                    let payload_offset = value.offset as u64;
+                    Some(FeatureSurfaceConstructionString {
+                        id: format!("{}-string-{ordinal:010}", payload.id),
+                        operation_label: payload.operation_label.clone(),
+                        surface_construction_payload: payload.id.clone(),
+                        ordinal: ordinal as u32,
+                        value: value.value.to_string(),
+                        payload_offset,
+                        source_offset: joined_payload_source_offset(
+                            payload_offset,
+                            &starts,
+                            &lengths,
+                            &sources,
+                        )?,
                     })
                 })
                 .collect()
