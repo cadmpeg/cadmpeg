@@ -5067,6 +5067,8 @@ pub struct OffsetStoreNamedPoint {
     pub data_blocks: Vec<String>,
     /// Ordered finite native scalar values.
     pub values: [f64; 2],
+    /// Exact shifted-binary64 encodings in scalar order.
+    pub raw_values: [[u8; 8]; 2],
     /// Absolute source offsets of the two scalar markers.
     pub value_source_offsets: [u64; 2],
     /// Absolute source offset of the name frame.
@@ -8712,6 +8714,7 @@ pub fn offset_store_named_points(container: &Container) -> Vec<OffsetStoreNamedP
                     .map(|relative| format!("{section_key}:block#{}", ordinal + relative + 1))
                     .collect(),
                 values: point.values,
+                raw_values: point.raw_values,
                 value_source_offsets: [
                     value_source_offset(point.value_offsets[0]).expect("first scalar in span"),
                     value_source_offset(point.value_offsets[1]).expect("second scalar in span"),

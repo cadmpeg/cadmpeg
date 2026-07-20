@@ -573,6 +573,8 @@ pub struct OffsetStoreNamedPoint {
     pub name: String,
     /// Two framed scalar values in block order.
     pub values: [f64; 2],
+    /// Exact shifted-binary64 encodings in scalar order.
+    pub raw_values: [[u8; 8]; 2],
     /// Scalar marker offsets in the concatenated two-block payload.
     pub value_offsets: [usize; 2],
     /// Minimal number of consecutive blocks containing both scalar frames.
@@ -598,6 +600,7 @@ pub fn offset_store_named_point(blocks: &[&[u8]]) -> Option<OffsetStoreNamedPoin
                 return Some(OffsetStoreNamedPoint {
                     name: name.value.to_string(),
                     values: [first_scalar.value, second_scalar.value],
+                    raw_values: [first_scalar.raw_value, second_scalar.raw_value],
                     value_offsets: [first_scalar.offset, second_scalar.offset],
                     block_count: block_ordinal + 1,
                 });

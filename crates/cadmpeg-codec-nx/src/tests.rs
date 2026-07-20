@@ -26,6 +26,12 @@ use crate::NxCodec;
 
 const MAGIC: &[u8; 8] = b"SPLMSSTR";
 
+fn shifted_f64_bytes(value: f64) -> [u8; 8] {
+    let mut bytes = value.to_be_bytes();
+    bytes[0] -= 0x10;
+    bytes
+}
+
 fn attach_test_body_surface(
     ir: &mut cadmpeg_ir::document::CadIr,
     body_id: &cadmpeg_ir::ids::BodyId,
@@ -5962,6 +5968,11 @@ fn om_offset_store_named_point_uses_minimal_consecutive_block_span() {
         .values
         .iter()
         .all(|value| (*value - 57.15).abs() < 1.0e-12));
+    let expected_raw: [[u8; 8]; 2] = [
+        first[14..22].try_into().unwrap(),
+        second[8..16].try_into().unwrap(),
+    ];
+    assert_eq!(point.raw_values, expected_raw);
     assert_eq!(point.value_offsets, [9, first.len() + 3]);
     assert_eq!(point.block_count, 2);
 
@@ -6086,6 +6097,7 @@ fn sketch_named_point_block_uses_require_exact_shared_block_identity() {
         name: "Point1".to_string(),
         data_blocks: vec!["block-10".to_string(), "block-11".to_string()],
         values: [1.0, 2.0],
+        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
         value_source_offsets: [100, 120],
         source_offset: 90,
     };
@@ -6139,6 +6151,7 @@ fn sketch_preceding_named_point_uses_require_a_complete_unique_consecutive_lane(
         name: "Point1".to_string(),
         data_blocks: blocks.iter().map(|block| (*block).to_string()).collect(),
         values: [1.0, 2.0],
+        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
         value_source_offsets: [200, 220],
         source_offset: 190,
     };
@@ -6218,6 +6231,7 @@ fn sketch_point_uses_retain_identical_witnesses_and_reject_conflicts() {
         name: "Point1".to_string(),
         data_blocks: vec!["block-10".to_string()],
         values: [1.0, 2.0],
+        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
         value_source_offsets: [200, 220],
         source_offset: 190,
     };
@@ -6299,6 +6313,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
         name: "Point1".to_string(),
         data_blocks: vec!["point-first".to_string(), "shared".to_string()],
         values: [1.0, 2.0],
+        raw_values: [shifted_f64_bytes(1.0), shifted_f64_bytes(2.0)],
         value_source_offsets: [200, 220],
         source_offset: 190,
     };
@@ -6346,6 +6361,7 @@ fn sketch_point_blocks_establish_ordered_datum_csys_dependencies() {
             "nx:om:offset-store#7:block#11".to_string(),
         ],
         values: [3.0, 4.0],
+        raw_values: [shifted_f64_bytes(3.0), shifted_f64_bytes(4.0)],
         value_source_offsets: [500, 520],
         source_offset: 490,
     };
