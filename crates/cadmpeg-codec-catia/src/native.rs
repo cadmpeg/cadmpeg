@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 65;
+pub const CATIA_NATIVE_VERSION: u32 = 66;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -117,7 +117,7 @@ pub struct CatiaConsolidatedEdgeRun {
 }
 
 /// One structurally complete width-coded class-`0x5e` edge node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConsolidatedEdgeNode {
     /// Stable native-record identity.
     pub id: String,
@@ -148,7 +148,7 @@ pub struct CatiaConsolidatedEdgeNode {
 }
 
 /// Exact class-specific edge-definition frame owned by one consolidated edge node.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct CatiaConsolidatedEdgeDefinition {
     /// Record byte offset.
     pub byte_offset: u64,
@@ -162,6 +162,27 @@ pub struct CatiaConsolidatedEdgeDefinition {
     pub header_token: u32,
     /// Complete class-specific payload.
     pub payload: Vec<u8>,
+    /// Structurally decoded class-specific payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<CatiaConsolidatedEdgeDefinitionData>,
+}
+
+/// Closed payload grammar of a consolidated edge-definition frame.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum CatiaConsolidatedEdgeDefinitionData {
+    /// Compact class-`0x24` form.
+    Compact24 {
+        /// Width-coded operand.
+        operand: u32,
+    },
+    /// Three operands followed by eight or nine scalar lanes.
+    Scalar {
+        /// Two compact operands followed by one persistent operand.
+        operands: [u32; 3],
+        /// Complete finite scalar lane.
+        values: Vec<f64>,
+    },
 }
 
 /// Exact oriented-use allocation chain owned by one consolidated edge node.
@@ -848,6 +869,22 @@ fn native_consolidated_edge_definition(
         class: definition.class,
         header_token: definition.header_token,
         payload: definition.payload,
+        data: definition
+            .data
+            .map(native_consolidated_edge_definition_data),
+    }
+}
+
+fn native_consolidated_edge_definition_data(
+    data: geometry::ConsolidatedEdgeDefinitionData,
+) -> CatiaConsolidatedEdgeDefinitionData {
+    match data {
+        geometry::ConsolidatedEdgeDefinitionData::Compact24 { operand } => {
+            CatiaConsolidatedEdgeDefinitionData::Compact24 { operand }
+        }
+        geometry::ConsolidatedEdgeDefinitionData::Scalar { operands, values } => {
+            CatiaConsolidatedEdgeDefinitionData::Scalar { operands, values }
+        }
     }
 }
 
@@ -1000,6 +1037,9 @@ fn validate_consolidated_edge_runs(
         });
         let definition_valid = node.definition.as_ref().is_none_or(|definition| {
             let token_limit = 1u32.checked_shl(u32::from(definition.width) * 8);
+            let expected_data =
+                geometry::consolidated_edge_definition_data(definition.class, &definition.payload)
+                    .map(native_consolidated_edge_definition_data);
             node.uses.is_some()
                 && matches!(definition.width, 1..=3)
                 && matches!(definition.flag, 0x03 | 0x13 | 0x83)
@@ -1007,6 +1047,7 @@ fn validate_consolidated_edge_runs(
                 && token_limit.is_some_and(|limit| definition.header_token < limit)
                 && !definition.payload.is_empty()
                 && definition.byte_offset < node.byte_offset
+                && definition.data == expected_data
         });
         if node.id != format!("catia:consolidated:edge-node#{index}")
             || !matches!(node.width, 1..=3)

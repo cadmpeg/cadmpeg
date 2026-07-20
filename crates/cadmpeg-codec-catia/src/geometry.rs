@@ -1600,7 +1600,7 @@ pub struct ConsolidatedEdgeUseRun {
 }
 
 /// Framed edge definition structurally owned by an adjacent oriented-use run.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConsolidatedEdgeDefinition {
     /// Record byte offset.
     pub pos: usize,
@@ -1614,6 +1614,70 @@ pub struct ConsolidatedEdgeDefinition {
     pub header_token: u32,
     /// Complete class-specific payload.
     pub payload: Vec<u8>,
+    /// Structurally decoded class-specific payload, when its complete grammar closes.
+    pub data: Option<ConsolidatedEdgeDefinitionData>,
+}
+
+/// Closed payload grammar of a consolidated edge-definition frame.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConsolidatedEdgeDefinitionData {
+    /// Compact class-`0x24` payload `81 <operand> 0f 87`.
+    Compact24 {
+        /// Width-coded operand.
+        operand: u32,
+    },
+    /// Three operand references followed by eight or nine scalar lanes.
+    Scalar {
+        /// Two compact operands followed by one persistent operand.
+        operands: [u32; 3],
+        /// Complete finite scalar lane.
+        values: Vec<f64>,
+    },
+}
+
+/// Decode a complete class-specific edge-definition payload without inferring
+/// geometric meanings for its operand or scalar lanes.
+#[must_use]
+pub fn consolidated_edge_definition_data(
+    class: u8,
+    payload: &[u8],
+) -> Option<ConsolidatedEdgeDefinitionData> {
+    if class == 0x24 && payload.first() == Some(&0x81) {
+        let mut at = 1;
+        let operand = compact_int(payload, &mut at)?;
+        return (payload.get(at..) == Some(&[0x0f, 0x87][..]))
+            .then_some(ConsolidatedEdgeDefinitionData::Compact24 { operand });
+    }
+    if !matches!(class, 0x23 | 0x24) || payload.first() != Some(&0x82) {
+        return None;
+    }
+    let mut at = 1;
+    let operands = [
+        compact_int(payload, &mut at)?,
+        compact_int(payload, &mut at)?,
+        persistent_ref(payload, &mut at)?,
+    ];
+    let scalar_bytes = payload.get(at..)?;
+    if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
+        return None;
+    }
+    let values = scalar_bytes
+        .chunks_exact(8)
+        .map(|bytes| Some(f64::from_le_bytes(bytes.try_into().ok()?)))
+        .collect::<Option<Vec<_>>>()?;
+    if !values.iter().all(|value| value.is_finite()) || values[2] != *values.last()? {
+        return None;
+    }
+    if values.len() == 9
+        && !(values[0] == values[3]
+            && values[0] == values[6]
+            && values[1] == values[4]
+            && values[1] == values[7]
+            && values[5] == 1.0)
+    {
+        return None;
+    }
+    Some(ConsolidatedEdgeDefinitionData::Scalar { operands, values })
 }
 
 /// Native endpoint-incidence graph of complete consolidated edge runs.
@@ -1829,6 +1893,10 @@ pub fn consolidated_edge_use_runs(data: &[u8]) -> Vec<ConsolidatedEdgeUseRun> {
                     class: record.class,
                     header_token: record.header_token,
                     payload: data[record.payload.clone()].to_vec(),
+                    data: consolidated_edge_definition_data(
+                        record.class,
+                        &data[record.payload.clone()],
+                    ),
                 });
             Some(ConsolidatedEdgeUseRun {
                 definition,

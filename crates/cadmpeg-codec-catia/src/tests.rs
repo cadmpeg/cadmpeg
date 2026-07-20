@@ -4913,7 +4913,9 @@ fn consolidated_edge_use_run_is_independent_of_pcurve_availability() {
 
 #[test]
 fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
-    let mut bytes = vec![0xb2, 0x03, 0x24, 0x05, 0x05, 0x05, 0x81, 0x05, 0x0f, 0x87];
+    use crate::geometry::ConsolidatedEdgeDefinitionData;
+
+    let mut bytes = vec![0xb2, 0x03, 0x24, 0x04, 0x05, 0x81, 0x05, 0x0f, 0x87];
     bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
 
     let runs = crate::geometry::consolidated_edge_use_runs(&bytes);
@@ -4923,7 +4925,11 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
     let definition = run.definition.as_ref().expect("adjacent definition");
     assert_eq!(definition.class, 0x24);
     assert_eq!(definition.header_token, 5);
-    assert_eq!(definition.payload, [0x05, 0x81, 0x05, 0x0f, 0x87]);
+    assert_eq!(definition.payload, [0x81, 0x05, 0x0f, 0x87]);
+    assert_eq!(
+        definition.data,
+        Some(ConsolidatedEdgeDefinitionData::Compact24 { operand: 1 })
+    );
 
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(
@@ -4934,6 +4940,37 @@ fn consolidated_edge_use_run_owns_adjacent_compact_definition() {
             .class,
         0x24
     );
+    assert!(matches!(
+        native.consolidated_edge_nodes[0]
+            .definition
+            .as_ref()
+            .and_then(|definition| definition.data.as_ref()),
+        Some(crate::native::CatiaConsolidatedEdgeDefinitionData::Compact24 { operand: 1 })
+    ));
+}
+
+#[test]
+fn consolidated_edge_definition_decodes_general_scalar_layout() {
+    use crate::geometry::ConsolidatedEdgeDefinitionData;
+
+    let mut payload = vec![0x82, 0x05, 0x09, 0x0a, 0x87, 0x0d];
+    for value in [0.0_f64, 2.0, 1e-6, 0.5, 1.5, 1.0, -0.5, 1e-6] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(
+        crate::geometry::consolidated_edge_definition_data(0x24, &payload),
+        Some(ConsolidatedEdgeDefinitionData::Scalar {
+            operands: [1, 2, 3463],
+            values: vec![0.0, 2.0, 1e-6, 0.5, 1.5, 1.0, -0.5, 1e-6],
+        })
+    );
+    let mut class24_nine_scalars = payload.clone();
+    class24_nine_scalars.extend_from_slice(&1e-6_f64.to_le_bytes());
+    assert!(
+        crate::geometry::consolidated_edge_definition_data(0x24, &class24_nine_scalars).is_none()
+    );
+    payload.pop();
+    assert!(crate::geometry::consolidated_edge_definition_data(0x24, &payload).is_none());
 }
 
 #[test]
