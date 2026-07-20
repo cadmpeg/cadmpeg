@@ -5071,6 +5071,7 @@ fn nx_feature_parameter_binding_joins_only_resolved_input_references() {
         data_block: input.data_block.clone(),
         ordinal,
         object_id: 201 + ordinal,
+        raw_object_id: vec![0x80, (201 + ordinal) as u8],
         target_record: Some(format!("nx:om-record-directory-0:entry#{ordinal}")),
         target_expression_declaration: declaration.map(str::to_string),
         source_offset: 800 + u64::from(ordinal),
@@ -7059,14 +7060,17 @@ fn om_data_block_object_references_require_complete_field_frames() {
             crate::om::DataBlockObjectReference {
                 offset: 2,
                 object_index: 42,
+                raw_object_index: vec![0x2a],
             },
             crate::om::DataBlockObjectReference {
                 offset: 8,
                 object_index: 201,
+                raw_object_index: vec![0x80, 0xc9],
             },
             crate::om::DataBlockObjectReference {
                 offset: 14,
                 object_index: 6466,
+                raw_object_index: vec![0x90, 0x19, 0x42],
             },
         ]
     );

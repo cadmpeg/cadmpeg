@@ -1338,12 +1338,14 @@ pub struct OperationBodyReference {
 }
 
 /// Object-index reference in one bounded offset-only OM data block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataBlockObjectReference {
     /// Byte offset of the object-index token within the containing byte range.
     pub offset: usize,
     /// Referenced OM object ID.
     pub object_index: u32,
+    /// Exact serialized object-index token.
+    pub raw_object_index: Vec<u8>,
 }
 
 /// Boolean operation kind stored after an operation label.
@@ -3919,6 +3921,7 @@ pub fn data_block_object_references(bytes: &[u8]) -> Vec<DataBlockObjectReferenc
         references.push(DataBlockObjectReference {
             offset: token,
             object_index,
+            raw_object_index: bytes[token..end].to_vec(),
         });
         at = end + 2;
     }

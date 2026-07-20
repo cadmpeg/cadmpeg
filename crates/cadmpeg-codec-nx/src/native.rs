@@ -12278,6 +12278,8 @@ pub struct DataBlockReference {
     pub ordinal: u32,
     /// Referenced persistent OM object ID.
     pub object_id: u32,
+    /// Exact serialized object-index token.
+    pub raw_object_id: Vec<u8>,
     /// Uniquely resolved object record in the same directory entry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_record: Option<String>,
@@ -13938,6 +13940,7 @@ pub fn data_block_references(container: &Container) -> Vec<DataBlockReference> {
                                 ),
                                 ordinal: ordinal as u32,
                                 object_id: reference.object_index,
+                                raw_object_id: reference.raw_object_index,
                                 target_record: unique(records.get(&key)),
                                 target_expression_declaration: unique(declarations.get(&key)),
                                 source_offset: entry_offset
