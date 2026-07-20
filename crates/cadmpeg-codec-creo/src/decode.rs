@@ -10034,7 +10034,7 @@ fn section_dimension_constraints(
     let Some(relations) = &definition.relations else {
         return Vec::new();
     };
-    let segments = complete_section_segment_rows(definition);
+    let segments = section_segment_rows(definition);
     let known_entities = section_entity_external_ids(definition);
     relations
         .rows
@@ -21569,6 +21569,24 @@ mod resolved_sketch_tests {
         assert_eq!(
             section_dimension_constraints(
                 &radius_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Radius {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            }
+        );
+        let mut incomplete_radius_segments = radius_definition.clone();
+        incomplete_radius_segments
+            .segments
+            .as_mut()
+            .expect("segments")
+            .declared_count += 1;
+        assert_eq!(
+            section_dimension_constraints(
+                &incomplete_radius_segments,
                 &SketchId("creo:model:sketch#917".into())
             )[0]
             .0
