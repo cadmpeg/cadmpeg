@@ -849,7 +849,7 @@ ND layouts share `var_arr`, `segtab`, `order_table`, `ent_tab`, and `vert_tab`, 
 | Table         | Semantics                                                                                                                              |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `var_arr`     | Solver-variable table keyed by `key`; `type=1` is point `u`, `type=2` is point `v`, and `type=3` is radius; `value` is solved, `guess` is the pre-solve estimate, and `known`, `homogeneity`, and `uvar_id` retain solver state. |
-| `segtab`      | Two-dimensional segments; `type=2` is LINE and `type=3` is ARC. A line uses `f6` as its null `cntrid`; an arc uses a center `pointid`. |
+| `segtab`      | Two-dimensional segments; `type=2` is LINE, `type=3` is ARC, and `type=10` is CIRCLE. A line uses `f6` as its null `cntrid`; an arc and circle use a center `pointid`. |
 | `order_table` | Generated-entity ordering table.                                                                                                       |
 | `ent_tab`     | Trimmed profile entity chain.                                                                                                          |
 | `vert_tab`    | Trim vertices and their two incident `segtab` entities.                                                                                |
@@ -875,6 +875,11 @@ The `var_arr` header retains its declared count and table-class reference when
 no variable row body validates; its derived point set is then empty.
 The `segtab_ptr` header retains its declared count and table-class reference
 when no segment row body validates.
+A type-10 `segtab` row is a full circle. It has no endpoint identifiers;
+the second point slot is the structural value one, `cntrid` selects the center
+point, and `radius` selects the ordinal radius or diameter dimension. A
+type-three selected dimension stores the radius. A type-four selected dimension
+stores the diameter, so half its positive value is the solved geometric radius.
 The `order_table` header retains its declared count and table-class reference
 when its prototype or positional identity rows do not validate.
 The `relat_ptr` header and its independent `skamp_ptr` and `triples_ptr` tables
@@ -1118,6 +1123,8 @@ type-three `var_arr` radius with that key. An arc's `radius` field selects the
 same radius key. The solved center point and positive radius define its
 unbounded circular carrier before both arc endpoints are available.
 Only a linear selected dimension contributes a solved radius.
+For a type-four diameter dimension, the propagated radius is half the selected
+dimension value.
 The selected dimension is the neutral radius constraint parameter when exactly
 one arc's `radius` field names that key and the selected dimension type is linear.
 A non-linear or schema-defined selected dimension does not define a neutral

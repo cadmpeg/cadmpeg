@@ -853,8 +853,7 @@ pub struct FeatureSegment {
     pub offset: usize,
 }
 
-/// One fully framed `segtab_ptr` row whose segment family has no neutral
-/// geometry representation.
+/// One fully framed `segtab_ptr` row outside the core segment-family enum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FeatureOpaqueSegment {
     /// Stored segment-family discriminator.

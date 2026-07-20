@@ -3540,6 +3540,20 @@ fn section_arc_geometry(
     })
 }
 
+fn section_opaque_circle_geometry(
+    points: &BTreeMap<u32, [f64; 2]>,
+    radii: &BTreeMap<u32, f64>,
+    segment: &crate::feature::FeatureOpaqueSegment,
+) -> Option<SketchGeometry> {
+    (segment.kind == 10).then_some(())?;
+    let center = points.get(&segment.center_id?)?;
+    let radius = *radii.get(&segment.radius_ref?)?;
+    Some(SketchGeometry::Circle {
+        center: Point2::new(center[0], center[1]),
+        radius: Length(radius),
+    })
+}
+
 fn section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
@@ -5096,13 +5110,60 @@ pub(crate) fn resolved_section_radii(
         if vectors[1] != [Some(0); 4] || vectors[2] != [Some(15), Some(0), Some(0), Some(0)] {
             continue;
         }
-        let Some(value) = section_relation_length_dimension(definition, relation)
-            .and_then(|dimension| dimension.value)
+        let Some(dimension) = section_relation_length_dimension(definition, relation) else {
+            continue;
+        };
+        let Some(value) = dimension
+            .value
             .filter(|value| value.is_finite() && *value > 0.0)
         else {
             continue;
         };
+        let value = if dimension.dimension_type == 4 {
+            value / 2.0
+        } else {
+            value
+        };
         candidates.entry(radius_id).or_default().push(value);
+    }
+    if let Some(dimensions) = definition
+        .dimensions
+        .as_ref()
+        .filter(|dimensions| feature_dimension_table_complete(dimensions))
+    {
+        for circle in definition
+            .segments
+            .iter()
+            .filter(|segments| segments.is_complete())
+            .flat_map(|segments| &segments.opaque_rows)
+            .filter(|segment| {
+                segment.kind == 10
+                    && unique_opaque_section_circle(definition, segment.external_id)
+                        .is_some_and(|candidate| candidate == *segment)
+            })
+        {
+            let Some(radius_id) = circle.radius_ref else {
+                continue;
+            };
+            let Some(dimension) = dimensions
+                .rows
+                .get(usize::try_from(radius_id).unwrap_or(usize::MAX))
+            else {
+                continue;
+            };
+            let Some(value) = dimension
+                .value
+                .filter(|value| value.is_finite() && *value > 0.0)
+            else {
+                continue;
+            };
+            let radius = match dimension.dimension_type {
+                3 => value,
+                4 => value / 2.0,
+                _ => continue,
+            };
+            candidates.entry(radius_id).or_default().push(radius);
+        }
     }
     let points = resolved_section_points(definition);
     for segment in definition
@@ -5231,6 +5292,9 @@ fn section_skamp_radius_source(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SectionRadiusSource> {
+    if let Some(circle) = unique_opaque_section_circle(definition, item.entity_id) {
+        return circle.radius_ref.map(SectionRadiusSource::Reference);
+    }
     if let Some(segment) = unique_section_skamp_segment(definition, item.entity_id) {
         return (segment.kind == crate::feature::FeatureSegmentKind::Arc)
             .then_some(segment.radius_ref)
@@ -9853,6 +9917,56 @@ fn section_angular_entities(
         .then(|| [first, second].map(|external_id| sketch_entity_id(sketch, external_id)))
 }
 
+fn section_circle_diameter_constraints(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    let Some(dimensions) = definition.dimensions.as_ref() else {
+        return Vec::new();
+    };
+    definition
+        .segments
+        .iter()
+        .filter(|segments| segments.is_complete())
+        .flat_map(|segments| &segments.opaque_rows)
+        .filter(|segment| segment.kind == 10)
+        .filter(|segment| {
+            unique_opaque_section_circle(definition, segment.external_id)
+                .is_some_and(|candidate| candidate == *segment)
+        })
+        .filter_map(|segment| Some((segment, usize::try_from(segment.radius_ref?).ok()?)))
+        .filter_map(|(circle, ordinal)| {
+            let (dimension, parameter) =
+                resolved_feature_dimension_parameter(sketch, dimensions, ordinal)?;
+            (dimension.dimension_type == 4).then_some(())?;
+            Some((
+                SketchConstraint {
+                    id: sketch_constraint_id(
+                        sketch,
+                        format_args!("diameter:{}", circle.external_id),
+                    ),
+                    sketch: sketch.clone(),
+                    definition: SketchConstraintDefinition::Diameter {
+                        entity: sketch_entity_id(sketch, circle.external_id),
+                        parameter,
+                    },
+                    name: None,
+                    driving: None,
+                    active: None,
+                    virtual_space: None,
+                    visible: None,
+                    orientation: None,
+                    label_distance: None,
+                    label_position: None,
+                    metadata: None,
+                    native_ref: Some(sketch_native_ref(sketch)),
+                },
+                dimension.offset,
+            ))
+        })
+        .collect()
+}
+
 fn section_dimension_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -10086,6 +10200,26 @@ fn section_linear_distance_vectors(vectors: [[Option<u32>; 4]; 3]) -> bool {
         && vectors[2] == [Some(15), Some(16), Some(15), Some(1)]
 }
 
+fn unique_opaque_section_circle(
+    definition: &crate::feature::FeatureDefinition,
+    external_id: u32,
+) -> Option<&crate::feature::FeatureOpaqueSegment> {
+    let mut matches = definition.segments.iter().flat_map(|segments| {
+        segments
+            .opaque_rows
+            .iter()
+            .filter(|segment| segment.external_id == external_id && segment.kind == 10)
+    });
+    let circle = matches.next()?;
+    (matches.next().is_none()
+        && !definition
+            .segments
+            .iter()
+            .flat_map(|segments| &segments.rows)
+            .any(|segment| segment.external_id == external_id))
+    .then_some(circle)
+}
+
 fn section_skamp_locus(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -10103,11 +10237,37 @@ fn section_skamp_locus(
             _ => None,
         };
     }
+    if let Some(circle) = unique_opaque_section_circle(definition, item.entity_id) {
+        return match item.sense {
+            0 => Some(SketchLocus::Entity(entity)),
+            4 if section_opaque_circle_geometry(
+                &resolved_section_points(definition),
+                &resolved_section_radii(definition),
+                circle,
+            )
+            .is_some() =>
+            {
+                Some(SketchLocus::Center(entity))
+            }
+            _ => None,
+        };
+    }
     if definition
         .segments
         .iter()
-        .flat_map(|segments| &segments.rows)
-        .any(|segment| segment.external_id == item.entity_id)
+        .flat_map(|segments| {
+            segments
+                .rows
+                .iter()
+                .map(|segment| segment.external_id)
+                .chain(
+                    segments
+                        .opaque_rows
+                        .iter()
+                        .map(|segment| segment.external_id),
+                )
+        })
+        .any(|external_id| external_id == item.entity_id)
     {
         return None;
     }
@@ -10371,6 +10531,9 @@ fn section_skamp_is_circular(
     definition: &crate::feature::FeatureDefinition,
     item: &crate::feature::FeatureSkampItem,
 ) -> bool {
+    if unique_opaque_section_circle(definition, item.entity_id).is_some() {
+        return true;
+    }
     let has_segment = definition
         .segments
         .iter()
@@ -11303,6 +11466,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .as_ref()
             .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
         let points = resolved_section_points(definition);
+        let radii = resolved_section_radii(definition);
         let missing_line_geometry = saved_section_missing_line_geometry(definition);
         let solved = definition
             .trim_entities
@@ -11515,24 +11679,51 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 format!("opaque:offset:{}", segment.offset)
             };
             let id = sketch_entity_id(&sketch_id, suffix);
+            let geometry = if segment.kind == 10 {
+                section_opaque_circle_geometry(&points, &radii, segment).unwrap_or_else(|| {
+                    SketchGeometry::Native {
+                        native_kind: "circle".to_string(),
+                    }
+                })
+            } else {
+                SketchGeometry::Native {
+                    native_kind: format!("segment_type:{}", segment.kind),
+                }
+            };
+            let solved_circle = matches!(&geometry, SketchGeometry::Circle { .. });
             annotate(
                 annotations,
                 &id.0,
                 "FeatDefs",
                 segment.offset as u64,
-                "opaque_section_segment",
-                Exactness::ByteExact,
+                if solved_circle {
+                    "solved_section_circle"
+                } else {
+                    "opaque_section_segment"
+                },
+                if solved_circle {
+                    Exactness::Derived
+                } else {
+                    Exactness::ByteExact
+                },
             );
             entities.push(SketchEntity {
                 id,
                 sketch: sketch_id.clone(),
                 construction: true,
                 native_ref: Some(sketch_native_ref(&sketch_id)),
-                geometry_ref: None,
+                geometry_ref: placed_sketch_curve_ref(
+                    transform,
+                    &sketch_id,
+                    if unique_external_id {
+                        segment.external_id.to_string()
+                    } else {
+                        format!("opaque:offset:{}", segment.offset)
+                    },
+                    &geometry,
+                ),
                 endpoint_refs: Vec::new(),
-                geometry: SketchGeometry::Native {
-                    native_kind: format!("segment_type:{}", segment.kind),
-                },
+                geometry,
             });
         }
         let mut saved_section_geometries = Vec::new();
@@ -11771,6 +11962,55 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                     }),
                 });
             }
+            for segment in definition
+                .segments
+                .iter()
+                .flat_map(|segments| &segments.opaque_rows)
+                .filter(|segment| segment.kind == 10)
+            {
+                let Some(section_geometry) =
+                    section_opaque_circle_geometry(&points, &radii, segment)
+                else {
+                    continue;
+                };
+                let Some(geometry) = placed_section_geometry_curve(transform, &section_geometry)
+                else {
+                    continue;
+                };
+                let suffix = if unique_segment_ids.contains(&segment.external_id) {
+                    segment.external_id.to_string()
+                } else {
+                    format!("opaque:offset:{}", segment.offset)
+                };
+                let id = CurveId(sketch_section_curve_id(&sketch_id, &suffix));
+                if ir.model.curves.iter().any(|existing| existing.id == id) {
+                    continue;
+                }
+                annotate(
+                    annotations,
+                    &id,
+                    "FeatDefs",
+                    segment.offset as u64,
+                    "placed_section_circle",
+                    Exactness::Derived,
+                );
+                ir.model.curves.push(Curve {
+                    id,
+                    geometry,
+                    source_object: Some(SourceObjectAssociation {
+                        format: "creo".to_string(),
+                        object_id: format!(
+                            "FeatDefs:section#{}:{suffix}",
+                            sketch_identity_scope(&sketch_id)
+                        ),
+                        name: None,
+                        color: None,
+                        visible: None,
+                        layer: None,
+                        instance_path: Vec::new(),
+                    }),
+                });
+            }
             for (internal_id, external_id, section_geometry, offset, id) in saved_section_geometries
             {
                 if ir.model.curves.iter().any(|existing| existing.id == id) {
@@ -11894,6 +12134,24 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
                 "FeatDefs",
                 offset as u64,
                 "section_dimension_constraint",
+                Exactness::ByteExact,
+            );
+            constraints.push(constraint);
+        }
+        for (mut constraint, offset) in section_circle_diameter_constraints(definition, &sketch_id)
+        {
+            if !reconcile_constraint_entity_references(
+                &mut constraint.definition,
+                &emitted_entity_ids,
+            ) {
+                continue;
+            }
+            annotate(
+                annotations,
+                &constraint.id.0,
+                "FeatDefs",
+                offset as u64,
+                "section_circle_diameter_constraint",
                 Exactness::ByteExact,
             );
             constraints.push(constraint);
@@ -18857,6 +19115,55 @@ mod resolved_sketch_tests {
                 &dimension,
                 ParameterId("creo:featdefs:parameter#917:3".to_string())
             ))
+        );
+        definition.segments = Some(crate::feature::FeatureSegmentTable {
+            declared_count: 1,
+            entity_ref: None,
+            rows: Vec::new(),
+            opaque_rows: vec![crate::feature::FeatureOpaqueSegment {
+                kind: 10,
+                directions: [None; 3],
+                point_ids: [None, Some(1)],
+                center_id: Some(7),
+                arc_orientation: None,
+                vertical_horizontal: None,
+                radius_ref: Some(0),
+                radius2_ref: None,
+                external_id: 42,
+                offset: 20,
+            }],
+            offset: 19,
+        });
+        definition
+            .dimensions
+            .as_mut()
+            .expect("dimension table")
+            .rows[0]
+            .dimension_type = 4;
+        assert_eq!(
+            resolved_section_radii(&definition),
+            BTreeMap::from([(0, 2.5)])
+        );
+        let diameter = section_circle_diameter_constraints(&definition, &sketch_917);
+        assert_eq!(diameter.len(), 1);
+        assert!(matches!(
+            diameter[0].0.definition,
+            SketchConstraintDefinition::Diameter {
+                ref entity,
+                ref parameter,
+            } if entity == &SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string())
+                && parameter == &ParameterId("creo:featdefs:parameter#917:3".to_string())
+        ));
+        assert_eq!(
+            section_opaque_circle_geometry(
+                &BTreeMap::from([(7, [1.0, 2.0])]),
+                &resolved_section_radii(&definition),
+                &definition.segments.as_ref().expect("segments").opaque_rows[0],
+            ),
+            Some(SketchGeometry::Circle {
+                center: Point2::new(1.0, 2.0),
+                radius: Length(2.5),
+            })
         );
         let unresolved_dimension = crate::feature::FeatureDimension {
             value: None,
