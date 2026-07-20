@@ -533,7 +533,7 @@ fn collect_carrier(rec: &Record) -> Carrier {
         vectors: Vec::new(),
         doubles: Vec::new(),
     };
-    for t in &rec.tokens {
+    for t in rec.tokens.iter() {
         match t {
             Token::Position(p) => c.positions.push(*p),
             Token::Vector3(v) => c.vectors.push(*v),
@@ -1086,7 +1086,7 @@ fn double_at(rec: &Record, i: usize) -> Option<f64> {
 }
 
 fn pcurve_parameter_range(rec: &Record) -> Option<[f64; 2]> {
-    match rec.tokens.as_slice() {
+    match &*rec.tokens {
         [.., Token::Double(start), Token::Double(end)] => Some([*start, *end]),
         _ => None,
     }
@@ -7303,7 +7303,8 @@ mod topology_tests {
                 Token::Ref(-1),
                 Token::Ref(-1),
                 Token::Ref(owner),
-            ],
+            ]
+            .into(),
             offset: 0,
             len: 0,
         };
@@ -7405,7 +7406,7 @@ mod topology_tests {
                 index: 1,
                 name: "point".into(),
                 head: "point".into(),
-                tokens: vec![Token::Position([0.0, 0.0, 0.0])],
+                tokens: vec![Token::Position([0.0, 0.0, 0.0])].into(),
                 offset: 0,
                 len: 0,
             },
@@ -7413,7 +7414,7 @@ mod topology_tests {
                 index: 2,
                 name: "point".into(),
                 head: "point".into(),
-                tokens: vec![Token::Position([1.0, 0.0, 0.0])],
+                tokens: vec![Token::Position([1.0, 0.0, 0.0])].into(),
                 offset: 0,
                 len: 0,
             },
@@ -7428,7 +7429,8 @@ mod topology_tests {
                     Token::Ref(-1),
                     Token::Long(0),
                     Token::Ref(1),
-                ],
+                ]
+                .into(),
                 offset: 0,
                 len: 0,
             },
@@ -7443,7 +7445,8 @@ mod topology_tests {
                     Token::Ref(-1),
                     Token::Long(1),
                     Token::Ref(2),
-                ],
+                ]
+                .into(),
                 offset: 0,
                 len: 0,
             },
@@ -7458,7 +7461,8 @@ mod topology_tests {
                     Token::Ref(3),
                     Token::Double(0.0),
                     Token::Ref(4),
-                ],
+                ]
+                .into(),
                 offset: 0,
                 len: 0,
             },
@@ -7530,7 +7534,8 @@ mod topology_tests {
                 Token::Ref(-1),
                 Token::Ref(4),
                 Token::True,
-            ],
+            ]
+            .into(),
             offset: 0,
             len: 0,
         };

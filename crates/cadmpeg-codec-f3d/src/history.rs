@@ -417,7 +417,7 @@ fn historical_record_archive(
     }
     for (&revision_ref, record) in &mut records {
         record.index = usize::try_from(*revision_entities.get(&revision_ref)?).ok()?;
-        for token in &mut record.tokens {
+        for token in std::sync::Arc::make_mut(&mut record.tokens) {
             let crate::sab::Token::Ref(reference) = token else {
                 continue;
             };
@@ -2933,7 +2933,7 @@ fn materialize_record_table(
         if i64::try_from(record.index).ok() != Some(version.entity_ref) {
             return None;
         }
-        for token in &record.tokens {
+        for token in record.tokens.iter() {
             let crate::sab::Token::Ref(reference) = token else {
                 continue;
             };
@@ -4184,7 +4184,7 @@ mod tests {
                 index,
                 name: name.into(),
                 head: name.into(),
-                tokens: Vec::new(),
+                tokens: Vec::new().into(),
                 offset: 0,
                 len: 0,
             })
@@ -4198,7 +4198,7 @@ mod tests {
 
         assert_eq!(table.len(), 2);
         assert_eq!(table[1].index, 1);
-        assert_eq!(table[1].tokens, [crate::sab::Token::Ref(1)]);
+        assert_eq!(&*table[1].tokens, [crate::sab::Token::Ref(1)]);
     }
 
     #[test]

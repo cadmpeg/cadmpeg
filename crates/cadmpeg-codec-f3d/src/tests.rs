@@ -12104,7 +12104,7 @@ fn analytic_carrier_decode_covers_each_shape() {
             index: 0,
             name: head.to_string(),
             head: head.to_string(),
-            tokens,
+            tokens: tokens.into(),
             offset: 0,
             len: 0,
         }
@@ -17423,7 +17423,8 @@ fn transform_decodes_column_major_basis_and_scaled_translation() {
             Token::Vector3([0.0, 0.0, 1.0]),
             Token::Position([1.0, 2.0, 3.0]),
             Token::Double(1.0),
-        ],
+        ]
+        .into(),
         offset: 0,
         len: 0,
     };

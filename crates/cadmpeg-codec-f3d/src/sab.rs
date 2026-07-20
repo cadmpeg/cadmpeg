@@ -12,6 +12,7 @@
 //! record extents without requiring semantic decoding of each payload.
 
 use cadmpeg_ir::le::{f64_at as read_f64, int_at as read_i, vec3_at as read_vec3};
+use std::sync::Arc;
 
 /// A decoded SAB token. Only the payload this codec consumes is retained with a
 /// typed value; all tokens are still framed so record boundaries stay exact.
@@ -62,7 +63,7 @@ pub struct Record {
     /// Leading name component used for dispatch, e.g. `cone`, `body`.
     pub head: String,
     /// Payload tokens following the name chain (subtype delimiters included).
-    pub tokens: Vec<Token>,
+    pub tokens: Arc<[Token]>,
     /// Byte offset of the record's first name-chain tag in the stream.
     pub offset: usize,
     /// Byte length of the record including its terminator.
@@ -513,7 +514,7 @@ fn frame_impl(
             index,
             name,
             head,
-            tokens,
+            tokens: tokens.into(),
             offset: rec_start,
             len: pos - rec_start,
         });
