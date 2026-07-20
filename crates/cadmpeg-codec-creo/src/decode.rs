@@ -5553,10 +5553,14 @@ fn resolved_trim_vertex_coordinates(
                         .flat_map(|table| &table.rows)
                         .filter(|entity| entity.external_id == *entity_id)
                         .collect::<Vec<_>>();
-                    let [entity] = matches.as_slice() else {
-                        continue;
+                    let external_id = match matches.as_slice() {
+                        [entity] => trim_segment_id(definition, entity),
+                        [] => segments
+                            .segment(*entity_id)
+                            .map(|segment| segment.external_id),
+                        _ => None,
                     };
-                    if let Some(external_id) = trim_segment_id(definition, entity) {
+                    if let Some(external_id) = external_id {
                         resolved.push(external_id);
                     }
                 }
@@ -5567,6 +5571,38 @@ fn resolved_trim_vertex_coordinates(
             }
             result
         });
+    if let Some(explicit) = &explicit_incident {
+        for (vertex, entities) in explicit {
+            if entities.len() < 2 || entities.windows(2).any(|pair| pair[0] == pair[1]) {
+                continue;
+            }
+            let mut derived = incident.get(vertex).cloned().unwrap_or_default();
+            derived.sort_unstable();
+            derived.dedup();
+            if derived
+                .iter()
+                .any(|external_id| !entities.contains(external_id))
+            {
+                continue;
+            }
+            incident.insert(*vertex, entities.clone());
+            let common_points = entities
+                .iter()
+                .filter_map(|external_id| segments.segment(*external_id))
+                .map(|segment| segment.point_ids.into_iter().collect::<BTreeSet<_>>())
+                .reduce(|common, points| common.intersection(&points).copied().collect());
+            let Some(common_points) = common_points else {
+                continue;
+            };
+            let common_points = common_points.into_iter().collect::<Vec<_>>();
+            let [point_id] = common_points.as_slice() else {
+                continue;
+            };
+            if let Some(coordinate) = points.get(point_id) {
+                coordinate_candidates.push((*vertex, *coordinate));
+            }
+        }
+    }
     for (vertex, mut entities) in incident {
         entities.sort_unstable();
         if entities.len() < 2 || entities.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -10638,6 +10674,39 @@ fn resolved_profile_chains(
         .iter()
         .filter_map(|row| Some((row, trim_segment_id(definition, row)?)))
         .collect::<Vec<_>>();
+    let trimmed_ids = rows
+        .iter()
+        .map(|(_, external_id)| *external_id)
+        .collect::<BTreeSet<_>>();
+    let trimmed_points = definition
+        .segments
+        .iter()
+        .flat_map(|segments| &segments.rows)
+        .filter(|segment| trimmed_ids.contains(&segment.external_id))
+        .flat_map(|segment| segment.point_ids)
+        .collect::<BTreeSet<_>>();
+    if definition
+        .segments
+        .iter()
+        .flat_map(|segments| &segments.rows)
+        .filter(|segment| {
+            emitted.contains(&segment.external_id)
+                && !trimmed_ids.contains(&segment.external_id)
+                && matches!(
+                    segment.kind,
+                    crate::feature::FeatureSegmentKind::Line
+                        | crate::feature::FeatureSegmentKind::Arc
+                )
+        })
+        .any(|segment| {
+            segment
+                .point_ids
+                .into_iter()
+                .any(|point| trimmed_points.contains(&point))
+        })
+    {
+        return resolved_segment_profile_chains(definition, sketch, emitted);
+    }
     let mut incident = BTreeMap::<u32, Vec<usize>>::new();
     for (index, row) in rows.iter().enumerate() {
         for vertex in row.0.vertices {
@@ -20951,6 +21020,42 @@ mod resolved_sketch_tests {
             &BTreeSet::from([10_u32, 11_u32, 12_u32]),
         )
         .is_empty());
+
+        let mut incomplete_trim_graph = definition.clone();
+        incomplete_trim_graph.segments = Some(crate::feature::FeatureSegmentTable {
+            declared_count: 4,
+            entity_ref: None,
+            rows: [(10, [1, 2]), (11, [2, 3]), (12, [3, 4]), (13, [4, 1])]
+                .into_iter()
+                .map(|(external_id, point_ids)| crate::feature::FeatureSegment {
+                    kind: crate::feature::FeatureSegmentKind::Line,
+                    directions: [None; 3],
+                    point_ids,
+                    center_id: None,
+                    arc_orientation: None,
+                    vertical_horizontal: None,
+                    radius_ref: None,
+                    radius2_ref: None,
+                    external_id,
+                    offset: external_id as usize,
+                })
+                .collect(),
+            opaque_rows: Vec::new(),
+            offset: 2,
+        });
+        incomplete_trim_graph
+            .trim_entities
+            .as_mut()
+            .expect("trim table")
+            .rows
+            .retain(|row| row.external_id != 13);
+        let profiles = resolved_profile_chains(
+            &incomplete_trim_graph,
+            &SketchId("creo:model:sketch#40".to_string()),
+            &BTreeSet::from([10_u32, 11_u32, 12_u32, 13_u32]),
+        );
+        assert_eq!(profiles.len(), 1);
+        assert_eq!(profiles[0].len(), 4);
 
         let mut arcs = definition.clone();
         arcs.trim_entities = Some(crate::feature::FeatureTrimEntityTable {
