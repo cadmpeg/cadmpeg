@@ -3586,21 +3586,28 @@ fn saved_section_line_geometry(
                 .then_some(())?;
             let segment_table = definition.segments.as_ref()?;
             segment_table.is_complete().then_some(())?;
+            let trimmed_external_ids = trimmed
+                .rows
+                .iter()
+                .filter_map(|row| trim_segment_id(definition, row))
+                .collect::<BTreeSet<_>>();
+            let ordered_external_ids = order_table
+                .rows
+                .iter()
+                .map(|row| row.external_id)
+                .collect::<BTreeSet<_>>();
+            let ordered_internal_ids = order_table
+                .rows
+                .iter()
+                .map(|row| row.internal_id)
+                .collect::<BTreeSet<_>>();
             let segment_ids = segment_table
                 .rows
                 .iter()
                 .filter(|candidate| {
                     candidate.kind == crate::feature::FeatureSegmentKind::Line
-                        && trimmed
-                            .rows
-                            .iter()
-                            .any(|row| {
-                                trim_segment_id(definition, row) == Some(candidate.external_id)
-                            })
-                        && !order_table
-                            .rows
-                            .iter()
-                            .any(|row| row.external_id == candidate.external_id)
+                        && trimmed_external_ids.contains(&candidate.external_id)
+                        && !ordered_external_ids.contains(&candidate.external_id)
                 })
                 .map(|candidate| candidate.external_id)
                 .collect::<Vec<_>>();
@@ -3609,10 +3616,7 @@ fn saved_section_line_geometry(
                 .iter()
                 .filter_map(|entity| match entity {
                     crate::feature::FeatureSavedEntity::Line(line)
-                        if !order_table
-                            .rows
-                            .iter()
-                            .any(|row| row.internal_id == line.entity_id) =>
+                        if !ordered_internal_ids.contains(&line.entity_id) =>
                     {
                         Some(line.entity_id)
                     }
@@ -3626,9 +3630,7 @@ fn saved_section_line_geometry(
                 _ => None,
             }
         });
-    let Some(internal_id) = internal_id else {
-        return saved_section_missing_line_geometry(definition, segment);
-    };
+    let internal_id = internal_id?;
     unique_saved_section_internal_ids(definition)
         .contains(&internal_id)
         .then_some(())?;
@@ -3888,30 +3890,30 @@ fn saved_geometry_endpoints(geometry: &SketchGeometry) -> Option<[[f64; 2]; 2]> 
 
 fn saved_section_missing_line_geometry(
     definition: &crate::feature::FeatureDefinition,
-    segment: &crate::feature::FeatureSegment,
-) -> Option<SketchGeometry> {
+) -> Option<(usize, SketchGeometry)> {
     let order = definition.order_table.as_ref()?;
     order.is_complete().then_some(())?;
     let segments = definition.segments.as_ref()?;
     segments.is_complete().then_some(())?;
     let trim = definition.trim_entities.as_ref()?;
     (trim.has_complete_bucket_frame() && trim.has_unique_external_ids()).then_some(())?;
+    let trimmed_external_ids = trim
+        .rows
+        .iter()
+        .filter_map(|row| trim_segment_id(definition, row))
+        .collect::<BTreeSet<_>>();
     let missing = segments
         .rows
         .iter()
         .filter(|candidate| {
             candidate.kind == crate::feature::FeatureSegmentKind::Line
                 && order.internal_id(candidate.external_id).is_none()
-                && trim
-                    .rows
-                    .iter()
-                    .any(|row| trim_segment_id(definition, row) == Some(candidate.external_id))
+                && trimmed_external_ids.contains(&candidate.external_id)
         })
         .collect::<Vec<_>>();
     let [missing] = missing.as_slice() else {
         return None;
     };
-    std::ptr::eq(*missing, segment).then_some(())?;
 
     let saved = definition.saved_section.as_ref()?;
     let geometries = saved
@@ -3964,10 +3966,13 @@ fn saved_section_missing_line_geometry(
     let [start, end] = open.as_slice() else {
         return None;
     };
-    Some(SketchGeometry::Line {
-        start: Point2::new(start[0], start[1]),
-        end: Point2::new(end[0], end[1]),
-    })
+    Some((
+        missing.offset,
+        SketchGeometry::Line {
+            start: Point2::new(start[0], start[1]),
+            end: Point2::new(end[0], end[1]),
+        },
+    ))
 }
 
 fn saved_points_coincide(first: [f64; 2], second: [f64; 2]) -> bool {
@@ -4072,9 +4077,29 @@ fn resolved_section_segment_geometry(
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
+    let missing_line = saved_section_missing_line_geometry(definition);
+    resolved_section_segment_geometry_with_missing_line(
+        definition,
+        points,
+        segment,
+        missing_line.as_ref(),
+    )
+}
+
+fn resolved_section_segment_geometry_with_missing_line(
+    definition: &crate::feature::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+    missing_line: Option<&(usize, SketchGeometry)>,
+) -> Option<SketchGeometry> {
     let stored = section_segment_geometry(points, segment);
     let saved = saved_section_line_geometry(definition, segment)
-        .or_else(|| saved_section_arc_geometry(definition, segment));
+        .or_else(|| saved_section_arc_geometry(definition, segment))
+        .or_else(|| {
+            missing_line
+                .filter(|(offset, _)| *offset == segment.offset)
+                .map(|(_, geometry)| geometry.clone())
+        });
     match (stored, saved) {
         (Some(stored), Some(saved)) => {
             let agree = match (&stored, &saved) {
@@ -5239,19 +5264,27 @@ fn section_arc_carrier(
     Some((center, radius))
 }
 
+#[derive(Clone)]
 struct SectionIntersectionCarrier {
     geometry: SketchGeometry,
     line_is_bounded: bool,
 }
 
+#[cfg(test)]
 fn section_axis_line_carrier(
     definition: &crate::feature::FeatureDefinition,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SketchGeometry> {
+    let variable_points = definition.variables.as_ref()?.reconciled_points().0;
+    section_axis_line_carrier_with_points(&variable_points, segment)
+}
+
+fn section_axis_line_carrier_with_points(
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+    segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
     (segment.kind == crate::feature::FeatureSegmentKind::Line).then_some(())?;
-    let variables = definition.variables.as_ref()?;
-    let (points, _) = variables.reconciled_points();
-    let endpoint = |id| points.get(&id);
+    let endpoint = |id| variable_points.get(&id);
     let [first, second] = segment.point_ids.map(endpoint);
     let (Some(first), Some(second)) = (first, second) else {
         return None;
@@ -5284,19 +5317,49 @@ fn section_axis_line_carrier(
     }
 }
 
+#[cfg(test)]
 fn section_segment_intersection_carrier(
     definition: &crate::feature::FeatureDefinition,
     radii: &BTreeMap<u32, f64>,
     points: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
 ) -> Option<SectionIntersectionCarrier> {
-    if let Some(geometry) = resolved_section_segment_geometry(definition, points, segment) {
+    let missing_line = saved_section_missing_line_geometry(definition);
+    let variable_points = definition
+        .variables
+        .as_ref()
+        .map(|variables| variables.reconciled_points().0)
+        .unwrap_or_default();
+    section_segment_intersection_carrier_with_missing_line(
+        definition,
+        radii,
+        points,
+        segment,
+        missing_line.as_ref(),
+        &variable_points,
+    )
+}
+
+fn section_segment_intersection_carrier_with_missing_line(
+    definition: &crate::feature::FeatureDefinition,
+    radii: &BTreeMap<u32, f64>,
+    points: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+    missing_line: Option<&(usize, SketchGeometry)>,
+    variable_points: &BTreeMap<u32, [Option<f64>; 2]>,
+) -> Option<SectionIntersectionCarrier> {
+    if let Some(geometry) = resolved_section_segment_geometry_with_missing_line(
+        definition,
+        points,
+        segment,
+        missing_line,
+    ) {
         return Some(SectionIntersectionCarrier {
             line_is_bounded: matches!(geometry, SketchGeometry::Line { .. }),
             geometry,
         });
     }
-    if let Some(geometry) = section_axis_line_carrier(definition, segment) {
+    if let Some(geometry) = section_axis_line_carrier_with_points(variable_points, segment) {
         return Some(SectionIntersectionCarrier {
             geometry,
             line_is_bounded: false,
@@ -5568,6 +5631,12 @@ fn resolved_trim_vertex_coordinates(
         return BTreeMap::new();
     };
     let radii = resolved_section_radii(definition);
+    let missing_line = saved_section_missing_line_geometry(definition);
+    let variable_points = definition
+        .variables
+        .as_ref()
+        .map(|variables| variables.reconciled_points().0)
+        .unwrap_or_default();
     let mut seen_vertex_ids = BTreeSet::new();
     let duplicate_vertex_ids = definition
         .trim_vertices
@@ -5694,6 +5763,25 @@ fn resolved_trim_vertex_coordinates(
             }
         }
     }
+    let intersection_carriers = incident
+        .values()
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|external_id| {
+            let segment = segments.segment(external_id)?;
+            let carrier = section_segment_intersection_carrier_with_missing_line(
+                definition,
+                &radii,
+                points,
+                segment,
+                missing_line.as_ref(),
+                &variable_points,
+            )?;
+            Some((external_id, carrier))
+        })
+        .collect::<BTreeMap<_, _>>();
     for (vertex, mut entities) in incident {
         entities.sort_unstable();
         if entities.len() < 2 || entities.windows(2).any(|pair| pair[0] == pair[1]) {
@@ -5705,14 +5793,9 @@ fn resolved_trim_vertex_coordinates(
         {
             continue;
         }
-        let geometry = |external_id| {
-            let segment = segments.segment(external_id)?;
-            section_segment_intersection_carrier(definition, &radii, points, segment)
-        };
         let carriers = entities
             .iter()
-            .copied()
-            .map(geometry)
+            .map(|external_id| intersection_carriers.get(external_id).cloned())
             .collect::<Option<Vec<_>>>();
         let Some(carriers) = carriers else {
             continue;
@@ -5739,7 +5822,12 @@ fn resolved_trim_vertex_coordinates(
                 continue;
             };
             let Some(SketchGeometry::Line { start, end }) =
-                resolved_section_segment_geometry(definition, points, segment)
+                resolved_section_segment_geometry_with_missing_line(
+                    definition,
+                    points,
+                    segment,
+                    missing_line.as_ref(),
+                )
             else {
                 continue;
             };
@@ -5814,11 +5902,29 @@ fn reconciled_section_coordinates(
     (coordinates, ambiguous)
 }
 
+#[cfg(test)]
 fn trimmed_section_segment_geometry(
     definition: &crate::feature::FeatureDefinition,
     points: &BTreeMap<u32, [f64; 2]>,
     trim_vertices: &BTreeMap<u32, [f64; 2]>,
     segment: &crate::feature::FeatureSegment,
+) -> Option<SketchGeometry> {
+    let missing_line = saved_section_missing_line_geometry(definition);
+    trimmed_section_segment_geometry_with_missing_line(
+        definition,
+        points,
+        trim_vertices,
+        segment,
+        missing_line.as_ref(),
+    )
+}
+
+fn trimmed_section_segment_geometry_with_missing_line(
+    definition: &crate::feature::FeatureDefinition,
+    points: &BTreeMap<u32, [f64; 2]>,
+    trim_vertices: &BTreeMap<u32, [f64; 2]>,
+    segment: &crate::feature::FeatureSegment,
+    missing_line: Option<&(usize, SketchGeometry)>,
 ) -> Option<SketchGeometry> {
     let trim = definition
         .trim_entities
@@ -5831,8 +5937,12 @@ fn trimmed_section_segment_geometry(
     if let Some(SketchGeometry::Line {
         start: carrier_start,
         end: carrier_end,
-    }) = resolved_section_segment_geometry(definition, points, segment)
-    {
+    }) = resolved_section_segment_geometry_with_missing_line(
+        definition,
+        points,
+        segment,
+        missing_line,
+    ) {
         let scale = [
             carrier_start.u,
             carrier_start.v,
@@ -10217,18 +10327,20 @@ fn section_skamp_constraints_for_geometry(
     };
     let complete_skamps =
         feature_solver_table_complete(relations.skamp_header.as_ref(), relations.skamps.len());
+    let skamp_id_counts =
+        relations
+            .skamps
+            .iter()
+            .fold(BTreeMap::<u32, usize>::new(), |mut counts, skamp| {
+                *counts.entry(skamp.id).or_default() += 1;
+                counts
+            });
     let section_entities = section_entity_external_ids(definition);
     relations
         .skamps
         .iter()
         .filter_map(|skamp| {
-            let unique_skamp_id = complete_skamps
-                && relations
-                    .skamps
-                    .iter()
-                    .filter(|candidate| candidate.id == skamp.id)
-                    .count()
-                    == 1;
+            let unique_skamp_id = complete_skamps && skamp_id_counts.get(&skamp.id) == Some(&1);
             let native_constraint = || {
                 let entities = skamp
                     .items
@@ -11030,6 +11142,7 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .as_ref()
             .is_some_and(crate::feature::FeatureSegmentTable::is_complete);
         let points = resolved_section_points(definition);
+        let missing_line_geometry = saved_section_missing_line_geometry(definition);
         let solved = definition
             .trim_entities
             .iter()
@@ -11037,19 +11150,44 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .filter_map(|row| trim_segment_id(definition, row))
             .collect::<BTreeSet<_>>();
         let trim_vertex_coordinates = resolved_trim_vertex_coordinates(definition, &points);
-        let segment_geometry = |segment: &crate::feature::FeatureSegment| {
-            if unique_segment_ids.contains(&segment.external_id)
-                && solved.contains(&segment.external_id)
-            {
-                trimmed_section_segment_geometry(
-                    definition,
-                    &points,
-                    &trim_vertex_coordinates,
-                    segment,
+        let resolved_segment_geometries = segments
+            .iter()
+            .map(|segment| {
+                (
+                    segment.offset,
+                    resolved_section_segment_geometry_with_missing_line(
+                        definition,
+                        &points,
+                        segment,
+                        missing_line_geometry.as_ref(),
+                    ),
                 )
-            } else {
-                resolved_section_segment_geometry(definition, &points, segment)
-            }
+            })
+            .collect::<BTreeMap<_, _>>();
+        let segment_geometries = segments
+            .iter()
+            .map(|segment| {
+                let geometry = if unique_segment_ids.contains(&segment.external_id)
+                    && solved.contains(&segment.external_id)
+                {
+                    trimmed_section_segment_geometry_with_missing_line(
+                        definition,
+                        &points,
+                        &trim_vertex_coordinates,
+                        segment,
+                        missing_line_geometry.as_ref(),
+                    )
+                } else {
+                    resolved_segment_geometries
+                        .get(&segment.offset)
+                        .cloned()
+                        .flatten()
+                };
+                (segment.offset, geometry)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let segment_geometry = |segment: &crate::feature::FeatureSegment| {
+            segment_geometries.get(&segment.offset).cloned().flatten()
         };
         let emitted = segments
             .iter()
@@ -11431,8 +11569,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
         ));
         if let Some(transform) = transform {
             for segment in segments {
-                let Some(section_geometry) =
-                    resolved_section_segment_geometry(definition, &points, segment)
+                let Some(section_geometry) = resolved_segment_geometries
+                    .get(&segment.offset)
+                    .cloned()
+                    .flatten()
                 else {
                     continue;
                 };
