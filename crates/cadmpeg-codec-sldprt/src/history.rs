@@ -2435,7 +2435,10 @@ mod history_reference_tests {
         let mut hole = feature("hole", Some("214"), 0);
         hole.xml_tag = "HoleWizard".into();
         hole.properties
-            .insert("DissectableChildren".into(), "212".into());
+            .insert("DissectableChildren".into(), "213,212".into());
+        let mut position = feature("position", Some("213"), 1);
+        position.xml_tag = "Sketch".into();
+        position.kind = "Sketch".into();
         let mut profile = feature("profile", Some("212"), 1);
         profile.xml_tag = "Sketch".into();
         profile.kind = "Sketch".into();
@@ -2451,7 +2454,7 @@ mod history_reference_tests {
             properties: BTreeMap::new(),
             content: Vec::new(),
             configurations: Vec::new(),
-            features: vec![hole, profile],
+            features: vec![hole, position, profile],
         };
 
         let projected = project_features(std::slice::from_ref(&history));
@@ -2470,7 +2473,7 @@ mod history_reference_tests {
         );
 
         let mut ambiguous = history;
-        ambiguous.features[1]
+        ambiguous.features[2]
             .parameters
             .insert("another length".into(), "2".into());
         let ambiguous = project_features(&[ambiguous]);
@@ -2482,6 +2485,57 @@ mod history_reference_tests {
         };
         assert_eq!(*diameter, Some(Length(4.5)));
         assert_eq!(*extent, None);
+    }
+
+    #[test]
+    fn hole_wizard_uses_the_unique_countersink_child_schema() {
+        let mut hole = feature("hole", Some("214"), 0);
+        hole.xml_tag = "HoleWizard".into();
+        hole.properties
+            .insert("DissectableChildren".into(), "213,212".into());
+        let mut position = feature("position", Some("213"), 1);
+        position.xml_tag = "Sketch".into();
+        position.kind = "Sketch".into();
+        position.parameters.insert("D1".into(), "11".into());
+        let mut profile = feature("profile", Some("212"), 2);
+        profile.xml_tag = "Sketch".into();
+        profile.kind = "Sketch".into();
+        profile
+            .parameters
+            .insert("localized bore".into(), "<MOD-DIAM>3.4".into());
+        profile
+            .parameters
+            .insert("localized depth".into(), "3".into());
+        profile
+            .parameters
+            .insert("localized entry".into(), "<MOD-DIAM>6.6".into());
+        profile
+            .parameters
+            .insert("localized angle".into(), "90°".into());
+        let history = FeatureHistory {
+            id: "history".into(),
+            part_name: None,
+            properties: BTreeMap::new(),
+            content: Vec::new(),
+            configurations: Vec::new(),
+            features: vec![hole, position, profile],
+        };
+
+        let projected = project_features(&[history]);
+        assert!(matches!(
+            projected[0].definition,
+            FeatureDefinition::Hole {
+                kind: HoleKind::Countersink {
+                    diameter: Length(6.6),
+                    angle: Angle(angle),
+                },
+                diameter: Some(Length(3.4)),
+                extent: Some(Extent::Blind {
+                    length: Length(3.0),
+                }),
+                ..
+            } if (angle - std::f64::consts::FRAC_PI_2).abs() < 1.0e-12
+        ));
     }
 
     #[test]
@@ -5201,14 +5255,13 @@ fn project_hole(
     feature: &Feature,
     features_by_source: &HashMap<&str, &Feature>,
 ) -> FeatureDefinition {
-    let (profile_diameter, profile_depth) =
-        simple_hole_profile_dimensions(feature, features_by_source).unwrap_or_default();
+    let profile = hole_profile_construction(feature, features_by_source);
     let diameter = feature
         .parameters
         .get("Diameter")
         .and_then(|value| parse_positive_length_mm(value))
         .map(Length)
-        .or(profile_diameter);
+        .or_else(|| profile.as_ref().map(|profile| profile.diameter));
     let has_counterbore = feature.parameters.contains_key("CounterboreDiameter")
         || feature.parameters.contains_key("CounterboreDepth");
     let has_countersink = feature.parameters.contains_key("CountersinkDiameter")
@@ -5264,7 +5317,9 @@ fn project_hole(
             },
         }
     } else {
-        HoleKind::Simple
+        profile
+            .as_ref()
+            .map_or(HoleKind::Simple, |profile| profile.kind.clone())
     };
     let extent = match feature.properties.get("EndCondition").map(String::as_str) {
         None | Some("Blind") => feature
@@ -5272,7 +5327,7 @@ fn project_hole(
             .get("Depth")
             .and_then(|value| parse_positive_length_mm(value))
             .map(Length)
-            .or(profile_depth)
+            .or_else(|| profile.as_ref().and_then(|profile| profile.depth))
             .map(|length| Extent::Blind { length }),
         Some("ThroughAll") => Some(Extent::ThroughAll),
         Some(_) => None,
@@ -5297,25 +5352,33 @@ fn project_hole(
     }
 }
 
-fn simple_hole_profile_dimensions(
+#[derive(Debug, Clone, PartialEq)]
+struct HoleProfileConstruction {
+    diameter: Length,
+    depth: Option<Length>,
+    kind: HoleKind,
+}
+
+fn hole_profile_construction(
     feature: &Feature,
     features_by_source: &HashMap<&str, &Feature>,
-) -> Option<(Option<Length>, Option<Length>)> {
+) -> Option<HoleProfileConstruction> {
     let children = feature.properties.get("DissectableChildren")?;
-    let sources = children
+    let mut constructions = children
         .split(',')
         .map(str::trim)
         .filter(|source| !source.is_empty())
-        .collect::<Vec<_>>();
-    let [source] = sources.as_slice() else {
-        return None;
-    };
-    let profile = *features_by_source.get(source)?;
-    if classify(profile) != Some(FeatureClass::Sketch) {
-        return None;
-    }
+        .filter_map(|source| features_by_source.get(source).copied())
+        .filter(|profile| classify(profile) == Some(FeatureClass::Sketch))
+        .filter_map(hole_sketch_construction);
+    let construction = constructions.next()?;
+    constructions.next().is_none().then_some(construction)
+}
+
+fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction> {
     let mut diameters = Vec::new();
-    let mut other_lengths = Vec::new();
+    let mut lengths = Vec::new();
+    let mut angles = Vec::new();
     for expression in profile.parameters.values() {
         if strip_diameter_modifier(expression).is_some() {
             if let Some(value) = parse_dimension_display_length(expression)
@@ -5324,21 +5387,49 @@ fn simple_hole_profile_dimensions(
             {
                 diameters.push(value);
             }
+        } else if let Some(value) = parse_bounded_angle_rad(expression).map(Angle) {
+            angles.push(value);
         } else {
             if let Some(value) = parse_positive_dimension_length_mm(expression).map(Length) {
-                other_lengths.push(value);
+                lengths.push(value);
             }
         }
     }
-    let diameter = match diameters.as_slice() {
-        [diameter] => Some(*diameter),
+    diameters.sort_by(|left, right| left.0.total_cmp(&right.0));
+    lengths.sort_by(|left, right| left.0.total_cmp(&right.0));
+    match (diameters.as_slice(), lengths.as_slice(), angles.as_slice()) {
+        ([diameter], depths, []) => Some(HoleProfileConstruction {
+            diameter: *diameter,
+            depth: match depths {
+                [depth] => Some(*depth),
+                _ => None,
+            },
+            kind: HoleKind::Simple,
+        }),
+        ([diameter, entry_diameter], [depth], [angle]) if diameter.0 < entry_diameter.0 => {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*depth),
+                kind: HoleKind::Countersink {
+                    diameter: *entry_diameter,
+                    angle: *angle,
+                },
+            })
+        }
+        ([diameter, entry_diameter], [entry_depth, depth], [])
+            if diameter.0 < entry_diameter.0 && entry_depth.0 < depth.0 =>
+        {
+            Some(HoleProfileConstruction {
+                diameter: *diameter,
+                depth: Some(*depth),
+                kind: HoleKind::Counterbore {
+                    diameter: *entry_diameter,
+                    depth: *entry_depth,
+                },
+            })
+        }
         _ => None,
-    };
-    let depth = match (diameter, other_lengths.as_slice()) {
-        (Some(_), [depth]) => Some(*depth),
-        _ => None,
-    };
-    Some((diameter, depth))
+    }
 }
 
 fn project_shell(feature: &Feature) -> FeatureDefinition {
