@@ -9198,17 +9198,14 @@ fn relation_incidence(
         .iter()
         .filter(|triple| triple.relation_id == Some(relation_id))
         .filter_map(|triple| triple.skamp_id)
-        .collect::<BTreeSet<_>>();
-    if incidence_ids.len() != 1 {
+        .collect::<Vec<_>>();
+    let [incidence_id] = incidence_ids.as_slice() else {
         return None;
-    }
-    let incidence_id = *incidence_ids
-        .first()
-        .expect("single relation incidence id exists");
+    };
     let incidences = relations
         .skamps
         .iter()
-        .filter(|skamp| skamp.id == incidence_id)
+        .filter(|skamp| skamp.id == *incidence_id)
         .collect::<Vec<_>>();
     let [incidence] = incidences.as_slice() else {
         return None;
@@ -18820,6 +18817,39 @@ mod resolved_sketch_tests {
             offset: 82,
         });
         assert!(relation_incidence(&incomplete_triples, 8).is_none());
+        let mut duplicate_join = incidence_distance.clone();
+        let duplicate_relations = duplicate_join.relations.as_mut().expect("relations");
+        duplicate_relations
+            .triples
+            .push(crate::feature::FeatureRelationTriple {
+                offset: 83,
+                ..duplicate_relations.triples[0].clone()
+            });
+        duplicate_relations
+            .triples_header
+            .as_mut()
+            .expect("triples header")
+            .declared_count = 2;
+        assert!(relation_incidence(&duplicate_join, 8).is_none());
+        let mut null_join = incidence_distance.clone();
+        let null_relations = null_join.relations.as_mut().expect("relations");
+        null_relations
+            .triples
+            .push(crate::feature::FeatureRelationTriple {
+                relation_id: Some(8),
+                equation_id: None,
+                skamp_id: None,
+                offset: 83,
+            });
+        null_relations
+            .triples_header
+            .as_mut()
+            .expect("triples header")
+            .declared_count = 2;
+        assert_eq!(
+            relation_incidence(&null_join, 8).map(|row| row.id),
+            Some(81)
+        );
         incidence_distance
             .relations
             .as_mut()
