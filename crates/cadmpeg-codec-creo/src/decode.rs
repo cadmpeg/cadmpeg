@@ -8171,26 +8171,8 @@ fn transfer_resolved_circular_extrusion_breps(
             continue;
         }
         let sketch_id = SketchId(format!("creo:model:sketch#{}", transform.definition_id));
-        let Some(sketch) = ir
-            .model
-            .sketches
-            .iter()
-            .find(|sketch| sketch.id == sketch_id)
-        else {
-            continue;
-        };
-        let [profile] = sketch.profiles.as_slice() else {
-            continue;
-        };
-        let [entity_use] = profile.as_slice() else {
-            continue;
-        };
-        let Some(SketchGeometry::Circle { center, radius }) = ir
-            .model
-            .sketch_entities
-            .iter()
-            .find(|entity| entity.id == entity_use.entity && entity.sketch == sketch_id)
-            .map(|entity| entity.geometry.clone())
+        let Some((section_center, radius)) =
+            resolved_circular_extrusion_profile(scan, ir, transform, feature_id, &sketch_id)
         else {
             continue;
         };
@@ -8208,10 +8190,9 @@ fn transfer_resolved_circular_extrusion_breps(
         }
         let region_id = RegionId(format!("{prefix}:region"));
         let shell_id = ShellId(format!("{prefix}:shell"));
-        let section_center = [center.u, center.v];
         let center = section_point_in_model(transform, section_center);
         let seam =
-            std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius.0 * transform.u_axis[axis]);
+            std::array::from_fn::<_, 3, _>(|axis| center[axis] + radius * transform.u_axis[axis]);
         let sides = [("bottom", span.lower), ("top", span.upper)];
         let mut face_ids = Vec::new();
         let mut cap_coedges = Vec::new();
@@ -8231,7 +8212,7 @@ fn transfer_resolved_circular_extrusion_breps(
                 annotations,
                 PcurveId(format!("{prefix}:pcurve:{side}:cap")),
                 transform.offset,
-                circular_pcurve(section_center, radius.0, 0.0, std::f64::consts::TAU),
+                circular_pcurve(section_center, radius, 0.0, std::f64::consts::TAU),
             );
             let side_pcurve = add_extrusion_pcurve(
                 ir,
@@ -8279,7 +8260,7 @@ fn transfer_resolved_circular_extrusion_breps(
                         transform.u_axis[1],
                         transform.u_axis[2],
                     ),
-                    radius: radius.0,
+                    radius,
                 },
                 source_object: None,
             });
@@ -8364,7 +8345,7 @@ fn transfer_resolved_circular_extrusion_breps(
                     transform.u_axis[1],
                     transform.u_axis[2],
                 ),
-                radius: radius.0,
+                radius,
             },
             source_object: None,
         });
@@ -8433,6 +8414,68 @@ fn transfer_resolved_circular_extrusion_breps(
         transferred += 1;
     }
     transferred
+}
+
+fn resolved_circular_extrusion_profile(
+    scan: &ContainerScan,
+    ir: &CadIr,
+    transform: &crate::placement::FeatureSectionTransform,
+    feature_id: u32,
+    sketch_id: &SketchId,
+) -> Option<([f64; 2], f64)> {
+    if let Some(sketch) = ir
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id == *sketch_id)
+    {
+        if let [profile] = sketch.profiles.as_slice() {
+            if let [entity_use] = profile.as_slice() {
+                if let Some(SketchGeometry::Circle { center, radius }) = ir
+                    .model
+                    .sketch_entities
+                    .iter()
+                    .find(|entity| entity.id == entity_use.entity && entity.sketch == *sketch_id)
+                    .map(|entity| &entity.geometry)
+                {
+                    return Some(([center.u, center.v], radius.0));
+                }
+            }
+        }
+    }
+    let sweep = circular_sweep_geometry(scan, feature_id)?;
+    sweep
+        .section_definition_id
+        .is_none_or(|definition_id| definition_id == transform.definition_id)
+        .then_some(())?;
+    circular_section_profile_from_cylinder(transform, &sweep.geometry)
+}
+
+fn circular_section_profile_from_cylinder(
+    transform: &crate::placement::FeatureSectionTransform,
+    geometry: &SurfaceGeometry,
+) -> Option<([f64; 2], f64)> {
+    let SurfaceGeometry::Cylinder {
+        origin,
+        axis,
+        radius,
+        ..
+    } = geometry
+    else {
+        return None;
+    };
+    let axis = normalized([axis.x, axis.y, axis.z])?;
+    (dot(axis, transform.normal).abs() >= 1.0 - 1e-9 && radius.is_finite() && *radius > 0.0)
+        .then_some(())?;
+    let delta = [
+        origin.x - transform.origin[0],
+        origin.y - transform.origin[1],
+        origin.z - transform.origin[2],
+    ];
+    Some((
+        [dot(delta, transform.u_axis), dot(delta, transform.v_axis)],
+        *radius,
+    ))
 }
 
 fn transfer_resolved_extrusion_breps(
@@ -9726,9 +9769,18 @@ fn section_skamp_circular_entity(
     circular.then(|| sketch_entity_id(sketch, item.entity_id))
 }
 
+#[cfg(test)]
 fn section_skamp_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
+) -> Vec<(SketchConstraint, usize)> {
+    section_skamp_constraints_for_geometry(definition, sketch, None)
+}
+
+fn section_skamp_constraints_for_geometry(
+    definition: &crate::feature::FeatureDefinition,
+    sketch: &SketchId,
+    geometry: Option<&BTreeMap<SketchEntityId, SketchGeometry>>,
 ) -> Vec<(SketchConstraint, usize)> {
     let Some(relations) = &definition.relations else {
         return Vec::new();
@@ -9769,7 +9821,7 @@ fn section_skamp_constraints(
                         .collect(),
                 })
             };
-            let constraint_definition = if unique_skamp_id {
+            let mut constraint_definition = if unique_skamp_id {
                 match (skamp.kind, skamp.items.as_slice()) {
                     (0, [first, second])
                         if section_skamp_point_locus(definition, sketch, first).is_some()
@@ -9924,6 +9976,11 @@ fn section_skamp_constraints(
             } else {
                 native_constraint()?
             };
+            if geometry.is_some_and(|geometry| {
+                !sketch_constraint_loci_compatible(&constraint_definition, geometry)
+            }) {
+                constraint_definition = native_constraint()?;
+            }
             Some((
                 SketchConstraint {
                     id: if unique_skamp_id {
@@ -9948,6 +10005,63 @@ fn section_skamp_constraints(
             ))
         })
         .collect()
+}
+
+fn sketch_constraint_loci_compatible(
+    definition: &SketchConstraintDefinition,
+    geometry: &BTreeMap<SketchEntityId, SketchGeometry>,
+) -> bool {
+    let locus_compatible = |locus: &SketchLocus| {
+        let entity = match locus {
+            SketchLocus::Entity(entity)
+            | SketchLocus::Start(entity)
+            | SketchLocus::End(entity)
+            | SketchLocus::Center(entity) => entity,
+        };
+        geometry.get(entity).is_some_and(|geometry| match locus {
+            SketchLocus::Entity(_) => true,
+            SketchLocus::Start(_) | SketchLocus::End(_) => !matches!(
+                geometry,
+                SketchGeometry::Point { .. } | SketchGeometry::Circle { .. }
+            ),
+            SketchLocus::Center(_) => matches!(
+                geometry,
+                SketchGeometry::Circle { .. }
+                    | SketchGeometry::Arc { .. }
+                    | SketchGeometry::Ellipse { .. }
+            ),
+        })
+    };
+    match definition {
+        SketchConstraintDefinition::CoincidentLoci { loci }
+        | SketchConstraintDefinition::Group { elements: loci }
+        | SketchConstraintDefinition::Text { elements: loci, .. } => {
+            loci.iter().all(locus_compatible)
+        }
+        SketchConstraintDefinition::SameCoordinate { first, second, .. }
+        | SketchConstraintDefinition::TangentLoci { first, second }
+        | SketchConstraintDefinition::DistanceLoci { first, second, .. }
+        | SketchConstraintDefinition::HorizontalDistance { first, second, .. }
+        | SketchConstraintDefinition::VerticalDistance { first, second, .. } => {
+            locus_compatible(first) && locus_compatible(second)
+        }
+        SketchConstraintDefinition::Midpoint { point, .. }
+        | SketchConstraintDefinition::PointOnObject { point, .. } => locus_compatible(point),
+        SketchConstraintDefinition::Symmetric { first, second, .. } => {
+            locus_compatible(first) && locus_compatible(second)
+        }
+        SketchConstraintDefinition::PointSymmetric {
+            first,
+            second,
+            center,
+        } => locus_compatible(first) && locus_compatible(second) && locus_compatible(center),
+        SketchConstraintDefinition::SnellsLaw {
+            incident,
+            refracted,
+            ..
+        } => locus_compatible(incident) && locus_compatible(refracted),
+        _ => true,
+    }
 }
 
 fn section_entity_external_ids(definition: &crate::feature::FeatureDefinition) -> BTreeSet<u32> {
@@ -10911,6 +11025,10 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             .iter()
             .map(|entity| entity.id.clone())
             .collect::<BTreeSet<_>>();
+        let emitted_entity_geometry = entities
+            .iter()
+            .map(|entity| (entity.id.clone(), entity.geometry.clone()))
+            .collect::<BTreeMap<_, _>>();
         let mut constraints = segments
             .iter()
             .filter_map(|segment| {
@@ -10965,7 +11083,11 @@ fn transfer_sketches(scan: &ContainerScan, ir: &mut CadIr, annotations: &mut Ann
             );
             constraints.push(constraint);
         }
-        for (mut constraint, offset) in section_skamp_constraints(definition, &sketch_id) {
+        for (mut constraint, offset) in section_skamp_constraints_for_geometry(
+            definition,
+            &sketch_id,
+            Some(&emitted_entity_geometry),
+        ) {
             if !reconcile_constraint_entity_references(
                 &mut constraint.definition,
                 &emitted_entity_ids,
@@ -15309,6 +15431,63 @@ mod resolved_sketch_tests {
                 allow_multi_profile_faces: None,
             }
         );
+    }
+
+    #[test]
+    fn circular_sweep_cylinder_recovers_its_section_profile() {
+        let transform = crate::placement::FeatureSectionTransform {
+            definition_id: 917,
+            feature_id: Some(40),
+            origin: [1.0, 2.0, 3.0],
+            u_axis: [0.0, 0.0, -1.0],
+            v_axis: [1.0, 0.0, 0.0],
+            normal: [0.0, -1.0, 0.0],
+            offset: 20,
+        };
+        let cylinder = SurfaceGeometry::Cylinder {
+            origin: Point3::new(5.0, -14.0, 1.0),
+            axis: Vector3::new(0.0, 1.0, 0.0),
+            ref_direction: Vector3::new(1.0, 0.0, 0.0),
+            radius: 4.5,
+        };
+
+        assert_eq!(
+            circular_section_profile_from_cylinder(&transform, &cylinder),
+            Some(([2.0, 4.0], 4.5))
+        );
+        let mut off_axis = cylinder.clone();
+        let SurfaceGeometry::Cylinder { axis, .. } = &mut off_axis else {
+            unreachable!();
+        };
+        *axis = Vector3::new(1.0, 0.0, 0.0);
+        assert_eq!(
+            circular_section_profile_from_cylinder(&transform, &off_axis),
+            None
+        );
+    }
+
+    #[test]
+    fn typed_center_locus_requires_resolved_circular_geometry() {
+        let entity = SketchEntityId("creo:test:entity#1".into());
+        let definition = SketchConstraintDefinition::CoincidentLoci {
+            loci: vec![SketchLocus::Center(entity.clone())],
+        };
+        let unresolved = BTreeMap::from([(
+            entity.clone(),
+            SketchGeometry::Native {
+                native_kind: "arc".into(),
+            },
+        )]);
+        assert!(!sketch_constraint_loci_compatible(&definition, &unresolved));
+
+        let resolved = BTreeMap::from([(
+            entity,
+            SketchGeometry::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length(1.0),
+            },
+        )]);
+        assert!(sketch_constraint_loci_compatible(&definition, &resolved));
     }
 
     #[test]
