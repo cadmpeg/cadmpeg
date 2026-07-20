@@ -1649,7 +1649,7 @@ struct CreoPositionalCylinderFrame {
     axis: [f64; 3],
     ref_direction: [f64; 3],
     radius: f64,
-    length: f64,
+    length: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -13990,12 +13990,13 @@ fn compact_simple_hole_geometry(
     )?;
     let frame = crate::surface::unique_surface_parameter(&scan.surface_parameters, cylinder_id)?
         .positional_cylinder_frame?;
+    let length = frame.length?;
     Some(SimpleHoleGeometry {
         entry_surface_id: None,
         cylinder_ids: vec![cylinder_id],
         direction: frame.axis,
         extent: Extent::Blind {
-            length: Length(frame.length),
+            length: Length(length),
         },
         geometry: SurfaceGeometry::Cylinder {
             origin: Point3::new(frame.origin[0], frame.origin[1], frame.origin[2]),

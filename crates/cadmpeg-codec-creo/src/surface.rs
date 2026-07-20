@@ -299,7 +299,7 @@ pub struct TabulatedCylinderFrame {
     pub prefixes: [u8; 6],
 }
 
-/// Complete model-space carrier and axial extent from a positional cylinder row.
+/// Complete model-space carrier and optional axial extent from a positional cylinder row.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PositionalCylinderFrame {
     /// Model-space origin at one axial end of the bounded cylinder.
@@ -310,8 +310,8 @@ pub struct PositionalCylinderFrame {
     pub ref_direction: [f64; 3],
     /// Cylinder radius.
     pub radius: f64,
-    /// Positive distance between the axial ends.
-    pub length: f64,
+    /// Positive distance between axial ends when the body stores an extent.
+    pub length: Option<f64>,
 }
 
 /// Six-slot outline frame in a positional torus-or-sphere body.
@@ -1693,6 +1693,7 @@ fn decode_positional_cylinder_frame(
     decode_local_system_cylinder_frame(body, cache)
         .or_else(|| decode_zero_support_cylinder_frame(body, cache))
         .or_else(|| decode_referenced_planar_envelope_cylinder_frame(body, cache))
+        .or_else(|| decode_held_axis_cylinder_frame(body, cache))
         .or_else(|| decode_compact_axis_aligned_cylinder_frame(body, cache))
         .or_else(|| decode_directrix_lane_axis_aligned_cylinder_frame(body, cache))
 }
@@ -1757,7 +1758,56 @@ fn decode_referenced_planar_envelope_cylinder_frame(
         axis: [0.0, axial_sign, 0.0],
         ref_direction: [radial_sign, 0.0, 0.0],
         radius,
-        length,
+        length: Some(length),
+    })
+}
+
+fn decode_held_axis_cylinder_frame(
+    body: &[u8],
+    cache: &scalar::ScalarCache,
+) -> Option<PositionalCylinderFrame> {
+    body.starts_with(&[0x11, 0x18, 0x13]).then_some(())?;
+    let mut cursor = 3;
+    let decode = |cursor| {
+        let (value, next) =
+            scalar::decode_tabulated_cylinder_first_coordinate(body, cursor, cache)?;
+        value.is_finite().then_some(())?;
+        Some((value, next))
+    };
+    let (held, next) = decode(cursor)?;
+    cursor = next;
+    let (first_radial, next) = decode(cursor)?;
+    cursor = next;
+    (body.get(cursor) == Some(&0x10)).then_some(())?;
+    cursor += 1;
+    let (first_axial, next) = decode(cursor)?;
+    cursor = next;
+    let (second_radial, next) = decode(cursor)?;
+    cursor = next;
+    (body.get(cursor) == Some(&0x19)).then_some(())?;
+    let (_, next) = scalar::decode_model_reference_coordinate(body, cursor, cache)?;
+    cursor = next;
+    let (second_axial, next) = decode(cursor)?;
+    cursor = next;
+    (body.get(cursor..) == Some(&[0xf7, 0x17])).then_some(())?;
+
+    let scale = [held, first_radial, first_axial, second_radial, second_axial]
+        .into_iter()
+        .map(f64::abs)
+        .fold(1.0, f64::max);
+    ((second_axial - first_axial).abs() <= 1e-9 * scale).then_some(())?;
+    let radius = 0.5 * (second_radial - first_radial).abs();
+    (radius > 0.0).then_some(())?;
+    Some(PositionalCylinderFrame {
+        origin: [
+            f64::midpoint(first_radial, second_radial),
+            held,
+            second_axial,
+        ],
+        axis: [0.0, 0.0, 1.0],
+        ref_direction: [(second_radial - first_radial).signum(), 0.0, 0.0],
+        radius,
+        length: None,
     })
 }
 
@@ -1838,7 +1888,7 @@ fn decode_local_system_cylinder_frame(
         axis,
         ref_direction,
         radius,
-        length,
+        length: Some(length),
     })
 }
 
@@ -1917,7 +1967,7 @@ fn decode_zero_support_cylinder_frame(
         axis,
         ref_direction,
         radius,
-        length,
+        length: Some(length),
     })
 }
 
@@ -2063,7 +2113,7 @@ fn axis_aligned_cylinder_from_corners(
         axis,
         ref_direction,
         radius,
-        length,
+        length: Some(length),
     })
 }
 
@@ -3342,7 +3392,7 @@ mod tests {
         assert_eq!(frame.axis, [1.0, 0.0, 0.0]);
         assert_eq!(frame.ref_direction, [0.0, 1.0, 0.0]);
         assert!((frame.radius - 0.75).abs() < 1e-12);
-        assert!((frame.length - 0.4).abs() < 1e-12);
+        assert!((frame.length.expect("axial extent") - 0.4).abs() < 1e-12);
 
         let positive_x = [
             17, 24, 19, 41, 217, 153, 41, 255, 255, 45, 53, 12, 204, 204, 204, 204, 205, 67, 232,
@@ -3364,7 +3414,7 @@ mod tests {
         assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
         assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
         assert!((frame.radius - 1.5).abs() < 1e-12);
-        assert!((frame.length - 1.7).abs() < 1e-12);
+        assert!((frame.length.expect("axial extent") - 1.7).abs() < 1e-12);
 
         let directrix_lane = [
             17, 24, 19, 135, 122, 225, 71, 174, 20, 123, 71, 0, 204, 45, 45, 20, 122, 225, 71, 174,
@@ -3378,7 +3428,7 @@ mod tests {
         assert_eq!(frame.axis, [0.0, 0.0, -1.0]);
         assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
         assert!((frame.radius - 2.1).abs() < 1e-12);
-        assert!((frame.length - 1.68).abs() < 1e-12);
+        assert!((frame.length.expect("axial extent") - 1.68).abs() < 1e-12);
 
         let forward_trailer = [
             17, 24, 19, 114, 174, 20, 122, 225, 71, 174, 199, 163, 215, 10, 61, 112, 164, 70, 47,
@@ -3410,7 +3460,7 @@ mod tests {
         assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert_eq!(frame.radius, 3.5);
-        assert_eq!(frame.length, 8.5);
+        assert_eq!(frame.length, Some(8.5));
 
         let zero_support = [
             17, 24, 19, 47, 32, 0, 72, 42, 128, 72, 16, 0, 67, 232, 0, 72, 39, 128, 47, 16, 0, 25,
@@ -3424,7 +3474,7 @@ mod tests {
         assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert_eq!(frame.radius, 0.75);
-        assert_eq!(frame.length, 8.0);
+        assert_eq!(frame.length, Some(8.0));
 
         let referenced_planar_envelope = [
             17, 24, 19, 47, 48, 0, 71, 17, 204, 24, 50, 195, 162, 112, 229, 160, 63, 250, 46, 17,
@@ -3439,7 +3489,7 @@ mod tests {
         assert_eq!(frame.axis, [0.0, 1.0, 0.0]);
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert!((frame.radius - 4.45).abs() < 1e-12);
-        assert_eq!(frame.length, 16.0);
+        assert_eq!(frame.length, Some(16.0));
 
         let reversed_referenced_planar_envelope = [
             17, 24, 19, 46, 17, 255, 71, 19, 204, 70, 48, 189, 112, 163, 215, 10, 62, 50, 197, 215,
@@ -3457,7 +3507,21 @@ mod tests {
         assert_eq!(frame.axis, [0.0, -1.0, 0.0]);
         assert_eq!(frame.ref_direction, [-1.0, 0.0, 0.0]);
         assert!((frame.radius - 4.95).abs() < 1e-12);
-        assert!((frame.length - 4.5).abs() < 1e-12);
+        assert!((frame.length.expect("axial extent") - 4.5).abs() < 1e-12);
+
+        let held_axis = [
+            17, 24, 19, 15, 70, 68, 166, 102, 102, 102, 102, 102, 16, 67, 224, 0, 70, 67, 166, 102,
+            102, 102, 102, 102, 25, 161, 166, 38, 51, 20, 92, 7, 14, 247, 23,
+        ];
+        let frame = decode_positional_cylinder_frame(&held_axis, &scalar::ScalarCache::default())
+            .expect("complete held-axis cylinder");
+        assert!((frame.origin[0] + 40.3).abs() < 1e-12);
+        assert_eq!(frame.origin[1], 0.0);
+        assert!((frame.origin[2] + 0.5).abs() < 1e-12);
+        assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert!((frame.radius - 1.0).abs() < 1e-12);
+        assert_eq!(frame.length, None);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;

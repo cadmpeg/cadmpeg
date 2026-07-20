@@ -343,6 +343,18 @@ first radial bound toward the second. A terminal `f7 17` or `f7 19` reverses
 both directions while retaining the second-bound origin. The model-reference
 token does not contribute a geometric coordinate.
 
+A held-axis positional cylinder begins `11 18 13` and stores one held
+coordinate, first radial bound, the literal separator `10`, first axial
+coordinate, second radial bound, one complete `19` model-reference token,
+second axial coordinate, and the exact trailer `f7 17`. Coordinates use the
+first tabulated-cylinder directrix-coordinate lane. The two axial coordinates
+are equal and the radial bounds are distinct. In model XYZ order, the radial
+midpoint, held coordinate, and common axial coordinate define the origin. The
+axis is positive Z, the reference direction points from the first radial bound
+toward the second, and half the radial span is the radius. This body defines an
+unbounded analytic carrier and does not define an axial extent. The
+model-reference token does not contribute a geometric coordinate.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.

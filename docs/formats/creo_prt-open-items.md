@@ -29,8 +29,8 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   symmetric, and two-sided travel.
 - Model-space analytic equations for remaining non-plane surface rows are
   unspecified, including positional cylinder variants outside the defined
-  local-system, compact axis-aligned, and referenced planar-envelope bodies and
-  cone apex and axis.
+  local-system, compact axis-aligned, referenced planar-envelope, and held-axis
+  bodies and cone apex and axis.
 - Round and fillet byte semantics are unspecified, including non-prismatic radii, flank geometry, and generated face bindings.
 - The negative DICT prefix lattice for scalar lanes that block geometry records is unspecified.
 
