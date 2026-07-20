@@ -50,6 +50,12 @@ This document records unresolved PSB byte semantics outside [creo_prt.md](creo_p
   `ed ba 10 0c 8d ee 90 b4 0c` solver sentinel are unspecified.
 - The geometric roles and selection order of multiple feature-definition `local_sys` and `transf` twelve-slot frames are unspecified.
 - The entity/locus roles of the three decoded four-slot `relat_ptr` operand vectors are unspecified.
+- The join from a `var_arr` value using the dimension-driven scalar sentinel to
+  the dimension relation that drives that solver variable is unspecified.
+  `uvar_id`, point key, relation identifier, relation dimension selector, and
+  external dimension identifier occupy distinct namespaces.
+- The semantics of the multi-valued `relat_ptr` `used` field are unspecified.
+  It is solver state, not a Boolean constraint-activation flag.
 - The geometry families and external-reference bindings of solver-only
   `skamp_ptr` entity identifiers are unspecified.
 - The DEPDB sweep-axis relation for parts without `ActDatums` is unspecified,
