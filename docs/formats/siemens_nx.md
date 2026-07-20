@@ -146,9 +146,10 @@ the feature-history record-area boundary.
 header `31 00 00 01 00 14 2f a4 7a e1 47 ae 14 7b 03 00 00 e0 7f ff ff ff 01 01`,
 then a target list and a tool list separated and terminated by `00`. Each list
 is encoded as `01 count:u8 refs`, contains `count - 1` object indices using the
-operation-header index encoding, and contains no null indices. The target list
-contains exactly one reference. The tool list contains at least one reference
-and preserves tool order.
+operation-header index encoding, and contains no null indices. Every reference
+retains its exact object-index token and offset. The target list contains exactly
+one reference. The tool list contains at least one reference and preserves tool
+order.
 
 Each of these labels projects as a neutral combine with join, cut, or intersect
 semantics respectively. A complete Boolean header supplies the target and

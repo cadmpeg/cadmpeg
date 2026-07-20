@@ -2778,7 +2778,7 @@ fn decode_retains_ordered_ug_part_segment_index_rows() {
         .decode(&mut Cursor::new(file), &DecodeOptions::default())
         .unwrap();
     let namespace = result.ir.native.namespace("nx").expect("NX namespace");
-    assert_eq!(namespace.version, 150);
+    assert_eq!(namespace.version, 151);
     let rows = namespace
         .arena_as::<crate::native::SegmentIndexRow>("segment_index_rows")
         .unwrap();
@@ -7186,7 +7186,11 @@ fn feature_body_lineage_excludes_tools_consumed_after_their_latest_writer() {
         operation_label: "operation#2".to_string(),
         kind: FeatureBooleanKind::Unite,
         target_object_index: 10,
+        raw_target_object_index: vec![10],
+        target_source_offset: 0,
         tool_object_indices: vec![20],
+        raw_tool_object_indices: vec![vec![20]],
+        tool_source_offsets: vec![0],
         source_offset: 0,
     }];
 
@@ -7303,7 +7307,11 @@ fn feature_body_lineage_continues_across_ordered_history_sections() {
         operation_label: "operation#late".to_string(),
         kind: FeatureBooleanKind::Unite,
         target_object_index: 10,
+        raw_target_object_index: vec![10],
+        target_source_offset: 1,
         tool_object_indices: vec![20],
+        raw_tool_object_indices: vec![vec![20]],
+        tool_source_offsets: vec![1],
         source_offset: 1,
     }];
 
@@ -7351,7 +7359,11 @@ fn segment_body_lineage_statuses_cover_every_bound_image() {
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
         target_object_index: 10,
+        raw_target_object_index: vec![10],
+        target_source_offset: 1,
         tool_object_indices: vec![21],
+        raw_tool_object_indices: vec![vec![21]],
+        tool_source_offsets: vec![1],
         source_offset: 1,
     }];
     let binding =
@@ -7437,7 +7449,11 @@ fn feature_body_lineage_treats_segment_tuple_indices_as_one_identity() {
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
         target_object_index: 10,
+        raw_target_object_index: vec![10],
+        target_source_offset: 0,
         tool_object_indices: vec![94],
+        raw_tool_object_indices: vec![vec![94]],
+        tool_source_offsets: vec![0],
         source_offset: 0,
     }];
     let bindings = [SegmentBodyBinding {
@@ -7492,7 +7508,11 @@ fn feature_body_lineage_closes_overlapping_alias_pairs_transitively() {
         operation_label: "operation#1".to_string(),
         kind: FeatureBooleanKind::Unite,
         target_object_index: 99,
+        raw_target_object_index: vec![99],
+        target_source_offset: 1,
         tool_object_indices: vec![10],
+        raw_tool_object_indices: vec![vec![10]],
+        tool_source_offsets: vec![1],
         source_offset: 1,
     }];
     let binding = |id: &str, stream_ordinal, body, alias| SegmentBodyBinding {
@@ -9241,7 +9261,33 @@ fn om_boolean_operations_decode_counted_target_and_tools() {
         crate::om::BooleanOperationKind::Subtract
     );
     assert_eq!(operations[0].target, 6494);
+    assert_eq!(operations[0].raw_target, [0x90, 0x19, 0x5e]);
+    assert_eq!(
+        operations[0].target_offset,
+        100 + bytes
+            .windows(3)
+            .position(|window| window == [0x90, 0x19, 0x5e])
+            .unwrap()
+    );
     assert_eq!(operations[0].tools, [6495, 6468, 6467, 6496]);
+    assert_eq!(
+        operations[0].raw_tools,
+        [
+            vec![0x90, 0x19, 0x5f],
+            vec![0x90, 0x19, 0x44],
+            vec![0x90, 0x19, 0x43],
+            vec![0x90, 0x19, 0x60],
+        ]
+    );
+    assert_eq!(
+        operations[0].tool_offsets,
+        [0x5f, 0x44, 0x43, 0x60].map(|low| {
+            100 + bytes
+                .windows(3)
+                .position(|window| window == [0x90, 0x19, low])
+                .unwrap()
+        })
+    );
 
     let mut invalid = bytes.to_vec();
     *invalid.last_mut().unwrap() = 1;
@@ -13449,7 +13495,7 @@ fn decode_retains_typed_nx_numeric_expression() {
         .expect("NX namespace")
         .arena_as::<crate::native::Expression>("expressions")
         .unwrap();
-    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 150);
+    assert_eq!(result.ir.native.namespace("nx").unwrap().version, 151);
     assert_eq!(expressions.len(), 1);
     assert_eq!(expressions[0].object_id, Some(0x102));
     assert_eq!(expressions[0].parameter_index, Some(8));

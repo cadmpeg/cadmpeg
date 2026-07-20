@@ -6314,8 +6314,16 @@ pub struct FeatureBooleanOperation {
     pub kind: FeatureBooleanKind,
     /// Object index of the target body.
     pub target_object_index: u32,
+    /// Exact serialized target object-index token.
+    pub raw_target_object_index: Vec<u8>,
+    /// Absolute file offset of the target object-index token.
+    pub target_source_offset: u64,
     /// Ordered object indices of the tool bodies.
     pub tool_object_indices: Vec<u32>,
+    /// Exact serialized tool object-index tokens in tool order.
+    pub raw_tool_object_indices: Vec<Vec<u8>>,
+    /// Absolute file offsets of the tool object-index tokens in tool order.
+    pub tool_source_offsets: Vec<u64>,
     /// Absolute file offset of the operation label tag.
     pub source_offset: u64,
 }
@@ -6503,7 +6511,15 @@ pub fn feature_boolean_operations(container: &Container) -> Vec<FeatureBooleanOp
                 operation_label,
                 kind,
                 target_object_index: operation.target,
+                raw_target_object_index: operation.raw_target,
+                target_source_offset: entry_offset + operation.target_offset as u64,
                 tool_object_indices: operation.tools,
+                raw_tool_object_indices: operation.raw_tools,
+                tool_source_offsets: operation
+                    .tool_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
                 source_offset: entry_offset + operation.offset as u64,
             });
         }

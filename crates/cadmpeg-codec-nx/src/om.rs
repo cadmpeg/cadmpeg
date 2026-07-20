@@ -1453,8 +1453,16 @@ pub struct BooleanOperation {
     pub kind: BooleanOperationKind,
     /// Object index of the target body.
     pub target: u32,
+    /// Exact serialized target object-index token.
+    pub raw_target: Vec<u8>,
+    /// Absolute offset of the target object-index token.
+    pub target_offset: usize,
     /// Ordered object indices of the tool bodies.
     pub tools: Vec<u32>,
+    /// Exact serialized tool object-index tokens in tool order.
+    pub raw_tools: Vec<Vec<u8>>,
+    /// Absolute offsets of the tool object-index tokens in tool order.
+    pub tool_offsets: Vec<usize>,
 }
 
 impl<'a> IndexedSection<'a> {
@@ -4074,25 +4082,37 @@ pub fn boolean_operations(bytes: &[u8], base_offset: usize) -> Vec<BooleanOperat
                 return None;
             }
             let (targets, next) =
-                counted_feature_object_indices(bytes, label_end + BODY_HEADER.len())?;
+                counted_feature_object_indices(bytes, base_offset, label_end + BODY_HEADER.len())?;
             if targets.len() != 1 || bytes.get(next) != Some(&0) {
                 return None;
             }
-            let (tools, end) = counted_feature_object_indices(bytes, next + 1)?;
+            let (tools, end) = counted_feature_object_indices(bytes, base_offset, next + 1)?;
             if tools.is_empty() || bytes.get(end) != Some(&0) {
                 return None;
             }
+            let target = targets.into_iter().next()?;
             Some(BooleanOperation {
                 offset: label.offset,
                 kind,
-                target: targets[0],
-                tools,
+                target: target.object_index,
+                raw_target: target.raw_object_index,
+                target_offset: target.offset,
+                tools: tools.iter().map(|tool| tool.object_index).collect(),
+                raw_tools: tools
+                    .iter()
+                    .map(|tool| tool.raw_object_index.clone())
+                    .collect(),
+                tool_offsets: tools.iter().map(|tool| tool.offset).collect(),
             })
         })
         .collect()
 }
 
-fn counted_feature_object_indices(bytes: &[u8], at: usize) -> Option<(Vec<u32>, usize)> {
+fn counted_feature_object_indices(
+    bytes: &[u8],
+    base_offset: usize,
+    at: usize,
+) -> Option<(Vec<PayloadObjectReference>, usize)> {
     if bytes.get(at) != Some(&0x01) {
         return None;
     }
@@ -4101,7 +4121,11 @@ fn counted_feature_object_indices(bytes: &[u8], at: usize) -> Option<(Vec<u32>, 
     let mut values = Vec::with_capacity(count);
     for _ in 0..count {
         let (value, next) = feature_object_index(bytes, cursor)?;
-        values.push(value?);
+        values.push(PayloadObjectReference {
+            offset: base_offset + cursor,
+            object_index: value?,
+            raw_object_index: bytes.get(cursor..next)?.to_vec(),
+        });
         cursor = next;
     }
     Some((values, cursor))
