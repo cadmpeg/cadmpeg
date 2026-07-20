@@ -25754,26 +25754,6 @@ fn transfer_native_brep(
         .map(|binding| (binding.half_edge, binding))
         .collect::<BTreeMap<_, _>>();
     let solved_vertices = solved_topological_vertices(scan, ir, &carriers);
-    for (vertex_id, position) in &solved_vertices {
-        let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
-        if ir.model.points.iter().any(|point| point.id == point_id) {
-            continue;
-        }
-        annotate(
-            annotations,
-            &point_id,
-            "VisibGeom",
-            0,
-            "topological_vertex_point",
-            Exactness::Derived,
-        );
-        ir.model.points.push(Point {
-            id: point_id,
-            position: Point3::new(position[0], position[1], position[2]),
-            source_object: None,
-        });
-    }
-    let solved_point_count = solved_vertices.len();
     let mut native_pcurves = NativePcurveCandidates::new();
     for (curve_id, faces, face_0_endpoints, face_1_endpoints, offset) in scan
         .pcurves
@@ -25880,8 +25860,13 @@ fn transfer_native_brep(
         })
         .copied()
         .collect::<BTreeSet<_>>();
-    let emitted_curves = edge_vertices.keys().copied().collect::<BTreeSet<_>>();
-    let used_vertices = solved_vertices.keys().copied().collect::<BTreeSet<_>>();
+    let emitted_curves = face_curves.clone();
+    let used_vertices = emitted_curves
+        .iter()
+        .filter_map(|curve| edge_vertices.get(curve))
+        .flatten()
+        .copied()
+        .collect::<BTreeSet<_>>();
     let row_offsets = scan
         .curve_topology_rows
         .iter()
@@ -25892,12 +25877,27 @@ fn transfer_native_brep(
         .map(|row| (row.id, row.faces))
         .collect::<BTreeMap<_, _>>();
 
+    let solved_point_count = used_vertices.len();
     for vertex_id in used_vertices {
         let point_id = PointId(format!("creo:visibgeom:point#{vertex_id}"));
         let vertex = VertexId(format!("creo:visibgeom:vertex#{vertex_id}"));
         if ir.model.vertices.iter().any(|item| item.id == vertex) {
             continue;
         }
+        annotate(
+            annotations,
+            &point_id,
+            "VisibGeom",
+            0,
+            "topological_vertex_point",
+            Exactness::Derived,
+        );
+        let position = solved_vertices[&vertex_id];
+        ir.model.points.push(Point {
+            id: point_id.clone(),
+            position: Point3::new(position[0], position[1], position[2]),
+            source_object: None,
+        });
         annotate(
             annotations,
             &vertex,
@@ -26347,60 +26347,6 @@ fn transfer_native_brep(
                 }
             }
         }
-    }
-    let wire_curves = emitted_curves
-        .difference(&face_curves)
-        .copied()
-        .collect::<BTreeSet<_>>();
-    let edge_vertices_used = emitted_curves
-        .iter()
-        .filter_map(|curve| edge_vertices.get(curve))
-        .flatten()
-        .copied()
-        .collect::<BTreeSet<_>>();
-    let free_vertices = solved_vertices
-        .keys()
-        .filter(|vertex| !edge_vertices_used.contains(vertex))
-        .copied()
-        .collect::<BTreeSet<_>>();
-    if !wire_curves.is_empty() || !free_vertices.is_empty() {
-        let body_id = BodyId("creo:visibgeom:body#wire".to_string());
-        let region_id = RegionId("creo:visibgeom:region#wire".to_string());
-        let shell_id = ShellId("creo:visibgeom:shell#wire".to_string());
-        for (id, tag) in [
-            (body_id.to_string(), "native_wire_body"),
-            (region_id.to_string(), "native_wire_region"),
-            (shell_id.to_string(), "native_wire_shell"),
-        ] {
-            annotate(annotations, id, "VisibGeom", 0, tag, Exactness::Derived);
-        }
-        ir.model.bodies.push(Body {
-            id: body_id.clone(),
-            kind: BodyKind::Wire,
-            regions: vec![region_id.clone()],
-            transform: None,
-            name: None,
-            color: None,
-            visible: None,
-        });
-        ir.model.regions.push(Region {
-            id: region_id.clone(),
-            body: body_id,
-            shells: vec![shell_id.clone()],
-        });
-        ir.model.shells.push(Shell {
-            id: shell_id,
-            region: region_id,
-            faces: Vec::new(),
-            wire_edges: wire_curves
-                .iter()
-                .map(|curve| EdgeId(format!("creo:visibgeom:edge#{curve}")))
-                .collect(),
-            free_vertices: free_vertices
-                .iter()
-                .map(|vertex| VertexId(format!("creo:visibgeom:vertex#{vertex}")))
-                .collect(),
-        });
     }
     (solved_point_count, emitted_curves.len())
 }
