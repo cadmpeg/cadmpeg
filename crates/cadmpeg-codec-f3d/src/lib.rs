@@ -1492,6 +1492,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                         design::DesignFeatureFamily::Fillet
                             | design::DesignFeatureFamily::Chamfer
                             | design::DesignFeatureFamily::Revolve
+                            | design::DesignFeatureFamily::Loft
                     )
                 ) && usize::try_from(operand.scope_reference_ordinal)
                     .ok()

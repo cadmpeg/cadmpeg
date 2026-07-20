@@ -15152,6 +15152,7 @@ pub fn decode_edge_operands(
                 DesignFeatureFamily::Fillet
                     | DesignFeatureFamily::Chamfer
                     | DesignFeatureFamily::Revolve
+                    | DesignFeatureFamily::Loft
             )
         )
     }) {
