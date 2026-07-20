@@ -377,7 +377,7 @@ fn sketch_input_entities(payload: &[u8], parent: &str) -> Vec<SketchInputEntity>
                 SketchInputKind::LineOrCircle
             } else if coordinates_m.is_none()
                 && (marker_is_selected_construction_line(payload, offset)
-                    || compact_extended_curve_endpoint_indices(payload, offset).is_some())
+                    || compact_curve_endpoint_indices(payload, offset).is_some())
             {
                 SketchInputKind::LineOrCircle
             } else if coordinates_m.is_none()
@@ -699,6 +699,16 @@ fn indexed_profile_coordinate_candidate(payload: &[u8], offset: usize) -> bool {
             }
             &[134, 138, 140]
         }
+        Some(prefix)
+            if prefix == SKETCH_MARKER && marker_native_code(payload, offset) == Some(0) =>
+        {
+            if marker_profile_curve_role(payload, offset) != Some(1)
+                || marker_object_index(payload, offset).is_none()
+            {
+                return false;
+            }
+            &[134]
+        }
         _ => return false,
     };
     record_sizes
@@ -756,12 +766,12 @@ mod marker_tests {
         bounded_profile_axis_endpoints, compact_body_component_path_at, compact_body_path_at,
         compact_body_retention_mode, compact_body_selection_at, compact_body_selection_vector,
         compact_body_state_ids, compact_bounded_curve_tangent, compact_combine_operation_at,
-        compact_component_plane_frame, compact_edge_component_path_at, compact_edge_selection_at,
-        compact_extended_curve_endpoint_indices, compact_extrusion_blind_through_all_second_at,
-        compact_extrusion_mid_plane_at, compact_extrusion_offset_from_face_at,
-        compact_extrusion_through_all_at, compact_extrusion_through_all_both_at,
-        compact_extrusion_through_next_at, compact_extrusion_to_face_at,
-        compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
+        compact_component_plane_frame, compact_curve_endpoint_indices,
+        compact_edge_component_path_at, compact_edge_selection_at,
+        compact_extrusion_blind_through_all_second_at, compact_extrusion_mid_plane_at,
+        compact_extrusion_offset_from_face_at, compact_extrusion_through_all_at,
+        compact_extrusion_through_all_both_at, compact_extrusion_through_next_at,
+        compact_extrusion_to_face_at, compact_extrusion_to_vertex_at, compact_general_curve_ref_at,
         compact_indexed_curve_endpoint_indices, compact_legacy_curve_endpoint_indices,
         compact_legacy_selected_axis_endpoint_indices, compact_line_chain_addresses,
         compact_line_region_addresses, compact_offset_plane_source,
@@ -3021,29 +3031,27 @@ mod marker_tests {
     }
 
     #[test]
-    fn compact_extended_curve_uses_one_based_endpoint_indices() {
-        let mut payload = vec![0; 84 + LEGACY_EXTENDED_SKETCH_MARKER.len()];
-        payload[..LEGACY_EXTENDED_SKETCH_MARKER.len()]
-            .copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
-        payload[5..13].fill(0xff);
-        payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
-        payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
-        payload[27..29].copy_from_slice(&2u16.to_le_bytes());
-        payload[35..39].copy_from_slice(&[0x00, 0x00, 0x0d, 0x00]);
-        payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
-        payload[56..58].copy_from_slice(&6u16.to_le_bytes());
-        payload[58..60].copy_from_slice(&11u16.to_le_bytes());
-        payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
-        payload[84..].copy_from_slice(LEGACY_EXTENDED_SKETCH_MARKER);
+    fn compact_curve_uses_one_based_endpoint_indices() {
+        for prefix in [LEGACY_EXTENDED_SKETCH_MARKER, SKETCH_MARKER] {
+            let mut payload = vec![0; 84 + prefix.len()];
+            payload[..prefix.len()].copy_from_slice(prefix);
+            payload[5..13].fill(0xff);
+            payload[13..17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+            payload[23..27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+            payload[27..29].copy_from_slice(&2u16.to_le_bytes());
+            payload[35..39].copy_from_slice(&[0x00, 0x00, 0x0d, 0x00]);
+            payload[48..56].copy_from_slice(&1.0f64.to_le_bytes());
+            payload[56..58].copy_from_slice(&6u16.to_le_bytes());
+            payload[58..60].copy_from_slice(&11u16.to_le_bytes());
+            payload[64..72].copy_from_slice(&(-1.0f64).to_le_bytes());
+            payload[84..].copy_from_slice(prefix);
 
-        assert_eq!(
-            compact_extended_curve_endpoint_indices(&payload, 0),
-            Some([7, 12])
-        );
-        assert_eq!(
-            sketch_input_entities(&payload, "lane")[0].kind,
-            SketchInputKind::LineOrCircle
-        );
+            assert_eq!(compact_curve_endpoint_indices(&payload, 0), Some([7, 12]));
+            assert_eq!(
+                sketch_input_entities(&payload, "lane")[0].kind,
+                SketchInputKind::LineOrCircle
+            );
+        }
     }
 
     #[test]
@@ -3199,6 +3207,24 @@ mod marker_tests {
 
             assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
         }
+    }
+
+    #[test]
+    fn current_indexed_profile_point_decodes_compact_coordinates() {
+        let offset = 4;
+        let mut payload = vec![0; offset + 134 + SKETCH_MARKER.len()];
+        payload[..offset].copy_from_slice(&5u32.to_le_bytes());
+        payload[offset..offset + SKETCH_MARKER.len()].copy_from_slice(SKETCH_MARKER);
+        payload[offset + 5..offset + 13].fill(0xff);
+        payload[offset + 13..offset + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+        payload[offset + 23..offset + 27].copy_from_slice(&[0x04, 0x00, 0x02, 0x00]);
+        payload[offset + 27..offset + 29].copy_from_slice(&1u16.to_le_bytes());
+        payload[offset + 56..offset + 58].copy_from_slice(&[0x1e, 0x00]);
+        payload[offset + 58..offset + 66].copy_from_slice(&1.25f64.to_le_bytes());
+        payload[offset + 66..offset + 74].copy_from_slice(&(-2.5f64).to_le_bytes());
+        payload[offset + 134..].copy_from_slice(SKETCH_MARKER);
+
+        assert_eq!(marker_coordinates(&payload, offset), Some([1.25, -2.5]));
     }
 
     #[test]
@@ -19917,7 +19943,7 @@ fn roster_curve_endpoint_markers<'a>(
         .or_else(|| legacy_coordinate_roster_selected_axis_endpoint_indices(payload, offset))
         .or_else(|| compact_legacy_selected_axis_endpoint_indices(payload, offset))
         .or_else(|| alternate_current_selected_axis_endpoint_indices(payload, offset))
-        .or_else(|| compact_extended_curve_endpoint_indices(payload, offset))
+        .or_else(|| compact_curve_endpoint_indices(payload, offset))
         .or_else(|| extended_horizontal_axis_endpoint_indices(payload, offset))
         .or_else(|| current_vertical_axis_endpoint_indices(payload, offset))
         .or_else(|| extended_wide_horizontal_relation_endpoint_indices(payload, offset))
@@ -20006,10 +20032,11 @@ fn roster_curve_endpoint_markers<'a>(
         .collect()
 }
 
-fn compact_extended_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
-    if payload.get(offset..offset + LEGACY_EXTENDED_SKETCH_MARKER.len())
-        != Some(LEGACY_EXTENDED_SKETCH_MARKER)
-        || marker_native_code(payload, offset) != Some(0)
+fn compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
+    if !matches!(
+        payload.get(offset..offset + SKETCH_MARKER.len()),
+        Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER || prefix == SKETCH_MARKER
+    ) || marker_native_code(payload, offset) != Some(0)
         || !matches!(
             payload.get(offset + 23..offset + 27),
             Some(locus) if locus == [0x04, 0x00, 0x02, 0x00] || locus == [0x05, 0x00, 0x01, 0x00]
