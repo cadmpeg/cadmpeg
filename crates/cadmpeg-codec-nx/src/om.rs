@@ -1173,10 +1173,12 @@ pub struct DraftConstructionBinary32Lane {
 }
 
 /// Compact object frame in a bounded offset-store block.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataBlockObjectFrame {
     /// Serialized persistent object ID.
     pub object_id: u32,
+    /// Exact serialized compact object-index token.
+    pub raw_object_id: Vec<u8>,
     /// Block-relative offset of the compact index.
     pub offset: usize,
 }
@@ -3775,7 +3777,11 @@ pub fn data_block_object_frames(bytes: &[u8]) -> Vec<DataBlockObjectFrame> {
             offset += 1;
             continue;
         }
-        references.push(DataBlockObjectFrame { object_id, offset });
+        references.push(DataBlockObjectFrame {
+            object_id,
+            raw_object_id: bytes[offset..offset + width].to_vec(),
+            offset,
+        });
         offset += width + DISCRIMINATOR.len();
     }
     references

@@ -6263,6 +6263,8 @@ pub struct DataBlockObjectFrame {
     pub ordinal: u32,
     /// Serialized persistent object ID.
     pub object_id: u32,
+    /// Exact serialized compact object-index token.
+    pub raw_object_id: Vec<u8>,
     /// Absolute source offset of the compact object index.
     pub source_offset: u64,
 }
@@ -11367,6 +11369,7 @@ pub fn data_block_object_frames(container: &Container) -> Vec<DataBlockObjectFra
                     data_block: data_block.clone(),
                     ordinal: ordinal as u32,
                     object_id: frame.object_id,
+                    raw_object_id: frame.raw_object_id,
                     source_offset: source_offset + frame.offset as u64,
                 })
                 .collect::<Vec<_>>()
