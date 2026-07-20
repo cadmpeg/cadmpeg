@@ -1129,7 +1129,9 @@ A type-five relation with
 `c=[16,15,0,0]`, and sign `1` binds the selected linear dimension to the
 unique arc whose endpoint pair, center, and `radius` dimension index match
 those stored operands. Endpoint order does not affect the radius. The selected
-dimension is the neutral radius constraint parameter.
+dimension is the neutral radius constraint parameter, except that a type-four
+dimension produces a diameter constraint because its stored value is the full
+diameter.
 
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 `c=[15,0,0,0]`, and sign `1` binds the selected dimension value to the
@@ -1139,10 +1141,12 @@ unbounded circular carrier before both arc endpoints are available.
 Only a linear selected dimension contributes a solved radius.
 For a type-four diameter dimension, the propagated radius is half the selected
 dimension value.
-The selected dimension is the neutral radius constraint parameter when exactly
-one arc's `radius` field names that key and the selected dimension type is linear.
+The selected dimension is the neutral circular-size constraint parameter when
+exactly one arc's `radius` field names that key and the selected dimension type
+is linear. Type four produces a diameter constraint; other linear types produce
+a radius constraint.
 A non-linear or schema-defined selected dimension does not define a neutral
-radius constraint.
+circular-size constraint.
 
 The named `segtab` row before its schema close is likewise a data row. Its `type`, `dir`, `pointid`, `cntrid`, `arcorient`, `verhor`, radius, and `ext_id` fields contribute one segment to the declared table count.
 Positional rows may insert the two-byte `c0 80` or `c1 00` wrapper before

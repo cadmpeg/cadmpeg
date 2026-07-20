@@ -10009,6 +10009,18 @@ fn section_circle_diameter_constraints(
         .collect()
 }
 
+fn circular_dimension_constraint(
+    entity: SketchEntityId,
+    parameter: ParameterId,
+    dimension_type: u32,
+) -> SketchConstraintDefinition {
+    if dimension_type == 4 {
+        SketchConstraintDefinition::Diameter { entity, parameter }
+    } else {
+        SketchConstraintDefinition::Radius { entity, parameter }
+    }
+}
+
 fn section_dimension_constraints(
     definition: &crate::feature::FeatureDefinition,
     sketch: &SketchId,
@@ -10088,10 +10100,11 @@ fn section_dimension_constraints(
                     known_entities
                         .contains(&segment.external_id)
                         .then_some(())?;
-                    return Some(SketchConstraintDefinition::Radius {
-                        entity: sketch_entity_id(sketch, segment.external_id),
+                    return Some(circular_dimension_constraint(
+                        sketch_entity_id(sketch, segment.external_id),
                         parameter,
-                    });
+                        dimension.dimension_type,
+                    ));
                 }
                 if relation.relation_type == 14
                     && relation.sign == 1
@@ -10115,10 +10128,11 @@ fn section_dimension_constraints(
                     known_entities
                         .contains(&segment.external_id)
                         .then_some(())?;
-                    return Some(SketchConstraintDefinition::Radius {
-                        entity: sketch_entity_id(sketch, segment.external_id),
+                    return Some(circular_dimension_constraint(
+                        sketch_entity_id(sketch, segment.external_id),
                         parameter,
-                    });
+                        dimension.dimension_type,
+                    ));
                 }
                 if relation.relation_type != 0 || !matches!(relation.sign, 0 | 1 | 0xf6) {
                     return None;
@@ -21299,6 +21313,30 @@ mod resolved_sketch_tests {
             }
         );
         legacy_radius_definition
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0]
+            .dimension_type = 4;
+        assert_eq!(
+            section_dimension_constraints(
+                &legacy_radius_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Diameter {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            }
+        );
+        legacy_radius_definition
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0]
+            .dimension_type = 2;
+        legacy_radius_definition
             .relations
             .as_mut()
             .expect("relations")
@@ -21348,6 +21386,30 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
             }
         );
+        radius_definition
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0]
+            .dimension_type = 4;
+        assert_eq!(
+            section_dimension_constraints(
+                &radius_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Diameter {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            }
+        );
+        radius_definition
+            .dimensions
+            .as_mut()
+            .expect("dimensions")
+            .rows[0]
+            .dimension_type = 2;
         let duplicate = radius_definition.segments.as_ref().expect("segments").rows[1].clone();
         radius_definition
             .segments
