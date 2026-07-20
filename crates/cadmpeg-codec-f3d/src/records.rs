@@ -1691,6 +1691,9 @@ pub struct DesignEdgeIdentityOperand {
     pub byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII class tag.
     pub class_tag: String,
+    /// Whether the identity uses the compact eleven-zero prologue.
+    #[serde(default)]
+    pub compact_layout: bool,
     /// Local persistent selection identity preceding the two UUID fields.
     pub local_id: u64,
     /// Byte offset of `local_id`.

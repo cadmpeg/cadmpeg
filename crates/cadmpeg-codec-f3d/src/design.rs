@@ -15889,6 +15889,7 @@ pub fn decode_edge_identity_operands(
                 record_index,
                 byte_offset: header.byte_offset,
                 class_tag: header.class_tag.clone(),
+                compact_layout: parsed.compact_layout,
                 local_id: parsed.local_id,
                 local_id_offset: parsed.local_id_offset,
                 asset_id: parsed.asset_id,
@@ -17296,6 +17297,7 @@ fn parse_extrude_identity_member(
 }
 
 struct ParsedEdgeIdentityMember {
+    compact_layout: bool,
     local_id: u64,
     local_id_offset: u64,
     asset_id: String,
@@ -17305,24 +17307,33 @@ struct ParsedEdgeIdentityMember {
 }
 
 fn parse_edge_identity_member(bytes: &[u8], start: usize) -> Option<ParsedEdgeIdentityMember> {
-    if bytes.get(start + 11..start + 23)? != [0; 12]
-        || bytes.get(start + 23) != Some(&1)
-        || bytes.get(start + 28..start + 34)? != [0; 6]
-        || u32_at(bytes, start + 34)? != 1
+    let (compact_layout, marker_offset) = if bytes.get(start + 11..start + 23) == Some(&[0; 12]) {
+        (false, 23)
+    } else if bytes.get(start + 11..start + 22) == Some(&[0; 11]) {
+        (true, 22)
+    } else {
+        return None;
+    };
+    let local_id_offset = marker_offset + 1;
+    let asset_offset = marker_offset + 15;
+    if bytes.get(start + marker_offset) != Some(&1)
+        || bytes.get(start + marker_offset + 5..start + marker_offset + 11)? != [0; 6]
+        || u32_at(bytes, start + marker_offset + 11)? != 1
     {
         return None;
     }
-    let local_id = u64::from(u32_at(bytes, start + 24)?);
-    let (asset_id, after_asset_id) = lp_utf16(bytes, start + 38)?;
+    let local_id = u64::from(u32_at(bytes, start + local_id_offset)?);
+    let (asset_id, after_asset_id) = lp_utf16(bytes, start + asset_offset)?;
     let (context_id, _after_context_id) = lp_utf16(bytes, after_asset_id)?;
     if !is_guid(&asset_id) || !is_guid(&context_id) {
         return None;
     }
     Some(ParsedEdgeIdentityMember {
+        compact_layout,
         local_id,
-        local_id_offset: u64::try_from(start + 24).ok()?,
+        local_id_offset: u64::try_from(start + local_id_offset).ok()?,
         asset_id,
-        asset_id_offset: u64::try_from(start + 42).ok()?,
+        asset_id_offset: u64::try_from(start + asset_offset + 4).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id + 4).ok()?,
     })
@@ -26350,9 +26361,19 @@ mod relation_tests {
         let edge_identity = super::parse_edge_identity_member(&edge_identity_bytes, 0)
             .expect("fixed edge-treatment selection identity");
         assert_eq!(edge_identity.local_id, 5890);
+        assert!(!edge_identity.compact_layout);
         assert_eq!(edge_identity.local_id_offset, 24);
         assert_eq!(edge_identity.asset_id_offset, 42);
         assert_eq!(edge_identity.context_id_offset, 118);
+
+        edge_identity_bytes.remove(22);
+        let compact_edge_identity = super::parse_edge_identity_member(&edge_identity_bytes, 0)
+            .expect("compact fixed edge-treatment selection identity");
+        assert!(compact_edge_identity.compact_layout);
+        assert_eq!(compact_edge_identity.local_id, 5890);
+        assert_eq!(compact_edge_identity.local_id_offset, 23);
+        assert_eq!(compact_edge_identity.asset_id_offset, 41);
+        assert_eq!(compact_edge_identity.context_id_offset, 117);
 
         group.id = "f3d:Design/BulkStream.dat:selection-group#100".into();
         member.id = "f3d:Design/BulkStream.dat:selection-member#200".into();
@@ -26878,6 +26899,7 @@ mod relation_tests {
             record_index,
             byte_offset: u64::from(record_index),
             class_tag: "297".into(),
+            compact_layout: false,
             local_id: u64::from(record_index),
             local_id_offset: 0,
             asset_id: "asset".into(),
