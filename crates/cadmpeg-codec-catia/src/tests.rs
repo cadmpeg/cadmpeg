@@ -5367,6 +5367,11 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
     let native = crate::native::CatiaNative::decode(&bytes);
     assert_eq!(native.design_objects.len(), 2);
     assert_eq!(native.design_objects[0].owner_ordinal, 1);
+    assert_eq!(native.design_objects[0].ordinal, 0);
+    assert_eq!(
+        native.design_objects[0].first_field_byte_offset,
+        native.object_graphs[0].records[0].byte_offset
+    );
     assert_eq!(native.design_objects[0].fields.len(), 2);
     assert!(native.design_objects[0].field_classes.is_empty());
     let graph = &native.object_graphs[0];
@@ -5386,6 +5391,11 @@ fn native_design_objects_follow_payload_references_to_target_owners() {
         vec![native.design_objects[1].id.clone()]
     );
     assert_eq!(native.design_objects[1].owner_ordinal, 3);
+    assert_eq!(native.design_objects[1].ordinal, 1);
+    assert_eq!(
+        native.design_objects[1].first_field_byte_offset,
+        native.object_graphs[0].records[2].byte_offset
+    );
     assert!(native.design_objects[1].dependencies.is_empty());
 }
 
@@ -5458,6 +5468,17 @@ fn native_design_objects_follow_first_field_order() {
     );
     assert_eq!(native.design_objects[0].fields.len(), 2);
     assert_eq!(native.design_objects[1].fields.len(), 1);
+    assert_eq!(
+        native
+            .design_objects
+            .iter()
+            .map(|object| (object.ordinal, object.first_field_byte_offset))
+            .collect::<Vec<_>>(),
+        [
+            (0, native.object_graphs[0].records[0].byte_offset),
+            (1, native.object_graphs[0].records[1].byte_offset),
+        ]
+    );
 
     let mut namespace = cadmpeg_ir::NativeNamespace::default();
     native

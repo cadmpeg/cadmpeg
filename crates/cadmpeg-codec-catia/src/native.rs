@@ -28,7 +28,7 @@ pub(crate) fn cgm_source(kind: &str, tag: u32) -> SourceObjectAssociation {
 }
 
 /// Current schema version for the CATIA native namespace.
-pub const CATIA_NATIVE_VERSION: u32 = 55;
+pub const CATIA_NATIVE_VERSION: u32 = 56;
 
 const CATIA_ARENA_NAMES: &[&str] = &[
     "alias_rows",
@@ -397,6 +397,10 @@ pub struct CatiaDesignObject {
     pub id: String,
     /// Containing [`CatiaObjectGraph`] identity.
     pub parent: String,
+    /// Zero-based order of this owner group by its first field in the graph.
+    pub ordinal: u64,
+    /// Byte offset of the first field carrying this owner ordinal.
+    pub first_field_byte_offset: u64,
     /// One-based owner ordinal stored by every field record.
     pub owner_ordinal: u32,
     /// Record selected by `owner_ordinal` when it lies inside the graph.
@@ -435,52 +439,57 @@ fn design_objects(graphs: &[CatiaObjectGraph]) -> Vec<CatiaDesignObject> {
                     fields[index].1.push(record);
                 }
             }
-            fields.into_iter().map(move |(owner_ordinal, records)| {
-                let owner_record = object_record_index(owner_ordinal, graph.records.len())
-                    .and_then(|index| graph.records.get(index));
-                let mut dependency_owners = Vec::new();
-                for reference in records
-                    .iter()
-                    .flat_map(|record| payload_references(&record.payload))
-                {
-                    let target_owner = object_record_index(reference, graph.records.len())
-                        .and_then(|index| graph.records.get(index))
-                        .and_then(|record| record.owner_ref);
-                    if let Some(target_owner) = target_owner.filter(|target| {
-                        *target != owner_ordinal
-                            && owner_indices.contains_key(target)
-                            && !dependency_owners.contains(target)
-                    }) {
-                        dependency_owners.push(target_owner);
-                    }
-                }
-                CatiaDesignObject {
-                    id: design_object_id(graph.byte_offset, owner_ordinal),
-                    parent: graph.id.clone(),
-                    owner_ordinal,
-                    owner_record: owner_record.map(|record| record.id.clone()),
-                    owner_class: owner_record
-                        .filter(|record| record_has_separator_roles(record))
-                        .and_then(|record| record.class_name.clone()),
-                    owner_storage_ref: owner_record
-                        .filter(|record| record_has_separator_roles(record))
-                        .and_then(|record| record.storage_ref),
-                    fields: records.iter().map(|record| record.id.clone()).collect(),
-                    field_classes: records
+            fields
+                .into_iter()
+                .enumerate()
+                .map(move |(ordinal, (owner_ordinal, records))| {
+                    let owner_record = object_record_index(owner_ordinal, graph.records.len())
+                        .and_then(|index| graph.records.get(index));
+                    let mut dependency_owners = Vec::new();
+                    for reference in records
                         .iter()
-                        .filter_map(|record| record.class_name.clone())
-                        .fold(Vec::new(), |mut classes, class| {
-                            if !classes.contains(&class) {
-                                classes.push(class);
-                            }
-                            classes
-                        }),
-                    dependencies: dependency_owners
-                        .into_iter()
-                        .map(|owner| design_object_id(graph.byte_offset, owner))
-                        .collect(),
-                }
-            })
+                        .flat_map(|record| payload_references(&record.payload))
+                    {
+                        let target_owner = object_record_index(reference, graph.records.len())
+                            .and_then(|index| graph.records.get(index))
+                            .and_then(|record| record.owner_ref);
+                        if let Some(target_owner) = target_owner.filter(|target| {
+                            *target != owner_ordinal
+                                && owner_indices.contains_key(target)
+                                && !dependency_owners.contains(target)
+                        }) {
+                            dependency_owners.push(target_owner);
+                        }
+                    }
+                    CatiaDesignObject {
+                        id: design_object_id(graph.byte_offset, owner_ordinal),
+                        parent: graph.id.clone(),
+                        ordinal: ordinal as u64,
+                        first_field_byte_offset: records[0].byte_offset,
+                        owner_ordinal,
+                        owner_record: owner_record.map(|record| record.id.clone()),
+                        owner_class: owner_record
+                            .filter(|record| record_has_separator_roles(record))
+                            .and_then(|record| record.class_name.clone()),
+                        owner_storage_ref: owner_record
+                            .filter(|record| record_has_separator_roles(record))
+                            .and_then(|record| record.storage_ref),
+                        fields: records.iter().map(|record| record.id.clone()).collect(),
+                        field_classes: records
+                            .iter()
+                            .filter_map(|record| record.class_name.clone())
+                            .fold(Vec::new(), |mut classes, class| {
+                                if !classes.contains(&class) {
+                                    classes.push(class);
+                                }
+                                classes
+                            }),
+                        dependencies: dependency_owners
+                            .into_iter()
+                            .map(|owner| design_object_id(graph.byte_offset, owner))
+                            .collect(),
+                    }
+                })
         })
         .collect()
 }
