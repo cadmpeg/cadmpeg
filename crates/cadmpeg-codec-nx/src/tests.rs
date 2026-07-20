@@ -8367,11 +8367,11 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
     assert_eq!(triples[0].body_object_index, 66);
     assert_eq!(triples[0].branch, 0x1c);
     assert_eq!(
-        triples[0].scalars.map(|scalar| scalar.value),
+        triples[0].scalars.each_ref().map(|scalar| scalar.value),
         [0.0, 3.0, -170.0]
     );
     assert_eq!(
-        triples[0].scalars.map(|scalar| scalar.encoding),
+        triples[0].scalars.each_ref().map(|scalar| scalar.encoding),
         [
             crate::om::PayloadScalarEncoding::Zero,
             crate::om::PayloadScalarEncoding::Binary32,
@@ -8379,14 +8379,21 @@ fn om_operation_body_scalar_clauses_preserve_body_order_and_branch() {
         ]
     );
     assert_eq!(
-        triples[0].scalars.map(|scalar| scalar.offset),
+        triples[0].scalars.each_ref().map(|scalar| scalar.offset),
         [106, 107, 111]
+    );
+    assert_eq!(
+        triples[0]
+            .scalars
+            .each_ref()
+            .map(|scalar| scalar.raw_value.as_slice()),
+        [&bytes[6..7], &bytes[7..11], &bytes[11..19]]
     );
     assert_eq!(triples[1].body_reference_ordinal, 1);
     assert_eq!(triples[1].body_object_index, 67);
     assert_eq!(triples[1].branch, 0x11);
     assert_eq!(
-        triples[1].scalars.map(|scalar| scalar.value),
+        triples[1].scalars.each_ref().map(|scalar| scalar.value),
         [2.0, 0.0, 0.0]
     );
     let truncated = &bytes[..bytes.len() - 1];

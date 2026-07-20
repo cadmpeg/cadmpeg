@@ -1165,7 +1165,7 @@ pub enum PayloadScalarEncoding {
 }
 
 /// One typed scalar in a bounded operation payload.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct PayloadScalar {
     /// Absolute offset of the scalar marker.
     pub offset: usize,
@@ -1173,10 +1173,12 @@ pub struct PayloadScalar {
     pub value: f64,
     /// Serialized width form.
     pub encoding: PayloadScalarEncoding,
+    /// Exact serialized scalar atom.
+    pub raw_value: Vec<u8>,
 }
 
 /// One three-scalar clause anchored to an ordered operation body reference.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct OperationBodyScalarTriple {
     /// Zero-based body-reference occurrence order.
     pub body_reference_ordinal: u32,
@@ -2642,6 +2644,7 @@ pub fn operation_body_scalar_triples(
                     offset: record.offset + at,
                     value,
                     encoding,
+                    raw_value: record.bytes.get(at..at + width)?.to_vec(),
                 });
                 at += width;
             }

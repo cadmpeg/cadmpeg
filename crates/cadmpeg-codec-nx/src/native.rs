@@ -5829,6 +5829,8 @@ pub struct FeatureOperationBodyScalarTriple {
     pub values: [f64; 3],
     /// Ordered serialized width forms.
     pub encodings: [FeaturePayloadScalarEncoding; 3],
+    /// Exact serialized scalar atoms in value order.
+    pub raw_values: [Vec<u8>; 3],
     /// Absolute file offsets of the three scalar markers.
     pub source_offsets: [u64; 3],
 }
@@ -10354,10 +10356,18 @@ pub fn feature_operation_body_scalar_triples(
                     body_reference_ordinal: triple.body_reference_ordinal,
                     body_object_index: triple.body_object_index,
                     branch: triple.branch,
-                    values: triple.scalars.map(|scalar| scalar.value),
-                    encodings: triple.scalars.map(|scalar| encoding(scalar.encoding)),
+                    values: triple.scalars.each_ref().map(|scalar| scalar.value),
+                    encodings: triple
+                        .scalars
+                        .each_ref()
+                        .map(|scalar| encoding(scalar.encoding)),
+                    raw_values: triple
+                        .scalars
+                        .each_ref()
+                        .map(|scalar| scalar.raw_value.clone()),
                     source_offsets: triple
                         .scalars
+                        .each_ref()
                         .map(|scalar| entry_offset + scalar.offset as u64),
                 });
             }
