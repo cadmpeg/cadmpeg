@@ -10447,6 +10447,9 @@ fn section_skamp_point_locus(
     sketch: &SketchId,
     item: &crate::feature::FeatureSkampItem,
 ) -> Option<SketchLocus> {
+    if item.sense == 0 && section_skamp_is_point(definition, item) {
+        return section_skamp_locus(definition, sketch, item);
+    }
     matches!(item.sense, 2..=4)
         .then(|| section_skamp_locus(definition, sketch, item))
         .flatten()
@@ -10614,16 +10617,7 @@ fn section_skamp_midpoint(
             && (section_skamp_is_line(definition, item) || section_skamp_is_arc(definition, item)))
         .then(|| sketch_entity_id(sketch, item.entity_id))
     };
-    let point = |item: &crate::feature::FeatureSkampItem| {
-        if item.sense == 0 && section_skamp_is_point(definition, item) {
-            Some(SketchLocus::Entity(sketch_entity_id(
-                sketch,
-                item.entity_id,
-            )))
-        } else {
-            section_skamp_point_locus(definition, sketch, item)
-        }
-    };
+    let point = |item| section_skamp_point_locus(definition, sketch, item);
     match (target(first), point(second), target(second), point(first)) {
         (Some(entity), Some(point), None, _) => Some((point, entity)),
         (None, _, Some(entity), Some(point)) => Some((point, entity)),
@@ -19945,6 +19939,78 @@ mod resolved_sketch_tests {
             saved_section: None,
             offset: 0,
         };
+        let point_entity = crate::feature::FeatureSkampItem {
+            entity_id: 14,
+            sense: 0,
+        };
+        let mut point_coincidence_definition = definition.clone();
+        let point_coincidence_relations = point_coincidence_definition
+            .relations
+            .as_mut()
+            .expect("relations");
+        point_coincidence_relations.skamps = vec![crate::feature::FeatureSkamp {
+            id: 0,
+            kind: 0,
+            flags: 0,
+            status: 1,
+            items: vec![
+                point_entity.clone(),
+                crate::feature::FeatureSkampItem {
+                    entity_id: 13,
+                    sense: 4,
+                },
+            ],
+            offset: 83,
+        }];
+        point_coincidence_relations
+            .skamp_header
+            .as_mut()
+            .expect("skamp header")
+            .declared_count = 1;
+        assert_eq!(
+            section_skamp_constraints(
+                &point_coincidence_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::CoincidentLoci {
+                loci: vec![
+                    SketchLocus::Entity(SketchEntityId(
+                        "creo:featdefs:sketch_entity#917:14".to_string()
+                    )),
+                    SketchLocus::Center(SketchEntityId(
+                        "creo:featdefs:sketch_entity#917:13".to_string()
+                    )),
+                ],
+            }
+        );
+        let point_coincidence_relations = point_coincidence_definition
+            .relations
+            .as_mut()
+            .expect("relations");
+        point_coincidence_relations.skamps[0].kind = 3;
+        point_coincidence_relations.skamps[0].items = vec![
+            crate::feature::FeatureSkampItem {
+                entity_id: 12,
+                sense: 0,
+            },
+            point_entity,
+        ];
+        assert_eq!(
+            section_skamp_constraints(
+                &point_coincidence_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::PointOnObject {
+                point: SketchLocus::Entity(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:14".to_string()
+                )),
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:12".to_string()),
+            }
+        );
         let mut collinear_definition = definition.clone();
         let collinear_relations = collinear_definition.relations.as_mut().expect("relations");
         collinear_relations.skamps = vec![crate::feature::FeatureSkamp {
