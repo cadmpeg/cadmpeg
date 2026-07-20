@@ -2344,6 +2344,7 @@ fn project_design_history(
         lanes,
     );
     crate::resolved_features::enrich_history_parameters(&mut semantic_projection, lanes, true);
+    crate::resolved_features::enrich_history_hole_constructions(&mut semantic_projection, lanes);
     crate::resolved_features::enrich_history_reference_planes(&mut semantic_projection, lanes);
     crate::pmi::enrich_history_parameters(&mut semantic_projection, pmi_dimensions);
     crate::history::apply_evaluated_parameters(&mut semantic_projection);

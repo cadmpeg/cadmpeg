@@ -7309,6 +7309,70 @@ fn hole_position_sketch_source(
     (source != 0 && source != u32::MAX).then_some(source)
 }
 
+/// Recover legacy Hole Wizard profile ownership from its adjacent typed child sources.
+pub(crate) fn enrich_history_hole_constructions(
+    histories: &mut [crate::records::FeatureHistory],
+    lanes: &[FeatureInputLane],
+) {
+    for history in histories {
+        let additions = history
+            .features
+            .iter()
+            .enumerate()
+            .filter(|(_, feature)| {
+                native_object_class(feature.input_class.as_deref().unwrap_or_default()).kind
+                    == NativeClassKind::HoleWizard
+                    && !feature.properties.contains_key("DissectableChildren")
+            })
+            .filter_map(|(feature_index, feature)| {
+                let hole_source = feature.source_id.as_deref()?.parse::<u32>().ok()?;
+                let mut position_sources = lanes
+                    .iter()
+                    .filter_map(|lane| hole_position_sketch_source(feature, lane))
+                    .collect::<Vec<_>>();
+                position_sources.sort_unstable();
+                position_sources.dedup();
+                let [position_source] = position_sources.as_slice() else {
+                    return None;
+                };
+                let adjacent = [
+                    position_source.checked_sub(1),
+                    position_source.checked_add(1),
+                ]
+                .into_iter()
+                .flatten()
+                .filter(|source| *source < hole_source)
+                .collect::<HashSet<_>>();
+                let mut profiles = history.features.iter().filter(|candidate| {
+                    candidate
+                        .source_id
+                        .as_deref()
+                        .and_then(|source| source.parse::<u32>().ok())
+                        .is_some_and(|source| adjacent.contains(&source))
+                        && classify(candidate) == Some(FeatureClass::Sketch)
+                        && crate::history::is_hole_profile_construction(candidate)
+                });
+                let profile = profiles.next()?;
+                profiles.next().is_none().then(|| {
+                    (
+                        feature_index,
+                        profile
+                            .source_id
+                            .as_ref()
+                            .expect("profile candidates carry source identity")
+                            .clone(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        for (feature_index, profile_source) in additions {
+            history.features[feature_index]
+                .properties
+                .insert("DissectableChildren".into(), profile_source);
+        }
+    }
+}
+
 /// Materialize Hole Wizard placements from the operation's typed position-sketch reference.
 pub(crate) fn project_hole_position_sketches(
     features: &mut [cadmpeg_ir::features::Feature],
@@ -7530,10 +7594,13 @@ mod hole_axis_tests {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchId};
 
-    use super::{hole_position_sketch_source, project_hole_axes, project_hole_position_sketches};
+    use super::{
+        enrich_history_hole_constructions, enrich_history_parameters, hole_position_sketch_source,
+        project_hole_axes, project_hole_position_sketches,
+    };
     use crate::records::{
         FeatureHistory, FeatureInputGeneratedSurfaceIdentity, FeatureInputLane, FeatureInputName,
-        SketchInputEntity, SketchInputKind,
+        FeatureInputScalar, FeatureInputScalarRole, SketchInputEntity, SketchInputKind,
     };
 
     fn model_hole() -> cadmpeg_ir::features::Feature {
@@ -7617,6 +7684,26 @@ mod hole_axis_tests {
         }
     }
 
+    fn lane_with_position_reference(position_source: u32) -> FeatureInputLane {
+        let mut lane = lane();
+        lane.native_payload.resize(200, 0);
+        lane.names.push(FeatureInputName {
+            id: "hole-name".into(),
+            parent: "lane".into(),
+            ordinal: 0,
+            offset: 0,
+            value: "Hole".into(),
+            object_id: Some(7),
+        });
+        let trailer = 6 + "Hole".encode_utf16().count() * 2;
+        lane.native_payload[trailer..trailer + 8].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
+        lane.native_payload[trailer + 8..trailer + 12].copy_from_slice(&7u32.to_le_bytes());
+        lane.native_payload[trailer + 48..trailer + 50].copy_from_slice(&[0, 0xc0]);
+        lane.native_payload[trailer + 50..trailer + 54]
+            .copy_from_slice(&position_source.to_le_bytes());
+        lane
+    }
+
     fn cylinder(id: usize, x: f64) -> Surface {
         Surface {
             id: SurfaceId(format!("surface-{id}")),
@@ -7670,21 +7757,8 @@ mod hole_axis_tests {
             text: None,
             content: Vec::new(),
         });
-        let mut lane = lane();
-        lane.native_payload.resize(200, 0);
-        lane.names.push(FeatureInputName {
-            id: "hole-name".into(),
-            parent: "lane".into(),
-            ordinal: 0,
-            offset: 0,
-            value: "Hole".into(),
-            object_id: Some(7),
-        });
+        let mut lane = lane_with_position_reference(6);
         let trailer = 6 + "Hole".encode_utf16().count() * 2;
-        lane.native_payload[trailer..trailer + 8].copy_from_slice(&[0, 0, 0, 0, 0, 0, 0, 0x40]);
-        lane.native_payload[trailer + 8..trailer + 12].copy_from_slice(&7u32.to_le_bytes());
-        lane.native_payload[trailer + 48..trailer + 50].copy_from_slice(&[0, 0xc0]);
-        lane.native_payload[trailer + 50..trailer + 54].copy_from_slice(&6u32.to_le_bytes());
         assert_eq!(
             hole_position_sketch_source(&history.features[0], &lane),
             Some(6)
@@ -7769,6 +7843,80 @@ mod hole_axis_tests {
                 },
             }
         ));
+    }
+
+    #[test]
+    fn adjacent_dimensioned_sketch_supplies_legacy_hole_profile() {
+        let mut history = native_history();
+        history.features.push(crate::records::Feature {
+            id: "native-profile-sketch".into(),
+            parent: "history".into(),
+            xml_tag: "Sketch".into(),
+            tree_parent: None,
+            source_id: Some("5".into()),
+            parent_source_id: None,
+            ordinal: 1,
+            name: "Profile".into(),
+            kind: "Sketch".into(),
+            input_class: Some("moProfileFeature_c".into()),
+            suppressed: false,
+            parameters: [
+                ("bore".into(), "<MOD-DIAM>4.2".into()),
+                ("depth".into(), "6.8".into()),
+                ("tip".into(), "118°".into()),
+            ]
+            .into(),
+            dimension_properties: Default::default(),
+            properties: Default::default(),
+            text: None,
+            content: vec![
+                crate::records::FeatureContent::Dimension("bore".into()),
+                crate::records::FeatureContent::Dimension("depth".into()),
+                crate::records::FeatureContent::Dimension("tip".into()),
+            ],
+        });
+
+        let mut lane = lane_with_position_reference(6);
+        lane.names.push(FeatureInputName {
+            id: "depth-name".into(),
+            parent: "lane".into(),
+            ordinal: 1,
+            offset: 120,
+            value: "depth".into(),
+            object_id: None,
+        });
+        lane.names.push(FeatureInputName {
+            id: "profile-name".into(),
+            parent: "lane".into(),
+            ordinal: 2,
+            offset: 100,
+            value: "Profile".into(),
+            object_id: Some(5),
+        });
+        lane.scalars.push(FeatureInputScalar {
+            id: "depth-scalar".into(),
+            parent: "lane".into(),
+            feature_ref: Some("native-profile-sketch".into()),
+            ordinal: 0,
+            offset: 150,
+            object_id: 1,
+            name: "depth-name".into(),
+            value: 0.0068,
+            role: FeatureInputScalarRole::Native,
+            entity_indices: Vec::new(),
+            operands: Vec::new(),
+        });
+        let mut histories = [history];
+        enrich_history_parameters(&mut histories, [&lane], true);
+        assert_eq!(histories[0].features[1].parameters["depth"], "6.8");
+        enrich_history_hole_constructions(&mut histories, &[lane]);
+        assert_eq!(
+            histories[0].features[0]
+                .properties
+                .get("DissectableChildren")
+                .map(String::as_str),
+            Some("5")
+        );
     }
 
     #[test]
@@ -10286,6 +10434,13 @@ pub(crate) fn enrich_history_parameters<'a>(
             continue;
         }
         let feature = &mut histories[history_index].features[feature_index];
+        let source_dimension = feature.content.iter().any(|content| {
+            matches!(content, crate::records::FeatureContent::Dimension(dimension) if dimension == &name)
+        });
+        if unit == ScalarUnit::Native && source_dimension && feature.parameters.contains_key(&name)
+        {
+            continue;
+        }
         if unit == ScalarUnit::Native
             && feature.parameters.get(&name).is_some_and(|expression| {
                 !native_scalar_matches_discrete_parameter(feature, &name, expression, first)

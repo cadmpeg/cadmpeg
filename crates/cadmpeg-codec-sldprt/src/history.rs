@@ -5536,6 +5536,10 @@ fn hole_sketch_construction(profile: &Feature) -> Option<HoleProfileConstruction
     }
 }
 
+pub(crate) fn is_hole_profile_construction(feature: &Feature) -> bool {
+    hole_sketch_construction(feature).is_some()
+}
+
 fn project_shell(feature: &Feature) -> FeatureDefinition {
     let thickness = feature
         .parameters
