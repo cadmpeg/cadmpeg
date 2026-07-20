@@ -7242,6 +7242,379 @@ impl MeshQuotient {
     }
 }
 
+struct DeferredFaceQuotientOptions {
+    alternatives: Vec<MeshQuotient>,
+    base_nodes: Vec<usize>,
+}
+
+fn deferred_face_quotient_options_limited(
+    domain: &MeshDeferredFaceBoundary,
+    edge_candidates: &[Vec<[usize; 2]>],
+    quotient: &MeshQuotient,
+    limit: usize,
+    budget: &MeshConstraintBudget,
+) -> Option<DeferredFaceQuotientOptions> {
+    #[derive(Clone, Copy)]
+    struct Gap {
+        left_end: usize,
+        right_start: usize,
+        capacity: usize,
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn fill_gap(
+        gaps: &[Gap],
+        gap: usize,
+        at: usize,
+        target: usize,
+        used: u64,
+        previous_end: usize,
+        missing_edges: &[usize],
+        missing_nodes: &[[usize; 2]],
+        edge_candidates: &[Vec<[usize; 2]>],
+        quotient: MeshQuotient,
+        base_quotient: &MeshQuotient,
+        base_nodes: &[usize],
+        output: &mut Vec<MeshQuotient>,
+        limit: usize,
+        budget: &MeshConstraintBudget,
+    ) {
+        if output.len() >= limit || budget.exhausted.get() {
+            return;
+        }
+        if at == target {
+            let mut quotient = quotient;
+            if quotient
+                .merge(previous_end, gaps[gap].right_start)
+                .is_none()
+            {
+                return;
+            }
+            walk_gaps(
+                gaps,
+                gap + 1,
+                used,
+                missing_edges,
+                missing_nodes,
+                edge_candidates,
+                &quotient,
+                base_quotient,
+                base_nodes,
+                output,
+                limit,
+                budget,
+            );
+            return;
+        }
+        let options = (missing_edges.len() - used.count_ones() as usize).saturating_mul(2);
+        if options > 1 && !budget.charge_by(options) {
+            return;
+        }
+        let mut seen = HashSet::new();
+        for (rank, _) in missing_edges.iter().enumerate() {
+            if used & (1 << rank) != 0 {
+                continue;
+            }
+            for reversed in [false, true] {
+                let start = missing_nodes[rank][usize::from(reversed)];
+                let end = missing_nodes[rank][usize::from(!reversed)];
+                let mut next = quotient.clone();
+                if next.merge(previous_end, start).is_none() {
+                    continue;
+                }
+                let end_root = next.union.find(end);
+                if !seen.insert((rank, end_root, next.signature())) {
+                    continue;
+                }
+                fill_gap(
+                    gaps,
+                    gap,
+                    at + 1,
+                    target,
+                    used | (1 << rank),
+                    end,
+                    missing_edges,
+                    missing_nodes,
+                    edge_candidates,
+                    next,
+                    base_quotient,
+                    base_nodes,
+                    output,
+                    limit,
+                    budget,
+                );
+                if output.len() >= limit || budget.exhausted.get() {
+                    return;
+                }
+            }
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn walk_gaps(
+        gaps: &[Gap],
+        gap: usize,
+        used: u64,
+        missing_edges: &[usize],
+        missing_nodes: &[[usize; 2]],
+        edge_candidates: &[Vec<[usize; 2]>],
+        quotient: &MeshQuotient,
+        base_quotient: &MeshQuotient,
+        base_nodes: &[usize],
+        output: &mut Vec<MeshQuotient>,
+        limit: usize,
+        budget: &MeshConstraintBudget,
+    ) {
+        if output.len() >= limit || budget.exhausted.get() {
+            return;
+        }
+        if gap == gaps.len() {
+            if used.count_ones() as usize != missing_edges.len() {
+                return;
+            }
+            let affected_edges = missing_edges
+                .iter()
+                .copied()
+                .filter(|edge| !edge_candidates[*edge].is_empty())
+                .collect::<HashSet<_>>();
+            let mut materialized = base_quotient.clone();
+            for local in 0..base_nodes.len() {
+                let local_root = quotient.union.root(local);
+                if local_root != local
+                    && materialized
+                        .merge(base_nodes[local_root], base_nodes[local])
+                        .is_none()
+                {
+                    return;
+                }
+            }
+            if materialized.propagate_edge_domains_with_budget(
+                affected_edges,
+                edge_candidates,
+                Some(budget),
+            ) {
+                output.push(quotient.clone());
+            }
+            return;
+        }
+        let remaining_edges = missing_edges.len() - used.count_ones() as usize;
+        let remaining_gaps = gaps.len() - gap - 1;
+        let minimum = 1;
+        let maximum = gaps[gap]
+            .capacity
+            .min(remaining_edges.saturating_sub(remaining_gaps));
+        if maximum < minimum {
+            return;
+        }
+        if maximum > minimum && !budget.charge_by(maximum - minimum + 1) {
+            return;
+        }
+        for target in minimum..=maximum {
+            fill_gap(
+                gaps,
+                gap,
+                0,
+                target,
+                used,
+                gaps[gap].left_end,
+                missing_edges,
+                missing_nodes,
+                edge_candidates,
+                quotient.clone(),
+                base_quotient,
+                base_nodes,
+                output,
+                limit,
+                budget,
+            );
+            if output.len() >= limit || budget.exhausted.get() {
+                return;
+            }
+        }
+    }
+
+    if domain.missing_edges.len() > u64::BITS as usize {
+        return None;
+    }
+    let mut gaps = Vec::new();
+    for cycle in &domain.cycles {
+        if cycle.exact_uses.is_empty() {
+            return None;
+        }
+        for index in 0..cycle.exact_uses.len() {
+            let (left, left_span) = cycle.exact_uses[index];
+            let right = cycle.exact_uses[(index + 1) % cycle.exact_uses.len()].0;
+            let left_end_position = (left.start + left_span) % cycle.length;
+            let capacity = (right.start + cycle.length - left_end_position) % cycle.length;
+            if capacity == 0 {
+                continue;
+            }
+            let left_reversed = left.reversed?;
+            let right_reversed = right.reversed?;
+            gaps.push(Gap {
+                left_end: left
+                    .edge
+                    .checked_mul(2)?
+                    .checked_add(usize::from(!left_reversed))?,
+                right_start: right
+                    .edge
+                    .checked_mul(2)?
+                    .checked_add(usize::from(right_reversed))?,
+                capacity,
+            });
+        }
+    }
+    if gaps.is_empty() {
+        return domain
+            .missing_edges
+            .is_empty()
+            .then(|| DeferredFaceQuotientOptions {
+                alternatives: Vec::new(),
+                base_nodes: Vec::new(),
+            });
+    }
+    if domain.missing_edges.len() < gaps.len() {
+        return Some(DeferredFaceQuotientOptions {
+            alternatives: Vec::new(),
+            base_nodes: Vec::new(),
+        });
+    }
+    let mut base_nodes = gaps
+        .iter()
+        .flat_map(|gap| [gap.left_end, gap.right_start])
+        .chain(
+            domain
+                .missing_edges
+                .iter()
+                .flat_map(|edge| [edge * 2, edge * 2 + 1]),
+        )
+        .map(|node| quotient.union.root(node))
+        .collect::<Vec<_>>();
+    base_nodes.sort_unstable();
+    base_nodes.dedup();
+    let local_by_base = base_nodes
+        .iter()
+        .enumerate()
+        .map(|(local, base)| (*base, local))
+        .collect::<HashMap<_, _>>();
+    for gap in &mut gaps {
+        gap.left_end = local_by_base[&quotient.union.root(gap.left_end)];
+        gap.right_start = local_by_base[&quotient.union.root(gap.right_start)];
+    }
+    let missing_nodes = domain
+        .missing_edges
+        .iter()
+        .map(|edge| {
+            [
+                local_by_base[&quotient.union.root(edge * 2)],
+                local_by_base[&quotient.union.root(edge * 2 + 1)],
+            ]
+        })
+        .collect::<Vec<_>>();
+    let local_quotient = MeshQuotient {
+        union: UnionFind::new(base_nodes.len()),
+        domains: base_nodes
+            .iter()
+            .map(|root| quotient.domains[*root].clone())
+            .collect(),
+        members: (0..base_nodes.len()).map(|node| vec![node]).collect(),
+    };
+    gaps.sort_unstable_by_key(|gap| {
+        let single_edge_options = if gap.capacity == 1 {
+            domain
+                .missing_edges
+                .iter()
+                .enumerate()
+                .flat_map(|(rank, _)| [false, true].map(move |reversed| (rank, reversed)))
+                .filter(|(rank, reversed)| {
+                    let start = missing_nodes[*rank][usize::from(*reversed)];
+                    let end = missing_nodes[*rank][usize::from(!*reversed)];
+                    let mut trial = local_quotient.clone();
+                    trial.merge(gap.left_end, start).is_some()
+                        && trial.merge(end, gap.right_start).is_some()
+                })
+                .count()
+        } else {
+            usize::MAX
+        };
+        (gap.capacity, single_edge_options)
+    });
+    let mut output = Vec::new();
+    walk_gaps(
+        &gaps,
+        0,
+        0,
+        &domain.missing_edges,
+        &missing_nodes,
+        edge_candidates,
+        &local_quotient,
+        quotient,
+        &base_nodes,
+        &mut output,
+        limit,
+        budget,
+    );
+    (!budget.exhausted.get()).then_some(DeferredFaceQuotientOptions {
+        alternatives: output,
+        base_nodes,
+    })
+}
+
+fn propagate_common_deferred_quotients(
+    mut options: DeferredFaceQuotientOptions,
+    edge_candidates: &[Vec<[usize; 2]>],
+    quotient: &mut MeshQuotient,
+    budget: &MeshConstraintBudget,
+) -> Option<()> {
+    let node_count = options.base_nodes.len();
+    let mut equivalence_classes = HashMap::<Vec<usize>, Vec<usize>>::new();
+    for node in 0..node_count {
+        let signature = options
+            .alternatives
+            .iter_mut()
+            .map(|alternative| alternative.union.find(node))
+            .collect::<Vec<_>>();
+        equivalence_classes.entry(signature).or_default().push(node);
+    }
+    for nodes in equivalence_classes.into_values() {
+        let Some((&representative, rest)) = nodes.split_first() else {
+            continue;
+        };
+        for &node in rest {
+            quotient.merge(options.base_nodes[representative], options.base_nodes[node])?;
+        }
+    }
+    for local in 0..node_count {
+        let mut allowed = HashSet::new();
+        for alternative in &mut options.alternatives {
+            let root = alternative.union.find(local);
+            allowed.extend(alternative.domains[root].iter().copied());
+        }
+        let root = quotient.union.find(options.base_nodes[local]);
+        let narrowed = quotient.domains[root]
+            .intersection(&allowed)
+            .copied()
+            .collect::<HashSet<_>>();
+        if narrowed.is_empty() {
+            return None;
+        }
+        quotient.domains[root] = Arc::new(narrowed);
+    }
+    let affected_edges = options
+        .base_nodes
+        .into_iter()
+        .flat_map(|node| {
+            let root = quotient.union.find(node);
+            quotient.members[root].clone()
+        })
+        .map(|node| node / 2)
+        .filter(|edge| !edge_candidates[*edge].is_empty())
+        .collect::<HashSet<_>>();
+    quotient
+        .propagate_edge_domains_with_budget(affected_edges, edge_candidates, Some(budget))
+        .then_some(())
+}
+
 fn propagate_common_ordered_face_quotients(
     domains: &[MeshFaceBoundaryDomain],
     edge_candidates: &[Vec<[usize; 2]>],
@@ -7249,10 +7622,28 @@ fn propagate_common_ordered_face_quotients(
     budget: &MeshConstraintBudget,
 ) -> Option<()> {
     const MAX_FACE_OPTIONS: usize = 4_096;
+    const MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS: usize = 64;
+    const MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS: usize = 512;
 
+    let mut face_order = (0..domains.len()).collect::<Vec<_>>();
+    face_order.sort_unstable_by_key(|face| match &domains[*face] {
+        MeshFaceBoundaryDomain::DeferredValidation(_) => (0, 0),
+        MeshFaceBoundaryDomain::Ordered(assignments) => (1, assignments.len()),
+        MeshFaceBoundaryDomain::UnorderedFullCycle(_) => (2, 0),
+    });
     loop {
         let before = quotient.signature();
-        for domain in domains {
+        for &face in &face_order {
+            let domain = &domains[face];
+            let face_budget = MeshConstraintBudget::new(match domain {
+                MeshFaceBoundaryDomain::DeferredValidation(_) => {
+                    MAX_DEFERRED_FACE_CONSTRAINT_OPERATIONS
+                }
+                MeshFaceBoundaryDomain::Ordered(_)
+                | MeshFaceBoundaryDomain::UnorderedFullCycle(_) => {
+                    MAX_ORDERED_FACE_CONSTRAINT_OPERATIONS
+                }
+            });
             if let MeshFaceBoundaryDomain::DeferredValidation(domain) = domain {
                 let mut merged_nodes = Vec::new();
                 for cycle in &domain.cycles {
@@ -7293,6 +7684,25 @@ fn propagate_common_ordered_face_quotients(
                 ) {
                     return None;
                 }
+                let Some(options) = deferred_face_quotient_options_limited(
+                    domain,
+                    edge_candidates,
+                    quotient,
+                    MAX_FACE_OPTIONS + 1,
+                    &face_budget,
+                ) else {
+                    continue;
+                };
+                if options.alternatives.len() <= MAX_FACE_OPTIONS
+                    && !options.alternatives.is_empty()
+                {
+                    propagate_common_deferred_quotients(
+                        options,
+                        edge_candidates,
+                        quotient,
+                        budget,
+                    )?;
+                }
                 continue;
             }
             let MeshFaceBoundaryDomain::Ordered(assignments) = domain else {
@@ -7306,10 +7716,11 @@ fn propagate_common_ordered_face_quotients(
                     edge_candidates,
                     &HashSet::new(),
                     MAX_FACE_OPTIONS + 1,
-                    Some(budget),
+                    Some(&face_budget),
                 );
-                if budget.exhausted.get() {
-                    return None;
+                if face_budget.exhausted.get() {
+                    truncated = true;
+                    break;
                 }
                 if options.len() > MAX_FACE_OPTIONS {
                     truncated = true;
@@ -7322,6 +7733,9 @@ fn propagate_common_ordered_face_quotients(
                 }
             }
             if truncated {
+                continue;
+            }
+            if alternatives.len() > MAX_FACE_OPTIONS {
                 continue;
             }
             if alternatives.is_empty() {
@@ -9952,6 +10366,13 @@ impl UnionFind {
         self.parents[node]
     }
 
+    fn root(&self, mut node: usize) -> usize {
+        while self.parents[node] != node {
+            node = self.parents[node];
+        }
+        node
+    }
+
     fn union(&mut self, left: usize, right: usize) {
         let left = self.find(left);
         let right = self.find(right);
@@ -10718,6 +11139,47 @@ mod motif_tests {
 
         assert_eq!(quotient.union.find(0), quotient.union.find(3));
         assert_eq!(quotient.union.find(1), quotient.union.find(2));
+    }
+
+    #[test]
+    fn deferred_gap_search_propagates_quotient_forced_edge_order() {
+        let use_ = |edge, start| MeshBoundaryEdgeCandidate {
+            edge,
+            start,
+            end: (start + 1) % 4,
+            reversed: Some(false),
+        };
+        let domains = [MeshFaceBoundaryDomain::DeferredValidation(
+            super::MeshDeferredFaceBoundary {
+                cycles: vec![super::MeshDeferredBoundaryCycle {
+                    length: 4,
+                    exact_uses: vec![(use_(0, 0), 1), (use_(1, 2), 1)],
+                }],
+                missing_edges: vec![2, 3],
+            },
+        )];
+        let candidates = vec![vec![[0, 1]], vec![[2, 3]], vec![[1, 2]], vec![[0, 3]]];
+        let mut quotient = MeshQuotient {
+            union: UnionFind::new(8),
+            domains: (0..8)
+                .map(|node| Arc::new(HashSet::from([[0, 1, 2, 3, 1, 2, 3, 0][node]])))
+                .collect(),
+            members: (0..8).map(|node| vec![node]).collect(),
+        };
+        let budget = super::MeshConstraintBudget::new(10_000);
+
+        super::propagate_common_ordered_face_quotients(
+            &domains,
+            &candidates,
+            &mut quotient,
+            &budget,
+        )
+        .expect("deferred gap quotient");
+
+        assert_eq!(quotient.union.find(1), quotient.union.find(4));
+        assert_eq!(quotient.union.find(5), quotient.union.find(2));
+        assert_eq!(quotient.union.find(3), quotient.union.find(6));
+        assert_eq!(quotient.union.find(7), quotient.union.find(0));
     }
 
     #[test]
