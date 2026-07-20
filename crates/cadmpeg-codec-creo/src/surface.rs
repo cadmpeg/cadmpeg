@@ -1814,7 +1814,7 @@ fn decode_directrix_lane_axis_aligned_cylinder_frame(
     }
     let orientation = if cursor == body.len() {
         AxisAlignedCornerOrientation::SecondToFirst
-    } else if body.get(cursor..) == Some(&[0xf7, 0x17]) {
+    } else if matches!(body.get(cursor..), Some([0xf7, 0x17 | 0x19])) {
         AxisAlignedCornerOrientation::FirstToSecond
     } else {
         return None;
@@ -3219,6 +3219,23 @@ mod tests {
         assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
         assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
         assert!((frame.radius - 2.11).abs() < 1e-12);
+
+        let compound_close_trailer = [
+            17, 24, 19, 47, 33, 0, 47, 39, 0, 47, 52, 128, 71, 23, 255, 47, 50, 128, 47, 56, 0, 47,
+            4, 0, 247, 25,
+        ];
+        let frame = decode_positional_cylinder_frame(
+            &compound_close_trailer,
+            &scalar::ScalarCache::default(),
+        )
+        .expect("complete compound-close directrix-lane cylinder");
+        assert_eq!(frame.origin[0], 15.0);
+        assert_eq!(frame.origin[1], 24.0);
+        assert!((frame.origin[2] + 6.0).abs() < 1e-12);
+        assert_eq!(frame.axis, [0.0, 0.0, 1.0]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert_eq!(frame.radius, 3.5);
+        assert_eq!(frame.length, 8.5);
 
         let mut inconsistent = negative_x.to_vec();
         inconsistent[58] = 0xd0;
