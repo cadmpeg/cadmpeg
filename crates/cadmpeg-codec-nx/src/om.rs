@@ -757,6 +757,34 @@ pub struct PatternPayloadReferenceField {
     pub references: Vec<PayloadObjectReference>,
 }
 
+/// Scalar width selected by a counted pattern-transform lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternTransformEncoding {
+    /// Four-byte shifted IEEE-754 binary32 rows.
+    Binary32,
+    /// Eight-byte shifted IEEE-754 binary64 rows.
+    Binary64,
+}
+
+/// One exact counted transform lane in a pattern operation payload.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternPayloadTransformLane {
+    /// Absolute offset of the opening `01, count` field.
+    pub offset: usize,
+    /// Count including the implicit seed row.
+    pub declared_count: u8,
+    /// Homogeneous scalar encoding selected by the operation family.
+    pub encoding: PatternTransformEncoding,
+    /// Ordered finite row scalars.
+    pub values: Vec<f64>,
+    /// Absolute offsets of the scalar encodings.
+    pub value_offsets: Vec<usize>,
+    /// Exact scalar bytes in row order.
+    pub raw_values: Vec<Vec<u8>>,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+}
+
 /// Exact construction header in a point-feature payload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PointFeaturePayloadHeader {
@@ -1917,6 +1945,96 @@ pub fn pattern_payload_references(
         return None;
     };
     Some(field.clone())
+}
+
+/// Decode the unique exactly counted transform lane in a bounded pattern payload.
+pub fn pattern_payload_transform_lane(
+    record: OperationRecord<'_>,
+) -> Option<PatternPayloadTransformLane> {
+    const FEATURE_PREFIX: [u8; 4] = [0x60, 0x01, 0x00, 0x00];
+    const FEATURE_SCALAR_SUFFIX: [u8; 14] = [
+        0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03,
+    ];
+    const GEOMETRY_PREFIX: [u8; 8] = [0x60, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00];
+    const GEOMETRY_SCALAR_SUFFIX: [u8; 10] =
+        [0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x03];
+    const ROW_TAIL: [u8; 5] = [0x00, 0x00, 0xff, 0x00, 0x00];
+    const TERMINATOR: [u8; 4] = [0x5f, 0x00, 0x00, 0x01];
+
+    let (prefix, scalar_suffix, encoding, scalar_width) = match record.label.value {
+        "Pattern Feature" => (
+            FEATURE_PREFIX.as_slice(),
+            FEATURE_SCALAR_SUFFIX.as_slice(),
+            PatternTransformEncoding::Binary32,
+            4usize,
+        ),
+        "Pattern Geometry" => (
+            GEOMETRY_PREFIX.as_slice(),
+            GEOMETRY_SCALAR_SUFFIX.as_slice(),
+            PatternTransformEncoding::Binary64,
+            8usize,
+        ),
+        _ => return None,
+    };
+    let decode = |start: usize| {
+        (record.payload.get(start) == Some(&0x01)).then_some(())?;
+        let declared_count = *record.payload.get(start + 1)?;
+        (declared_count >= 2).then_some(())?;
+        let row_count = usize::from(declared_count - 1);
+        let mut at = start + 2;
+        let mut values = Vec::with_capacity(row_count);
+        let mut value_offsets = Vec::with_capacity(row_count);
+        let mut raw_values = Vec::with_capacity(row_count);
+        let mut selectors = Vec::with_capacity(row_count);
+        for ordinal in 1..declared_count {
+            (record.payload.get(at..at + prefix.len()) == Some(prefix)).then_some(())?;
+            at += prefix.len();
+            let raw = record.payload.get(at..at + scalar_width)?;
+            let (value, actual_encoding, width) = payload_scalar(raw)?;
+            (actual_encoding
+                == match encoding {
+                    PatternTransformEncoding::Binary32 => PayloadScalarEncoding::Binary32,
+                    PatternTransformEncoding::Binary64 => PayloadScalarEncoding::Binary64,
+                }
+                && width == scalar_width)
+                .then_some(())?;
+            values.push(value);
+            value_offsets.push(record.payload_offset + at);
+            raw_values.push(raw.to_vec());
+            at += scalar_width;
+            (record.payload.get(at..at + scalar_suffix.len()) == Some(scalar_suffix))
+                .then_some(())?;
+            at += scalar_suffix.len();
+            let (selector, width) = compact_index(record.payload.get(at..)?)?;
+            let CompactIndex::Value(selector) = selector else {
+                return None;
+            };
+            selectors.push(selector);
+            at += width;
+            (record.payload.get(at) == Some(&0x01)).then_some(())?;
+            (record.payload.get(at + 1) == Some(&ordinal)).then_some(())?;
+            (record.payload.get(at + 2..at + 2 + ROW_TAIL.len()) == Some(&ROW_TAIL))
+                .then_some(())?;
+            at += 2 + ROW_TAIL.len();
+        }
+        (record.payload.get(at..at + TERMINATOR.len()) == Some(&TERMINATOR)).then_some(())?;
+        Some(PatternPayloadTransformLane {
+            offset: record.payload_offset + start,
+            declared_count,
+            encoding,
+            values,
+            value_offsets,
+            raw_values,
+            selectors,
+        })
+    };
+    let matches = (0..record.payload.len().saturating_sub(1))
+        .filter_map(decode)
+        .collect::<Vec<_>>();
+    let [lane] = matches.as_slice() else {
+        return None;
+    };
+    Some(lane.clone())
 }
 
 /// Decode the exact leading construction header in a bounded `POINT` payload.

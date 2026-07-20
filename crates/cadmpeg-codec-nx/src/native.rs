@@ -5198,6 +5198,39 @@ pub struct FeaturePatternReference {
     pub source_offset: u64,
 }
 
+/// Scalar width selected by one exact pattern-transform lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FeaturePatternTransformEncoding {
+    /// Four-byte shifted IEEE-754 binary32 rows.
+    Binary32,
+    /// Eight-byte shifted IEEE-754 binary64 rows.
+    Binary64,
+}
+
+/// Exact counted transform lane carried by a bounded pattern payload.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FeaturePatternTransformLane {
+    /// Globally unique transform-lane identity.
+    pub id: String,
+    /// Owning `Pattern Feature` or `Pattern Geometry` operation label.
+    pub operation_label: String,
+    /// Count including the implicit seed row.
+    pub declared_count: u8,
+    /// Homogeneous scalar encoding selected by the operation family.
+    pub encoding: FeaturePatternTransformEncoding,
+    /// Ordered finite row scalars.
+    pub values: Vec<f64>,
+    /// Exact scalar encodings in row order.
+    pub raw_values: Vec<Vec<u8>>,
+    /// Ordered non-null compact selectors.
+    pub selectors: Vec<u32>,
+    /// Absolute source offset of the opening `01, count` field.
+    pub source_offset: u64,
+    /// Absolute source offsets of the scalar encodings.
+    pub value_source_offsets: Vec<u64>,
+}
+
 /// Exact leading construction header carried by a bounded point-feature payload.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeaturePointConstructionHeader {
@@ -8934,6 +8967,58 @@ pub fn feature_pattern_references(container: &Container) -> Vec<FeaturePatternRe
         }
     })
     .collect()
+}
+
+/// Decode exact counted transform lanes from bounded pattern payloads.
+pub fn feature_pattern_transform_lanes(container: &Container) -> Vec<FeaturePatternTransformLane> {
+    let sections = container.om_sections();
+    let mut lanes = Vec::new();
+    for (section_ordinal, link) in feature_history_sections(container) {
+        let Some((entry, section)) = sections.iter().find(|(entry, section)| {
+            entry
+                .file_span
+                .map_or(section.offset as u64, |(offset, _)| {
+                    offset + section.offset as u64
+                })
+                == link.section_offset
+        }) else {
+            continue;
+        };
+        let section_key = format!("{section_ordinal:010}");
+        let entry_offset = entry.file_span.map_or(0, |(offset, _)| offset);
+        for (operation_ordinal, record) in section.operation_records_with_label_ordinals() {
+            let Some(lane) = crate::om::pattern_payload_transform_lane(record) else {
+                continue;
+            };
+            lanes.push(FeaturePatternTransformLane {
+                id: format!(
+                    "nx:feature-history:pattern-transform-lane#{section_key}-{operation_ordinal:010}"
+                ),
+                operation_label: format!(
+                    "nx:feature-history:operation-label#{section_key}-{operation_ordinal:010}"
+                ),
+                declared_count: lane.declared_count,
+                encoding: match lane.encoding {
+                    crate::om::PatternTransformEncoding::Binary32 => {
+                        FeaturePatternTransformEncoding::Binary32
+                    }
+                    crate::om::PatternTransformEncoding::Binary64 => {
+                        FeaturePatternTransformEncoding::Binary64
+                    }
+                },
+                values: lane.values,
+                raw_values: lane.raw_values,
+                selectors: lane.selectors,
+                source_offset: entry_offset + lane.offset as u64,
+                value_source_offsets: lane
+                    .value_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
+            });
+        }
+    }
+    lanes
 }
 
 /// Decode exact point-feature construction headers without assigning coordinate semantics.

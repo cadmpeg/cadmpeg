@@ -7721,6 +7721,66 @@ fn om_pattern_reference_graph_preserves_nullable_terminal_slot() {
 }
 
 #[test]
+fn om_pattern_transform_lanes_require_counted_family_rows() {
+    let feature_payload = b"\xaa\x01\x03\x60\x01\x00\x00\x50\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\xd0\x54\x00\x00\x00\x01\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x9f\xfe\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
+    let label = crate::om::OperationLabel {
+        header_offset: 100,
+        offset: 119,
+        value: "Pattern Feature",
+        object_indices: [None; 4],
+        object_index_offsets: [115, 116, 117, 118],
+    };
+    let record = crate::om::OperationRecord {
+        offset: 100,
+        bytes: feature_payload,
+        payload_offset: 200,
+        payload: feature_payload,
+        label,
+    };
+    let lane = crate::om::pattern_payload_transform_lane(record).expect("feature lane");
+    assert_eq!(lane.offset, 201);
+    assert_eq!(lane.declared_count, 3);
+    assert_eq!(lane.encoding, crate::om::PatternTransformEncoding::Binary32);
+    assert_eq!(lane.values, [3.3125, -3.3125]);
+    assert_eq!(lane.value_offsets, [207, 237]);
+    assert_eq!(lane.selectors, [2, 8190]);
+
+    let geometry_payload = b"\x01\x03\x60\x01\x00\x00\x00\x00\x01\x00\x30\x60\x80\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x02\x01\x01\x00\x00\xff\x00\x00\x60\x01\x00\x00\x00\x00\x01\x00\x30\x70\x80\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x01\x01\x03\x03\x01\x02\x00\x00\xff\x00\x00\x5f\x00\x00\x01";
+    let geometry_record = crate::om::OperationRecord {
+        label: crate::om::OperationLabel {
+            value: "Pattern Geometry",
+            ..label
+        },
+        bytes: geometry_payload,
+        payload: geometry_payload,
+        ..record
+    };
+    let lane = crate::om::pattern_payload_transform_lane(geometry_record).expect("geometry lane");
+    assert_eq!(lane.encoding, crate::om::PatternTransformEncoding::Binary64);
+    assert_eq!(lane.values, [132.0, 264.0]);
+    assert_eq!(lane.selectors, [2, 3]);
+
+    let mut wrong_ordinal = feature_payload.to_vec();
+    wrong_ordinal[29] = 2;
+    assert!(
+        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+            bytes: &wrong_ordinal,
+            payload: &wrong_ordinal,
+            ..record
+        })
+        .is_none()
+    );
+    assert!(
+        crate::om::pattern_payload_transform_lane(crate::om::OperationRecord {
+            bytes: &feature_payload[..feature_payload.len() - 1],
+            payload: &feature_payload[..feature_payload.len() - 1],
+            ..record
+        })
+        .is_none()
+    );
+}
+
+#[test]
 fn om_geometry_instance_reference_requires_one_complete_field() {
     let label = crate::om::OperationLabel {
         header_offset: 100,

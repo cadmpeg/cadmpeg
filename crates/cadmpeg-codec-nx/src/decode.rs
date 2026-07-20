@@ -7720,6 +7720,8 @@ fn attach_native_object_model(
     let feature_projected_curve_references =
         crate::native::feature_projected_curve_references(&scan.container);
     let feature_pattern_references = crate::native::feature_pattern_references(&scan.container);
+    let feature_pattern_transform_lanes =
+        crate::native::feature_pattern_transform_lanes(&scan.container);
     let feature_point_construction_headers =
         crate::native::feature_point_construction_headers(&scan.container);
     let feature_point_construction_scalar_lanes =
@@ -8057,6 +8059,7 @@ fn attach_native_object_model(
         && feature_sketch_references.is_empty()
         && feature_projected_curve_references.is_empty()
         && feature_pattern_references.is_empty()
+        && feature_pattern_transform_lanes.is_empty()
         && feature_point_construction_headers.is_empty()
         && feature_point_construction_scalar_lanes.is_empty()
         && feature_draft_construction_references.is_empty()
@@ -8860,6 +8863,7 @@ fn attach_native_object_model(
             sketch_references: &feature_sketch_references,
             projected_curve_references: &feature_projected_curve_references,
             pattern_references: &feature_pattern_references,
+            pattern_transform_lanes: &feature_pattern_transform_lanes,
             point_construction_headers: &feature_point_construction_headers,
             point_construction_scalar_lanes: &feature_point_construction_scalar_lanes,
             draft_construction_references: &feature_draft_construction_references,
@@ -9305,6 +9309,12 @@ fn attach_native_object_model(
     }
     if !feature_pattern_references.is_empty() {
         namespace.set_arena("feature_pattern_references", &feature_pattern_references)?;
+    }
+    if !feature_pattern_transform_lanes.is_empty() {
+        namespace.set_arena(
+            "feature_pattern_transform_lanes",
+            &feature_pattern_transform_lanes,
+        )?;
     }
     if !feature_point_construction_headers.is_empty() {
         namespace.set_arena(
@@ -10075,6 +10085,7 @@ struct FeatureOperationSources<'a> {
     sketch_references: &'a [crate::native::FeatureSketchReference],
     projected_curve_references: &'a [crate::native::FeatureProjectedCurveReference],
     pattern_references: &'a [crate::native::FeaturePatternReference],
+    pattern_transform_lanes: &'a [crate::native::FeaturePatternTransformLane],
     point_construction_headers: &'a [crate::native::FeaturePointConstructionHeader],
     point_construction_scalar_lanes: &'a [crate::native::FeaturePointConstructionScalarLane],
     draft_construction_references: &'a [crate::native::FeatureDraftConstructionReference],
@@ -10185,6 +10196,7 @@ fn attach_feature_operations(
         sketch_references,
         projected_curve_references,
         pattern_references,
+        pattern_transform_lanes,
         point_construction_headers,
         point_construction_scalar_lanes,
         draft_construction_references,
@@ -10361,6 +10373,8 @@ fn attach_feature_operations(
         });
     let pattern_references_by_operation =
         records_by_operation(pattern_references, |reference| &reference.operation_label);
+    let pattern_transform_lanes_by_operation =
+        records_by_operation(pattern_transform_lanes, |lane| &lane.operation_label);
     let point_construction_headers_by_operation = point_construction_headers
         .iter()
         .map(|header| (header.operation_label.as_str(), header))
@@ -11143,6 +11157,13 @@ fn attach_feature_operations(
                     .clone()
                     .unwrap_or_else(|| reference.object_index.to_string()),
             );
+        }
+        for lane in pattern_transform_lanes_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert("pattern_transform_lane".to_string(), lane.id.clone());
         }
         if let Some(header) = point_construction_headers_by_operation.get(label.id.as_str()) {
             source_properties.insert("point_construction_header".to_string(), header.id.clone());
