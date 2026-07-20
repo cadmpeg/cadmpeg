@@ -3386,6 +3386,24 @@ mod marker_tests {
             compact_bounded_curve_tangent(&payload, 0),
             Some([-1.0, 0.0])
         );
+
+        let mut legacy_112 = vec![0; 112 + LEGACY_SKETCH_MARKER.len()];
+        legacy_112[..80].copy_from_slice(&payload[..80]);
+        legacy_112[..LEGACY_SKETCH_MARKER.len()].copy_from_slice(LEGACY_SKETCH_MARKER);
+        legacy_112[80..84].copy_from_slice(&1i32.to_le_bytes());
+        legacy_112[84..86].copy_from_slice(&4u16.to_le_bytes());
+        for offset in (86..102).step_by(4) {
+            legacy_112[offset..offset + 4].copy_from_slice(&(-2i32).to_le_bytes());
+        }
+        legacy_112[104..108].copy_from_slice(&583u32.to_le_bytes());
+        legacy_112[108..112].copy_from_slice(&450u32.to_le_bytes());
+        legacy_112[112..].copy_from_slice(LEGACY_SKETCH_MARKER);
+        assert_eq!(
+            wide_indexed_curve_endpoint_indices(&legacy_112, 0),
+            Some([7, 11])
+        );
+        legacy_112[98] = 0;
+        assert_eq!(wide_indexed_curve_endpoint_indices(&legacy_112, 0), None);
     }
 
     #[test]
@@ -18960,7 +18978,7 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
         || f64::from_le_bytes(payload.get(offset + 48..offset + 56)?.try_into().ok()?) != 1.0
         || payload.get(offset + 68..offset + 72) != Some(&[0x01, 0x00, 0x00, 0x00])
         || payload.get(offset + 72..offset + 80) != Some(&(-1.0f64).to_le_bytes())
-        || !sketch_marker_prefix_at(payload, offset.checked_add(92)?)
+        || !wide_indexed_curve_record_ends_at(payload, offset, prefix)
     {
         return None;
     }
@@ -18975,6 +18993,37 @@ fn wide_indexed_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<
         .map(u32::from)
     };
     Some([endpoint(64)?, endpoint(66)?])
+}
+
+fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8]) -> bool {
+    if sketch_marker_prefix_at(payload, offset.saturating_add(92)) {
+        return true;
+    }
+    let selector = payload
+        .get(offset + 80..offset + 84)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(i32::from_le_bytes);
+    let state = payload
+        .get(offset + 84..offset + 86)
+        .and_then(|bytes| bytes.try_into().ok())
+        .map(u16::from_le_bytes);
+    let identities = [104usize, 108].map(|relative| {
+        payload
+            .get(offset + relative..offset + relative + 4)
+            .and_then(|bytes| bytes.try_into().ok())
+            .map(u32::from_le_bytes)
+    });
+    prefix == LEGACY_SKETCH_MARKER
+        && matches!(selector, Some(-1 | 1))
+        && state.is_some_and(|state| state != 0)
+        && payload.get(offset + 86..offset + 102)
+            == Some(&[
+                0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xfe, 0xff,
+                0xff, 0xff,
+            ])
+        && payload.get(offset + 102..offset + 104) == Some(&[0; 2])
+        && matches!(identities, [Some(first), Some(second)] if first != u32::MAX && second != u32::MAX && first != second)
+        && sketch_marker_prefix_at(payload, offset.saturating_add(112))
 }
 
 fn marker_profile_curve_role(payload: &[u8], offset: usize) -> Option<u16> {
