@@ -57,7 +57,7 @@ This document records F3D semantics that the format specification does not yet d
 
 ## Material assets
 
-- The semantic role of the u32 prelude before `texture_RealWorldOffsetX`, the complete Distance and unit-tag namespaces, and the application-defined meanings of texture map-channel integer values are unresolved.
+- The semantic roles of the u8 preceding a TextureURI path count and the u32 prelude before `texture_RealWorldOffsetX`, the complete Distance and unit-tag namespaces, and the application-defined meanings of texture map-channel integer values are unresolved.
 - The complete Design-record grammar binding canvas and decal objects to `Images.BlobParts` entries is unresolved.
 - The resolution of preset phrases against the external material library is unresolved.
 - The precedence of `color-adesk-attrib`, `material-adesk-attrib`, and `rh_material` library records relative to direct colors and appearance assignments is unresolved.
