@@ -8755,7 +8755,17 @@ fn om_extrude_body_32_branch_decodes_counted_lanes() {
     assert_eq!(branch.atoms_be, [0x3d82_5600, 0x3d82_5700]);
     assert_eq!(branch.atom_indices, [598, 599]);
     assert_eq!(branch.first_indices, [43, 45, 44]);
+    assert_eq!(
+        branch.raw_first_indices,
+        [vec![0x80, 0x2b], vec![0x80, 0x2d], vec![0x80, 0x2c]]
+    );
+    assert_eq!(branch.first_index_offsets, [128, 130, 132]);
     assert_eq!(branch.second_indices, [46, 119]);
+    assert_eq!(
+        branch.raw_second_indices,
+        [vec![0x80, 0x2e], vec![0x80, 0x77]]
+    );
+    assert_eq!(branch.second_index_offsets, [136, 138]);
     assert_eq!(branch.terminal_object_index, 115);
 
     let mut invalid = bytes.to_vec();
@@ -8813,8 +8823,12 @@ fn nx_extrude_32_construction_requires_resolved_contiguous_profile() {
         atom_indices: vec![1],
         atom_data_blocks: vec![Some("block#1".to_string())],
         first_indices: vec![2],
+        raw_first_indices: vec![vec![2]],
+        first_index_source_offsets: vec![21],
         first_data_blocks: vec![Some("block#2".to_string())],
         second_indices: vec![3],
+        raw_second_indices: vec![vec![3]],
+        second_index_source_offsets: vec![22],
         second_data_blocks: vec![Some("block#3".to_string())],
         terminal_object_index: 42,
         source_offset: 20,

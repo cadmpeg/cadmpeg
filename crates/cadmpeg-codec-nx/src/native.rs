@@ -5995,10 +5995,18 @@ pub struct FeatureExtrudePayload32Branch {
     pub atom_data_blocks: Vec<Option<String>>,
     /// Ordered values in the first compact-index lane.
     pub first_indices: Vec<u32>,
+    /// Exact compact-index tokens in the first lane.
+    pub raw_first_indices: Vec<Vec<u8>>,
+    /// Absolute source offsets of the first-lane tokens.
+    pub first_index_source_offsets: Vec<u64>,
     /// Unique offset-only data blocks addressed by the first lane.
     pub first_data_blocks: Vec<Option<String>>,
     /// Ordered values in the second compact-index lane.
     pub second_indices: Vec<u32>,
+    /// Exact compact-index tokens in the second lane.
+    pub raw_second_indices: Vec<Vec<u8>>,
+    /// Absolute source offsets of the second-lane tokens.
+    pub second_index_source_offsets: Vec<u64>,
     /// Unique offset-only data blocks addressed by the second lane.
     pub second_data_blocks: Vec<Option<String>>,
     /// Object index in the terminal field.
@@ -10722,8 +10730,20 @@ pub fn feature_extrude_payload_32_branches(
                 atom_indices: branch.atom_indices,
                 atom_data_blocks,
                 first_indices: branch.first_indices,
+                raw_first_indices: branch.raw_first_indices,
+                first_index_source_offsets: branch
+                    .first_index_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
                 first_data_blocks,
                 second_indices: branch.second_indices,
+                raw_second_indices: branch.raw_second_indices,
+                second_index_source_offsets: branch
+                    .second_index_offsets
+                    .into_iter()
+                    .map(|offset| entry_offset + offset as u64)
+                    .collect(),
                 second_data_blocks,
                 terminal_object_index: branch.terminal_object_index,
                 source_offset: entry_offset + branch.offset as u64,

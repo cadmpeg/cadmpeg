@@ -1290,8 +1290,16 @@ pub struct ExtrudePayload32Branch {
     pub atom_indices: Vec<u32>,
     /// Ordered values in the first compact-index lane.
     pub first_indices: Vec<u32>,
+    /// Exact compact-index tokens in the first lane.
+    pub raw_first_indices: Vec<Vec<u8>>,
+    /// Absolute offsets of the first-lane compact-index tokens.
+    pub first_index_offsets: Vec<usize>,
     /// Ordered values in the second compact-index lane.
     pub second_indices: Vec<u32>,
+    /// Exact compact-index tokens in the second lane.
+    pub raw_second_indices: Vec<Vec<u8>>,
+    /// Absolute offsets of the second-lane compact-index tokens.
+    pub second_index_offsets: Vec<usize>,
     /// Object index in the terminal field.
     pub terminal_object_index: u32,
 }
@@ -2959,8 +2967,8 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
             Some(u32::from(bytes[1] - 0x80) * 256 + u32::from(bytes[2]))
         })
         .collect::<Option<Vec<_>>>()?;
-    let first_indices = counted_compact_values(record.bytes, &mut at)?;
-    let second_indices = counted_compact_values(record.bytes, &mut at)?;
+    let first = counted_compact_values(record.bytes, &mut at)?;
+    let second = counted_compact_values(record.bytes, &mut at)?;
     if record.bytes.get(at..at + 2) != Some(&[0x00, 0x01]) {
         return None;
     }
@@ -2978,8 +2986,20 @@ pub fn extrude_payload_32_branch(record: OperationRecord<'_>) -> Option<ExtrudeP
         raw_scalar,
         atoms_be,
         atom_indices,
-        first_indices,
-        second_indices,
+        first_indices: first.values,
+        raw_first_indices: first.raw_values,
+        first_index_offsets: first
+            .offsets
+            .into_iter()
+            .map(|offset| record.offset + offset)
+            .collect(),
+        second_indices: second.values,
+        raw_second_indices: second.raw_values,
+        second_index_offsets: second
+            .offsets
+            .into_iter()
+            .map(|offset| record.offset + offset)
+            .collect(),
         terminal_object_index,
     })
 }
@@ -3678,7 +3698,13 @@ fn counted_u32_atoms(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
     Some(values)
 }
 
-fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
+struct CountedCompactValues {
+    values: Vec<u32>,
+    raw_values: Vec<Vec<u8>>,
+    offsets: Vec<usize>,
+}
+
+fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<CountedCompactValues> {
     if bytes.get(*at) != Some(&0x01) {
         return None;
     }
@@ -3688,15 +3714,24 @@ fn counted_compact_values(bytes: &[u8], at: &mut usize) -> Option<Vec<u32>> {
     }
     *at += 2;
     let mut values = Vec::with_capacity(count - 1);
+    let mut raw_values = Vec::with_capacity(count - 1);
+    let mut offsets = Vec::with_capacity(count - 1);
     for _ in 1..count {
+        let value_at = *at;
         let (value, width) = compact_index(bytes.get(*at..)?)?;
         let CompactIndex::Value(value) = value else {
             return None;
         };
         values.push(value);
+        raw_values.push(bytes[value_at..value_at + width].to_vec());
+        offsets.push(value_at);
         *at += width;
     }
-    Some(values)
+    Some(CountedCompactValues {
+        values,
+        raw_values,
+        offsets,
+    })
 }
 
 fn payload_scalar(bytes: &[u8]) -> Option<(f64, PayloadScalarEncoding, usize)> {
