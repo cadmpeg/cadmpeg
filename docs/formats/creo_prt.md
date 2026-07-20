@@ -1384,7 +1384,8 @@ its section entity identifier; the cylinder entry does not. The materialized
 cap plane's complete square outline fixes the cylinder axis, radial center, and
 radius. A type-20127 zero-offset placement instruction fixes the section at the
 parallel standard datum; the materialized cap then fixes the blind trimming
-extent.
+extent. The resolved section profile, section normal, and cap offset define the
+same neutral blind extrusion operation as the two-cap form.
 
 A typed schema row that owns a materialized `srf_array` row is an active construction feature. The root schema class supplies its operation family independently of an `MdlStatus` operation name.
 

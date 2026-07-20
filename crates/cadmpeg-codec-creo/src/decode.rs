@@ -13089,27 +13089,30 @@ fn schema_feature_definition(
             .iter()
             .filter(|definition| definition.owner_feature_id == Some(feature_id))
             .collect::<Vec<_>>();
-        if let ([definition], Some(sweep)) = (
-            definitions.as_slice(),
-            circular_sweep_geometry(scan, feature_id),
-        ) {
-            let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
-            let profile = section_profile_ref(
-                ir,
-                definition.id,
-                feature_sketch_record_id_in_scan(scan, definition),
-            );
-            return circular_sweep_feature_definition(
-                profile,
-                &sweep,
-                section_sweep_boolean_operation(
-                    feature_recipe_effect(scan, feature_id),
-                    kind,
-                    output_kind.is_some(),
-                    preceding_features_establish_body(ir),
-                ),
-                (output_kind == Some(BodyKind::Solid)).then_some(true),
-            );
+        let sweep = circular_sweep_geometry(scan, feature_id);
+        if let ([definition], Some(sweep)) = (definitions.as_slice(), sweep) {
+            if sweep
+                .section_definition_id
+                .is_none_or(|definition_id| definition_id == definition.id)
+            {
+                let output_kind = evaluated_sweep_body_kind(ir, "extrusion", feature_id);
+                let profile = section_profile_ref(
+                    ir,
+                    definition.id,
+                    feature_sketch_record_id_in_scan(scan, definition),
+                );
+                return circular_sweep_feature_definition(
+                    profile,
+                    &sweep,
+                    section_sweep_boolean_operation(
+                        feature_recipe_effect(scan, feature_id),
+                        kind,
+                        output_kind.is_some(),
+                        preceding_features_establish_body(ir),
+                    ),
+                    (output_kind == Some(BodyKind::Solid)).then_some(true),
+                );
+            }
         }
     }
     if feature_recipe(scan, feature_id) == Some(crate::feature::FeatureRecipeKind::Revolve) {
@@ -13717,7 +13720,8 @@ fn circular_sweep_cylinder_from_cap_outlines(
 
 #[derive(Debug, Clone, PartialEq)]
 struct CircularSweepGeometry {
-    cylinder_ids: [u32; 2],
+    cylinder_ids: Vec<u32>,
+    section_definition_id: Option<u32>,
     direction: [f64; 3],
     extent: Extent,
     geometry: SurfaceGeometry,
@@ -13726,7 +13730,7 @@ struct CircularSweepGeometry {
 fn single_cap_circular_sweep_geometry(
     scan: &ContainerScan,
     feature_id: u32,
-) -> Option<(u32, SurfaceGeometry)> {
+) -> Option<CircularSweepGeometry> {
     let tables = scan
         .feature_entity_tables
         .iter()
@@ -13782,10 +13786,23 @@ fn single_cap_circular_sweep_geometry(
         plane.2,
         plane_envelope_corners(&envelope.envelope),
     );
-    Some((
-        cylinder_id.entity_id,
-        cylinder_from_single_cap_outline(cap)?,
-    ))
+    let transforms = scan
+        .feature_section_transforms
+        .iter()
+        .filter(|transform| transform.feature_id == Some(feature_id))
+        .collect::<Vec<_>>();
+    let [transform] = transforms.as_slice() else {
+        return None;
+    };
+    let (extent, direction) =
+        extrusion_extent_and_direction(transform.origin, transform.normal, [(plane.1, plane.2)])?;
+    Some(CircularSweepGeometry {
+        cylinder_ids: vec![cylinder_id.entity_id],
+        section_definition_id: Some(transform.definition_id),
+        direction,
+        extent,
+        geometry: cylinder_from_single_cap_outline(cap)?,
+    })
 }
 
 fn circular_sweep_feature_definition(
@@ -13817,6 +13834,14 @@ fn circular_sweep_feature_definition(
 }
 
 fn circular_sweep_geometry(scan: &ContainerScan, feature_id: u32) -> Option<CircularSweepGeometry> {
+    two_cap_circular_sweep_geometry(scan, feature_id)
+        .or_else(|| single_cap_circular_sweep_geometry(scan, feature_id))
+}
+
+fn two_cap_circular_sweep_geometry(
+    scan: &ContainerScan,
+    feature_id: u32,
+) -> Option<CircularSweepGeometry> {
     let tables = scan
         .feature_entity_tables
         .iter()
@@ -13825,6 +13850,14 @@ fn circular_sweep_geometry(scan: &ContainerScan, feature_id: u32) -> Option<Circ
     let [table] = tables.as_slice() else {
         return None;
     };
+    if table
+        .entries
+        .iter()
+        .map(|entry| entry.class_id)
+        .eq([204, 203, 200, 200])
+    {
+        return None;
+    }
     let [first_plane, second_plane, first_cylinder, second_cylinder] = table.entry_ids.as_slice()
     else {
         return None;
@@ -13858,7 +13891,8 @@ fn circular_sweep_geometry(scan: &ContainerScan, feature_id: u32) -> Option<Circ
     }
     let (_, direction, extent) = hole_placement([*first, *second])?;
     Some(CircularSweepGeometry {
-        cylinder_ids,
+        cylinder_ids: cylinder_ids.to_vec(),
+        section_definition_id: None,
         direction,
         extent,
         geometry: circular_sweep_cylinder_from_cap_outlines([cap(first), cap(second)])?,
@@ -15162,7 +15196,8 @@ mod resolved_sketch_tests {
     #[test]
     fn circular_sweep_projects_profile_direction_and_extent() {
         let sweep = CircularSweepGeometry {
-            cylinder_ids: [12, 13],
+            cylinder_ids: vec![12, 13],
+            section_definition_id: None,
             direction: [0.0, 0.0, -1.0],
             extent: Extent::Blind {
                 length: Length(6.5),
@@ -28828,7 +28863,11 @@ fn transfer_circular_sweep_cylinders(
     let sweep_feature_ids = scan
         .feature_rows
         .iter()
-        .filter(|row| row.root_schema_class == Some(917))
+        .filter(|row| {
+            row.root_schema_class == Some(917)
+                && feature_recipe(scan, row.feature_id)
+                    == Some(crate::feature::FeatureRecipeKind::Extrude)
+        })
         .map(|row| row.feature_id)
         .collect::<BTreeSet<_>>();
     let mut transferred = 0;
@@ -28836,8 +28875,8 @@ fn transfer_circular_sweep_cylinders(
         let Some(sweep) = circular_sweep_geometry(scan, feature_id) else {
             continue;
         };
-        for cylinder_id in sweep.cylinder_ids {
-            let row = crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id)
+        for cylinder_id in &sweep.cylinder_ids {
+            let row = crate::surface::unique_surface_row(&scan.surface_rows, *cylinder_id)
                 .expect("validated cylinder row");
             let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
             if ir.model.surfaces.iter().any(|surface| surface.id == id) {
@@ -28866,57 +28905,6 @@ fn transfer_circular_sweep_cylinders(
             });
             transferred += 1;
         }
-    }
-    transferred
-}
-
-fn transfer_single_cap_circular_sweep_cylinders(
-    scan: &ContainerScan,
-    ir: &mut CadIr,
-    annotations: &mut AnnotationBuilder,
-) -> usize {
-    let feature_ids = scan
-        .feature_rows
-        .iter()
-        .filter(|row| {
-            feature_recipe(scan, row.feature_id) == Some(crate::feature::FeatureRecipeKind::Extrude)
-        })
-        .map(|row| row.feature_id)
-        .collect::<BTreeSet<_>>();
-    let mut transferred = 0;
-    for feature_id in feature_ids {
-        let Some((cylinder_id, geometry)) = single_cap_circular_sweep_geometry(scan, feature_id)
-        else {
-            continue;
-        };
-        let id = SurfaceId(format!("creo:visibgeom:surface#{cylinder_id}"));
-        if ir.model.surfaces.iter().any(|surface| surface.id == id) {
-            continue;
-        }
-        let row = crate::surface::unique_surface_row(&scan.surface_rows, cylinder_id)
-            .expect("validated single-cap cylinder row");
-        annotate(
-            annotations,
-            &id,
-            "AllFeatur",
-            row.offset as u64,
-            "single_cap_circular_sweep_cylinder",
-            Exactness::Derived,
-        );
-        ir.model.surfaces.push(Surface {
-            id,
-            geometry,
-            source_object: Some(SourceObjectAssociation {
-                format: "creo".to_string(),
-                object_id: format!("VisibGeom:{cylinder_id}"),
-                name: None,
-                color: None,
-                visible: None,
-                layer: None,
-                instance_path: Vec::new(),
-            }),
-        });
-        transferred += 1;
     }
     transferred
 }
@@ -29531,8 +29519,6 @@ fn build_ir(
         transfer_resolved_extrusion_vertex_orbit_curves(scan, &mut ir, &mut annotations);
     let circular_sweep_cylinder_count =
         transfer_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
-    let single_cap_circular_sweep_cylinder_count =
-        transfer_single_cap_circular_sweep_cylinders(scan, &mut ir, &mut annotations);
     let hole_cylinder_count = transfer_hole_cylinders(scan, &mut ir, &mut annotations);
     let constrained_slot_fillet_cylinder_count =
         transfer_constrained_slot_fillet_cylinders(scan, &mut ir, &mut annotations);
@@ -29635,10 +29621,6 @@ fn build_ir(
         source.attributes.insert(
             "transferred_circular_sweep_cylinder_count".to_string(),
             circular_sweep_cylinder_count.to_string(),
-        );
-        source.attributes.insert(
-            "transferred_single_cap_circular_sweep_cylinder_count".to_string(),
-            single_cap_circular_sweep_cylinder_count.to_string(),
         );
         source.attributes.insert(
             "transferred_hole_cylinder_count".to_string(),
