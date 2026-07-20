@@ -438,10 +438,23 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && scope.kind_offset > scope.byte_offset
             && scope.kind_offset < scope.paired_byte_offset.saturating_sub(78)
             && scope.feature_ordinal > 0
-            && scope.feature_ordinal_offset == scope.paired_byte_offset.saturating_sub(78)
+            && scope.feature_ordinal_offset
+                == scope
+                    .paired_byte_offset
+                    .saturating_sub(if scope.kind == "CopyPasteBodies" {
+                        110
+                    } else {
+                        78
+                    })
             && scope.history_state_id_offset == scope.kind_offset.saturating_sub(8)
             && scope.previous_history_state_id_offset
-                == scope.feature_ordinal_offset.saturating_add(31)
+                == scope.feature_ordinal_offset.saturating_add(
+                    if scope.kind == "CopyPasteBodies" {
+                        53
+                    } else {
+                        31
+                    },
+                )
             && scope.history_state_id.is_some() == scope.previous_history_state_id.is_some()
             && scope.reference_count_offset > scope.byte_offset
             && scope.reference_count_offset < scope.kind_offset

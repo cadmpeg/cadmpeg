@@ -17307,18 +17307,23 @@ fn parse_parameter_scope(
         }
         position = at.checked_add(1)?;
     };
-    let kind_end = paired_at.checked_sub(78)?;
     let mut candidates = Vec::new();
-    for at in start + 11..kind_end {
+    for at in start + 11..paired_at {
         if let Some((kind, end)) = lp_utf16(bytes, at) {
-            if end == kind_end && kind.chars().all(|character| !character.is_control()) {
-                candidates.push((at, kind));
+            let Some(tail_length) = paired_at.checked_sub(end) else {
+                continue;
+            };
+            if (matches!(tail_length, 78) || (tail_length == 110 && kind == "CopyPasteBodies"))
+                && kind.chars().all(|character| !character.is_control())
+            {
+                candidates.push((at, end, kind));
             }
         }
     }
-    let [(kind_at, kind)] = candidates.as_slice() else {
+    let [(kind_at, kind_end, kind)] = candidates.as_slice() else {
         return None;
     };
+    let kind_end = *kind_end;
     let reference_table_end = kind_at.checked_sub(4)?;
     let feature_ordinal = u32_at(bytes, kind_end)?;
     if feature_ordinal == 0 {
@@ -17329,7 +17334,8 @@ fn parse_parameter_scope(
         u32::MAX => None,
         state_id => Some(i64::from(state_id)),
     };
-    let previous_history_state_id_offset = kind_end.checked_add(31)?;
+    let previous_history_state_id_offset =
+        kind_end.checked_add(if kind == "CopyPasteBodies" { 53 } else { 31 })?;
     let previous_history_state_id = match u32_at(bytes, previous_history_state_id_offset)? {
         u32::MAX => None,
         state_id => Some(i64::from(state_id)),
@@ -23674,6 +23680,39 @@ mod relation_tests {
             .collect::<Vec<_>>();
         assert_eq!(discovered.len(), 1);
         assert_eq!(discovered[0].record_index, 12);
+
+        let mut copy_scope = Vec::new();
+        copy_scope.extend_from_slice(&3u32.to_le_bytes());
+        copy_scope.extend_from_slice(b"316");
+        copy_scope.extend_from_slice(&12u32.to_le_bytes());
+        copy_scope.extend_from_slice(&[0; 10]);
+        copy_scope.extend_from_slice(&1u32.to_le_bytes());
+        copy_scope.push(1);
+        copy_scope.extend_from_slice(&55u32.to_le_bytes());
+        copy_scope.extend_from_slice(&[0; 6]);
+        copy_scope.extend_from_slice(&u32::MAX.to_le_bytes());
+        lp_utf16(&mut copy_scope, "CopyPasteBodies");
+        let copy_feature_ordinal_at = copy_scope.len();
+        let mut copy_tail = [0; 110];
+        copy_tail[0..4].copy_from_slice(&2u32.to_le_bytes());
+        copy_tail[53..57].copy_from_slice(&u32::MAX.to_le_bytes());
+        copy_scope.extend_from_slice(&copy_tail);
+        let copy_paired_at = copy_scope.len();
+        copy_scope.extend_from_slice(&3u32.to_le_bytes());
+        copy_scope.extend_from_slice(b"259");
+        copy_scope.extend_from_slice(&12u32.to_le_bytes());
+        let copy = parse_parameter_scope(&copy_scope, &header)
+            .expect("CopyPasteBodies scope with extended tail");
+        assert_eq!(copy.kind, "CopyPasteBodies");
+        assert_eq!(copy.feature_ordinal, 2);
+        assert_eq!(copy.feature_ordinal_offset, copy_feature_ordinal_at as u64);
+        assert_eq!(copy.history_state_id, None);
+        assert_eq!(copy.previous_history_state_id, None);
+        assert_eq!(
+            copy.previous_history_state_id_offset,
+            (copy_feature_ordinal_at + 53) as u64
+        );
+        assert_eq!(copy.frame_length, copy_paired_at as u64);
 
         // A Sketch scope may also carry the generic ordered reference table
         // used by `EntityGenesis`-form streams; the table then has more than
