@@ -5731,6 +5731,70 @@ fn initial_mesh_quotient(
         .then_some(quotient)
 }
 
+fn complete_mesh_endpoint_candidates_from_ports(
+    edge_candidates: &[Vec<[usize; 2]>],
+    point_count: usize,
+    port_identities: &[[u32; 2]],
+    max_pairs_per_edge: usize,
+    max_pairs_total: usize,
+) -> Option<Vec<Vec<[usize; 2]>>> {
+    let mut quotient = initial_mesh_quotient(edge_candidates, point_count, port_identities)?;
+    let mut pair_count = 0usize;
+    edge_candidates
+        .iter()
+        .enumerate()
+        .map(|(edge, candidates)| {
+            if !candidates.is_empty() {
+                pair_count = pair_count.checked_add(candidates.len())?;
+                return (pair_count <= max_pairs_total).then(|| candidates.clone());
+            }
+            let left = quotient.union.find(edge * 2);
+            let right = quotient.union.find(edge * 2 + 1);
+            let relation_count = if left == right {
+                quotient.domains[left].len()
+            } else {
+                quotient.domains[left]
+                    .len()
+                    .checked_mul(quotient.domains[right].len())?
+            };
+            if relation_count > max_pairs_per_edge {
+                return None;
+            }
+            pair_count = pair_count.checked_add(relation_count)?;
+            if pair_count > max_pairs_total {
+                return None;
+            }
+            let mut completed = if left == right {
+                quotient.domains[left]
+                    .iter()
+                    .copied()
+                    .map(|point| [point, point])
+                    .collect::<Vec<_>>()
+            } else {
+                quotient.domains[left]
+                    .iter()
+                    .flat_map(|&left_point| {
+                        quotient.domains[right]
+                            .iter()
+                            .copied()
+                            .filter(move |&right_point| right_point != left_point)
+                            .map(move |right_point| {
+                                if left_point < right_point {
+                                    [left_point, right_point]
+                                } else {
+                                    [right_point, left_point]
+                                }
+                            })
+                    })
+                    .collect::<Vec<_>>()
+            };
+            completed.sort_unstable();
+            completed.dedup();
+            (!completed.is_empty()).then_some(completed)
+        })
+        .collect()
+}
+
 impl MeshQuotient {
     fn signature(&mut self) -> Vec<(Vec<usize>, Vec<usize>)> {
         let mut components = Vec::new();
@@ -9009,12 +9073,14 @@ pub fn parse_standard_mesh_incidence_candidates<F>(
 where
     F: Fn(&[[usize; 2]]) -> bool,
 {
+    const MAX_COMPLETED_PAIRS_PER_EDGE: usize = 65_536;
+    const MAX_COMPLETED_PAIRS_TOTAL: usize = 1_000_000;
+
     let (_, face_count, after_faces) = largest_fbb_run(bytes)?;
     let (edge_rows, vertex_header) = parse_edge_tables(bytes, after_faces)?;
     let vertex_points = parse_vertex_table(bytes, vertex_header)?;
     if edge_rows.len() != edge_faces.len()
         || edge_rows.len() != edge_candidates.len()
-        || edge_candidates.iter().any(Vec::is_empty)
         || edge_candidates
             .iter()
             .flatten()
@@ -9037,13 +9103,20 @@ where
     if port_identities.len() != edge_rows.len() {
         return None;
     }
+    let edge_candidates = complete_mesh_endpoint_candidates_from_ports(
+        edge_candidates,
+        vertex_points.len(),
+        &port_identities,
+        MAX_COMPLETED_PAIRS_PER_EDGE,
+        MAX_COMPLETED_PAIRS_TOTAL,
+    )?;
     let mesh_quotient =
-        initial_mesh_quotient(edge_candidates, vertex_points.len(), &port_identities)?;
+        initial_mesh_quotient(&edge_candidates, vertex_points.len(), &port_identities)?;
     let pair_solutions = incidence_endpoint_pair_solutions(
         &edge_rows,
         &vertex_points,
         edge_faces,
-        edge_candidates,
+        &edge_candidates,
         face_count,
         Some(&mesh_domains),
         Some(&mesh_quotient),
@@ -10757,6 +10830,34 @@ mod motif_tests {
         let clone = quotient.clone();
         assert!(Arc::ptr_eq(&quotient.domains[0], &clone.domains[0]));
         assert!(Arc::ptr_eq(&quotient.domains[0], &quotient.domains[3]));
+    }
+
+    #[test]
+    fn port_quotient_completes_only_supported_unknown_edge_pairs() {
+        let completed = super::complete_mesh_endpoint_candidates_from_ports(
+            &[vec![[0, 1]], Vec::new(), vec![[2, 3]]],
+            5,
+            &[[10, 11], [10, 12], [12, 13]],
+            16,
+            32,
+        )
+        .expect("bounded quotient completion");
+
+        assert_eq!(completed[0], vec![[0, 1]]);
+        assert_eq!(completed[1], vec![[0, 2], [0, 3], [1, 2], [1, 3]]);
+        assert_eq!(completed[2], vec![[2, 3]]);
+    }
+
+    #[test]
+    fn port_quotient_declines_unbounded_unknown_edge_pairs() {
+        assert!(super::complete_mesh_endpoint_candidates_from_ports(
+            &[Vec::new()],
+            100,
+            &[[10, 11]],
+            1_000,
+            1_000,
+        )
+        .is_none());
     }
 
     #[test]
