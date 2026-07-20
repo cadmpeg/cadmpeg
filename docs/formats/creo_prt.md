@@ -2394,13 +2394,19 @@ compact `11` parameter form remains an opaque one-byte parameter while leaving
 the following coefficient and local-system positions aligned. A complete row
 consumes all twelve local-system slots before its trailing compound record.
 
-A conic record defines a complete ellipse carrier without interpreting its
-parameter tokens when the first two local-system triples are finite orthogonal
-unit vectors, the final triple is a finite center, `|c1|` and `|c2|` are
-positive, and the two stored endpoints are antipodal about that center at
-exactly one of those radii. Their common plane normal is the normalized cross
-product of the frame vectors. The larger coefficient magnitude is the
-semi-major radius. An endpoint at the semi-major radius supplies the major
-direction; an endpoint at the semi-minor radius supplies its in-plane
-perpendicular. Records that fail any invariant do not define an ellipse
-carrier.
+A type-30 conic record defines a complete ellipse carrier without interpreting
+its parameter tokens when the first two local-system triples are finite
+orthogonal unit vectors, the final triple is a finite center, and `|c1|` and
+`|c2|` are positive. Their common plane normal is the normalized cross product
+of the frame vectors. The larger coefficient magnitude is the semi-major
+radius. Antipodal endpoints at exactly one coefficient radius establish the
+corresponding principal direction: a major-radius endpoint supplies the major
+direction, while a minor-radius endpoint supplies its in-plane perpendicular.
+For non-antipodal endpoints, assigning `|c1|` and `|c2|` to the two frame
+directions must produce exactly one mapping under which both endpoints are in
+the frame plane and satisfy `(x/r1)^2 + (y/r2)^2 = 1`. The frame direction
+assigned the larger radius is the major direction, oriented toward the first
+endpoint with a nonzero major-axis projection. Equal coefficient radii have
+equivalent mappings and use the first frame direction. Records that satisfy
+neither proof, or admit two distinct unequal-radius mappings, do not define an
+ellipse carrier.

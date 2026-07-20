@@ -119,8 +119,8 @@ fn normalize(vector: [f64; 3]) -> Option<([f64; 3], f64)> {
         .then(|| (vector.map(|value| value / magnitude), magnitude))
 }
 
-/// Derive every ellipse whose conic frame, radii, and antipodal endpoints
-/// independently satisfy one model-space equation.
+/// Derive every ellipse whose conic frame, radii, and endpoints independently
+/// satisfy one model-space equation.
 pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
     let mut result = Vec::new();
     for conic in conics {
@@ -154,20 +154,6 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
         let Some((axis, _)) = normalize(cross(first_frame, second_frame)) else {
             continue;
         };
-        let first_delta = std::array::from_fn(|index| conic.start[index] - center[index]);
-        let second_delta = std::array::from_fn(|index| conic.end[index] - center[index]);
-        let Some((first_direction, first_radius)) = normalize(first_delta) else {
-            continue;
-        };
-        let Some((_, second_radius)) = normalize(second_delta) else {
-            continue;
-        };
-        if (0..3).any(|index| (first_delta[index] + second_delta[index]).abs() > 1e-9 * scale)
-            || dot(first_direction, axis).abs() > 1e-9
-            || (first_radius - second_radius).abs() > 1e-9 * scale
-        {
-            continue;
-        }
         let radii = [conic.coefficient_1.abs(), conic.coefficient_2.abs()];
         if radii
             .iter()
@@ -177,15 +163,77 @@ pub fn ellipse_carriers(conics: &[ReferenceConic]) -> Vec<ReferenceEllipse> {
         }
         let major_radius = radii[0].max(radii[1]);
         let minor_radius = radii[0].min(radii[1]);
-        let radius_scale = major_radius.max(1.0);
-        let major_direction = if (first_radius - major_radius).abs() <= 1e-9 * radius_scale {
-            first_direction
-        } else if (first_radius - minor_radius).abs() <= 1e-9 * radius_scale {
-            normalize(cross(first_direction, axis))
-                .map_or(first_direction, |(direction, _)| direction)
+        let endpoints = [conic.start, conic.end];
+        let endpoint_deltas =
+            endpoints.map(|endpoint| std::array::from_fn(|index| endpoint[index] - center[index]));
+        let antipodal_major_direction = (|| {
+            let (first_direction, first_radius) = normalize(endpoint_deltas[0])?;
+            let (_, second_radius) = normalize(endpoint_deltas[1])?;
+            ((0..3).all(|index| {
+                (endpoint_deltas[0][index] + endpoint_deltas[1][index]).abs() <= 1e-9 * scale
+            }) && dot(first_direction, axis).abs() <= 1e-9
+                && (first_radius - second_radius).abs() <= 1e-9 * scale)
+                .then_some(())?;
+            let radius_scale = major_radius.max(1.0);
+            if (first_radius - major_radius).abs() <= 1e-9 * radius_scale {
+                Some(first_direction)
+            } else if (first_radius - minor_radius).abs() <= 1e-9 * radius_scale {
+                normalize(cross(first_direction, axis)).map(|(direction, _)| direction)
+            } else {
+                None
+            }
+        })();
+        if let Some(major_direction) = antipodal_major_direction {
+            result.push(ReferenceEllipse {
+                source_entity_id: conic.entity_id,
+                center,
+                axis,
+                major_direction,
+                major_radius,
+                minor_radius,
+                offset: conic.offset,
+            });
+            continue;
+        }
+        let mapping_is_valid = |first_radius: f64, second_radius: f64| {
+            endpoints.iter().all(|endpoint| {
+                let delta = std::array::from_fn(|index| endpoint[index] - center[index]);
+                let first = dot(delta, first_frame);
+                let second = dot(delta, second_frame);
+                let plane = dot(delta, axis);
+                plane.abs() <= 1e-9 * scale
+                    && ((first / first_radius).powi(2) + (second / second_radius).powi(2) - 1.0)
+                        .abs()
+                        <= 1e-9
+            })
+        };
+        let direct = mapping_is_valid(radii[0], radii[1]);
+        let swapped = mapping_is_valid(radii[1], radii[0]);
+        let equal_radii = (radii[0] - radii[1]).abs() <= 1e-12 * radii[0].max(radii[1]);
+        let (first_radius, second_radius) = if direct && (!swapped || equal_radii) {
+            (radii[0], radii[1])
+        } else if swapped && !direct {
+            (radii[1], radii[0])
         } else {
             continue;
         };
+        let mut major_direction = if first_radius >= second_radius {
+            first_frame
+        } else {
+            second_frame
+        };
+        let orientation = endpoints
+            .iter()
+            .map(|endpoint| {
+                dot(
+                    std::array::from_fn(|index| endpoint[index] - center[index]),
+                    major_direction,
+                )
+            })
+            .find(|projection| projection.abs() > 1e-12 * scale);
+        if orientation.is_some_and(f64::is_sign_negative) {
+            major_direction = major_direction.map(|value| -value);
+        }
         result.push(ReferenceEllipse {
             source_entity_id: conic.entity_id,
             center,
@@ -933,17 +981,17 @@ mod tests {
         assert_eq!(conic.parameter_start, Some(0.0));
         assert_eq!(conic.parameter_end, None);
         assert_eq!([conic.coefficient_1, conic.coefficient_2], [-1.0, 1.0]);
-        assert_eq!(conic.local_system.unwrap()[9], -1.0);
+        assert_eq!(conic.local_system.expect("complete local system")[9], -1.0);
     }
 
     #[test]
-    fn derives_ellipse_from_orthonormal_frame_and_antipodal_major_endpoints() {
+    fn derives_ellipse_from_orthonormal_frame_and_non_antipodal_endpoints() {
         let conic = ReferenceConic {
             entity_id: 7,
             type_id: 30,
             flip: 1,
             start: [-3.0, 2.0, 4.0],
-            end: [7.0, 2.0, 4.0],
+            end: [2.0, 4.0, 4.0],
             parameter_start: None,
             parameter_end: None,
             coefficient_1: -5.0,
@@ -966,9 +1014,21 @@ mod tests {
             }]
         );
 
-        let mut invalid = conic;
-        invalid.local_system.as_mut().unwrap()[3] = 1.0;
+        let mut invalid = conic.clone();
+        invalid
+            .local_system
+            .as_mut()
+            .expect("complete local system")[3] = 1.0;
         assert!(ellipse_carriers(&[invalid]).is_empty());
+
+        let diagonal = (100.0_f64 / 29.0).sqrt();
+        let ambiguous = ReferenceConic {
+            local_system: Some([1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+            start: [diagonal, diagonal, 0.0],
+            end: [-diagonal, -diagonal, 0.0],
+            ..conic
+        };
+        assert!(ellipse_carriers(&[ambiguous]).is_empty());
     }
 
     #[test]
