@@ -370,6 +370,19 @@ coordinate. The radius is the absolute radial sample-to-center distance. The
 reference direction is model Z with the sign opposite the radial offset. The
 model-reference token does not contribute a geometric coordinate.
 
+A repeated-diameter type-24 round body stores two scalar diameter endpoints
+and two model-space XYZ extent endpoints. The body is either one contiguous
+scalar frame after `15` or `00 15 1c`, or two scalar frames separated by the
+literal byte `12`. The diameter endpoints are distinct. Exactly one coordinate
+span between the extent endpoints equals their absolute difference. That
+coordinate is radial: its midpoint is the corresponding cylinder-origin
+coordinate, its sign from the first endpoint to the second defines the
+reference direction, and half its span is the radius. Removing that radial
+component from the extent-endpoint displacement produces the nonzero cylinder
+axis vector. Its magnitude is the bounded axial length, its normalized value
+is the axis direction, and the first extent endpoint supplies the other two
+origin coordinates.
+
 Cylinder and cone prototype local systems are parameter templates. Their terminal
 triples do not establish model-space origins. Cylinder and cone carriers require
 their positional construction or a feature placement.

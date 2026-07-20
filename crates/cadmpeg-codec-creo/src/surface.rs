@@ -404,6 +404,12 @@ struct TorusRadiusOverrideLayout {
     radius1_start: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct Type24RoundLayout {
+    diameter: f64,
+    extent_endpoints: [[f64; 3]; 2],
+}
+
 /// One contiguous positional scalar frame with no intervening bytes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SurfaceParameterScalarFrame {
@@ -623,6 +629,58 @@ impl SurfaceParameterRecord {
     #[must_use]
     pub fn type24_round_radius(&self, type_byte: u8) -> Option<f64> {
         (type_byte == 0x24).then_some(())?;
+        let layout = self.type24_round_layout()?;
+        Some(0.5 * layout.diameter)
+    }
+
+    fn type24_round_frame(&self, type_byte: u8) -> Option<PositionalCylinderFrame> {
+        (type_byte == 0x24).then_some(())?;
+        let layout = self.type24_round_layout()?;
+        let spans = std::array::from_fn::<_, 3, _>(|index| {
+            layout.extent_endpoints[1][index] - layout.extent_endpoints[0][index]
+        });
+        let scale = layout
+            .extent_endpoints
+            .iter()
+            .flatten()
+            .chain([layout.diameter].iter())
+            .map(|value| value.abs())
+            .fold(1.0, f64::max);
+        let radial_indices = spans
+            .iter()
+            .enumerate()
+            .filter_map(|(index, span)| {
+                ((span.abs() - layout.diameter).abs() <= 1e-9 * scale).then_some(index)
+            })
+            .collect::<Vec<_>>();
+        let [radial_index] = radial_indices.as_slice() else {
+            return None;
+        };
+        let mut axis_vector = spans;
+        axis_vector[*radial_index] = 0.0;
+        let length = axis_vector
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt();
+        (length.is_finite() && length > 1e-12 * scale).then_some(())?;
+        let mut origin = layout.extent_endpoints[0];
+        origin[*radial_index] = f64::midpoint(
+            layout.extent_endpoints[0][*radial_index],
+            layout.extent_endpoints[1][*radial_index],
+        );
+        let mut ref_direction = [0.0; 3];
+        ref_direction[*radial_index] = spans[*radial_index].signum();
+        Some(PositionalCylinderFrame {
+            origin,
+            axis: axis_vector.map(|value| value / length),
+            ref_direction,
+            radius: 0.5 * layout.diameter,
+            length: Some(length),
+        })
+    }
+
+    fn type24_round_layout(&self) -> Option<Type24RoundLayout> {
         let contiguous_values = |frame: &SurfaceParameterScalarFrame| {
             let mut cursor = frame.offset;
             let mut values = Vec::with_capacity(frame.slots.len());
@@ -676,7 +734,10 @@ impl SurfaceParameterRecord {
             .iter()
             .zip(extent_endpoints[1])
             .any(|(first, second)| ((second - first).abs() - diameter).abs() <= 1e-9 * scale)
-            .then_some(0.5 * diameter)
+            .then_some(Type24RoundLayout {
+                diameter,
+                extent_endpoints,
+            })
     }
 
     /// Decode the common model-space sweep-direction prefix of a positional
@@ -1859,7 +1920,7 @@ fn parameter_records_for_rows(
         let positional_cone_frame = (row.kind == SurfaceKind::Cone)
             .then(|| decode_positional_cone_frame(&body, &cache))
             .flatten();
-        records.push(SurfaceParameterRecord {
+        let mut record = SurfaceParameterRecord {
             surface_id: row.id,
             scalar_values: scalar_tokens
                 .iter()
@@ -1876,7 +1937,11 @@ fn parameter_records_for_rows(
             boundary,
             offset: row.offset,
             body_offset: *body_start,
-        });
+        };
+        if row.kind == SurfaceKind::Cylinder && record.positional_cylinder_frame.is_none() {
+            record.positional_cylinder_frame = record.type24_round_frame(row.type_byte);
+        }
+        records.push(record);
     }
     records
 }
@@ -4434,7 +4499,17 @@ mod tests {
             0x2f, 0x2c, 0x00, 0x2f, 0x10, 0x00,
         ];
 
-        assert!((record(&panel).type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
+        let panel = record(&panel);
+        assert!((panel.type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
+        let frame = panel
+            .positional_cylinder_frame
+            .expect("complete repeated-diameter carrier");
+        assert_eq!(frame.origin, [2.2, -22.35, -1.45]);
+        assert_eq!(frame.ref_direction, [1.0, 0.0, 0.0]);
+        assert!((frame.radius - 0.2).abs() < 1.0e-12);
+        assert!((frame.length.unwrap() - 46.241_026_156_433_854).abs() < 1.0e-12);
+        assert!((frame.axis[1] - 46.15 / frame.length.unwrap()).abs() < 1.0e-12);
+        assert!((frame.axis[2] - 2.9 / frame.length.unwrap()).abs() < 1.0e-12);
         assert!((record(&prefixed_panel).type24_round_radius(0x24).unwrap() - 0.2).abs() < 1.0e-12);
         assert!((record(&separated).type24_round_radius(0x24).unwrap() - 2.0).abs() < 1.0e-12);
 
