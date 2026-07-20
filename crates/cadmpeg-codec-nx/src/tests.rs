@@ -5906,10 +5906,14 @@ fn om_sketch_name_field_decodes_direct_and_extended_compact_type_codes() {
         (fields[0].offset, fields[0].type_code, fields[0].value),
         (0, Some(0x32), "Point1")
     );
+    assert_eq!(fields[0].raw_type_code, Some(vec![0x32]));
+    assert_eq!(fields[0].type_code_offset, Some(1));
     assert_eq!(
         (fields[1].offset, fields[1].type_code, fields[1].value),
         (12, Some(0x83), "Line2")
     );
+    assert_eq!(fields[1].raw_type_code, Some(vec![0x80, 0x83]));
+    assert_eq!(fields[1].type_code_offset, Some(13));
 
     assert!(crate::om::construction_payload_named_fields(&[
         0x66, 0xff, 0x03, 0x08, b'P', b'o', b'i', b'n', b't', b'1', 0x00,
@@ -5929,6 +5933,8 @@ fn om_sketch_name_field_decodes_type_free_payload_leading_form() {
     assert_eq!(fields.len(), 1);
     assert_eq!(fields[0].offset, 0);
     assert_eq!(fields[0].type_code, None);
+    assert_eq!(fields[0].raw_type_code, None);
+    assert_eq!(fields[0].type_code_offset, None);
     assert!(fields[0].payload_leading);
     assert_eq!(fields[0].value, "Point1");
 
@@ -6035,6 +6041,9 @@ fn sketch_named_records_own_fixed_pairs_within_their_intervals() {
         construction_payload: "payload".to_string(),
         ordinal,
         type_code: Some(1),
+        raw_type_code: Some(vec![1]),
+        type_code_payload_offset: Some(offset + 1),
+        type_code_source_offset: Some(1001 + offset),
         payload_leading: false,
         value: format!("Point{}", ordinal + 1),
         payload_offset: offset,
@@ -9087,6 +9096,9 @@ fn nx_block_payload_points_require_exactly_two_named_scalars() {
         construction_payload: construction_payload.clone(),
         ordinal: 0,
         type_code: Some(131),
+        raw_type_code: Some(vec![0x80, 0x83]),
+        type_code_payload_offset: Some(11),
+        type_code_source_offset: Some(101),
         payload_leading: false,
         value: "Point7".to_string(),
         payload_offset: 10,

@@ -550,12 +550,16 @@ pub fn construction_payload_scalar_fields(bytes: &[u8]) -> Vec<ConstructionPaylo
 }
 
 /// One compact-code string field in a reconstructed construction payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConstructionPayloadNamedField<'a> {
     /// Payload-relative offset of the `66` marker.
     pub offset: usize,
     /// Decoded non-null compact type code following the marker.
     pub type_code: Option<u32>,
+    /// Exact compact type-code token, absent for the payload-leading form.
+    pub raw_type_code: Option<Vec<u8>>,
+    /// Payload-relative compact type-code offset, when present.
+    pub type_code_offset: Option<usize>,
     /// Whether the field uses the type-free payload-leading form.
     pub payload_leading: bool,
     /// Exact nonempty printable ASCII value.
@@ -621,6 +625,8 @@ pub fn construction_payload_named_fields(bytes: &[u8]) -> Vec<ConstructionPayloa
             fields.push(ConstructionPayloadNamedField {
                 offset: 0,
                 type_code: None,
+                raw_type_code: None,
+                type_code_offset: None,
                 payload_leading: true,
                 value,
             });
@@ -645,6 +651,8 @@ pub fn construction_payload_named_fields(bytes: &[u8]) -> Vec<ConstructionPayloa
         fields.push(ConstructionPayloadNamedField {
             offset: start,
             type_code: Some(type_code),
+            raw_type_code: Some(bytes[start + 1..marker].to_vec()),
+            type_code_offset: Some(start + 1),
             payload_leading: false,
             value,
         });

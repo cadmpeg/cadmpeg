@@ -4965,13 +4965,22 @@ pub struct FeatureSketchPayloadName {
     /// Decoded compact type code following the `66` marker, when present.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub type_code: Option<u32>,
+    /// Exact compact type-code token, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_type_code: Option<Vec<u8>>,
+    /// Payload-relative offset of the compact type-code token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_code_payload_offset: Option<u64>,
+    /// Absolute source offset of the compact type-code token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_code_source_offset: Option<u64>,
     /// Whether the field uses the type-free payload-leading form.
     pub payload_leading: bool,
     /// Exact printable field value.
     pub value: String,
-    /// Byte offset of the `66` marker within the reconstructed payload.
+    /// Byte offset of the opening `66` or payload-leading `03` marker.
     pub payload_offset: u64,
-    /// Absolute file offset of the `66` marker.
+    /// Absolute file offset of the opening marker.
     pub source_offset: u64,
 }
 
@@ -6154,13 +6163,22 @@ pub struct FeatureBlockPayloadName {
     pub ordinal: u32,
     /// Non-null compact type code, absent for the payload-leading form.
     pub type_code: Option<u32>,
+    /// Exact compact type-code token, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub raw_type_code: Option<Vec<u8>>,
+    /// Payload-relative offset of the compact type-code token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_code_payload_offset: Option<u64>,
+    /// Absolute source offset of the compact type-code token.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub type_code_source_offset: Option<u64>,
     /// Whether the field uses the type-free payload-leading form.
     pub payload_leading: bool,
     /// Exact printable field value.
     pub value: String,
-    /// Payload-relative name marker offset.
+    /// Payload-relative opening `66` or payload-leading `03` marker offset.
     pub payload_offset: u64,
-    /// Absolute source offset of the name marker.
+    /// Absolute source offset of the opening marker.
     pub source_offset: u64,
 }
 
@@ -8440,6 +8458,18 @@ pub fn feature_sketch_payload_names(
                         construction_payload: construction_payload.clone(),
                         ordinal: ordinal as u32,
                         type_code: field.type_code,
+                        raw_type_code: field.raw_type_code,
+                        type_code_payload_offset: field
+                            .type_code_offset
+                            .map(|offset| offset as u64),
+                        type_code_source_offset: field.type_code_offset.and_then(|offset| {
+                            joined_payload_source_offset(
+                                offset as u64,
+                                &block_payload_offsets,
+                                &block_byte_lengths,
+                                &block_source_offsets,
+                            )
+                        }),
                         payload_leading: field.payload_leading,
                         value: field.value.to_string(),
                         payload_offset: relative,
@@ -11076,6 +11106,13 @@ pub fn feature_block_payload_names(
                         construction_payload: payload.id.clone(),
                         ordinal: ordinal as u32,
                         type_code: field.type_code,
+                        raw_type_code: field.raw_type_code,
+                        type_code_payload_offset: field
+                            .type_code_offset
+                            .map(|offset| offset as u64),
+                        type_code_source_offset: field.type_code_offset.and_then(|offset| {
+                            joined_payload_source_offset(offset as u64, &starts, &lengths, &sources)
+                        }),
                         payload_leading: field.payload_leading,
                         value: field.value.to_string(),
                         payload_offset: field.offset as u64,
