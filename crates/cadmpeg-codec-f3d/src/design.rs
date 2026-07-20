@@ -15371,7 +15371,7 @@ pub fn decode_edge_operands(
                     | DesignFeatureFamily::Revolve
                     | DesignFeatureFamily::Loft
             )
-        )
+        ) || matches!(scope.kind.as_str(), "EdgeFlange" | "Hem")
     }) {
         let member_indices = groups
             .iter()
