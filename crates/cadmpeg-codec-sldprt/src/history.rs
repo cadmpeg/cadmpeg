@@ -7052,7 +7052,7 @@ fn path_source(
                 .collect::<Vec<_>>()
                 .join(","),
         ),
-        PathRef::Edges(_) | PathRef::Curves(_) => None,
+        PathRef::Edges(_) | PathRef::Curves(_) | PathRef::HistoricalEdges { .. } => None,
     }
 }
 

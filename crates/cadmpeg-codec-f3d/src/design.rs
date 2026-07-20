@@ -815,12 +815,16 @@ pub fn project_parameter_design_with_edge_identities(
                     },
                 )
             } else if family == Some(DesignFeatureFamily::Loft) {
-                project_fixed_loft(scope, construction_groups).unwrap_or_else(|| {
-                    FeatureDefinition::Native {
-                        kind: scope.kind.clone(),
-                        parameters: BTreeMap::new(),
-                        properties: native_scope_properties(scope, native_scope),
-                    }
+                project_fixed_loft(
+                    scope,
+                    construction_groups,
+                    edge_operands,
+                    edge_identity_operands,
+                )
+                .unwrap_or_else(|| FeatureDefinition::Native {
+                    kind: scope.kind.clone(),
+                    parameters: BTreeMap::new(),
+                    properties: native_scope_properties(scope, native_scope),
                 })
             } else if family == Some(DesignFeatureFamily::Sweep) {
                 project_fixed_sweep(scope, construction_groups).unwrap_or_else(|| {
@@ -3226,6 +3230,8 @@ fn project_fixed_revolve(
 fn project_fixed_loft(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
+    edge_operands: &[DesignEdgeOperand],
+    edge_identity_operands: &[DesignEdgeIdentityOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{FeatureDefinition, LoftPointSection, LoftSection, ProfileRef};
 
@@ -3235,13 +3241,14 @@ fn project_fixed_loft(
         return None;
     };
     let stream = native_stream(&scope.id)?;
-    let groups = construction_groups
+    let mut groups = construction_groups
         .iter()
         .filter(|group| {
             native_stream(&group.id) == Some(stream)
                 && group.scope_record_index == scope.record_index
         })
         .collect::<Vec<_>>();
+    groups.sort_by_key(|group| group.scope_reference_ordinal);
     let body_count = groups
         .iter()
         .filter(|group| group.role == 0x4_0000_0000)
@@ -3266,12 +3273,28 @@ fn project_fixed_loft(
                 let guides = groups
                     .iter()
                     .filter(|group| group.role == 0x5_0000_0000)
-                    .map(|group| cadmpeg_ir::features::PathRef::Native(group.id.clone()))
+                    .map(|group| {
+                        resolved_loft_path(
+                            group,
+                            construction_groups,
+                            edge_operands,
+                            edge_identity_operands,
+                            scope,
+                        )
+                    })
                     .collect::<Vec<_>>();
                 let centerlines = groups
                     .iter()
                     .filter(|group| group.role == 0x7_0000_0000)
-                    .map(|group| cadmpeg_ir::features::PathRef::Native(group.id.clone()))
+                    .map(|group| {
+                        resolved_loft_path(
+                            group,
+                            construction_groups,
+                            edge_operands,
+                            edge_identity_operands,
+                            scope,
+                        )
+                    })
                     .collect::<Vec<_>>();
                 let centerline = match centerlines.as_slice() {
                     [] => None,
@@ -3348,6 +3371,60 @@ fn project_fixed_loft(
         op: fixed_boolean_operation(*operation),
         closed: false,
     })
+}
+
+fn resolved_loft_path(
+    group: &DesignConstructionOperandGroup,
+    groups: &[DesignConstructionOperandGroup],
+    operands: &[DesignEdgeOperand],
+    identity_operands: &[DesignEdgeIdentityOperand],
+    scope: &DesignParameterScope,
+) -> cadmpeg_ir::features::PathRef {
+    let selection = resolved_edge_group(
+        group,
+        groups,
+        operands,
+        identity_operands,
+        scope.previous_history_state_id,
+        &neutral_feature_id(scope),
+        None,
+    );
+    loft_path_from_edge_selection(&group.id, selection)
+}
+
+fn loft_path_from_edge_selection(
+    native: &str,
+    selection: cadmpeg_ir::features::EdgeSelection,
+) -> cadmpeg_ir::features::PathRef {
+    use cadmpeg_ir::features::{EdgeSelection, PathRef};
+
+    match selection {
+        EdgeSelection::Edges(edges) | EdgeSelection::Resolved { edges, .. } => {
+            PathRef::Edges(edges)
+        }
+        EdgeSelection::Historical {
+            state,
+            edges,
+            native,
+        } => PathRef::HistoricalEdges {
+            state,
+            edges,
+            native,
+        },
+        EdgeSelection::HistoricalPartial {
+            state,
+            edges,
+            unresolved,
+            native,
+        } if unresolved.is_empty() && !edges.is_empty() => PathRef::HistoricalEdges {
+            state,
+            edges,
+            native,
+        },
+        EdgeSelection::Unresolved
+        | EdgeSelection::Native(_)
+        | EdgeSelection::HistoricalPartial { .. } => PathRef::Native(native.to_owned()),
+    }
 }
 
 fn project_fixed_sweep(
@@ -21169,6 +21246,42 @@ mod relation_tests {
     }
 
     #[test]
+    fn loft_path_preserves_complete_historical_edge_selection() {
+        use cadmpeg_ir::features::{EdgeSelection, PathRef};
+        use cadmpeg_ir::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+
+        let state = FeatureInputTopologyId("f3d:history-input:state#feature".into());
+        let edge = HistoricalEdgeId("f3d:history-input:edge#7:feature:41:17".into());
+        assert_eq!(
+            super::loft_path_from_edge_selection(
+                "group",
+                EdgeSelection::Historical {
+                    state: state.clone(),
+                    edges: vec![edge.clone()],
+                    native: "selection".into(),
+                },
+            ),
+            PathRef::HistoricalEdges {
+                state: state.clone(),
+                edges: vec![edge.clone()],
+                native: "selection".into(),
+            }
+        );
+        assert_eq!(
+            super::loft_path_from_edge_selection(
+                "group",
+                EdgeSelection::HistoricalPartial {
+                    state,
+                    edges: vec![edge],
+                    unresolved: vec!["operand".into()],
+                    native: "selection".into(),
+                },
+            ),
+            PathRef::Native("group".into())
+        );
+    }
+
+    #[test]
     fn feature_identity_uses_stream_family_and_native_ordinal() {
         let first = neutral_feature_id_parts("Design/A:B", "Kind:12", 3);
         let same = neutral_feature_id_parts("Design/A:B", "Kind:12", 3);
@@ -24124,7 +24237,7 @@ mod relation_tests {
         };
         let role_41 = [loft_group(0, 0x41_0000_0000), loft_group(1, 0x41_0000_0000)];
         assert!(matches!(
-            super::project_fixed_loft(&loft_scope, &role_41),
+            super::project_fixed_loft(&loft_scope, &role_41, &[], &[]),
             Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
                 if sections.len() == 2 && guides.is_empty()
         ));
@@ -24134,7 +24247,7 @@ mod relation_tests {
             loft_group(2, 0x5_0000_0000),
         ];
         assert!(matches!(
-            super::project_fixed_loft(&loft_scope, &role_5),
+            super::project_fixed_loft(&loft_scope, &role_5, &[], &[]),
             Some(cadmpeg_ir::features::FeatureDefinition::Loft { sections, guides, .. })
                 if sections.len() == 3 && guides.is_empty()
         ));
@@ -24144,7 +24257,7 @@ mod relation_tests {
             loft_group(2, 0x7_0000_0000),
         ];
         assert!(matches!(
-            super::project_fixed_loft(&loft_scope, &centered),
+            super::project_fixed_loft(&loft_scope, &centered, &[], &[]),
             Some(cadmpeg_ir::features::FeatureDefinition::Loft {
                 sections,
                 guides,
@@ -24158,14 +24271,22 @@ mod relation_tests {
             loft_group(2, 0x5_0000_0000),
             loft_group(3, 0x7_0000_0000),
         ];
-        assert_eq!(super::project_fixed_loft(&loft_scope, &mixed), None);
+        assert_eq!(
+            super::project_fixed_loft(&loft_scope, &mixed, &[], &[]),
+            None
+        );
         let mut point = loft_group(0, 0x5_0000_0000);
         point.members = vec![10];
         let profile = loft_group(1, 0x43_0000_0000);
         let mut boundary = loft_group(2, 0x5_0000_0000);
         boundary.members = vec![20, 21, 22];
         assert!(matches!(
-            super::project_fixed_loft(&loft_scope, &[point, profile, boundary]),
+            super::project_fixed_loft(
+                &loft_scope,
+                &[point, profile, boundary],
+                &[],
+                &[],
+            ),
             Some(cadmpeg_ir::features::FeatureDefinition::Loft {
                 sections,
                 guides,

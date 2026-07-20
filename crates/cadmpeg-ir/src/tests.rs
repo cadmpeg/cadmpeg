@@ -3501,6 +3501,23 @@ fn edge_selections_round_trip_through_json() {
 }
 
 #[test]
+fn historical_edge_paths_round_trip_through_json() {
+    use crate::features::PathRef;
+    use crate::ids::{FeatureInputTopologyId, HistoricalEdgeId};
+
+    let path = PathRef::HistoricalEdges {
+        state: FeatureInputTopologyId("synthetic:history-input:state#0".into()),
+        edges: vec![
+            HistoricalEdgeId("synthetic:history-input:edge#0".into()),
+            HistoricalEdgeId("synthetic:history-input:edge#1".into()),
+        ],
+        native: "native:path#0".into(),
+    };
+    let json = serde_json::to_string(&path).unwrap();
+    assert_eq!(serde_json::from_str::<PathRef>(&json).unwrap(), path);
+}
+
+#[test]
 fn face_selections_round_trip_through_json() {
     use crate::features::FaceSelection;
     use crate::ids::{FaceId, FeatureInputTopologyId, HistoricalFaceId};

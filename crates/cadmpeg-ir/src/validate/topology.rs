@@ -2668,6 +2668,29 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
                     curves.iter().map(|id| id.0.as_str()),
                     &ids.curves,
                 ),
+                PathRef::HistoricalEdges {
+                    state,
+                    edges,
+                    native,
+                } => check_historical_selection(
+                    findings,
+                    &feature.id,
+                    (
+                        state,
+                        edges.iter().map(crate::ids::HistoricalEdgeId::as_str),
+                        native,
+                    ),
+                    "path edge",
+                    false,
+                    &input_topologies,
+                    |topology| {
+                        topology
+                            .edges
+                            .iter()
+                            .map(crate::ids::HistoricalEdgeId::as_str)
+                            .collect()
+                    },
+                ),
                 PathRef::Native(_) | PathRef::Sketch(_) => {}
             }
         }

@@ -1542,6 +1542,15 @@ pub enum PathRef {
     Edges(Vec<EdgeId>),
     /// Path resolved as ordered geometric curves.
     Curves(Vec<CurveId>),
+    /// Path resolved as ordered edges in the consuming feature's input topology.
+    HistoricalEdges {
+        /// Input topology containing every path edge.
+        state: FeatureInputTopologyId,
+        /// State-local edge identities in path order.
+        edges: Vec<HistoricalEdgeId>,
+        /// Full-fidelity source path selection.
+        native: String,
+    },
 }
 
 /// Radius assignment along filleted edges.
