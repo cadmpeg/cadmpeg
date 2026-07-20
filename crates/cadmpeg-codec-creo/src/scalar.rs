@@ -449,11 +449,21 @@ pub fn decode_positional_plane_local_system_slots(
     decode_local_system_slots(body, cache, LocalSystemVariant::PositionalPlane)
 }
 
+/// Decode a positional plane support frame whose origin uses the named
+/// local-system sign for compact one-half coordinates.
+pub(crate) fn decode_plane_support_local_system_slots(
+    body: &[u8],
+    cache: &ScalarCache,
+) -> Option<[f64; 12]> {
+    decode_local_system_slots(body, cache, LocalSystemVariant::PlaneSupport)
+}
+
 #[derive(Clone, Copy)]
 enum LocalSystemVariant {
     Explicit,
     Feature,
     PositionalPlane,
+    PlaneSupport,
 }
 
 fn decode_local_system_slots(
@@ -497,10 +507,13 @@ fn decode_local_system_slots(
         }
         let row = decode_in_row_lane(body, cursor, cache);
         let (value, next) = match (variant, values.len()) {
-            (LocalSystemVariant::PositionalPlane, 9) => {
+            (LocalSystemVariant::PlaneSupport, 9..=11) if body.get(cursor) == Some(&0x0e) => {
+                (0.5, cursor + 1)
+            }
+            (LocalSystemVariant::PositionalPlane | LocalSystemVariant::PlaneSupport, 9) => {
                 row.or_else(|| decode_tabulated_cylinder_first_coordinate(body, cursor, cache))?
             }
-            (LocalSystemVariant::PositionalPlane, 10 | 11) => {
+            (LocalSystemVariant::PositionalPlane | LocalSystemVariant::PlaneSupport, 10 | 11) => {
                 row.or_else(|| decode_tabulated_cylinder_second_coordinate(body, cursor, cache))?
             }
             _ => row?,
@@ -684,6 +697,23 @@ mod tests {
                 f64::from_be_bytes([0xc0, 0x1e, 0, 0, 0, 0, 0, 0x65]),
                 f64::from_be_bytes([0xbf, 0xd9, 0x53, 0xd5, 0xa1, 0x38, 0xce, 0xd8]),
             ])
+        );
+    }
+
+    #[test]
+    fn plane_support_origin_uses_positive_compact_half() {
+        let body = [
+            0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4, 0x0e, 0x18, 0xe4,
+        ];
+        let cache = ScalarCache::default();
+
+        assert_eq!(
+            decode_plane_support_local_system_slots(&body, &cache),
+            Some([0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 1.0])
+        );
+        assert_eq!(
+            decode_positional_plane_local_system_slots(&body, &cache).map(|slots| slots[9]),
+            Some(-0.5)
         );
     }
 

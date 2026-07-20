@@ -3174,7 +3174,7 @@ fn complete_plane_local_system_slots(
     cache: &scalar::ScalarCache,
 ) -> Option<[f64; 12]> {
     let frame_body = body.strip_suffix(&[0xe1]).unwrap_or(body);
-    scalar::decode_positional_plane_local_system_slots(frame_body, cache)
+    scalar::decode_plane_support_local_system_slots(frame_body, cache)
 }
 
 /// Decode the e3-bounded local-system chunk following each plane envelope.
