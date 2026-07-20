@@ -5180,7 +5180,6 @@ pub(crate) fn resolved_section_radii(
         for circle in definition
             .segments
             .iter()
-            .filter(|segments| segments.is_complete())
             .flat_map(|segments| &segments.opaque_rows)
             .filter(|segment| {
                 segment.kind == 10
@@ -9973,7 +9972,6 @@ fn section_circle_size_constraints(
     definition
         .segments
         .iter()
-        .filter(|segments| segments.is_complete())
         .flat_map(|segments| &segments.opaque_rows)
         .filter(|segment| segment.kind == 10)
         .filter(|segment| {
@@ -19409,6 +19407,29 @@ mod resolved_sketch_tests {
                 parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
             }
         );
+        definition
+            .segments
+            .as_mut()
+            .expect("segment table")
+            .declared_count = 2;
+        assert_eq!(
+            resolved_section_radii(&definition),
+            BTreeMap::from([(0, 2.5)])
+        );
+        assert_eq!(
+            section_circle_size_constraints(&definition, &sketch_917)[0]
+                .0
+                .definition,
+            SketchConstraintDefinition::Diameter {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:42".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:3".to_string()),
+            }
+        );
+        definition
+            .segments
+            .as_mut()
+            .expect("segment table")
+            .declared_count = 1;
         definition
             .dimensions
             .as_mut()
