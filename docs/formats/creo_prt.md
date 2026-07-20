@@ -991,6 +991,9 @@ flag `2` selects the section `v` coordinate. This discriminator defines the
 neutral same-coordinate axis without requiring solved locus coordinates. When
 both loci are solved, their selected coordinates must agree. Other flag values
 and contradictory solved coordinates retain the native incidence.
+Types 30 and 31 store the same two-locus relation with a fixed coordinate:
+type 30 selects section `v`, and type 31 selects section `u`. Their `flags`
+field does not select the coordinate.
 A two-item type-35 incidence whose operands resolve as one point locus and one
 bounded line or arc places that point at the entity midpoint. The target entity
 has sense zero. The point operand is either a sense-zero point entity or an

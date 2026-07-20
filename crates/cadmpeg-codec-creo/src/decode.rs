@@ -10205,6 +10205,8 @@ fn section_skamp_same_coordinate_sources(
     let coordinate = match (skamp.kind, skamp.flags) {
         (17, 1) => 0,
         (17, 2) => 1,
+        (30, _) => 1,
+        (31, _) => 0,
         _ => return None,
     };
     Some((
@@ -10562,7 +10564,7 @@ fn section_skamp_constraints_for_geometry(
                             center: section_skamp_locus(definition, sketch, center)?,
                         }
                     }
-                    (17, [_, _]) => {
+                    (17 | 30 | 31, [_, _]) => {
                         if let Some((first, second, axis)) =
                             section_skamp_same_coordinate(definition, sketch, skamp)
                         {
@@ -19984,6 +19986,28 @@ mod resolved_sketch_tests {
                 axis: SketchCoordinateAxis::V,
             }
         );
+        let mut fixed_y_coordinate = definition.clone();
+        fixed_y_coordinate
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[14]
+            .kind = 30;
+        fixed_y_coordinate
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[14]
+            .flags = 99;
+        assert_eq!(
+            section_skamp_constraints(
+                &fixed_y_coordinate,
+                &SketchId("creo:model:sketch#917".into())
+            )[14]
+                .0
+                .definition,
+            constraints[14].0.definition
+        );
         let mut propagated_same_coordinate = definition.clone();
         propagated_same_coordinate
             .variables
@@ -20014,6 +20038,41 @@ mod resolved_sketch_tests {
                 .definition,
             constraints[14].0.definition
         );
+        unsolved_same_coordinate
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[14]
+            .kind = 31;
+        unsolved_same_coordinate
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[14]
+            .flags = 0;
+        assert_eq!(
+            section_skamp_constraints(
+                &unsolved_same_coordinate,
+                &SketchId("creo:model:sketch#917".into())
+            )[14]
+                .0
+                .definition,
+            SketchConstraintDefinition::SameCoordinate {
+                first: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:12".to_string()
+                )),
+                second: SketchLocus::Start(SketchEntityId(
+                    "creo:featdefs:sketch_entity#917:15".to_string()
+                )),
+                axis: SketchCoordinateAxis::U,
+            }
+        );
+        unsolved_same_coordinate
+            .relations
+            .as_mut()
+            .expect("relations")
+            .skamps[14]
+            .kind = 17;
         unsolved_same_coordinate
             .relations
             .as_mut()
