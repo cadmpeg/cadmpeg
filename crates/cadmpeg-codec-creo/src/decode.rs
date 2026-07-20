@@ -9423,6 +9423,39 @@ fn section_dimension_constraints(
                 if dimension.value_unit != crate::feature::DimensionUnit::Millimeters {
                     return None;
                 }
+                if relation.relation_type == 5 && relation.sign == 1 {
+                    let vectors = relation.operand_vectors?;
+                    let [Some(first_point), Some(0), Some(second_point), Some(0)] = vectors[0]
+                    else {
+                        return None;
+                    };
+                    let [Some(center), Some(10), Some(0), Some(1)] = vectors[1] else {
+                        return None;
+                    };
+                    if vectors[2] != [Some(16), Some(15), Some(0), Some(0)] {
+                        return None;
+                    }
+                    let matching = segments
+                        .iter()
+                        .filter(|segment| {
+                            segment.kind == crate::feature::FeatureSegmentKind::Arc
+                                && segment.radius_ref == Some(relation.dimension_id)
+                                && segment.center_id == Some(center)
+                                && (segment.point_ids == [first_point, second_point]
+                                    || segment.point_ids == [second_point, first_point])
+                        })
+                        .collect::<Vec<_>>();
+                    let [segment] = matching.as_slice() else {
+                        return None;
+                    };
+                    known_entities
+                        .contains(&segment.external_id)
+                        .then_some(())?;
+                    return Some(SketchConstraintDefinition::Radius {
+                        entity: sketch_entity_id(sketch, segment.external_id),
+                        parameter,
+                    });
+                }
                 if relation.relation_type == 14
                     && relation.sign == 1
                     && relation.operand_vectors?[1] == [Some(0); 4]
@@ -19008,6 +19041,63 @@ mod resolved_sketch_tests {
                 }],
             }
         );
+        let mut legacy_radius_definition = definition.clone();
+        let legacy_arc = &mut legacy_radius_definition
+            .segments
+            .as_mut()
+            .expect("segments")
+            .rows[1];
+        legacy_arc.radius_ref = Some(0);
+        let [first_point, second_point] = legacy_arc.point_ids;
+        let center = legacy_arc.center_id.expect("arc center");
+        let legacy_radius_relation = &mut legacy_radius_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows[0];
+        legacy_radius_relation.relation_type = 5;
+        legacy_radius_relation.sign = 1;
+        legacy_radius_relation.dimension_id = 0;
+        legacy_radius_relation.operand_vectors = Some([
+            [Some(first_point), Some(0), Some(second_point), Some(0)],
+            [Some(center), Some(10), Some(0), Some(1)],
+            [Some(16), Some(15), Some(0), Some(0)],
+        ]);
+        assert_eq!(
+            section_dimension_constraints(
+                &legacy_radius_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Radius {
+                entity: SketchEntityId("creo:featdefs:sketch_entity#917:13".to_string()),
+                parameter: ParameterId("creo:featdefs:parameter#917:42".to_string()),
+            }
+        );
+        legacy_radius_definition
+            .relations
+            .as_mut()
+            .expect("relations")
+            .rows[0]
+            .operand_vectors = Some([
+            [Some(first_point), Some(0), Some(second_point), Some(0)],
+            [Some(center), Some(10), Some(0), Some(1)],
+            [Some(16), Some(15), Some(0), Some(1)],
+        ]);
+        assert!(matches!(
+            section_dimension_constraints(
+                &legacy_radius_definition,
+                &SketchId("creo:model:sketch#917".into())
+            )[0]
+            .0
+            .definition,
+            SketchConstraintDefinition::Native {
+                ref native_kind,
+                ..
+            } if native_kind == "creo:relation:5"
+        ));
+
         let mut radius_definition = definition.clone();
         radius_definition.segments.as_mut().expect("segments").rows[1].radius_ref = Some(101);
         let radius_relation = &mut radius_definition

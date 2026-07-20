@@ -923,6 +923,13 @@ between two line entities. The first two values are internal identifiers in
 remaining operand vectors and the relation sign retain the native
 angle-direction selectors.
 
+A type-five relation with
+`a=[first_point,0,second_point,0]`, `b=[center_point,10,0,1]`,
+`c=[16,15,0,0]`, and sign `1` binds the selected linear dimension to the
+unique arc whose endpoint pair, center, and `radius` dimension index match
+those stored operands. Endpoint order does not affect the radius. The selected
+dimension is the neutral radius constraint parameter.
+
 A type-14 relation with `a=[radius_id,0,0,0]`, `b=[0,0,0,0]`,
 `c=[15,0,0,0]`, and sign `1` binds the selected dimension value to the
 type-three `var_arr` radius with that key. An arc's `radius` field selects the
