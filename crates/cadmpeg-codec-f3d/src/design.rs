@@ -12,12 +12,12 @@ use crate::records::{
     DesignBaseFlangeOperation, DesignBodyBinding, DesignBodyBounds, DesignBodyMember,
     DesignCoilExtent, DesignCoilSection, DesignCoilSectionPlacement, DesignConfiguration,
     DesignConfigurationKind, DesignConstructionOperandGroup, DesignConstructionOperandIdentity,
-    DesignConstructionPersistentIdentity, DesignDimensionAnnotationFrame,
-    DesignDimensionAnnotationOperand, DesignDimensionLocus, DesignDimensionLocusGroup,
-    DesignDimensionLocusPair, DesignDimensionNullLocusPair, DesignDimensionRecipeRecord,
-    DesignDirectFaceOperation, DesignEdgeFlangeOperation, DesignEdgeIdentityOperand,
-    DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand, DesignExtrudeExtent,
-    DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
+    DesignConstructionPersistentIdentity, DesignCopyPasteBodiesOperation,
+    DesignDimensionAnnotationFrame, DesignDimensionAnnotationOperand, DesignDimensionLocus,
+    DesignDimensionLocusGroup, DesignDimensionLocusPair, DesignDimensionNullLocusPair,
+    DesignDimensionRecipeRecord, DesignDirectFaceOperation, DesignEdgeFlangeOperation,
+    DesignEdgeIdentityOperand, DesignEdgeOperand, DesignEntityHeader, DesignEntitySelectionOperand,
+    DesignExtrudeExtent, DesignExtrudeFaceRole, DesignExtrudeOperandRole, DesignExtrudeOperation,
     DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember, DesignExtrudeStart,
     DesignFaceOperand, DesignFilletRadiusGroup, DesignFilletRadiusLaw,
     DesignFixedChamferParameters, DesignFixedExtrudeParameters, DesignFixedFilletParameters,
@@ -554,8 +554,8 @@ pub fn project_parameter_design_with_edge_identities(
     Vec<cadmpeg_ir::features::DesignParameter>,
 ) {
     use cadmpeg_ir::features::{
-        Angle, BodySelection, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection,
-        Feature, FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternForm,
+        Angle, DesignParameter as NeutralParameter, DimensionDisplay, EdgeSelection, Feature,
+        FeatureDefinition, FilletGroup, Length, ParameterId, ParameterValue, PatternForm,
         PatternKind, RadiusSpec,
     };
     use std::collections::BTreeMap;
@@ -1082,6 +1082,21 @@ pub fn project_parameter_design_with_edge_identities(
                         properties: native_scope_properties(scope, native_scope),
                     }
                 })
+            } else if scope.kind == "CopyPasteBodies" {
+                scope.copy_paste_bodies_operation.as_ref().map_or_else(
+                    || FeatureDefinition::Native {
+                        kind: scope.kind.clone(),
+                        parameters: BTreeMap::new(),
+                        properties: native_scope_properties(scope, native_scope),
+                    },
+                    |operation| FeatureDefinition::InsertBodies {
+                        bodies: design_body_selection(
+                            scope,
+                            &operation.copied_body_entity_suffixes,
+                            body_bindings,
+                        ),
+                    },
+                )
             } else if scope.kind == "Base Feature" {
                 scope.base_feature_construction.as_ref().map_or_else(
                     || FeatureDefinition::Native {
@@ -1089,33 +1104,12 @@ pub fn project_parameter_design_with_edge_identities(
                         parameters: BTreeMap::new(),
                         properties: native_scope_properties(scope, native_scope),
                     },
-                    |construction| {
-                        let bodies = construction
-                            .body_entity_suffixes
-                            .iter()
-                            .filter_map(|suffix| {
-                                let matches = body_bindings
-                                    .iter()
-                                    .filter(|binding| {
-                                        native_stream(&binding.id) == Some(native_scope)
-                                            && binding.entity_suffix == *suffix
-                                    })
-                                    .filter_map(|binding| binding.body.clone())
-                                    .collect::<HashSet<_>>();
-                                (matches.len() == 1)
-                                    .then(|| matches.into_iter().next())
-                                    .flatten()
-                            })
-                            .collect::<Vec<_>>();
-                        let bodies = if bodies.len() == construction.body_entity_suffixes.len() {
-                            BodySelection::Resolved {
-                                bodies,
-                                native: scope.id.clone(),
-                            }
-                        } else {
-                            BodySelection::Native(scope.id.clone())
-                        };
-                        FeatureDefinition::BaseFeature { bodies }
+                    |construction| FeatureDefinition::BaseFeature {
+                        bodies: design_body_selection(
+                            scope,
+                            &construction.body_entity_suffixes,
+                            body_bindings,
+                        ),
                     },
                 )
             } else {
@@ -1129,6 +1123,12 @@ pub fn project_parameter_design_with_edge_identities(
                         .collect(),
                     properties: native_scope_properties(scope, native_scope),
                 }
+            };
+            let outputs = match &definition {
+                FeatureDefinition::InsertBodies {
+                    bodies: cadmpeg_ir::features::BodySelection::Resolved { bodies, .. },
+                } => bodies.clone(),
+                _ => Vec::new(),
             };
             Feature {
                 id: scope_ids[&(native_scope, scope.record_index)].clone(),
@@ -1149,7 +1149,7 @@ pub fn project_parameter_design_with_edge_identities(
                 source_tag: Some(scope.kind.clone()),
                 source_text: None,
                 source_content: Vec::new(),
-                outputs: Vec::new(),
+                outputs,
                 definition,
                 native_ref: Some(scope.id.clone()),
             }
@@ -1368,6 +1368,43 @@ pub fn project_parameter_design_with_edge_identities(
     assign_feature_ordinals(&mut features);
     parameters.sort_by_key(|parameter| parameter.id.clone());
     (features, parameters)
+}
+
+fn design_body_selection<T>(
+    scope: &DesignParameterScope,
+    entity_suffixes: &[T],
+    body_bindings: &[DesignBodyBinding],
+) -> cadmpeg_ir::features::BodySelection
+where
+    T: Copy + Into<u64>,
+{
+    use cadmpeg_ir::features::BodySelection;
+
+    let stream = native_stream(&scope.id).unwrap_or("f3d:design");
+    let bodies = entity_suffixes
+        .iter()
+        .filter_map(|suffix| {
+            let suffix = (*suffix).into();
+            let matches = body_bindings
+                .iter()
+                .filter(|binding| {
+                    native_stream(&binding.id) == Some(stream) && binding.entity_suffix == suffix
+                })
+                .filter_map(|binding| binding.body.clone())
+                .collect::<HashSet<_>>();
+            (matches.len() == 1)
+                .then(|| matches.into_iter().next())
+                .flatten()
+        })
+        .collect::<Vec<_>>();
+    if bodies.len() == entity_suffixes.len() {
+        BodySelection::Resolved {
+            bodies,
+            native: scope.id.clone(),
+        }
+    } else {
+        BodySelection::Native(scope.id.clone())
+    }
 }
 
 /// Bind each Sketch history node to geometry in exactly one neutral sketch arena.
@@ -14728,6 +14765,7 @@ pub fn decode_parameter_scopes(
             scope.fixed_fillet_parameters = exact_fixed_fillet_parameters(bytes, &scope);
             scope.fixed_chamfer_parameters = exact_fixed_chamfer_parameters(bytes, &scope);
             scope.path_feature_construction = exact_path_feature_construction(bytes, &scope);
+            scope.copy_paste_bodies_operation = exact_copy_paste_bodies_operation(bytes, &scope);
             scope.base_feature_construction = exact_base_feature_construction(bytes, &scope);
             scope.id = format!(
                 "f3d:{}:design-parameter-scope#{}",
@@ -14739,6 +14777,115 @@ pub fn decode_parameter_scopes(
     out.sort_by_key(|scope| scope.id.clone());
     out.dedup_by_key(|scope| scope.id.clone());
     Ok(out)
+}
+
+fn exact_copy_paste_bodies_operation(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<DesignCopyPasteBodiesOperation> {
+    if scope.kind != "CopyPasteBodies" || scope.reference_members.len() < 2 {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset).ok()?;
+    let body_group_record_index = marked_record_reference(bytes, start + 29)?;
+    let relation_record_index = marked_record_reference(bytes, start + 40)?;
+    if scope.reference_members[0] != body_group_record_index {
+        return None;
+    }
+    let search_at = usize::try_from(scope.paired_byte_offset)
+        .ok()?
+        .checked_add(1)?;
+    let body_group_at =
+        next_indexed_record_offset_with_index(bytes, search_at, body_group_record_index)?;
+    let (body_group_class_tag, body_group_after_tag) = lp_ascii(bytes, body_group_at)?;
+    let body_group_after_index = body_group_after_tag.checked_add(4)?;
+    if bytes.get(body_group_after_index..body_group_after_index + 10)? != [0; 10] {
+        return None;
+    }
+    let body_group_count_at = body_group_after_index.checked_add(10)?;
+    let body_group_count = usize::try_from(u32_at(bytes, body_group_count_at)?).ok()?;
+    if body_group_count != scope.reference_members.len().checked_sub(1)? {
+        return None;
+    }
+    let mut body_operand_record_indices = Vec::with_capacity(body_group_count);
+    let mut body_operand_record_offsets = Vec::with_capacity(body_group_count);
+    let mut body_group_cursor = body_group_count_at.checked_add(4)?;
+    for expected in &scope.reference_members[1..] {
+        let actual = marked_record_reference(bytes, body_group_cursor)?;
+        if actual != *expected {
+            return None;
+        }
+        body_operand_record_indices.push(actual);
+        body_operand_record_offsets.push(u64::try_from(body_group_cursor + 1).ok()?);
+        body_group_cursor = body_group_cursor.checked_add(11)?;
+    }
+    let relation_at =
+        next_indexed_record_offset_with_index(bytes, search_at, relation_record_index)?;
+    let (relation_class_tag, after_tag) = lp_ascii(bytes, relation_at)?;
+    let after_index = after_tag.checked_add(4)?;
+    if bytes.get(after_index..after_index + 8)? != [0; 8] {
+        return None;
+    }
+    let count_at = after_index.checked_add(8)?;
+    if bytes.get(count_at) != Some(&1) {
+        return None;
+    }
+    let reference_count = usize::try_from(u32_at(bytes, count_at + 1)?).ok()?;
+    let body_count = scope.reference_members.len().checked_sub(1)?;
+    if reference_count != body_count.checked_mul(2)? {
+        return None;
+    }
+    let mut source_body_entity_suffixes = Vec::with_capacity(body_count);
+    let mut source_body_entity_suffix_offsets = Vec::with_capacity(body_count);
+    let mut copied_body_entity_suffixes = Vec::with_capacity(body_count);
+    let mut copied_body_entity_suffix_offsets = Vec::with_capacity(body_count);
+    let references_at = count_at.checked_add(5)?;
+    let body_reference = |at: usize, trailing_zeros: usize| {
+        if bytes.get(at) != Some(&1)
+            || !bytes
+                .get(at + 5..at + 5 + trailing_zeros)?
+                .iter()
+                .all(|byte| *byte == 0)
+        {
+            return None;
+        }
+        u32_at(bytes, at + 1)
+    };
+    for ordinal in 0..body_count {
+        let source_at = references_at.checked_add(ordinal.checked_mul(30)?)?;
+        let copied_at = source_at.checked_add(15)?;
+        source_body_entity_suffixes.push(body_reference(source_at, 10)?);
+        source_body_entity_suffix_offsets.push(u64::try_from(source_at + 1).ok()?);
+        copied_body_entity_suffixes.push(body_reference(
+            copied_at,
+            if ordinal + 1 == body_count { 6 } else { 10 },
+        )?);
+        copied_body_entity_suffix_offsets.push(u64::try_from(copied_at + 1).ok()?);
+    }
+    if source_body_entity_suffixes
+        .iter()
+        .chain(&copied_body_entity_suffixes)
+        .copied()
+        .collect::<HashSet<_>>()
+        .len()
+        != reference_count
+    {
+        return None;
+    }
+    Some(DesignCopyPasteBodiesOperation {
+        body_group_record_index,
+        body_group_class_tag,
+        body_group_byte_offset: u64::try_from(body_group_at).ok()?,
+        body_operand_record_indices,
+        body_operand_record_offsets,
+        relation_record_index,
+        relation_class_tag,
+        relation_byte_offset: u64::try_from(relation_at).ok()?,
+        source_body_entity_suffixes,
+        source_body_entity_suffix_offsets,
+        copied_body_entity_suffixes,
+        copied_body_entity_suffix_offsets,
+    })
 }
 
 fn exact_base_feature_construction(
@@ -17994,6 +18141,7 @@ fn parse_parameter_scope(
         fixed_fillet_parameters: None,
         fixed_chamfer_parameters: None,
         path_feature_construction: None,
+        copy_paste_bodies_operation: None,
         base_feature_construction: None,
         work_plane_transform: None,
         work_plane_transform_offset: None,
@@ -24374,6 +24522,49 @@ mod relation_tests {
         );
         assert_eq!(copy.frame_length, copy_paired_at as u64);
 
+        let mut operation_bytes = vec![0; 80];
+        operation_bytes[29] = 1;
+        operation_bytes[30..34].copy_from_slice(&55u32.to_le_bytes());
+        operation_bytes[34..40].fill(0);
+        operation_bytes[40] = 1;
+        operation_bytes[41..45].copy_from_slice(&44u32.to_le_bytes());
+        operation_bytes[45..51].fill(0);
+        let body_group_at = operation_bytes.len();
+        operation_bytes.extend_from_slice(&3u32.to_le_bytes());
+        operation_bytes.extend_from_slice(b"264");
+        operation_bytes.extend_from_slice(&55u32.to_le_bytes());
+        operation_bytes.extend_from_slice(&[0; 10]);
+        operation_bytes.extend_from_slice(&1u32.to_le_bytes());
+        operation_bytes.push(1);
+        operation_bytes.extend_from_slice(&66u32.to_le_bytes());
+        operation_bytes.extend_from_slice(&[0; 6]);
+        let relation_at = operation_bytes.len();
+        operation_bytes.extend_from_slice(&3u32.to_le_bytes());
+        operation_bytes.extend_from_slice(b"314");
+        operation_bytes.extend_from_slice(&44u32.to_le_bytes());
+        operation_bytes.extend_from_slice(&[0; 8]);
+        operation_bytes.push(1);
+        operation_bytes.extend_from_slice(&2u32.to_le_bytes());
+        for suffix in [1206, 1215] {
+            operation_bytes.push(1);
+            operation_bytes.extend_from_slice(&u32::to_le_bytes(suffix));
+            operation_bytes.extend_from_slice(&[0; 10]);
+        }
+        let mut operation_scope = copy.clone();
+        operation_scope.byte_offset = 0;
+        operation_scope.paired_byte_offset = 60;
+        operation_scope.reference_members = vec![55, 66];
+        let operation =
+            super::exact_copy_paste_bodies_operation(&operation_bytes, &operation_scope)
+                .expect("single-body CopyPasteBodies relation");
+        assert_eq!(operation.body_group_record_index, 55);
+        assert_eq!(operation.body_group_byte_offset, body_group_at as u64);
+        assert_eq!(operation.body_operand_record_indices, [66]);
+        assert_eq!(operation.relation_record_index, 44);
+        assert_eq!(operation.relation_byte_offset, relation_at as u64);
+        assert_eq!(operation.source_body_entity_suffixes, [1206]);
+        assert_eq!(operation.copied_body_entity_suffixes, [1215]);
+
         // A Sketch scope may also carry the generic ordered reference table
         // used by `EntityGenesis`-form streams; the table then has more than
         // one member and the entity join happens by unique suffix match.
@@ -25520,6 +25711,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -25883,6 +26075,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -26269,6 +26462,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -30513,6 +30707,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -30635,6 +30830,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -30804,6 +31000,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -31385,6 +31582,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -32143,6 +32341,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -32532,6 +32731,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -32645,6 +32845,7 @@ mod relation_tests {
                 fixed_fillet_parameters: None,
                 fixed_chamfer_parameters: None,
                 path_feature_construction: None,
+                copy_paste_bodies_operation: None,
                 base_feature_construction: None,
                 work_plane_transform: None,
                 work_plane_transform_offset: None,
@@ -33288,6 +33489,7 @@ mod relation_tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,

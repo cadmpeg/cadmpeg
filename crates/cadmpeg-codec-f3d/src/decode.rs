@@ -475,7 +475,8 @@ fn design_projection_gaps(ir: &CadIr, native: &F3dNative) -> DesignProjectionGap
     for feature in &ir.model.features {
         match &feature.definition {
             FeatureDefinition::Native { .. } => gaps.native_features += 1,
-            FeatureDefinition::BaseFeature { bodies } => {
+            FeatureDefinition::BaseFeature { bodies }
+            | FeatureDefinition::InsertBodies { bodies } => {
                 if matches!(bodies, BodySelection::Native(_) | BodySelection::Unresolved) {
                     gaps.body_selections += 1;
                 }
@@ -1841,6 +1842,21 @@ fn extend_related_design_records(
                     byte_offset: scope.byte_offset,
                 });
         }
+        if let Some(operation) = &scope.copy_paste_bodies_operation {
+            if existing.insert((stream.to_owned(), operation.relation_record_index)) {
+                native
+                    .design_record_headers
+                    .push(crate::records::DesignRecordHeader {
+                        id: format!(
+                            "{stream}:design-record-header#{}",
+                            operation.relation_byte_offset
+                        ),
+                        record_index: operation.relation_record_index,
+                        class_tag: operation.relation_class_tag.clone(),
+                        byte_offset: operation.relation_byte_offset,
+                    });
+            }
+        }
     }
     let indices = native
         .design_parameter_scopes
@@ -2907,6 +2923,7 @@ mod tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,
@@ -3053,6 +3070,7 @@ mod tests {
             fixed_fillet_parameters: None,
             fixed_chamfer_parameters: None,
             path_feature_construction: None,
+            copy_paste_bodies_operation: None,
             base_feature_construction: None,
             work_plane_transform: None,
             work_plane_transform_offset: None,

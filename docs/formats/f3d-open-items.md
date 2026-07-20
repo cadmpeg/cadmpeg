@@ -36,7 +36,7 @@ This document records F3D semantics that the format specification does not yet d
 - The semantic meaning of the explicit per-member role integers within a `0x80000000` spline-group relation is unresolved.
 - Whether `EntityGenesis`-form sketch coordinate values follow the document display unit or are fixed at ten times the centimetre value is unresolved.
 - In a sketch member-run head record, the roles of the eleven zero bytes between the record index and the placement matrix and of the marked tail after the matrix are unresolved.
-- Sheet-metal `EdgeFlange` and `Hem` have exact edge, parameter-owner, settings, and bend-radius frames, but the extent, height-datum, bend-position, direction, and hem-form discriminator meanings are unresolved, so they have no neutral operation grammar. `CopyPasteBodies` also has no neutral operation grammar.
+- Sheet-metal `EdgeFlange` and `Hem` have exact edge, parameter-owner, settings, and bend-radius frames, but the extent, height-datum, bend-position, direction, and hem-form discriminator meanings are unresolved, so they have no neutral operation grammar.
 - `SpirePrimitive` section-placement values other than `4`, and the independent semantic name of its fixed u32 value `2` at primary-header offset 26, remain unresolved.
 - In the `EntityGenesis`-form placement record class, the role of the f64-shaped field ending at primary-record offset 45, the record referenced at offset 57 of the 362-byte WorkPlane variant, and the shared tail fields of the 213- and 341-byte sketch placement forms are unresolved.
 - The construction-record join that determines the position of a reference-derived `WorkPoint` without an explicit class-282 coordinate is unresolved.

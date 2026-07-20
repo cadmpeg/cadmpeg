@@ -471,6 +471,71 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
                     && operation.bend_radius_offset < scope.paired_byte_offset
             }
         };
+        let copy_paste_link = match (&scope.copy_paste_bodies_operation, scope.kind.as_str()) {
+            (None, kind) => kind != "CopyPasteBodies",
+            (Some(_), kind) if kind != "CopyPasteBodies" => false,
+            (Some(operation), _) => {
+                let body_count = operation.body_operand_record_indices.len();
+                let group_header =
+                    records_by_index.get(&(native_stream, operation.body_group_record_index));
+                let relation_header =
+                    records_by_index.get(&(native_stream, operation.relation_record_index));
+                body_count > 0
+                    && scope.reference_members.first() == Some(&operation.body_group_record_index)
+                    && scope.reference_members[1..] == operation.body_operand_record_indices
+                    && operation.body_operand_record_offsets.len() == body_count
+                    && operation.body_operand_record_offsets.first()
+                        == Some(&operation.body_group_byte_offset.saturating_add(26))
+                    && operation
+                        .body_operand_record_offsets
+                        .windows(2)
+                        .all(|pair| pair[1] == pair[0].saturating_add(11))
+                    && operation.source_body_entity_suffixes.len() == body_count
+                    && operation.source_body_entity_suffix_offsets.len() == body_count
+                    && operation.copied_body_entity_suffixes.len() == body_count
+                    && operation.copied_body_entity_suffix_offsets.len() == body_count
+                    && operation.source_body_entity_suffix_offsets.first()
+                        == Some(&operation.relation_byte_offset.saturating_add(25))
+                    && operation
+                        .source_body_entity_suffix_offsets
+                        .iter()
+                        .zip(&operation.copied_body_entity_suffix_offsets)
+                        .all(|(source, copied)| *copied == source.saturating_add(15))
+                    && operation
+                        .source_body_entity_suffix_offsets
+                        .windows(2)
+                        .all(|pair| pair[1] == pair[0].saturating_add(30))
+                    && operation
+                        .source_body_entity_suffixes
+                        .iter()
+                        .chain(&operation.copied_body_entity_suffixes)
+                        .copied()
+                        .collect::<HashSet<_>>()
+                        .len()
+                        == body_count.saturating_mul(2)
+                    && group_header.is_some_and(|header| {
+                        header.byte_offset == operation.body_group_byte_offset
+                            && header.class_tag == operation.body_group_class_tag
+                    })
+                    && relation_header.is_some_and(|header| {
+                        header.byte_offset == operation.relation_byte_offset
+                            && header.class_tag == operation.relation_class_tag
+                    })
+                    && operation.source_body_entity_suffixes.iter().all(|suffix| {
+                        native.design_body_bindings.iter().any(|binding| {
+                            design_stream(&binding.id) == native_stream
+                                && binding.entity_suffix == u64::from(*suffix)
+                        })
+                    })
+                    && operation.copied_body_entity_suffixes.iter().all(|suffix| {
+                        native.design_body_bindings.iter().any(|binding| {
+                            design_stream(&binding.id) == native_stream
+                                && binding.entity_suffix == u64::from(*suffix)
+                                && binding.body.is_some()
+                        })
+                    })
+            }
+        };
         let valid = scope.class_tag.len() == 3
             && scope.class_tag.bytes().all(|byte| byte.is_ascii_digit())
             && scope.paired_class_tag.len() == 3
@@ -581,6 +646,7 @@ pub fn validate_native(ir: &CadIr) -> Vec<Finding> {
             && base_flange_link
             && edge_flange_link
             && hem_link
+            && copy_paste_link
             && (scope.kind != "Sketch"
                 || placements_by_scope.contains_key(&(native_stream, scope.record_index)))
             && unique_index;

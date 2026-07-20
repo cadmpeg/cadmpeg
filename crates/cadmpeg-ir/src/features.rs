@@ -280,6 +280,11 @@ pub enum FeatureDefinition {
         /// Bodies copied into the parametric timeline when the session closed.
         bodies: BodySelection,
     },
+    /// Independent bodies introduced by a copy-and-paste operation.
+    InsertBodies {
+        /// Newly created body copies in source order.
+        bodies: BodySelection,
+    },
     /// Freeform modeling session represented by its final subdivision cages.
     Form {
         /// Ordered control cages committed by the session.

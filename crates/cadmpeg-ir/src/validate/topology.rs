@@ -1775,6 +1775,18 @@ fn check_feature_references(ir: &CadIr, ids: &IdSets, findings: &mut Vec<Finding
         let mut body_selections = Vec::new();
         match &feature.definition {
             FeatureDefinition::BaseFeature { bodies } => body_selections.push(bodies),
+            FeatureDefinition::InsertBodies { bodies } => {
+                body_selections.push(bodies);
+                if let BodySelection::Resolved { bodies, .. } = bodies {
+                    if feature.outputs != *bodies {
+                        feature_geometry_error(
+                            findings,
+                            feature,
+                            "inserted bodies do not match feature outputs",
+                        );
+                    }
+                }
+            }
             FeatureDefinition::Form { cages } => {
                 if cages.is_empty() {
                     feature_geometry_error(findings, feature, "Form operation has no control cage");

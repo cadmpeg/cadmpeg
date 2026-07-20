@@ -1090,6 +1090,9 @@ pub struct DesignParameterScope {
     /// Exact fixed construction carried by a Loft or Sweep scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path_feature_construction: Option<DesignPathFeatureConstruction>,
+    /// Exact source-to-copy body mapping carried by a `CopyPasteBodies` scope.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub copy_paste_bodies_operation: Option<DesignCopyPasteBodiesOperation>,
     /// Exact result-body references carried by a `Base Feature` scope.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_feature_construction: Option<DesignBaseFeatureConstruction>,
@@ -1224,6 +1227,35 @@ pub struct DesignHemOperation {
     pub is_flipped: bool,
     /// Uninterpreted bend-position discriminator.
     pub bend_position_code: u32,
+}
+
+/// Source and copied Design body identities carried by `CopyPasteBodies`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct DesignCopyPasteBodiesOperation {
+    /// Counted body-selection group named by the scope prefix and reference table.
+    pub body_group_record_index: u32,
+    /// Dynamic class tag of the body group's primary header.
+    pub body_group_class_tag: String,
+    /// Byte offset of the body group's primary header.
+    pub body_group_byte_offset: u64,
+    /// Ordered body-operand records carried by the counted group.
+    pub body_operand_record_indices: Vec<u32>,
+    /// Byte offsets parallel to `body_operand_record_indices`.
+    pub body_operand_record_offsets: Vec<u64>,
+    /// Indexed source-to-copy relation record named by the scope prefix.
+    pub relation_record_index: u32,
+    /// Dynamic class tag of the relation record's primary header.
+    pub relation_class_tag: String,
+    /// Byte offset of the relation record's primary header.
+    pub relation_byte_offset: u64,
+    /// Source Design body entity suffixes in copy order.
+    pub source_body_entity_suffixes: Vec<u32>,
+    /// Byte offsets parallel to `source_body_entity_suffixes`.
+    pub source_body_entity_suffix_offsets: Vec<u64>,
+    /// Newly copied Design body entity suffixes parallel to the sources.
+    pub copied_body_entity_suffixes: Vec<u32>,
+    /// Byte offsets parallel to `copied_body_entity_suffixes`.
+    pub copied_body_entity_suffix_offsets: Vec<u64>,
 }
 
 /// Result bodies captured when a Fusion direct-modeling Base Feature closes.
