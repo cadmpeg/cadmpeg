@@ -7765,6 +7765,11 @@ fn attach_native_object_model(
         crate::native::feature_draft_construction_terminal_lanes(&scan.container);
     let feature_surface_construction_references =
         crate::native::feature_surface_construction_references(&scan.container);
+    let feature_surface_construction_payloads =
+        crate::native::feature_surface_construction_payloads(
+            &scan.container,
+            &feature_surface_construction_references,
+        );
     let feature_surface_construction_branches =
         crate::native::feature_surface_construction_branches(&scan.container);
     let feature_extrude_profile_references =
@@ -8055,6 +8060,7 @@ fn attach_native_object_model(
         && feature_draft_construction_identity_frames.is_empty()
         && feature_draft_construction_terminal_lanes.is_empty()
         && feature_surface_construction_references.is_empty()
+        && feature_surface_construction_payloads.is_empty()
         && feature_surface_construction_branches.is_empty()
         && feature_extrude_profile_references.is_empty()
         && feature_extrude_payload_headers.is_empty()
@@ -8855,6 +8861,7 @@ fn attach_native_object_model(
             draft_construction_identity_frames: &feature_draft_construction_identity_frames,
             draft_construction_terminal_lanes: &feature_draft_construction_terminal_lanes,
             surface_construction_references: &feature_surface_construction_references,
+            surface_construction_payloads: &feature_surface_construction_payloads,
             surface_construction_branches: &feature_surface_construction_branches,
             sketch_named_point_block_uses: &feature_sketch_named_point_block_uses,
             sketch_preceding_named_point_uses: &feature_sketch_preceding_named_point_uses,
@@ -9356,6 +9363,12 @@ fn attach_native_object_model(
         namespace.set_arena(
             "feature_surface_construction_references",
             &feature_surface_construction_references,
+        )?;
+    }
+    if !feature_surface_construction_payloads.is_empty() {
+        namespace.set_arena(
+            "feature_surface_construction_payloads",
+            &feature_surface_construction_payloads,
         )?;
     }
     if !feature_surface_construction_branches.is_empty() {
@@ -10050,6 +10063,7 @@ struct FeatureOperationSources<'a> {
         &'a [crate::native::FeatureDraftConstructionIdentityFrame],
     draft_construction_terminal_lanes: &'a [crate::native::FeatureDraftConstructionTerminalLane],
     surface_construction_references: &'a [crate::native::FeatureSurfaceConstructionReference],
+    surface_construction_payloads: &'a [crate::native::FeatureSurfaceConstructionPayload],
     surface_construction_branches: &'a [crate::native::FeatureSurfaceConstructionBranch],
     sketch_named_point_block_uses: &'a [crate::native::FeatureSketchNamedPointBlockUse],
     sketch_preceding_named_point_uses: &'a [crate::native::FeatureSketchPrecedingNamedPointUse],
@@ -10156,6 +10170,7 @@ fn attach_feature_operations(
         draft_construction_identity_frames,
         draft_construction_terminal_lanes,
         surface_construction_references,
+        surface_construction_payloads,
         surface_construction_branches,
         sketch_named_point_block_uses,
         sketch_preceding_named_point_uses,
@@ -10360,6 +10375,10 @@ fn attach_feature_operations(
     let surface_construction_references_by_operation =
         records_by_operation(surface_construction_references, |reference| {
             &reference.operation_label
+        });
+    let surface_construction_payloads_by_operation =
+        records_by_operation(surface_construction_payloads, |payload| {
+            &payload.operation_label
         });
     let surface_construction_branches_by_operation =
         records_by_operation(surface_construction_branches, |branch| {
@@ -11208,6 +11227,16 @@ fn attach_feature_operations(
                     .data_block
                     .clone()
                     .unwrap_or_else(|| reference.object_index.to_string()),
+            );
+        }
+        for payload in surface_construction_payloads_by_operation
+            .get(label.id.as_str())
+            .into_iter()
+            .flatten()
+        {
+            source_properties.insert(
+                "surface_construction_payload".to_string(),
+                payload.id.clone(),
             );
         }
         for branch in surface_construction_branches_by_operation

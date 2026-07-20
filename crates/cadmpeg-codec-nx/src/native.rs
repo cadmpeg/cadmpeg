@@ -5474,6 +5474,29 @@ pub struct FeatureSurfaceConstructionReference {
     pub source_offset: u64,
 }
 
+/// Exact logical payload reconstructed from an ordered surface-construction graph.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FeatureSurfaceConstructionPayload {
+    /// Globally unique reconstructed-payload identity.
+    pub id: String,
+    /// Owning `SKIN` or `Studio Surface` operation label.
+    pub operation_label: String,
+    /// Ordered construction-reference records.
+    pub construction_references: [String; 14],
+    /// Ordered source blocks.
+    pub data_blocks: [String; 14],
+    /// Exact concatenated payload length.
+    pub byte_len: u64,
+    /// SHA-256 of the concatenated bytes.
+    pub sha256: String,
+    /// Payload-relative block starts.
+    pub block_payload_offsets: [u64; 14],
+    /// Exact source-block lengths.
+    pub block_byte_lengths: [u64; 14],
+    /// Absolute source-block offsets.
+    pub block_source_offsets: [u64; 14],
+}
+
 /// One resolved reference within a surface-construction branch.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FeatureSurfaceBranchReference {
@@ -9415,6 +9438,61 @@ pub fn feature_surface_construction_references(
         }
     })
     .collect()
+}
+
+/// Reconstruct ordered logical payloads from complete surface-construction graphs.
+pub fn feature_surface_construction_payloads(
+    container: &Container,
+    references: &[FeatureSurfaceConstructionReference],
+) -> Vec<FeatureSurfaceConstructionPayload> {
+    let blocks = offset_data_block_bytes(container);
+    references
+        .iter()
+        .map(|reference| reference.operation_label.as_str())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .filter_map(|operation_label| {
+            let mut graph = references
+                .iter()
+                .filter(|reference| reference.operation_label == operation_label)
+                .collect::<Vec<_>>();
+            graph.sort_by_key(|reference| reference.ordinal);
+            if graph
+                .iter()
+                .enumerate()
+                .any(|(ordinal, reference)| reference.ordinal != ordinal as u32)
+            {
+                return None;
+            }
+            let graph: [&FeatureSurfaceConstructionReference; 14] = graph.try_into().ok()?;
+            let data_blocks = graph
+                .each_ref()
+                .map(|reference| reference.data_block.clone())
+                .into_iter()
+                .collect::<Option<Vec<_>>>()?;
+            let store = data_blocks.first()?.rsplit_once(":block#")?.0;
+            if data_blocks.iter().any(|block| {
+                block
+                    .rsplit_once(":block#")
+                    .is_none_or(|(prefix, _)| prefix != store)
+            }) {
+                return None;
+            }
+            let (bytes, starts, lengths, sources) = join_data_block_bytes(&data_blocks, &blocks)?;
+            let (_, operation_key) = operation_label.rsplit_once('#')?;
+            Some(FeatureSurfaceConstructionPayload {
+                id: format!("nx:feature-history:surface-construction-payload#{operation_key}"),
+                operation_label: operation_label.to_string(),
+                construction_references: graph.each_ref().map(|reference| reference.id.clone()),
+                data_blocks: data_blocks.try_into().ok()?,
+                byte_len: bytes.len() as u64,
+                sha256: cadmpeg_ir::hash::sha256_hex(&bytes),
+                block_payload_offsets: starts.try_into().ok()?,
+                block_byte_lengths: lengths.try_into().ok()?,
+                block_source_offsets: sources.try_into().ok()?,
+            })
+        })
+        .collect()
 }
 
 /// Decode and resolve exact counted surface-construction branches without
