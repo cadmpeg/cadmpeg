@@ -10276,119 +10276,6 @@ impl MeshSelectionSearch<'_> {
         changed_edges: Option<&HashSet<usize>>,
         budget: &MeshConstraintBudget,
     ) -> bool {
-        const MAX_FACE_EQUATION_OPTIONS: usize = 4_096;
-
-        fn common_assignment_equations(
-            quotient: &MeshQuotient,
-            assignment: &MeshFaceBoundaryAssignment,
-            edge_candidates: &[Vec<[usize; 2]>],
-            budget: &MeshConstraintBudget,
-        ) -> Option<HashSet<[usize; 2]>> {
-            fn port(use_: MeshBoundaryEdgeCandidate, reversed: bool, end: bool) -> Option<usize> {
-                use_.edge.checked_mul(2)?.checked_add(usize::from(if end {
-                    !reversed
-                } else {
-                    reversed
-                }))
-            }
-
-            if assignment.boundaries.iter().any(Vec::is_empty) {
-                return None;
-            }
-            let unknown = assignment
-                .boundaries
-                .iter()
-                .flatten()
-                .filter(|use_| use_.reversed.is_none())
-                .count();
-            let combinations = 1usize.checked_shl(unknown as u32)?;
-            if combinations > MAX_FACE_EQUATION_OPTIONS {
-                return None;
-            }
-            let mut before = quotient.clone();
-            let mut nodes = assignment
-                .boundaries
-                .iter()
-                .flatten()
-                .flat_map(|use_| [use_.edge * 2, use_.edge * 2 + 1])
-                .collect::<Vec<_>>();
-            nodes.sort_unstable();
-            nodes.dedup();
-            let mut common = None::<HashSet<[usize; 2]>>;
-            for mask in 0..combinations {
-                if !budget.charge() {
-                    return None;
-                }
-                let mut variable = 0usize;
-                let directions = assignment
-                    .boundaries
-                    .iter()
-                    .map(|boundary| {
-                        boundary
-                            .iter()
-                            .map(|use_| {
-                                use_.reversed.unwrap_or_else(|| {
-                                    let shift = unknown - variable - 1;
-                                    variable += 1;
-                                    mask & (1usize << shift) != 0
-                                })
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .collect::<Vec<_>>();
-                let mut option = quotient.clone();
-                let viable =
-                    assignment
-                        .boundaries
-                        .iter()
-                        .zip(&directions)
-                        .all(|(boundary, directions)| {
-                            (0..boundary.len()).all(|index| {
-                                let next = (index + 1) % boundary.len();
-                                let Some(left) = port(boundary[index], directions[index], true)
-                                else {
-                                    return false;
-                                };
-                                let Some(right) = port(boundary[next], directions[next], false)
-                                else {
-                                    return false;
-                                };
-                                let Some(root) = option.merge(left, right) else {
-                                    return false;
-                                };
-                                option.propagate_component_edge_domains_with_budget(
-                                    root,
-                                    edge_candidates,
-                                    Some(budget),
-                                )
-                            })
-                        });
-                if !viable {
-                    continue;
-                }
-                let mut option_equations = HashSet::new();
-                for (at, left) in nodes.iter().enumerate() {
-                    for right in &nodes[at + 1..] {
-                        if before.union.find(*left) != before.union.find(*right)
-                            && option.union.find(*left) == option.union.find(*right)
-                        {
-                            option_equations.insert([*left, *right]);
-                        }
-                    }
-                }
-                match &mut common {
-                    Some(common) => {
-                        common.retain(|equation| option_equations.contains(equation));
-                    }
-                    None => common = Some(option_equations),
-                }
-                if common.as_ref().is_some_and(HashSet::is_empty) {
-                    break;
-                }
-            }
-            common
-        }
-
         let mut queue = self
             .selected
             .iter()
@@ -10433,52 +10320,14 @@ impl MeshSelectionSearch<'_> {
                 if let Some(cached) = cached {
                     cached
                 } else {
-                    let structural_option_bound =
-                        self.assignments[face]
-                            .iter()
-                            .try_fold(0usize, |total, assignment| {
-                                let unknown = assignment
-                                    .boundaries
-                                    .iter()
-                                    .flatten()
-                                    .filter(|use_| use_.reversed.is_none())
-                                    .count();
-                                total.checked_add(1usize.checked_shl(unknown as u32)?)
-                            });
-                    let equations: Vec<[usize; 2]> = if structural_option_bound
-                        .is_none_or(|bound| bound > MAX_FACE_EQUATION_OPTIONS)
-                    {
-                        let Some(common) = common_supported_corner_equations(
-                            quotient,
-                            &self.assignments[face],
-                            budget,
-                        ) else {
-                            return budget.exhausted.get();
-                        };
-                        common.into_iter().collect()
-                    } else {
-                        let mut common = None::<HashSet<[usize; 2]>>;
-                        for assignment in &self.assignments[face] {
-                            let Some(assignment_common) = common_assignment_equations(
-                                quotient,
-                                assignment,
-                                self.edge_candidates,
-                                budget,
-                            ) else {
-                                continue;
-                            };
-                            match &mut common {
-                                Some(common) => {
-                                    common.retain(|equation| assignment_common.contains(equation));
-                                }
-                                None => common = Some(assignment_common),
-                            }
-                        }
-                        let Some(common) = common else {
-                            return budget.exhausted.get();
-                        };
-                        common.into_iter().collect()
+                    let Some(common) = common_supported_corner_equations(
+                        quotient,
+                        &self.assignments[face],
+                        budget,
+                    ) else {
+                        return budget.exhausted.get();
                     };
+                    let equations = common.into_iter().collect::<Vec<_>>();
                     let mut cache = self.face_equation_cache.borrow_mut();
                     if cache.len() >= MAX_FACE_EQUATION_CACHE_ENTRIES {
                         cache.clear();
