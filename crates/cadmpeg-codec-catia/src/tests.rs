@@ -4974,6 +4974,61 @@ fn consolidated_edge_definition_decodes_general_scalar_layout() {
 }
 
 #[test]
+fn consolidated_edge_definition_decodes_class25_scalar_layouts() {
+    use crate::geometry::ConsolidatedEdgeDefinitionData;
+
+    let operands = [0x82, 0x05, 0xe7, 0x0a, 0x87, 0x0d];
+    let mut plain = operands.to_vec();
+    for value in [1.0_f64, 2.0, 1e-6, 3.0, 4.0, 1.0, 5.0, 1e-6] {
+        plain.extend_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(
+        crate::geometry::consolidated_edge_definition_data(0x25, &plain),
+        Some(ConsolidatedEdgeDefinitionData::Scalar25 {
+            operands: [1, 0xe7, 3463],
+            values: vec![1.0, 2.0, 1e-6, 3.0, 4.0, 1.0, 5.0, 1e-6],
+        })
+    );
+
+    let mut segmented = operands.to_vec();
+    for value in [1.0_f64, 2.0, 1e-6, 3.0, 4.0] {
+        segmented.extend_from_slice(&value.to_le_bytes());
+    }
+    segmented.push(0x82);
+    for value in [1.0_f64, 2.0, 3.0, 4.0, 5.0, 1e-6] {
+        segmented.extend_from_slice(&value.to_le_bytes());
+    }
+    assert!(matches!(
+        crate::geometry::consolidated_edge_definition_data(0x25, &segmented),
+        Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
+            operands: [1, 0xe7, 3463],
+            marker: 0x82,
+            ref trailing,
+            ..
+        }) if trailing.len() == 6
+    ));
+    segmented[46] = 0x84;
+    assert!(crate::geometry::consolidated_edge_definition_data(0x25, &segmented).is_none());
+
+    let mut bytes = vec![0xb2, 0x03, 0x25, plain.len() as u8, 0x05];
+    bytes.extend_from_slice(&plain);
+    bytes.extend_from_slice(&a5_native_edge_identity_stream(6, 139, 142));
+    let native = crate::native::CatiaNative::decode(&bytes);
+    assert!(matches!(
+        native.consolidated_edge_nodes[0]
+            .definition
+            .as_ref()
+            .and_then(|definition| definition.data.as_ref()),
+        Some(
+            crate::native::CatiaConsolidatedEdgeDefinitionData::Scalar25 {
+                operands: [1, 0xe7, 3463],
+                ..
+            }
+        )
+    ));
+}
+
+#[test]
 fn consolidated_analytic_circle_run_binds_adjacent_carrier() {
     fn record(class: u8, token: u8, payload: &[u8]) -> Vec<u8> {
         let mut bytes = vec![0xb2, 0x03, class, payload.len() as u8, token];

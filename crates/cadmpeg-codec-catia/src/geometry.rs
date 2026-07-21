@@ -1196,8 +1196,8 @@ pub fn b2_edge_nodes(data: &[u8]) -> Vec<B2EdgeNode> {
         .filter_map(|frame| {
             let mut at = frame.payload;
             let curve_ref = compact_int(data, &mut at)?;
-            let start_vertex_ref = edge_vertex_ref(data, &mut at)?;
-            let end_vertex_ref = edge_vertex_ref(data, &mut at)?;
+            let start_vertex_ref = allocation_ref(data, &mut at)?;
+            let end_vertex_ref = allocation_ref(data, &mut at)?;
             let start_parameter_ref = compact_int(data, &mut at)?;
             let end_parameter_ref = compact_int(data, &mut at)?;
             let tail = *data.get(at)?;
@@ -1666,6 +1666,24 @@ pub enum ConsolidatedEdgeDefinitionData {
         /// Complete finite scalar lane.
         values: Vec<f64>,
     },
+    /// Class-`0x25` three-operand form with one uninterrupted scalar lane.
+    Scalar25 {
+        /// Two mixed-width allocation operands followed by one persistent operand.
+        operands: [u32; 3],
+        /// Complete finite scalar lane.
+        values: Vec<f64>,
+    },
+    /// Class-`0x25` three-operand form with a tagged scalar-lane boundary.
+    SegmentedScalar25 {
+        /// Two mixed-width allocation operands followed by one persistent operand.
+        operands: [u32; 3],
+        /// Five finite scalars preceding the segment marker.
+        leading: [f64; 5],
+        /// Scalar-lane boundary marker (`0x82` or `0x83`).
+        marker: u8,
+        /// Complete finite scalar lane following the marker.
+        trailing: Vec<f64>,
+    },
 }
 
 /// Decode a complete class-specific edge-definition payload without inferring
@@ -1681,6 +1699,33 @@ pub fn consolidated_edge_definition_data(
         return (payload.get(at..) == Some(&[0x0f, 0x87][..]))
             .then_some(ConsolidatedEdgeDefinitionData::Compact24 { operand });
     }
+    if class == 0x25 && payload.first() == Some(&0x82) {
+        let mut at = 1;
+        let operands = [
+            allocation_ref(payload, &mut at)?,
+            allocation_ref(payload, &mut at)?,
+            persistent_ref(payload, &mut at)?,
+        ];
+        let scalar_bytes = payload.get(at..)?;
+        if matches!(scalar_bytes.len(), 64 | 72 | 80) {
+            let values = finite_f64_lane(scalar_bytes)?;
+            return Some(ConsolidatedEdgeDefinitionData::Scalar25 { operands, values });
+        }
+        let leading = read_f64_array::<5>(scalar_bytes, 0)?;
+        let marker = *scalar_bytes.get(40)?;
+        let trailing = finite_f64_lane(scalar_bytes.get(41..)?)?;
+        if leading.iter().all(|value| value.is_finite())
+            && matches!((marker, trailing.len()), (0x82, 5..=7) | (0x83, 8..=9))
+        {
+            return Some(ConsolidatedEdgeDefinitionData::SegmentedScalar25 {
+                operands,
+                leading,
+                marker,
+                trailing,
+            });
+        }
+        return None;
+    }
     if !matches!(class, 0x23 | 0x24) || payload.first() != Some(&0x82) {
         return None;
     }
@@ -1694,11 +1739,8 @@ pub fn consolidated_edge_definition_data(
     if !matches!((class, scalar_bytes.len()), (0x23, 64 | 72) | (0x24, 64)) {
         return None;
     }
-    let values = scalar_bytes
-        .chunks_exact(8)
-        .map(|bytes| Some(f64::from_le_bytes(bytes.try_into().ok()?)))
-        .collect::<Option<Vec<_>>>()?;
-    if !values.iter().all(|value| value.is_finite()) || values[2] != *values.last()? {
+    let values = finite_f64_lane(scalar_bytes)?;
+    if values[2] != *values.last()? {
         return None;
     }
     if values.len() == 9
@@ -1711,6 +1753,19 @@ pub fn consolidated_edge_definition_data(
         return None;
     }
     Some(ConsolidatedEdgeDefinitionData::Scalar { operands, values })
+}
+
+fn finite_f64_lane(bytes: &[u8]) -> Option<Vec<f64>> {
+    if !bytes.len().is_multiple_of(8) {
+        return None;
+    }
+    bytes
+        .chunks_exact(8)
+        .map(|bytes| {
+            let value = f64::from_le_bytes(bytes.try_into().ok()?);
+            value.is_finite().then_some(value)
+        })
+        .collect()
 }
 
 /// Native endpoint-incidence graph of complete consolidated edge runs.
@@ -5189,7 +5244,7 @@ fn persistent_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     }
 }
 
-fn edge_vertex_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
+fn allocation_ref(bytes: &[u8], at: &mut usize) -> Option<u32> {
     match *bytes.get(*at)? {
         0x06 => {
             let value = u32::from(*bytes.get(*at + 1)?);
