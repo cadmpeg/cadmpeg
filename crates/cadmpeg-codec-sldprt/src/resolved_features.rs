@@ -3529,7 +3529,26 @@ mod marker_tests {
             ),
             Some([0.0, 0.0])
         );
+        let mut hybrid_entities = centered_entities.clone();
+        let mut additional_endpoint = hybrid_entities[2].clone();
+        additional_endpoint.id.push_str(":additional");
+        additional_endpoint.offset += 1;
+        additional_endpoint.coordinates_m = Some([-1.0, 0.0]);
+        hybrid_entities.insert(3, additional_endpoint);
+        payload[curve_offset + 64..curve_offset + 66].copy_from_slice(&2u16.to_le_bytes());
+        payload[curve_offset + 66..curve_offset + 68].copy_from_slice(&1u16.to_le_bytes());
+        let hybrid_markers = hybrid_entities.iter().collect::<Vec<_>>();
+        assert_eq!(
+            coordinate_roster_arc_center(
+                &payload,
+                &hybrid_entities[4],
+                &hybrid_markers,
+                [&hybrid_entities[3], &hybrid_entities[2]],
+            ),
+            Some([0.0, 0.0])
+        );
         payload[curve_offset + 64..curve_offset + 66].copy_from_slice(&0u16.to_le_bytes());
+        payload[curve_offset + 66..curve_offset + 68].copy_from_slice(&2u16.to_le_bytes());
         payload[curve_offset..curve_offset + LEGACY_SKETCH_MARKER.len()]
             .copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[curve_offset + 92..curve_offset + 92 + LEGACY_SKETCH_MARKER.len()]
@@ -15011,18 +15030,32 @@ pub(crate) fn project_marker_backed_sketches(
                             &object_markers,
                         );
                         let mut endpoint_refs = endpoints
-                            .into_iter()
+                            .iter()
                             .map(|endpoint| endpoint.id.clone())
                             .collect::<Vec<_>>();
-                        if marker.kind == SketchInputKind::Arc
-                            && usize::try_from(marker.offset).ok().is_some_and(|offset| {
-                                current_indexed_arc_reverses_center_sweep(
-                                    &lane.native_payload,
-                                    offset,
-                                )
-                            })
+                        if let (
+                            SketchGeometry::Arc {
+                                center,
+                                radius,
+                                start_angle,
+                                ..
+                            },
+                            [first, second],
+                        ) = (&geometry, endpoints.as_slice())
                         {
-                            endpoint_refs.reverse();
+                            let geometry_start = Point2::new(
+                                center.u + radius.0 * start_angle.0.cos(),
+                                center.v + radius.0 * start_angle.0.sin(),
+                            );
+                            if let (Some(first), Some(second)) = (project(first), project(second)) {
+                                let first_distance =
+                                    (geometry_start.u - first.u).hypot(geometry_start.v - first.v);
+                                let second_distance = (geometry_start.u - second.u)
+                                    .hypot(geometry_start.v - second.v);
+                                if second_distance < first_distance {
+                                    endpoint_refs.reverse();
+                                }
+                            }
                         }
                         endpoint_refs
                     } else {
@@ -20972,36 +21005,34 @@ fn coordinate_roster_arc_center(
             })
             .collect::<Vec<_>>();
         coordinates.sort_unstable_by_key(|marker| marker.offset);
-        let roster_endpoints = [
+        Some([
             *coordinates.get(first_index)?,
             *coordinates.get(second_index)?,
-        ];
-        let same_pair = (resolved_endpoints[0].id == roster_endpoints[0].id
+        ])
+    };
+    let endpoint_pair_matches = |roster_endpoints: [&SketchInputEntity; 2]| {
+        (resolved_endpoints[0].id == roster_endpoints[0].id
             && resolved_endpoints[1].id == roster_endpoints[1].id)
             || (resolved_endpoints[0].id == roster_endpoints[1].id
-                && resolved_endpoints[1].id == roster_endpoints[0].id);
-        if !same_pair {
-            return None;
-        }
-        let center = coordinates.get(center_index)?.coordinates_m?;
-        let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
-        let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
-        (first_radius > 0.0 && same_dimension_length(first_radius, second_radius)).then_some(center)
+                && resolved_endpoints[1].id == roster_endpoints[0].id)
     };
-    let mut centers = [roster(false), roster(true)]
+    if ![roster(false), roster(true)]
         .into_iter()
         .flatten()
-        .collect::<Vec<_>>();
-    centers.sort_by(|left, right| {
-        left[0]
-            .total_cmp(&right[0])
-            .then_with(|| left[1].total_cmp(&right[1]))
-    });
-    centers.dedup();
-    let [center] = centers.as_slice() else {
+        .any(endpoint_pair_matches)
+    {
         return None;
-    };
-    Some(*center)
+    }
+    let mut complete_roster = markers
+        .iter()
+        .copied()
+        .filter(|marker| marker.feature_ref == curve.feature_ref && marker.coordinates_m.is_some())
+        .collect::<Vec<_>>();
+    complete_roster.sort_unstable_by_key(|marker| marker.offset);
+    let center = complete_roster.get(center_index)?.coordinates_m?;
+    let first_radius = (first[0] - center[0]).hypot(first[1] - center[1]);
+    let second_radius = (second[0] - center[0]).hypot(second[1] - center[1]);
+    (first_radius > 0.0 && same_dimension_length(first_radius, second_radius)).then_some(center)
 }
 
 fn coordinate_circle_radius(
