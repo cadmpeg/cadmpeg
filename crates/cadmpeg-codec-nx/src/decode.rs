@@ -7621,10 +7621,14 @@ pub(crate) fn hole_feature_is_incomplete(
     extent: Option<&Extent>,
 ) -> bool {
     let (kind, exit_kind) = treatments;
+    let profile_incomplete = profile.is_some_and(profile_ref_is_opaque);
+    let face_incomplete = face.is_some_and(face_selection_is_incomplete);
     let location_unresolved = position.is_none() && profile.is_none_or(profile_ref_is_opaque);
     let orientation_unresolved =
         direction.is_none() && face.is_none_or(face_selection_is_incomplete);
-    location_unresolved
+    profile_incomplete
+        || face_incomplete
+        || location_unresolved
         || orientation_unresolved
         || matches!(kind, HoleKind::Unresolved { .. })
         || exit_kind.is_some_and(|kind| matches!(kind, HoleKind::Unresolved { .. }))

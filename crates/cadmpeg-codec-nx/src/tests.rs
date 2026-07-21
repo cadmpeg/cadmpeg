@@ -3831,6 +3831,28 @@ fn nx_selection_completeness_rejects_repeated_faces_and_edges() {
 }
 
 #[test]
+fn nx_hole_completeness_rejects_opaque_supplied_operands() {
+    use cadmpeg_ir::features::{Extent, FaceSelection, HoleKind, Length, ProfileRef};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let incomplete = |profile, face| {
+        crate::decode::hole_feature_is_incomplete(
+            profile,
+            face,
+            Some(Point3::new(0.0, 0.0, 0.0)),
+            Some(Vector3::new(0.0, 0.0, 1.0)),
+            (&HoleKind::Simple, None),
+            Some(Length(1.0)),
+            Some(&Extent::ThroughAll),
+        )
+    };
+
+    assert!(!incomplete(None, None));
+    assert!(incomplete(Some(&ProfileRef::Unresolved), None));
+    assert!(incomplete(None, Some(&FaceSelection::Unresolved)));
+}
+
+#[test]
 fn nx_body_operation_completeness_requires_disjoint_roles() {
     use cadmpeg_ir::features::BodySelection;
     use cadmpeg_ir::ids::BodyId;
