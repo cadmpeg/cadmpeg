@@ -1226,8 +1226,37 @@ pub(crate) fn bind_face_operand_history_candidates(
                 .into_iter()
                 .collect(),
         };
+        if crate::design::design_feature_family(&scope.kind)
+            == Some(crate::design::DesignFeatureFamily::Split)
+        {
+            operand.resolved_face_slots = resolve_split_tool_face(operand, topology)
+                .into_iter()
+                .collect();
+        }
     }
     bind_profile_face_group_cardinality(operands, scopes, operand_groups, histories);
+}
+
+fn resolve_split_tool_face(
+    operand: &crate::records::DesignFaceOperand,
+    topology: &crate::history_records::AsmHistoricalTopology,
+) -> Option<i64> {
+    if operand.group_record_index.is_some()
+        || operand.group_member_ordinal.is_some()
+        || operand.scope_reference_ordinal != 1
+        || operand.recipe_kind != crate::records::ConstructionRecipeKind::Face
+        || operand.recipe_program != [0, -1]
+    {
+        return None;
+    }
+    let [reference] = operand.recipe_references.as_slice() else {
+        return None;
+    };
+    let candidates = faces_in_topology(&reference.candidate_faces, topology);
+    let [face] = candidates.as_slice() else {
+        return None;
+    };
+    stable_ref(&face.0)
 }
 
 pub(crate) fn bind_body_recipe_operand_history_candidates(

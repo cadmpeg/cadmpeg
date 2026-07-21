@@ -4091,13 +4091,14 @@ fn project_split(
     let [tool] = matching_tools.as_slice() else {
         return None;
     };
-    let tools = resolved_face_operand(tool).map_or_else(
-        || FaceSelection::Native(tool.id.clone()),
-        |faces| FaceSelection::Resolved {
-            faces,
-            native: tool.id.clone(),
-        },
-    );
+    let mut tools = direct_face_selection(scope, face_operands)
+        .unwrap_or_else(|| FaceSelection::Native(tool.id.clone()));
+    match &mut tools {
+        FaceSelection::Resolved { native, .. }
+        | FaceSelection::Historical { native, .. }
+        | FaceSelection::HistoricalPartial { native, .. } => native.clone_from(&tool.id),
+        _ => {}
+    }
     Some(FeatureDefinition::SplitBody {
         targets: BodySelection::Native(targets.id.clone()),
         tools,
