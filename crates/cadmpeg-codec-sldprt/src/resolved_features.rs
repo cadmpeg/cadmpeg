@@ -14900,6 +14900,14 @@ pub(crate) fn project_marker_backed_sketches(
                     } else {
                         Vec::new()
                     };
+                    if matches!(geometry, SketchGeometry::Native { .. })
+                        && marker.coordinates_m.is_some()
+                        && usize::try_from(marker.offset).ok().is_none_or(|offset| {
+                            !marker_is_geometry_locus(&lane.native_payload, offset)
+                        })
+                    {
+                        return None;
+                    }
                     Some(SketchEntity {
                         id: SketchEntityId(format!(
                             "sldprt:model:sketch-entity#markers:{lane_key}:{}:{}",
@@ -24395,6 +24403,11 @@ mod profile_join_tests {
             triangle_line("triangle-1", 10, 10, "triangle-point-1", "triangle-point-2"),
             triangle_line("triangle-2", 11, 11, "triangle-point-2", "triangle-point-0"),
         ];
+        let mut display_handle = marker("display-handle", Some([0.030, 0.030]));
+        display_handle.feature_ref = Some("sketch-native".into());
+        display_handle.ordinal = 12;
+        display_handle.offset = 250;
+        display_handle.kind = SketchInputKind::Arc;
         payload.resize(300, 0);
         payload[200..205].copy_from_slice(LEGACY_SKETCH_MARKER);
         payload[227..229].copy_from_slice(&2u16.to_le_bytes());
@@ -24434,6 +24447,7 @@ mod profile_join_tests {
                 .into_iter()
                 .chain(triangle_points)
                 .chain(triangle)
+                .chain([display_handle])
                 .collect(),
         };
         let mut sketches = Vec::new();
