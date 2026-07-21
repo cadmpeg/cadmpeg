@@ -853,7 +853,11 @@ participant body sets are pairwise disjoint, and otherwise retain their native
 object-index selections. The body clauses do not assign which side
 is retained, so the neutral retained side is unresolved.
 
-A `DELETE` operation projects as a neutral delete-selected-bodies feature. Its primary-body field is the selected body, not an output. A uniquely bound body image resolves the selection; an absent or ambiguous binding leaves the selection unresolved.
+A `DELETE` operation with a primary-body field projects as a neutral
+delete-selected-bodies feature. The field identifies the selected body, not an
+output. A uniquely bound body image resolves the selection; an ambiguous body
+binding retains the native selection. Without the primary-body field, the
+record does not identify a body target and remains a native operation.
 
 A `TEXT` operation with exactly two payload strings projects the first string as a text semantic annotation and the second as its font family. The owning ordered feature is a non-modeling annotation node and retains the operation record as its native identity.
 
