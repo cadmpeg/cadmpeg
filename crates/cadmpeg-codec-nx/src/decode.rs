@@ -11686,6 +11686,7 @@ fn attach_feature_operations(
         let sew_projection = (label.value == "SEW")
             .then(|| {
                 sew_body_feature_definition(
+                    *body_references.get(label.id.as_str())?,
                     operation_body_operands_by_operation
                         .get(label.id.as_str())?
                         .as_slice(),
@@ -13564,27 +13565,29 @@ pub(crate) fn delete_body_feature_definition(
 }
 
 pub(crate) fn sew_body_feature_definition(
+    primary_body_object_index: u32,
     operands: &[&crate::native::FeatureOperationBodyOperand],
     bodies_by_object_index: &BTreeMap<u32, Vec<BodyId>>,
 ) -> Option<FeatureDefinition> {
-    let object_indices = operands
-        .iter()
-        .map(|operand| operand.operand_object_index)
-        .collect::<Vec<_>>();
-    (!object_indices.is_empty()).then(|| FeatureDefinition::SewBodies {
-        bodies: feature_body_selection(
-            &object_indices,
-            bodies_by_object_index,
-            format!(
-                "nx:om-object-indices#{}",
-                object_indices
-                    .iter()
-                    .map(u32::to_string)
-                    .collect::<Vec<_>>()
-                    .join(",")
+    (!operands.is_empty()).then(|| {
+        let object_indices = std::iter::once(primary_body_object_index)
+            .chain(operands.iter().map(|operand| operand.operand_object_index))
+            .collect::<Vec<_>>();
+        FeatureDefinition::SewBodies {
+            bodies: feature_body_selection(
+                &object_indices,
+                bodies_by_object_index,
+                format!(
+                    "nx:om-object-indices#{}",
+                    object_indices
+                        .iter()
+                        .map(u32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(",")
+                ),
             ),
-        ),
-        gap_tolerance: None,
+            gap_tolerance: None,
+        }
     })
 }
 

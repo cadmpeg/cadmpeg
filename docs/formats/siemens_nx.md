@@ -831,9 +831,10 @@ An `EXTRUDE` construction profile is complete when its witnessed profile-referen
 
 A wrapped operation-body member is a body operand when its compact index differs from the anchoring body index and equals an object index present in an operation body-reference field or validated segment body-binding tuple. The operand retains its body clause, member order, serialized identity, matching segment bindings, and source offset. Other wrapped members retain only their native member representation.
 
-A `SEW` operation projects as a neutral body-sew feature. Without body operands,
-the body selection is unresolved. With one or more body operands, operand order
-is the wrapped-member order. Every operand resolves to
+A `SEW` operation projects as a neutral body-sew feature. Without a unique
+primary-body field or without body operands, the body selection is unresolved.
+With both fields, the primary body is the first participant and the remaining
+participant order is the wrapped-member order. Every participant resolves to
 neutral bodies only when all object identities have surviving segment body
 bindings; otherwise the ordered native object-index selection is retained
 atomically. The operation record does not assign a gap tolerance, so the

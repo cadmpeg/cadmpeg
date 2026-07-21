@@ -3111,22 +3111,27 @@ fn nx_sew_projects_ordered_body_operands_without_inventing_tolerance() {
     };
     let operands = [operand(0, 20), operand(1, 30)];
     let references = operands.iter().collect::<Vec<_>>();
+    let primary = BodyId("body#10".to_string());
     let first = BodyId("body#20".to_string());
     let second = BodyId("body#30".to_string());
-    let bodies = BTreeMap::from([(20, vec![first.clone()]), (30, vec![second.clone()])]);
+    let bodies = BTreeMap::from([
+        (10, vec![primary.clone()]),
+        (20, vec![first.clone()]),
+        (30, vec![second.clone()]),
+    ]);
 
     assert_eq!(
-        crate::decode::sew_body_feature_definition(&references, &bodies),
+        crate::decode::sew_body_feature_definition(10, &references, &bodies),
         Some(FeatureDefinition::SewBodies {
             bodies: BodySelection::Resolved {
-                bodies: vec![first, second],
-                native: "nx:om-object-indices#20,30".to_string(),
+                bodies: vec![primary, first, second],
+                native: "nx:om-object-indices#10,20,30".to_string(),
             },
             gap_tolerance: None,
         })
     );
     assert_eq!(
-        crate::decode::sew_body_feature_definition(&[], &bodies),
+        crate::decode::sew_body_feature_definition(10, &[], &bodies),
         None
     );
 }
