@@ -1746,6 +1746,16 @@ fn neutral_surface(
     }
 }
 
+pub(crate) fn resolved_surface_geometry(
+    graph: &B5Graph,
+    surface_id: u32,
+) -> Option<SurfaceGeometry> {
+    let surface = graph.surfaces.get(&surface_id)?;
+    let payload = UnknownId("catia:payload:unknown#b5-surface".to_string());
+    let geometry = neutral_surface(surface, graph, surface_id, &payload).geometry;
+    (!matches!(geometry, SurfaceGeometry::Unknown { .. })).then_some(geometry)
+}
+
 fn surface_parameter_bounds(graph: &B5Graph, surface_id: u32) -> Option<[[f64; 2]; 2]> {
     let mut bounds = [[f64::INFINITY, f64::NEG_INFINITY]; 2];
     for point in graph

@@ -6,7 +6,10 @@
 
 #![allow(clippy::unwrap_used)]
 
-use std::{collections::HashMap, io::Cursor};
+use std::{
+    collections::{HashMap, HashSet},
+    io::Cursor,
+};
 
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
 use cadmpeg_ir::document::CadIr;
@@ -3818,6 +3821,18 @@ fn b5_object_graph_resolves_face_loop_pcurve_and_edge_members() {
         graph.pcurves[&211].lifted_endpoints,
         Some([[0.0, 0.0, 0.0], [8.0, 2.0, 2.0]])
     );
+}
+
+#[test]
+fn standard_freeform_tag_resolves_object_stream_face_carrier() {
+    let carriers = crate::decode::standard_object_surface_geometries_from_streams(
+        [b5_closed_triangle_stream()],
+        &HashSet::from([500]),
+    );
+    assert!(matches!(
+        carriers.get(&500),
+        Some(SurfaceGeometry::Plane { .. })
+    ));
 }
 
 #[test]

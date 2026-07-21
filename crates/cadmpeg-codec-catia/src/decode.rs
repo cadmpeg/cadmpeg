@@ -5319,7 +5319,24 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         .iter()
         .filter(|record| matches!(record, geometry::StandardSurfaceRecord::Analytic(_)))
         .count();
-    let freeform_record_count = records.len() - analytic_record_count;
+    let freeform_tags = records
+        .iter()
+        .filter_map(|record| match record {
+            geometry::StandardSurfaceRecord::Freeform { tag, .. } => Some(*tag),
+            geometry::StandardSurfaceRecord::Analytic(_) => None,
+        })
+        .collect::<HashSet<_>>();
+    let freeform_geometries = standard_object_surface_geometries(scan, &freeform_tags);
+    let unresolved_freeform_record_count = records
+        .iter()
+        .filter(|record| {
+            matches!(
+                record,
+                geometry::StandardSurfaceRecord::Freeform { tag, .. }
+                    if !freeform_geometries.contains_key(tag)
+            )
+        })
+        .count();
     let face_frame_vectors = topology::standard_face_frame_vectors(brep);
     let curve_supports = geometry::standard_curve_supports(brep, face_count);
     let curved_surfaces = records
@@ -5393,11 +5410,24 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
                 unreachable!()
             };
             let id = SurfaceId(format!("catia:standard:surf#{i}"));
+            let geometry = freeform_geometries
+                .get(tag)
+                .cloned()
+                .unwrap_or(SurfaceGeometry::Unknown { record: None });
             face_bindings.push((id.clone(), *forward, *pos));
-            surface_annotations.push((id.clone(), *pos, None, Exactness::Unknown));
+            surface_annotations.push((
+                id.clone(),
+                *pos,
+                None,
+                if matches!(geometry, SurfaceGeometry::Unknown { .. }) {
+                    Exactness::Unknown
+                } else {
+                    Exactness::ByteExact
+                },
+            ));
             surfaces.push(Surface {
                 id,
-                geometry: SurfaceGeometry::Unknown { record: None },
+                geometry,
                 source_object: Some(cgm_source("carrier", *tag)),
             });
             continue;
@@ -5564,10 +5594,60 @@ fn try_decode_standard(scan: &ContainerScan) -> Option<ProjectedDecode> {
         &typed,
         plane_faces,
         analytic_record_count,
-        freeform_record_count,
+        unresolved_freeform_record_count,
         topology_attached,
     );
     Some((ir, report, annotations, unknowns))
+}
+
+fn standard_object_surface_geometries(
+    scan: &ContainerScan,
+    tags: &HashSet<u32>,
+) -> HashMap<u32, SurfaceGeometry> {
+    let streams = [scan.outer.as_ref(), scan.inner.as_ref()]
+        .into_iter()
+        .flatten()
+        .flat_map(|directory| {
+            directory.descriptors.iter().map(|descriptor| {
+                container::reconstruct_logical_stream(&scan.data, descriptor, directory.inner)
+            })
+        });
+    standard_object_surface_geometries_from_streams(streams, tags)
+}
+
+pub(crate) fn standard_object_surface_geometries_from_streams(
+    streams: impl IntoIterator<Item = Vec<u8>>,
+    tags: &HashSet<u32>,
+) -> HashMap<u32, SurfaceGeometry> {
+    let mut candidates = HashMap::<u32, Option<SurfaceGeometry>>::new();
+    for stream in streams {
+        let Some(graph) = crate::b5::parse(&stream) else {
+            continue;
+        };
+        for face in graph
+            .faces
+            .iter()
+            .filter(|face| tags.contains(&face.object_id))
+        {
+            let Some(geometry) =
+                crate::b5_transfer::resolved_surface_geometry(&graph, face.surface)
+            else {
+                continue;
+            };
+            candidates
+                .entry(face.object_id)
+                .and_modify(|stored| {
+                    if stored.as_ref().is_some_and(|stored| *stored != geometry) {
+                        *stored = None;
+                    }
+                })
+                .or_insert(Some(geometry));
+        }
+    }
+    candidates
+        .into_iter()
+        .filter_map(|(tag, geometry)| Some((tag, geometry?)))
+        .collect()
 }
 
 /// Attach standard analytic carriers to faces only when every FBB face has a
