@@ -625,8 +625,14 @@ pub(crate) fn bind_feature_body_selections(
         if matching_scopes.next().is_some() {
             continue;
         }
-        let FeatureDefinition::MoveBody { bodies, .. } = &mut feature.definition else {
-            continue;
+        let (bodies, proof) = match &mut feature.definition {
+            FeatureDefinition::MoveBody { bodies, .. } => {
+                (bodies, BodySelectionProof::TopologyStableRevision)
+            }
+            FeatureDefinition::SplitBody { targets, .. } => {
+                (targets, BodySelectionProof::RevisedInput)
+            }
+            _ => continue,
         };
         let BodySelection::Native(group_id) = bodies else {
             continue;
@@ -652,9 +658,15 @@ pub(crate) fn bind_feature_body_selections(
         let Some(Some(state)) = states.get(&state_id) else {
             continue;
         };
-        let Some(body) =
-            singleton_body_revision_across_state_chain(state, previous_state_id, &states)
-        else {
+        let body = match proof {
+            BodySelectionProof::TopologyStableRevision => {
+                singleton_body_revision_across_state_chain(state, previous_state_id, &states)
+            }
+            BodySelectionProof::RevisedInput => {
+                singleton_revised_input_body_across_state_chain(state, previous_state_id, &states)
+            }
+        };
+        let Some(body) = body else {
             continue;
         };
         let prefix = feature_input_prefix(&feature.id, previous_state_id);
@@ -666,6 +678,43 @@ pub(crate) fn bind_feature_body_selections(
             native: group_id.clone(),
         };
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum BodySelectionProof {
+    TopologyStableRevision,
+    RevisedInput,
+}
+
+fn singleton_revised_input_body_across_state_chain<'a>(
+    state: &'a AsmDeltaState,
+    previous_state_id: i64,
+    states: &HashMap<i64, Option<&'a AsmDeltaState>>,
+) -> Option<i64> {
+    let mut current = state;
+    let mut visited = HashSet::new();
+    let mut revised = BTreeSet::new();
+    while current.state_id != previous_state_id {
+        if !visited.insert(current.state_id) {
+            return None;
+        }
+        let transition = current.transition.as_ref()?;
+        revised.extend(
+            transition
+                .topology
+                .bodies
+                .updated
+                .iter()
+                .chain(&transition.topology.bodies.deleted)
+                .copied(),
+        );
+        let previous_id = transition.previous_state_id?;
+        current = *states.get(&previous_id)?.as_ref()?;
+    }
+    let input = current.topology.as_ref()?;
+    let mut candidates = input.bodies.iter().filter(|body| revised.contains(body));
+    let body = *candidates.next()?;
+    candidates.next().is_none().then_some(body)
 }
 
 fn singleton_body_revision_across_state_chain<'a>(
@@ -4137,7 +4186,7 @@ mod tests {
     }
 
     #[test]
-    fn singleton_body_revision_excludes_topology_changing_operations() {
+    fn body_selection_proofs_distinguish_stable_and_topology_changing_operations() {
         let state = |state_id, transition| AsmDeltaState {
             id: format!("state-{state_id}"),
             parent: "history".into(),
@@ -4200,6 +4249,41 @@ mod tests {
         assert_eq!(
             singleton_body_revision_across_state_chain(&result, 10, &states),
             Some(7)
+        );
+
+        let topology = |bodies: &[i64]| AsmHistoricalTopology {
+            bodies: bodies.to_vec(),
+            ..AsmHistoricalTopology::default()
+        };
+        let mut split_previous = state(20, None);
+        split_previous.topology = Some(topology(&[7, 8]));
+        let mut split_transition = AsmHistoricalTransition {
+            previous_state_id: Some(20),
+            records: AsmHistoricalEntityDelta::default(),
+            topology: AsmHistoricalTopologyDelta::default(),
+        };
+        split_transition.topology.bodies.updated.push(7);
+        split_transition.topology.bodies.inserted.push(9);
+        let mut split_result = state(21, Some(split_transition.clone()));
+        split_result.topology = Some(topology(&[7, 8, 9]));
+        let split_states = HashMap::from([(20, Some(&split_previous)), (21, Some(&split_result))]);
+        assert_eq!(
+            singleton_revised_input_body_across_state_chain(&split_result, 20, &split_states),
+            Some(7)
+        );
+
+        split_transition.topology.bodies.updated.push(8);
+        let mut ambiguous_split = state(21, Some(split_transition));
+        ambiguous_split.topology = Some(topology(&[7, 8, 9]));
+        let ambiguous_states =
+            HashMap::from([(20, Some(&split_previous)), (21, Some(&ambiguous_split))]);
+        assert_eq!(
+            singleton_revised_input_body_across_state_chain(
+                &ambiguous_split,
+                20,
+                &ambiguous_states
+            ),
+            None
         );
 
         transition.previous_state_id = Some(10);
