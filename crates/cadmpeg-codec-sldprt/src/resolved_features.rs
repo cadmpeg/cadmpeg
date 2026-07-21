@@ -4131,6 +4131,9 @@ mod marker_tests {
         );
         current_112[17..21].copy_from_slice(&1u32.to_le_bytes());
         assert_eq!(wide_indexed_curve_endpoint_indices(&current_112, 0), None);
+        current_112[17..21].copy_from_slice(&2u32.to_le_bytes());
+        current_112[84..86].copy_from_slice(&3u16.to_le_bytes());
+        assert_eq!(wide_indexed_curve_endpoint_indices(&current_112, 0), None);
     }
 
     #[test]
@@ -21609,6 +21612,8 @@ fn current_extended_wide_curve_body(payload: &[u8], offset: usize) -> bool {
         && payload.get(offset + 29..offset + 31) == Some(&1u16.to_le_bytes())
         && payload.get(offset + 35..offset + 39) == Some(&[0x00, 0x00, 0x44, 0x00])
         && payload.get(offset + 56..offset + 64) == Some(&[0; 8])
+        && payload.get(offset + 80..offset + 84) == Some(&(-1i32).to_le_bytes())
+        && payload.get(offset + 84..offset + 86) == Some(&4u16.to_le_bytes())
 }
 
 fn wide_indexed_curve_record_ends_at(payload: &[u8], offset: usize, prefix: &[u8]) -> bool {
