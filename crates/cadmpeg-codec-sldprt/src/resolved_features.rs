@@ -3105,7 +3105,11 @@ mod marker_tests {
 
     #[test]
     fn compact_curve_uses_one_based_endpoint_indices() {
-        for prefix in [LEGACY_EXTENDED_SKETCH_MARKER, SKETCH_MARKER] {
+        for prefix in [
+            LEGACY_SKETCH_MARKER,
+            LEGACY_EXTENDED_SKETCH_MARKER,
+            SKETCH_MARKER,
+        ] {
             let mut payload = vec![0; 84 + prefix.len()];
             payload[..prefix.len()].copy_from_slice(prefix);
             payload[5..13].fill(0xff);
@@ -3583,6 +3587,11 @@ mod marker_tests {
             Some([7, 10])
         );
         compact[60..64].copy_from_slice(&1u32.to_le_bytes());
+        assert_eq!(
+            legacy_state_five_curve_endpoint_indices(&compact, 0),
+            Some([7, 10])
+        );
+        compact[74..76].copy_from_slice(&2u16.to_le_bytes());
         assert_eq!(
             legacy_state_five_curve_endpoint_indices(&compact, 0),
             Some([7, 10])
@@ -20265,7 +20274,10 @@ fn roster_curve_endpoint_markers<'a>(
 fn compact_curve_endpoint_indices(payload: &[u8], offset: usize) -> Option<[u32; 2]> {
     if !matches!(
         payload.get(offset..offset + SKETCH_MARKER.len()),
-        Some(prefix) if prefix == LEGACY_EXTENDED_SKETCH_MARKER || prefix == SKETCH_MARKER
+        Some(prefix)
+            if prefix == LEGACY_SKETCH_MARKER
+                || prefix == LEGACY_EXTENDED_SKETCH_MARKER
+                || prefix == SKETCH_MARKER
     ) || marker_native_code(payload, offset) != Some(0)
         || !matches!(
             payload.get(offset + 23..offset + 27),
@@ -20366,6 +20378,8 @@ fn legacy_coordinate_roster_endpoint_offset(payload: &[u8], offset: usize) -> Op
     }
     if compact_indexed_curve_endpoint_indices(payload, offset).is_some() {
         Some(56)
+    } else if compact_curve_endpoint_indices(payload, offset).is_some() {
+        Some(56)
     } else if wide_indexed_curve_endpoint_indices(payload, offset).is_some() {
         Some(64)
     } else {
@@ -20406,7 +20420,9 @@ fn legacy_state_five_curve_endpoint_offset(payload: &[u8], offset: usize) -> Opt
         .map(u32::from_le_bytes)
         .is_some_and(|state| matches!(state, 0 | 1))
         && payload.get(offset + 64..offset + 72) == Some(&(-1.0f64).to_le_bytes())
-        && payload.get(offset + 72..offset + 80) == Some(&[0; 8])
+        && payload.get(offset + 72..offset + 74) == Some(&[0; 2])
+        && matches!(payload.get(offset + 74..offset + 76), Some([0 | 2, 0]))
+        && payload.get(offset + 76..offset + 80) == Some(&[0; 4])
         && sketch_marker_prefix_at(payload, offset.checked_add(84)?)
     {
         Some(56)
