@@ -474,6 +474,17 @@ struct CreoFeatureEntityTableEntryRecord {
 }
 
 #[derive(Serialize)]
+struct CreoFeatureSurfaceReplayAssociation {
+    id: String,
+    owner_feature_id: u32,
+    visible_surface_id: u32,
+    replay_surface_id: u32,
+    replay_ordinal: usize,
+    surface_family: String,
+    table_offset: usize,
+}
+
+#[derive(Serialize)]
 struct CreoFeatureGeometryTableRecord {
     id: String,
     owner_feature_id: u32,
@@ -1054,6 +1065,85 @@ fn feature_entity_table_records(scan: &ContainerScan) -> Vec<CreoFeatureEntityTa
             offset: table.offset,
         })
         .collect()
+}
+
+fn feature_surface_replay_associations(
+    scan: &ContainerScan,
+) -> Vec<CreoFeatureSurfaceReplayAssociation> {
+    let mut associations = Vec::new();
+    for table in &scan.feature_entity_tables {
+        let Some(owner_feature_id) = table.feature_id else {
+            continue;
+        };
+        let visible_ids = table
+            .entries
+            .iter()
+            .take_while(|entry| entry.class_id == 254)
+            .map(|entry| entry.entity_id)
+            .collect::<Vec<_>>();
+        if visible_ids.is_empty() {
+            continue;
+        }
+        let visible_rows = visible_ids
+            .iter()
+            .map(|id| crate::surface::unique_surface_row(&scan.surface_rows, *id))
+            .collect::<Option<Vec<_>>>();
+        let Some(visible_rows) = visible_rows else {
+            continue;
+        };
+        let replay_entries = &table.entries[visible_ids.len()..];
+        let mut replay_ordinal = 0;
+        let mut cursor = 0;
+        while cursor + visible_rows.len() <= replay_entries.len() {
+            let candidate_entries = &replay_entries[cursor..cursor + visible_rows.len()];
+            if candidate_entries.iter().any(|entry| entry.class_id != 214) {
+                cursor += 1;
+                continue;
+            }
+            let candidate_rows = candidate_entries
+                .iter()
+                .map(|entry| {
+                    crate::surface::unique_surface_row(
+                        &scan.nonvisible_surface_rows,
+                        entry.entity_id,
+                    )
+                })
+                .collect::<Option<Vec<_>>>();
+            let Some(candidate_rows) = candidate_rows else {
+                cursor += 1;
+                continue;
+            };
+            if visible_rows
+                .iter()
+                .zip(&candidate_rows)
+                .all(|(visible, replay)| {
+                    visible.feature_id == owner_feature_id
+                        && replay.feature_id == owner_feature_id
+                        && visible.kind == replay.kind
+                })
+            {
+                associations.extend(visible_rows.iter().zip(candidate_rows).map(
+                    |(visible, replay)| CreoFeatureSurfaceReplayAssociation {
+                        id: format!(
+                            "creo:allfeatur:surface_replay#{}:{}:{}:{}",
+                            owner_feature_id, table.offset, replay_ordinal, visible.id
+                        ),
+                        owner_feature_id,
+                        visible_surface_id: visible.id,
+                        replay_surface_id: replay.id,
+                        replay_ordinal,
+                        surface_family: surface_family(visible.kind).to_string(),
+                        table_offset: table.offset,
+                    },
+                ));
+                replay_ordinal += 1;
+                cursor += visible_rows.len();
+            } else {
+                cursor += 1;
+            }
+        }
+    }
+    associations
 }
 
 fn feature_geometry_table_records(scan: &ContainerScan) -> Vec<CreoFeatureGeometryTableRecord> {
@@ -34795,6 +34885,22 @@ fn build_ir(
         namespace.version = 1;
         namespace.set_arena("feature_entity_tables", &feature_entity_tables)?;
     }
+    let feature_surface_replays = feature_surface_replay_associations(scan);
+    if !feature_surface_replays.is_empty() {
+        for association in &feature_surface_replays {
+            annotate(
+                &mut annotations,
+                &association.id,
+                "AllFeatur",
+                association.table_offset as u64,
+                "feature_surface_replay_association",
+                Exactness::Derived,
+            );
+        }
+        let namespace = ir.native.namespace_mut("creo");
+        namespace.version = 1;
+        namespace.set_arena("feature_surface_replays", &feature_surface_replays)?;
+    }
     let feature_geometry_tables = feature_geometry_table_records(scan);
     if !feature_geometry_tables.is_empty() {
         for table in &feature_geometry_tables {
@@ -35481,6 +35587,10 @@ fn source_meta(scan: &ContainerScan) -> SourceMeta {
     attributes.insert(
         "decoded_feature_entity_table_count".to_string(),
         scan.feature_entity_tables.len().to_string(),
+    );
+    attributes.insert(
+        "decoded_feature_surface_replay_association_count".to_string(),
+        feature_surface_replay_associations(scan).len().to_string(),
     );
     if let Some(count) = scan.declared_body_count {
         attributes.insert("declared_body_count".to_string(), count.to_string());

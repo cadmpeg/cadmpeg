@@ -1654,6 +1654,64 @@ fn scan_binds_allfeatur_mixed_entity_table_to_known_feature() {
 }
 
 #[test]
+fn decode_binds_ordered_visible_surfaces_to_matching_replay_runs() {
+    let mut visible = b"srf_array\0\xf8\x02".to_vec();
+    visible.extend_from_slice(&[7, 0x24, 4, 0x01, 0, 8, 0xe3]);
+    visible.extend_from_slice(&[8, 0x26, 4, 0x01, 0, 0, 0xe3]);
+    visible.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let mut nonvisible = b"srf_array\0\xf8\x05".to_vec();
+    for (id, kind) in [(9, 0x24), (10, 0x26), (11, 0x22), (12, 0x24), (13, 0x26)] {
+        nonvisible.extend_from_slice(&[id, kind, 4, 0x01, 0, 0, 0xe3]);
+    }
+    nonvisible.extend_from_slice(b"crv_array\0\xf3\xf8\0");
+    let mut allfeatur = vec![4, 0xeb, 0x04, 0xf8, 7, 0xf7, 79, 0xfb, 0xe3];
+    for (id, class_id) in [
+        (7, 254),
+        (8, 254),
+        (9, 214),
+        (10, 214),
+        (11, 215),
+        (12, 214),
+        (13, 214),
+    ] {
+        allfeatur.extend_from_slice(&[id, 0x80, class_id, 0, 0, 0xe3]);
+    }
+    let result = decode::decode(
+        &mut Cursor::new(build_prt(
+            "c",
+            &[
+                ("VisibGeom", visible),
+                ("NovisGeom", nonvisible),
+                ("AllFeatur", allfeatur),
+                ("MdlStatus", b"Round id 4\0".to_vec()),
+            ],
+        )),
+        &DecodeOptions::default(),
+    )
+    .expect("decode ordered surface replay");
+
+    let associations =
+        &result.ir.native.namespace("creo").unwrap().arenas["feature_surface_replays"];
+    assert_eq!(associations.len(), 4);
+    for (association, visible_id, replay_id, ordinal) in [
+        (&associations[0], 7, 9, 0),
+        (&associations[1], 8, 10, 0),
+        (&associations[2], 7, 12, 1),
+        (&associations[3], 8, 13, 1),
+    ] {
+        assert_eq!(association.fields["owner_feature_id"], 4);
+        assert_eq!(association.fields["visible_surface_id"], visible_id);
+        assert_eq!(association.fields["replay_surface_id"], replay_id);
+        assert_eq!(association.fields["replay_ordinal"], ordinal);
+    }
+    assert_eq!(
+        result.ir.source.as_ref().unwrap().attributes
+            ["decoded_feature_surface_replay_association_count"],
+        "4"
+    );
+}
+
+#[test]
 fn scan_decodes_source_entity_id_whose_compact_tail_is_e3() {
     let mut geometry = visibgeom_payload(2, 0);
     geometry.extend_from_slice(&[7, 0x22, 4, 0x01, 0, 0]);
